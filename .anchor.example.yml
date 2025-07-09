@@ -1,0 +1,51 @@
+# Example Anchor configuration file
+# Copy this to .anchor.yml in your project root and customize
+
+rules:
+  # Prevent web layer from directly accessing the database
+  - type: no_direct_dependency
+    paths:
+      - "lib/my_app_web/**/*.ex"
+    forbidden_modules:
+      - MyApp.Repo
+      - Ecto.Query
+    recursive: true
+
+  # Ensure all contexts use the base context module
+  - type: must_use_module
+    paths:
+      - "lib/my_app/contexts/**/*.ex"
+    required_modules:
+      - MyApp.Context
+    recursive: true
+
+  # Ensure schema modules only contain generated code
+  - type: module_pattern_restrictions
+    pattern: "*.Schemas.*"
+    allowed_functions: []  # Empty means only compiler-generated functions
+
+  # Another example: Only allow specific functions in query modules
+  - type: module_pattern_restrictions
+    pattern: "*Queries"
+    allowed_functions:
+      - "new"
+      - "with_status"
+      - "with_user"
+      - "ordered"
+
+  # Prevent test files from using production secrets
+  - type: no_direct_dependency
+    paths:
+      - "test/**/*.exs"
+    forbidden_modules:
+      - MyApp.Secrets
+      - System
+    recursive: true
+
+  # Ensure all LiveView modules use the LiveView behaviour
+  - type: must_use_module
+    paths:
+      - "lib/my_app_web/live/**/*.ex"
+    required_modules:
+      - Phoenix.LiveView
+    recursive: true
