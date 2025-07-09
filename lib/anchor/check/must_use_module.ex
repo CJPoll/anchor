@@ -25,10 +25,9 @@ defmodule Anchor.Check.MustUseModule do
     end)
   end
 
-  defp create_issue(source_file, required_module, params) do
+  defp create_issue(source_file, required_module, _params) do
     format_issue(
       source_file,
-      params,
       message: "Module must use #{inspect(required_module)}",
       line_no: 1,
       trigger: inspect(required_module)

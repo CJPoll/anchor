@@ -41,12 +41,11 @@ defmodule Anchor.Check.ModulePatternRestrictions do
     MapSet.to_list(functions)
   end
 
-  defp create_issue(source_file, function_name, ast, params) do
+  defp create_issue(source_file, function_name, ast, _params) do
     line_no = find_function_line(ast, function_name)
 
     format_issue(
       source_file,
-      params,
       message: "Module defines non-allowed function: #{function_name}",
       line_no: line_no,
       trigger: function_name

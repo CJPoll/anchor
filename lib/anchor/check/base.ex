@@ -79,9 +79,16 @@ defmodule Anchor.Check.Base do
       end
 
       defp matches_recursive_pattern?(path, pattern) do
-        pattern = String.replace(pattern, "**", ".*")
-        regex = pattern_to_regex(pattern)
-        Regex.match?(regex, path)
+        regex_pattern = 
+          pattern
+          |> String.replace(".", "\\.")
+          |> String.replace("**", "___DOUBLE_STAR___")
+          |> String.replace("*", "[^/]*")
+          |> String.replace("___DOUBLE_STAR___", ".*")
+          |> then(&"^#{&1}$")
+          |> Regex.compile!()
+        
+        Regex.match?(regex_pattern, path)
       end
 
       defp matches_module_pattern?(module_name, pattern) do

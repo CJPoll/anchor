@@ -25,12 +25,11 @@ defmodule Anchor.Check.NoDependency do
     end)
   end
 
-  defp create_issue(source_file, forbidden_module, ast, params) do
+  defp create_issue(source_file, forbidden_module, ast, _params) do
     line_no = find_module_reference_line(ast, forbidden_module)
 
     format_issue(
       source_file,
-      params,
       message: "Module has forbidden direct dependency on #{inspect(forbidden_module)}",
       line_no: line_no,
       trigger: inspect(forbidden_module)
