@@ -15,6 +15,7 @@ Anchor allows you to define rules about module dependencies and usage patterns t
 - **Content-based Module Matching**: Apply rules to modules that use specific modules (e.g., all modules using `Ecto.Schema`)
 - **Single Control-Flow Enforcement**: Ensure function clauses contain at most one control-flow structure for simpler code
 - **No Tuple Pattern Matching in Function Heads**: Prevent coupling by disallowing :ok/:error tuple patterns in function heads
+- **Case on Bare Arguments**: Discourage case statements on bare function arguments in favor of function head pattern matching
 - **Flexible Configuration**: YAML-based rules with support for umbrella applications
 
 ## Installation
@@ -67,6 +68,11 @@ rules:
     paths:
       - "lib/my_app/**/*.ex"
     recursive: true
+
+  - type: case_on_bare_arg
+    paths:
+      - "lib/my_app/**/*.ex"
+    recursive: true
 ```
 
 For umbrella applications, you can place the configuration at the root or in individual apps.
@@ -87,7 +93,8 @@ Configure Credo to use the custom checks in `.credo.exs`:
           {Anchor.Check.MustUseModule, []},
           {Anchor.Check.ModulePatternRestrictions, []},
           {Anchor.Check.SingleControlFlow, []},
-          {Anchor.Check.NoTupleMatchInHead, []}
+          {Anchor.Check.NoTupleMatchInHead, []},
+          {Anchor.Check.CaseOnBareArg, []}
         ]
       }
     }

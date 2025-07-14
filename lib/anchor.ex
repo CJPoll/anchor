@@ -13,6 +13,7 @@ defmodule Anchor do
   - `Anchor.Check.ModulePatternRestrictions` - Restricts functions in modules matching patterns
   - `Anchor.Check.SingleControlFlow` - Ensures function clauses contain at most one control-flow structure
   - `Anchor.Check.NoTupleMatchInHead` - Prevents pattern matching on :ok/:error tuples in function heads
+  - `Anchor.Check.CaseOnBareArg` - Discourages case statements on bare function arguments
 
   ## Integration with Credo
 
@@ -28,7 +29,8 @@ defmodule Anchor do
                 {Anchor.Check.MustUseModule, []},
                 {Anchor.Check.ModulePatternRestrictions, []},
                 {Anchor.Check.SingleControlFlow, []},
-                {Anchor.Check.NoTupleMatchInHead, []}
+                {Anchor.Check.NoTupleMatchInHead, []},
+                {Anchor.Check.CaseOnBareArg, []}
               ]
             }
           }
@@ -45,7 +47,8 @@ defmodule Anchor do
       Anchor.Check.MustUseModule,
       Anchor.Check.ModulePatternRestrictions,
       Anchor.Check.SingleControlFlow,
-      Anchor.Check.NoTupleMatchInHead
+      Anchor.Check.NoTupleMatchInHead,
+      Anchor.Check.CaseOnBareArg
     ]
   end
 end
