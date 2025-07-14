@@ -1,5 +1,5 @@
 defmodule Anchor.Check.CaseOnBareArg do
-  use Credo.Check,
+  use Anchor.Check.Base,
     category: :design,
     explanations: [
       check: """
@@ -31,19 +31,8 @@ defmodule Anchor.Check.CaseOnBareArg do
       """
     ]
 
-  @impl true
-  def run_on_all_source_files(exec, source_files, params) do
-    issues =
-      source_files
-      |> Enum.flat_map(&check_file(&1, params))
-
-    exec
-    |> Credo.Execution.ExecutionIssues.append(issues)
-  end
-
-  defp check_file(source_file, params) do
-    check_file(source_file, [%{type: :case_on_bare_arg}], params)
-  end
+  @doc false
+  def rule_type, do: :case_on_bare_arg
 
   @doc false
   def check_file(source_file, _rules, params) do
