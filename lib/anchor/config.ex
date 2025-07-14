@@ -55,6 +55,7 @@ defmodule Anchor.Config do
       type: rule["type"] |> to_string() |> String.to_atom(),
       paths: rule["paths"] || [],
       pattern: rule["pattern"],
+      uses_module: rule["uses_module"],
       forbidden_modules: parse_modules(rule["forbidden_modules"]),
       required_modules: parse_modules(rule["required_modules"]),
       allowed_functions: rule["allowed_functions"] || [],

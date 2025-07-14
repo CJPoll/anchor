@@ -33,6 +33,15 @@ rules:
       - "with_user"
       - "ordered"
 
+  # Content-based matching: Restrict functions in modules that use Ecto.Schema
+  - type: module_pattern_restrictions
+    uses_module: "Ecto.Schema"
+    allowed_functions:
+      - "changeset"
+      - "__changeset__"
+      - "__schema__"
+      - "__struct__"
+
   # Prevent test files from using production secrets
   - type: no_direct_dependency
     paths:

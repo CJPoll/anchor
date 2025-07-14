@@ -62,6 +62,14 @@ anchors:
     allowed_functions:
       - with_*
       - new
+      
+  - type: module_pattern_restrictions
+    uses_module: "Ecto.Schema"
+    allowed_functions:
+      - changeset
+      - __changeset__
+      - __schema__
+      - __struct__
 ```
 
 ## Important Notes

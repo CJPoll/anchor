@@ -71,6 +71,14 @@ defmodule Anchor.Check.Base do
         matches_module_pattern?(module_name, pattern)
       end
 
+      defp rule_matches_file?(%{uses_module: uses_module}, source_file) when is_binary(uses_module) do
+        ast = Credo.Code.ast(source_file)
+        
+        uses_module
+        |> Module.concat([])
+        |> then(&DependencyAnalyzer.has_use?(ast, &1))
+      end
+
       defp rule_matches_file?(_, _), do: false
 
       defp matches_pattern?(path, pattern) do

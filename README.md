@@ -12,6 +12,7 @@ Anchor allows you to define rules about module dependencies and usage patterns t
 - **Transitive Dependency Analysis**: Track indirect dependencies through the module graph
 - **Module Usage Requirements**: Enforce that certain directories must use specific modules
 - **Pattern-based Function Restrictions**: Limit what functions modules matching patterns can define
+- **Content-based Module Matching**: Apply rules to modules that use specific modules (e.g., all modules using `Ecto.Schema`)
 - **Flexible Configuration**: YAML-based rules with support for umbrella applications
 
 ## Installation
@@ -50,6 +51,10 @@ rules:
   - type: module_pattern_restrictions
     pattern: "*.Schemas.*"
     allowed_functions: []  # Only generated functions allowed
+
+  - type: module_pattern_restrictions
+    uses_module: "Ecto.Schema"
+    allowed_functions: ["changeset", "__changeset__", "__schema__", "__struct__"]
 ```
 
 For umbrella applications, you can place the configuration at the root or in individual apps.
