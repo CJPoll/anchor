@@ -31,8 +31,6 @@ defmodule Anchor.Check.CaseOnBareArg do
       """
     ]
 
-  import Credo.Check
-
   @impl true
   def run_on_all_source_files(exec, source_files, params) do
     issues =
