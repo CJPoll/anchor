@@ -58,3 +58,15 @@ rules:
     required_modules:
       - Phoenix.LiveView
     recursive: true
+
+  # Enforce simple functions with at most one control-flow structure
+  - type: single_control_flow
+    paths:
+      - "lib/my_app/**/*.ex"
+    recursive: true
+
+  # Prevent pattern matching on :ok/:error tuples in function heads
+  - type: no_tuple_match_in_head
+    paths:
+      - "lib/my_app/**/*.ex"
+    recursive: true

@@ -11,6 +11,8 @@ defmodule Anchor do
   - `Anchor.Check.NoDependency` - Prevents direct dependencies on forbidden modules
   - `Anchor.Check.MustUseModule` - Ensures modules use required modules
   - `Anchor.Check.ModulePatternRestrictions` - Restricts functions in modules matching patterns
+  - `Anchor.Check.SingleControlFlow` - Ensures function clauses contain at most one control-flow structure
+  - `Anchor.Check.NoTupleMatchInHead` - Prevents pattern matching on :ok/:error tuples in function heads
 
   ## Integration with Credo
 
@@ -24,7 +26,9 @@ defmodule Anchor do
               enabled: [
                 {Anchor.Check.NoDependency, []},
                 {Anchor.Check.MustUseModule, []},
-                {Anchor.Check.ModulePatternRestrictions, []}
+                {Anchor.Check.ModulePatternRestrictions, []},
+                {Anchor.Check.SingleControlFlow, []},
+                {Anchor.Check.NoTupleMatchInHead, []}
               ]
             }
           }
@@ -39,7 +43,9 @@ defmodule Anchor do
     [
       Anchor.Check.NoDependency,
       Anchor.Check.MustUseModule,
-      Anchor.Check.ModulePatternRestrictions
+      Anchor.Check.ModulePatternRestrictions,
+      Anchor.Check.SingleControlFlow,
+      Anchor.Check.NoTupleMatchInHead
     ]
   end
 end

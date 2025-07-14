@@ -4,9 +4,11 @@ defmodule AnchorTest do
 
   test "returns list of checks" do
     checks = Anchor.checks()
-    assert length(checks) == 3
+    assert length(checks) == 5
     assert Anchor.Check.NoDependency in checks
     assert Anchor.Check.MustUseModule in checks
     assert Anchor.Check.ModulePatternRestrictions in checks
+    assert Anchor.Check.SingleControlFlow in checks
+    assert Anchor.Check.NoTupleMatchInHead in checks
   end
 end

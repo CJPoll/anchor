@@ -29,6 +29,8 @@ All checks inherit from `Anchor.Check.Base` and are located in `lib/anchor/check
 - `NoDependency` - Enforces forbidden dependencies between modules
 - `MustUseModule` - Ensures modules matching patterns use required modules
 - `ModulePatternRestrictions` - Restricts functions that can be defined in pattern-matched modules
+- `SingleControlFlow` - Ensures function clauses contain at most one control-flow structure
+- `NoTupleMatchInHead` - Prevents pattern matching on :ok/:error tuples in function heads
 
 ### Key Architectural Decisions
 
