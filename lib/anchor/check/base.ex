@@ -87,18 +87,18 @@ defmodule Anchor.Check.Base do
       end
 
       defp matches_recursive_pattern?(path, pattern) do
-        # Handle ** glob patterns correctly
-        # ** should match zero or more directories
-        regex_pattern =
+        # Convert glob pattern to regex
+        regex_pattern = 
           pattern
           |> String.replace(".", "\\.")
-          |> String.replace("**/*", "**")  # Convert **/* to just ** for simpler handling
-          |> String.replace("**/", "**")   # Convert **/ to just ** for simpler handling
-          |> String.replace("**", "(.*)?")  # ** matches zero or more path segments
-          |> String.replace("*", "[^/]*")  # * matches within a single path segment
+          |> String.replace("**", "___DOUBLE_STAR___")  # Temporarily replace ** to avoid conflicts
+          |> String.replace("*", "[^/]*")  # Replace single * with non-slash matcher
+          |> String.replace("___DOUBLE_STAR___/", "(.*/)?")  # **/ matches zero or more path segments with trailing /
+          |> String.replace("/___DOUBLE_STAR___", "(/.*)?")  # /** matches zero or more path segments with leading /
+          |> String.replace("___DOUBLE_STAR___", ".*")  # ** alone matches anything
           |> then(&"^#{&1}$")
           |> Regex.compile!()
-
+        
         Regex.match?(regex_pattern, path)
       end
 
