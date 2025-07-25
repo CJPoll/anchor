@@ -7,6 +7,7 @@ defmodule Anchor.MixProject do
       version: "0.1.0",
       elixir: "~> 1.15",
       start_permanent: Mix.env() == :prod,
+      elixirc_options: [warnings_as_errors: true],
       deps: deps(),
       description: "Architectural constraint checks for Elixir projects via Credo",
       package: package(),

@@ -15,6 +15,9 @@ defmodule Anchor.Check.NoTransitiveDependency do
   @doc false
   def rule_type, do: :no_transitive_dependency
 
+  # Override the base implementation to build modules map once
+  defoverridable run_on_all_source_files: 3
+
   @impl true
   def run_on_all_source_files(exec, source_files, params) do
     case Config.load() do
