@@ -27,7 +27,7 @@ defmodule Anchor.Check.ModulePatternRestrictionsTest do
       }
 
       source_file = SourceFile.parse(source_code, "lib/my_app/user.ex")
-      
+
       issues = ModulePatternRestrictions.check_file(source_file, [rule], [])
 
       assert length(issues) == 1
@@ -59,7 +59,7 @@ defmodule Anchor.Check.ModulePatternRestrictionsTest do
       }
 
       source_file = SourceFile.parse(source_code, "lib/my_app/user.ex")
-      
+
       issues = ModulePatternRestrictions.check_file(source_file, [rule], [])
 
       assert length(issues) == 0
@@ -86,10 +86,10 @@ defmodule Anchor.Check.ModulePatternRestrictionsTest do
 
       source_file = SourceFile.parse(source_code, "lib/my_app/service.ex")
       ast = Credo.Code.ast(source_file)
-      
+
       # Test that the module doesn't use Ecto.Schema
       refute Anchor.DependencyAnalyzer.has_use?(ast, Ecto.Schema)
-      
+
       # Since this test directly calls check_file, we need to ensure the rule would match
       # In the real flow, rule_matches_file? would prevent this from being checked
       # So we'll test the matching logic separately
@@ -103,10 +103,10 @@ defmodule Anchor.Check.ModulePatternRestrictionsTest do
         use Ecto.Schema
       end
       """
-      
+
       source_file = SourceFile.parse(source_code, "lib/my_app/user.ex")
       ast = Credo.Code.ast(source_file)
-      
+
       assert Anchor.DependencyAnalyzer.has_use?(ast, Ecto.Schema)
     end
 
@@ -116,10 +116,10 @@ defmodule Anchor.Check.ModulePatternRestrictionsTest do
         def hello, do: :world
       end
       """
-      
+
       source_file = SourceFile.parse(source_code, "lib/my_app/service.ex")
       ast = Credo.Code.ast(source_file)
-      
+
       refute Anchor.DependencyAnalyzer.has_use?(ast, Ecto.Schema)
     end
   end

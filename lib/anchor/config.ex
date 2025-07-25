@@ -12,7 +12,7 @@ defmodule Anchor.Config do
   def load do
     paths = config_paths()
     found_path = Enum.find(paths, &File.exists?/1)
-    
+
     case found_path do
       nil -> {:ok, %__MODULE__{}}
       path -> load_from_path(path)

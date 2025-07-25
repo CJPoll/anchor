@@ -9,6 +9,7 @@ defmodule Anchor do
   ## Available Checks
 
   - `Anchor.Check.NoDependency` - Prevents direct dependencies on forbidden modules
+  - `Anchor.Check.NoTransitiveDependency` - Prevents transitive dependencies on forbidden modules
   - `Anchor.Check.MustUseModule` - Ensures modules use required modules
   - `Anchor.Check.ModulePatternRestrictions` - Restricts functions in modules matching patterns
   - `Anchor.Check.SingleControlFlow` - Ensures function clauses contain at most one control-flow structure
@@ -26,6 +27,7 @@ defmodule Anchor do
             checks: %{
               enabled: [
                 {Anchor.Check.NoDependency, []},
+                {Anchor.Check.NoTransitiveDependency, []},
                 {Anchor.Check.MustUseModule, []},
                 {Anchor.Check.ModulePatternRestrictions, []},
                 {Anchor.Check.SingleControlFlow, []},
@@ -44,6 +46,7 @@ defmodule Anchor do
   def checks do
     [
       Anchor.Check.NoDependency,
+      Anchor.Check.NoTransitiveDependency,
       Anchor.Check.MustUseModule,
       Anchor.Check.ModulePatternRestrictions,
       Anchor.Check.SingleControlFlow,

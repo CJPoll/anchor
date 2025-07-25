@@ -70,3 +70,13 @@ rules:
     paths:
       - "lib/my_app/**/*.ex"
     recursive: true
+
+  # Ensure pure business logic modules don't transitively depend on infrastructure
+  - type: no_transitive_dependency
+    paths:
+      - "lib/my_app/domain/**/*.ex"
+    recursive: true
+    forbidden_modules:
+      - MyApp.Repo
+      - Phoenix.PubSub
+      - Oban

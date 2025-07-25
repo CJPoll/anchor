@@ -71,9 +71,10 @@ defmodule Anchor.Check.Base do
         matches_module_pattern?(module_name, pattern)
       end
 
-      defp rule_matches_file?(%{uses_module: uses_module}, source_file) when is_binary(uses_module) do
+      defp rule_matches_file?(%{uses_module: uses_module}, source_file)
+           when is_binary(uses_module) do
         ast = Credo.Code.ast(source_file)
-        
+
         uses_module
         |> Module.concat([])
         |> then(&DependencyAnalyzer.has_use?(ast, &1))
@@ -98,7 +99,7 @@ defmodule Anchor.Check.Base do
           |> String.replace("___DOUBLE_STAR___", ".*")  # ** alone matches anything
           |> then(&"^#{&1}$")
           |> Regex.compile!()
-        
+
         Regex.match?(regex_pattern, path)
       end
 
