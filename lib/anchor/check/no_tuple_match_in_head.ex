@@ -94,7 +94,7 @@ defmodule Anchor.Check.NoTupleMatchInHead do
     format_issue(
       source_file,
       message:
-        "Function `#{function_name}` pattern matches on :ok/:error tuple in its #{visibility_text} function head. Refactor the call site to have a case statement based on the ok/error status.",
+        "Function `#{function_name}` pattern matches on :ok/:error tuple in its #{visibility_text} function head. Consider having the calling function use a case statement on the value instead.",
       line_no: line_no,
       trigger: function_name
     )
