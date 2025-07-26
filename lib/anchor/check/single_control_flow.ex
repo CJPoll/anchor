@@ -125,7 +125,8 @@ defmodule Anchor.Check.SingleControlFlow do
     format_issue(
       source_file,
       message:
-        "Function clause `#{function_name}` contains #{count} control-flow structures (maximum allowed: 1)",
+        "Function clause `#{function_name}` contains #{count} control-flow structures (maximum allowed: 1). " <>
+        "Control-flow structures include: pipe chains (|>), cond, with, case, if, unless, for, and receive.",
       line_no: line_no,
       trigger: function_name
     )
