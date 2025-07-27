@@ -16,6 +16,7 @@ Anchor allows you to define rules about module dependencies and usage patterns t
 - **Single Control-Flow Enforcement**: Ensure function clauses contain at most one control-flow structure for simpler code
 - **No Tuple Pattern Matching in Function Heads**: Prevent coupling by disallowing :ok/:error tuple patterns in function heads
 - **Case on Bare Arguments**: Discourage case statements on bare function arguments in favor of function head pattern matching
+- **Alphabetized Functions**: Enforce alphabetical ordering of functions with flexible modes (all, public only, or separate public/private)
 - **Flexible Configuration**: YAML-based rules with support for umbrella applications
 
 ## Installation
@@ -75,6 +76,12 @@ rules:
     recursive: true
 
   - type: case_on_bare_arg
+    paths:
+      - "lib/my_app/**/*.ex"
+    recursive: true
+
+  - type: alphabetized_functions
+    mode: :separate
     paths:
       - "lib/my_app/**/*.ex"
     recursive: true
@@ -201,6 +208,24 @@ Discourages case statements on bare function arguments.
 
 ```yaml
 - type: case_on_bare_arg
+  paths:
+    - "lib/my_app/**/*.ex"
+  recursive: true
+```
+
+### `alphabetized_functions`
+
+Ensures functions in modules are ordered alphabetically. Supports three modes:
+- `:all` - All functions must be in alphabetical order
+- `:public_only` - Only public functions must be in alphabetical order
+- `:separate` (default) - Public and private functions are alphabetized separately
+
+Functions with the same name but different arities are sorted by arity (e.g., `foo/0` before `foo/1`).
+Sorting is case-insensitive.
+
+```yaml
+- type: alphabetized_functions
+  mode: :separate  # :all, :public_only, or :separate (default)
   paths:
     - "lib/my_app/**/*.ex"
   recursive: true
