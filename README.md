@@ -17,6 +17,7 @@ Anchor allows you to define rules about module dependencies and usage patterns t
 - **No Tuple Pattern Matching in Function Heads**: Prevent coupling by disallowing :ok/:error tuple patterns in function heads
 - **Case on Bare Arguments**: Discourage case statements on bare function arguments in favor of function head pattern matching
 - **Alphabetized Functions**: Enforce alphabetical ordering of functions with flexible modes (all, public only, or separate public/private)
+- **Maximum File Length**: Enforce maximum file length limits to encourage better code organization
 - **Flexible Configuration**: YAML-based rules with support for umbrella applications
 
 ## Installation
@@ -82,6 +83,12 @@ rules:
 
   - type: alphabetized_functions
     mode: :separate
+    paths:
+      - "lib/my_app/**/*.ex"
+    recursive: true
+
+  - type: max_file_length
+    max_lines: 400
     paths:
       - "lib/my_app/**/*.ex"
     recursive: true
@@ -226,6 +233,20 @@ Sorting is case-insensitive.
 ```yaml
 - type: alphabetized_functions
   mode: :separate  # :all, :public_only, or :separate (default)
+  paths:
+    - "lib/my_app/**/*.ex"
+  recursive: true
+```
+
+### `max_file_length`
+
+Ensures files do not exceed a maximum number of lines. Large files are harder to understand, navigate, and maintain. By limiting file length, you encourage better code organization and separation of concerns.
+
+The default maximum is 400 lines, but this can be configured.
+
+```yaml
+- type: max_file_length
+  max_lines: 400  # default is 400
   paths:
     - "lib/my_app/**/*.ex"
   recursive: true
