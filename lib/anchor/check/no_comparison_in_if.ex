@@ -101,7 +101,7 @@ defmodule Anchor.Check.NoComparisonInIf do
     format_issue(
       source_file,
       message: "Avoid direct comparisons in `if` statements. " <>
-               "Extract the comparison to a private function with a descriptive name.",
+               "Extract the comparison to a function in the appropriate module with a descriptive name.",
       line_no: line_no,
       trigger: "if"
     )
