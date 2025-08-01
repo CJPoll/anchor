@@ -18,6 +18,7 @@ Anchor allows you to define rules about module dependencies and usage patterns t
 - **Case on Bare Arguments**: Discourage case statements on bare function arguments in favor of function head pattern matching
 - **Alphabetized Functions**: Enforce alphabetical ordering of functions with flexible modes (all, public only, or separate public/private)
 - **Maximum File Length**: Enforce maximum file length limits to encourage better code organization
+- **No Comparison in If**: Enforce descriptive function names instead of direct comparisons in if statements
 - **Flexible Configuration**: YAML-based rules with support for umbrella applications
 
 ## Installation
@@ -92,6 +93,11 @@ rules:
     paths:
       - "lib/my_app/**/*.ex"
     recursive: true
+
+  - type: no_comparison_in_if
+    paths:
+      - "lib/my_app/**/*.ex"
+    recursive: true
 ```
 
 For umbrella applications, you can place the configuration at the root or in individual apps.
@@ -114,7 +120,10 @@ Configure Credo to use the custom checks in `.credo.exs`:
           {Anchor.Check.ModulePatternRestrictions, []},
           {Anchor.Check.SingleControlFlow, []},
           {Anchor.Check.NoTupleMatchInHead, []},
-          {Anchor.Check.CaseOnBareArg, []}
+          {Anchor.Check.CaseOnBareArg, []},
+          {Anchor.Check.AlphabetizedFunctions, []},
+          {Anchor.Check.MaxFileLength, []},
+          {Anchor.Check.NoComparisonInIf, []}
         ]
       }
     }
@@ -247,6 +256,44 @@ The default maximum is 400 lines, but this can be configured.
 ```yaml
 - type: max_file_length
   max_lines: 400  # default is 400
+  paths:
+    - "lib/my_app/**/*.ex"
+  recursive: true
+```
+
+### `no_comparison_in_if`
+
+Ensures that `if` statements do not contain direct comparisons in their conditionals. Instead, comparisons should be extracted to functions with descriptive names that convey domain meaning.
+
+This improves code readability by expressing intent rather than implementation.
+
+Bad:
+```elixir
+if user.age >= 18 do
+  # ...
+end
+
+if user.status == :active and user.verified? do
+  # ...
+end
+```
+
+Good:
+```elixir
+if adult?(user) do
+  # ...
+end
+
+if eligible_user?(user) do
+  # ...
+end
+
+defp adult?(user), do: user.age >= 18
+defp eligible_user?(user), do: user.status == :active and user.verified?
+```
+
+```yaml
+- type: no_comparison_in_if
   paths:
     - "lib/my_app/**/*.ex"
   recursive: true
