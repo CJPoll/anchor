@@ -19,6 +19,7 @@ Anchor allows you to define rules about module dependencies and usage patterns t
 - **Alphabetized Functions**: Enforce alphabetical ordering of functions with flexible modes (all, public only, or separate public/private)
 - **Maximum File Length**: Enforce maximum file length limits to encourage better code organization
 - **No Comparison in If**: Enforce descriptive function names instead of direct comparisons in if statements
+- **Struct Getter Convention**: Ensure getter functions follow a consistent naming pattern matching the fields they extract
 - **Flexible Configuration**: YAML-based rules with support for umbrella applications
 
 ## Installation
@@ -123,7 +124,8 @@ Configure Credo to use the custom checks in `.credo.exs`:
           {Anchor.Check.CaseOnBareArg, []},
           {Anchor.Check.AlphabetizedFunctions, []},
           {Anchor.Check.MaxFileLength, []},
-          {Anchor.Check.NoComparisonInIf, []}
+          {Anchor.Check.NoComparisonInIf, []},
+          {Anchor.Check.StructGetterConvention, []}
         ]
       }
     }
@@ -294,6 +296,53 @@ defp eligible_user?(user), do: user.status == :active and user.verified?
 
 ```yaml
 - type: no_comparison_in_if
+  paths:
+    - "lib/my_app/**/*.ex"
+  recursive: true
+```
+
+### `struct_getter_convention`
+
+Ensures that getter functions follow a consistent pattern. A function is considered a getter if ALL of the following are true:
+1. The function takes exactly one argument
+2. The function pattern matches a struct type on that argument
+3. The pattern match extracts a value from the struct
+4. The function returns that value with no additional processing
+
+For getter functions, this check validates:
+1. The function name matches the field being extracted
+2. The function is defined in the struct's module
+
+This promotes a clean, predictable API where field access is simple and consistent.
+
+Bad:
+```elixir
+defmodule MyApp.User do
+  defstruct [:name, :email, :profile]
+  
+  # Wrong: function name doesn't match field
+  def get_name(%__MODULE__{name: name}), do: name
+  
+  # Wrong: processes the value (not a getter)
+  def email(%__MODULE__{email: email}), do: String.downcase(email)
+end
+```
+
+Good:
+```elixir
+defmodule MyApp.User do
+  defstruct [:name, :email, :profile]
+  
+  def name(%__MODULE__{name: name}), do: name
+  def email(%__MODULE__{email: email}), do: email
+  def profile(%__MODULE__{profile: profile}), do: profile
+end
+```
+
+Note: This check allows getters to return `%Ecto.Association.NotLoaded{}` structs, as this is the natural behavior when associations aren't loaded.
+
+```yaml
+- type: struct_getter_convention
   paths:
     - "lib/my_app/**/*.ex"
   recursive: true
