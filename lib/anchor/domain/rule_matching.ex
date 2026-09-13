@@ -52,20 +52,20 @@ defmodule Anchor.Domain.RuleMatching do
   with none of those selectors returns `false` (deny by default).
   """
   #
-  # Clause precedence is deliberate and preserved byte-for-byte from the former
-  # `Anchor.Check.Base` private clauses: `paths` first, then module `pattern`,
-  # then `uses_module`, then deny-by-default. Note the interaction with
-  # `Anchor.Config.parse_rule/1`, which stamps EVERY parsed rule with
-  # `paths: []` (plus `recursive: false`): such a rule matches this first clause
-  # (`is_list([])`) and returns `false` via `Enum.any?([], …)`, so a
-  # Config-parsed `pattern`/`uses_module` rule never reaches its own clause. That
-  # is a pre-existing selection quirk (parsed rules are not sparse), not
-  # introduced by the extraction; it is left as-is here so behavior is unchanged.
-  # The `pattern`/`uses_module` clauses are reachable — and unit-tested — via
-  # sparse rule maps that omit the `paths` key.
+  # Clause precedence is deliberate: `paths` first, then module `pattern`, then
+  # `uses_module`, then deny-by-default. The first clause is guarded on a
+  # NON-EMPTY `paths` list (`is_list(paths) and paths != []`) so that an
+  # absent/empty `paths` falls through to the `pattern`/`uses_module` selectors
+  # instead of shadowing them (Gap D fix, DND-140). Previously
+  # `Anchor.Config.parse_rule/1` stamped EVERY parsed rule with `paths: []`, and
+  # this clause matched it (`is_list([])`) and returned `false` via
+  # `Enum.any?([], …)`, so a Config-parsed `pattern`/`uses_module` rule never
+  # reached its own clause. `parse_rule/1` now surfaces an absent `paths` as
+  # `nil`, and this guard additionally treats an explicit `[]` as "no path
+  # selector", so both channels select correctly.
   @spec rule_matches_file?(map(), facts()) :: boolean()
   def rule_matches_file?(%{paths: paths, recursive: recursive}, %{filename: filename})
-      when is_list(paths) do
+      when is_list(paths) and paths != [] do
     Enum.any?(paths, fn pattern ->
       if recursive do
         GlobPattern.matches_recursive_pattern?(filename, pattern)

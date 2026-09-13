@@ -13,6 +13,10 @@ defmodule Anchor.Config do
   Each rule map exposes atom keys consumed by the checks. In addition to the
   selector/relationship fields, this module surfaces (BUG 2 fix):
 
+    * `:paths` — the list of path globs, or `nil` when the rule omits `paths`
+      (Gap D fix, DND-140). An absent `paths` is surfaced as `nil` rather than
+      `[]` so a `pattern`/`uses_module`-selected rule is not shadowed by
+      `Anchor.Domain.RuleMatching`'s path clause. A present list is kept as-is.
     * `:max_lines` — an integer (or `nil` when absent) read by
       `Anchor.Check.MaxFileLength`.
     * `:mode` — an atom (`:all` / `:public_only` / `:separate`), coerced from a
@@ -45,7 +49,12 @@ defmodule Anchor.Config do
   def parse_rule(rule) when is_map(rule) do
     %{
       type: rule["type"] |> to_string() |> String.to_atom(),
-      paths: rule["paths"] || [],
+      # Gap D (DND-140): surface an ABSENT `paths` as `nil`, not `[]`. An empty
+      # list is a valid list, which `RuleMatching`'s path clause would match and
+      # then shadow the `pattern`/`uses_module` selectors with `Enum.any?([], …)`.
+      # A `nil` (or `[]`) `paths` now falls through to those selectors. A present
+      # list is preserved as-is.
+      paths: rule["paths"],
       pattern: rule["pattern"],
       uses_module: rule["uses_module"],
       forbidden_modules: parse_modules(rule["forbidden_modules"]),
