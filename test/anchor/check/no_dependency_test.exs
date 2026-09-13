@@ -1,12 +1,15 @@
 defmodule Anchor.Check.NoDependencyTest do
-  # Characterization tests for Anchor.Check.NoDependency.
+  # Acceptance tests for Anchor.Check.NoDependency (T6.1 / DND-126).
   #
-  # T1 (DND-121) safety-net: these pin the CURRENT observable behavior of
-  # `check_file/3` (real `Credo.SourceFile` in, `[%Credo.Issue{}]` out) so that
-  # later five-bucket-compliance work (T6.x) has a regression net. They assert
-  # what the code does today, not the adjudicated contract in
-  # docs/five-bucket-test-matrix.md; where the two differ, the matrix wins later
-  # and these assertions are expected to be revised by the fixing ticket.
+  # Detection now lives in the pure Domain module Anchor.Domain.Checks.NoDependency;
+  # this suite exercises the check's observable contract end-to-end through the thin
+  # Framework shell: `check_file/3` takes a real `Credo.SourceFile` and returns
+  # `[%Credo.Issue{}]`. These rows assert the *intended* behaviour in
+  # docs/five-bucket-test-matrix.md ("no_dependency.ex -> check_file/3 -> #1-8"),
+  # which supersedes the T1 characterization pins — in particular row 7 now reports
+  # the FIRST reference line, not the last.
+  #
+  # Sabotage record: ../../sabotage_records/no_dependency-20260913-dnd_126_t6_1_no_dependency.md
   use ExUnit.Case, async: true
 
   alias Anchor.Check.NoDependency
@@ -19,6 +22,7 @@ defmodule Anchor.Check.NoDependencyTest do
   end
 
   describe "check_file/3" do
+    # Row 1 — Happy Path
     test "flags a direct dependency on a forbidden module" do
       source = """
       defmodule W do
@@ -32,6 +36,7 @@ defmodule Anchor.Check.NoDependencyTest do
       assert issue.line_no == 2
     end
 
+    # Row 2 — Happy Path
     test "flags a forbidden dep referenced only in a qualified call" do
       source = """
       defmodule W do
@@ -46,6 +51,7 @@ defmodule Anchor.Check.NoDependencyTest do
       assert issue.line_no == 3
     end
 
+    # Row 3 — Happy Path
     test "flags each distinct forbidden module once" do
       source = """
       defmodule W do
@@ -61,6 +67,7 @@ defmodule Anchor.Check.NoDependencyTest do
       assert triggers == ["MyApp.Repo", "System"]
     end
 
+    # Row 4 — Positive Control
     test "clean module with no forbidden dep returns no issues" do
       source = """
       defmodule W do
@@ -71,6 +78,7 @@ defmodule Anchor.Check.NoDependencyTest do
       assert issues(source, [MyApp.Repo]) == []
     end
 
+    # Row 5 — Positive Control
     test "forbidden module named but not referenced returns no issues" do
       source = """
       defmodule W do
@@ -81,6 +89,7 @@ defmodule Anchor.Check.NoDependencyTest do
       assert issues(source, [MyApp.Repo]) == []
     end
 
+    # Row 6 — Validation
     test "empty forbidden list flags nothing" do
       source = """
       defmodule W do
@@ -91,37 +100,34 @@ defmodule Anchor.Check.NoDependencyTest do
       assert issues(source, []) == []
     end
 
-    test "characterizes which line is reported when a forbidden module appears twice" do
-      # Current behavior: `find_module_reference_line/2` prewalks the AST and
-      # keeps the LAST match, so with references on lines 2 and 3 the issue is
-      # reported at line 3. The acceptance matrix (row 7) specifies the FIRST
-      # line (2) as the intended contract; this divergence is pinned here for
-      # the fixing ticket (T6.1) to flip.
+    # Row 7 — Control Flow Decisioning: FIRST reference line when a module
+    # appears twice (references on lines 2 and 4 -> reported at line 2).
+    test "reports the first reference line when a forbidden module appears twice" do
       source = """
       defmodule W do
         def f, do: MyApp.Repo.all(Q)
+
         def g, do: MyApp.Repo.one(Q)
       end
       """
 
       assert [issue] = issues(source, [MyApp.Repo])
-      assert issue.line_no == 3
+      assert issue.line_no == 2
     end
 
-    test "characterizes an aliased forbidden dependency: it is flagged at the alias line" do
-      # Current behavior: an `alias MyApp.Repo` line is itself a reference to the
-      # forbidden module, so the issue is reported on the alias declaration line
-      # (line 2) rather than the usage line. Pinned as-is.
+    # Row 8 — Rule Selection: a rule that does not select the file never reaches
+    # check_file/3 (Base filters by path first), so the check sees no rules and
+    # emits nothing. A positive control (row 1) proves the same source DOES flag
+    # when the rule is present.
+    test "rule not selecting the file yields nothing" do
       source = """
       defmodule W do
-        alias MyApp.Repo
-        def f, do: Repo.all(Q)
+        def f, do: MyApp.Repo.all(Q)
       end
       """
 
-      assert [issue] = issues(source, [MyApp.Repo])
-      assert issue.trigger == "MyApp.Repo"
-      assert issue.line_no == 2
+      source_file = SourceFile.parse(source, "lib/some_module.ex")
+      assert NoDependency.check_file(source_file, [], []) == []
     end
   end
 
