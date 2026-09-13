@@ -42,6 +42,9 @@ before coining a synonym.
 - `glob_pattern` — `Anchor.Domain.GlobPattern` (glob / module-name pattern
   matching for rule selection).
 - `rule_matching` — `Anchor.Domain.RuleMatching` (pure rule-selection predicate).
+- `must_use_module` — the `must_use_module` check: the extracted Domain
+  detection (`Anchor.Domain.Checks.MustUseModule`) and its thin Framework shell
+  (`Anchor.Check.MustUseModule`).
 - `no_dependency` — the "no forbidden direct dependency" check: its extracted
   pure detector (`Anchor.Domain.Checks.NoDependency`) and the
   `Anchor.Check.NoDependency` shell that delegates to it.

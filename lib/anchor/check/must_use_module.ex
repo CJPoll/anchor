@@ -13,22 +13,6 @@ defmodule Anchor.Check.MustUseModule do
 
   @doc false
   def detect_violations(_source_file, ast, rules, _context) do
-    uses = DependencyAnalyzer.extract_uses(ast)
-
-    Enum.flat_map(rules, fn rule ->
-      required = rule.required_modules || []
-
-      required
-      |> Enum.reject(&(&1 in uses))
-      |> Enum.map(&create_violation/1)
-    end)
-  end
-
-  defp create_violation(required_module) do
-    %Violation{
-      message: "Module must use #{inspect(required_module)}",
-      line: 1,
-      trigger: inspect(required_module)
-    }
+    Anchor.Domain.Checks.MustUseModule.detect_violations(ast, rules)
   end
 end
