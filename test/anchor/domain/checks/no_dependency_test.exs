@@ -190,4 +190,216 @@ defmodule Anchor.Domain.Checks.NoDependencyTest do
       assert detect(source, rule) == []
     end
   end
+
+  # Gap F (DND-150): `same_context` scoping of `forbidden_patterns` matches.
+  # Matrix: docs/gap-f-same-context-test-matrix.md
+  #   "lib/anchor/domain/checks/no_dependency.ex -> detect_violations/3 -> #1-10".
+  #
+  # Sabotage record:
+  #   ../../../sabotage_records/no_dependency-20260913-dnd_150_a2_same_context_detection.md
+  describe "detect_violations/3 — same_context scoping (Gap F)" do
+    defp detect3(source, rule, file_context),
+      do: NoDependency.detect_violations(ast(source), [rule], file_context)
+
+    # Matrix row 1 — Happy Path: a same-context dep is flagged.
+    test "flags a forbidden_patterns match that shares the file's context" do
+      source = """
+      defmodule W do
+        def f, do: WaltUi.Contacts.Managers.Highlights.run(x)
+      end
+      """
+
+      rule = %{
+        forbidden_modules: [],
+        forbidden_patterns: ["*.Managers.*"],
+        match: :call,
+        same_context: true,
+        context_depth: 2
+      }
+
+      assert [%Violation{} = violation] = detect3(source, rule, ["WaltUi", "Contacts"])
+      assert violation.trigger == "WaltUi.Contacts.Managers.Highlights"
+      assert violation.line == 2
+    end
+
+    # Matrix row 2 — Control Flow: a cross-context dep is allowed.
+    test "does not flag a forbidden_patterns match in a different context" do
+      source = """
+      defmodule W do
+        def f, do: WaltUi.Search.Managers.Index.run(x)
+      end
+      """
+
+      rule = %{
+        forbidden_modules: [],
+        forbidden_patterns: ["*.Managers.*"],
+        match: :call,
+        same_context: true,
+        context_depth: 2
+      }
+
+      assert detect3(source, rule, ["WaltUi", "Contacts"]) == []
+    end
+
+    # Matrix row 3 — Control Flow: same_context: false flags every pattern match.
+    test "same_context: false flags a cross-context pattern match (regression guard)" do
+      source = """
+      defmodule W do
+        def f, do: WaltUi.Search.Managers.Index.run(x)
+      end
+      """
+
+      rule = %{
+        forbidden_modules: [],
+        forbidden_patterns: ["*.Managers.*"],
+        match: :call,
+        same_context: false,
+        context_depth: 2
+      }
+
+      assert [%Violation{trigger: "WaltUi.Search.Managers.Index"}] =
+               detect3(source, rule, ["WaltUi", "Contacts"])
+    end
+
+    # Matrix row 4 — Control Flow: absent same_context is identical to /2.
+    test "absent same_context is identical to detect_violations/2" do
+      source = """
+      defmodule W do
+        def f, do: WaltUi.Search.Managers.Index.run(x)
+        def g, do: WaltUi.Billing.Managers.Ledger.run(x)
+      end
+      """
+
+      rule = %{
+        forbidden_modules: [],
+        forbidden_patterns: ["*.Managers.*"],
+        match: :call
+      }
+
+      violations = detect3(source, rule, ["WaltUi", "Contacts"])
+      assert length(violations) == 2
+      assert violations == NoDependency.detect_violations(ast(source), [rule])
+    end
+
+    # Matrix row 5 — Error Handling: exact forbidden_modules ignores scoping.
+    test "an exact forbidden_modules match is reported even under same_context" do
+      source = """
+      defmodule W do
+        def f, do: WaltUi.Repo.all(q)
+      end
+      """
+
+      rule = %{
+        forbidden_modules: [WaltUi.Repo],
+        forbidden_patterns: [],
+        same_context: true,
+        context_depth: 2
+      }
+
+      assert [%Violation{trigger: "WaltUi.Repo"}] = detect3(source, rule, ["WaltUi", "Contacts"])
+    end
+
+    # Matrix row 6 — Validation: a dep with fewer than context_depth segments.
+    test "does not flag a pattern match whose dep has no derivable context" do
+      source = """
+      defmodule W do
+        def f, do: SomeMod.run(x)
+      end
+      """
+
+      rule = %{
+        forbidden_modules: [],
+        forbidden_patterns: ["*SomeMod"],
+        match: :call,
+        same_context: true,
+        context_depth: 2
+      }
+
+      assert detect3(source, rule, ["WaltUi", "Contacts"]) == []
+    end
+
+    # Matrix row 7 — Validation: nil file_context under a same_context rule.
+    test "nil file_context reports nothing for a scoped pattern match (deny-side default)" do
+      source = """
+      defmodule W do
+        def f, do: WaltUi.Contacts.Managers.Highlights.run(x)
+      end
+      """
+
+      rule = %{
+        forbidden_modules: [],
+        forbidden_patterns: ["*.Managers.*"],
+        match: :call,
+        same_context: true,
+        context_depth: 2
+      }
+
+      assert detect3(source, rule, nil) == []
+    end
+
+    # Matrix row 8 — Control Flow: mixed deps, only the same-context one reported.
+    test "reports only the same-context dep among mixed deps" do
+      source = """
+      defmodule W do
+        def f, do: WaltUi.Contacts.Managers.A.run(x)
+        def g, do: WaltUi.Search.Managers.B.run(x)
+      end
+      """
+
+      rule = %{
+        forbidden_modules: [],
+        forbidden_patterns: ["*.Managers.*"],
+        match: :call,
+        same_context: true,
+        context_depth: 2
+      }
+
+      assert [%Violation{} = violation] = detect3(source, rule, ["WaltUi", "Contacts"])
+      assert violation.trigger == "WaltUi.Contacts.Managers.A"
+      assert violation.line == 2
+    end
+
+    # Matrix row 9 — Control Flow: a deeper context_depth narrows context.
+    test "context_depth: 3 treats sibling depth-3 contexts as different" do
+      source = """
+      defmodule W do
+        def f, do: WaltUi.Integrations.Managers.X.run(x)
+      end
+      """
+
+      rule = %{
+        forbidden_modules: [],
+        forbidden_patterns: ["*.Managers.*"],
+        match: :call,
+        same_context: true,
+        context_depth: 3
+      }
+
+      assert detect3(source, rule, ["WaltUi", "Integrations", "Processors"]) == []
+    end
+
+    # Matrix row 10 — Happy Path: line + trigger preserved on a same-context match.
+    test "preserves the dep's first-reference line and inspect/1 trigger" do
+      source = """
+      defmodule W do
+        def f, do: :noop
+        def g, do: WaltUi.Contacts.Managers.Highlights.run(x)
+      end
+      """
+
+      dep = WaltUi.Contacts.Managers.Highlights
+
+      rule = %{
+        forbidden_modules: [],
+        forbidden_patterns: ["*.Managers.*"],
+        match: :call,
+        same_context: true,
+        context_depth: 2
+      }
+
+      assert [%Violation{} = violation] = detect3(source, rule, ["WaltUi", "Contacts"])
+      assert violation.line == 3
+      assert violation.trigger == inspect(dep)
+    end
+  end
 end

@@ -37,19 +37,59 @@ defmodule Anchor.Domain.Checks.NoDependency do
   @doc """
   Returns the `%Violation{}` list for `ast` against the already-selected `rules`.
 
-  Each rule contributes one violation per forbidden module the AST directly
-  references; each distinct forbidden module is reported once, at its first
-  reference line.
+  Back-compat entry point: delegates to `detect_violations/3` with
+  `file_context: nil`, i.e. no `same_context` scoping — identical to the
+  behavior before Gap F (DND-150).
   """
   @spec detect_violations(Macro.t(), [map()]) :: [Violation.t()]
-  def detect_violations(ast, rules) do
+  def detect_violations(ast, rules), do: detect_violations(ast, rules, nil)
+
+  @doc """
+  Returns the `%Violation{}` list for `ast` against the already-selected `rules`,
+  scoping `forbidden_patterns` matches to the checked file's own context when a
+  rule sets `same_context: true` (Gap F, DND-150).
+
+  `file_context` is the checked file's own context — the list of leading
+  namespace segments of its defining module (e.g. `["WaltUi", "Contacts"]`) — or
+  `nil` when the file has no derivable module name. It is compared segment-for-
+  segment against each dependency's own context, truncated to the rule's
+  `context_depth`.
+
+  Scoping rules (only when a rule's `same_context` is `true`):
+
+    * A `forbidden_patterns` match is reported **iff** the dependency's context
+      equals the file's context (both truncated to `context_depth`).
+    * A dependency (or the file) with fewer than `context_depth` namespace
+      segments has no derivable context → treated as **not** same-context → not
+      reported.
+    * `file_context: nil` under a `same_context` rule reports nothing for that
+      rule's pattern matches — the deny-side default: with no file context to
+      compare, a scoped match cannot be confirmed same-context.
+
+  Exact `forbidden_modules` matches are **never** scoped — they always report,
+  regardless of `same_context`. When `same_context` is `false`/absent, every
+  pattern match is reported exactly as before (hard back-compat guarantee).
+  """
+  @spec detect_violations(Macro.t(), [map()], [String.t()] | nil) :: [Violation.t()]
+  def detect_violations(ast, rules, file_context) do
     Enum.flat_map(rules, fn rule ->
       dependencies = dependencies_for(ast, Map.get(rule, :match, :reference))
       forbidden_modules = rule.forbidden_modules || []
       forbidden_patterns = Map.get(rule, :forbidden_patterns, []) || []
+      same_context = Map.get(rule, :same_context, false)
+      context_depth = Map.get(rule, :context_depth, 2)
 
       dependencies
-      |> Enum.filter(&forbidden?(&1, forbidden_modules, forbidden_patterns))
+      |> Enum.filter(
+        &forbidden?(
+          &1,
+          forbidden_modules,
+          forbidden_patterns,
+          same_context,
+          context_depth,
+          file_context
+        )
+      )
       |> Enum.map(&build_violation(&1, ast))
     end)
   end
@@ -62,10 +102,65 @@ defmodule Anchor.Domain.Checks.NoDependency do
 
   # A dependency is forbidden when it is an exact `forbidden_modules` entry (Gap
   # B lets that be a bare Erlang atom) OR its module name matches a
-  # `forbidden_patterns` glob (Gap A). A module matched by both is filtered once,
-  # so it is reported once.
-  defp forbidden?(dependency, forbidden_modules, forbidden_patterns) do
-    dependency in forbidden_modules or matches_any_pattern?(dependency, forbidden_patterns)
+  # `forbidden_patterns` glob (Gap A) that is in-scope for this rule (Gap F). A
+  # module matched by both is filtered once, so it is reported once.
+  #
+  # Exact `forbidden_modules` matches are NEVER scoped by `same_context` — they
+  # name absolute IO modules (`Repo`, `:telemetry`) for which a same-subdomain
+  # qualifier is meaningless. Only `forbidden_patterns` matches are scoped.
+  defp forbidden?(
+         dependency,
+         forbidden_modules,
+         forbidden_patterns,
+         same_context,
+         context_depth,
+         file_context
+       ) do
+    dependency in forbidden_modules or
+      pattern_forbidden?(
+        dependency,
+        forbidden_patterns,
+        same_context,
+        context_depth,
+        file_context
+      )
+  end
+
+  defp pattern_forbidden?(dependency, patterns, same_context, context_depth, file_context) do
+    matches_any_pattern?(dependency, patterns) and
+      in_scope?(dependency, same_context, context_depth, file_context)
+  end
+
+  # Gap F scoping gate. `same_context: false`/absent => every pattern match is in
+  # scope (report it), preserving pre-Gap-F behavior exactly. When `true`, a
+  # match is in scope only if the dependency and the file share a context: both
+  # module names must have at least `context_depth` segments and their first
+  # `context_depth` segments must be equal. A `nil` file context (no derivable
+  # module name) is the deny-side default — nothing to compare, so not in scope.
+  defp in_scope?(_dependency, false, _context_depth, _file_context), do: true
+
+  defp in_scope?(dependency, true, context_depth, file_context) do
+    file_ctx = context_prefix(file_context, context_depth)
+    dep_ctx = context_prefix(dependency_segments(dependency), context_depth)
+
+    not is_nil(file_ctx) and not is_nil(dep_ctx) and file_ctx == dep_ctx
+  end
+
+  # The first `context_depth` segments of a segment list, or `nil` when there are
+  # fewer than `context_depth` of them (no derivable context). A `nil` input
+  # (absent file context) stays `nil`.
+  defp context_prefix(nil, _context_depth), do: nil
+
+  defp context_prefix(segments, context_depth) do
+    if length(segments) >= context_depth, do: Enum.take(segments, context_depth), else: nil
+  end
+
+  # A dependency's own namespace segments, as bare strings (`["WaltUi",
+  # "Contacts", ...]`). A bare Erlang/OTP atom (`:telemetry`) has no Elixir
+  # namespace, so it yields `[]` and never derives a context — `Module.split/1`
+  # would raise on it, so it is never called for one.
+  defp dependency_segments(dependency) do
+    if elixir_module?(dependency), do: Module.split(dependency), else: []
   end
 
   defp matches_any_pattern?(dependency, patterns) do

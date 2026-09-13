@@ -73,20 +73,24 @@ defmodule Anchor.Managers.Lint do
 
   defp detect_for_file(check_module, source_file, rules, modules_map, params) do
     ast = Source.ast(source_file)
-    matching_rules = matching_rules(check_module, source_file, ast, rules)
-    violations = detect(check_module, source_file, ast, matching_rules, modules_map, params)
+    # Gap F (DND-150): the file's facts (its own module names among them) are
+    # computed ONCE here and reused for BOTH rule selection and the check
+    # context — no second AST walk. The file's `module_names` are threaded into
+    # the check context so `same_context` detection can derive the file's context.
+    facts = file_facts(source_file, ast)
+    matching_rules = matching_rules(check_module, facts, rules)
+    violations = detect(check_module, source_file, ast, matching_rules, modules_map, facts, params)
     {source_file, violations}
   end
 
-  defp detect(_check_module, _source_file, _ast, [], _modules_map, _params), do: []
+  defp detect(_check_module, _source_file, _ast, [], _modules_map, _facts, _params), do: []
 
-  defp detect(check_module, source_file, ast, matching_rules, modules_map, params) do
-    context = %{modules_map: modules_map, params: params}
+  defp detect(check_module, source_file, ast, matching_rules, modules_map, facts, params) do
+    context = %{modules_map: modules_map, params: params, module_names: facts.module_names}
     check_module.detect_violations(source_file, ast, matching_rules, context)
   end
 
-  defp matching_rules(check_module, source_file, ast, rules) do
-    facts = file_facts(source_file, ast)
+  defp matching_rules(check_module, facts, rules) do
     rule_type = check_module.rule_type()
 
     rules

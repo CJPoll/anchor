@@ -16,6 +16,7 @@ defmodule Anchor.Managers.LintTest do
   import Hammox
 
   alias Anchor.Check.MustUseModule
+  alias Anchor.Check.NoDependency
   alias Anchor.Check.NoTransitiveDependency
   alias Anchor.Config
   alias Anchor.ConfigLoaderMock
@@ -148,6 +149,105 @@ defmodule Anchor.Managers.LintTest do
       assert violation.message ==
                "Module has transitive dependency on forbidden module MyApp.Repo " <>
                  "(dependency chain: A -> B -> MyApp.Repo)"
+    end
+  end
+
+  # Gap F (DND-150): the Manager threads the file's own `module_names` (computed
+  # once, reused for both rule selection and the check context) into the check
+  # context, so `same_context` detection can derive the file's context.
+  #
+  # Matrix: docs/gap-f-same-context-test-matrix.md
+  #   "lib/anchor/managers/lint.ex -> run/4 -> #1-3".
+  #
+  # Sabotage record:
+  #   ../../sabotage_records/no_dependency-20260913-dnd_150_a2_same_context_detection.md
+  describe "run/4 same_context context plumbing (Gap F)" do
+    # Matrix row 1 — Happy Path: the file's module names reach the check context,
+    # so a same-context dep is scoped and flagged. If `module_names` were NOT
+    # threaded the check would derive a nil file context and report nothing, so a
+    # violation here proves the plumbing.
+    test "threads the file's module names into the check context so scoping runs" do
+      source = """
+      defmodule WaltUi.Contacts.Adapters.Foo do
+        def f, do: WaltUi.Contacts.Managers.Bar.run(x)
+      end
+      """
+
+      source_file = SourceFile.parse(source, "lib/foo.ex")
+
+      rule = %{
+        type: :no_direct_dependency,
+        pattern: "*.Adapters.*",
+        forbidden_modules: [],
+        forbidden_patterns: ["*.Managers.*"],
+        match: :call,
+        same_context: true,
+        context_depth: 2
+      }
+
+      expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
+
+      assert {:ok, [{^source_file, [%Violation{trigger: "WaltUi.Contacts.Managers.Bar"}]}]} =
+               Lint.run(NoDependency, [source_file], [], config_loader: ConfigLoaderMock)
+    end
+
+    # Matrix row 2 — Control Flow: rule selection is unchanged after facts are
+    # computed once. The pattern rule selects the matching file and skips the
+    # other; the selected file's cross-context dep is (correctly) not flagged, and
+    # the unselected file gets [] — i.e. selection still partitions the files.
+    test "rule selection is unchanged (facts computed once)" do
+      selected =
+        SourceFile.parse(
+          "defmodule WaltUi.Contacts.Adapters.Foo do\n  def f, do: WaltUi.Contacts.Managers.Bar.run(x)\nend\n",
+          "lib/foo.ex"
+        )
+
+      unselected =
+        SourceFile.parse("defmodule WaltUi.Plain do\n  def x, do: 1\nend\n", "lib/plain.ex")
+
+      rule = %{
+        type: :no_direct_dependency,
+        pattern: "*.Adapters.*",
+        forbidden_modules: [],
+        forbidden_patterns: ["*.Managers.*"],
+        match: :call,
+        same_context: true,
+        context_depth: 2
+      }
+
+      expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
+
+      assert {:ok,
+              [
+                {^selected, [%Violation{trigger: "WaltUi.Contacts.Managers.Bar"}]},
+                {^unselected, []}
+              ]} =
+               Lint.run(NoDependency, [selected, unselected], [], config_loader: ConfigLoaderMock)
+    end
+
+    # Matrix row 3 — Control Flow: a non-same_context check is unaffected by the
+    # threading — identical {:ok, results} to the pre-feature path.
+    test "a non-same_context check is unaffected" do
+      source = """
+      defmodule MyApp.Thing do
+        def f, do: MyApp.Repo.all(q)
+      end
+      """
+
+      source_file = SourceFile.parse(source, "lib/thing.ex")
+
+      rule = %{
+        type: :no_direct_dependency,
+        pattern: "*MyApp.*",
+        forbidden_modules: [MyApp.Repo],
+        forbidden_patterns: [],
+        match: :reference
+      }
+
+      expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
+
+      assert {:ok, [{^source_file, [%Violation{trigger: "MyApp.Repo", line: 2}]}]} =
+               Lint.run(NoDependency, [source_file], [], config_loader: ConfigLoaderMock)
     end
   end
 end
