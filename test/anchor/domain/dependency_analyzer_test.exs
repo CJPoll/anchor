@@ -358,7 +358,7 @@ defmodule Anchor.Domain.DependencyAnalyzerTest do
   describe "extract_call_dependencies/1 — call-position only (Gap A' / DND-142)" do
     # See docs/phase-d-gap-test-matrix.md, dependency_analyzer.ex ::
     # extract_call_dependencies/1 rows 1-7.
-    # Sabotage record: ../sabotage_records/dependency_analyzer-20260913-dnd_142_gap_a_forbidden_patterns_match.md
+    # Sabotage record: ../sabotage_records/no_dependency-20260913-dnd_142_gap_a_forbidden_patterns_match.md
 
     # Matrix row 1 — Happy Path
     test "records an aliased remote call" do

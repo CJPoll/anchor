@@ -244,7 +244,7 @@ defmodule Anchor.Domain.Checks.NoTransitiveDependencyTest do
     # See docs/phase-d-gap-test-matrix.md, no_transitive_dependency.ex ::
     # detect_violations/3 rows 1-4.
     # Sabotage record:
-    #   ../../../sabotage_records/no_transitive_dependency-20260913-dnd_142_gap_a_forbidden_patterns_match.md
+    #   ../../../sabotage_records/no_dependency-20260913-dnd_142_gap_a_forbidden_patterns_match.md
 
     defp pattern_rule(patterns) do
       %{type: :no_transitive_dependency, forbidden_modules: [], forbidden_patterns: patterns}

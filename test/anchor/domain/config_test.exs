@@ -196,7 +196,7 @@ defmodule Anchor.Domain.ConfigTest do
 
   describe "parse_rule/1 — forbidden_patterns and match (Gap A + A' / DND-142)" do
     # See docs/phase-d-gap-test-matrix.md, config.ex :: parse_rule/1 rows 1,2,5,6,7,8,12.
-    # Sabotage record: ../../sabotage_records/config-20260913-dnd_142_gap_a_forbidden_patterns_match.md
+    # Sabotage record: ../../sabotage_records/no_dependency-20260913-dnd_142_gap_a_forbidden_patterns_match.md
 
     # Matrix row 1 — Happy Path (A): forbidden_patterns surfaced as a list.
     test "surfaces forbidden_patterns as a list" do
