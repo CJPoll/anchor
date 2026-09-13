@@ -6,6 +6,13 @@ Accepted. Ported from walt_ui `adrs/001-cross-project-engineering-principles.md`
 and `backend/adrs/001-five-bucket-architecture.md` on 2026-09-12, adapted for a
 single, standalone (non-umbrella) Elixir library.
 
+Amended 2026-09-13 (DND-123 / T3): `Anchor.Config` was split into a pure
+parser/struct (Domain) plus `Anchor.Domain.ConfigPaths` (Domain) and a
+`Anchor.Adapters.ConfigFile` (Side Effect) adapter. The wholesale "`Anchor.Config`
+is a Side Effect" classification the ADR carried is now wrong; the Side Effect is
+`Anchor.Adapters.ConfigFile`. Standard unchanged — see the amendment note under
+"How this maps to Anchor".
+
 ## Context
 
 Anchor is a small library, but the class of problems the five-bucket
@@ -45,8 +52,10 @@ Every module belongs to exactly one of five buckets:
    future tool built on Anchor may acquire one.
 3. **Side Effects** — ports/adapters in the Hexagonal Architecture sense.
    Repositories, external-API clients, file-system access — anything that does
-   IO. In Anchor, `Anchor.Config` is the worked example: it reads `.anchor.yml`
-   off disk (`File.exists?/1`, `File.read/1`) and parses it into a struct.
+   IO. In Anchor, `Anchor.Adapters.ConfigFile` is the worked example: it reads
+   `.anchor.yml` off disk (`File.exists?/1`, `File.read/1`), decodes the YAML,
+   and hands the decoded map to the pure parser — returning a struct, never raw
+   YAML.
 4. **Domain** — side-effect-free business logic. Pure functions, typed structs,
    value objects. Given the same inputs it always returns the same outputs: no
    IO, no clock reads, no disk. In Anchor, `Anchor.DependencyAnalyzer` is the
@@ -67,7 +76,11 @@ contexts. Its buckets map onto subdirectories under `lib/anchor/`:
 ```
 lib/anchor/
   check/          # Framework — the Credo integration (Anchor.Check.*)
-  config.ex       # Side Effect — reads .anchor.yml from disk
+  adapters/
+    config_file.ex   # Side Effect — reads/decodes .anchor.yml from disk
+  domain/
+    config.ex        # Domain — pure YAML-map -> %Config{} parser + struct
+    config_paths.ex  # Domain — pure candidate-path computation
   dependency_analyzer.ex   # Domain — pure AST analysis
   <managers>/     # Managers — orchestration, added as it accrues
 ```
@@ -97,14 +110,14 @@ naming and placement rather than in a heavyweight directory scheme.
 
 - Framework **MUST NOT** call adapters directly. Go through a Manager. (A Credo
   check that needs configuration goes through the orchestration that loads it,
-  not straight into `Anchor.Config`'s file reads.)
+  not straight into `Anchor.Adapters.ConfigFile`'s file reads.)
 - Framework **MAY** call Domain objects for simple response logic — for example,
   a check handing an AST to `Anchor.DependencyAnalyzer` and formatting the
   result is Framework calling Domain, which is allowed.
 - Side Effects (adapters) receive Domain objects and return Domain objects. They
   do not leak raw file contents or external payloads past their boundary —
-  `Anchor.Config.load/0` returns an `%Anchor.Config{}` struct, not a raw YAML
-  map.
+  `Anchor.Adapters.ConfigFile.load/0` returns an `%Anchor.Config{}` struct, not a
+  raw YAML map.
 - Domain objects **MUST NOT** call Side Effects, Managers, UI Components, or
   Framework. They are pure. `Anchor.DependencyAnalyzer` never reads a file and
   never calls a check module.
@@ -176,7 +189,8 @@ and are dropped rather than adapted:
   no Ecto and no schemas. (The underlying idea — that a struct definition is
   Domain while the thing that loads it is a Side Effect — is already covered by
   the generic Domain/Side-Effect definitions above; Anchor's `%Anchor.Config{}`
-  struct is Domain data, and `Anchor.Config`'s file reads are the Side Effect.)
+  struct and its parser are Domain, and `Anchor.Adapters.ConfigFile`'s file reads
+  are the Side Effect.)
 - **Oban workers are Framework** — Anchor has no Oban and no background jobs.
 - **The CQRS-machinery exemption** (aggregates, commands, events, projectors,
   process managers follow Commanded's architecture, not the five buckets) —
@@ -189,17 +203,48 @@ and are dropped rather than adapted:
 |---|---|---|
 | `Anchor.Check.*` (e.g. `NoDependency`, `NoTransitiveDependency`, `MustUseModule`) | Framework | They `use Anchor.Check.Base`, are registered in `.credo.exs`, and are invoked by Credo's runner — the framework's entry points. |
 | `Anchor.Check.Base` | Framework | The shared `use`-target that wires a check into Credo. |
-| `Anchor.Config` | Side Effect | Reads `.anchor.yml` off disk (`File.exists?/1`, `File.read/1`) and returns a struct. IO at the edge. |
+| `Anchor.Adapters.ConfigFile` | Side Effect | Reads `.anchor.yml` off disk (`File.exists?/1`, `File.read/1`), decodes the YAML, and hands the map to the parser. IO at the edge; returns a struct, never raw YAML. |
+| `Anchor.Config` | Domain | The `%Config{}` struct plus its pure parser (`parse_config/1`, `parse_rule/1`): decoded-YAML-map in, atom-keyed rule maps out. No IO. |
+| `Anchor.Domain.ConfigPaths` | Domain | `candidates/2`: a pure function of a working directory and an `apps?` boolean returning the ordered candidate-path list. No IO — the adapter decides which candidate exists. |
 | `Anchor.DependencyAnalyzer` | Domain | Pure AST analysis: extracts dependencies and `use`s, computes transitive closures over an in-memory map. Same input, same output, no IO. |
 | `%Anchor.Config{}` struct | Domain (data) | A typed struct is Domain data; the adapter that produced it is the Side Effect. |
 | Orchestration that loads config then runs analysis | Manager | Coordinates the Side Effect (config load) and Domain (analysis). Kept thin today. |
 
+#### Amendment (2026-09-13, DND-123 / T3): Config split into Domain parser, Domain ConfigPaths, and a ConfigFile adapter
+
+The ADR originally classified `Anchor.Config` wholesale as a Side Effect, with
+its file reads as the worked example of IO at the edge. That was imprecise:
+`Anchor.Config` mixed two buckets in one module — pure parsing of a decoded YAML
+map into a struct (Domain) and the `File.*`/YAML IO that fetched that map (Side
+Effect). The generic definitions above always said a struct definition is Domain
+while the thing that loads it is a Side Effect; the module simply violated that
+by doing both.
+
+T3 split it along the seam the definitions already drew:
+
+- **`Anchor.Config`** keeps the `%Config{}` struct and the pure parser
+  (`parse_config/1`, `parse_rule/1`) — reclassified **Domain**. It performs no
+  IO and never decodes YAML.
+- **`Anchor.Domain.ConfigPaths`** is the pure candidate-path computation
+  (`candidates/2`) — **Domain**.
+- **`Anchor.Adapters.ConfigFile`** is the **Side Effect**: `load/0` /
+  `load_from_path/1`, all `File.*` IO and YAML decoding, calling `ConfigPaths`
+  and the parser and returning an `%Anchor.Config{}`.
+
+This is an amendment, not a supersession: the five-bucket rule and the
+allowed-calls matrix are unchanged, and every subject the Decision binds is
+bound exactly as before. Only the classification of the `Anchor.Config` subject
+is corrected — the Domain/Side-Effect boundary now runs *between* modules
+instead of *inside* one. (The Framework-reaching-past-the-Manager concern the
+Examples illustrate is likewise unchanged; only the adapter's name moves from
+`Anchor.Config` to `Anchor.Adapters.ConfigFile`.)
+
 The load-bearing consequence for Anchor: a `Anchor.Check.*` module (Framework)
 may call `Anchor.DependencyAnalyzer` (Domain) directly, and may go through a
 Manager to obtain configuration, but it must not itself do the file IO that
-`Anchor.Config` owns. And `Anchor.DependencyAnalyzer` must never grow a
-`File.read/1` or a call into a check module — the moment it does, it has stopped
-being Domain.
+`Anchor.Adapters.ConfigFile` owns. And `Anchor.DependencyAnalyzer` (or the pure
+`Anchor.Config` parser) must never grow a `File.read/1` or a call into a check
+module — the moment it does, it has stopped being Domain.
 
 ## Examples
 
@@ -227,13 +272,21 @@ defmodule Anchor.DependencyAnalyzer do
   end
 end
 
-# Side Effect — reads the file, returns a Domain struct.
-defmodule Anchor.Config do
+# Side Effect — reads the file and decodes YAML, hands the map to the Domain
+# parser, returns a Domain struct.
+defmodule Anchor.Adapters.ConfigFile do
   def load_from_path(path) do
     with {:ok, content} <- File.read(path),
          {:ok, data} <- YamlElixir.read_from_string(content) do
-      {:ok, parse_config(data)}   # returns %Anchor.Config{}, not raw YAML
+      {:ok, Anchor.Config.parse_config(data)}   # %Anchor.Config{}, not raw YAML
     end
+  end
+end
+
+# Domain — pure: decoded map in, struct out. No IO.
+defmodule Anchor.Config do
+  def parse_config(data) when is_map(data) do
+    %__MODULE__{rules: Enum.map(Map.get(data, "rules", []), &parse_rule/1)}
   end
 end
 ```
@@ -258,7 +311,7 @@ end
 # BAD: Framework reaching past the Manager into the adapter's IO.
 defmodule Anchor.Check.NoDependency do
   def check_file(source_file, _rules, _params) do
-    {:ok, config} = Anchor.Config.load()   # skip orchestration; Framework doing config IO indirectly
+    {:ok, config} = Anchor.Adapters.ConfigFile.load()   # skip orchestration; Framework doing config IO indirectly
     # ...
   end
 end
@@ -302,6 +355,7 @@ configuration.
 - walt_ui `adrs/001-cross-project-engineering-principles.md` and
   `backend/adrs/001-five-bucket-architecture.md` — the source ADRs this is
   ported from.
-- `lib/anchor/config.ex` (Side Effect), `lib/anchor/dependency_analyzer.ex`
-  (Domain), `lib/anchor/check/` (Framework) — the modules that exemplify each
-  bucket.
+- `lib/anchor/adapters/config_file.ex` (Side Effect),
+  `lib/anchor/domain/config.ex` and `lib/anchor/domain/config_paths.ex`
+  (Domain), `lib/anchor/dependency_analyzer.ex` (Domain),
+  `lib/anchor/check/` (Framework) — the modules that exemplify each bucket.

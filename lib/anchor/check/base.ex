@@ -9,12 +9,13 @@ defmodule Anchor.Check.Base do
 
       import Credo.Check
 
+      alias Anchor.Adapters.ConfigFile
       alias Anchor.Config
       alias Anchor.DependencyAnalyzer
 
       @impl true
       def run_on_all_source_files(exec, source_files, params) do
-        case Config.load() do
+        case ConfigFile.load() do
           {:ok, config} ->
             issues =
               source_files
@@ -89,14 +90,19 @@ defmodule Anchor.Check.Base do
 
       defp matches_recursive_pattern?(path, pattern) do
         # Convert glob pattern to regex
-        regex_pattern = 
+        regex_pattern =
           pattern
           |> String.replace(".", "\\.")
-          |> String.replace("**", "___DOUBLE_STAR___")  # Temporarily replace ** to avoid conflicts
-          |> String.replace("*", "[^/]*")  # Replace single * with non-slash matcher
-          |> String.replace("___DOUBLE_STAR___/", "(.*/)?")  # **/ matches zero or more path segments with trailing /
-          |> String.replace("/___DOUBLE_STAR___", "(/.*)?")  # /** matches zero or more path segments with leading /
-          |> String.replace("___DOUBLE_STAR___", ".*")  # ** alone matches anything
+          # Temporarily replace ** to avoid conflicts
+          |> String.replace("**", "___DOUBLE_STAR___")
+          # Replace single * with non-slash matcher
+          |> String.replace("*", "[^/]*")
+          # **/ matches zero or more path segments with trailing /
+          |> String.replace("___DOUBLE_STAR___/", "(.*/)?")
+          # /** matches zero or more path segments with leading /
+          |> String.replace("/___DOUBLE_STAR___", "(/.*)?")
+          # ** alone matches anything
+          |> String.replace("___DOUBLE_STAR___", ".*")
           |> then(&"^#{&1}$")
           |> Regex.compile!()
 

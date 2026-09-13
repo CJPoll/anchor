@@ -44,10 +44,13 @@ like the testing pyramid. The bucket vocabulary is ADR 001's.
   detection, aliased and dotted references, and transitive-closure edge cases
   (cycles, missing nodes, self-reference).
 - **Adapters (Side Effects)** — test only the conversions: the shape that comes
-  off the boundary, and the Domain object that goes back. For `Anchor.Config`
-  that is: given YAML content, the parsed `%Anchor.Config{}` has the right
-  rules; given a missing file, the documented default. The IO itself is not the
-  subject.
+  off the boundary, and the Domain object that goes back. For
+  `Anchor.Adapters.ConfigFile` that is: given YAML content, the parsed
+  `%Anchor.Config{}` has the right rules; given a missing file, the documented
+  default. The IO itself is not the subject. (The pure parsing that turns a
+  decoded YAML map into `%Anchor.Config{}` lives in the Domain module
+  `Anchor.Config` and is tested exhaustively there, per the Domain bullet
+  above.)
 - **Managers** — mock the adapters, assert the expected value comes back. Where
   Anchor's orchestration loads config and runs analysis, a Manager test stubs
   the config load and checks the analysis is driven correctly.
