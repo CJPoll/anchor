@@ -125,6 +125,72 @@ treated as "no path selector". In other words, a `pattern`- or
 `uses_module`-only rule does **not** need an empty or placeholder `paths` entry
 — leave `paths` off entirely and the module selector is honored.
 
+### Config schema: rule keys at a glance
+
+A single reference for the rule keys, including the four added for full
+five-bucket enforcement. Each is shown with the minimal example that exercises
+it; the per-check sections under [Check Types](#check-types) carry the full
+semantics and edge cases.
+
+| Key | Applies to | Meaning |
+|---|---|---|
+| `paths` | any rule | Path-glob selector. **Absent** ⇒ parsed as `nil`, so selection falls through to `pattern`/`uses_module`; this differs only cosmetically from an explicit `[]` (also "no path selector"). A present list selects by path (recursive `**` when `recursive: true`). |
+| `pattern` | any rule | Module-name-glob selector (`*` crosses dots). |
+| `uses_module` | any rule | Selects files that `use` the named module. |
+| `recursive` | any rule | `true` gives `paths` globs `**` (across-segment) semantics. |
+| `forbidden_modules` / `required_modules` | dependency / `must_use_module` | Exact module tokens (see the token syntax below). |
+| `forbidden_patterns` | `no_direct_dependency`, `no_transitive_dependency` | Module-name globs; forbids any referenced/reachable module whose name matches. |
+| `match` | `no_direct_dependency` | `reference` (default) or `call` — which dependency set the rule inspects. |
+| `allowed_functions` | `module_pattern_restrictions` | Function-name allow-list (globs). |
+| `mode`, `max_lines` | `alphabetized_functions`, `max_file_length` | Style-check parameters. |
+
+**`forbidden_patterns` — module-name globs (dot-bounded).** A `*` crosses dots,
+so `*.Adapters.*` matches `MyApp.Contacts.Adapters.Repository`, but the `.`
+between segments is literal, so the pattern is dot-bounded: it matches a
+`.Adapters.` segment and does **not** match `Foo.AdaptersHelper`. Patterns are
+matched against the fully-qualified name (`Elixir.MyApp…`), so lead with `*`.
+
+```yaml
+- type: no_direct_dependency
+  pattern: "*.Domain.*"
+  forbidden_patterns:
+    - "*.Adapters.*"   # forbid any module with a `.Adapters.` segment
+```
+
+**`match` — `call` vs `reference` (default `reference`).** `reference` flags a
+forbidden module named in **any** position (a call, a value held in a map or
+keyword list, a typespec). `call` flags it only when it is actually **called**
+(`Foo.Adapters.L.enrich(x)` or `apply(Foo.Adapters.L, :enrich, [x])`) — a module
+merely held as an atom passes. This is the "Domain-router-holds-atoms" carve-out.
+
+```yaml
+- type: no_direct_dependency
+  pattern: "*.Domain.Router"
+  forbidden_patterns:
+    - "*.Adapters.*"
+  match: call          # `%{yaml: Foo.Adapters.L}` passes; `Foo.Adapters.L.run()` fails
+```
+
+**Leading-colon `:atom` module syntax.** A `forbidden_modules` /
+`required_modules` token that starts with `:` names an Erlang/OTP module and is
+kept as the raw atom (via `String.to_atom`, **not** `Module.concat`), so it
+matches a bare-atom remote call. Quote it so YAML keeps it a string.
+
+```yaml
+- type: no_direct_dependency
+  paths: ["lib/my_app/domain/**/*.ex"]
+  recursive: true
+  forbidden_modules:
+    - ":telemetry"     # matches `:telemetry.execute(...)`
+    - MyApp.Repo       # CamelCase token stays an Elixir alias
+```
+
+**Paths-absent selection (`paths: nil`).** Omitting `paths` entirely is
+meaningful: the rule parses with `paths: nil`, so a `pattern`- or
+`uses_module`-only rule selects by its module selector instead of being shadowed
+by an empty path list. The `forbidden_patterns` example above (no `paths` key)
+relies on exactly this.
+
 ## Usage
 
 Configure Credo to use the custom checks in `.credo.exs`:

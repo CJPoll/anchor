@@ -25,22 +25,24 @@ rules:
   # (File / YamlElixir), or on the Side Effect / Manager buckets. It receives
   # plain data and returns plain data.
   #
-  # NOTE (owner follow-up, out of this Epic's scope): the ideal rule here is
-  # "forbid `Credo.*` ANYWHERE outside `lib/anchor/check/`", but Anchor's
-  # `no_direct_dependency` matches forbidden modules by EXACT atom only, so the
-  # Credo modules must be enumerated. A follow-up should add `pattern` support
-  # (e.g. a forbidden pattern `Credo.*`) reusing
-  # `Anchor.Domain.GlobPattern.module_pattern_to_regex/1`.
+  # SELF-DOGFOOD (DND-143): the previous owner follow-up noted here — "the ideal
+  # rule is to forbid `Credo.*` ANYWHERE, but `no_direct_dependency` matched
+  # forbidden modules by EXACT atom only, so they had to be enumerated" — is now
+  # closed by Gap A (`forbidden_patterns`, DND-142). The five enumerated
+  # `Credo.*` modules are replaced by the single dot-bounded module-name glob
+  # `*.Adapters.*`-style pattern `*.Credo.*`, which forbids EVERY Credo module a
+  # Domain file could reference (not just the five that were spelled out),
+  # tightening the self-check. The pattern is matched against the fully-qualified
+  # name (`Elixir.Credo.Code`, …), so it leads with `*`. Domain has zero *code*
+  # references to Credo (only moduledoc/comment mentions, which are not in the
+  # AST the analyzer walks), so `mix credo --strict` stays green.
   - type: no_direct_dependency
     paths:
       - "lib/anchor/domain/**/*.ex"
     recursive: true
+    forbidden_patterns:
+      - "*.Credo.*"
     forbidden_modules:
-      - Credo.Code
-      - Credo.SourceFile
-      - Credo.Issue
-      - Credo.Check
-      - Credo.Execution.ExecutionIssues
       - File
       - YamlElixir
       - Anchor.Adapters.ConfigFile
