@@ -147,6 +147,24 @@ defmodule Anchor.Domain.Checks.NoTupleMatchInHeadTest do
              """) == []
     end
 
+    test "does not flag a bare arity-1 `{:ok}` / `{:error}` tuple (arity >= 2 only)" do
+      # Positive control: the arity-2 form of the same tag DOES flag, so the
+      # absence below is the arity boundary, not a dead checker.
+      assert [%Violation{trigger: "control"}] =
+               detect("""
+               defmodule S do
+                 def control({:ok, v}), do: v
+               end
+               """)
+
+      assert detect("""
+             defmodule S do
+               def a({:ok}), do: :a
+               def b({:error}), do: :b
+             end
+             """) == []
+    end
+
     test "does not flag an ok/error tuple in a body-level case" do
       assert detect("""
              defmodule S do

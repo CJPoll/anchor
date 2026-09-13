@@ -99,12 +99,15 @@ defmodule Anchor.Domain.Checks.NoTupleMatchInHead do
   defp flaggable_arg?({:=, _meta, [lhs, rhs]}), do: result_tuple?(lhs) or result_tuple?(rhs)
   defp flaggable_arg?(arg), do: result_tuple?(arg)
 
-  # Two-element tuples are literal 2-tuples in the AST; tuples of any other
-  # arity are `{:{}, meta, [tag | _]}`. A tuple nested in a list or map is a
-  # different node shape and never reaches here as a bare tuple, so it is
+  # A result tuple is `{:ok, ...}` / `{:error, ...}` of arity >= 2. Two-element
+  # tuples are literal 2-tuples in the AST; tuples of arity 3+ are
+  # `{:{}, meta, [tag, second | _]}`. A bare `{:ok}` / `{:error}` 1-tuple
+  # (`{:{}, meta, [tag]}`) is not a result tuple and is not flagged — the second
+  # element is what carries the wrapped value. A tuple nested in a list or map is
+  # a different node shape and never reaches here as a bare tuple, so it is
   # allowed.
   defp result_tuple?({tag, _second}) when tag in @tuple_tags, do: true
-  defp result_tuple?({:{}, _meta, [tag | _rest]}) when tag in @tuple_tags, do: true
+  defp result_tuple?({:{}, _meta, [tag, _second | _rest]}) when tag in @tuple_tags, do: true
   defp result_tuple?(_other), do: false
 
   defp build_violation(function_name, visibility, line_no) do

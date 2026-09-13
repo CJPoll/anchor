@@ -9,7 +9,8 @@
   shell delegates to it via `check_file/3`)
 - **Suite run:**
   `mix test --seed 0 test/anchor/check/no_tuple_match_in_head_test.exs test/anchor/domain/checks/no_tuple_match_in_head_test.exs`
-  (24 tests: the 15-row `check_file/3` acceptance matrix + 9 pure-Domain rows)
+  (25 tests: the 15-row `check_file/3` acceptance matrix + 10 pure-Domain rows,
+  the last of which pins the arity->=2 boundary added in review)
 
 T6.6 (DND-131) replaced the previous regex-on-source implementation of the
 `no_tuple_match_in_head` check with AST-based detection extracted into the pure
@@ -28,6 +29,7 @@ verbatim, including `left:` / `right:`.
 | F | Emit `"public function head"` for private defs too (`else: "private"` → `else: "public"`) | 2 (private-head rows: Domain + shell #6) | `code: assert issue.message =~ "private function head"` `left: "Function \`handle\` pattern matches on :ok/:error tuple in its public function head. Consider having the calling function use a case statement on the value instead."` `right: "private function head"` |
 | G | Report `def` line + 1 (`Keyword.get(meta, :line)` → `(Keyword.get(meta, :line) + 1)`, all four clause extractions) | 2 (the two line assertions: Domain #1 + shell #1) | `code: assert issue.line_no == 2` `left: 3` `right: 2` (shell #1); `code: assert violation.line == 2` `left: 3` `right: 2` (Domain #1) |
 | H | Flag tuples nested in a list/map (replace the two `result_tuple?/1` structural clauses with a `Macro.prewalk` that reports any `:ok`/`:error` tuple **anywhere** in the argument subtree) | 5 (the nesting-allowed rows: shell #10 list, #11 map, #14 mixed → 2 issues; Domain sibling-nested control, Domain nested/plain absence) | shell #10/#11 flip from `[issue]` to a two-element list (the second issue is the nested `control`/`handle` tuple); shell #14: `code: assert [issue] = issues(source)` `left: [issue]` `right: [%Credo.Issue{... trigger: "f" ...}, %Credo.Issue{... trigger: "f" ...}]` (the nested `{:error, e}` in `%{r: ...}` now produces a second issue) |
+| I | Drop the arity->=2 requirement on the `{:{}, meta, [tag | _]}` clause (`[tag, _second | _rest]` → `[tag | _rest]`), so a bare 1-tuple `{:ok}` / `{:error}` is flagged | 1 (Domain arity-boundary row, added in review) | `code: assert detect("... def a({:ok}) ... def b({:error}) ...") == []` `left: [%Anchor.Domain.Violation{...}, ...]` `right: []` |
 
 ## What each mutation proves
 
@@ -58,6 +60,12 @@ verbatim, including `left:` / `right:`.
   the nested `{:error, e}` as a *second* issue. The absence rows (#9–#13) and
   their positive controls are what catch it — proving those rows assert real
   absence, not a dead checker.
+- **I** protects the arity->=2 boundary (added addressing a review nit: code and
+  moduledoc had disagreed on whether a bare 1-tuple `{:ok}` counts). A result
+  tuple carries the wrapped value in its second element; a bare `{:ok}` /
+  `{:error}` is not one and must not flag. The row's positive control (`{:ok, v}`
+  arity-2 head) flags, so the mutation reddens only the arity-1 absence, pinning
+  the boundary rather than tuple recognition in general.
 
 ## Traps encountered (ADR 002 catalogue)
 
@@ -79,8 +87,8 @@ verbatim, including `left:` / `right:`.
 ## Measured zeros
 
 None. Every mutation reddened at least one row, and every asserted property of
-the 15-row acceptance matrix — direct `:ok` tuple, direct `:error` tuple,
-3-element tuple, forward `=` operand, reversed `=` operand, public vs private
-message, function-name trigger, `def`-line number, and the three
+the acceptance matrix — direct `:ok` tuple, direct `:error` tuple, 3-element
+tuple, forward `=` operand, reversed `=` operand, public vs private message,
+function-name trigger, `def`-line number, the arity->=2 boundary, and the
 nesting-allowed / plain-arg / body-case absences with their positive controls —
 is protected by at least one mutation above.
