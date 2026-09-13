@@ -34,88 +34,11 @@ defmodule Anchor.Check.CaseOnBareArg do
   @doc false
   def rule_type, do: :case_on_bare_arg
 
+  # Thin Framework delegate: the Manager hands over the bare AST; detection
+  # lives in the pure Domain module, and Base maps the returned
+  # `%Anchor.Domain.Violation{}`s onto `Credo.Issue`s.
   @doc false
   def detect_violations(_source_file, ast, _rules, _context) do
-    ast
-    |> find_case_on_bare_args()
-    |> Enum.map(&create_violation/1)
-  end
-
-  defp find_case_on_bare_args(ast) do
-    {_, violations} =
-      Macro.prewalk(ast, [], fn node, acc ->
-        case node do
-          # Function with guards must come before regular functions
-          # because the regular pattern would match the :when atom as the function name
-          {:def, _meta, [{:when, _, [{name, _, args} | _guards]}, body]}
-          when is_atom(name) and is_list(args) ->
-            arg_names = extract_arg_names(args)
-            violations = find_case_violations_in_body(body, arg_names, name)
-            {node, acc ++ violations}
-
-          {:defp, _meta, [{:when, _, [{name, _, args} | _guards]}, body]}
-          when is_atom(name) and is_list(args) ->
-            arg_names = extract_arg_names(args)
-            violations = find_case_violations_in_body(body, arg_names, name)
-            {node, acc ++ violations}
-
-          # Match regular function definitions
-          {:def, _meta, [{name, _, args}, body]} when is_atom(name) and is_list(args) ->
-            arg_names = extract_arg_names(args)
-            violations = find_case_violations_in_body(body, arg_names, name)
-            {node, acc ++ violations}
-
-          {:defp, _meta, [{name, _, args}, body]} when is_atom(name) and is_list(args) ->
-            arg_names = extract_arg_names(args)
-            violations = find_case_violations_in_body(body, arg_names, name)
-            {node, acc ++ violations}
-
-          _ ->
-            {node, acc}
-        end
-      end)
-
-    violations
-  end
-
-  defp extract_arg_names(args) do
-    Enum.flat_map(args, fn
-      {name, _, nil} when is_atom(name) -> [name]
-      _ -> []
-    end)
-  end
-
-  defp find_case_violations_in_body(body, arg_names, function_name) do
-    {_, violations} =
-      Macro.prewalk(body, [], fn
-        {:case, meta, [{arg_name, _, nil}, _clauses]} = node, acc when is_atom(arg_name) ->
-          if arg_name in arg_names do
-            line_no = Keyword.get(meta, :line)
-
-            violation = %{
-              function_name: function_name,
-              arg_name: arg_name,
-              line_no: line_no
-            }
-
-            {node, [violation | acc]}
-          else
-            {node, acc}
-          end
-
-        node, acc ->
-          {node, acc}
-      end)
-
-    violations
-  end
-
-  defp create_violation(%{function_name: function_name, arg_name: arg_name, line_no: line_no}) do
-    %Violation{
-      message:
-        "Case statement operates on bare argument `#{arg_name}` in function `#{function_name}`. Consider using function head pattern matching instead.",
-      line: line_no,
-      trigger: "case"
-    }
+    Anchor.Domain.Checks.CaseOnBareArg.detect_violations(ast)
   end
 end

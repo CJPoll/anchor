@@ -1,214 +1,163 @@
 defmodule Anchor.Check.CaseOnBareArgTest do
-  use ExUnit.Case
+  # Acceptance tests for Anchor.Check.CaseOnBareArg (T6.7 / DND-132).
+  #
+  # Detection now lives in the pure Domain module
+  # Anchor.Domain.Checks.CaseOnBareArg; this suite exercises the check's
+  # observable contract end-to-end through the thin Framework shell:
+  # `check_file/3` takes a real `Credo.SourceFile` and returns
+  # `[%Credo.Issue{}]`. These rows match
+  # docs/five-bucket-test-matrix.md ("case_on_bare_arg.ex -> check_file/3 -> #1-8").
+  #
+  # Sabotage record: ../../sabotage_records/case_on_bare_arg-20260913-dnd_132_t6_7_case_on_bare_arg.md
+  use ExUnit.Case, async: true
 
   alias Anchor.Check.CaseOnBareArg
   alias Credo.SourceFile
 
-  describe "case on bare arg check" do
-    test "detects case statement on bare function argument" do
-      source_code = """
+  defp issues(source) do
+    source_file = SourceFile.parse(source, "lib/some_module.ex")
+    rule = %{type: :case_on_bare_arg}
+    CaseOnBareArg.check_file(source_file, [rule], [])
+  end
+
+  describe "check_file/3" do
+    # Row 1 — Happy Path
+    test "flags case directly on a bare argument" do
+      source = """
       defmodule MyApp.Example do
         def process(status) do
           case status do
             :ok -> "Success!"
             :error -> "Failed!"
-            _ -> "Unknown"
           end
         end
       end
       """
 
-      rule = %{type: :case_on_bare_arg}
-      source_file = SourceFile.parse(source_code, "lib/my_app/example.ex")
-      issues = CaseOnBareArg.check_file(source_file, [rule], [])
+      assert [issue] = issues(source)
 
-      assert length(issues) == 1
-      issue = List.first(issues)
-      assert issue.message =~ "Case statement operates on bare argument `status`"
-      assert issue.message =~ "Consider using function head pattern matching"
+      assert issue.message ==
+               "Case statement operates on bare argument `status` in function `process`. Consider using function head pattern matching instead."
+
+      assert issue.trigger == "case"
+      assert issue.line_no == 3
     end
 
-    test "allows case statement on function call result" do
-      source_code = """
+    # Row 2 — Positive Control
+    test "passes when case is on a transformed value" do
+      source = """
       defmodule MyApp.Example do
         def process(data) do
           case validate(data) do
-            {:ok, result} -> result
-            {:error, reason} -> {:error, reason}
+            :ok -> :done
           end
         end
       end
       """
 
-      rule = %{type: :case_on_bare_arg}
-      source_file = SourceFile.parse(source_code, "lib/my_app/example.ex")
-      issues = CaseOnBareArg.check_file(source_file, [rule], [])
-
-      assert length(issues) == 0
+      assert issues(source) == []
     end
 
-    test "allows case statement on expression" do
-      source_code = """
+    # Row 3 — Happy Path
+    test "flags bare arg in a guarded function" do
+      source = """
       defmodule MyApp.Example do
-        def process(x, y) do
-          case x + y do
-            0 -> :zero
-            n when n > 0 -> :positive
-            _ -> :negative
-          end
-        end
-      end
-      """
-
-      rule = %{type: :case_on_bare_arg}
-      source_file = SourceFile.parse(source_code, "lib/my_app/example.ex")
-      issues = CaseOnBareArg.check_file(source_file, [rule], [])
-
-      assert length(issues) == 0
-    end
-
-    test "detects multiple violations in same function" do
-      source_code = """
-      defmodule MyApp.Example do
-        def process(status, mode) do
-          result = case status do
-            :ok -> :continue
-            :error -> :stop
-          end
-          
-          case mode do
-            :fast -> do_fast(result)
-            :slow -> do_slow(result)
-          end
-        end
-      end
-      """
-
-      rule = %{type: :case_on_bare_arg}
-      source_file = SourceFile.parse(source_code, "lib/my_app/example.ex")
-      issues = CaseOnBareArg.check_file(source_file, [rule], [])
-
-      assert length(issues) == 2
-      assert Enum.any?(issues, &(&1.message =~ "bare argument `status`"))
-      assert Enum.any?(issues, &(&1.message =~ "bare argument `mode`"))
-    end
-
-    test "detects in private functions" do
-      source_code = """
-      defmodule MyApp.Example do
-        defp handle_internal(response) do
-          case response do
-            {:ok, data} -> process_data(data)
-            {:error, _} -> nil
-          end
-        end
-      end
-      """
-
-      rule = %{type: :case_on_bare_arg}
-      source_file = SourceFile.parse(source_code, "lib/my_app/example.ex")
-      issues = CaseOnBareArg.check_file(source_file, [rule], [])
-
-      assert length(issues) == 1
-      issue = List.first(issues)
-      assert issue.message =~ "bare argument `response`"
-    end
-
-    test "detects in functions with guards" do
-      source_code = """
-      defmodule MyApp.Example do
-        def process(value) when is_atom(value) do
-          case value do
+        def process(status) when is_atom(status) do
+          case status do
             :yes -> true
             :no -> false
-            _ -> nil
           end
         end
       end
       """
 
-      rule = %{type: :case_on_bare_arg}
-      source_file = SourceFile.parse(source_code, "lib/my_app/example.ex")
-      issues = CaseOnBareArg.check_file(source_file, [rule], [])
-
-      assert length(issues) == 1
+      assert [issue] = issues(source)
+      assert issue.trigger == "case"
     end
 
-    test "allows case on local variables" do
-      source_code = """
+    # Row 4 — Validation (adjudicated fix: a defaulted arg is still bare)
+    test "flags case on a defaulted bare argument" do
+      source = """
       defmodule MyApp.Example do
-        def process(data) do
-          result = transform(data)
-          
-          case result do
-            {:ok, value} -> value
-            {:error, _} -> nil
-          end
-        end
-      end
-      """
-
-      rule = %{type: :case_on_bare_arg}
-      source_file = SourceFile.parse(source_code, "lib/my_app/example.ex")
-      issues = CaseOnBareArg.check_file(source_file, [rule], [])
-
-      # result is a local variable, not a function argument
-      assert length(issues) == 0
-    end
-
-    test "detects nested case statements" do
-      source_code = """
-      defmodule MyApp.Example do
-        def process(outer, inner) do
-          case outer do
-            :a ->
-              case inner do
-                :x -> :ax
-                :y -> :ay
-              end
-            :b ->
-              :b_result
-          end
-        end
-      end
-      """
-
-      rule = %{type: :case_on_bare_arg}
-      source_file = SourceFile.parse(source_code, "lib/my_app/example.ex")
-      issues = CaseOnBareArg.check_file(source_file, [rule], [])
-
-      assert length(issues) == 2
-      assert Enum.any?(issues, &(&1.message =~ "bare argument `outer`"))
-      assert Enum.any?(issues, &(&1.message =~ "bare argument `inner`"))
-    end
-
-    test "handles destructured arguments correctly" do
-      source_code = """
-      defmodule MyApp.Example do
-        def process({:ok, _data} = result) do
-          # This should not trigger since result is pattern matched in the function head
-          case result do
-            {:ok, value} -> value
-            _ -> nil
-          end
-        end
-
-        def handle(%{status: status}) do
-          # status is extracted from a map pattern, not a bare arg
+        def process(status \\\\ :ok) do
           case status do
-            :active -> true
-            :inactive -> false
+            :ok -> :done
           end
         end
       end
       """
 
-      rule = %{type: :case_on_bare_arg}
-      source_file = SourceFile.parse(source_code, "lib/my_app/example.ex")
-      issues = CaseOnBareArg.check_file(source_file, [rule], [])
+      assert [issue] = issues(source)
+      assert issue.trigger == "case"
+      assert issue.message =~ "bare argument `status`"
+    end
 
-      # Neither should trigger - they're not simple bare arguments
-      assert length(issues) == 0
+    # Row 5 — Control Flow Decisioning
+    test "passes when the case scrutinee is a different variable" do
+      source = """
+      defmodule MyApp.Example do
+        def process(a) do
+          b = f(a)
+
+          case b do
+            :ok -> :done
+          end
+        end
+      end
+      """
+
+      assert issues(source) == []
+    end
+
+    # Row 6 — Happy Path
+    test "flags in a private function" do
+      source = """
+      defmodule MyApp.Example do
+        defp process(x) do
+          case x do
+            :ok -> :done
+          end
+        end
+      end
+      """
+
+      assert [issue] = issues(source)
+      assert issue.message =~ "function `process`"
+    end
+
+    # Row 7 — High Signal
+    test "flags two bare-arg cases in one function" do
+      source = """
+      defmodule MyApp.Example do
+        def process(a, b) do
+          case a, do: (:ok -> :continue)
+          case b, do: (:fast -> :go)
+        end
+      end
+      """
+
+      issues = issues(source)
+      assert length(issues) == 2
+
+      line_nos = issues |> Enum.map(& &1.line_no) |> Enum.sort()
+      assert line_nos == [3, 4]
+    end
+
+    # Row 8 — Positive Control
+    test "passes when there is no case at all" do
+      source = """
+      defmodule MyApp.Example do
+        def process(x), do: x + 1
+      end
+      """
+
+      assert issues(source) == []
+    end
+  end
+
+  describe "rule_type/0" do
+    test "is :case_on_bare_arg" do
+      assert CaseOnBareArg.rule_type() == :case_on_bare_arg
     end
   end
 end
