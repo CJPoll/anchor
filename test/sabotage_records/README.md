@@ -97,3 +97,10 @@ before coining a synonym.
   match-assignment (`=`) operand recognition, replacing the previous
   regex-on-source implementation) and the `Anchor.Check.NoTupleMatchInHead`
   shell that delegates to it.
+- `struct_getter_convention` — the "struct getter convention" check: its
+  extracted pure detector (`Anchor.Domain.Checks.StructGetterConvention`,
+  including `alias_map` / `resolve_struct_module` alias resolution (with `:as`
+  and `A.{B, C}` forms), the enclosing-struct naming rule gated on a literal
+  `defstruct`, and the foreign-struct `location_violation` that recovers the
+  real module name) and the `Anchor.Check.StructGetterConvention` shell that
+  delegates to it.
