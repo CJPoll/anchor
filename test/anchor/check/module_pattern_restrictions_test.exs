@@ -1,126 +1,176 @@
 defmodule Anchor.Check.ModulePatternRestrictionsTest do
-  use ExUnit.Case
+  # Acceptance tests for Anchor.Check.ModulePatternRestrictions (T6.4 / DND-129).
+  #
+  # Detection now lives in the pure Domain module
+  # Anchor.Domain.Checks.ModulePatternRestrictions; this suite exercises the
+  # check's observable contract end-to-end through the thin Framework shell:
+  # `check_file/3` takes a real `Credo.SourceFile` and returns `[%Credo.Issue{}]`.
+  # These rows assert docs/five-bucket-test-matrix.md
+  # ("module_pattern_restrictions.ex -> check_file/3 -> #1-9"), including the
+  # adjudicated fixes: `allowed_functions` glob support (rows 5-6), multi-clause
+  # name dedup (row 8), and module-based rule selection (row 9). Selection is
+  # exercised via SPARSE rule maps (no `:paths` key), the only way
+  # `pattern`/`uses_module` selection is observable — see the matrix note on the
+  # pre-existing `paths: []` selection shadow.
+  #
+  # Sabotage record:
+  # ../../sabotage_records/module_pattern_restrictions-20260913-dnd_129_t6_4_module_pattern_restrictions.md
+  use ExUnit.Case, async: true
 
   alias Anchor.Check.ModulePatternRestrictions
   alias Credo.SourceFile
 
-  describe "uses_module pattern matching" do
-    test "restricts functions in modules that use Ecto.Schema" do
-      source_code = """
+  defp issues(source, rule) do
+    source_file = SourceFile.parse(source, "lib/my_app/user.ex")
+    ModulePatternRestrictions.check_file(source_file, [rule], [])
+  end
+
+  defp uses_rule(allowed) do
+    %{type: :module_pattern_restrictions, uses_module: "Ecto.Schema", allowed_functions: allowed}
+  end
+
+  describe "check_file/3" do
+    # Row 1 — Happy Path
+    test "flags a non-allowed public function (message/trigger/line 7)" do
+      source = """
       defmodule MyApp.User do
         use Ecto.Schema
 
         schema "users" do
           field :name, :string
         end
-
-        def custom_function do
-          :not_allowed
-        end
+        def custom_function, do: :not_allowed
       end
       """
 
-      rule = %{
-        type: :module_pattern_restrictions,
-        uses_module: "Ecto.Schema",
-        allowed_functions: ["changeset", "__changeset__", "__schema__", "__struct__"]
-      }
+      rule = uses_rule(["changeset", "__changeset__", "__schema__", "__struct__"])
 
-      source_file = SourceFile.parse(source_code, "lib/my_app/user.ex")
-
-      issues = ModulePatternRestrictions.check_file(source_file, [rule], [])
-
-      assert length(issues) == 1
-      issue = List.first(issues)
+      assert [issue] = issues(source, rule)
       assert issue.message == "Module defines non-allowed function: custom_function"
+      assert issue.trigger == "custom_function"
+      assert issue.line_no == 7
     end
 
-    test "allows functions in allowed_functions list for modules using Ecto.Schema" do
-      source_code = """
+    # Row 2 — Positive Control
+    test "passes when only allowed functions are defined" do
+      source = """
       defmodule MyApp.User do
         use Ecto.Schema
-
-        schema "users" do
-          field :name, :string
-        end
 
         def changeset(user, attrs) do
-          user
-          |> Ecto.Changeset.cast(attrs, [:name])
-          |> Ecto.Changeset.validate_required([:name])
+          {user, attrs}
         end
       end
       """
 
-      rule = %{
-        type: :module_pattern_restrictions,
-        uses_module: "Ecto.Schema",
-        allowed_functions: ["changeset", "__changeset__", "__schema__", "__struct__"]
-      }
+      rule = uses_rule(["changeset", "__changeset__", "__schema__", "__struct__"])
 
-      source_file = SourceFile.parse(source_code, "lib/my_app/user.ex")
-
-      issues = ModulePatternRestrictions.check_file(source_file, [rule], [])
-
-      assert length(issues) == 0
+      assert issues(source, rule) == []
     end
 
-    test "does not apply to modules that don't use the specified module" do
-      source_code = """
-      defmodule MyApp.Service do
-        def custom_function do
-          :allowed
-        end
-
-        def another_function do
-          :also_allowed
-        end
+    # Row 3 — Validation
+    test "flags a non-allowed private function too" do
+      source = """
+      defmodule MyApp.User do
+        use Ecto.Schema
+        defp helper, do: :x
       end
       """
 
-      _rule = %{
-        type: :module_pattern_restrictions,
-        uses_module: "Ecto.Schema",
-        allowed_functions: []
-      }
+      assert [issue] = issues(source, uses_rule([]))
+      assert issue.trigger == "helper"
+    end
 
-      source_file = SourceFile.parse(source_code, "lib/my_app/service.ex")
-      ast = Anchor.Check.Source.ast(source_file)
+    # Row 4 — Happy Path
+    test "empty allowed list flags every defined function" do
+      source = """
+      defmodule MyApp.User do
+        use Ecto.Schema
+        def a, do: 1
+        def b(x), do: x
+      end
+      """
 
-      # Test that the module doesn't use Ecto.Schema
-      refute Anchor.Domain.DependencyAnalyzer.has_use?(ast, Ecto.Schema)
+      issues = issues(source, uses_rule([]))
+      triggers = issues |> Enum.map(& &1.trigger) |> Enum.sort()
 
-      # Since this test directly calls check_file, we need to ensure the rule would match
-      # In the real flow, rule_matches_file? would prevent this from being checked
-      # So we'll test the matching logic separately
+      assert length(issues) == 2
+      assert triggers == ["a", "b"]
+    end
+
+    # Row 5 — Happy Path (glob allow)
+    test "glob/prefix allow pattern honored (`with_*`)" do
+      source = """
+      defmodule MyApp.User do
+        use Ecto.Schema
+        def with_status(x), do: x
+        def new, do: :n
+      end
+      """
+
+      assert issues(source, uses_rule(["new", "with_*"])) == []
+    end
+
+    # Row 6 — Control Flow Decisioning (glob still flags non-match)
+    test "prefix pattern still flags a non-matching function" do
+      source = """
+      defmodule MyApp.User do
+        use Ecto.Schema
+        def with_status(x), do: x
+        def delete(x), do: x
+      end
+      """
+
+      assert [issue] = issues(source, uses_rule(["with_*"]))
+      assert issue.trigger == "delete"
+    end
+
+    # Row 7 — High Signal (reported at definition line 5)
+    test "function reported at its definition line" do
+      source = """
+      defmodule MyApp.User do
+        use Ecto.Schema
+        def changeset(u, a), do: {u, a}
+
+        def custom, do: :x
+      end
+      """
+
+      assert [issue] = issues(source, uses_rule(["changeset"]))
+      assert issue.trigger == "custom"
+      assert issue.line_no == 5
+    end
+
+    # Row 8 — Control Flow Decisioning (multi-clause deduped)
+    test "multi-clause non-allowed function reported once" do
+      source = """
+      defmodule MyApp.User do
+        use Ecto.Schema
+        def foo(1), do: :one
+        def foo(_), do: :other
+      end
+      """
+
+      assert [issue] = issues(source, uses_rule([]))
+      assert issue.trigger == "foo"
+    end
+
+    # Row 9 — Rule Selection (uses_module does not match -> nothing).
+    # Positive control: row 1 proves the same shape DOES flag when selected.
+    test "rule not selecting the file (uses_module) yields nothing" do
+      source = """
+      defmodule MyApp.Service do
+        def custom_function, do: :x
+      end
+      """
+
+      assert issues(source, uses_rule([])) == []
     end
   end
 
-  describe "rule matching with uses_module" do
-    test "rule_matches_file? returns true for modules using the specified module" do
-      source_code = """
-      defmodule MyApp.User do
-        use Ecto.Schema
-      end
-      """
-
-      source_file = SourceFile.parse(source_code, "lib/my_app/user.ex")
-      ast = Anchor.Check.Source.ast(source_file)
-
-      assert Anchor.Domain.DependencyAnalyzer.has_use?(ast, Ecto.Schema)
-    end
-
-    test "rule_matches_file? returns false for modules not using the specified module" do
-      source_code = """
-      defmodule MyApp.Service do
-        def hello, do: :world
-      end
-      """
-
-      source_file = SourceFile.parse(source_code, "lib/my_app/service.ex")
-      ast = Anchor.Check.Source.ast(source_file)
-
-      refute Anchor.Domain.DependencyAnalyzer.has_use?(ast, Ecto.Schema)
+  describe "rule_type/0" do
+    test "is :module_pattern_restrictions" do
+      assert ModulePatternRestrictions.rule_type() == :module_pattern_restrictions
     end
   end
 end

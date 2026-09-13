@@ -48,6 +48,11 @@ before coining a synonym.
 - `no_dependency` — the "no forbidden direct dependency" check: its extracted
   pure detector (`Anchor.Domain.Checks.NoDependency`) and the
   `Anchor.Check.NoDependency` shell that delegates to it.
+- `module_pattern_restrictions` — the `module_pattern_restrictions` check: the
+  extracted Domain detection (`Anchor.Domain.Checks.ModulePatternRestrictions`,
+  including `allowed_functions` glob support and `pattern`/`uses_module`
+  selection) and its thin Framework shell
+  (`Anchor.Check.ModulePatternRestrictions`).
 - `no_transitive_dependency` — the "no forbidden transitive dependency" check:
   its extracted pure detector (`Anchor.Domain.Checks.NoTransitiveDependency`,
   including `find_dependency_path` / `format_dependency_path` /
