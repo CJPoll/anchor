@@ -49,27 +49,24 @@ defmodule Anchor.Check.StructGetterConvention do
 
   @doc false
   def detect_violations(_source_file, ast, _rules, _context) do
-    case ast do
-      {:ok, module_ast_source} ->
-        case extract_module_info(module_ast_source) do
-          {:ok, module_ast} ->
-            struct_fields = find_struct_fields(module_ast)
+    # `ast` is the bare AST handed in by the Framework edge (`Anchor.Check.Source`
+    # unwraps Credo's `{:ok, ast}` once — BUG 1); it is the `defmodule` node
+    # directly, not a wrapped tuple.
+    case extract_module_info(ast) do
+      {:ok, module_ast} ->
+        struct_fields = find_struct_fields(module_ast)
 
-            if struct_fields == [] do
-              # No struct defined, no getters to check
-              []
-            else
-              module_ast
-              |> find_all_functions()
-              |> Enum.filter(&is_getter_candidate?/1)
-              |> Enum.flat_map(&validate_getter(&1, struct_fields))
-            end
-
-          :no_module ->
-            []
+        if struct_fields == [] do
+          # No struct defined, no getters to check
+          []
+        else
+          module_ast
+          |> find_all_functions()
+          |> Enum.filter(&is_getter_candidate?/1)
+          |> Enum.flat_map(&validate_getter(&1, struct_fields))
         end
 
-      _ ->
+      :no_module ->
         []
     end
   end

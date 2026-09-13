@@ -22,7 +22,7 @@ defmodule Anchor.Check.MaxFileLength do
 
   @doc false
   def detect_violations(source_file, ast, rules, _context) do
-    lines = Credo.Code.to_lines(source_file)
+    lines = Source.to_lines(source_file)
     code_line_count = count_code_lines(lines, ast)
 
     Enum.flat_map(rules, fn rule ->
@@ -68,13 +68,6 @@ defmodule Anchor.Check.MaxFileLength do
   end
 
   defp extract_doc_line_ranges(ast) do
-    case ast do
-      {:ok, actual_ast} -> do_extract_doc_line_ranges(actual_ast)
-      _ -> do_extract_doc_line_ranges(ast)
-    end
-  end
-
-  defp do_extract_doc_line_ranges(ast) do
     {_, ranges} =
       Macro.prewalk(ast, [], fn node, acc ->
         case node do

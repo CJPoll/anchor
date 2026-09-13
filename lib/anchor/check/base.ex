@@ -27,7 +27,8 @@ defmodule Anchor.Check.Base do
 
       import Credo.Check
 
-      alias Anchor.DependencyAnalyzer
+      alias Anchor.Check.Source
+      alias Anchor.Domain.DependencyAnalyzer
       alias Anchor.Domain.Violation
       alias Anchor.Managers.Lint
 
@@ -58,7 +59,7 @@ defmodule Anchor.Check.Base do
       # Manager; the caller passes the already-selected rules, exactly as the old
       # `check_file/3` was called.
       def check_file(source_file, rules, params) do
-        ast = Credo.Code.ast(source_file)
+        ast = Source.ast(source_file)
         context = %{modules_map: %{}, params: params}
 
         source_file

@@ -25,7 +25,7 @@ defmodule Anchor.Check.NoTupleMatchInHead do
 
   @doc false
   def detect_violations(source_file, _ast, rules, _context) do
-    source_code = source_file |> Credo.SourceFile.source()
+    source_code = Source.source(source_file)
 
     Enum.flat_map(rules, fn _rule ->
       source_code

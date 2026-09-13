@@ -85,10 +85,10 @@ defmodule Anchor.Check.ModulePatternRestrictionsTest do
       }
 
       source_file = SourceFile.parse(source_code, "lib/my_app/service.ex")
-      ast = Credo.Code.ast(source_file)
+      ast = Anchor.Check.Source.ast(source_file)
 
       # Test that the module doesn't use Ecto.Schema
-      refute Anchor.DependencyAnalyzer.has_use?(ast, Ecto.Schema)
+      refute Anchor.Domain.DependencyAnalyzer.has_use?(ast, Ecto.Schema)
 
       # Since this test directly calls check_file, we need to ensure the rule would match
       # In the real flow, rule_matches_file? would prevent this from being checked
@@ -105,9 +105,9 @@ defmodule Anchor.Check.ModulePatternRestrictionsTest do
       """
 
       source_file = SourceFile.parse(source_code, "lib/my_app/user.ex")
-      ast = Credo.Code.ast(source_file)
+      ast = Anchor.Check.Source.ast(source_file)
 
-      assert Anchor.DependencyAnalyzer.has_use?(ast, Ecto.Schema)
+      assert Anchor.Domain.DependencyAnalyzer.has_use?(ast, Ecto.Schema)
     end
 
     test "rule_matches_file? returns false for modules not using the specified module" do
@@ -118,9 +118,9 @@ defmodule Anchor.Check.ModulePatternRestrictionsTest do
       """
 
       source_file = SourceFile.parse(source_code, "lib/my_app/service.ex")
-      ast = Credo.Code.ast(source_file)
+      ast = Anchor.Check.Source.ast(source_file)
 
-      refute Anchor.DependencyAnalyzer.has_use?(ast, Ecto.Schema)
+      refute Anchor.Domain.DependencyAnalyzer.has_use?(ast, Ecto.Schema)
     end
   end
 end

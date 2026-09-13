@@ -41,8 +41,6 @@ defmodule Anchor.Check.CaseOnBareArg do
     |> Enum.map(&create_violation/1)
   end
 
-  defp find_case_on_bare_args({:ok, ast}), do: find_case_on_bare_args(ast)
-
   defp find_case_on_bare_args(ast) do
     {_, violations} =
       Macro.prewalk(ast, [], fn node, acc ->

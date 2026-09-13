@@ -2,7 +2,7 @@ defmodule Anchor.Integration.LintCompositionTest do
   # Integration coverage for the acquire -> derive-facts -> select composition
   # that T4 moved into `Anchor.Managers.Lint` and that `Anchor.Check.Base`
   # (Framework) drives. It exercises the WHOLE composition with the REAL
-  # `Anchor.DependencyAnalyzer` (fact derivation off a real AST) and the REAL
+  # `Anchor.Domain.DependencyAnalyzer` (fact derivation off a real AST) and the REAL
   # `Anchor.Domain.RuleMatching` / `Anchor.Domain.GlobPattern` selection — only
   # the config SOURCE is injected.
   #
@@ -42,16 +42,19 @@ defmodule Anchor.Integration.LintCompositionTest do
 
   # Module `pattern` selection (matrix row #4) is the pure-predicate case OWNED
   # and proven by T2's `Anchor.Domain.RuleMatchingTest` (it matches
-  # `"App.Schemas.User"` against `"*.Schemas.*"`). Through the REAL composition,
-  # though, it currently cannot select: `Credo.Code.ast/1` returns an
-  # `{:ok, ast}` tuple and `DependencyAnalyzer.extract_module_name/1` does not
-  # unwrap it, so the derived `module_names` fact is `[""]` (documented latent
-  # BUG 1, out of scope for T4). These tests PIN that current end-to-end behavior
-  # — the composition wiring is real; only the fact derivation is bugged — so a
-  # future fix that makes row #4 select end-to-end will visibly flip them.
+  # `"App.Schemas.User"` against `"*.Schemas.*"`). Post-BUG-1 (T5) it now selects
+  # end-to-end through the REAL composition: `Anchor.Check.Source` unwraps the
+  # `{:ok, ast}` tuple and `Anchor.Domain.DependencyAnalyzer.extract_module_names/1`
+  # derives the real name `["App.Schemas.User"]`, which the `pattern` selector
+  # matches. (Before T5 this PINNED the shadowed `[""]` non-selection.)
+  #
+  # NOTE: the rule is a SPARSE map (no `:paths` key), so the separate `paths: []`
+  # selection-shadow bug (from parsed `.anchor.yml` rules, T2/T3, out of scope
+  # here) does not apply — the `pattern` clause is reached and selection is
+  # genuinely observable.
   describe "module `pattern` selection through the real acquire (matrix row #4)" do
     @tag row: 4
-    test "does NOT select today because module-name derivation is shadowed by BUG 1" do
+    test "selects a file whose derived module name matches the pattern (BUG 1 fixed)" do
       source = """
       defmodule App.Schemas.User do
         def x, do: 1
@@ -61,9 +64,10 @@ defmodule Anchor.Integration.LintCompositionTest do
       source_file = SourceFile.parse(source, "lib/user.ex")
       rule = %{type: :must_use_module, pattern: "*.Schemas.*", required_modules: [App.Base]}
 
-      # T2 proves the pure predicate DOES match a correct `module_names` fact;
-      # here the real acquire feeds it `[""]`, so nothing is selected.
-      assert {:ok, [{^source_file, []}]} = run(MustUseModule, source_file, rule)
+      # Selected by module `pattern`; MustUseModule then flags the missing
+      # `App.Base` — one violation proves the file was selected.
+      assert {:ok, [{^source_file, [%Violation{trigger: "App.Base"}]}]} =
+               run(MustUseModule, source_file, rule)
     end
   end
 
