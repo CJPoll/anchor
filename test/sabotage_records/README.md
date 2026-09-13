@@ -48,3 +48,8 @@ before coining a synonym.
 - `no_dependency` — the "no forbidden direct dependency" check: its extracted
   pure detector (`Anchor.Domain.Checks.NoDependency`) and the
   `Anchor.Check.NoDependency` shell that delegates to it.
+- `no_transitive_dependency` — the "no forbidden transitive dependency" check:
+  its extracted pure detector (`Anchor.Domain.Checks.NoTransitiveDependency`,
+  including `find_dependency_path` / `format_dependency_path` /
+  `find_module_reference_line`) and the `Anchor.Check.NoTransitiveDependency`
+  shell that delegates to it (declaring `needs_module_graph?/0`).
