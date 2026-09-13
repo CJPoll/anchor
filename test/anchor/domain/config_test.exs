@@ -259,6 +259,137 @@ defmodule Anchor.Domain.ConfigTest do
     end
   end
 
+  describe "parse_rule/1 — same_context / context_depth (Gap F / DND-149)" do
+    # See docs/gap-f-same-context-test-matrix.md, config.ex -> parse_rule/1 (A1) rows 1-7.
+    # Sabotage record: ../../sabotage_records/config-20260913-dnd_149_a1_same_context_config.md
+
+    # Matrix row 1 — Happy Path: same_context: true with default depth.
+    test "row 1: same_context true surfaces true with default context_depth 2" do
+      rule =
+        Config.parse_rule(%{
+          "type" => "no_direct_dependency",
+          "forbidden_patterns" => ["A.*.Managers.*"],
+          "same_context" => true
+        })
+
+      assert rule.same_context == true
+      assert rule.context_depth == 2
+    end
+
+    # Matrix row 2 — Happy Path: explicit context_depth carried.
+    test "row 2: an explicit context_depth is carried through" do
+      rule =
+        Config.parse_rule(%{
+          "type" => "no_direct_dependency",
+          "forbidden_patterns" => ["A.*.Managers.*"],
+          "same_context" => true,
+          "context_depth" => 3
+        })
+
+      assert rule.same_context == true
+      assert rule.context_depth == 3
+    end
+
+    # Matrix row 3 — Control Flow: keys absent => back-compat defaults.
+    # PINNED CHOICE: keys absent => context_depth defaults to 2 (not nil/absent),
+    # same_context defaults to false. Detection (A2) is unchanged by these keys.
+    test "row 3: keys absent default to same_context false and context_depth 2" do
+      rule =
+        Config.parse_rule(%{
+          "type" => "no_direct_dependency",
+          "forbidden_patterns" => ["A.*.Managers.*"]
+        })
+
+      assert rule.same_context == false
+      assert rule.context_depth == 2
+    end
+
+    # Matrix row 4 — Validation: same_context true with no forbidden_patterns
+    # (nothing to scope) fails, naming the rule.
+    test "row 4: same_context true with no forbidden_patterns is rejected, naming the rule" do
+      result =
+        Config.parse_rule(%{
+          "type" => "no_direct_dependency",
+          "same_context" => true,
+          "forbidden_modules" => ["Repo"]
+        })
+
+      assert {:error, {:invalid_rule, reason}} = result
+      assert reason =~ "no_direct_dependency"
+      assert reason =~ "forbidden_patterns"
+    end
+
+    # Matrix row 5 — Validation: non-boolean same_context is rejected.
+    test "row 5: a non-boolean same_context is rejected" do
+      result =
+        Config.parse_rule(%{
+          "type" => "no_direct_dependency",
+          "forbidden_patterns" => ["A.*.Managers.*"],
+          "same_context" => "yes"
+        })
+
+      assert {:error, {:invalid_rule, reason}} = result
+      assert reason =~ "same_context"
+    end
+
+    # Matrix row 6 — Validation: non-positive context_depth is rejected.
+    test "row 6: a non-positive context_depth is rejected" do
+      result =
+        Config.parse_rule(%{
+          "type" => "no_direct_dependency",
+          "forbidden_patterns" => ["A.*.Managers.*"],
+          "same_context" => true,
+          "context_depth" => 0
+        })
+
+      assert {:error, {:invalid_rule, reason}} = result
+      assert reason =~ "context_depth"
+    end
+
+    # Matrix row 7 — Control Flow: context_depth without same_context is inert
+    # (parses, same_context false, no forbidden_patterns requirement applies).
+    test "row 7: context_depth without same_context parses inertly (same_context false)" do
+      rule =
+        Config.parse_rule(%{
+          "type" => "no_direct_dependency",
+          "context_depth" => 3
+        })
+
+      assert rule.same_context == false
+      assert rule.context_depth == 3
+    end
+  end
+
+  describe "parse_config/1 — invalid rules surface {:error, _} (Gap F / DND-149)" do
+    # Malformed rules must NEVER become a silent green no-op: an invalid rule in
+    # the document makes parse_config/1 surface {:error, _} rather than a
+    # %Config{} with an unusable rule, so the load channel can fail.
+    test "an invalid same_context rule makes parse_config surface an error" do
+      data = %{
+        "rules" => [
+          %{"type" => "no_direct_dependency", "same_context" => true}
+        ]
+      }
+
+      assert {:error, {:invalid_rule, _reason}} = Config.parse_config(data)
+    end
+
+    test "a document of only valid rules still yields a %Config{}" do
+      data = %{
+        "rules" => [
+          %{
+            "type" => "no_direct_dependency",
+            "forbidden_patterns" => ["A.*.Managers.*"],
+            "same_context" => true
+          }
+        ]
+      }
+
+      assert %Config{rules: [rule]} = Config.parse_config(data)
+      assert rule.same_context == true
+    end
+  end
+
   describe "parse_config/1" do
     test "maps every rule in the document through parse_rule/1" do
       data = %{

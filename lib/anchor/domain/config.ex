@@ -46,7 +46,16 @@ defmodule Anchor.Config do
   """
   def parse_config(data) when is_map(data) do
     rules = Map.get(data, "rules", [])
-    %__MODULE__{rules: Enum.map(rules, &parse_rule/1)}
+    parsed = Enum.map(rules, &parse_rule/1)
+
+    # Gap F (DND-149): a rule that fails validation surfaces `{:error, reason}`
+    # from `parse_rule/1`. Propagate the FIRST such error so a malformed rule
+    # fails the load (via `Anchor.Adapters.ConfigFile`) instead of becoming a
+    # silent green no-op. A document of only valid rules yields a `%Config{}`.
+    case Enum.find(parsed, &match?({:error, _}, &1)) do
+      nil -> %__MODULE__{rules: parsed}
+      {:error, _reason} = error -> error
+    end
   end
 
   def parse_config(_data), do: %__MODULE__{}
@@ -54,8 +63,19 @@ defmodule Anchor.Config do
   @doc """
   Parses a single YAML rule map (string keys) into the internal rule map
   (atom keys).
+
+  Returns the atom-keyed rule map, or `{:error, {:invalid_rule, reason}}` when
+  the rule fails validation of the Gap F (`same_context` / `context_depth`)
+  keys — surfaced up through `parse_config/1` and the load adapter so a
+  malformed rule never silently becomes a green no-op.
   """
   def parse_rule(rule) when is_map(rule) do
+    with :ok <- validate_new_keys(rule) do
+      build_rule(rule)
+    end
+  end
+
+  defp build_rule(rule) do
     %{
       type: rule["type"] |> to_string() |> String.to_atom(),
       # Gap D (DND-140): surface an ABSENT `paths` as `nil`, not `[]`. An empty
@@ -83,9 +103,55 @@ defmodule Anchor.Config do
       # (only modules in call position, honoring ADR-001's Domain-router-holds-
       # atoms carve-out). Coerced from a bare YAML token; an unknown token falls
       # back to `:reference` WITHOUT raising.
-      match: parse_match(rule["match"])
+      match: parse_match(rule["match"]),
+      # Gap F (DND-149): scope a `no_direct_dependency` `forbidden_patterns`
+      # match to the checked file's own context. `same_context` (default
+      # `false`) turns scoping on; `context_depth` (default `2`) is how many
+      # leading namespace segments define a context. These keys are ADDITIVE —
+      # detection (A2) is unchanged here, so a rule lacking them behaves exactly
+      # as today. Validation of the keys happens in `validate_new_keys/1` before
+      # this map is built.
+      same_context: Map.get(rule, "same_context", false),
+      context_depth: Map.get(rule, "context_depth", 2)
     }
   end
+
+  # Gap F (DND-149): validate the two new keys BEFORE building the rule map, so a
+  # malformed rule surfaces `{:error, {:invalid_rule, reason}}` rather than a map
+  # that would be a silent no-op. Order: type of `same_context`, then
+  # positivity of `context_depth`, then the "same_context true needs something to
+  # scope" cross-check. An absent `same_context`/`context_depth` is valid and
+  # defaults applied in `build_rule/1`.
+  defp validate_new_keys(rule) do
+    same_context = Map.get(rule, "same_context")
+    context_depth = Map.get(rule, "context_depth")
+    forbidden_patterns = rule["forbidden_patterns"] || []
+
+    cond do
+      not is_nil(same_context) and not is_boolean(same_context) ->
+        {:error,
+         {:invalid_rule,
+          "same_context must be a boolean, got: #{inspect(same_context)} " <>
+            "(rule type: #{rule_type(rule)})"}}
+
+      not is_nil(context_depth) and not (is_integer(context_depth) and context_depth > 0) ->
+        {:error,
+         {:invalid_rule,
+          "context_depth must be a positive integer, got: #{inspect(context_depth)} " <>
+            "(rule type: #{rule_type(rule)})"}}
+
+      same_context == true and forbidden_patterns == [] ->
+        {:error,
+         {:invalid_rule,
+          "same_context: true requires forbidden_patterns to scope (nothing to scope) " <>
+            "(rule type: #{rule_type(rule)})"}}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp rule_type(rule), do: rule["type"] || "unknown"
 
   defp parse_modules(nil), do: []
 
