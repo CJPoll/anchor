@@ -28,6 +28,17 @@ defmodule Anchor.Domain.Checks.NoDependency do
   Erlang/OTP atom (`:telemetry`); the latter matches a bare-atom remote call and
   is located by its call-callee node (never `Module.split/1`, which raises on a
   non-Elixir atom).
+
+  ## Same-context scoping (Gap F)
+
+  A rule may set `same_context: true` to scope its `forbidden_patterns` matches
+  to the checked file's own context (its first `context_depth` namespace
+  segments) — reporting a pattern match only when the dependency shares that
+  context. Exact `forbidden_modules` matches are never scoped, a
+  fewer-than-`context_depth` or `nil` context is the deny-side (nothing
+  reported), and `same_context: false`/absent reports every match exactly as
+  before. `detect_violations/3` carries the full semantics; the `/2` back-compat
+  entry point passes `file_context: nil` (no scoping).
   """
 
   alias Anchor.Domain.DependencyAnalyzer

@@ -133,3 +133,61 @@ derives `file_context` from `context.module_names` and delegates to the domain
   `main`; a sabotage record (ADR 003) for each new detection branch:
   same-context match, cross-context skip, exact-module-not-scoped, and the
   fewer-than-depth edge.
+
+---
+
+## Reconciliation notes (A3, DND-151) — matrix ⇄ shipped behavior
+
+The matrix above is the design as written before implementation. A1 (DND-149)
+and A2 (DND-150) shipped and merged consistent with it. Two clarifications
+reconcile the matrix's *illustrative* wording with the *literal* shipped
+behavior; the design rows are unchanged (clarify, do not rewrite):
+
+1. **`forbidden_patterns` are matched against the `Elixir.`-prefixed
+   fully-qualified name, so real patterns lead with `*`.** The A2 rows above
+   write the pattern as `"WaltUi.*.Managers.*"` for readability. That start-
+   anchored form is **illustrative, not literal**: because a pattern is matched
+   against `Elixir.WaltUi.Search.Managers.Index` (not `WaltUi.Search…`), a
+   pattern beginning `WaltUi.` never matches. The shipped tests use the repo's
+   leading-`*` convention `"*.Managers.*"`, matching `forbidden_patterns`
+   generally (see README → "Forbidding by pattern"). The `same_context` /
+   `context_depth` comparison is a **separate** mechanism: it compares the plain
+   namespace segments (`Elixir.` stripped) of the file's and the dependency's
+   module names, so `["WaltUi","Contacts"]` there is literal.
+
+2. **Row 3 (A1) — `context_depth` when the key is absent — pinned to `2`.** The
+   row offered a choice ("`context_depth` absent/nil — pick one and pin it"). A1
+   pinned **defaults applied on the rule map**: an absent `same_context` becomes
+   `false` and an absent `context_depth` becomes `2` (not nil/absent). Rationale:
+   predictable, matches the design default table, and additive keys cannot affect
+   detection unless `same_context: true`. Detection (A2) reads the same defaults
+   via `Map.get(rule, :context_depth, 2)`, so a rule map that predates the keys
+   still scopes correctly.
+
+3. **Per-rule depth truncation (A2 implementation choice).** The check
+   (`Anchor.Check.NoDependency`) passes the file's full leading namespace
+   segments; the **domain** (`Anchor.Domain.Checks.NoDependency`) truncates both
+   the file's and each dependency's segments to *that rule's* `context_depth`.
+   This is equivalent to the matrix's "first `context_depth` segments" wording
+   for a single depth, and strictly more correct when two rules on the same file
+   use different depths.
+
+## A3 dogfood decision — no `same_context` rule added to anchor's own `.anchor.yml`
+
+**Decision: declined, with rationale (an accepted acceptance outcome per the
+ticket).** Anchor's source is a **single context** organized by *bucket*: every
+module is `Anchor.<Bucket>.…` (`Anchor.Domain.*`, `Anchor.Adapters.*`,
+`Anchor.Managers.*`, `Anchor.Check.*`) under one `Anchor` top namespace. There is
+no `Anchor.<Subdomain>` axis, and therefore no "adapter must not call a Manager
+in its **own** subdomain but may call **another** subdomain's Manager" hazard —
+the exact hazard `same_context` exists to express.
+
+Moreover, anchor's dogfooded forbiddances are deliberately **cross-bucket** (e.g.
+Rule 1: Domain files must not reference `*.Credo.*`). `same_context` scopes a
+`forbidden_patterns` match to the *same* context, so adding `same_context: true`
+to Rule 1 (depth 2, context `["Anchor","Domain"]`) would make `*.Credo.*` never
+fire — Credo modules (`Elixir.Credo.*`, context `["Credo","…"]`) are never
+same-context as an `Anchor.Domain` file — **silently disabling a real check**.
+`same_context` is thus not usefully expressible on anchor's own tree, and adding
+one would weaken enforcement rather than strengthen it. Anchor's `.anchor.yml` is
+left unchanged; `mix credo --strict` stays green.
