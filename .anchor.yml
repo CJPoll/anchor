@@ -30,9 +30,10 @@ rules:
   # forbidden modules by EXACT atom only, so they had to be enumerated" — is now
   # closed by Gap A (`forbidden_patterns`, DND-142). The five enumerated
   # `Credo.*` modules are replaced by the single dot-bounded module-name glob
-  # `*.Adapters.*`-style pattern `*.Credo.*`, which forbids EVERY Credo module a
-  # Domain file could reference (not just the five that were spelled out),
-  # tightening the self-check. The pattern is matched against the fully-qualified
+  # `*.Credo.*`, which forbids EVERY Credo module a Domain file could reference
+  # (not just the five that were spelled out), tightening the self-check. `*`
+  # crosses dots, and the `.` is literal, so it matches a `.Credo.` segment. The
+  # pattern is matched against the fully-qualified
   # name (`Elixir.Credo.Code`, …), so it leads with `*`. Domain has zero *code*
   # references to Credo (only moduledoc/comment mentions, which are not in the
   # AST the analyzer walks), so `mix credo --strict` stays green.

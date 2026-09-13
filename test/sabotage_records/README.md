@@ -34,8 +34,9 @@ failure string down here.
 
 `<domain>-YYYYMMDD-<sanitized-branch>.md` — three parts, two hyphens, no part
 contains a hyphen. `<domain>` is the check or module under test with the
-`Anchor.Check.` / `Anchor.` / `Anchor.Domain.` prefix dropped and lowercased to
-`snake_case`. `YYYYMMDD` is the UTC date the run was performed.
+`Anchor.Check.` / `Anchor.` / `Anchor.Domain.` / `Anchor.Managers.` prefix
+dropped and lowercased to `snake_case`. `YYYYMMDD` is the UTC date the run was
+performed.
 `<sanitized-branch>` is the branch with every non-`[A-Za-z0-9]` run replaced by
 `_`.
 
@@ -48,6 +49,10 @@ before coining a synonym.
   (`Anchor.Config`), the pure candidate-path computation
   (`Anchor.Domain.ConfigPaths`), and the file adapter
   (`Anchor.Adapters.ConfigFile`). All three share this domain word.
+- `lint` — `Anchor.Managers.Lint`, the pipeline-composition Manager (the public
+  lint entry that composes config loading, AST acquisition, fact derivation, rule
+  selection, and detection). Used for end-to-end/integration runs that mutate the
+  Manager wiring rather than a single check's Domain detection.
 - `glob_pattern` — `Anchor.Domain.GlobPattern` (glob / module-name pattern
   matching for rule selection).
 - `rule_matching` — `Anchor.Domain.RuleMatching` (pure rule-selection predicate).
