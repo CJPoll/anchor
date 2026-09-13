@@ -199,6 +199,57 @@ two forms:
   recursive: true
 ```
 
+#### Forbidding by pattern (`forbidden_patterns`)
+
+Alongside the exact `forbidden_modules` list, `forbidden_patterns` forbids any
+referenced module whose name matches a **module-name glob**. A `*` in the glob
+crosses dots (module separators), so `*.Adapters.*` matches
+`MyApp.Contacts.Adapters.Repository`. The `.` between segments is literal, so the
+pattern is **dot-bounded**: `*.Adapters.*` matches a `.Adapters.` segment but
+does **not** match `Foo.AdaptersHelper` (there is no dot after `Adapters`).
+`forbidden_modules` and `forbidden_patterns` may be combined on one rule; a
+module matched by both is reported once.
+
+A pattern is matched against the module's **fully-qualified** name, which
+includes the `Elixir.` prefix for Elixir modules (e.g.
+`Elixir.MyApp.Contacts.Adapters.Repository`). Because `*` crosses dots, lead a
+pattern with `*` (as every example here does) to match from the front — a
+start-anchored pattern such as `MyApp.Adapters.*` would never match, since the
+name begins with `Elixir.`. Write `*.Adapters.*` (or `*MyApp.Adapters.*`)
+instead.
+
+```yaml
+# Forbid any adapter module, named or not, plus one exact module.
+- type: no_direct_dependency
+  pattern: "*.Domain.*"        # applies to Domain modules
+  forbidden_patterns:
+    - "*.Adapters.*"           # any module with an .Adapters. segment
+  forbidden_modules:
+    - MyApp.Repo
+```
+
+#### Reference vs. call matching (`match`)
+
+`match` selects which dependencies the rule inspects:
+
+- `match: reference` (the **default**) flags a forbidden module referenced in
+  **any** position — a call, a value held in a map or keyword list, a typespec.
+- `match: call` flags a forbidden module only when it appears in **call
+  position** (`Foo.Adapters.L.enrich(x)` or `apply(Foo.Adapters.L, :enrich, [x])`).
+  A module merely **held as an atom** — e.g. a Domain router keeping an adapter
+  module as a map value it never itself calls — passes under `call`. This honors
+  the "Domain-router-holds-atoms" carve-out: holding an adapter atom is allowed,
+  calling it is not.
+
+```yaml
+# A Domain router may HOLD adapter atoms (a lookup table) but must never CALL them.
+- type: no_direct_dependency
+  pattern: "*.Domain.Router"
+  forbidden_patterns:
+    - "*.Adapters.*"
+  match: call                  # `%{yaml: Foo.Adapters.Loader}` passes; `Foo.Adapters.Loader.run()` fails
+```
+
 ### `no_transitive_dependency`
 
 Prevents transitive (indirect) dependencies on forbidden modules. This check analyzes the entire dependency graph to ensure that a module doesn't depend on forbidden modules through intermediary modules.
@@ -213,6 +264,19 @@ Prevents transitive (indirect) dependencies on forbidden modules. This check ana
 Example violation:
 - `MyApp.Web.UserController` → `MyApp.Core.Users` → `MyApp.Repo` ❌
 - The Web layer indirectly depends on Repo through the Core layer
+
+Like `no_direct_dependency`, this check also accepts `forbidden_patterns` —
+module-name globs (dot-bounded `*` crosses dots) matched against every
+transitively-reachable module, in addition to the exact `forbidden_modules`
+list. (The `match` mode is specific to `no_direct_dependency`; the transitive
+graph is always reference-based.)
+
+```yaml
+- type: no_transitive_dependency
+  pattern: "MyApp.Web.*"
+  forbidden_patterns:
+    - "*.Adapters.*"           # Web must not reach any adapter, even indirectly
+```
 
 ### `must_use_module`
 

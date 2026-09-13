@@ -239,4 +239,86 @@ defmodule Anchor.Domain.Checks.NoTransitiveDependencyTest do
                )
     end
   end
+
+  describe "detect_violations/3 — forbidden_patterns (Gap A / DND-142)" do
+    # See docs/phase-d-gap-test-matrix.md, no_transitive_dependency.ex ::
+    # detect_violations/3 rows 1-4.
+    # Sabotage record:
+    #   ../../../sabotage_records/no_dependency-20260913-dnd_142_gap_a_forbidden_patterns_match.md
+
+    defp pattern_rule(patterns) do
+      %{type: :no_transitive_dependency, forbidden_modules: [], forbidden_patterns: patterns}
+    end
+
+    # Matrix row 1 — Happy Path: a pattern flags a transitively-reached adapter.
+    test "forbidden_patterns flags a transitively-reached adapter" do
+      modules_map = %{
+        A => %{direct_dependencies: [B]},
+        B => %{direct_dependencies: [X.Adapters.Y]}
+      }
+
+      assert [%Violation{} = violation] =
+               NoTransitiveDependency.detect_violations(
+                 a_refs_b(),
+                 [pattern_rule(["*.Adapters.*"])],
+                 modules_map
+               )
+
+      assert violation.message =~ "transitive dependency on forbidden module X.Adapters.Y"
+      assert violation.message =~ "dependency chain: A -> B -> X.Adapters.Y"
+      assert violation.trigger == "X.Adapters.Y"
+      assert violation.line == 2
+    end
+
+    # Matrix row 2 — Positive Control: a reachable set with no pattern match passes.
+    test "a reachable set with no pattern match passes" do
+      modules_map = %{
+        A => %{direct_dependencies: [B]},
+        B => %{direct_dependencies: [C]}
+      }
+
+      assert NoTransitiveDependency.detect_violations(
+               a_refs_b(),
+               [pattern_rule(["*.Adapters.*"])],
+               modules_map
+             ) == []
+    end
+
+    # Matrix row 3 — Happy Path: forbidden_modules and forbidden_patterns both
+    # fire transitively.
+    test "forbidden_modules and forbidden_patterns both fire transitively" do
+      modules_map = %{
+        A => %{direct_dependencies: [B]},
+        B => %{direct_dependencies: [MyApp.Repo, Z.Adapters.W]}
+      }
+
+      rule = %{
+        type: :no_transitive_dependency,
+        forbidden_modules: [MyApp.Repo],
+        forbidden_patterns: ["*.Adapters.*"]
+      }
+
+      violations =
+        NoTransitiveDependency.detect_violations(a_refs_b(), [rule], modules_map)
+
+      assert length(violations) == 2
+
+      triggers = violations |> Enum.map(& &1.trigger) |> MapSet.new()
+      assert triggers == MapSet.new(["MyApp.Repo", "Z.Adapters.W"])
+    end
+
+    # Matrix row 4 — Validation: the pattern is dot-bounded transitively.
+    test "the pattern is dot-bounded transitively — AdaptersHelper does not match" do
+      modules_map = %{
+        A => %{direct_dependencies: [B]},
+        B => %{direct_dependencies: [Foo.AdaptersHelper]}
+      }
+
+      assert NoTransitiveDependency.detect_violations(
+               a_refs_b(),
+               [pattern_rule(["*.Adapters.*"])],
+               modules_map
+             ) == []
+    end
+  end
 end

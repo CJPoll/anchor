@@ -355,6 +355,64 @@ defmodule Anchor.Domain.DependencyAnalyzerTest do
     end
   end
 
+  describe "extract_call_dependencies/1 — call-position only (Gap A' / DND-142)" do
+    # See docs/phase-d-gap-test-matrix.md, dependency_analyzer.ex ::
+    # extract_call_dependencies/1 rows 1-7.
+    # Sabotage record: ../sabotage_records/no_dependency-20260913-dnd_142_gap_a_forbidden_patterns_match.md
+
+    # Matrix row 1 — Happy Path
+    test "records an aliased remote call" do
+      assert Foo.Bar in DependencyAnalyzer.extract_call_dependencies(ast("Foo.Bar.baz(x)"))
+    end
+
+    # Matrix row 2 — Happy Path
+    test "records apply/3 with a literal module" do
+      assert Foo.Bar in DependencyAnalyzer.extract_call_dependencies(
+               ast("apply(Foo.Bar, :baz, [x])")
+             )
+    end
+
+    # Matrix row 3 — Validation (router carve-out): an inert alias held as a map
+    # value is NOT a call and must not be recorded.
+    test "does not record an inert alias held as a map value" do
+      refute Foo.Adapters.Loader in DependencyAnalyzer.extract_call_dependencies(
+               ast("%{yaml: Foo.Adapters.Loader}")
+             )
+    end
+
+    # Matrix row 4 — Validation: a typespec body is skipped (its `Foo.Bar.t()`
+    # parses as a call but is macro-time, not a runtime call).
+    test "does not record an alias inside a typespec" do
+      refute Foo.Bar in DependencyAnalyzer.extract_call_dependencies(
+               ast("@spec f(Foo.Bar.t()) :: :ok")
+             )
+    end
+
+    # Matrix row 5 — Happy Path (B ∩ A'): a bare-atom remote call in call position.
+    test "records a bare-atom remote call" do
+      assert :telemetry in DependencyAnalyzer.extract_call_dependencies(
+               ast(":telemetry.execute(a, b, c)")
+             )
+    end
+
+    # Matrix row 6 — Positive Control: a plain alias reference (no call) is NOT recorded.
+    test "does not record a plain alias reference" do
+      refute Foo.Bar in DependencyAnalyzer.extract_call_dependencies(ast("x = Foo.Bar"))
+    end
+
+    # Matrix row 7 — Control Flow Decisioning: `__MODULE__.Sub.f()` resolves to
+    # the enclosing module's submodule.
+    test "resolves and records __MODULE__.Sub.f() as Enclosing.Sub" do
+      src = """
+      defmodule Enclosing do
+        def f, do: __MODULE__.Sub.f()
+      end
+      """
+
+      assert Enclosing.Sub in DependencyAnalyzer.extract_call_dependencies(ast(src))
+    end
+  end
+
   describe "extract_uses/1" do
     # Row 1
     test "extracts use declarations" do

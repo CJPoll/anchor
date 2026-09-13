@@ -73,6 +73,34 @@ defmodule Anchor.Domain.DependencyAnalyzer do
   end
 
   @doc """
+  Returns the sorted, de-duplicated list of modules `ast` references in **call
+  position** — Gap A' (DND-142).
+
+  A module is recorded only when it is the callee of a remote call:
+
+    * an aliased or bare-atom remote call `{{:., _, [mod, fun]}, _, args}`
+      (`Foo.Bar.baz(x)`, `:telemetry.execute(...)`), or
+    * `apply(mod, fun, args)` with a **literal** `mod` (an alias or a bare atom;
+      a variable `mod` is dynamic dispatch, outside the static boundary and
+      records nothing).
+
+  A module that appears only as an **inert** reference — a value in a map/keyword
+  list, a plain alias reference, or inside a typespec body — is NOT recorded.
+  This is the load-bearing difference from `extract_direct_dependencies/1`
+  (which records those references): it honors ADR-001's "Domain-router-holds-
+  atoms" carve-out, where a Domain module may hold an adapter module as an atom
+  value so long as it never calls it. `__MODULE__.Sub.f()` resolves to the
+  enclosing module's submodule (`Enclosing.Sub`), exactly as in the direct walk.
+  """
+  @spec extract_call_dependencies(Macro.t()) :: [module()]
+  def extract_call_dependencies(ast) do
+    ast
+    |> collect_call_deps(@initial_scope, MapSet.new())
+    |> MapSet.to_list()
+    |> Enum.sort()
+  end
+
+  @doc """
   Returns the sorted, de-duplicated list of modules `ast` `use`s.
   """
   @spec extract_uses(Macro.t()) :: [module()]
@@ -268,6 +296,92 @@ defmodule Anchor.Domain.DependencyAnalyzer do
   end
 
   defp resolvable_self_reference?(_parts, _scope), do: false
+
+  # ---- call-position dependency collection (Gap A', pure) ----
+
+  # Type-attribute bodies are macro-time type expressions, not runtime calls.
+  # `@spec f(Foo.Bar.t()) :: :ok` parses `Foo.Bar.t()` as a call node, so the
+  # whole attribute is skipped to keep a typespec's alias out of the call set.
+  @type_attributes [:spec, :type, :typep, :opaque, :callback, :macrocallback]
+
+  # A `defmodule` updates the enclosing scope (for `__MODULE__` resolution) and
+  # descends into the body only — a module is never its own dependency.
+  defp collect_call_deps({:defmodule, _meta, [name_ast, body_kw]}, scope, acc) do
+    enclosing =
+      case literal_alias_parts(name_ast) do
+        {:ok, parts} -> (scope.enclosing || []) ++ parts
+        :error -> scope.enclosing
+      end
+
+    collect_call_deps(do_block(body_kw), %{scope | enclosing: enclosing}, acc)
+  end
+
+  # Inside a `quote`, `__MODULE__` resolution is suppressed (opaque).
+  defp collect_call_deps({:quote, _meta, args}, scope, acc) do
+    collect_call_children(args, %{scope | in_quote: true}, acc)
+  end
+
+  # A typespec/type attribute — skip its body entirely (no call recorded).
+  defp collect_call_deps({:@, _meta, [{name, _ameta, _args}]}, _scope, acc)
+       when name in @type_attributes do
+    acc
+  end
+
+  # An aliased remote call `Foo.Bar.baz(...)` (or `__MODULE__.Sub.f(...)`): record
+  # the resolved callee module, then descend into the ARGUMENTS only (the callee
+  # alias node itself is already accounted for and carries no further call).
+  defp collect_call_deps({{:., _dmeta, [{:__aliases__, _ameta, parts}, _fun]}, _meta, args}, scope, acc)
+       when is_list(parts) do
+    acc = record_alias(parts, scope, acc)
+    collect_call_arg_list(args, scope, acc)
+  end
+
+  # A bare-atom remote call `:telemetry.execute(...)`: record the raw atom callee.
+  defp collect_call_deps({{:., _dmeta, [mod, _fun]}, _meta, args}, scope, acc)
+       when is_atom(mod) do
+    collect_call_arg_list(args, scope, MapSet.put(acc, mod))
+  end
+
+  # `apply(mod, fun, args)` with a LITERAL module — record `mod`, then descend
+  # into all three arguments (a non-literal `mod` records nothing; dynamic
+  # dispatch is outside the static-analysis boundary).
+  defp collect_call_deps({:apply, _meta, [mod, _fun, _args] = call_args}, scope, acc) do
+    acc = record_apply_mod(mod, scope, acc)
+    collect_call_children(call_args, scope, acc)
+  end
+
+  # Generic 3-tuple: recurse into the callee form and the argument list, but never
+  # into the metadata keyword list. An inert `{:__aliases__, _, parts}` reference
+  # reaches here and is NOT recorded (only call callees are).
+  defp collect_call_deps({form, _meta, args}, scope, acc) do
+    acc = collect_call_deps(form, scope, acc)
+    collect_call_arg_list(args, scope, acc)
+  end
+
+  defp collect_call_deps({left, right}, scope, acc) do
+    acc = collect_call_deps(left, scope, acc)
+    collect_call_deps(right, scope, acc)
+  end
+
+  defp collect_call_deps(list, scope, acc) when is_list(list),
+    do: collect_call_children(list, scope, acc)
+
+  defp collect_call_deps(_other, _scope, acc), do: acc
+
+  defp collect_call_children(list, scope, acc) when is_list(list) do
+    Enum.reduce(list, acc, fn child, acc -> collect_call_deps(child, scope, acc) end)
+  end
+
+  defp collect_call_arg_list(args, scope, acc) when is_list(args),
+    do: collect_call_children(args, scope, acc)
+
+  defp collect_call_arg_list(_args, _scope, acc), do: acc
+
+  defp record_apply_mod({:__aliases__, _meta, parts}, scope, acc) when is_list(parts),
+    do: record_alias(parts, scope, acc)
+
+  defp record_apply_mod(mod, _scope, acc) when is_atom(mod), do: MapSet.put(acc, mod)
+  defp record_apply_mod(_mod, _scope, acc), do: acc
 
   # Dependencies found in one module's own body: scoped to `enclosing_parts` for
   # `__MODULE__` resolution, and stopping at nested `defmodule` boundaries so a

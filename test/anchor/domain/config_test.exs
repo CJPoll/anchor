@@ -194,6 +194,71 @@ defmodule Anchor.Domain.ConfigTest do
     end
   end
 
+  describe "parse_rule/1 — forbidden_patterns and match (Gap A + A' / DND-142)" do
+    # See docs/phase-d-gap-test-matrix.md, config.ex :: parse_rule/1 rows 1,2,5,6,7,8,12.
+    # Sabotage record: ../../sabotage_records/no_dependency-20260913-dnd_142_gap_a_forbidden_patterns_match.md
+
+    # Matrix row 1 — Happy Path (A): forbidden_patterns surfaced as a list.
+    test "surfaces forbidden_patterns as a list" do
+      rule =
+        Config.parse_rule(%{
+          "type" => "no_direct_dependency",
+          "forbidden_patterns" => ["*.Adapters.*"]
+        })
+
+      assert rule.forbidden_patterns == ["*.Adapters.*"]
+    end
+
+    # Matrix row 2 — Validation (A): absent forbidden_patterns defaults to [].
+    test "an absent forbidden_patterns defaults to an empty list" do
+      rule = Config.parse_rule(%{"type" => "no_direct_dependency"})
+
+      assert rule.forbidden_patterns == []
+    end
+
+    # Matrix row 5 — Validation (A'): absent match defaults to :reference.
+    test "an absent match defaults to :reference" do
+      rule = Config.parse_rule(%{"type" => "no_direct_dependency"})
+
+      assert rule.match == :reference
+    end
+
+    # Matrix row 6 — Happy Path (A'): "call" coerced to :call.
+    test "match: \"call\" is coerced to :call" do
+      rule = Config.parse_rule(%{"match" => "call"})
+
+      assert rule.match == :call
+    end
+
+    # Matrix row 7 — Validation (A'): "reference" coerced to :reference.
+    test "match: \"reference\" is coerced to :reference" do
+      rule = Config.parse_rule(%{"match" => "reference"})
+
+      assert rule.match == :reference
+    end
+
+    # Matrix row 8 — Error Handling (A'): an unknown token falls back to
+    # :reference and does NOT raise.
+    test "an unknown match token falls back to :reference without raising" do
+      rule = Config.parse_rule(%{"match" => "sideways"})
+
+      assert rule.match == :reference
+    end
+
+    # Matrix row 12 — Control Flow Decisioning (A): forbidden_patterns and
+    # forbidden_modules coexist on one rule.
+    test "forbidden_patterns and forbidden_modules coexist on one rule" do
+      rule =
+        Config.parse_rule(%{
+          "forbidden_modules" => ["MyApp.Repo"],
+          "forbidden_patterns" => ["*.Adapters.*"]
+        })
+
+      assert rule.forbidden_modules == [MyApp.Repo]
+      assert rule.forbidden_patterns == ["*.Adapters.*"]
+    end
+  end
+
   describe "parse_config/1" do
     test "maps every rule in the document through parse_rule/1" do
       data = %{
