@@ -67,6 +67,16 @@ defmodule Anchor.Domain.Checks.MaxFileLengthTest do
       assert detect(module_with_defs(10), %{:type => :max_file_length, "max_lines" => 10}) == []
     end
 
+    test "honors a quoted (string) :max_lines value" do
+      # T3 (`Anchor.Config.parse_rule/1`) passes `rule["max_lines"]` through
+      # verbatim, so a quoted YAML value (`max_lines: "10"`) surfaces as a binary
+      # under the atom key. 10 defs → 12 code lines, over the coerced 10.
+      assert [%Violation{message: message}] =
+               detect(module_with_defs(10), %{type: :max_file_length, max_lines: "10"})
+
+      assert message =~ "(maximum allowed: 10)"
+    end
+
     test "counts code lines only, excluding blanks, comments and doc bodies" do
       text = """
       defmodule MyModule do

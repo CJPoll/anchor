@@ -31,6 +31,7 @@ exercises the pure detector directly.
 | F | **Report line 2 instead of 1** (`line: 1` → `line: 2`) | 2 (shell #1 + domain flag row) | domain: `code: assert violation.line == 1` `left: 2` `right: 1`; shell #1: `code: assert issue.line_no == 1` `left: 2` `right: 1` |
 | G | **Count full-line `#` comments** (`String.starts_with?(trimmed, "#") -> false` → `... -> true`) | 3 (shell #6,#9 + domain count) | shell #6: `code: assert [] == check(text, %{type: :max_file_length, max_lines: 3})` `left: []` `right: [%Credo.Issue{... message: "File contains 33 lines of code (maximum allowed: 3)...", ...}]`; shell #9 message: `left: "File contains 37 lines of code (maximum allowed: 5)..."` `right: "File contains 12 lines of code (maximum allowed: 5)"` |
 | H | **Disable @moduledoc/@doc/@typedoc range collection** (`when doc_type in [:moduledoc, :doc, :typedoc] ->` → `when doc_type in [:none_such] ->`, so heredoc bodies are counted as code) | 2 (shell #7 + domain count) | shell #7: `code: assert [] == check(text, %{type: :max_file_length, max_lines: 10})` `left: []` `right: [%Credo.Issue{... message: "File contains 15 lines of code (maximum allowed: 10)...", ...}]` |
+| I | **Ignore a quoted (string) `:max_lines`** (`is_binary(max) -> String.to_integer(max)` → `is_binary(max) -> @default_max_lines + 0 * String.length(max)`; the `* String.length(max)` keeps `max` bound so the suite still compiles under `--warnings-as-errors`) | 1 (domain quoted-string row) | domain `honors a quoted (string) :max_lines value`: `code: assert [%Violation{message: message}] = detect(module_with_defs(10), %{type: :max_file_length, max_lines: "10"})` `left: [%Anchor.Domain.Violation{message: message}]` `right: []` |
 
 ## What each mutation proves
 
@@ -50,6 +51,10 @@ exercises the pure detector directly.
   of code`), which is why the message carries the code-line count per ADR 002.
 - **E / F** protect the two remaining violation fields — `trigger` (the filename)
   and `line` (always 1).
+- **I** protects the `is_binary` coercion branch of `get_max_lines/1`: T3 passes
+  `rule["max_lines"]` through verbatim, so a *quoted* YAML value surfaces as a
+  binary under the atom key, and the check must coerce it. (Added after code
+  review flagged this branch as unprotected — see below.)
 
 ## Trap encountered (ADR 002 catalogue)
 
@@ -64,11 +69,18 @@ runs and the trigger assertions are what fail.
 
 ## Measured zeros
 
-None. Every mutation reddened at least one row. Each asserted property of the
-9-row matrix — over/at/under both the 400 default and a configured maximum, the
-three exclusion classes (blank, comment, doc-body) plus `@doc false`, the
-code-line count carried in the message, and the `line`/`trigger` fields — is
-protected by at least one mutation above.
+None **after** mutation I was added. Each asserted property of the 9-row matrix
+— over/at/under both the 400 default and a configured maximum, the three
+exclusion classes (blank, comment, doc-body) plus `@doc false`, the code-line
+count carried in the message, and the `line`/`trigger` fields — plus the
+quoted-string `:max_lines` coercion is protected by at least one mutation above.
+
+The original run (mutations A–H) had a genuine measured zero that code review
+caught: the `is_binary(max) -> String.to_integer(max)` clause of
+`get_max_lines/1` was reachable (a quoted YAML `max_lines: "10"` surfaces as a
+binary) but no test exercised a string *value*, so deleting the clause reddened
+nothing. Mutation **I** and the domain `honors a quoted (string) :max_lines
+value` test close that gap; this note is kept as the honest record of it.
 
 ## Note on the inherited doc-range approximation
 
