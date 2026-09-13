@@ -29,17 +29,25 @@
           {Credo.Check.Consistency.SpaceAroundOperators, []},
           {Credo.Check.Consistency.SpaceInParentheses, []},
           {Credo.Check.Consistency.TabsOrSpaces, []},
-          
+
           # Anchor checks - enable these to enforce architectural constraints
           {Anchor.Check.NoDependency, []},
+          {Anchor.Check.NoTransitiveDependency, []},
           {Anchor.Check.MustUseModule, []},
           {Anchor.Check.ModulePatternRestrictions, []},
-          
+          {Anchor.Check.SingleControlFlow, []},
+          {Anchor.Check.NoTupleMatchInHead, []},
+          {Anchor.Check.CaseOnBareArg, []},
+          {Anchor.Check.NoComparisonInIf, []},
+          {Anchor.Check.NoDiscardingArrowInWith, []},
+          {Anchor.Check.AlphabetizedFunctions, []},
+          {Anchor.Check.MaxFileLength, []},
+          {Anchor.Check.StructGetterConvention, []},
+
           # More built-in checks...
           {Credo.Check.Design.AliasUsage, []},
           {Credo.Check.Design.DuplicatedCode, []},
           {Credo.Check.Design.SkipTestWithoutComment, []},
-          
           {Credo.Check.Readability.AliasOrder, []},
           {Credo.Check.Readability.FunctionNames, []},
           {Credo.Check.Readability.LargeNumbers, []},
@@ -61,7 +69,6 @@
           {Credo.Check.Readability.UnnecessaryAliasExpansion, []},
           {Credo.Check.Readability.VariableNames, []},
           {Credo.Check.Readability.WithSingleClause, []},
-          
           {Credo.Check.Refactor.ABCSize, []},
           {Credo.Check.Refactor.AppendSingleItem, []},
           {Credo.Check.Refactor.DoubleBooleanNegation, []},
@@ -77,7 +84,6 @@
           {Credo.Check.Refactor.FilterFilter, []},
           {Credo.Check.Refactor.RejectReject, []},
           {Credo.Check.Refactor.RedundantWithClauseResult, []},
-          
           {Credo.Check.Warning.ApplicationConfigInModuleAttribute, []},
           {Credo.Check.Warning.BoolOperationOnSameValues, []},
           {Credo.Check.Warning.Dbg, []},

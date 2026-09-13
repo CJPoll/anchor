@@ -15,6 +15,11 @@ defmodule Anchor do
   - `Anchor.Check.SingleControlFlow` - Ensures function clauses contain at most one control-flow structure
   - `Anchor.Check.NoTupleMatchInHead` - Prevents pattern matching on :ok/:error tuples in function heads
   - `Anchor.Check.CaseOnBareArg` - Discourages case statements on bare function arguments
+  - `Anchor.Check.NoComparisonInIf` - Discourages comparison operators in if/unless conditions
+  - `Anchor.Check.NoDiscardingArrowInWith` - Prevents discarding `<-` results in `with` clauses
+  - `Anchor.Check.AlphabetizedFunctions` - Ensures function clauses are alphabetized within a module
+  - `Anchor.Check.MaxFileLength` - Enforces a maximum number of lines per file
+  - `Anchor.Check.StructGetterConvention` - Enforces a consistent convention for struct getter functions
 
   ## Integration with Credo
 
@@ -32,7 +37,12 @@ defmodule Anchor do
                 {Anchor.Check.ModulePatternRestrictions, []},
                 {Anchor.Check.SingleControlFlow, []},
                 {Anchor.Check.NoTupleMatchInHead, []},
-                {Anchor.Check.CaseOnBareArg, []}
+                {Anchor.Check.CaseOnBareArg, []},
+                {Anchor.Check.NoComparisonInIf, []},
+                {Anchor.Check.NoDiscardingArrowInWith, []},
+                {Anchor.Check.AlphabetizedFunctions, []},
+                {Anchor.Check.MaxFileLength, []},
+                {Anchor.Check.StructGetterConvention, []}
               ]
             }
           }
@@ -51,7 +61,12 @@ defmodule Anchor do
       Anchor.Check.ModulePatternRestrictions,
       Anchor.Check.SingleControlFlow,
       Anchor.Check.NoTupleMatchInHead,
-      Anchor.Check.CaseOnBareArg
+      Anchor.Check.CaseOnBareArg,
+      Anchor.Check.NoComparisonInIf,
+      Anchor.Check.NoDiscardingArrowInWith,
+      Anchor.Check.AlphabetizedFunctions,
+      Anchor.Check.MaxFileLength,
+      Anchor.Check.StructGetterConvention
     ]
   end
 end
