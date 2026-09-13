@@ -26,6 +26,12 @@ strings are verbatim, including `left:` / `right:`.
 | I | Drop the arity tie-break from the sort key (`{String.downcase(name), func.arity}` → `{String.downcase(name)}`) | 1 (row 3) | `code: assert Enum.any?(...&(&1.trigger == "foo/1"))` `Expected truthy, got false` |
 | J | Blank the private prefix (`:separate_private -> "private "` → `""`) | 1 (row 8) | `code: assert aardvark.message =~ "private function \`aardvark/0\` is not in alphabetical order"` `left: "function \`aardvark/0\` is not in alphabetical order. It should appear after the beginning."` `right: "private function \`aardvark/0\` is not in alphabetical order"` |
 
+> There is no mutation **B**: the two default/dispatch mutations first tried under
+> that label failed to compile under `--warnings-as-errors` (see "Traps
+> encountered" below), so no failure string exists to record. The label is kept
+> to preserve the one-to-one mapping between the letters and the mutations
+> actually attempted.
+
 ## What each mutation proves
 
 - **A** is the BUG-2 consumer fix (the T3 loop closed): `mode` must be read from
