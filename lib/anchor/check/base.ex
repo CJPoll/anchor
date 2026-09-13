@@ -9,13 +9,14 @@ defmodule Anchor.Check.Base do
 
       import Credo.Check
 
+      alias Anchor.Adapters.ConfigFile
       alias Anchor.Config
       alias Anchor.DependencyAnalyzer
       alias Anchor.Domain.RuleMatching
 
       @impl true
       def run_on_all_source_files(exec, source_files, params) do
-        case Config.load() do
+        case ConfigFile.load() do
           {:ok, config} ->
             issues =
               source_files

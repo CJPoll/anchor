@@ -20,7 +20,7 @@ defmodule Anchor.Check.NoTransitiveDependency do
 
   @impl true
   def run_on_all_source_files(exec, source_files, params) do
-    case Config.load() do
+    case ConfigFile.load() do
       {:ok, config} ->
         # Build the modules map once for all files
         modules_map = build_modules_map(source_files)
