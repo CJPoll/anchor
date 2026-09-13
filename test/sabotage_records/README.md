@@ -67,3 +67,8 @@ before coining a synonym.
   `find_function_clauses` / `count_control_flow_structures` /
   `already_in_pipe_chain?`) and the `Anchor.Check.SingleControlFlow` shell that
   delegates to it.
+- `no_comparison_in_if` — the "no direct comparisons in `if`/`unless`" check:
+  its extracted pure detector (`Anchor.Domain.Checks.NoComparisonInIf`,
+  including `find_if_with_comparisons` / `has_comparison?`, with `unless`
+  brought into scope alongside `if`) and the `Anchor.Check.NoComparisonInIf`
+  shell that delegates to it.
