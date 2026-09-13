@@ -351,6 +351,39 @@ defmodule Anchor.Domain.DependencyAnalyzerTest do
     end
   end
 
+  describe "module_dependencies/1" do
+    test "emits one node per module with dependencies partitioned to the owning module" do
+      src = """
+      defmodule Parent do
+        def p, do: Foo.bar()
+
+        defmodule Child do
+          def c, do: Baz.qux()
+        end
+      end
+      """
+
+      nodes = Map.new(DependencyAnalyzer.module_dependencies(ast(src)))
+
+      assert Map.keys(nodes) |> Enum.sort() == [Parent, Parent.Child]
+      # `stop_at_nested`: the parent's deps must NOT absorb the child's (Baz).
+      assert nodes[Parent] == %{module: Parent, direct_dependencies: [Foo]}
+      assert nodes[Parent.Child] == %{module: Parent.Child, direct_dependencies: [Baz]}
+    end
+
+    test "resolves __MODULE__ against the owning module in each node's body" do
+      src = """
+      defmodule Enclosing do
+        def f, do: __MODULE__.Sub.g()
+      end
+      """
+
+      nodes = Map.new(DependencyAnalyzer.module_dependencies(ast(src)))
+
+      assert nodes[Enclosing].direct_dependencies == [Enclosing.Sub]
+    end
+  end
+
   describe "find_transitive_dependencies/3" do
     # Row 1
     test "reaches a module through one hop" do

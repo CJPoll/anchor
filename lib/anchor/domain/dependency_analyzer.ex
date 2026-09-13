@@ -17,8 +17,11 @@ defmodule Anchor.Domain.DependencyAnalyzer do
     * `extract_direct_dependencies/1` — the modules a file references. Outside a
       `quote`, `__MODULE__.Sub` resolves to the lexically-enclosing module's
       submodule (`Enclosing.Sub`); inside a `quote` that resolution is
-      suppressed (opaque). Attribute/variable field access (`@attr.Sub`,
-      `var.Sub`) never records a spurious module dependency and never crashes.
+      suppressed (opaque). A bare `%__MODULE__{}` (a struct self-reference,
+      outside or inside a `quote`) is intentionally not emitted — a module is
+      never its own external dependency. Attribute/variable field access
+      (`@attr.Sub`, `var.Sub`) never records a spurious module dependency and
+      never crashes.
     * `extract_uses/1` — the modules a file `use`s.
     * `module_dependencies/1` — one graph node per `defmodule`, each carrying the
       direct dependencies found in that module's own body (nested modules are

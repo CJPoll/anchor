@@ -8,7 +8,7 @@
   `module_dependencies/1`, `find_transitive_dependencies/3`), and the
   AST-acquisition boundary `Anchor.Check.Source` (BUG 1 unwrap).
 - **Suite run:** `mix test test/anchor/domain/dependency_analyzer_test.exs`
-  (whole-suite green bar: `mix test` → 265 tests, 0 failures)
+  (whole-suite green bar: `mix test` → 267 tests, 0 failures)
 - **Merge base:** daab5d93b5e29eb6906daa8baef24abe71c7218d
 
 ## What T5 authored (why this file has real teeth)
@@ -18,15 +18,16 @@ T5 is THE crux of the epic. It moves the analyzer into the Domain bucket (zero
 edge (`Anchor.Check.Source`) so the Domain never sees the tuple again (BUG 1),
 turns singular `extract_module_name/1` into plural `extract_module_names/1`
 (pre-order DFS, fully qualified — BUG 4), and makes `__MODULE__` resolution
-crash-free and quote-aware (BUG 3). Three mutations exercise the load-bearing
+crash-free and quote-aware (BUG 3). Four mutations exercise the load-bearing
 new logic; each was applied, the suite run, the failure observed, then reverted
-(tree returned to `33 tests, 0 failures`).
+(tree returned to `35 tests, 0 failures`).
 
 | # | Mutation | Tests failed | Failure string (verbatim) |
 |---|---|---|---|
 | A | `module_nodes/2`: drop the pre-order recursion — `[{Module.concat(full), full, body} \| module_nodes(body, full)]` → `[{Module.concat(full), full, body}]` (never descend into a module's children) | 3 | `extract_module_names/1 nested siblings …` — `code: assert DependencyAnalyzer.extract_module_names(ast(src)) == [A, A.B, A.C]` — `left: [A]` / `right: [A, A.B, A.C]` (also the "pre-order DFS keeps a subtree contiguous" and "deeper DFS" rows: `left: [A]` vs `[A, A.D, A.C, A.C.E]` / `[A, A.D, A.D.F, A.C, A.C.E]`) |
 | B | `record_alias/3` (`__MODULE__` resolution): name the wrong module — `Module.concat(scope.enclosing ++ tail)` → `Module.concat(tail)` (drop the enclosing prefix) | 1 | `extract_direct_dependencies/1 __MODULE__.Sub in ordinary code resolves to the enclosing submodule` — `code: assert Enclosing.Sub in deps` — `left: Enclosing.Sub` / `right: [Sub]` |
 | C | `resolvable_self_reference?/2` (quote suppression): `Enum.all?(tail, &is_atom/1) and not scope.in_quote and scope.enclosing != nil` → drop `not scope.in_quote` (resolve `__MODULE__` even inside a `quote`) | 1 | `extract_direct_dependencies/1 __MODULE__ inside quote is opaque, not resolved to the enclosing module` — `code: refute Enclosing.Sub in deps` — `left: Enclosing.Sub` / `right: [Enclosing.Sub]` |
+| D | `collect_deps/3` on `defmodule` (`module_dependencies/1` graph partition): `if scope.stop_at_nested do acc` → `if false do acc` (walk into nested modules, so a parent absorbs a child's deps) | 1 | `module_dependencies/1 emits one node per module with dependencies partitioned to the owning module` — `code: assert nodes[Parent] == %{module: Parent, direct_dependencies: [Foo]}` — `left: %{module: Parent, direct_dependencies: [Baz, Foo]}` / `right: %{module: Parent, direct_dependencies: [Foo]}` |
 
 ## Measured zeros made explicit (macro/quote static-analysis boundary)
 
