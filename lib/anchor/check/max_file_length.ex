@@ -21,26 +21,25 @@ defmodule Anchor.Check.MaxFileLength do
   def rule_type, do: :max_file_length
 
   @doc false
-  def check_file(source_file, rules, params) do
+  def detect_violations(source_file, ast, rules, _context) do
     lines = Credo.Code.to_lines(source_file)
-    code_line_count = count_code_lines(lines, source_file)
+    code_line_count = count_code_lines(lines, ast)
 
     Enum.flat_map(rules, fn rule ->
       max_lines = get_max_lines(rule)
 
       if code_line_count > max_lines do
-        [create_issue(source_file, code_line_count, max_lines, params)]
+        [create_violation(source_file, code_line_count, max_lines)]
       else
         []
       end
     end)
   end
 
-  defp count_code_lines(lines, source_file) do
-    # Get the AST to find documentation attribute locations
-    ast = Credo.Code.ast(source_file)
+  defp count_code_lines(lines, ast) do
+    # Use the AST to find documentation attribute locations
     doc_line_ranges = extract_doc_line_ranges(ast)
-    
+
     lines
     |> Enum.count(fn {line_number, line_content} ->
       is_code_line?(line_content, line_number, doc_line_ranges)
@@ -49,17 +48,14 @@ defmodule Anchor.Check.MaxFileLength do
 
   defp is_code_line?(line, line_number, doc_line_ranges) do
     trimmed = String.trim(line)
-    
+
     cond do
       # Empty or whitespace-only line
       trimmed == "" -> false
-      
       # Comment line (starts with #, but not a doc attribute)
       String.starts_with?(trimmed, "#") -> false
-      
       # Line is within a doc block
       in_doc_block?(line_number, doc_line_ranges) -> false
-      
       # Otherwise it's a code line
       true -> true
     end
@@ -79,32 +75,33 @@ defmodule Anchor.Check.MaxFileLength do
   end
 
   defp do_extract_doc_line_ranges(ast) do
-    {_, ranges} = Macro.prewalk(ast, [], fn node, acc ->
-      case node do
-        # Match @moduledoc, @doc, @typedoc with documentation
-        {:@, meta, [{doc_type, _, [doc_content]}]} 
-        when doc_type in [:moduledoc, :doc, :typedoc] ->
-          case extract_doc_range(doc_content, meta[:line]) do
-            nil -> {node, acc}
-            range -> {node, [range | acc]}
-          end
-          
-        # Also handle @doc false
-        {:@, meta, [{:doc, _, [false]}]} ->
-          {node, [{meta[:line], meta[:line]} | acc]}
-          
-        _ ->
-          {node, acc}
-      end
-    end)
-    
+    {_, ranges} =
+      Macro.prewalk(ast, [], fn node, acc ->
+        case node do
+          # Match @moduledoc, @doc, @typedoc with documentation
+          {:@, meta, [{doc_type, _, [doc_content]}]}
+          when doc_type in [:moduledoc, :doc, :typedoc] ->
+            case extract_doc_range(doc_content, meta[:line]) do
+              nil -> {node, acc}
+              range -> {node, [range | acc]}
+            end
+
+          # Also handle @doc false
+          {:@, meta, [{:doc, _, [false]}]} ->
+            {node, [{meta[:line], meta[:line]} | acc]}
+
+          _ ->
+            {node, acc}
+        end
+      end)
+
     ranges
   end
 
   defp extract_doc_range(doc_content, base_line) when is_binary(doc_content) do
     # Count lines in the string content
     lines_in_doc = doc_content |> String.split("\n") |> length()
-    
+
     # The documentation spans from the @doc line to the closing """
     # For multiline strings, we need to include the opening and closing lines
     if String.contains?(doc_content, "\n") do
@@ -115,6 +112,7 @@ defmodule Anchor.Check.MaxFileLength do
       {base_line, base_line}
     end
   end
+
   defp extract_doc_range(false, base_line), do: {base_line, base_line}
   defp extract_doc_range(_, _), do: nil
 
@@ -126,13 +124,13 @@ defmodule Anchor.Check.MaxFileLength do
     end
   end
 
-  defp create_issue(source_file, line_count, max_lines, _params) do
-    format_issue(
-      source_file,
-      message: "File contains #{line_count} lines of code (maximum allowed: #{max_lines}). " <>
-               "Consider breaking this file into smaller, more focused modules.",
-      line_no: 1,
+  defp create_violation(source_file, line_count, max_lines) do
+    %Violation{
+      message:
+        "File contains #{line_count} lines of code (maximum allowed: #{max_lines}). " <>
+          "Consider breaking this file into smaller, more focused modules.",
+      line: 1,
       trigger: source_file.filename
-    )
+    }
   end
 end

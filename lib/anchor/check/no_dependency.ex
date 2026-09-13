@@ -12,8 +12,7 @@ defmodule Anchor.Check.NoDependency do
   def rule_type, do: :no_direct_dependency
 
   @doc false
-  def check_file(source_file, rules, params) do
-    ast = Credo.Code.ast(source_file)
+  def detect_violations(_source_file, ast, rules, _context) do
     dependencies = DependencyAnalyzer.extract_direct_dependencies(ast)
 
     Enum.flat_map(rules, fn rule ->
@@ -21,19 +20,18 @@ defmodule Anchor.Check.NoDependency do
 
       forbidden
       |> Enum.filter(&(&1 in dependencies))
-      |> Enum.map(&create_issue(source_file, &1, ast, params))
+      |> Enum.map(&create_violation(&1, ast))
     end)
   end
 
-  defp create_issue(source_file, forbidden_module, ast, _params) do
+  defp create_violation(forbidden_module, ast) do
     line_no = find_module_reference_line(ast, forbidden_module)
 
-    format_issue(
-      source_file,
+    %Violation{
       message: "Module has forbidden direct dependency on #{inspect(forbidden_module)}",
-      line_no: line_no,
+      line: line_no,
       trigger: inspect(forbidden_module)
-    )
+    }
   end
 
   defp find_module_reference_line(ast, module) do

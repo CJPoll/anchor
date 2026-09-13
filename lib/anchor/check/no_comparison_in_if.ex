@@ -42,22 +42,20 @@ defmodule Anchor.Check.NoComparisonInIf do
   def rule_type, do: :no_comparison_in_if
 
   @doc false
-  def check_file(source_file, rules, params) do
-    ast = Credo.Code.ast(source_file)
-
+  def detect_violations(_source_file, ast, rules, _context) do
     Enum.flat_map(rules, fn _rule ->
-      find_if_with_comparisons(ast, source_file, params)
+      find_if_with_comparisons(ast)
     end)
   end
 
-  defp find_if_with_comparisons(ast, source_file, params) do
-    {_ast, issues} =
+  defp find_if_with_comparisons(ast) do
+    {_ast, violations} =
       Macro.prewalk(ast, [], fn
         {:if, meta, [condition, _body]} = node, acc ->
           case has_comparison?(condition) do
             true ->
-              issue = create_issue(source_file, meta, params)
-              {node, [issue | acc]}
+              violation = create_violation(meta)
+              {node, [violation | acc]}
 
             false ->
               {node, acc}
@@ -67,7 +65,7 @@ defmodule Anchor.Check.NoComparisonInIf do
           {node, acc}
       end)
 
-    issues
+    violations
   end
 
   defp has_comparison?(ast) do
@@ -95,15 +93,15 @@ defmodule Anchor.Check.NoComparisonInIf do
     has_comp
   end
 
-  defp create_issue(source_file, meta, _params) do
+  defp create_violation(meta) do
     line_no = Keyword.get(meta, :line, 1)
 
-    format_issue(
-      source_file,
-      message: "Avoid direct comparisons in `if` statements. " <>
-               "Extract the comparison to a function in the appropriate module with a descriptive name.",
-      line_no: line_no,
+    %Violation{
+      message:
+        "Avoid direct comparisons in `if` statements. " <>
+          "Extract the comparison to a function in the appropriate module with a descriptive name.",
+      line: line_no,
       trigger: "if"
-    )
+    }
   end
 end

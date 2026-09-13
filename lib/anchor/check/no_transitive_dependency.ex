@@ -10,41 +10,17 @@ defmodule Anchor.Check.NoTransitiveDependency do
       """
     ]
 
-  @modules_map_key :__no_transitive_dependency_modules_map__
-
   @doc false
   def rule_type, do: :no_transitive_dependency
 
-  # Override the base implementation to build modules map once
-  defoverridable run_on_all_source_files: 3
-
-  @impl true
-  def run_on_all_source_files(exec, source_files, params) do
-    case ConfigFile.load() do
-      {:ok, config} ->
-        # Build the modules map once for all files
-        modules_map = build_modules_map(source_files)
-
-        # Store modules_map in params for check_file
-        params_with_map = Keyword.put(params, @modules_map_key, modules_map)
-
-        issues =
-          source_files
-          |> Enum.flat_map(&process_file(&1, config, params_with_map))
-
-        exec
-        |> Credo.Execution.ExecutionIssues.append(issues)
-
-      {:error, _reason} ->
-        exec
-    end
-  end
+  @doc false
+  # This check needs the cross-file module dependency graph; the Manager builds
+  # it once and hands it in via `context.modules_map`.
+  def needs_module_graph?, do: true
 
   @doc false
-  def check_file(source_file, rules, params) do
-    modules_map = Keyword.get(params, @modules_map_key, %{})
-
-    ast = Credo.Code.ast(source_file)
+  def detect_violations(_source_file, ast, rules, context) do
+    modules_map = context.modules_map
     module_name = DependencyAnalyzer.extract_module_name(ast)
 
     # Find all transitive dependencies for this module
@@ -59,24 +35,11 @@ defmodule Anchor.Check.NoTransitiveDependency do
 
       forbidden
       |> Enum.filter(&(&1 in transitive_deps))
-      |> Enum.map(&create_issue(source_file, &1, module_name, modules_map, ast))
+      |> Enum.map(&create_violation(&1, module_name, modules_map, ast))
     end)
   end
 
-  defp build_modules_map(source_files) do
-    # Build a map of module -> dependencies
-    Enum.reduce(source_files, %{}, fn source_file, acc ->
-      analysis = DependencyAnalyzer.analyze_file(source_file)
-
-      if analysis.module do
-        Map.put(acc, analysis.module, analysis)
-      else
-        acc
-      end
-    end)
-  end
-
-  defp create_issue(source_file, forbidden_module, current_module, modules_map, ast) do
+  defp create_violation(forbidden_module, current_module, modules_map, ast) do
     # Find the dependency path
     path = find_dependency_path(modules_map, current_module, forbidden_module)
     path_description = format_dependency_path(path)
@@ -85,13 +48,12 @@ defmodule Anchor.Check.NoTransitiveDependency do
     direct_dep = Enum.at(path, 1)
     line_no = if direct_dep, do: find_module_reference_line(ast, direct_dep)
 
-    format_issue(
-      source_file,
+    %Violation{
       message:
         "Module has transitive dependency on forbidden module #{inspect(forbidden_module)}#{path_description}",
-      line_no: line_no,
+      line: line_no,
       trigger: inspect(forbidden_module)
-    )
+    }
   end
 
   defp find_dependency_path(modules_map, start_module, target_module) do

@@ -23,6 +23,8 @@ defmodule Anchor.Config do
 
   defstruct rules: []
 
+  @type t :: %__MODULE__{rules: [map()]}
+
   @doc """
   Builds a `%Anchor.Config{}` from a decoded YAML document.
 

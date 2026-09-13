@@ -15,9 +15,7 @@ defmodule Anchor.Check.SingleControlFlow do
   def rule_type, do: :single_control_flow
 
   @doc false
-  def check_file(source_file, rules, params) do
-    ast = Credo.Code.ast(source_file)
-
+  def detect_violations(_source_file, ast, rules, _context) do
     Enum.flat_map(rules, fn _rule ->
       ast
       |> find_function_clauses()
@@ -25,7 +23,7 @@ defmodule Anchor.Check.SingleControlFlow do
         control_flow_count = count_control_flow_structures(body)
 
         if control_flow_count > 1 do
-          [create_issue(source_file, function_name, line_no, control_flow_count, params)]
+          [create_violation(function_name, line_no, control_flow_count)]
         else
           []
         end
@@ -121,14 +119,13 @@ defmodule Anchor.Check.SingleControlFlow do
     end
   end
 
-  defp create_issue(source_file, function_name, line_no, count, _params) do
-    format_issue(
-      source_file,
+  defp create_violation(function_name, line_no, count) do
+    %Violation{
       message:
         "Function clause `#{function_name}` contains #{count} control-flow structures (maximum allowed: 1). " <>
-        "Control-flow structures include: pipe chains (|>), cond, with, case, if, unless, for, and receive. Favor extracting pipe chains to helpers before extracting other structures.",
-      line_no: line_no,
+          "Control-flow structures include: pipe chains (|>), cond, with, case, if, unless, for, and receive. Favor extracting pipe chains to helpers before extracting other structures.",
+      line: line_no,
       trigger: function_name
-    )
+    }
   end
 end

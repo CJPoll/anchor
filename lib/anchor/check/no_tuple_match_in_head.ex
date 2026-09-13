@@ -24,14 +24,14 @@ defmodule Anchor.Check.NoTupleMatchInHead do
   def rule_type, do: :no_tuple_match_in_head
 
   @doc false
-  def check_file(source_file, rules, params) do
+  def detect_violations(source_file, _ast, rules, _context) do
     source_code = source_file |> Credo.SourceFile.source()
 
     Enum.flat_map(rules, fn _rule ->
       source_code
       |> find_function_definitions()
       |> Enum.filter(&has_ok_error_pattern_in_args?/1)
-      |> Enum.map(&create_issue(source_file, &1, params))
+      |> Enum.map(&create_violation/1)
     end)
   end
 
@@ -88,15 +88,14 @@ defmodule Anchor.Check.NoTupleMatchInHead do
     |> Kernel.-(1)
   end
 
-  defp create_issue(source_file, %{name: function_name, line: line_no, type: def_type}, _params) do
+  defp create_violation(%{name: function_name, line: line_no, type: def_type}) do
     visibility_text = if def_type == "def", do: "public", else: "private"
 
-    format_issue(
-      source_file,
+    %Violation{
       message:
         "Function `#{function_name}` pattern matches on :ok/:error tuple in its #{visibility_text} function head. Consider having the calling function use a case statement on the value instead.",
-      line_no: line_no,
+      line: line_no,
       trigger: function_name
-    )
+    }
   end
 end
