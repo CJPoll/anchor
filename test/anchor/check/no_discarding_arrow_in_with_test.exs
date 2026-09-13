@@ -1,740 +1,159 @@
 defmodule Anchor.Check.NoDiscardingArrowInWithTest do
-  use ExUnit.Case
+  # Acceptance tests for Anchor.Check.NoDiscardingArrowInWith (T6.9 / DND-134).
+  #
+  # Detection now lives in the pure Domain module
+  # Anchor.Domain.Checks.NoDiscardingArrowInWith; this suite exercises the
+  # check's observable contract end-to-end through the thin Framework shell:
+  # `check_file/3` takes a real `Credo.SourceFile` and returns
+  # `[%Credo.Issue{}]`. These rows match docs/five-bucket-test-matrix.md
+  # ("no_discarding_arrow_in_with.ex -> check_file/3 -> #1-8").
+  #
+  # Sabotage record: ../../sabotage_records/no_discarding_arrow_in_with-20260913-dnd_134_t6_9_no_discarding_arrow_in_with.md
+  use ExUnit.Case, async: true
 
   alias Anchor.Check.NoDiscardingArrowInWith
   alias Credo.SourceFile
 
-  # Helper function to check if issues are found
-  defp assert_issue(source_code) do
-    source = SourceFile.parse(source_code, "lib/test.ex")
-    issues = NoDiscardingArrowInWith.check_file(source, [], [])
-    assert length(issues) > 0, "Expected to find issues but found none"
-    issues
+  defp issues(source) do
+    source_file = SourceFile.parse(source, "lib/some_module.ex")
+    rule = %{type: :no_discarding_arrow_in_with}
+    NoDiscardingArrowInWith.check_file(source_file, [rule], [])
   end
 
-  defp assert_no_issue(source_code) do
-    source = SourceFile.parse(source_code, "lib/test.ex")
-    issues = NoDiscardingArrowInWith.check_file(source, [], [])
-    assert issues == [], "Expected no issues but found: #{inspect(issues)}"
-  end
-
-  describe "single underscore pattern - should trigger" do
-    test "base case" do
-      source_code = """
-      defmodule Test do
-        def test_func do
+  describe "check_file/3" do
+    # Row 1 — Happy Path
+    test "flags `_ <- expr` discarding clause" do
+      source = """
+      defmodule MyApp.Example do
+        def f do
           with _ <- some_function() do
             :ok
           end
         end
       end
       """
-      issues = assert_issue(source_code)
-      assert Enum.any?(issues, &(&1.message =~ "Unnecessary arrow"))
+
+      assert [issue] = issues(source)
+
+      assert issue.message ==
+               "Unnecessary arrow (<-) in with clause. Pattern `_` only discards the value. " <>
+                 "Remove the arrow and pattern to simplify"
+
+      assert issue.trigger == "_"
+      assert issue.line_no == 3
     end
 
-    test "with guard" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          x = 5
-          with _ when x > 0 <- some_function() do
-            :ok
-          end
-        end
-      end
-      """
-      issues = assert_issue(source_code)
-      assert Enum.any?(issues, &(&1.message =~ "Unnecessary arrow"))
-    end
-
-    test "with rescue" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          with _ <- some_function() do
-            :ok
-          rescue
-            e -> {:error, e}
-          end
-        end
-      end
-      """
-      issues = assert_issue(source_code)
-      assert Enum.any?(issues, &(&1.message =~ "Unnecessary arrow"))
-    end
-
-    test "with guard and rescue" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          x = 5
-          with _ when x > 0 <- some_function() do
-            :ok
-          rescue
-            e -> {:error, e}
-          end
-        end
-      end
-      """
-      issues = assert_issue(source_code)
-      assert Enum.any?(issues, &(&1.message =~ "Unnecessary arrow"))
-    end
-
-    test "with else" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          with _ <- some_function() do
-            :ok
-          else
-            other -> {:else, other}
-          end
-        end
-      end
-      """
-      issues = assert_issue(source_code)
-      assert Enum.any?(issues, &(&1.message =~ "Unnecessary arrow"))
-    end
-  end
-
-  describe "variable starting with underscore - should trigger" do
-    test "base case" do
-      source_code = """
-      defmodule Test do
-        def test_func do
+    # Row 2 — Happy Path
+    test "flags `_result <- expr` (underscore-prefixed var)" do
+      source = """
+      defmodule MyApp.Example do
+        def f do
           with _result <- some_function() do
             :ok
           end
         end
       end
       """
-      issues = assert_issue(source_code)
-      assert Enum.any?(issues, &(&1.message =~ "Unnecessary arrow"))
+
+      assert [issue] = issues(source)
+      assert issue.trigger == "_result"
     end
 
-    test "with guard" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          x = 5
-          with _result when x > 0 <- some_function() do
+    # Row 3 — Validation
+    test "flags a discarding clause with a guard" do
+      source = """
+      defmodule MyApp.Example do
+        def f do
+          with _x when is_nil(_x) <- some_function() do
             :ok
           end
         end
       end
       """
-      issues = assert_issue(source_code)
-      assert Enum.any?(issues, &(&1.message =~ "Unnecessary arrow"))
+
+      assert [issue] = issues(source)
+      assert issue.trigger == "_x"
     end
 
-    test "with rescue" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          with _result <- some_function() do
-            :ok
-          rescue
-            e -> {:error, e}
-          end
-        end
-      end
-      """
-      issues = assert_issue(source_code)
-      assert Enum.any?(issues, &(&1.message =~ "Unnecessary arrow"))
-    end
-
-    test "with guard and rescue" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          x = 5
-          with _result when x > 0 <- some_function() do
-            :ok
-          rescue
-            e -> {:error, e}
-          end
-        end
-      end
-      """
-      issues = assert_issue(source_code)
-      assert Enum.any?(issues, &(&1.message =~ "Unnecessary arrow"))
-    end
-
-    test "with else" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          with _result <- some_function() do
-            :ok
-          else
-            other -> {:else, other}
-          end
-        end
-      end
-      """
-      issues = assert_issue(source_code)
-      assert Enum.any?(issues, &(&1.message =~ "Unnecessary arrow"))
-    end
-
-    test "various underscore variable names" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          with _ignored <- func1(),
-               _unused <- func2(),
-               _temp <- func3() do
-            :ok
-          end
-        end
-      end
-      """
-      issues = assert_issue(source_code)
-      assert length(issues) == 3
-    end
-  end
-
-  describe "multiple violations in one with - should trigger" do
-    test "base case" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          with {:ok, value} <- get_value(),
-               _ <- log_something(),
-               _ignored <- another_function() do
-            use_value(value)
-          end
-        end
-      end
-      """
-      issues = assert_issue(source_code)
-      assert length(issues) == 2  # Should find 2 violations
-    end
-
-    test "with guard" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          x = 5
-          with {:ok, value} <- get_value(),
-               _ when x > 0 <- log_something(),
-               _ignored when x > 1 <- another_function() do
-            use_value(value)
-          end
-        end
-      end
-      """
-      issues = assert_issue(source_code)
-      assert length(issues) == 2
-    end
-
-    test "with rescue" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          with {:ok, value} <- get_value(),
-               _ <- log_something(),
-               _ignored <- another_function() do
-            use_value(value)
-          rescue
-            e -> {:error, e}
-          end
-        end
-      end
-      """
-      issues = assert_issue(source_code)
-      assert length(issues) == 2
-    end
-
-    test "with guard and rescue" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          x = 5
-          with {:ok, value} <- get_value(),
-               _ when x > 0 <- log_something(),
-               _ignored when x > 1 <- another_function() do
-            use_value(value)
-          rescue
-            e -> {:error, e}
-          end
-        end
-      end
-      """
-      issues = assert_issue(source_code)
-      assert length(issues) == 2
-    end
-
-    test "with else" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          with {:ok, value} <- get_value(),
-               _ <- log_something(),
-               _ignored <- another_function() do
-            use_value(value)
-          else
-            {:error, reason} -> {:failed, reason}
-            other -> {:unexpected, other}
-          end
-        end
-      end
-      """
-      issues = assert_issue(source_code)
-      assert length(issues) == 2
-    end
-  end
-
-  describe "no left-arrow - should NOT trigger" do
-    test "base case" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          with some_function() do
-            :ok
-          end
-        end
-      end
-      """
-      assert_no_issue(source_code)
-    end
-
-    test "with rescue" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          with some_function() do
-            :ok
-          rescue
-            e -> {:error, e}
-          end
-        end
-      end
-      """
-      assert_no_issue(source_code)
-    end
-
-    test "with else" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          with some_function() do
-            :ok
-          else
-            false -> :failed
-            nil -> :not_found
-          end
-        end
-      end
-      """
-      assert_no_issue(source_code)
-    end
-  end
-
-  describe "meaningful pattern match with underscore inside - should NOT trigger" do
-    test "base case" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          with {:ok, _} <- some_function() do
-            :ok
-          end
-        end
-      end
-      """
-      assert_no_issue(source_code)
-    end
-
-    test "with guard" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          x = 5
-          with {:ok, _} when x > 0 <- some_function() do
-            :ok
-          end
-        end
-      end
-      """
-      assert_no_issue(source_code)
-    end
-
-    test "with rescue" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          with {:ok, _} <- some_function() do
-            :ok
-          rescue
-            e -> {:error, e}
-          end
-        end
-      end
-      """
-      assert_no_issue(source_code)
-    end
-
-    test "with guard and rescue" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          x = 5
-          with {:ok, _} when x > 0 <- some_function() do
-            :ok
-          rescue
-            e -> {:error, e}
-          end
-        end
-      end
-      """
-      assert_no_issue(source_code)
-    end
-
-    test "with else" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          with {:ok, _} <- some_function() do
-            :ok
-          else
-            {:error, reason} -> {:failed, reason}
-            other -> {:unexpected, other}
-          end
-        end
-      end
-      """
-      assert_no_issue(source_code)
-    end
-  end
-
-  describe "variable without underscore prefix - should NOT trigger" do
-    test "base case" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          with result <- some_function() do
-            result
-          end
-        end
-      end
-      """
-      assert_no_issue(source_code)
-    end
-
-    test "with guard" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          x = 5
-          with result when x > 0 <- some_function() do
-            result
-          end
-        end
-      end
-      """
-      assert_no_issue(source_code)
-    end
-
-    test "with rescue" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          with result <- some_function() do
-            result
-          rescue
-            e -> {:error, e}
-          end
-        end
-      end
-      """
-      assert_no_issue(source_code)
-    end
-
-    test "with guard and rescue" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          x = 5
-          with result when x > 0 <- some_function() do
-            result
-          rescue
-            e -> {:error, e}
-          end
-        end
-      end
-      """
-      assert_no_issue(source_code)
-    end
-
-    test "with else" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          with result <- some_function() do
-            result
-          else
-            nil -> :not_found
-            other -> other
-          end
-        end
-      end
-      """
-      assert_no_issue(source_code)
-    end
-  end
-
-  describe "complex patterns - should NOT trigger" do
-    test "list pattern" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          with [_, _, third] <- get_list() do
-            third
-          end
-        end
-      end
-      """
-      assert_no_issue(source_code)
-    end
-
-    test "tuple pattern with guard" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          x = 5
-          with {_, second} when x > 0 <- get_tuple() do
-            second
-          end
-        end
-      end
-      """
-      assert_no_issue(source_code)
-    end
-
-    test "map pattern with rescue" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          with %{key: _, value: v} <- get_map() do
-            v
-          rescue
-            e -> {:error, e}
-          end
-        end
-      end
-      """
-      assert_no_issue(source_code)
-    end
-
-    test "multiple underscores with guard and rescue" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          x = 5
-          with {_, _, third} when x > 0 <- get_triple() do
-            third
-          rescue
-            e -> {:error, e}
-          end
-        end
-      end
-      """
-      assert_no_issue(source_code)
-    end
-
-    test "struct pattern with else" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          with %MyStruct{id: _, data: data} <- get_struct() do
-            data
-          else
-            nil -> :not_found
-            other -> {:invalid, other}
-          end
-        end
-      end
-      """
-      assert_no_issue(source_code)
-    end
-
-    test "error tuple patterns" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          with {:error, _, _} <- some_function() do
-            :ok
-          end
-        end
-      end
-      """
-      assert_no_issue(source_code)
-    end
-  end
-
-  describe "nested with expressions" do
-    test "should detect violation in inner with" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          with {:ok, conn} <- get_connection() do
-            with _ <- validate(conn) do
-              :ok
-            end
-          end
-        end
-      end
-      """
-      issues = assert_issue(source_code)
-      assert length(issues) == 1
-    end
-
-    test "nested with variations" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          with {:ok, conn} <- get_connection() do
-            x = 5
-            with _ when x > 0 <- validate(conn) do
-              :ok
-            rescue
-              e -> {:validation_error, e}
-            end
-          else
-            {:error, reason} -> {:connection_failed, reason}
-          end
-        end
-      end
-      """
-      issues = assert_issue(source_code)
-      assert length(issues) == 1
-    end
-
-    test "multiple nested violations" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          with {:ok, data} <- get_data() do
-            with _ <- log_data(data) do
-              with _result <- process_data(data) do
-                :ok
-              end
-            end
-          end
-        end
-      end
-      """
-      issues = assert_issue(source_code)
-      assert length(issues) == 2
-    end
-  end
-
-  describe "edge cases" do
-    test "with in function with multiple clauses" do
-      source_code = """
-      defmodule Test do
-        def test_func(true) do
-          with _ <- some_function() do
-            :ok
-          end
-        end
-
-        def test_func(false) do
-          with _ignored <- another_function() do
-            :error
-          end
-        end
-      end
-      """
-      issues = assert_issue(source_code)
-      assert length(issues) == 2
-    end
-
-    test "with catch and after" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          with _ <- some_function() do
-            :ok
-          catch
-            :throw, value -> {:caught, value}
-          after
-            cleanup()
-          end
-        end
-      end
-      """
-      issues = assert_issue(source_code)
-      assert length(issues) == 1
-    end
-
-    test "multiple function-level keywords" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          with _ <- some_function() do
-            :ok
-          rescue
-            e in RuntimeError -> {:runtime_error, e}
-            e -> {:error, e}
-          catch
-            :exit, reason -> {:exit, reason}
-            :throw, value -> {:caught, value}
-          else
-            {:error, _} -> :expected_error
-            other -> {:unexpected, other}
-          after
-            cleanup()
-          end
-        end
-      end
-      """
-      issues = assert_issue(source_code)
-      assert length(issues) == 1
-    end
-
-    test "underscore in rescue/catch patterns should not trigger" do
-      source_code = """
-      defmodule Test do
-        def test_func do
+    # Row 4 — Positive Control
+    test "passes meaningful pattern `{:ok, value} <-`" do
+      source = """
+      defmodule MyApp.Example do
+        def f do
           with {:ok, value} <- some_function() do
             value
-          rescue
-            %SpecificError{message: _} = e -> {:specific, e}
-            _ -> :generic_error
-          catch
-            :throw, _ -> :caught_throw
           end
         end
       end
       """
-      assert_no_issue(source_code)
+
+      assert issues(source) == []
     end
 
-    test "single line with expression" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          with _ <- some_function(), do: :ok
-        end
-      end
-      """
-      issues = assert_issue(source_code)
-      assert length(issues) == 1
-    end
-
-    test "pattern matching in with body should not affect check" do
-      source_code = """
-      defmodule Test do
-        def test_func do
-          with {:ok, data} <- get_data() do
-            _ = Logger.debug("Got data")
-            process(data)
+    # Row 5 — Positive Control
+    test "passes `{:ok, _} <-` (structural match, not bare discard)" do
+      source = """
+      defmodule MyApp.Example do
+        def f do
+          with {:ok, _} <- some_function() do
+            :ok
           end
         end
       end
       """
-      assert_no_issue(source_code)
+
+      assert issues(source) == []
+    end
+
+    # Row 6 — Positive Control
+    test "passes a normal bound var `value <- expr`" do
+      source = """
+      defmodule MyApp.Example do
+        def f do
+          with value <- some_function() do
+            value
+          end
+        end
+      end
+      """
+
+      assert issues(source) == []
+    end
+
+    # Row 7 — High Signal
+    test "flags only the discarding clause in a multi-clause `with`" do
+      source = """
+      defmodule MyApp.Example do
+        def f do
+          with {:ok, v} <- a(),
+               _ <- b(v) do
+            v
+          end
+        end
+      end
+      """
+
+      assert [issue] = issues(source)
+      assert issue.line_no == 4
+    end
+
+    # Row 8 — Positive Control
+    test "`with` with no arrow clauses (all bare exprs) passes" do
+      source = """
+      defmodule MyApp.Example do
+        def f do
+          with true, do: :ok
+        end
+      end
+      """
+
+      assert issues(source) == []
+    end
+  end
+
+  describe "rule_type/0" do
+    test "is :no_discarding_arrow_in_with" do
+      assert NoDiscardingArrowInWith.rule_type() == :no_discarding_arrow_in_with
     end
   end
 end
