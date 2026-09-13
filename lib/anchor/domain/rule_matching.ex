@@ -51,6 +51,18 @@ defmodule Anchor.Domain.RuleMatching do
   Selection is by `paths`, then module `pattern`, then `uses_module`; a rule
   with none of those selectors returns `false` (deny by default).
   """
+  #
+  # Clause precedence is deliberate and preserved byte-for-byte from the former
+  # `Anchor.Check.Base` private clauses: `paths` first, then module `pattern`,
+  # then `uses_module`, then deny-by-default. Note the interaction with
+  # `Anchor.Config.parse_rule/1`, which stamps EVERY parsed rule with
+  # `paths: []` (plus `recursive: false`): such a rule matches this first clause
+  # (`is_list([])`) and returns `false` via `Enum.any?([], …)`, so a
+  # Config-parsed `pattern`/`uses_module` rule never reaches its own clause. That
+  # is a pre-existing selection quirk (parsed rules are not sparse), not
+  # introduced by the extraction; it is left as-is here so behavior is unchanged.
+  # The `pattern`/`uses_module` clauses are reachable — and unit-tested — via
+  # sparse rule maps that omit the `paths` key.
   @spec rule_matches_file?(map(), facts()) :: boolean()
   def rule_matches_file?(%{paths: paths, recursive: recursive}, %{filename: filename})
       when is_list(paths) do
