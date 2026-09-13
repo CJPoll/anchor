@@ -12,6 +12,7 @@ defmodule Anchor.Check.Base do
       alias Anchor.Adapters.ConfigFile
       alias Anchor.Config
       alias Anchor.DependencyAnalyzer
+      alias Anchor.Domain.RuleMatching
 
       @impl true
       def run_on_all_source_files(exec, source_files, params) do
@@ -42,92 +43,26 @@ defmodule Anchor.Check.Base do
       end
 
       defp find_matching_rules(source_file, %Config{rules: rules}) do
+        facts = file_facts(source_file)
+
         rules
-        |> Enum.filter(&rule_matches_type?/1)
-        |> Enum.filter(&rule_matches_file?(&1, source_file))
+        |> Enum.filter(&RuleMatching.rule_matches_type?(&1, rule_type()))
+        |> Enum.filter(&RuleMatching.rule_matches_file?(&1, facts))
       end
 
-      defp rule_matches_type?(rule), do: rule.type == rule_type()
-
-      defp rule_matches_file?(%{paths: paths, recursive: recursive}, source_file)
-           when is_list(paths) do
-        file_path = source_file.filename
-
-        Enum.any?(paths, fn pattern ->
-          if recursive do
-            matches_recursive_pattern?(file_path, pattern)
-          else
-            matches_pattern?(file_path, pattern)
-          end
-        end)
-      end
-
-      defp rule_matches_file?(%{pattern: pattern}, source_file) when is_binary(pattern) do
-        module_name =
-          source_file
-          |> Credo.Code.ast()
-          |> DependencyAnalyzer.extract_module_name()
-          |> to_string()
-
-        matches_module_pattern?(module_name, pattern)
-      end
-
-      defp rule_matches_file?(%{uses_module: uses_module}, source_file)
-           when is_binary(uses_module) do
+      # Derives the pure facts the Domain rule-selection predicate operates on.
+      # The module-name derivation intentionally mirrors the historical behavior
+      # (Credo.Code.ast/1 returns an {:ok, ast} tuple, so extract_module_name/1
+      # resolves to nil -> "") so this refactor changes nothing observable; the
+      # fact-derivation fix is a separate ticket.
+      defp file_facts(source_file) do
         ast = Credo.Code.ast(source_file)
 
-        uses_module
-        |> Module.concat([])
-        |> then(&DependencyAnalyzer.has_use?(ast, &1))
-      end
-
-      defp rule_matches_file?(_, _), do: false
-
-      defp matches_pattern?(path, pattern) do
-        regex = pattern_to_regex(pattern)
-        Regex.match?(regex, path)
-      end
-
-      defp matches_recursive_pattern?(path, pattern) do
-        # Convert glob pattern to regex
-        regex_pattern =
-          pattern
-          |> String.replace(".", "\\.")
-          # Temporarily replace ** to avoid conflicts
-          |> String.replace("**", "___DOUBLE_STAR___")
-          # Replace single * with non-slash matcher
-          |> String.replace("*", "[^/]*")
-          # **/ matches zero or more path segments with trailing /
-          |> String.replace("___DOUBLE_STAR___/", "(.*/)?")
-          # /** matches zero or more path segments with leading /
-          |> String.replace("/___DOUBLE_STAR___", "(/.*)?")
-          # ** alone matches anything
-          |> String.replace("___DOUBLE_STAR___", ".*")
-          |> then(&"^#{&1}$")
-          |> Regex.compile!()
-
-        Regex.match?(regex_pattern, path)
-      end
-
-      defp matches_module_pattern?(module_name, pattern) do
-        regex = module_pattern_to_regex(pattern)
-        Regex.match?(regex, module_name)
-      end
-
-      defp pattern_to_regex(pattern) do
-        pattern
-        |> String.replace(".", "\\.")
-        |> String.replace("*", "[^/]*")
-        |> then(&"^#{&1}$")
-        |> Regex.compile!()
-      end
-
-      defp module_pattern_to_regex(pattern) do
-        pattern
-        |> String.replace(".", "\\.")
-        |> String.replace("*", ".*")
-        |> then(&"^#{&1}$")
-        |> Regex.compile!()
+        %{
+          filename: source_file.filename,
+          module_names: [to_string(DependencyAnalyzer.extract_module_name(ast))],
+          uses: DependencyAnalyzer.extract_uses(ast)
+        }
       end
 
       # To be implemented by specific checks
