@@ -161,6 +161,39 @@ defmodule Anchor.Domain.ConfigTest do
     end
   end
 
+  describe "parse_rule/1 — Erlang-atom module tokens (Gap B / DND-141)" do
+    # See docs/phase-d-gap-test-matrix.md, config.ex :: parse_rule/1 rows 9-11.
+    # Sabotage record: ../../sabotage_records/dependency_analyzer-20260913-dnd_141_gap_b_erlang_atom_targets.md
+
+    # Matrix row 9 — Validation (leading-`:` token -> String.to_atom, NOT Module.concat)
+    test "a leading-colon forbidden_modules token is kept as a raw atom" do
+      rule = Config.parse_rule(%{"forbidden_modules" => [":telemetry"]})
+
+      assert rule.forbidden_modules == [:telemetry]
+    end
+
+    # Matrix row 10 — Happy Path (regression guard: ordinary module string still concats)
+    test "an ordinary CamelCase forbidden_modules token still becomes a module atom" do
+      rule = Config.parse_rule(%{"forbidden_modules" => ["MyApp.Repo"]})
+
+      assert rule.forbidden_modules == [MyApp.Repo]
+    end
+
+    # Matrix row 11 — Validation (mixed list preserved element-wise)
+    test "a mixed atom + module forbidden_modules list is preserved element-wise" do
+      rule = Config.parse_rule(%{"forbidden_modules" => [":telemetry", "MyApp.Repo"]})
+
+      assert rule.forbidden_modules == [:telemetry, MyApp.Repo]
+    end
+
+    # required_modules honors the same leading-colon rule (symmetry).
+    test "a leading-colon required_modules token is kept as a raw atom" do
+      rule = Config.parse_rule(%{"required_modules" => [":cowboy", "MyApp.Schema"]})
+
+      assert rule.required_modules == [:cowboy, MyApp.Schema]
+    end
+  end
+
   describe "parse_config/1" do
     test "maps every rule in the document through parse_rule/1" do
       data = %{

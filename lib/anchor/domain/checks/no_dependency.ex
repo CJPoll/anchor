@@ -23,6 +23,11 @@ defmodule Anchor.Domain.Checks.NoDependency do
   at the **first** reference line (the earliest occurrence in pre-order source
   traversal); when the module cannot be located in the AST the line is `nil`
   (Credo then defaults it).
+
+  A `forbidden_modules` entry may be an Elixir alias (`MyApp.Repo`) or a bare
+  Erlang/OTP atom (`:telemetry`); the latter matches a bare-atom remote call and
+  is located by its call-callee node (never `Module.split/1`, which raises on a
+  non-Elixir atom).
   """
 
   alias Anchor.Domain.DependencyAnalyzer
@@ -59,15 +64,41 @@ defmodule Anchor.Domain.Checks.NoDependency do
   # The line of the FIRST reference to `module` in `ast`. Pre-order traversal
   # visits the earliest source occurrence first, so once a line is recorded it is
   # never overwritten by a later match. `nil` when the module is not located.
+  #
+  # An Elixir alias module (`MyApp.Repo`) is located by its `:__aliases__` parts.
+  # A bare-atom Erlang/OTP module (`:telemetry`) is located by its remote-call
+  # callee node instead — `Module.split/1` raises on a non-Elixir atom, so it is
+  # never called for one.
   defp first_reference_line(ast, module) do
-    module_parts = module |> Module.split() |> Enum.map(&String.to_atom/1)
+    if elixir_module?(module) do
+      alias_reference_line(ast, module |> Module.split() |> Enum.map(&String.to_atom/1))
+    else
+      atom_reference_line(ast, module)
+    end
+  end
 
+  defp elixir_module?(module), do: match?("Elixir." <> _, Atom.to_string(module))
+
+  defp alias_reference_line(ast, module_parts) do
     {_ast, line} =
       Macro.prewalk(ast, nil, fn
         {:__aliases__, meta, ^module_parts} = node, nil ->
           {node, Keyword.get(meta, :line)}
 
         {{:., _, [{:__aliases__, meta, ^module_parts}, _]}, _, _} = node, nil ->
+          {node, Keyword.get(meta, :line)}
+
+        node, acc ->
+          {node, acc}
+      end)
+
+    line
+  end
+
+  defp atom_reference_line(ast, atom) do
+    {_ast, line} =
+      Macro.prewalk(ast, nil, fn
+        {{:., _, [^atom, _fun]}, meta, _args} = node, nil ->
           {node, Keyword.get(meta, :line)}
 
         node, acc ->

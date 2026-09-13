@@ -299,6 +299,62 @@ defmodule Anchor.Domain.DependencyAnalyzerTest do
     end
   end
 
+  describe "extract_direct_dependencies/1 — bare-atom remote-call callees (Gap B / DND-141)" do
+    # See docs/phase-d-gap-test-matrix.md, dependency_analyzer.ex ::
+    # extract_direct_dependencies/1 rows 1-6.
+    # Sabotage record: ../sabotage_records/dependency_analyzer-20260913-dnd_141_gap_b_erlang_atom_targets.md
+
+    # Matrix row 1 — Happy Path
+    test "a bare-atom remote call records the atom module" do
+      assert :telemetry in DependencyAnalyzer.extract_direct_dependencies(
+               ast(":telemetry.execute([:a], %{}, %{})")
+             )
+    end
+
+    # Matrix row 2 — Positive Control
+    test "a bare :ok atom literal is not recorded" do
+      refute :ok in DependencyAnalyzer.extract_direct_dependencies(ast("def f, do: :ok"))
+    end
+
+    # Matrix row 3 — Validation
+    test "an atom in non-call position (list element) is not recorded" do
+      refute :telemetry in DependencyAnalyzer.extract_direct_dependencies(
+               ast("x = [:telemetry, :other]")
+             )
+    end
+
+    # Matrix row 4 — Positive Control
+    test "an aliased remote call is unchanged (Elixir Logger)" do
+      assert Logger in DependencyAnalyzer.extract_direct_dependencies(ast(~S|Logger.info("x")|))
+    end
+
+    # Matrix row 5 — Happy Path
+    test "an atom call and an alias call are both recorded" do
+      src = """
+      defmodule Test do
+        def f do
+          :telemetry.execute(a, b, c)
+          MyApp.Repo.all(q)
+        end
+      end
+      """
+
+      deps = DependencyAnalyzer.extract_direct_dependencies(ast(src))
+      assert :telemetry in deps
+      assert MyApp.Repo in deps
+    end
+
+    # Matrix row 6 — Validation (keyed as the RAW atom, not Elixir.-prefixed)
+    test "the atom callee is keyed as the raw atom, not an Elixir.-prefixed module" do
+      deps = DependencyAnalyzer.extract_direct_dependencies(ast(":cowboy.start_clear(a, b, c)"))
+
+      assert :cowboy in deps
+      # The mangled `Elixir.cowboy` form (what `Module.concat(["cowboy"])` yields)
+      # must NOT appear — the atom is recorded verbatim.
+      refute Module.concat(["cowboy"]) in deps
+    end
+  end
+
   describe "extract_uses/1" do
     # Row 1
     test "extracts use declarations" do

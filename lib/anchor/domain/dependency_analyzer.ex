@@ -21,7 +21,11 @@ defmodule Anchor.Domain.DependencyAnalyzer do
       outside or inside a `quote`) is intentionally not emitted — a module is
       never its own external dependency. Attribute/variable field access
       (`@attr.Sub`, `var.Sub`) never records a spurious module dependency and
-      never crashes.
+      never crashes. A remote call on a **bare-atom** module
+      (`:telemetry.execute(...)`) records the callee as the raw atom
+      (`:telemetry`, never `Elixir.telemetry`), so a `forbidden_modules` rule can
+      target an Erlang/OTP module; this is scoped strictly to the call callee, so
+      inert atom literals (`:ok`, a list element) are not recorded.
     * `extract_uses/1` — the modules a file `use`s.
     * `module_dependencies/1` — one graph node per `defmodule`, each carrying the
       direct dependencies found in that module's own body (nested modules are
@@ -206,6 +210,19 @@ defmodule Anchor.Domain.DependencyAnalyzer do
   # an attribute/variable marker) carry no further module dependency.
   defp collect_deps({:__aliases__, _meta, parts}, scope, acc) when is_list(parts) do
     record_alias(parts, scope, acc)
+  end
+
+  # A remote call whose callee module is a BARE ATOM — an Erlang/OTP module such
+  # as `:telemetry.execute(...)` or `:cowboy.start_clear(...)`. Record the RAW
+  # atom (never `Module.concat`, which would mangle `:cowboy` into
+  # `Elixir.cowboy`). Scoped strictly to the call callee: an inert atom literal
+  # (`:ok`, a list element, a local-call name) never reaches this clause because
+  # it is not in the `{{:., _, [mod, fun]}, _, args}` callee position. Aliased
+  # callees (`{:__aliases__, _, _}`) fall through to the generic clause and keep
+  # their existing behavior.
+  defp collect_deps({{:., _dmeta, [mod, _fun]}, _meta, args}, scope, acc)
+       when is_atom(mod) do
+    collect_arg_list(args, scope, MapSet.put(acc, mod))
   end
 
   # Generic 3-tuple: recurse into the callee (which may itself be a `.` node) and

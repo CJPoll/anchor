@@ -176,6 +176,29 @@ Prevents direct dependencies on forbidden modules.
   recursive: true
 ```
 
+#### Module token syntax (`forbidden_modules` / `required_modules`)
+
+Each entry in `forbidden_modules` and `required_modules` names a module in one of
+two forms:
+
+- **Elixir alias** — a CamelCase token such as `MyApp.Repo` or `Ecto.Query`.
+  This targets the Elixir module of that name.
+- **Erlang/OTP atom** — a **leading-colon** token such as `:telemetry` or
+  `:cowboy`. This targets a bare Erlang module, matching a remote call like
+  `:telemetry.execute(...)`. The token is kept as the raw atom, so quote it if
+  your YAML parser would otherwise treat the leading `:` specially.
+
+```yaml
+# Forbid a direct dependency on an Erlang/OTP module.
+- type: no_direct_dependency
+  paths:
+    - "lib/my_app/domain/**/*.ex"
+  forbidden_modules:
+    - ":telemetry"   # matches `:telemetry.execute(...)`
+    - MyApp.Repo     # matches `MyApp.Repo.all(...)`
+  recursive: true
+```
+
 ### `no_transitive_dependency`
 
 Prevents transitive (indirect) dependencies on forbidden modules. This check analyzes the entire dependency graph to ensure that a module doesn't depend on forbidden modules through intermediary modules.
