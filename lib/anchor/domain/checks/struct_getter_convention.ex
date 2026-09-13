@@ -252,7 +252,7 @@ defmodule Anchor.Domain.Checks.StructGetterConvention do
   defp literal_struct?({:__MODULE__, _, _}), do: true
 
   defp literal_struct?({:__aliases__, _, parts}) when is_list(parts),
-    do: Enum.all?(parts, &is_atom/1)
+    do: parts != [] and Enum.all?(parts, &is_atom/1)
 
   defp literal_struct?(_), do: false
 
