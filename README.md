@@ -210,6 +210,14 @@ does **not** match `Foo.AdaptersHelper` (there is no dot after `Adapters`).
 `forbidden_modules` and `forbidden_patterns` may be combined on one rule; a
 module matched by both is reported once.
 
+A pattern is matched against the module's **fully-qualified** name, which
+includes the `Elixir.` prefix for Elixir modules (e.g.
+`Elixir.MyApp.Contacts.Adapters.Repository`). Because `*` crosses dots, lead a
+pattern with `*` (as every example here does) to match from the front — a
+start-anchored pattern such as `MyApp.Adapters.*` would never match, since the
+name begins with `Elixir.`. Write `*.Adapters.*` (or `*MyApp.Adapters.*`)
+instead.
+
 ```yaml
 # Forbid any adapter module, named or not, plus one exact module.
 - type: no_direct_dependency

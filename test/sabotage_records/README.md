@@ -21,6 +21,15 @@ failure string down here.
 - **Read the matching records before weakening a check** — especially rows
   recording a measured **zero**, which flag a claim no test protects.
 
+- **A mission may direct ONE combined record for a multi-domain run.** ADR 003
+  otherwise splits a run by domain (one file each). When a mission explicitly
+  directs a single record for a change that spans several domains, it is filed
+  under the **primary** domain, every off-domain mutation is labelled inside it,
+  and each touched test file's `Sabotage record:` comment points there — so
+  `ls`-by-domain may miss it, but `grep -rl '<Module>'` will not. Precedent:
+  `dependency_analyzer-*-dnd_141_*` (config + analyzer) and
+  `no_dependency-*-dnd_142_*` (config + analyzer + both dependency checks).
+
 ## Filename convention
 
 `<domain>-YYYYMMDD-<sanitized-branch>.md` — three parts, two hyphens, no part
