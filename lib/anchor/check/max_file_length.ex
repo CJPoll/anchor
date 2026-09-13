@@ -20,110 +20,19 @@ defmodule Anchor.Check.MaxFileLength do
   @doc false
   def rule_type, do: :max_file_length
 
+  # Thin Framework delegate: acquire the file's lines (via `Source`) and hand
+  # them, the bare AST already acquired at the edge, the Manager-selected rules,
+  # and the filename to the pure Domain detector; `Base` maps the returned
+  # `%Anchor.Domain.Violation{}`s onto `Credo.Issue`s.
   @doc false
   def detect_violations(source_file, ast, rules, _context) do
     lines = Source.to_lines(source_file)
-    code_line_count = count_code_lines(lines, ast)
 
-    Enum.flat_map(rules, fn rule ->
-      max_lines = get_max_lines(rule)
-
-      if code_line_count > max_lines do
-        [create_violation(source_file, code_line_count, max_lines)]
-      else
-        []
-      end
-    end)
-  end
-
-  defp count_code_lines(lines, ast) do
-    # Use the AST to find documentation attribute locations
-    doc_line_ranges = extract_doc_line_ranges(ast)
-
-    lines
-    |> Enum.count(fn {line_number, line_content} ->
-      is_code_line?(line_content, line_number, doc_line_ranges)
-    end)
-  end
-
-  defp is_code_line?(line, line_number, doc_line_ranges) do
-    trimmed = String.trim(line)
-
-    cond do
-      # Empty or whitespace-only line
-      trimmed == "" -> false
-      # Comment line (starts with #, but not a doc attribute)
-      String.starts_with?(trimmed, "#") -> false
-      # Line is within a doc block
-      in_doc_block?(line_number, doc_line_ranges) -> false
-      # Otherwise it's a code line
-      true -> true
-    end
-  end
-
-  defp in_doc_block?(line_number, doc_line_ranges) do
-    Enum.any?(doc_line_ranges, fn {start_line, end_line} ->
-      line_number >= start_line && line_number <= end_line
-    end)
-  end
-
-  defp extract_doc_line_ranges(ast) do
-    {_, ranges} =
-      Macro.prewalk(ast, [], fn node, acc ->
-        case node do
-          # Match @moduledoc, @doc, @typedoc with documentation
-          {:@, meta, [{doc_type, _, [doc_content]}]}
-          when doc_type in [:moduledoc, :doc, :typedoc] ->
-            case extract_doc_range(doc_content, meta[:line]) do
-              nil -> {node, acc}
-              range -> {node, [range | acc]}
-            end
-
-          # Also handle @doc false
-          {:@, meta, [{:doc, _, [false]}]} ->
-            {node, [{meta[:line], meta[:line]} | acc]}
-
-          _ ->
-            {node, acc}
-        end
-      end)
-
-    ranges
-  end
-
-  defp extract_doc_range(doc_content, base_line) when is_binary(doc_content) do
-    # Count lines in the string content
-    lines_in_doc = doc_content |> String.split("\n") |> length()
-
-    # The documentation spans from the @doc line to the closing """
-    # For multiline strings, we need to include the opening and closing lines
-    if String.contains?(doc_content, "\n") do
-      # Multi-line doc: @doc line + content lines + closing line
-      {base_line, base_line + lines_in_doc + 1}
-    else
-      # Single line doc
-      {base_line, base_line}
-    end
-  end
-
-  defp extract_doc_range(false, base_line), do: {base_line, base_line}
-  defp extract_doc_range(_, _), do: nil
-
-  defp get_max_lines(rule) do
-    case Map.get(rule, "max_lines") do
-      nil -> 400
-      max when is_integer(max) and max > 0 -> max
-      max when is_binary(max) -> String.to_integer(max)
-    end
-  end
-
-  defp create_violation(source_file, line_count, max_lines) do
-    %Violation{
-      message:
-        "File contains #{line_count} lines of code (maximum allowed: #{max_lines}). " <>
-          "Consider breaking this file into smaller, more focused modules.",
-      line: 1,
-      trigger: source_file.filename
-    }
+    Anchor.Domain.Checks.MaxFileLength.detect_violations(
+      lines,
+      ast,
+      rules,
+      source_file.filename
+    )
   end
 end

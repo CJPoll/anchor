@@ -1,450 +1,184 @@
 defmodule Anchor.Check.MaxFileLengthTest do
-  use ExUnit.Case
+  # The Framework-edge acceptance matrix for the `max_file_length` check, driven
+  # through the backward-compatible `check_file/3` entry point (Base acquires the
+  # AST via Source, the shell acquires the lines and delegates to the pure
+  # `Anchor.Domain.Checks.MaxFileLength`, and the returned `%Violation{}`s are
+  # mapped to `%Credo.Issue{}`). Rules are ATOM-keyed exactly as T3
+  # (`Anchor.Config.parse_rule/1`) surfaces them — in particular the maximum is
+  # `:max_lines` (BUG 2: the pre-refactor code read the string key "max_lines").
+  #
+  # The pure detector is exercised directly in
+  # test/anchor/domain/checks/max_file_length_test.exs.
+  #
+  # Sabotage record:
+  #   ../../sabotage_records/max_file_length-20260913-dnd_136_t6_11_max_file_length.md
+  use ExUnit.Case, async: true
 
   alias Anchor.Check.MaxFileLength
   alias Credo.SourceFile
 
-  describe "realistic module with various elements" do
-    test "counts only actual code lines, excluding docs and comments" do
-      source_file = """
-      defmodule MyApp.Users.User do
+  @filename "lib/my_app/some_module.ex"
+
+  # A module whose body is `n` single-line `def`s. Code-line count is therefore
+  # exactly `n + 2` (the `defmodule` line, `n` def lines, the `end` line) — no
+  # blanks, comments or docs, so the count is unambiguous.
+  defp module_with_defs(n) do
+    body = Enum.map_join(1..n, "\n", fn i -> "  def function_#{i}(), do: :ok" end)
+    "defmodule MyModule do\n#{body}\nend"
+  end
+
+  defp source(text, filename), do: SourceFile.parse(text, filename)
+
+  defp check(text, rule, filename \\ @filename) do
+    MaxFileLength.check_file(source(text, filename), [rule], [])
+  end
+
+  describe "check_file/3" do
+    # Row #1 — over the default 400 (no :max_lines) → one issue, message names
+    # 401 code lines and the 400 default, on line 1, triggered by the filename.
+    test "#1 flags a file over the default 400 (401 code lines, no max_lines)" do
+      # 399 defs → 401 code lines.
+      issues = check(module_with_defs(399), %{type: :max_file_length})
+
+      assert [issue] = issues
+
+      assert issue.message =~
+               "File contains 401 lines of code (maximum allowed: 400)"
+
+      assert issue.message =~ "Consider breaking this file into smaller"
+      assert issue.line_no == 1
+      assert issue.trigger == @filename
+    end
+
+    # Row #2 — exactly 400 code lines → no issue (strictly-greater triggers).
+    test "#2 does not flag a file at exactly the default 400" do
+      # 398 defs → 400 code lines.
+      assert [] == check(module_with_defs(398), %{type: :max_file_length})
+    end
+
+    # Row #3 — honors a configured max_lines: 10 (12 code lines → one issue).
+    test "#3 honors a configured max_lines of 10" do
+      # 10 defs → 12 code lines.
+      issues = check(module_with_defs(10), %{type: :max_file_length, max_lines: 10})
+
+      assert [issue] = issues
+
+      assert issue.message =~
+               "File contains 12 lines of code (maximum allowed: 10)"
+    end
+
+    # Row #4 — under the configured max → no issue.
+    test "#4 does not flag a file under the configured max_lines" do
+      # 3 defs → 5 code lines, under the configured 10.
+      assert [] == check(module_with_defs(3), %{type: :max_file_length, max_lines: 10})
+    end
+
+    # Row #5 — blank / whitespace-only lines are not counted (boundary proof).
+    test "#5 excludes blank and whitespace-only lines from the count" do
+      lines =
+        ["defmodule MyModule do"] ++
+          List.duplicate("", 25) ++
+          ["  def hello(), do: :ok"] ++
+          List.duplicate("   ", 25) ++
+          ["end"]
+
+      text = Enum.join(lines, "\n")
+
+      # 3 real code lines + 50 blank lines. At the 3-line boundary the blanks are
+      # excluded, so nothing triggers; were they counted (53) it would.
+      assert [] == check(text, %{type: :max_file_length, max_lines: 3})
+
+      # Positive control: detection is live for this exact source.
+      assert [issue] = check(text, %{type: :max_file_length, max_lines: 2})
+      assert issue.message =~ "File contains 3 lines of code (maximum allowed: 2)"
+    end
+
+    # Row #6 — full-line `#` comments are not counted (boundary proof).
+    test "#6 excludes full-line comments from the count" do
+      lines =
+        ["defmodule MyModule do"] ++
+          List.duplicate("  # a comment line", 30) ++
+          ["  def hello(), do: :ok", "end"]
+
+      text = Enum.join(lines, "\n")
+
+      # 3 real code lines + 30 comment lines. At the boundary the comments are
+      # excluded (3 not > 3); were they counted (33) it would trigger.
+      assert [] == check(text, %{type: :max_file_length, max_lines: 3})
+
+      # Positive control.
+      assert [issue] = check(text, %{type: :max_file_length, max_lines: 2})
+      assert issue.message =~ "File contains 3 lines of code (maximum allowed: 2)"
+    end
+
+    # Row #7 — @moduledoc / @doc heredoc bodies are not counted.
+    test "#7 excludes @moduledoc and @doc heredoc bodies from the count" do
+      text = """
+      defmodule MyModule do
         @moduledoc \"\"\"
-        This module represents a user in the system.
-        
-        Users have various attributes and can perform
-        multiple actions within the application.
-        
-        ## Examples
-        
-            iex> User.new(name: "John")
-            %User{name: "John"}
-            
-        ## Fields
-        
-        - `:name` - The user's full name
-        - `:email` - The user's email address
-        - `:role` - The user's role in the system
+        Line one of the module documentation.
+        Line two of the module documentation.
+        Line three of the module documentation.
+        Line four of the module documentation.
+        Line five of the module documentation.
         \"\"\"
-        
-        use Ecto.Schema
-        import Ecto.Changeset
-        
-        # This is a single-line comment
-        
-        @typedoc \"\"\"
-        Represents a user struct with all its fields.
-        
-        This type is used throughout the application
-        to ensure type safety when dealing with users.
-        \"\"\"
-        @type t :: %__MODULE__{
-          id: integer() | nil,
-          name: String.t(),
-          email: String.t(),
-          role: atom()
-        }
-        
+
         @doc \"\"\"
-        Creates a new user with the given attributes.
-        
-        ## Parameters
-        
-        - `attrs` - A map of user attributes
-        
-        ## Examples
-        
-            iex> User.new(%{name: "Jane", email: "jane@example.com"})
-            %User{name: "Jane", email: "jane@example.com"}
+        Doc line one.
+        Doc line two.
+        Doc line three.
         \"\"\"
-        def new(attrs) do
-          %__MODULE__{}
-          |> cast(attrs, [:name, :email, :role])
-          |> validate_required([:name, :email])
-        end
-        
-        # Another comment
-        # that spans
-        # multiple lines
-        
-        @doc \"\"\"
-        Validates a user changeset.
-        \"\"\"
-        def validate(changeset) do
-          changeset
-          |> validate_length(:name, min: 2, max: 100)
-          |> validate_format(:email, ~r/@/)
-        end
-        
+
+        def hello(), do: :ok
+      end
+      """
+
+      # Real code lines: defmodule, def hello, end = 3. The doc bodies (~11 lines)
+      # are excluded, so with a generous max of 10 nothing triggers; were the doc
+      # bodies counted the file would be well over 10.
+      assert [] == check(text, %{type: :max_file_length, max_lines: 10})
+
+      # Positive control: the same source triggers once the max drops below the
+      # real code-line count.
+      assert [issue] = check(text, %{type: :max_file_length, max_lines: 2})
+      assert issue.message =~ "File contains 3 lines of code (maximum allowed: 2)"
+    end
+
+    # Row #8 — a `@doc false` line is not counted (boundary proof).
+    test "#8 excludes a @doc false line from the count" do
+      text = """
+      defmodule MyModule do
         @doc false
-        def internal_function(user) do
-          # This function is for internal use only
-          do_something(user)
-        end
-        
-        # Private functions
-        
-        defp do_something(user) do
-          user
-        end
-        
-        
-        
-        # Empty lines above should not count
-        
-        defp another_helper do
-          :ok
-        end
-        
-        @doc \"\"\"
-        A macro that does something special.
-        \"\"\"
-        defmacro special_macro(ast) do
-          quote do
-            unquote(ast)
-          end
-        end
+        def internal(), do: :ok
+        def other(), do: :ok
       end
       """
-      
-      # When counting actual code lines (excluding docs, comments, empty lines):
-      # Should count: module definition, use, import, @type, function defs, actual code lines
-      # Should NOT count: @moduledoc, @typedoc, @doc, comments, empty lines
-      
-      rule = %{"type" => "max_file_length", "max_lines" => 30}
-      source = SourceFile.parse(source_file, "lib/test.ex")
-      issues = MaxFileLength.check_file(source, [rule], [])
-      
-      # This should count approximately 20-25 actual code lines, well under 30
-      assert [] == issues
+
+      # Real code lines: defmodule, def internal, def other, end = 4. At the
+      # 4-line boundary the `@doc false` line is excluded (4 not > 4); were it
+      # counted (5) it would trigger.
+      assert [] == check(text, %{type: :max_file_length, max_lines: 4})
+
+      # Positive control: detection is live for this exact source.
+      assert [issue] = check(text, %{type: :max_file_length, max_lines: 3})
+      assert issue.message =~ "File contains 4 lines of code (maximum allowed: 3)"
     end
-    
-    test "detects when actual code exceeds limit despite many comments" do
-      functions = Enum.map(1..50, fn i ->
-        """
-        @doc \"\"\"
-        Function #{i} documentation.
-        \"\"\"
-        def function_#{i}(x) do
-          # Comment for function #{i}
-          x + #{i}
-        end
-        """
-      end)
-      
-      source_file = """
-      defmodule MyModule do
-        @moduledoc \"\"\"
-        A module with many functions.
-        \"\"\"
-        
-        #{Enum.join(functions, "\n")}
-      end
-      """
-      
-      rule = %{"type" => "max_file_length", "max_lines" => 100}
-      source = SourceFile.parse(source_file, "lib/test.ex")
-      issues = MaxFileLength.check_file(source, [rule], [])
-      
-      # With 50 functions, each having ~3 lines of actual code (def, body, end)
-      # Plus module definition, this should exceed 100 lines of actual code
-      assert length(issues) == 1
+
+    # Row #9 — the message reflects the code-line count only (not blanks/comments).
+    test "#9 message reports code lines only, not blank or comment lines" do
+      # 10 defs → 12 code lines, then 25 blank + 25 comment lines interleaved.
+      filler =
+        (List.duplicate("", 25) ++ List.duplicate("  # noise", 25))
+        |> Enum.join("\n")
+
+      text = "#{module_with_defs(10)}\n#{filler}"
+
+      issues = check(text, %{type: :max_file_length, max_lines: 5})
+
+      assert [issue] = issues
+
+      assert issue.message =~
+               "File contains 12 lines of code (maximum allowed: 5)"
     end
-  end
-
-  test "no issue when file is under default limit of 400 lines" do
-    lines = Enum.map(1..396, fn i -> "  def function_#{i}(), do: :ok" end)
-    source_file = "defmodule MyModule do\n#{Enum.join(lines, "\n")}\nend"
-
-    rule = %{"type" => "max_file_length"}
-    source = SourceFile.parse(source_file, "lib/test.ex")
-    assert [] == MaxFileLength.check_file(source, [rule], [])
-  end
-
-  test "no issue when file is exactly at default limit of 400 lines" do
-    lines = Enum.map(1..398, fn i -> "  def function_#{i}(), do: :ok" end)
-    source_file = "defmodule MyModule do\n#{Enum.join(lines, "\n")}\nend"
-
-    rule = %{"type" => "max_file_length"}
-    source = SourceFile.parse(source_file, "lib/test.ex")
-    assert [] == MaxFileLength.check_file(source, [rule], [])
-  end
-
-  test "detects file exceeding default limit of 400 lines" do
-    lines = Enum.map(1..399, fn i -> "  def function_#{i}(), do: :ok" end)
-    source_file = "defmodule MyModule do\n#{Enum.join(lines, "\n")}\nend"
-
-    rule = %{"type" => "max_file_length"}
-    source = SourceFile.parse(source_file, "lib/test.ex")
-    issues = MaxFileLength.check_file(source, [rule], [])
-    
-    assert length(issues) == 1
-    issue = hd(issues)
-    assert issue.message =~ "File contains 401 lines of code (maximum allowed: 400)"
-    assert issue.message =~ "Consider breaking this file into smaller"
-    assert issue.line_no == 1
-  end
-
-  test "respects custom max_lines configuration as integer" do
-    lines = Enum.map(1..99, fn i -> "  def function_#{i}(), do: :ok" end)
-    source_file = "defmodule MyModule do\n#{Enum.join(lines, "\n")}\nend"
-
-    rule = %{"type" => "max_file_length", "max_lines" => 100}
-    source = SourceFile.parse(source_file, "lib/test.ex")
-    issues = MaxFileLength.check_file(source, [rule], [])
-    
-    assert length(issues) == 1
-    issue = hd(issues)
-    assert issue.message =~ "File contains 101 lines of code (maximum allowed: 100)"
-  end
-
-  test "respects custom max_lines configuration as string" do
-    lines = Enum.map(1..99, fn i -> "  def function_#{i}(), do: :ok" end)
-    source_file = "defmodule MyModule do\n#{Enum.join(lines, "\n")}\nend"
-
-    rule = %{"type" => "max_file_length", "max_lines" => "100"}
-    source = SourceFile.parse(source_file, "lib/test.ex")
-    issues = MaxFileLength.check_file(source, [rule], [])
-    
-    assert length(issues) == 1
-    issue = hd(issues)
-    assert issue.message =~ "File contains 101 lines of code (maximum allowed: 100)"
-  end
-
-  test "no issue when file is under custom limit" do
-    lines = Enum.map(1..47, fn i -> "  def function_#{i}(), do: :ok" end)
-    source_file = "defmodule MyModule do\n#{Enum.join(lines, "\n")}\nend"
-
-    rule = %{"type" => "max_file_length", "max_lines" => 50}
-    source = SourceFile.parse(source_file, "lib/test.ex")
-    assert [] == MaxFileLength.check_file(source, [rule], [])
-  end
-
-  test "handles empty files" do
-    source_file = ""
-
-    rule = %{"type" => "max_file_length"}
-    source = SourceFile.parse(source_file, "lib/test.ex")
-    assert [] == MaxFileLength.check_file(source, [rule], [])
-  end
-
-  describe "documentation and comment handling" do
-    test "excludes @moduledoc from line count" do
-      source_file = """
-      defmodule MyModule do
-        @moduledoc \"\"\"
-        This is a very long module documentation
-        that spans multiple lines.
-        
-        It includes:
-        - Examples
-        - Usage instructions
-        - Implementation details
-        
-        And should not count towards the line limit.
-        \"\"\"
-        
-        def hello, do: :world
-      end
-      """
-      
-      # Should only count: defmodule line, def line, and end lines (approximately 3-4 lines)
-      rule = %{"type" => "max_file_length", "max_lines" => 10}
-      source = SourceFile.parse(source_file, "lib/test.ex")
-      assert [] == MaxFileLength.check_file(source, [rule], [])
-    end
-    
-    test "excludes @doc and @typedoc from line count" do
-      source_file = """
-      defmodule MyModule do
-        @typedoc \"\"\"
-        A custom type with documentation.
-        This documentation is multiple lines.
-        \"\"\"
-        @type custom_type :: String.t()
-        
-        @doc \"\"\"
-        Function documentation.
-        
-        ## Examples
-        
-            iex> hello()
-            :world
-        \"\"\"
-        def hello, do: :world
-        
-        @doc \"\"\"
-        Another function with docs.
-        \"\"\"
-        @spec goodbye() :: :moon
-        def goodbye, do: :moon
-      end
-      """
-      
-      # Should count: defmodule, @type, @spec, def lines, end - but not @doc/@typedoc
-      rule = %{"type" => "max_file_length", "max_lines" => 15}
-      source = SourceFile.parse(source_file, "lib/test.ex")
-      assert [] == MaxFileLength.check_file(source, [rule], [])
-    end
-    
-    test "excludes comments from line count" do
-      source_file = """
-      defmodule MyModule do
-        # This is a comment
-        # Another comment line
-        # Yet another comment
-        
-        def hello do
-          # Inline comment
-          :world # End of line comment
-        end
-        
-        # Comment between functions
-        # With multiple lines
-        # That should not count
-        
-        def goodbye do
-          :moon
-        end
-      end
-      """
-      
-      # Should only count actual code lines
-      rule = %{"type" => "max_file_length", "max_lines" => 10}
-      source = SourceFile.parse(source_file, "lib/test.ex")
-      assert [] == MaxFileLength.check_file(source, [rule], [])
-    end
-    
-    test "excludes empty lines and whitespace-only lines" do
-      source_file = """
-      defmodule MyModule do
-        
-        
-        def hello, do: :world
-        
-        
-        
-        def goodbye, do: :moon
-        
-        
-      end
-      """
-      
-      # Should only count the 4 actual code lines
-      rule = %{"type" => "max_file_length", "max_lines" => 5}
-      source = SourceFile.parse(source_file, "lib/test.ex")
-      assert [] == MaxFileLength.check_file(source, [rule], [])
-    end
-  end
-  
-  describe "complex module structures" do
-    test "handles modules with macros, callbacks, and behaviours" do
-      source_file = """
-      defmodule MyApp.ComplexModule do
-        @moduledoc \"\"\"
-        A complex module with various Elixir constructs.
-        \"\"\"
-        
-        @behaviour GenServer
-        
-        use GenServer
-        require Logger
-        import Ecto.Query
-        alias MyApp.{User, Post, Comment}
-        
-        @impl true
-        def init(state) do
-          {:ok, state}
-        end
-        
-        @impl true
-        def handle_call(:get, _from, state) do
-          {:reply, state, state}
-        end
-        
-        @doc \"\"\"
-        A public function.
-        \"\"\"
-        def public_function(x) do
-          x * 2
-        end
-        
-        # Private functions section
-        
-        defp private_helper(x) do
-          x + 1
-        end
-        
-        defmacro my_macro(ast) do
-          quote do
-            unquote(ast)
-          end
-        end
-        
-        defmacrop private_macro(ast) do
-          ast
-        end
-      end
-      """
-      
-      # Count actual code, not docs/comments
-      # Module has ~28 lines of actual code
-      rule = %{"type" => "max_file_length", "max_lines" => 30}
-      source = SourceFile.parse(source_file, "lib/test.ex")
-      assert [] == MaxFileLength.check_file(source, [rule], [])
-    end
-    
-    test "handles nested modules" do
-      source_file = """
-      defmodule OuterModule do
-        @moduledoc \"\"\"
-        Outer module docs.
-        \"\"\"
-        
-        defmodule InnerModule do
-          @moduledoc \"\"\"
-          Inner module docs.
-          \"\"\"
-          
-          def inner_function do
-            :inner
-          end
-        end
-        
-        def outer_function do
-          :outer
-        end
-      end
-      """
-      
-      # Should count all defmodule and def lines, but not @moduledoc
-      rule = %{"type" => "max_file_length", "max_lines" => 10}
-      source = SourceFile.parse(source_file, "lib/test.ex")
-      assert [] == MaxFileLength.check_file(source, [rule], [])
-    end
-  end
-
-  test "no longer counts blank lines and comments" do
-    source_file = "defmodule MyModule do\n  # This is a comment\n  def hello, do: :world\n  \n  # Another comment\n  \n  def goodbye, do: :moon\nend"
-
-    # New implementation only counts actual code lines (4 lines: defmodule, def, def, end)
-    rule = %{"type" => "max_file_length", "max_lines" => 5}
-    source = SourceFile.parse(source_file, "lib/test.ex")
-    issues = MaxFileLength.check_file(source, [rule], [])
-    
-    # Should not trigger because only 4 lines of actual code
-    assert issues == []
-  end
-
-  test "trigger contains filename" do
-    lines = Enum.map(1..399, fn i -> "  def function_#{i}(), do: :ok" end)
-    source_file = "defmodule MyModule do\n#{Enum.join(lines, "\n")}\nend"
-
-    rule = %{"type" => "max_file_length"}
-    source = SourceFile.parse(source_file, "lib/my_app/some_module.ex")
-    issues = MaxFileLength.check_file(source, [rule], [])
-    
-    assert length(issues) == 1
-    issue = hd(issues)
-    assert issue.trigger == "lib/my_app/some_module.ex"
   end
 end
