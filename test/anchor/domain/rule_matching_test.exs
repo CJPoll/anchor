@@ -91,6 +91,73 @@ defmodule Anchor.Domain.RuleMatchingTest do
     end
   end
 
+  # Gap D (DND-140) — test-matrix rule_matching.ex -> rule_matches_file?/2 rows 1-7.
+  # With parse_rule/1 now emitting `paths: nil` when YAML omits `paths` (and the
+  # first clause guarded on a NON-EMPTY list), a `pattern`/`uses_module` rule
+  # falls through to its own clause instead of being shadowed by
+  # `Enum.any?([], …)`.
+  # Sabotage record: ../../sabotage_records/rule_matching-20260913-dnd_140_gap_d_rule_selection.md
+  describe "rule_matches_file?/2 Gap D: paths-presence gating (DND-140)" do
+    # Row 1
+    test "row 1: pattern rule with paths: nil selects by module name" do
+      rule = %{pattern: "*.Schemas.*", paths: nil, uses_module: nil}
+
+      assert RuleMatching.rule_matches_file?(
+               rule,
+               facts(%{module_names: ["Elixir.App.Schemas.User"]})
+             )
+    end
+
+    # Row 2
+    test "row 2: pattern rule with paths: nil does not select a non-matching module" do
+      rule = %{pattern: "*.Schemas.*", paths: nil, uses_module: nil}
+
+      refute RuleMatching.rule_matches_file?(
+               rule,
+               facts(%{module_names: ["Elixir.App.Service"]})
+             )
+    end
+
+    # Row 3
+    test "row 3: paths rule (recursive) still selects by path" do
+      rule = %{paths: ["lib/**/*.ex"], recursive: true, pattern: nil, uses_module: nil}
+
+      assert RuleMatching.rule_matches_file?(rule, facts(%{filename: "lib/a/b.ex"}))
+    end
+
+    # Row 4 — the real bug reproduction: an empty `paths: []` must no longer
+    # shadow the pattern selector.
+    test "row 4: empty paths: [] falls through to the pattern clause" do
+      rule = %{paths: [], recursive: false, pattern: "*.Schemas.*", uses_module: nil}
+
+      assert RuleMatching.rule_matches_file?(
+               rule,
+               facts(%{module_names: ["Elixir.App.Schemas.User"]})
+             )
+    end
+
+    # Row 5
+    test "row 5: uses_module rule with paths: nil selects a file that uses it" do
+      rule = %{uses_module: "Ecto.Schema", paths: nil, pattern: nil}
+
+      assert RuleMatching.rule_matches_file?(rule, facts(%{uses: [Ecto.Schema]}))
+    end
+
+    # Row 6
+    test "row 6: rule with no selector (all nil) selects nothing (deny by default)" do
+      rule = %{paths: nil, pattern: nil, uses_module: nil}
+
+      refute RuleMatching.rule_matches_file?(rule, facts())
+    end
+
+    # Row 7
+    test "row 7: non-recursive single-* paths rule does not select a nested file" do
+      rule = %{paths: ["lib/*.ex"], recursive: false, pattern: nil, uses_module: nil}
+
+      refute RuleMatching.rule_matches_file?(rule, facts(%{filename: "lib/a/b.ex"}))
+    end
+  end
+
   describe "rule_matches_type?/2" do
     test "true when rule type equals the check's type" do
       assert RuleMatching.rule_matches_type?(
