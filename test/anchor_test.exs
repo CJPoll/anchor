@@ -36,4 +36,25 @@ defmodule AnchorTest do
              "#{inspect(check)} is not a valid Credo.Check (missing category/0)"
     end
   end
+
+  test "checks/0 matches every check module that actually exists on disk" do
+    check_dir = Path.join([__DIR__, "..", "lib", "anchor", "check"])
+
+    modules_on_disk =
+      check_dir
+      |> File.ls!()
+      |> Enum.reject(&(&1 == "base.ex"))
+      |> Enum.map(fn filename ->
+        filename
+        |> Path.basename(".ex")
+        |> Macro.camelize()
+        |> then(&Module.concat([Anchor, Check, &1]))
+      end)
+      |> Enum.sort()
+
+    assert Enum.sort(Anchor.checks()) == modules_on_disk,
+           "Anchor.checks/0 has drifted from the check modules under lib/anchor/check/ " <>
+             "(excluding base.ex, the shared __using__ macro). Add or remove entries in " <>
+             "Anchor.checks/0 to match."
+  end
 end
