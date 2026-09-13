@@ -13,6 +13,17 @@ These mutations prove the two bug fixes this ticket delivers: BUG 2 (surface
 the umbrella-root `.anchor.yml`). Each mutation lets the wrong value or the
 default leak through; each was watched to fail and then reverted.
 
+**Scope note (BUG 2).** T3's BUG-2 fix is the *surfacing*: `parse_rule/1` now
+emits `max_lines` (atom-keyed integer) and `mode` (coerced atom) on every rule
+map inside the returned `%Config{}`. The two *consumers* —
+`Anchor.Check.MaxFileLength` and `Anchor.Check.AlphabetizedFunctions` — still
+read the old string keys (`Map.get(rule, "max_lines")` / `"mode"`) and so do not
+yet observe these values; wiring them to read the atom keys is downstream
+T6.10/T6.11 (per the T3 ticket). There is **no regression**: those string-key
+lookups were already dead before this change (the parser never emitted the
+keys). So BUG-2 is not yet observable end-to-end from `.anchor.yml`; this record
+proves only the parser half T3 owns.
+
 ## Mutations
 
 | # | Mutation | Suite | Tests failed | Failure string |
