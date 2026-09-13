@@ -62,3 +62,8 @@ before coining a synonym.
   extracted pure detector (`Anchor.Domain.Checks.CaseOnBareArg`, including
   defaulted-argument (`\`) recognition) and the `Anchor.Check.CaseOnBareArg`
   shell that delegates to it.
+- `single_control_flow` — the "single control flow" check: its extracted pure
+  detector (`Anchor.Domain.Checks.SingleControlFlow`, including
+  `find_function_clauses` / `count_control_flow_structures` /
+  `already_in_pipe_chain?`) and the `Anchor.Check.SingleControlFlow` shell that
+  delegates to it.
