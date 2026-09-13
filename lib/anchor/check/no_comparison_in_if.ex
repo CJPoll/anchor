@@ -3,9 +3,10 @@ defmodule Anchor.Check.NoComparisonInIf do
     category: :readability,
     explanations: [
       check: """
-      This check ensures that `if` statements do not contain direct comparisons
-      in their conditionals. Instead, comparisons should be extracted to private
-      functions with descriptive names that convey domain meaning.
+      This check ensures that `if` and `unless` statements do not contain direct
+      comparisons in their conditionals. Instead, comparisons should be
+      extracted to private functions with descriptive names that convey domain
+      meaning.
 
       This improves code readability by expressing intent rather than implementation.
 
@@ -17,7 +18,7 @@ defmodule Anchor.Check.NoComparisonInIf do
         # ...
       end
 
-      if user.status == :active and user.verified? do
+      unless user.status == :active do
         # ...
       end
       ```
@@ -28,12 +29,12 @@ defmodule Anchor.Check.NoComparisonInIf do
         # ...
       end
 
-      if eligible_user?(user) do
+      unless active_status?(user) do
         # ...
       end
 
       defp adult?(user), do: user.age >= 18
-      defp eligible_user?(user), do: user.status == :active and user.verified?
+      defp active_status?(user), do: user.status == :active
       ```
       """
     ]
@@ -41,67 +42,11 @@ defmodule Anchor.Check.NoComparisonInIf do
   @doc false
   def rule_type, do: :no_comparison_in_if
 
+  # Thin Framework delegate: the Manager hands over the bare AST and the rules
+  # it already selected; detection lives in the pure Domain module, and Base
+  # maps the returned `%Anchor.Domain.Violation{}`s onto `Credo.Issue`s.
   @doc false
   def detect_violations(_source_file, ast, rules, _context) do
-    Enum.flat_map(rules, fn _rule ->
-      find_if_with_comparisons(ast)
-    end)
-  end
-
-  defp find_if_with_comparisons(ast) do
-    {_ast, violations} =
-      Macro.prewalk(ast, [], fn
-        {:if, meta, [condition, _body]} = node, acc ->
-          case has_comparison?(condition) do
-            true ->
-              violation = create_violation(meta)
-              {node, [violation | acc]}
-
-            false ->
-              {node, acc}
-          end
-
-        node, acc ->
-          {node, acc}
-      end)
-
-    violations
-  end
-
-  defp has_comparison?(ast) do
-    {_ast, has_comp} =
-      Macro.prewalk(ast, false, fn
-        # Comparison operators
-        {op, _meta, [_left, _right]} = node, _acc
-        when op in [:==, :!=, :===, :!==, :<, :>, :<=, :>=] ->
-          {node, true}
-
-        # Logical operators that might contain comparisons
-        {:and, _meta, [left, right]} = node, acc ->
-          {node, acc || has_comparison?(left) || has_comparison?(right)}
-
-        {:or, _meta, [left, right]} = node, acc ->
-          {node, acc || has_comparison?(left) || has_comparison?(right)}
-
-        {:not, _meta, [expr]} = node, acc ->
-          {node, acc || has_comparison?(expr)}
-
-        node, acc ->
-          {node, acc}
-      end)
-
-    has_comp
-  end
-
-  defp create_violation(meta) do
-    line_no = Keyword.get(meta, :line, 1)
-
-    %Violation{
-      message:
-        "Avoid direct comparisons in `if` statements. " <>
-          "Extract the comparison to a function in the appropriate module with a descriptive name.",
-      line: line_no,
-      trigger: "if"
-    }
+    Anchor.Domain.Checks.NoComparisonInIf.detect_violations(ast, rules)
   end
 end
