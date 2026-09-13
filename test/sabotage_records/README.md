@@ -67,3 +67,8 @@ before coining a synonym.
   `find_function_clauses` / `count_control_flow_structures` /
   `already_in_pipe_chain?`) and the `Anchor.Check.SingleControlFlow` shell that
   delegates to it.
+- `no_discarding_arrow_in_with` — the "no discarding arrow in with" check:
+  its extracted pure detector (`Anchor.Domain.Checks.NoDiscardingArrowInWith`,
+  including `extract_with_clauses` / `check_with_clauses` /
+  `is_discarding_pattern?`) and the `Anchor.Check.NoDiscardingArrowInWith`
+  shell that delegates to it.
