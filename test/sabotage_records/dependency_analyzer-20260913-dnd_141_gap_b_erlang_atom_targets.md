@@ -20,6 +20,7 @@
 |---|---|---|---|---|
 | A | Delete the bare-atom remote-call callee clause `defp collect_deps({{:., _dmeta, [mod, _fun]}, _meta, args}, ...) when is_atom(mod)` from `DependencyAnalyzer` | analyzer + no_dependency test files | **4** | re-reds extract_direct_dependencies rows 1, 5, 6 + the wired-check integration row |
 | B | Revert `Config.parse_modules` to `Enum.map(modules, &Module.concat([&1]))` (drop the leading-colon `parse_module_token/1` branch) | config test file | **3** | re-reds parse_rule rows 9, 11 + the required_modules symmetry row |
+| C | Force `NoDependency.elixir_module?/1` to `true` (so `first_reference_line/2` calls `Module.split/1` on the bare atom) | no_dependency test file | **2** | re-reds both wired-check atom rows — the dedicated mutation for the `first_reference_line` atom branch |
 
 Mutation A and Mutation B were applied and measured **separately** (each with the
 other's production code intact), then reverted with `git checkout -- <file>`. The
@@ -118,6 +119,39 @@ required_modules symmetry — "a leading-colon required_modules token is kept as
 
 Result: `20 tests, 3 failures`.
 
+### Mutation C — verbatim failures
+
+`NoDependency.elixir_module?/1` forced to `true`, so `first_reference_line/2`
+runs `Module.split/1` on the bare atom `:telemetry`, which raises. This is the
+dedicated mutation for the third production change (the atom branch of the
+first-reference-line lookup), which was otherwise only covered-by-crash.
+
+"an atom forbidden module flags a bare-atom remote call at its first line":
+
+```
+  1) test check_file/3 — Erlang-atom forbidden module (Gap B / DND-141, integration) an atom forbidden module flags a bare-atom remote call at its first line (Anchor.Check.NoDependencyTest)
+     test/anchor/check/no_dependency_test.exs:140
+     ** (ArgumentError) expected an Elixir module, got: :telemetry
+     code: assert [issue] = issues(source, [:telemetry])
+     stacktrace:
+       (elixir 1.19.4) lib/module.ex:1824: Module.split/2
+       (anchor 0.1.0) lib/anchor/domain/checks/no_dependency.ex:74: Anchor.Domain.Checks.NoDependency.first_reference_line/2
+```
+
+"reports the first reference line for a bare-atom module referenced twice":
+
+```
+  2) test check_file/3 — Erlang-atom forbidden module (Gap B / DND-141, integration) reports the first reference line for a bare-atom module referenced twice (Anchor.Check.NoDependencyTest)
+     test/anchor/check/no_dependency_test.exs:157
+     ** (ArgumentError) expected an Elixir module, got: :telemetry
+     code: assert [issue] = issues(source, [:telemetry])
+     stacktrace:
+       (elixir 1.19.4) lib/module.ex:1824: Module.split/2
+       (anchor 0.1.0) lib/anchor/domain/checks/no_dependency.ex:74: Anchor.Domain.Checks.NoDependency.first_reference_line/2
+```
+
+Result: `13 tests, 2 failures`.
+
 ## Rows that stayed green under Mutation B, and why
 
 - **parse_rule row 10** ("an ordinary CamelCase forbidden_modules token still
@@ -130,8 +164,16 @@ Result: `20 tests, 3 failures`.
 ## Measured zeros
 
 None. Every claim the fix adds is protected by at least one test that reddens
-under the corresponding mutation (analyzer rows 1/5/6 + integration under A;
-config rows 9/11 + required_modules under B).
+under the corresponding mutation:
+
+- analyzer bare-atom-callee clause → rows 1/5/6 + integration (Mutation A);
+- config leading-colon branch → parse_rule rows 9/11 + required_modules (Mutation B);
+- `first_reference_line` atom branch → both wired-check atom rows (Mutation C).
+
+Mutation C was added in the review round to give the third production change a
+**dedicated** mutation. Before it, that branch was protected only "by crash"
+(any revert made `Module.split(:telemetry)` raise inside the integration test);
+Mutation C makes that coverage explicit and re-runnable rather than incidental.
 
 ## Traps encountered
 

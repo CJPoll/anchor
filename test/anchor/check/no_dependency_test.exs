@@ -150,7 +150,25 @@ defmodule Anchor.Check.NoDependencyTest do
       assert issue.line_no == 2
     end
 
-    # Positive control — an inert `:ok` is never recorded, so it never flags.
+    # Reports the FIRST reference line for a bare-atom module appearing twice —
+    # the atom-path analogue of the alias-path row above (proves
+    # `atom_reference_line/2` short-circuits on the earliest occurrence, and that
+    # `first_reference_line/2` never calls `Module.split/1` on a bare atom).
+    test "reports the first reference line for a bare-atom module referenced twice" do
+      source = """
+      defmodule W do
+        def f, do: :telemetry.execute([:a], %{}, %{})
+
+        def g, do: :telemetry.execute([:b], %{}, %{})
+      end
+      """
+
+      assert [issue] = issues(source, [:telemetry])
+      assert issue.line_no == 2
+    end
+
+    # Absence assertion (paired with the row-9 positive control above): an inert
+    # `:ok` is never recorded, so an `:ok` rule flags nothing.
     test "an inert :ok atom literal is never flagged" do
       source = """
       defmodule W do
