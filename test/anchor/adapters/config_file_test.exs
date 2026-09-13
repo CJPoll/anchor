@@ -65,6 +65,24 @@ defmodule Anchor.Adapters.ConfigFileTest do
         assert {:error, {:config_load_failed, _reason}} = ConfigFile.load_from_path(path)
       end)
     end
+
+    # Gap F (DND-149): an invalid rule must surface on load, not silently green.
+    # A same_context: true rule with no forbidden_patterns has nothing to scope,
+    # so the load fails through the existing {:config_load_failed, _} channel.
+    test "an invalid same_context rule fails the load (not a silent no-op)" do
+      yaml = """
+      rules:
+        - type: no_direct_dependency
+          same_context: true
+          forbidden_modules:
+            - MyApp.Repo
+      """
+
+      with_config_file(yaml, fn path ->
+        assert {:error, {:config_load_failed, {:invalid_rule, _reason}}} =
+                 ConfigFile.load_from_path(path)
+      end)
+    end
   end
 
   describe "load/0 (test-matrix: config.ex -> load/0 and load_from_path/1)" do

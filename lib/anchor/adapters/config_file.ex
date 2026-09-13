@@ -37,8 +37,12 @@ defmodule Anchor.Adapters.ConfigFile do
   """
   def load_from_path(path) do
     with {:ok, content} <- File.read(path),
-         {:ok, data} <- YamlElixir.read_from_string(content) do
-      {:ok, Config.parse_config(data)}
+         {:ok, data} <- YamlElixir.read_from_string(content),
+         # Gap F (DND-149): `parse_config/1` returns `{:error, reason}` when a
+         # rule fails validation, so an invalid rule fails the load instead of
+         # loading as a no-op. A valid document yields a `%Config{}`.
+         %Config{} = config <- Config.parse_config(data) do
+      {:ok, config}
     else
       {:error, reason} -> {:error, {:config_load_failed, reason}}
     end
