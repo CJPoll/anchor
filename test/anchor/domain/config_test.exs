@@ -49,11 +49,13 @@ defmodule Anchor.Domain.ConfigTest do
       assert rule.forbidden_modules == [MyApp.Repo, Ecto.Query]
     end
 
-    # Row 4
-    test "absent list fields default to []" do
+    # Row 4 — absent list fields default to [], EXCEPT `paths` which surfaces as
+    # nil (Gap D, DND-140): an absent `paths` must be distinguishable from an
+    # explicit empty list so RuleMatching can fall through to pattern/uses_module.
+    test "absent list fields default to [] (paths surfaces as nil)" do
       rule = Config.parse_rule(%{"type" => "no_direct_dependency"})
 
-      assert rule.paths == []
+      assert rule.paths == nil
       assert rule.forbidden_modules == []
       assert rule.required_modules == []
       assert rule.allowed_functions == []
@@ -135,6 +137,27 @@ defmodule Anchor.Domain.ConfigTest do
 
       assert rule.max_lines == nil
       assert rule.mode == nil
+    end
+
+    # Gap D (DND-140) — test-matrix config.ex -> parse_rule/1 rows 3-4.
+    # Sabotage record: ../../sabotage_records/config-20260913-dnd_140_gap_d_rule_selection.md
+
+    # Matrix row 3: absent `paths` surfaces as nil (not []). Previously the
+    # parser stamped `|| []`, which made RuleMatching's first clause shadow the
+    # pattern/uses_module selectors.
+    test "Gap D row 3: absent paths surfaces as nil, not []" do
+      rule =
+        Config.parse_rule(%{"type" => "no_direct_dependency", "pattern" => "*.Schemas.*"})
+
+      assert rule.paths == nil
+    end
+
+    # Matrix row 4 (regression guard): a present `paths` list is preserved as-is.
+    test "Gap D row 4: present paths preserved as a list" do
+      rule =
+        Config.parse_rule(%{"type" => "no_direct_dependency", "paths" => ["lib/**/*.ex"]})
+
+      assert rule.paths == ["lib/**/*.ex"]
     end
   end
 

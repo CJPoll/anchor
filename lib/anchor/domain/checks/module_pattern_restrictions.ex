@@ -24,11 +24,14 @@ defmodule Anchor.Domain.Checks.ModulePatternRestrictions do
   Manager's concern (`Anchor.Managers.Lint` via `Anchor.Domain.RuleMatching`), so
   a legitimately path-selected rule is never dropped here.
 
-  The pre-existing `paths: []` selection shadow (every *parsed* rule is stamped
-  with `paths: []`, so `RuleMatching` never selects a `pattern`/`uses_module`
-  rule in the real config flow) is out of scope and unchanged; `pattern` /
-  `uses_module` selection is exercised here via **sparse** rule maps (no `:paths`
-  key), exactly as it is observable.
+  The former `paths: []` selection shadow — where every *parsed* rule was stamped
+  with `paths: []`, so `RuleMatching` never selected a `pattern`/`uses_module`
+  rule in the real config flow — was fixed in Gap D (DND-140):
+  `Anchor.Config.parse_rule/1` now surfaces an absent `paths` as `nil` and
+  `Anchor.Domain.RuleMatching` gates its path clause on a non-empty list, so a
+  `pattern`/`uses_module` rule is selected by `RuleMatching` in the real config
+  flow. This check's own module-based selection (below) is unchanged; it is
+  exercised via **sparse** rule maps (no `:paths` key).
 
   ## Allowed-function matching
 

@@ -103,6 +103,28 @@ rules:
 
 For umbrella applications, you can place the configuration at the root or in individual apps.
 
+### Selecting which files a rule applies to
+
+Every rule chooses the files it applies to with **exactly one** of three
+selectors, tried in this order:
+
+1. `paths` — a list of path globs matched against the file's path. Recursive
+   `**` semantics apply when `recursive: true`, single-`*` semantics otherwise.
+2. `pattern` — a module-name glob matched against any module the file defines
+   (for example `"*.Schemas.*"`).
+3. `uses_module` — selects files that `use` the named module (for example
+   `"Ecto.Schema"`).
+
+A rule that carries **none** of these selectors matches nothing (deny by
+default).
+
+Omitting `paths` is meaningful: a rule with no `paths` key is parsed with
+`paths: nil` (an *absent* selector), so selection falls through to `pattern` or
+`uses_module`. This differs from `paths: []` (an empty list), which is also
+treated as "no path selector". In other words, a `pattern`- or
+`uses_module`-only rule does **not** need an empty or placeholder `paths` entry
+— leave `paths` off entirely and the module selector is honored.
+
 ## Usage
 
 Configure Credo to use the custom checks in `.credo.exs`:
