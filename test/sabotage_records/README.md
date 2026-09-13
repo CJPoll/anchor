@@ -77,6 +77,12 @@ before coining a synonym.
   including `find_if_with_comparisons` / `has_comparison?`, with `unless`
   brought into scope alongside `if`) and the `Anchor.Check.NoComparisonInIf`
   shell that delegates to it.
+- `max_file_length` — the `max_file_length` check: its extracted pure detector
+  (`Anchor.Domain.Checks.MaxFileLength`, including `count_code_lines` /
+  `is_code_line?` / doc-range extraction / `get_max_lines` / message building,
+  reading the maximum from the atom `:max_lines` key T3 surfaces — the BUG 2
+  fix) and the `Anchor.Check.MaxFileLength` shell that acquires lines via
+  `Anchor.Check.Source` and delegates to it.
 - `no_tuple_match_in_head` — the "no `:ok`/`:error` tuple match in a function
   head" check: its extracted pure, AST-based detector
   (`Anchor.Domain.Checks.NoTupleMatchInHead`, including `find_function_clauses`
