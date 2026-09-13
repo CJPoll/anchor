@@ -32,6 +32,7 @@ defmodule Anchor.Domain.Checks.NoTransitiveDependency do
   """
 
   alias Anchor.Domain.DependencyAnalyzer
+  alias Anchor.Domain.GlobPattern
   alias Anchor.Domain.Violation
 
   @doc """
@@ -60,11 +61,25 @@ defmodule Anchor.Domain.Checks.NoTransitiveDependency do
 
     Enum.flat_map(rules, fn rule ->
       forbidden = rule.forbidden_modules || []
+      forbidden_patterns = Map.get(rule, :forbidden_patterns, []) || []
 
-      forbidden
-      |> Enum.filter(&(&1 in transitive_deps))
+      transitive_deps
+      |> Enum.filter(&forbidden?(&1, forbidden, forbidden_patterns))
       |> Enum.map(&build_violation(&1, module_name, modules_map, ast))
     end)
+  end
+
+  # Gap A (DND-142): a transitively-reachable module is forbidden when it is an
+  # exact `forbidden_modules` entry OR its module name matches a
+  # `forbidden_patterns` glob. Graph edges stay reference-based; `match` mode is
+  # A'-scoped to `NoDependency` and is not consulted here.
+  defp forbidden?(module, forbidden_modules, forbidden_patterns) do
+    module in forbidden_modules or matches_any_pattern?(module, forbidden_patterns)
+  end
+
+  defp matches_any_pattern?(module, patterns) do
+    module_name = to_string(module)
+    Enum.any?(patterns, &GlobPattern.matches_module_pattern?(module_name, &1))
   end
 
   defp build_violation(forbidden_module, current_module, modules_map, ast) do

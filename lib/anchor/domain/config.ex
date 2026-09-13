@@ -68,10 +68,22 @@ defmodule Anchor.Config do
       uses_module: rule["uses_module"],
       forbidden_modules: parse_modules(rule["forbidden_modules"]),
       required_modules: parse_modules(rule["required_modules"]),
+      # Gap A (DND-142): module-name globs (e.g. `"*.Adapters.*"`), matched with
+      # `Anchor.Domain.GlobPattern.matches_module_pattern?/2`. Absent ⇒ `[]`.
+      # Patterns are strings (not run through `parse_modules`, unlike
+      # `forbidden_modules`/`required_modules`), so a leading-colon token here is
+      # a literal glob character, not an Erlang-atom module token.
+      forbidden_patterns: rule["forbidden_patterns"] || [],
       allowed_functions: rule["allowed_functions"] || [],
       recursive: rule["recursive"] || false,
       max_lines: rule["max_lines"],
-      mode: parse_mode(rule["mode"])
+      mode: parse_mode(rule["mode"]),
+      # Gap A' (DND-142): which dependency set the `no_direct_dependency` check
+      # consults — `:reference` (default, every referenced module) or `:call`
+      # (only modules in call position, honoring ADR-001's Domain-router-holds-
+      # atoms carve-out). Coerced from a bare YAML token; an unknown token falls
+      # back to `:reference` WITHOUT raising.
+      match: parse_match(rule["match"])
     }
   end
 
@@ -97,4 +109,11 @@ defmodule Anchor.Config do
   defp parse_mode("public_only"), do: :public_only
   defp parse_mode("separate"), do: :separate
   defp parse_mode(_token), do: :separate
+
+  # Gap A' (DND-142): `match` arrives as a bare YAML token (a string). Coerce the
+  # two known tokens; an absent `match` and any unknown token both default to
+  # `:reference` (current behavior), never raising.
+  defp parse_match("call"), do: :call
+  defp parse_match("reference"), do: :reference
+  defp parse_match(_token), do: :reference
 end

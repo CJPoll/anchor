@@ -31,6 +31,7 @@ defmodule Anchor.Domain.Checks.NoDependency do
   """
 
   alias Anchor.Domain.DependencyAnalyzer
+  alias Anchor.Domain.GlobPattern
   alias Anchor.Domain.Violation
 
   @doc """
@@ -42,15 +43,34 @@ defmodule Anchor.Domain.Checks.NoDependency do
   """
   @spec detect_violations(Macro.t(), [map()]) :: [Violation.t()]
   def detect_violations(ast, rules) do
-    dependencies = DependencyAnalyzer.extract_direct_dependencies(ast)
-
     Enum.flat_map(rules, fn rule ->
-      forbidden = rule.forbidden_modules || []
+      dependencies = dependencies_for(ast, Map.get(rule, :match, :reference))
+      forbidden_modules = rule.forbidden_modules || []
+      forbidden_patterns = Map.get(rule, :forbidden_patterns, []) || []
 
-      forbidden
-      |> Enum.filter(&(&1 in dependencies))
+      dependencies
+      |> Enum.filter(&forbidden?(&1, forbidden_modules, forbidden_patterns))
       |> Enum.map(&build_violation(&1, ast))
     end)
+  end
+
+  # Gap A' (DND-142): the dependency set the rule consults. `:call` mode looks at
+  # call-position dependencies only (honoring the router carve-out); `:reference`
+  # (default) at every referenced module, as before.
+  defp dependencies_for(ast, :call), do: DependencyAnalyzer.extract_call_dependencies(ast)
+  defp dependencies_for(ast, _match), do: DependencyAnalyzer.extract_direct_dependencies(ast)
+
+  # A dependency is forbidden when it is an exact `forbidden_modules` entry (Gap
+  # B lets that be a bare Erlang atom) OR its module name matches a
+  # `forbidden_patterns` glob (Gap A). A module matched by both is filtered once,
+  # so it is reported once.
+  defp forbidden?(dependency, forbidden_modules, forbidden_patterns) do
+    dependency in forbidden_modules or matches_any_pattern?(dependency, forbidden_patterns)
+  end
+
+  defp matches_any_pattern?(dependency, patterns) do
+    module_name = to_string(dependency)
+    Enum.any?(patterns, &GlobPattern.matches_module_pattern?(module_name, &1))
   end
 
   defp build_violation(forbidden_module, ast) do
