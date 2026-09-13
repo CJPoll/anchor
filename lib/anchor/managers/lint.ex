@@ -2,8 +2,8 @@ defmodule Anchor.Managers.Lint do
   @moduledoc """
   Orchestrates a single check's run over a set of source files — the **Manager**
   (ADR 001), and the only module allowed to call both the config adapter (a Side
-  Effect) and Domain code (`Anchor.Domain.RuleMatching` / `Anchor.Domain.GlobPattern`
-  and the check's own detection).
+  Effect) and Domain code (`Anchor.Domain.RuleMatching` — which in turn uses
+  `Anchor.Domain.GlobPattern` — and the check's own detection).
 
   It takes a check to completion:
 
@@ -15,7 +15,7 @@ defmodule Anchor.Managers.Lint do
        it; the others do not.
     3. For each file: acquire the AST at the framework edge, derive the pure
        facts the Domain selector operates on, select the rules that apply to this
-       check and this file (`RuleMatching` + `GlobPattern`), and — when at least
+       check and this file (`RuleMatching`, which uses `GlobPattern`), and — when at least
        one rule matches — call the check's Domain detection.
     4. Return `{:ok, [{source_file, [%Anchor.Domain.Violation{}]}]}` — Domain
        objects, never `Credo.Issue`s. Mapping violations to Credo issues is the
@@ -28,8 +28,8 @@ defmodule Anchor.Managers.Lint do
 
   Acquisition currently calls `Credo.Code.ast/1` directly here at the framework
   edge, mirroring what `Anchor.Check.Base` did before this refactor. The pure
-  Domain selection calls (`RuleMatching`/`GlobPattern`) receive only a plain
-  facts map — no Credo types. Turning acquisition into a proper port
+  Domain selection call (`RuleMatching`, and `GlobPattern` beneath it) receives
+  only a plain facts map — no Credo types. Turning acquisition into a proper port
   (`Anchor.Domain.DependencyAnalyzer` + an AST-acquisition boundary) is T5's job,
   built on top of this Manager.
   """
