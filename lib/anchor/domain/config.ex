@@ -23,6 +23,20 @@ defmodule Anchor.Config do
       bare YAML token, read by `Anchor.Check.AlphabetizedFunctions`. An unknown
       token coerces to `:separate`; an absent `mode` stays `nil` so the check
       applies its own default.
+    * `:same_context` — a boolean (default `false`) on a `no_direct_dependency`
+      rule (Gap F, DND-149). When `true`, a `forbidden_patterns` match is a
+      violation only if the dependency shares the checked file's own context;
+      exact `forbidden_modules` matches are never scoped. See
+      `Anchor.Domain.Checks.NoDependency` for the detection semantics.
+    * `:context_depth` — a positive integer (default `2`) on a
+      `no_direct_dependency` rule: how many leading namespace segments define a
+      "context". Inert unless `:same_context` is `true`.
+
+  A malformed `:same_context` (non-boolean), a non-positive `:context_depth`, or
+  a `same_context: true` rule with no `forbidden_patterns` to scope makes
+  `parse_rule/1` return `{:error, {:invalid_rule, reason}}`, which
+  `parse_config/1` propagates so a malformed rule fails the load (via
+  `Anchor.Adapters.ConfigFile`) rather than becoming a silent green no-op.
 
   ## Module tokens (`forbidden_modules` / `required_modules`)
 

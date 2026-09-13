@@ -141,6 +141,8 @@ semantics and edge cases.
 | `forbidden_modules` / `required_modules` | dependency / `must_use_module` | Exact module tokens (see the token syntax below). |
 | `forbidden_patterns` | `no_direct_dependency`, `no_transitive_dependency` | Module-name globs; forbids any referenced/reachable module whose name matches. |
 | `match` | `no_direct_dependency` | `reference` (default) or `call` — which dependency set the rule inspects. |
+| `same_context` | `no_direct_dependency` | Boolean, default `false`. When `true`, a `forbidden_patterns` match is a violation **only if** the dependency shares the checked file's own context. Exact `forbidden_modules` matches are never scoped. |
+| `context_depth` | `no_direct_dependency` | Positive integer, default `2`. Number of leading module-namespace segments that define a "context/subdomain". Inert unless `same_context: true`. |
 | `allowed_functions` | `module_pattern_restrictions` | Function-name allow-list (globs). |
 | `mode`, `max_lines` | `alphabetized_functions`, `max_file_length` | Style-check parameters. |
 
@@ -315,6 +317,70 @@ instead.
     - "*.Adapters.*"
   match: call                  # `%{yaml: Foo.Adapters.Loader}` passes; `Foo.Adapters.Loader.run()` fails
 ```
+
+#### Same-context scoping (`same_context` / `context_depth`)
+
+By default a `forbidden_patterns` match is a violation wherever it occurs.
+`same_context` narrows a pattern so it fires **only when the forbidden dependency
+lives in the same context (subdomain) as the file being checked**. This expresses
+a rule a static glob cannot: *"an adapter must not call a Manager in **its own**
+subdomain, but calling **another** subdomain's Manager (its public API) is
+allowed."*
+
+Two keys, both on a `no_direct_dependency` rule:
+
+- **`same_context`** — boolean, default `false`. `true` turns scoping on.
+- **`context_depth`** — positive integer, default `2`. How many leading
+  namespace segments define a context. A module's **context** is the first
+  `context_depth` dot-separated segments of its name: at depth 2,
+  `MyApp.Contacts.Managers.Foo` has context `["MyApp", "Contacts"]`.
+
+Scoping semantics, and their edges (all grounded in the shipped detection):
+
+- **A pattern match is reported iff the dependency's context equals the file's
+  own context**, both truncated to `context_depth`. The file's own context is
+  derived from the file's first defining module name.
+- **Exact `forbidden_modules` matches are never scoped.** They name absolute IO
+  modules (`MyApp.Repo`, `:telemetry`) for which "same subdomain" is meaningless,
+  so they always report regardless of `same_context`. Only `forbidden_patterns`
+  matches are scoped.
+- **Fewer than `context_depth` segments ⇒ no context ⇒ not reported.** If either
+  the dependency **or** the file has fewer than `context_depth` namespace
+  segments, it has no derivable context, is treated as *not* same-context, and
+  the match is not reported.
+- **A file with no derivable module name ⇒ nothing reported (deny-side default).**
+  Under a `same_context` rule, a file whose context cannot be derived (`nil`
+  context) reports nothing for that rule's pattern matches — with no file context
+  to compare against, a scoped match cannot be confirmed same-context.
+- **`same_context: false` or absent ⇒ today's behavior exactly** — every pattern
+  match is reported. This is a hard back-compat guarantee; a `context_depth` on a
+  rule without `same_context: true` is inert.
+
+A `same_context: true` rule that has no `forbidden_patterns` (nothing to scope) is
+rejected at config load with `{:error, {:invalid_rule, _}}`, as are a non-boolean
+`same_context` and a non-positive `context_depth` — a malformed rule fails the
+load rather than silently becoming a green no-op.
+
+```yaml
+# Forbid an adapter from calling a Manager IN ITS OWN subdomain, while still
+# allowing it to call another subdomain's Manager (the cross-subdomain public API).
+- type: no_direct_dependency
+  paths:
+    - "lib/my_app/*/adapters/**/*.ex"
+  recursive: true
+  forbidden_patterns:
+    - "*.Managers.*"     # any Manager module...
+  same_context: true     # ...but only when it shares the adapter's own subdomain
+  context_depth: 2       # context = MyApp.<Subdomain>
+  match: call
+```
+
+Because patterns are matched against the module's fully-qualified name (which
+carries the `Elixir.` prefix), lead the pattern with `*` — `"*.Managers.*"`, not
+`"MyApp.*.Managers.*"` — exactly as for `forbidden_patterns` generally. The
+`same_context`/`context_depth` comparison, by contrast, is done on the plain
+namespace segments (`Elixir.` stripped) of both the file's and the dependency's
+module names.
 
 ### `no_transitive_dependency`
 
