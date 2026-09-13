@@ -58,3 +58,8 @@ before coining a synonym.
   including `find_dependency_path` / `format_dependency_path` /
   `find_module_reference_line`) and the `Anchor.Check.NoTransitiveDependency`
   shell that delegates to it (declaring `needs_module_graph?/0`).
+- `single_control_flow` — the "single control flow" check: its extracted pure
+  detector (`Anchor.Domain.Checks.SingleControlFlow`, including
+  `find_function_clauses` / `count_control_flow_structures` /
+  `already_in_pipe_chain?`) and the `Anchor.Check.SingleControlFlow` shell that
+  delegates to it.

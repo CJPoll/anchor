@@ -1,226 +1,203 @@
 defmodule Anchor.Check.SingleControlFlowTest do
-  use ExUnit.Case
+  # Framework contract for Anchor.Check.SingleControlFlow: real `Credo.SourceFile`
+  # in, `[%Credo.Issue{}]` out via `check_file/3`. Detection lives in the Domain
+  # (Anchor.Domain.Checks.SingleControlFlow, tested in
+  # test/anchor/domain/checks/single_control_flow_test.exs); these rows verify
+  # the thin shell delegates and that violations are mapped to issues with the
+  # right message/trigger/line_no.
+  #
+  # Covers docs/five-bucket-test-matrix.md → single_control_flow.ex → check_file/3
+  # rows #1-10 (adjudicated contract).
+  #
+  # Sabotage record: ../../sabotage_records/single_control_flow-20260913-dnd_130_t6_5_single_control_flow.md
+  use ExUnit.Case, async: true
 
   alias Anchor.Check.SingleControlFlow
   alias Credo.SourceFile
 
-  describe "single control flow check" do
-    test "allows functions with no control-flow structures" do
-      source_code = """
-      defmodule MyApp.Example do
-        def simple_function(a, b) do
-          a + b
-        end
-      end
-      """
+  defp issues(source) do
+    source_file = SourceFile.parse(source, "lib/some_module.ex")
+    rule = %{type: :single_control_flow}
+    SingleControlFlow.check_file(source_file, [rule], [])
+  end
 
-      rule = %{type: :single_control_flow}
-      source_file = SourceFile.parse(source_code, "lib/my_app/example.ex")
-      issues = SingleControlFlow.check_file(source_file, [rule], [])
-
-      assert length(issues) == 0
-    end
-
-    test "allows functions with exactly one control-flow structure" do
-      source_code = """
-      defmodule MyApp.Example do
-        def with_if(x) do
-          if x > 0 do
-            :positive
-          else
-            :non_positive
-          end
-        end
-
-        def with_case(value) do
-          case value do
-            nil -> :empty
-            _ -> :has_value
-          end
-        end
-
-        def with_pipe(list) do
-          list
-          |> Enum.map(&(&1 * 2))
-          |> Enum.sum()
-        end
-      end
-      """
-
-      rule = %{type: :single_control_flow}
-      source_file = SourceFile.parse(source_code, "lib/my_app/example.ex")
-      issues = SingleControlFlow.check_file(source_file, [rule], [])
-
-      assert length(issues) == 0
-    end
-
-    test "detects functions with multiple control-flow structures" do
-      source_code = """
-      defmodule MyApp.Example do
-        def multiple_flows(x, list) do
-          result = if x > 0 do
-            list
-            |> Enum.map(&(&1 * 2))
-            |> Enum.sum()
-          else
-            0
-          end
-          
-          result
-        end
-      end
-      """
-
-      rule = %{type: :single_control_flow}
-      source_file = SourceFile.parse(source_code, "lib/my_app/example.ex")
-      issues = SingleControlFlow.check_file(source_file, [rule], [])
-
-      assert length(issues) == 1
-      issue = List.first(issues)
-      assert issue.message =~ "contains 2 control-flow structures"
-      assert issue.trigger == "multiple_flows"
-    end
-
-    test "counts pipe chains as one control-flow structure" do
-      source_code = """
-      defmodule MyApp.Example do
-        def long_pipe(list) do
-          list
-          |> Enum.map(&(&1 * 2))
-          |> Enum.filter(&(&1 > 10))
-          |> Enum.take(5)
-          |> Enum.sum()
-        end
-      end
-      """
-
-      rule = %{type: :single_control_flow}
-      source_file = SourceFile.parse(source_code, "lib/my_app/example.ex")
-      issues = SingleControlFlow.check_file(source_file, [rule], [])
-
-      assert length(issues) == 0
-    end
-
-    test "detects nested control-flow structures" do
-      source_code = """
-      defmodule MyApp.Example do
-        def nested_flows(x, y) do
-          case x do
-            :a ->
-              if y > 0 do
-                :positive_a
-              else
-                :non_positive_a
-              end
-            :b ->
-              :just_b
+  describe "check_file/3" do
+    # Row #1
+    test "flags a clause with two control-flow structures" do
+      source = """
+      defmodule S do
+        def f(x) do
+          if x do
+            case x do
+              _ -> 1
+            end
           end
         end
       end
       """
 
-      rule = %{type: :single_control_flow}
-      source_file = SourceFile.parse(source_code, "lib/my_app/example.ex")
-      issues = SingleControlFlow.check_file(source_file, [rule], [])
+      assert [issue] = issues(source)
+      assert issue.message =~ "contains 2 control-flow structures (maximum allowed: 1)"
+      assert issue.trigger == "f"
+      assert issue.line_no == 2
+    end
 
-      assert length(issues) == 1
-      issue = List.first(issues)
+    # Row #2
+    test "single `case` clause passes" do
+      source = """
+      defmodule S do
+        def f(x) do
+          case validate(x) do
+            :ok -> :ok
+            _ -> :error
+          end
+        end
+      end
+      """
+
+      assert issues(source) == []
+    end
+
+    # Row #3
+    test "a single pipe chain counts as one (passes)" do
+      source = """
+      defmodule S do
+        def f(x) do
+          x |> a() |> b() |> c()
+        end
+      end
+      """
+
+      assert issues(source) == []
+    end
+
+    # Row #4
+    test "pipe chain plus a `case` flags (count 2)" do
+      source = """
+      defmodule S do
+        def f(x) do
+          y = x |> a() |> b()
+
+          case y do
+            _ -> y
+          end
+        end
+      end
+      """
+
+      assert [issue] = issues(source)
       assert issue.message =~ "contains 2 control-flow structures"
     end
 
-    test "handles all control-flow types" do
-      source_code = """
-      defmodule MyApp.Example do
-        def with_cond(x) do
-          cond do
-            x > 10 -> :big
-            x > 0 -> :small
-            true -> :zero_or_negative
-          end
-        end
-
-        def with_with(user, params) do
-          with {:ok, user} <- validate_user(user),
-               {:ok, params} <- validate_params(params) do
-            process(user, params)
-          end
-        end
-
-        def with_unless(x) do
-          unless x == nil do
-            x * 2
-          end
-        end
-
-        def with_for(list) do
-          for x <- list, x > 0 do
-            x * 2
-          end
-        end
-
-        def with_receive() do
-          receive do
-            {:msg, data} -> data
-          after
-            1000 -> :timeout
-          end
+    # Row #5
+    test "two separate pipe chains flag (count 2)" do
+      source = """
+      defmodule S do
+        def f(x, y) do
+          a = x |> one() |> two()
+          b = y |> three() |> four()
+          {a, b}
         end
       end
       """
 
-      rule = %{type: :single_control_flow}
-      source_file = SourceFile.parse(source_code, "lib/my_app/example.ex")
-      issues = SingleControlFlow.check_file(source_file, [rule], [])
-
-      # All functions have exactly one control-flow structure
-      assert length(issues) == 0
+      assert [issue] = issues(source)
+      assert issue.message =~ "contains 2 control-flow structures"
     end
 
-    test "handles private functions" do
-      source_code = """
-      defmodule MyApp.Example do
-        defp private_with_multiple(x) do
-          y = case x do
-            nil -> 0
-            n -> n
-          end
-          
-          if y > 0 do
-            :positive
-          else
-            :non_positive
+    # Row #6
+    test "`with` + `if` flags" do
+      source = """
+      defmodule S do
+        def f(x) do
+          with {:ok, v} <- validate(x) do
+            if v do
+              :ok
+            end
           end
         end
       end
       """
 
-      rule = %{type: :single_control_flow}
-      source_file = SourceFile.parse(source_code, "lib/my_app/example.ex")
-      issues = SingleControlFlow.check_file(source_file, [rule], [])
-
-      assert length(issues) == 1
-      issue = List.first(issues)
-      assert issue.trigger == "private_with_multiple"
+      assert [issue] = issues(source)
+      assert issue.message =~ "contains 2 control-flow structures"
     end
 
-    test "handles functions with guards" do
-      source_code = """
-      defmodule MyApp.Example do
-        def guarded(x) when is_integer(x) do
-          if x > 0 do
-            :positive
-          else
-            :non_positive
+    # Row #7
+    test "`for` + `unless` flags (cond/receive also count as structures)" do
+      source = """
+      defmodule S do
+        def f(list) do
+          unless Enum.empty?(list) do
+            for x <- list do
+              x * 2
+            end
           end
         end
       end
       """
 
-      rule = %{type: :single_control_flow}
-      source_file = SourceFile.parse(source_code, "lib/my_app/example.ex")
-      issues = SingleControlFlow.check_file(source_file, [rule], [])
+      assert [issue] = issues(source)
+      assert issue.message =~ "contains 2 control-flow structures"
+    end
 
-      assert length(issues) == 0
+    # Row #8
+    test "clause with guard is analyzed" do
+      source = """
+      defmodule S do
+        def f(x) when is_integer(x) do
+          if x do
+            case x do
+              _ -> 1
+            end
+          end
+        end
+      end
+      """
+
+      assert [issue] = issues(source)
+      assert issue.trigger == "f"
+    end
+
+    # Row #9
+    test "function with zero control-flow structures passes" do
+      source = """
+      defmodule S do
+        def f(x) do
+          x + 1
+        end
+      end
+      """
+
+      assert issues(source) == []
+    end
+
+    # Row #10
+    test "each violating clause reported at its own def line" do
+      source = """
+      defmodule S do
+        def ok(x) do
+          x + 1
+        end
+
+        def bad(x) do
+          if x do
+            case x do
+              _ -> 1
+            end
+          end
+        end
+      end
+      """
+
+      assert [issue] = issues(source)
+      assert issue.line_no == 6
+    end
+  end
+
+  describe "rule_type/0" do
+    test "is :single_control_flow" do
+      assert SingleControlFlow.rule_type() == :single_control_flow
     end
   end
 end
