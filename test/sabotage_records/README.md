@@ -77,6 +77,13 @@ before coining a synonym.
   including `find_if_with_comparisons` / `has_comparison?`, with `unless`
   brought into scope alongside `if`) and the `Anchor.Check.NoComparisonInIf`
   shell that delegates to it.
+- `alphabetized_functions` — the "alphabetized functions" check: its extracted
+  pure detector (`Anchor.Domain.Checks.AlphabetizedFunctions`, including
+  `extract_functions` with `defguard`/`defguardp` support and multi-clause
+  collapse, the `:all`/`:public_only`/`:separate` mode dispatch read from the T3
+  atom key, `find_ordering_issues` / `find_structural_violations` and message
+  building) and the `Anchor.Check.AlphabetizedFunctions` shell that delegates to
+  it.
 - `max_file_length` — the `max_file_length` check: its extracted pure detector
   (`Anchor.Domain.Checks.MaxFileLength`, including `count_code_lines` /
   `is_code_line?` / doc-range extraction / `get_max_lines` / message building,
