@@ -21,12 +21,17 @@ defmodule Anchor.Check.NoTransitiveDependency do
   @doc false
   def detect_violations(_source_file, ast, rules, context) do
     modules_map = context.modules_map
-    module_name = DependencyAnalyzer.extract_module_name(ast)
 
-    # Find all transitive dependencies for this module
+    ast
+    |> DependencyAnalyzer.extract_module_names()
+    |> Enum.flat_map(&violations_for_module(&1, modules_map, rules, ast))
+  end
+
+  defp violations_for_module(module_name, modules_map, rules, ast) do
+    # Find all transitive dependencies for this module (self removed).
     transitive_deps =
-      DependencyAnalyzer.find_transitive_dependencies(modules_map, module_name)
-      # Remove self from dependencies
+      modules_map
+      |> DependencyAnalyzer.find_transitive_dependencies(module_name)
       |> MapSet.delete(module_name)
       |> MapSet.to_list()
 

@@ -114,11 +114,13 @@ defmodule Anchor.Managers.LintTest do
       # a missing key would raise KeyError here — reaching `{:ok, ...}` proves the
       # plumbing.
       #
-      # A is selected by `uses_module` (which composes end-to-end). This PINS
-      # current behavior: under BUG 1 the derived module names are nil (the
-      # `{:ok, ast}` wrapping), so the built graph is effectively empty and no
-      # transitive dependency is found — hence `[]` per file today. A future
-      # BUG 1 fix will flip A's file to a `MyApp.Repo` violation.
+      # A is selected by `uses_module` (which composes end-to-end). Post-BUG-1
+      # (T5): `Anchor.Check.Source` unwraps the `{:ok, ast}` tuple, so the
+      # derived module names are real and `build_modules_map/2` registers
+      # `A -> [B]` and `B -> [MyApp.Repo]`. A's transitive closure therefore
+      # reaches the forbidden `MyApp.Repo` (chain `A -> B -> MyApp.Repo`) and A's
+      # file is flagged; B is not selected by the `uses_module` rule, so it stays
+      # clean. (Before T5 both files were `[]` because the graph was empty.)
       file_a =
         SourceFile.parse(
           "defmodule A do\n  use SelectMe\n  def go, do: B.call()\nend\n",
@@ -136,10 +138,16 @@ defmodule Anchor.Managers.LintTest do
 
       expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
 
-      assert {:ok, [{^file_a, []}, {^file_b, []}]} =
+      assert {:ok, [{^file_a, [violation]}, {^file_b, []}]} =
                Lint.run(NoTransitiveDependency, [file_a, file_b], [],
                  config_loader: ConfigLoaderMock
                )
+
+      assert %Violation{trigger: "MyApp.Repo", line: 3} = violation
+
+      assert violation.message ==
+               "Module has transitive dependency on forbidden module MyApp.Repo " <>
+                 "(dependency chain: A -> B -> MyApp.Repo)"
     end
   end
 end

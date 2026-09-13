@@ -43,7 +43,9 @@ defmodule AnchorTest do
     modules_on_disk =
       check_dir
       |> File.ls!()
-      |> Enum.reject(&(&1 == "base.ex"))
+      # base.ex is the shared __using__ macro; source.ex is the AST-acquisition
+      # boundary (Framework edge, Anchor.Check.Source) — neither is a Credo check.
+      |> Enum.reject(&(&1 in ["base.ex", "source.ex"]))
       |> Enum.map(fn filename ->
         filename
         |> Path.basename(".ex")

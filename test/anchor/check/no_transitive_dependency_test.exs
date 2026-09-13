@@ -2,7 +2,7 @@ defmodule Anchor.Check.NoTransitiveDependencyTest do
   use ExUnit.Case
 
   alias Anchor.Check.NoTransitiveDependency
-  alias Anchor.DependencyAnalyzer
+  alias Anchor.Domain.DependencyAnalyzer
   alias Credo.SourceFile
 
   describe "transitive dependency analysis" do

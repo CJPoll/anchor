@@ -24,19 +24,20 @@ defmodule Anchor.Managers.Lint do
   On a config-load failure it returns `{:error, reason}` so the Framework can
   skip the check without breaking the Credo run.
 
-  ## AST acquisition (interim)
+  ## AST acquisition
 
-  Acquisition currently calls `Credo.Code.ast/1` directly here at the framework
-  edge, mirroring what `Anchor.Check.Base` did before this refactor. The pure
-  Domain selection call (`RuleMatching`, and `GlobPattern` beneath it) receives
-  only a plain facts map — no Credo types. Turning acquisition into a proper port
-  (`Anchor.Domain.DependencyAnalyzer` + an AST-acquisition boundary) is T5's job,
-  built on top of this Manager.
+  Acquisition goes through `Anchor.Check.Source` (the Framework edge, the only
+  place Credo AST/source acquisition may appear); it unwraps Credo's
+  `{:ok, ast}` once and hands the bare AST to the pure
+  `Anchor.Domain.DependencyAnalyzer`, which derives the facts the Domain selector
+  (`RuleMatching`, and `GlobPattern` beneath it) operates on. No Credo types
+  cross into the Domain.
   """
 
   alias Anchor.Adapters.ConfigFile
+  alias Anchor.Check.Source
   alias Anchor.Config
-  alias Anchor.DependencyAnalyzer
+  alias Anchor.Domain.DependencyAnalyzer
   alias Anchor.Domain.RuleMatching
 
   @default_config_loader ConfigFile
@@ -71,7 +72,7 @@ defmodule Anchor.Managers.Lint do
   end
 
   defp detect_for_file(check_module, source_file, rules, modules_map, params) do
-    ast = Credo.Code.ast(source_file)
+    ast = Source.ast(source_file)
     matching_rules = matching_rules(check_module, source_file, ast, rules)
     violations = detect(check_module, source_file, ast, matching_rules, modules_map, params)
     {source_file, violations}
@@ -96,26 +97,23 @@ defmodule Anchor.Managers.Lint do
   defp file_facts(source_file, ast) do
     %{
       filename: source_file.filename,
-      module_names: [to_string(DependencyAnalyzer.extract_module_name(ast))],
+      module_names: Enum.map(DependencyAnalyzer.extract_module_names(ast), &to_string/1),
       uses: DependencyAnalyzer.extract_uses(ast)
     }
   end
 
   defp build_modules_map(check_module, source_files) do
     if check_module.needs_module_graph?() do
-      Enum.reduce(source_files, %{}, &put_module_analysis/2)
+      Enum.reduce(source_files, %{}, &put_module_analyses/2)
     else
       %{}
     end
   end
 
-  defp put_module_analysis(source_file, acc) do
-    analysis = DependencyAnalyzer.analyze_file(source_file)
-
-    if analysis.module do
-      Map.put(acc, analysis.module, analysis)
-    else
-      acc
-    end
+  defp put_module_analyses(source_file, acc) do
+    source_file
+    |> Source.ast()
+    |> DependencyAnalyzer.module_dependencies()
+    |> Enum.reduce(acc, fn {module, analysis}, acc -> Map.put(acc, module, analysis) end)
   end
 end
