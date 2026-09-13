@@ -1,0 +1,85 @@
+# Anchor's own architectural constraints, enforced on Anchor's own tree.
+#
+# This is the "dogfood" config (ticket DND-139 / T8): Anchor uses its own
+# custom Credo checks to enforce the ADR-001 five-bucket architecture on its
+# own source. It is wired into `.credo.exs` (which enables the corresponding
+# `Anchor.Check.*` modules), so `mix credo --strict` is the gate that enforces
+# these rules on this repo.
+#
+# Only the ARCHITECTURE checks are enabled today (see `.credo.exs` for the
+# rationale on why the style checks — single_control_flow, alphabetized_functions,
+# max_file_length, etc. — are staged rather than enabled). Enabling a style
+# check here without the tree already conforming would redden real `lib/` code,
+# and T8 is a config-and-wiring ticket that must not groom production modules.
+#
+# Selection note: only the `paths` selector fires from a real `.anchor.yml`.
+# `Anchor.Config.parse_rule/1` stamps every parsed rule with `paths: []`, which
+# short-circuits the `pattern`/`uses_module` selectors in
+# `Anchor.Domain.RuleMatching.rule_matches_file?/2`. So every rule below selects
+# its files by `paths` globs, never by module pattern.
+
+rules:
+  # --- Rule 1: Domain must stay pure (side-effect-free, framework-free) ---
+  #
+  # Domain code (ADR 001) may not depend on Credo internals, on IO
+  # (File / YamlElixir), or on the Side Effect / Manager buckets. It receives
+  # plain data and returns plain data.
+  #
+  # NOTE (owner follow-up, out of this Epic's scope): the ideal rule here is
+  # "forbid `Credo.*` ANYWHERE outside `lib/anchor/check/`", but Anchor's
+  # `no_direct_dependency` matches forbidden modules by EXACT atom only, so the
+  # Credo modules must be enumerated. A follow-up should add `pattern` support
+  # (e.g. a forbidden pattern `Credo.*`) reusing
+  # `Anchor.Domain.GlobPattern.module_pattern_to_regex/1`.
+  - type: no_direct_dependency
+    paths:
+      - "lib/anchor/domain/**/*.ex"
+    recursive: true
+    forbidden_modules:
+      - Credo.Code
+      - Credo.SourceFile
+      - Credo.Issue
+      - Credo.Check
+      - Credo.Execution.ExecutionIssues
+      - File
+      - YamlElixir
+      - Anchor.Adapters.ConfigFile
+      - Anchor.Managers.Lint
+
+  # --- Rule 2: the config parser specifically must not read files ---
+  #
+  # `Anchor.Config` (lib/anchor/domain/config.ex) is the pure YAML-map parser;
+  # reading `.anchor.yml` off disk is the Side Effect adapter's job
+  # (`Anchor.Adapters.ConfigFile`). A narrower, targeted guard on top of Rule 1.
+  - type: no_direct_dependency
+    paths:
+      - "lib/anchor/domain/config.ex"
+    recursive: false
+    forbidden_modules:
+      - File
+
+  # --- Rule 3: every check shell must use the shared Framework base ---
+  #
+  # Each of Anchor's 12 checks is a thin Framework delegate built on
+  # `Anchor.Check.Base` (which provides `run_on_all_source_files/3` and the
+  # violation->issue mapping). The check shells are enumerated explicitly rather
+  # than globbed as `lib/anchor/check/*.ex` because that directory also holds
+  # `base.ex` (which DEFINES the base and cannot use itself) and `source.ex`
+  # (the AST-acquisition Framework edge, which is not a check shell). A bare
+  # `*.ex` glob would flag both of those as false positives.
+  - type: must_use_module
+    paths:
+      - "lib/anchor/check/alphabetized_functions.ex"
+      - "lib/anchor/check/case_on_bare_arg.ex"
+      - "lib/anchor/check/max_file_length.ex"
+      - "lib/anchor/check/module_pattern_restrictions.ex"
+      - "lib/anchor/check/must_use_module.ex"
+      - "lib/anchor/check/no_comparison_in_if.ex"
+      - "lib/anchor/check/no_dependency.ex"
+      - "lib/anchor/check/no_discarding_arrow_in_with.ex"
+      - "lib/anchor/check/no_transitive_dependency.ex"
+      - "lib/anchor/check/no_tuple_match_in_head.ex"
+      - "lib/anchor/check/single_control_flow.ex"
+      - "lib/anchor/check/struct_getter_convention.ex"
+    required_modules:
+      - Anchor.Check.Base

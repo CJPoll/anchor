@@ -12,6 +12,34 @@
 # satisfied by editing production code. A later cleanup ticket can re-enable
 # them once `lib/` is groomed. Everything that the current tree already
 # satisfies stays enabled so the gate keeps real signal.
+#
+# ----------------------------------------------------------------------------
+# Self-check bootstrap (DND-139 / T8): put Anchor's OWN compiled beams on the
+# code path so the `Anchor.Check.*` checks enabled below are dogfooded on
+# Anchor's own tree.
+#
+# `mix credo` neither compiles the current project nor runs `loadpaths` for it,
+# so the project's own ebin is NOT on the code path when Credo evaluates this
+# file and validates the enabled-check list (`Code.ensure_compiled/1`). Without
+# it, `Anchor.Check.NoDependency` / `MustUseModule` are silently dropped as
+# "undefined checks" — and, critically, Credo then runs 51 checks instead of 53
+# and still exits 0, a FALSE GREEN in the only enforcement point this repo has.
+#
+# `.credo.exs` is `Code.eval_string`'d with full Elixir evaluation, so we
+# guarantee the beams exist and are loadable before validation:
+#
+#   1. `Mix.Task.run("compile", [])` — build (or confirm up-to-date) Anchor's
+#      own beams. `mix credo` does NOT compile on its own, so on a fresh
+#      checkout this is what turns the silent-drop into a hard guarantee the
+#      dogfood checks actually run. Idempotent within a run (a no-op when the
+#      tree is already compiled).
+#   2. `Code.append_path/1` on the compiled ebin — put those real compiled
+#      modules (with their full Domain closure) on the code path so Credo's
+#      `Code.ensure_compiled/1` finds them. No source recompilation.
+Mix.Task.run("compile", [])
+anchor_ebin = Path.join(["_build", to_string(Mix.env()), "lib", "anchor", "ebin"])
+if File.dir?(anchor_ebin), do: Code.append_path(String.to_charlist(anchor_ebin))
+
 %{
   configs: [
     %{
@@ -32,13 +60,33 @@
           {Credo.Check.Consistency.SpaceInParentheses, []},
           {Credo.Check.Consistency.TabsOrSpaces, []},
 
-          # NOTE: Anchor's own checks (NoDependency, MustUseModule, ...) are
-          # deliberately NOT enabled here. Credo validates the enabled-check
-          # list while Anchor's own modules are not yet loaded (self-reference
-          # chicken-and-egg), so listing them only yields "undefined check"
-          # warnings; and without a `.anchor.yml` they would be no-ops anyway.
-          # Consumers enable them via `.credo.example.exs`, where Anchor is a
-          # loaded dependency.
+          # Anchor's OWN architecture checks, dogfooded on Anchor's own tree
+          # (ticket DND-139 / T8). These load only because of the self-check
+          # bootstrap above (the `Mix.Task.run("compile", [])` +
+          # `Code.append_path/1` at the top of this file) — `mix credo` does NOT
+          # compile or load the current project on its own, so without that
+          # bootstrap Credo would drop both as "undefined checks". The rules
+          # these read live in `.anchor.yml` at the repo root:
+          #
+          #   * NoDependency  — Domain stays pure (Rules 1 & 2 in .anchor.yml).
+          #   * MustUseModule — every check shell uses Anchor.Check.Base (Rule 3).
+          #
+          # Only the ARCHITECTURE checks are enabled. The STYLE checks
+          # (SingleControlFlow, AlphabetizedFunctions, MaxFileLength,
+          # CaseOnBareArg, NoComparisonInIf, NoDiscardingArrowInWith,
+          # NoTupleMatchInHead, StructGetterConvention,
+          # ModulePatternRestrictions, NoTransitiveDependency) are STAGED, not
+          # enabled: Anchor's own `lib/` does not yet conform to all of them,
+          # and T8 must not groom production modules to force compliance. A
+          # later cleanup ticket can enable each style check once the tree
+          # passes it. Consumers see the full menu in `.credo.example.exs`.
+          #
+          # CI note: anchor has no CI pipeline, so `mix credo --strict` (this
+          # local gate) IS the enforcement point. Wiring these into an actual
+          # CI job is a recommended owner follow-up, deferred here because no
+          # pipeline exists to wire into.
+          {Anchor.Check.NoDependency, []},
+          {Anchor.Check.MustUseModule, []},
 
           # Readability — checks the current tree already satisfies.
           {Credo.Check.Readability.FunctionNames, []},
