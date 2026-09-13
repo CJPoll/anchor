@@ -14,15 +14,15 @@ present `paths` list is preserved unchanged.
 | # | Mutation | Tests failed | Failure string |
 |---|---|---|---|
 | A | `paths: rule["paths"]` → `paths: rule["paths"] \|\| []` (restore the pre-fix `\|\| []`, so an absent `paths` is stamped `[]` again) | 2 | `parse_rule/1 … absent list fields default to [] (paths surfaces as nil)` — `Assertion with == failed` — `code: assert rule.paths == nil` — `left: []` — `right: nil`; `parse_rule/1 … Gap D row 3: absent paths surfaces as nil, not []` — `Assertion with == failed` — `code: assert rule.paths == nil` — `left: []` — `right: nil` |
+| B | `paths: rule["paths"]` → `paths: nil` (never surface a present list) | 2 | `parse_rule/1 … Gap D row 4: present paths preserved as a list` — `Assertion with == failed` — `code: assert rule.paths == ["lib/**/*.ex"]` — `left: nil` — `right: ["lib/**/*.ex"]`; `parse_rule/1 … parses a no_direct_dependency rule` — `Assertion with == failed` — `code: assert rule.paths == ["lib/web/**/*.ex"]` — `left: nil` — `right: ["lib/web/**/*.ex"]` |
 
 ## Rows that stayed green, and why
 
-- `Gap D row 4: present paths preserved as a list` held under mutation A: a
-  present list is truthy, so `rule["paths"] || []` returns the list unchanged —
-  the mutation only affects the *absent* case. Preservation is proven instead by
-  row 4's positive assertion (`rule.paths == ["lib/**/*.ex"]`), which no
-  `|| []`-style mutation can break; a mutation dropping `paths` entirely would
-  red it, but is out of scope for this fix.
+- Mutation A (`|| []`) does not touch the present-`paths` case (a present list is
+  truthy, so `rule["paths"] || []` returns it unchanged); the preservation half
+  is pinned by mutation B instead, which nulls `paths` unconditionally and reds
+  the present-`paths` rows. So mutation A red rows and mutation B red rows
+  together cover both the absent⇒`nil` and present⇒preserved halves of the fix.
 - All non-`paths` fields (`forbidden_modules`, `required_modules`,
   `allowed_functions`, `recursive`, `max_lines`, `mode`) were untouched by this
   fix and stayed green.
