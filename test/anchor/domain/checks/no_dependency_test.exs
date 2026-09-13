@@ -300,7 +300,13 @@ defmodule Anchor.Domain.Checks.NoDependencyTest do
     end
 
     # Matrix row 6 — Validation: a dep with fewer than context_depth segments.
-    test "does not flag a pattern match whose dep has no derivable context" do
+    # The file context is deliberately the SAME single segment as the dep
+    # (`["SomeMod"]`), so the ONLY thing keeping this at 0 is the fewer-than-depth
+    # guard (`context_prefix/2` returning nil for a segment list shorter than
+    # context_depth). If that guard were removed both sides would truncate to
+    # `["SomeMod"]`, compare equal, and wrongly report — so this row is a
+    # non-vacuous test of that branch, not merely a different-context case.
+    test "does not flag a pattern match when neither side has context_depth segments" do
       source = """
       defmodule W do
         def f, do: SomeMod.run(x)
@@ -315,7 +321,7 @@ defmodule Anchor.Domain.Checks.NoDependencyTest do
         context_depth: 2
       }
 
-      assert detect3(source, rule, ["WaltUi", "Contacts"]) == []
+      assert detect3(source, rule, ["SomeMod"]) == []
     end
 
     # Matrix row 7 — Validation: nil file_context under a same_context rule.
