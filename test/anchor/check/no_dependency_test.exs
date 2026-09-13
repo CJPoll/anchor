@@ -131,6 +131,50 @@ defmodule Anchor.Check.NoDependencyTest do
     end
   end
 
+  describe "check_file/3 — Erlang-atom forbidden module (Gap B / DND-141, integration)" do
+    # End-to-end through the wired Framework shell, no mocks: an Erlang/OTP atom
+    # `forbidden_modules` entry flags a bare-atom remote call.
+    # Sabotage record: ../../sabotage_records/dependency_analyzer-20260913-dnd_141_gap_b_erlang_atom_targets.md
+
+    # Matrix (no_dependency.ex) row 9 — Happy Path
+    test "an atom forbidden module flags a bare-atom remote call at its first line" do
+      source = """
+      defmodule W do
+        def f, do: :telemetry.execute([:a], %{}, %{})
+      end
+      """
+
+      assert [issue] = issues(source, [:telemetry])
+      assert issue.message == "Module has forbidden direct dependency on :telemetry"
+      assert issue.trigger == ":telemetry"
+      assert issue.line_no == 2
+    end
+
+    # Positive control — an inert `:ok` is never recorded, so it never flags.
+    test "an inert :ok atom literal is never flagged" do
+      source = """
+      defmodule W do
+        def f, do: :ok
+      end
+      """
+
+      assert issues(source, [:ok]) == []
+    end
+
+    # Positive control — Elixir alias behavior is unchanged alongside the atom rule.
+    test "Elixir Logger behavior is unchanged when an atom rule is also present" do
+      source = """
+      defmodule W do
+        def f, do: Logger.info("x")
+      end
+      """
+
+      assert [issue] = issues(source, [Logger, :telemetry])
+      assert issue.trigger == "Logger"
+      assert issue.line_no == 2
+    end
+  end
+
   describe "rule_type/0" do
     test "is :no_direct_dependency" do
       assert NoDependency.rule_type() == :no_direct_dependency

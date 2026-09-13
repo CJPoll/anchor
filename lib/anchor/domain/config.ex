@@ -19,6 +19,15 @@ defmodule Anchor.Config do
       bare YAML token, read by `Anchor.Check.AlphabetizedFunctions`. An unknown
       token coerces to `:separate`; an absent `mode` stays `nil` so the check
       applies its own default.
+
+  ## Module tokens (`forbidden_modules` / `required_modules`)
+
+  Each entry is turned into the module it names. A CamelCase token
+  (`"MyApp.Repo"`) is an Elixir alias and becomes the module atom `MyApp.Repo`
+  via `Module.concat`. A **leading-colon** token (`":telemetry"`) names an
+  Erlang/OTP module and is kept as the raw atom `:telemetry` (via
+  `String.to_atom` on the un-prefixed name), so a rule can target a bare-atom
+  dependency such as `:telemetry.execute(...)`.
   """
 
   defstruct rules: []
@@ -60,8 +69,16 @@ defmodule Anchor.Config do
   defp parse_modules(nil), do: []
 
   defp parse_modules(modules) when is_list(modules) do
-    Enum.map(modules, &Module.concat([&1]))
+    Enum.map(modules, &parse_module_token/1)
   end
+
+  # A leading-colon YAML token names an Erlang/OTP module (`":telemetry"`), which
+  # must stay a RAW atom — `Module.concat` would mangle it into `Elixir.telemetry`
+  # and it would never match the bare-atom dependency the analyzer records. An
+  # ordinary CamelCase token (`"MyApp.Repo"`) is an Elixir alias and still goes
+  # through `Module.concat`.
+  defp parse_module_token(":" <> rest) when byte_size(rest) > 0, do: String.to_atom(rest)
+  defp parse_module_token(token), do: Module.concat([token])
 
   # BUG 2: `mode` arrives as a bare YAML token (a string), not a colon-prefixed
   # atom. Coerce the known tokens; fall back to `:separate` for an unknown
