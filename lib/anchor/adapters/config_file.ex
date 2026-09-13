@@ -10,6 +10,8 @@ defmodule Anchor.Adapters.ConfigFile do
   `{:error, {:config_load_failed, reason}}` tuple — never raw YAML.
   """
 
+  @behaviour Anchor.Adapters.ConfigLoader
+
   alias Anchor.Config
   alias Anchor.Domain.ConfigPaths
 
@@ -18,6 +20,7 @@ defmodule Anchor.Adapters.ConfigFile do
   working directory. When no candidate exists, returns an empty config so the
   checks run as no-ops.
   """
+  @impl Anchor.Adapters.ConfigLoader
   def load do
     cwd = File.cwd!()
     apps? = File.dir?(Path.join(cwd, "apps"))

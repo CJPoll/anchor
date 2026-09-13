@@ -12,16 +12,14 @@ defmodule Anchor.Check.ModulePatternRestrictions do
   def rule_type, do: :module_pattern_restrictions
 
   @doc false
-  def check_file(source_file, rules, params) do
-    ast = Credo.Code.ast(source_file)
-
+  def detect_violations(_source_file, ast, rules, _context) do
     Enum.flat_map(rules, fn rule ->
       allowed_functions = rule.allowed_functions || []
 
       ast
       |> extract_defined_functions()
       |> Enum.reject(&(&1 in allowed_functions))
-      |> Enum.map(&create_issue(source_file, &1, ast, params))
+      |> Enum.map(&create_violation(&1, ast))
     end)
   end
 
@@ -41,15 +39,14 @@ defmodule Anchor.Check.ModulePatternRestrictions do
     MapSet.to_list(functions)
   end
 
-  defp create_issue(source_file, function_name, ast, _params) do
+  defp create_violation(function_name, ast) do
     line_no = find_function_line(ast, function_name)
 
-    format_issue(
-      source_file,
+    %Violation{
       message: "Module defines non-allowed function: #{function_name}",
-      line_no: line_no,
+      line: line_no,
       trigger: function_name
-    )
+    }
   end
 
   defp find_function_line(ast, function_name) do

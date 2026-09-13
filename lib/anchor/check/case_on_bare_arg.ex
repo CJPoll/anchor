@@ -35,10 +35,10 @@ defmodule Anchor.Check.CaseOnBareArg do
   def rule_type, do: :case_on_bare_arg
 
   @doc false
-  def check_file(source_file, _rules, params) do
-    ast = Credo.Code.ast(source_file)
-    violations = find_case_on_bare_args(ast)
-    Enum.map(violations, &create_issue(source_file, &1, params))
+  def detect_violations(_source_file, ast, _rules, _context) do
+    ast
+    |> find_case_on_bare_args()
+    |> Enum.map(&create_violation/1)
   end
 
   defp find_case_on_bare_args({:ok, ast}), do: find_case_on_bare_args(ast)
@@ -112,17 +112,12 @@ defmodule Anchor.Check.CaseOnBareArg do
     violations
   end
 
-  defp create_issue(
-         source_file,
-         %{function_name: function_name, arg_name: arg_name, line_no: line_no},
-         _params
-       ) do
-    format_issue(
-      source_file,
+  defp create_violation(%{function_name: function_name, arg_name: arg_name, line_no: line_no}) do
+    %Violation{
       message:
         "Case statement operates on bare argument `#{arg_name}` in function `#{function_name}`. Consider using function head pattern matching instead.",
-      line_no: line_no,
+      line: line_no,
       trigger: "case"
-    )
+    }
   end
 end

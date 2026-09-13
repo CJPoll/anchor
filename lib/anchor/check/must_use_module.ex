@@ -12,8 +12,7 @@ defmodule Anchor.Check.MustUseModule do
   def rule_type, do: :must_use_module
 
   @doc false
-  def check_file(source_file, rules, params) do
-    ast = Credo.Code.ast(source_file)
+  def detect_violations(_source_file, ast, rules, _context) do
     uses = DependencyAnalyzer.extract_uses(ast)
 
     Enum.flat_map(rules, fn rule ->
@@ -21,16 +20,15 @@ defmodule Anchor.Check.MustUseModule do
 
       required
       |> Enum.reject(&(&1 in uses))
-      |> Enum.map(&create_issue(source_file, &1, params))
+      |> Enum.map(&create_violation/1)
     end)
   end
 
-  defp create_issue(source_file, required_module, _params) do
-    format_issue(
-      source_file,
+  defp create_violation(required_module) do
+    %Violation{
       message: "Module must use #{inspect(required_module)}",
-      line_no: 1,
+      line: 1,
       trigger: inspect(required_module)
-    )
+    }
   end
 end
