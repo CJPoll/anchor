@@ -33,6 +33,20 @@ defmodule Anchor.Domain.RuleMatchingTest do
       refute RuleMatching.rule_matches_file?(rule, facts(%{filename: "lib/a/b.ex"}))
     end
 
+    # Routing coverage (closes a sabotage measured-zero): these pin that the
+    # `recursive` flag chooses which GlobPattern matcher runs. The `lib/a/b.ex`
+    # rows above cannot distinguish the two matchers on a `lib/**/*.ex` pattern
+    # (both accept a one-level-deep path), so a deeper path is used here.
+    test "#3a recursive path selects a deep file that single-* semantics would miss" do
+      rule = %{paths: ["lib/**/*.ex"], recursive: true}
+      assert RuleMatching.rule_matches_file?(rule, facts(%{filename: "lib/a/b/c.ex"}))
+    end
+
+    test "#3b non-recursive path uses single-* semantics even for a ** pattern" do
+      rule = %{paths: ["lib/**/*.ex"], recursive: false}
+      refute RuleMatching.rule_matches_file?(rule, facts(%{filename: "lib/a/b/c.ex"}))
+    end
+
     test "#4 module pattern rule matches by module name" do
       rule = %{pattern: "*.Schemas.*"}
       assert RuleMatching.rule_matches_file?(rule, facts(%{module_names: ["App.Schemas.User"]}))
