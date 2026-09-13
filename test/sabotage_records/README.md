@@ -72,3 +72,8 @@ before coining a synonym.
   including `extract_with_clauses` / `check_with_clauses` /
   `is_discarding_pattern?`) and the `Anchor.Check.NoDiscardingArrowInWith`
   shell that delegates to it.
+- `no_comparison_in_if` — the "no direct comparisons in `if`/`unless`" check:
+  its extracted pure detector (`Anchor.Domain.Checks.NoComparisonInIf`,
+  including `find_if_with_comparisons` / `has_comparison?`, with `unless`
+  brought into scope alongside `if`) and the `Anchor.Check.NoComparisonInIf`
+  shell that delegates to it.
