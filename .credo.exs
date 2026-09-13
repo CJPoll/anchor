@@ -21,13 +21,22 @@
 # `mix credo` neither compiles the current project nor runs `loadpaths` for it,
 # so the project's own ebin is NOT on the code path when Credo evaluates this
 # file and validates the enabled-check list (`Code.ensure_compiled/1`). Without
-# this, `Anchor.Check.NoDependency` / `MustUseModule` are silently dropped as
-# "undefined checks". `.credo.exs` is `Code.eval_string`'d with full Elixir
-# evaluation, so we append the already-compiled ebin (produced by the
-# `mix compile` that precedes `mix credo` in the green-bar) — the real compiled
-# modules with their full Domain closure, no source recompilation. Guarded on
-# existence so a not-yet-compiled tree degrades to a dropped-check warning
-# rather than a crash.
+# it, `Anchor.Check.NoDependency` / `MustUseModule` are silently dropped as
+# "undefined checks" — and, critically, Credo then runs 51 checks instead of 53
+# and still exits 0, a FALSE GREEN in the only enforcement point this repo has.
+#
+# `.credo.exs` is `Code.eval_string`'d with full Elixir evaluation, so we
+# guarantee the beams exist and are loadable before validation:
+#
+#   1. `Mix.Task.run("compile", [])` — build (or confirm up-to-date) Anchor's
+#      own beams. `mix credo` does NOT compile on its own, so on a fresh
+#      checkout this is what turns the silent-drop into a hard guarantee the
+#      dogfood checks actually run. Idempotent within a run (a no-op when the
+#      tree is already compiled).
+#   2. `Code.append_path/1` on the compiled ebin — put those real compiled
+#      modules (with their full Domain closure) on the code path so Credo's
+#      `Code.ensure_compiled/1` finds them. No source recompilation.
+Mix.Task.run("compile", [])
 anchor_ebin = Path.join(["_build", to_string(Mix.env()), "lib", "anchor", "ebin"])
 if File.dir?(anchor_ebin), do: Code.append_path(String.to_charlist(anchor_ebin))
 
@@ -52,11 +61,12 @@ if File.dir?(anchor_ebin), do: Code.append_path(String.to_charlist(anchor_ebin))
           {Credo.Check.Consistency.TabsOrSpaces, []},
 
           # Anchor's OWN architecture checks, dogfooded on Anchor's own tree
-          # (ticket DND-139 / T8). Running `mix credo` inside this project
-          # compiles `lib/` first, so the `Anchor.Check.*` modules are loaded
-          # and available to Credo — the earlier "self-reference / undefined
-          # check" concern does not materialize. The rules these read live in
-          # `.anchor.yml` at the repo root:
+          # (ticket DND-139 / T8). These load only because of the self-check
+          # bootstrap above (the `Mix.Task.run("compile", [])` +
+          # `Code.append_path/1` at the top of this file) — `mix credo` does NOT
+          # compile or load the current project on its own, so without that
+          # bootstrap Credo would drop both as "undefined checks". The rules
+          # these read live in `.anchor.yml` at the repo root:
           #
           #   * NoDependency  — Domain stays pure (Rules 1 & 2 in .anchor.yml).
           #   * MustUseModule — every check shell uses Anchor.Check.Base (Rule 3).
