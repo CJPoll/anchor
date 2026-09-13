@@ -94,6 +94,21 @@ defmodule Anchor.Domain.Checks.StructGetterConventionTest do
                "Getter for `Other.Thing.name` should be defined in `Other.Thing` (not in `A`)"
     end
 
+    test "resolves a multi-alias `A.{B}` form to the real foreign module" do
+      ast =
+        ast("""
+        defmodule A do
+          alias Other.{Thing}
+          def name(%Thing{name: name}), do: name
+        end
+        """)
+
+      assert [%Violation{} = violation] = StructGetterConvention.detect_violations(ast)
+
+      assert violation.message ==
+               "Getter for `Other.Thing.name` should be defined in `Other.Thing` (not in `A`)"
+    end
+
     test "a bare literal struct with no alias resolves to Elixir.<Name> and is foreign" do
       ast =
         ast("""
