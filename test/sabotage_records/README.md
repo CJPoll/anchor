@@ -58,3 +58,7 @@ before coining a synonym.
   including `find_dependency_path` / `format_dependency_path` /
   `find_module_reference_line`) and the `Anchor.Check.NoTransitiveDependency`
   shell that delegates to it (declaring `needs_module_graph?/0`).
+- `case_on_bare_arg` — the "no case on a bare function argument" check: its
+  extracted pure detector (`Anchor.Domain.Checks.CaseOnBareArg`, including
+  defaulted-argument (`\`) recognition) and the `Anchor.Check.CaseOnBareArg`
+  shell that delegates to it.
