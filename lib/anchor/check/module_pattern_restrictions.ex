@@ -11,59 +11,11 @@ defmodule Anchor.Check.ModulePatternRestrictions do
   @doc false
   def rule_type, do: :module_pattern_restrictions
 
+  # Thin Framework delegate: the Manager hands over the bare AST and the rules it
+  # already selected; detection lives in the pure Domain module, and Base maps the
+  # returned `%Anchor.Domain.Violation{}`s onto `Credo.Issue`s.
   @doc false
   def detect_violations(_source_file, ast, rules, _context) do
-    Enum.flat_map(rules, fn rule ->
-      allowed_functions = rule.allowed_functions || []
-
-      ast
-      |> extract_defined_functions()
-      |> Enum.reject(&(&1 in allowed_functions))
-      |> Enum.map(&create_violation(&1, ast))
-    end)
-  end
-
-  defp extract_defined_functions(ast) do
-    {_, functions} =
-      Macro.prewalk(ast, MapSet.new(), fn
-        {:def, _, [{name, _, _} | _]} = node, acc when is_atom(name) ->
-          {node, MapSet.put(acc, to_string(name))}
-
-        {:defp, _, [{name, _, _} | _]} = node, acc when is_atom(name) ->
-          {node, MapSet.put(acc, to_string(name))}
-
-        node, acc ->
-          {node, acc}
-      end)
-
-    MapSet.to_list(functions)
-  end
-
-  defp create_violation(function_name, ast) do
-    line_no = find_function_line(ast, function_name)
-
-    %Violation{
-      message: "Module defines non-allowed function: #{function_name}",
-      line: line_no,
-      trigger: function_name
-    }
-  end
-
-  defp find_function_line(ast, function_name) do
-    function_atom = String.to_atom(function_name)
-
-    {_, line} =
-      Macro.prewalk(ast, nil, fn
-        {:def, meta, [{^function_atom, _, _} | _]} = node, _acc ->
-          {node, Keyword.get(meta, :line)}
-
-        {:defp, meta, [{^function_atom, _, _} | _]} = node, _acc ->
-          {node, Keyword.get(meta, :line)}
-
-        node, acc ->
-          {node, acc}
-      end)
-
-    line
+    Anchor.Domain.Checks.ModulePatternRestrictions.detect_violations(ast, rules)
   end
 end
