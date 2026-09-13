@@ -84,3 +84,10 @@ before coining a synonym.
   atom key, `find_ordering_issues` / `find_structural_violations` and message
   building) and the `Anchor.Check.AlphabetizedFunctions` shell that delegates to
   it.
+- `no_tuple_match_in_head` — the "no `:ok`/`:error` tuple match in a function
+  head" check: its extracted pure, AST-based detector
+  (`Anchor.Domain.Checks.NoTupleMatchInHead`, including `find_function_clauses`
+  / `flaggable_arg?` / `result_tuple?`, with per-argument judgment and
+  match-assignment (`=`) operand recognition, replacing the previous
+  regex-on-source implementation) and the `Anchor.Check.NoTupleMatchInHead`
+  shell that delegates to it.
