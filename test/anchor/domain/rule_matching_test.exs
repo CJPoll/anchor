@@ -170,4 +170,23 @@ defmodule Anchor.Domain.RuleMatchingTest do
       refute RuleMatching.rule_matches_type?(%{type: :must_use_module}, :no_direct_dependency)
     end
   end
+
+  # DND-1292: a selector glob is `*`/`**` plus literals. A `+` or `?` in a
+  # `paths` or `pattern` selector used to be live regex.
+  # Sabotage record: ../../sabotage_records/glob_pattern-20260929-dnd_1292_glob_escape.md
+  describe "rule_matches_file?/2 (regex metacharacters are literal, DND-1292)" do
+    test "a `paths` glob with `+` selects its own directory, not the regex reading" do
+      rule = %{paths: ["lib/c++/**/*.ex"], recursive: true}
+
+      assert RuleMatching.rule_matches_file?(rule, facts(%{filename: "lib/c++/a/b.ex"}))
+      refute RuleMatching.rule_matches_file?(rule, facts(%{filename: "lib/c/a/b.ex"}))
+    end
+
+    test "a `pattern` glob with `?` is a literal, not an optional character" do
+      rule = %{pattern: "*.Webs?", paths: nil}
+
+      refute RuleMatching.rule_matches_file?(rule, facts(%{module_names: ["Elixir.App.Web"]}))
+      assert RuleMatching.rule_matches_file?(rule, facts(%{module_names: ["Elixir.App.Webs?"]}))
+    end
+  end
 end

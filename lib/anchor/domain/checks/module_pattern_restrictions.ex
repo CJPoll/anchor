@@ -35,11 +35,11 @@ defmodule Anchor.Domain.Checks.ModulePatternRestrictions do
 
   ## Allowed-function matching
 
-  An `allowed_functions` entry containing `*` is a name glob (`with_*` allows
-  `with_status`), matched through `Anchor.Domain.GlobPattern.matches_pattern?/2`.
-  An entry with no `*` is matched by exact name equality, preserving the original
-  literal-membership behavior (and avoiding treating a trailing `?`/`!` in a
-  function name as a regex metacharacter).
+  An `allowed_functions` entry is a name glob (`with_*` allows `with_status`),
+  matched through `Anchor.Domain.GlobPattern.matches_pattern?/2`. `*` is the only
+  wildcard; every other character is a literal (DND-1292), so an entry with no
+  `*` matches exactly its own name, and `*?` allows the functions whose names end
+  in `?`.
   """
 
   alias Anchor.Domain.DependencyAnalyzer
@@ -96,14 +96,11 @@ defmodule Anchor.Domain.Checks.ModulePatternRestrictions do
     Enum.any?(allowed_functions, &function_matches?(function_name, &1))
   end
 
-  # A glob entry (`with_*`) goes through GlobPattern; a literal entry is an exact
-  # name match, so a function name ending in `?`/`!` is never read as a regex.
+  # Every entry goes through GlobPattern (DND-1292): an entry with no `*` is all
+  # literal, so it matches exactly its own name, and a `?`/`!` in any entry is a
+  # literal. There is no second matcher here to disagree with it.
   defp function_matches?(function_name, entry) do
-    if String.contains?(entry, "*") do
-      GlobPattern.matches_pattern?(function_name, entry)
-    else
-      function_name == entry
-    end
+    GlobPattern.matches_pattern?(function_name, entry)
   end
 
   defp extract_defined_functions(ast) do

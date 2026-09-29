@@ -80,6 +80,12 @@ per-type key allowlist has one home, `Anchor.Domain.RuleSchema`. A new rule key
 goes there, into `Anchor.Config.parse_rule/1`, and into the README table "Keys
 each rule type accepts" (a test compares the table with the allowlist).
 
+Globs (`paths`, `pattern`, `forbidden_patterns`, `allowed_functions`) are
+compiled in one place, `Anchor.Domain.GlobPattern` (DND-1292): `*` and `**`
+are the only wildcards, and every other character is escaped with
+`Regex.escape/1`. Never build a regex, `=~` or `String.match?` from config text
+anywhere else; a new glob-bearing key calls `GlobPattern`.
+
 A rule that loads but checks nothing fails too (DND-1290), as one class:
 more than one selector, `recursive` without `paths`, a relation-bearing rule
 with no relation, a relation list of empty strings, a match-all

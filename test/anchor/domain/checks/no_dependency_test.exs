@@ -408,4 +408,33 @@ defmodule Anchor.Domain.Checks.NoDependencyTest do
       assert violation.trigger == inspect(dep)
     end
   end
+
+  # DND-1292: a `forbidden_patterns` glob is `*` plus literals. A `?` used to
+  # make the character before it optional, so `*.Webs?.*` also forbade `.Web.`.
+  # Sabotage record: ../../../sabotage_records/glob_pattern-20260929-dnd_1292_glob_escape.md
+  describe "detect_violations/2 — forbidden_patterns metacharacters (DND-1292)" do
+    test "a `?` in a forbidden pattern is a literal" do
+      source = """
+      defmodule W do
+        def f, do: App.Web.Foo.call(q)
+      end
+      """
+
+      rule = %{forbidden_modules: [], forbidden_patterns: ["*.Webs?.*"], match: :reference}
+
+      assert detect(source, rule) == []
+    end
+
+    test "a `+` in a forbidden pattern is a literal" do
+      source = """
+      defmodule W do
+        def f, do: App.Web.Foo.call(q)
+      end
+      """
+
+      rule = %{forbidden_modules: [], forbidden_patterns: ["*.We+b.*"], match: :reference}
+
+      assert detect(source, rule) == []
+    end
+  end
 end
