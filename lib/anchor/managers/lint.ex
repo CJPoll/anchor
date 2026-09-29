@@ -21,8 +21,15 @@ defmodule Anchor.Managers.Lint do
        objects, never `Credo.Issue`s. Mapping violations to Credo issues is the
        Framework's job (`Anchor.Check.Base`).
 
-  On a config-load failure it returns `{:error, reason}` so the Framework can
-  skip the check without breaking the Credo run.
+  On a config-load failure it returns `{:error, reason}`, which the Framework
+  reports as a Credo issue (DND-1265: Anchor fails closed, so a run that checked
+  nothing never reads as a run that found nothing).
+
+  A source file that does not parse yields one `:fail_closed` violation from
+  `Anchor.Domain.Failures`, not an empty AST, when the `:report_shared_failures`
+  option is `true` (the default). The Framework passes `false` to every Anchor
+  check but one, so the report appears once per run; see
+  `Anchor.Check.Base.shared_failure_reporter?/2`.
 
   ## AST acquisition
 
@@ -38,6 +45,7 @@ defmodule Anchor.Managers.Lint do
   alias Anchor.Check.Source
   alias Anchor.Config
   alias Anchor.Domain.DependencyAnalyzer
+  alias Anchor.Domain.Failures
   alias Anchor.Domain.RuleMatching
 
   @default_config_loader ConfigFile
@@ -51,28 +59,56 @@ defmodule Anchor.Managers.Lint do
   `params` are the Credo check params, threaded through to the check's detection.
   `opts` accepts `:config_loader` — a module implementing
   `Anchor.Adapters.ConfigLoader` — to inject a mock in tests; it defaults to the
-  real `Anchor.Adapters.ConfigFile`.
+  real `Anchor.Adapters.ConfigFile`. It also accepts `:report_shared_failures`
+  (default `true`): whether an unparseable file yields its violation for this
+  check.
   """
   @spec run(module(), [Credo.SourceFile.t()], keyword(), keyword()) :: result()
   def run(check_module, source_files, params, opts \\ []) do
     config_loader = Keyword.get(opts, :config_loader, @default_config_loader)
+    report_shared_failures? = Keyword.get(opts, :report_shared_failures, true)
 
     case config_loader.load() do
       {:ok, %Config{rules: rules}} ->
-        modules_map = build_modules_map(check_module, source_files)
+        run_context = %{
+          check: check_module,
+          rules: rules,
+          modules_map: build_modules_map(check_module, source_files),
+          params: params,
+          report_shared_failures?: report_shared_failures?
+        }
 
-        results =
-          Enum.map(source_files, &detect_for_file(check_module, &1, rules, modules_map, params))
-
-        {:ok, results}
+        # Each file is parsed as it is checked and dropped afterwards, so a run
+        # never holds every file's AST at once.
+        {:ok, Enum.map(source_files, &result_for_file(&1, run_context))}
 
       {:error, reason} ->
         {:error, reason}
     end
   end
 
-  defp detect_for_file(check_module, source_file, rules, modules_map, params) do
-    ast = Source.ast(source_file)
+  defp result_for_file(source_file, run_context) do
+    source_file
+    |> Source.ast()
+    |> result_for_parse(source_file, run_context)
+  end
+
+  # DND-1265: a file Anchor cannot parse is reported, never checked as if it
+  # were empty. The report is not specific to this check, so only the run's
+  # shared-failure reporter makes it (see `Anchor.Check.Base`); every other
+  # check skips the file.
+  defp result_for_parse({:error, {line, message}}, source_file, %{report_shared_failures?: true}) do
+    {source_file, [Failures.unparseable_violation(line, message)]}
+  end
+
+  defp result_for_parse({:error, _parse_error}, source_file, _run_context), do: {source_file, []}
+
+  defp result_for_parse({:ok, ast}, source_file, run_context) do
+    %{check: check_module, rules: rules, modules_map: modules_map, params: params} = run_context
+    detect_for_file(check_module, source_file, ast, rules, modules_map, params)
+  end
+
+  defp detect_for_file(check_module, source_file, ast, rules, modules_map, params) do
     # Gap F (DND-150): the file's facts (its own module names among them) are
     # computed ONCE here and reused for BOTH rule selection and the check
     # context — no second AST walk. The file's `module_names` are threaded into
@@ -111,15 +147,18 @@ defmodule Anchor.Managers.Lint do
 
   defp build_modules_map(check_module, source_files) do
     if check_module.needs_module_graph?() do
-      Enum.reduce(source_files, %{}, &put_module_analyses/2)
+      Enum.reduce(source_files, %{}, &put_module_analyses(Source.ast(&1), &2))
     else
       %{}
     end
   end
 
-  defp put_module_analyses(source_file, acc) do
-    source_file
-    |> Source.ast()
+  # An unparseable file contributes no modules to the graph; it is reported on
+  # its own (see `result_for_parse/3`).
+  defp put_module_analyses({:error, _parse_error}, acc), do: acc
+
+  defp put_module_analyses({:ok, ast}, acc) do
+    ast
     |> DependencyAnalyzer.module_dependencies()
     |> Enum.reduce(acc, fn {module, analysis}, acc -> Map.put(acc, module, analysis) end)
   end

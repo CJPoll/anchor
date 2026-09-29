@@ -9,10 +9,12 @@ defmodule Anchor.Adapters.ConfigLoader do
   real adapter `Anchor.Adapters.ConfigFile` and overridable in a test via the
   `:config_loader` option.
 
-  An implementation returns `{:ok, %Anchor.Config{}}` on success (an empty config
-  when no `.anchor.yml` is present, so checks run as no-ops) or
-  `{:error, reason}` when loading fails — in which case the checks are skipped
-  rather than crashing the Credo run.
+  An implementation returns `{:ok, %Anchor.Config{}}` on success, or
+  `{:error, reason}` when there is no config to use — none was found, or it did
+  not load. Anchor fails closed (DND-1265): the Framework reports `reason` as a
+  Credo issue through `Anchor.Domain.Failures`, so no error ever reads as a run
+  that found nothing. `Anchor.Adapters.ConfigFile` documents the reasons it
+  returns; a reason of any other shape is still reported.
   """
 
   @callback load() :: {:ok, Anchor.Config.t()} | {:error, term()}

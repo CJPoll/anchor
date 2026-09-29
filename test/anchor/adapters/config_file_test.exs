@@ -1,14 +1,15 @@
 defmodule Anchor.Adapters.ConfigFileTest do
-  # Side Effect adapter — the file boundary. Rows 1-4 drive `load_from_path/1`
-  # against a temp file; rows 5-6 drive `load/0`, which reads the cwd.
+  # Side Effect adapter — the file boundary. `load_from_path/1` rows run against
+  # a temp file; `load/0` rows read the cwd.
   #
-  # `async: false` because rows 5-6 briefly `File.cd/1` into a temp directory so
-  # `load/0` (which reads `.anchor.yml` from the cwd) picks up the fixture.
-  # ExUnit runs sync modules in isolation (no other test runs concurrently), so
-  # the process-global cwd change is safe. This is the same discipline the E2E
-  # harness uses; keep this module `async: false`.
+  # `async: false` because the `load/0` rows briefly `File.cd/1` into a temp
+  # directory so `load/0` (which reads `.anchor.yml` from the cwd) picks up the
+  # fixture. ExUnit runs sync modules in isolation (no other test runs
+  # concurrently), so the process-global cwd change is safe. This is the same
+  # discipline the E2E harness uses; keep this module `async: false`.
   #
   # Sabotage record: ../../sabotage_records/config-20260913-dnd_123_t3_config_split.md
+  # Sabotage record (DND-1265 fail-closed rows): ../../sabotage_records/config-20260929-dnd_1265_anchor_fail_closed.md
   use ExUnit.Case, async: false
 
   alias Anchor.Adapters.ConfigFile
@@ -46,23 +47,48 @@ defmodule Anchor.Adapters.ConfigFileTest do
       end)
     end
 
-    # Row 2
-    test "an empty file yields an empty rule list" do
+    # Row 2 (DND-1265): an empty file checks nothing, so it fails the load.
+    test "an empty file fails the load, naming the file" do
       with_config_file("", fn path ->
-        assert {:ok, %Config{rules: []}} = ConfigFile.load_from_path(path)
+        assert {:error, {:config_load_failed, ^path, {:invalid_config, _reason}}} =
+                 ConfigFile.load_from_path(path)
       end)
     end
 
-    # Row 3
-    test "a missing file returns {:error, {:config_load_failed, :enoent}}" do
-      assert {:error, {:config_load_failed, :enoent}} =
-               ConfigFile.load_from_path("nonexistent-#{:erlang.unique_integer([:positive])}.yml")
+    # Row 3 (DND-1265): the failure names the path it could not read.
+    test "a missing file returns {:error, {:config_load_failed, path, {:read, :enoent}}}" do
+      path = "nonexistent-#{:erlang.unique_integer([:positive])}.yml"
+
+      assert {:error, {:config_load_failed, ^path, {:read, :enoent}}} =
+               ConfigFile.load_from_path(path)
     end
 
-    # Row 4
-    test "malformed YAML returns {:error, {:config_load_failed, _reason}}" do
+    # Row 4 (DND-1265): the YAML error arrives as plain text, not a YamlElixir
+    # struct, so the Domain never depends on the YAML library.
+    test "malformed YAML returns {:error, {:config_load_failed, path, {:yaml, message}}}" do
       with_config_file("rules: [unterminated", fn path ->
-        assert {:error, {:config_load_failed, _reason}} = ConfigFile.load_from_path(path)
+        assert {:error, {:config_load_failed, ^path, {:yaml, message}}} =
+                 ConfigFile.load_from_path(path)
+
+        assert is_binary(message)
+        assert message != ""
+      end)
+    end
+
+    # DND-1265 (A8): an unknown rule type fails the load through the adapter.
+    test "an unknown rule type fails the load, naming the file" do
+      yaml = """
+      rules:
+        - type: no_direct_dependancy
+          forbidden_modules:
+            - MyApp.Repo
+      """
+
+      with_config_file(yaml, fn path ->
+        assert {:error, {:config_load_failed, ^path, {:invalid_rule, reason}}} =
+                 ConfigFile.load_from_path(path)
+
+        assert reason =~ "no_direct_dependancy"
       end)
     end
 
@@ -79,18 +105,43 @@ defmodule Anchor.Adapters.ConfigFileTest do
       """
 
       with_config_file(yaml, fn path ->
-        assert {:error, {:config_load_failed, {:invalid_rule, _reason}}} =
+        assert {:error, {:config_load_failed, ^path, {:invalid_rule, _reason}}} =
                  ConfigFile.load_from_path(path)
+      end)
+    end
+
+    # DND-1265: the shipped example and the dogfood config must load under the
+    # strict parser, so neither documents a config Anchor rejects.
+    test "the repo's .anchor.yml and .anchor.example.yml both load" do
+      assert {:ok, %Config{rules: [_ | _]}} = ConfigFile.load_from_path(".anchor.yml")
+      assert {:ok, %Config{rules: [_ | _]}} = ConfigFile.load_from_path(".anchor.example.yml")
+    end
+
+    # The README's main Configuration example (its first YAML block) must load
+    # too. It spells `mode: :separate`, which the strict `mode` parse accepts.
+    test "the README's Configuration example loads" do
+      [_before, configuration] =
+        "README.md" |> File.read!() |> String.split("## Configuration\n", parts: 2)
+
+      [_intro, rest] = String.split(configuration, "```yaml\n", parts: 2)
+      [yaml, _after] = String.split(rest, "```", parts: 2)
+
+      with_config_file(yaml, fn path ->
+        assert {:ok, %Config{rules: rules}} = ConfigFile.load_from_path(path)
+        assert length(rules) > 5
+        assert Enum.any?(rules, &(&1.mode == :separate))
       end)
     end
   end
 
   describe "load/0 (test-matrix: config.ex -> load/0 and load_from_path/1)" do
-    # Row 5
-    test "returns an empty config when no candidate exists in the cwd" do
-      with_cwd(fn _dir ->
+    # Row 5 (DND-1265, A6): no candidate is a failure naming every path
+    # searched, never an empty config that reads green.
+    test "returns {:config_not_found, searched} when no candidate exists in the cwd" do
+      with_cwd(fn dir ->
         # No .anchor.yml written into the temp dir.
-        assert {:ok, %Config{rules: []}} = ConfigFile.load()
+        assert {:error, {:config_not_found, [searched]}} = ConfigFile.load()
+        assert searched == Path.join(dir, ".anchor.yml")
       end)
     end
 
@@ -111,6 +162,46 @@ defmodule Anchor.Adapters.ConfigFileTest do
         assert rule.forbidden_modules == [MyApp.Repo]
       end)
     end
+
+    # DND-1265 miss case: a config that exists, but not where the lookup
+    # searches (run from a subdirectory), is reported with the path the lookup
+    # actually computed, not read as an empty config.
+    test "a config outside the computed candidates is reported, not read as empty" do
+      with_cwd(fn dir ->
+        File.write!(Path.join(dir, ".anchor.yml"), "rules: []\n")
+        sub = Path.join(dir, "lib")
+        File.mkdir_p!(sub)
+        File.cd!(sub)
+
+        assert {:error, {:config_not_found, [searched]}} = ConfigFile.load()
+        assert searched == Path.join(sub, ".anchor.yml")
+      end)
+    end
+
+    # DND-1265 miss case: from inside an umbrella app, both the app and the
+    # umbrella-root candidates are searched, and both are named.
+    test "from an umbrella app with no config, both searched candidates are named" do
+      with_cwd(fn dir ->
+        app = Path.join([dir, "apps", "my_app"])
+        File.mkdir_p!(app)
+        File.cd!(app)
+
+        assert {:error, {:config_not_found, searched}} = ConfigFile.load()
+
+        assert searched == [Path.join(app, ".anchor.yml"), Path.join(dir, ".anchor.yml")]
+      end)
+    end
+
+    # DND-1265: a candidate that exists but cannot be read (here, a directory)
+    # is a load failure naming it, not a skipped candidate.
+    test "an existing but unreadable candidate fails the load, naming it" do
+      with_cwd(fn dir ->
+        File.mkdir_p!(Path.join(dir, ".anchor.yml"))
+
+        assert {:error, {:config_load_failed, path, {:read, :eisdir}}} = ConfigFile.load()
+        assert path == Path.join(dir, ".anchor.yml")
+      end)
+    end
   end
 
   defp with_config_file(content, fun) do
@@ -124,6 +215,9 @@ defmodule Anchor.Adapters.ConfigFileTest do
     end
   end
 
+  # Hands `fun` the cwd as `File.cwd!/0` reports it after the `cd`, which is the
+  # resolved path when the temp dir sits behind a symlink, so path assertions
+  # compare like with like. The original cwd is always restored.
   defp with_cwd(fun) do
     dir = Path.join(System.tmp_dir!(), "anchor_cwd_#{:erlang.unique_integer([:positive])}")
     File.mkdir_p!(dir)
@@ -131,7 +225,7 @@ defmodule Anchor.Adapters.ConfigFileTest do
     File.cd!(dir)
 
     try do
-      fun.(dir)
+      fun.(File.cwd!())
     after
       File.cd!(original)
       File.rm_rf!(dir)

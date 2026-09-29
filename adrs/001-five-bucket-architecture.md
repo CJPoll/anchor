@@ -13,6 +13,12 @@ is a Side Effect" classification the ADR carried is now wrong; the Side Effect i
 `Anchor.Adapters.ConfigFile`. Standard unchanged — see the amendment note under
 "How this maps to Anchor".
 
+Amended 2026-09-29 (DND-1265): the `Anchor.Config` / `ConfigFile` example under
+Examples → Correct showed `parse_config/1` defaulting a missing `rules` key to
+`[]`, the fail-open shape DND-1265 removed. The example now shows the
+fail-closed shape. Standard unchanged — see "Amendment: fail-closed config
+example" under Examples.
+
 ## Context
 
 Anchor is a small library, but the class of problems the five-bucket
@@ -277,19 +283,34 @@ end
 defmodule Anchor.Adapters.ConfigFile do
   def load_from_path(path) do
     with {:ok, content} <- File.read(path),
-         {:ok, data} <- YamlElixir.read_from_string(content) do
-      {:ok, Anchor.Config.parse_config(data)}   # %Anchor.Config{}, not raw YAML
+         {:ok, data} <- YamlElixir.read_from_string(content),
+         %Anchor.Config{} = config <- Anchor.Config.parse_config(data) do
+      {:ok, config}   # %Anchor.Config{}, not raw YAML
+    else
+      {:error, detail} -> {:error, {:config_load_failed, path, detail}}
     end
   end
 end
 
-# Domain — pure: decoded map in, struct out. No IO.
+# Domain — pure: decoded map in, struct (or a reason) out. No IO.
 defmodule Anchor.Config do
-  def parse_config(data) when is_map(data) do
-    %__MODULE__{rules: Enum.map(Map.get(data, "rules", []), &parse_rule/1)}
+  def parse_config(%{"rules" => rules}) when is_list(rules) do
+    %__MODULE__{rules: Enum.map(rules, &parse_rule/1)}
   end
+
+  def parse_config(_data), do: {:error, {:invalid_config, "no `rules:` list"}}
 end
 ```
+
+#### Amendment: fail-closed config example (2026-09-29, DND-1265)
+
+This example used to show `parse_config/1` reading `Map.get(data, "rules", [])`
+and the adapter wrapping whatever came back in `{:ok, _}`. The bucket split it
+illustrates was right, and still is. The detail was wrong: a document with no
+`rules` key loaded as zero rules, and every check then read green over code it
+never checked. DND-1265 made the parser return a reason instead and the adapter
+pass that reason on, so the example now shows that shape. The real code also
+validates each rule; the example keeps only what the bucket rule needs.
 
 ### Incorrect
 

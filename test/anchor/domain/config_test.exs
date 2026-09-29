@@ -3,6 +3,8 @@ defmodule Anchor.Domain.ConfigTest do
   # file-boundary tests.
   #
   # Sabotage record: ../../sabotage_records/config-20260913-dnd_123_t3_config_split.md
+  # Sabotage record (rows DND-1265 rewrote: unknown mode/match, empty or
+  # rules-less document): ../../sabotage_records/config-20260929-dnd_1265_anchor_fail_closed.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config
@@ -112,23 +114,24 @@ defmodule Anchor.Domain.ConfigTest do
 
     # Row 10 (BUG 2)
     test "bare mode: public_only coerced to :public_only" do
-      rule = Config.parse_rule(%{"mode" => "public_only"})
+      rule = Config.parse_rule(%{"type" => "alphabetized_functions", "mode" => "public_only"})
 
       assert rule.mode == :public_only
     end
 
     # Row 11 (BUG 2)
     test "bare mode: separate coerced to :separate" do
-      rule = Config.parse_rule(%{"mode" => "separate"})
+      rule = Config.parse_rule(%{"type" => "alphabetized_functions", "mode" => "separate"})
 
       assert rule.mode == :separate
     end
 
-    # Row 12 (BUG 2)
-    test "unknown mode token falls back to :separate without crashing" do
-      rule = Config.parse_rule(%{"mode" => "sideways"})
-
-      assert rule.mode == :separate
+    # Row 12 (BUG 2), superseded by DND-1265: an unknown mode token used to fall
+    # back to :separate. It now fails the rule without crashing. See
+    # config_fail_closed_test.exs for the full fail-closed matrix.
+    test "an unknown mode token fails the rule without crashing" do
+      assert {:error, {:invalid_rule, _reason}} =
+               Config.parse_rule(%{"type" => "alphabetized_functions", "mode" => "sideways"})
     end
 
     # Row 13
@@ -167,28 +170,44 @@ defmodule Anchor.Domain.ConfigTest do
 
     # Matrix row 9 — Validation (leading-`:` token -> String.to_atom, NOT Module.concat)
     test "a leading-colon forbidden_modules token is kept as a raw atom" do
-      rule = Config.parse_rule(%{"forbidden_modules" => [":telemetry"]})
+      rule =
+        Config.parse_rule(%{
+          "type" => "no_direct_dependency",
+          "forbidden_modules" => [":telemetry"]
+        })
 
       assert rule.forbidden_modules == [:telemetry]
     end
 
     # Matrix row 10 — Happy Path (regression guard: ordinary module string still concats)
     test "an ordinary CamelCase forbidden_modules token still becomes a module atom" do
-      rule = Config.parse_rule(%{"forbidden_modules" => ["MyApp.Repo"]})
+      rule =
+        Config.parse_rule(%{
+          "type" => "no_direct_dependency",
+          "forbidden_modules" => ["MyApp.Repo"]
+        })
 
       assert rule.forbidden_modules == [MyApp.Repo]
     end
 
     # Matrix row 11 — Validation (mixed list preserved element-wise)
     test "a mixed atom + module forbidden_modules list is preserved element-wise" do
-      rule = Config.parse_rule(%{"forbidden_modules" => [":telemetry", "MyApp.Repo"]})
+      rule =
+        Config.parse_rule(%{
+          "type" => "no_direct_dependency",
+          "forbidden_modules" => [":telemetry", "MyApp.Repo"]
+        })
 
       assert rule.forbidden_modules == [:telemetry, MyApp.Repo]
     end
 
     # required_modules honors the same leading-colon rule (symmetry).
     test "a leading-colon required_modules token is kept as a raw atom" do
-      rule = Config.parse_rule(%{"required_modules" => [":cowboy", "MyApp.Schema"]})
+      rule =
+        Config.parse_rule(%{
+          "type" => "must_use_module",
+          "required_modules" => [":cowboy", "MyApp.Schema"]
+        })
 
       assert rule.required_modules == [:cowboy, MyApp.Schema]
     end
@@ -225,24 +244,24 @@ defmodule Anchor.Domain.ConfigTest do
 
     # Matrix row 6 — Happy Path (A'): "call" coerced to :call.
     test "match: \"call\" is coerced to :call" do
-      rule = Config.parse_rule(%{"match" => "call"})
+      rule = Config.parse_rule(%{"type" => "no_direct_dependency", "match" => "call"})
 
       assert rule.match == :call
     end
 
     # Matrix row 7 — Validation (A'): "reference" coerced to :reference.
     test "match: \"reference\" is coerced to :reference" do
-      rule = Config.parse_rule(%{"match" => "reference"})
+      rule = Config.parse_rule(%{"type" => "no_direct_dependency", "match" => "reference"})
 
       assert rule.match == :reference
     end
 
-    # Matrix row 8 — Error Handling (A'): an unknown token falls back to
-    # :reference and does NOT raise.
-    test "an unknown match token falls back to :reference without raising" do
-      rule = Config.parse_rule(%{"match" => "sideways"})
-
-      assert rule.match == :reference
+    # Matrix row 8 — Error Handling (A'), superseded by DND-1265 (A9): an
+    # unknown token used to fall back to :reference. It now fails the rule, and
+    # still does NOT raise.
+    test "an unknown match token fails the rule without raising" do
+      assert {:error, {:invalid_rule, _reason}} =
+               Config.parse_rule(%{"type" => "no_direct_dependency", "match" => "sideways"})
     end
 
     # Matrix row 12 — Control Flow Decisioning (A): forbidden_patterns and
@@ -250,6 +269,7 @@ defmodule Anchor.Domain.ConfigTest do
     test "forbidden_patterns and forbidden_modules coexist on one rule" do
       rule =
         Config.parse_rule(%{
+          "type" => "no_direct_dependency",
           "forbidden_modules" => ["MyApp.Repo"],
           "forbidden_patterns" => ["*.Adapters.*"]
         })
@@ -406,12 +426,16 @@ defmodule Anchor.Domain.ConfigTest do
       assert rule2.required_modules == [MyApp.Schema]
     end
 
-    test "a document with no rules yields an empty config" do
-      assert %Config{rules: []} = Config.parse_config(%{})
+    # Superseded by DND-1265: a document with no `rules` list, or an empty one
+    # (nil), used to yield an empty config that checked nothing. Both now fail;
+    # an explicit `rules: []` is the deliberate empty config.
+    test "a document with no rules key fails; an explicit empty list is an empty config" do
+      assert {:error, {:invalid_config, _reason}} = Config.parse_config(%{})
+      assert %Config{rules: []} = Config.parse_config(%{"rules" => []})
     end
 
-    test "a non-map document (empty YAML decodes to nil) yields an empty config" do
-      assert %Config{rules: []} = Config.parse_config(nil)
+    test "a non-map document (empty YAML decodes to nil) fails" do
+      assert {:error, {:invalid_config, _reason}} = Config.parse_config(nil)
     end
   end
 end

@@ -6,6 +6,11 @@ defmodule Anchor do
 
   Create an `.anchor.yml` file in your project root with rules defining your architectural constraints.
 
+  Anchor fails closed: a missing `.anchor.yml`, a config that does not load, and
+  a source file it cannot parse are each reported as a Credo issue with a `Fix:`
+  line, never as a clean run. See the README section "Where Anchor looks, and
+  what happens when it cannot check".
+
   ## Available Checks
 
   - `Anchor.Check.NoDependency` - Prevents direct dependencies on forbidden modules

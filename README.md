@@ -103,6 +103,57 @@ rules:
 
 For umbrella applications, you can place the configuration at the root or in individual apps.
 
+### Where Anchor looks, and what happens when it cannot check
+
+Anchor searches for `.anchor.yml` in the directory credo runs from. Run from an
+umbrella app (`apps/<app>`), it also searches the umbrella root. Run from a
+directory that holds an `apps/` directory, it also searches two directories up
+(a long-standing quirk of the lookup; keep `.anchor.yml` in the directory you
+run credo from). The first file found is used, and a "not found" issue names
+every path searched.
+
+Anchor **fails closed**: a run that could not check something reports it as a
+Credo issue, never as a clean run. Each message says what was searched or what
+failed, and ends with a `Fix:` line.
+
+| Condition | Where the issue sits | Example message |
+|---|---|---|
+| No `.anchor.yml` found | the first searched path | `Anchor found no .anchor.yml, so no Anchor rule was checked. Searched: /proj/.anchor.yml. Fix: ...` |
+| `.anchor.yml` exists but cannot be read (for example, it is a directory) | that path | `Anchor could not read /proj/.anchor.yml (:eisdir), so no Anchor rule was checked. Fix: ...` |
+| Invalid YAML | that path | `Anchor could not parse /proj/.anchor.yml as YAML, so no Anchor rule was checked: ... Fix: ...` |
+| A document or rule Anchor rejects (below) | that path | `Anchor rejected /proj/.anchor.yml, so no Anchor rule was checked: rule 2: unknown rule type "no_direct_dependancy"; known types: ... Fix: ...` |
+| A source file that does not parse | that file, at the parser's line | `Anchor could not parse this file, so no Anchor rule was checked against it: ... Fix: ...` |
+
+The load rejects, rather than silently ignoring:
+
+- a document that is empty, has no `rules:` list, has a top-level key other than
+  `rules` (for example `anchors:`), or whose `rules` is not a list. An explicit
+  `rules: []` is a deliberate empty config and loads;
+- a rule that is not a mapping, or has no `type`, or a `type` that no Anchor
+  check reads (a typo such as `no_direct_dependancy`);
+- an unknown `match` token (`reference` or `call`) or `mode` token (`all`,
+  `public_only`, `separate`). A leading colon is accepted on `type`, `match`
+  and `mode`, so `mode: :all` means `:all`;
+- the `same_context` / `context_depth` errors described under
+  [Same-context scoping](#same-context-scoping-same_context--context_depth).
+
+A config failure is reported **once per run**, by the first Anchor check in the
+enabled list, whichever Anchor checks you enable. So is an unparseable file.
+These issues use `:higher` priority, so they show without `--strict`. They take
+that first check's category, so which bit of the exit status they set depends
+on which Anchor check is listed first; the exit status is non-zero either way.
+
+A config issue sits on `.anchor.yml`, which is not one of credo's source files.
+`mix credo` and `mix credo --strict` print it. `mix credo list` prints issues
+per source file, so it omits it, though its exit status is still non-zero.
+
+One limit comes from Credo itself: `mix credo` drops a file it cannot parse
+before any check runs, and prints only `Some source files could not be parsed
+correctly and are excluded`. Such a file never reaches Anchor, and the run can
+still exit 0. `mix compile` fails on it (and `mix test`, for a test file), which
+is the gate that catches it. Anchor's own report covers a file handed to a check
+directly, as `Credo.Test.Case` and other callers do.
+
 ### Selecting which files a rule applies to
 
 Every rule chooses the files it applies to with **exactly one** of three
@@ -134,17 +185,18 @@ semantics and edge cases.
 
 | Key | Applies to | Meaning |
 |---|---|---|
+| `type` | every rule | Required. One of the rule types under [Check Types](#check-types). A missing or unknown type fails the load. |
 | `paths` | any rule | Path-glob selector. **Absent** ⇒ parsed as `nil`, so selection falls through to `pattern`/`uses_module`; this differs only cosmetically from an explicit `[]` (also "no path selector"). A present list selects by path (recursive `**` when `recursive: true`). |
 | `pattern` | any rule | Module-name-glob selector (`*` crosses dots). |
 | `uses_module` | any rule | Selects files that `use` the named module. |
 | `recursive` | any rule | `true` gives `paths` globs `**` (across-segment) semantics. |
 | `forbidden_modules` / `required_modules` | dependency / `must_use_module` | Exact module tokens (see the token syntax below). |
 | `forbidden_patterns` | `no_direct_dependency`, `no_transitive_dependency` | Module-name globs; forbids any referenced/reachable module whose name matches. |
-| `match` | `no_direct_dependency` | `reference` (default) or `call` — which dependency set the rule inspects. |
+| `match` | `no_direct_dependency` | `reference` (default) or `call` — which dependency set the rule inspects. Any other token fails the load. |
 | `same_context` | `no_direct_dependency` | Boolean, default `false`. When `true`, a `forbidden_patterns` match is a violation **only if** the dependency shares the checked file's own context. Exact `forbidden_modules` matches are never scoped. |
 | `context_depth` | `no_direct_dependency` | Positive integer, default `2`. Number of leading module-namespace segments that define a "context/subdomain". Inert unless `same_context: true`. |
 | `allowed_functions` | `module_pattern_restrictions` | Function-name allow-list (globs). |
-| `mode`, `max_lines` | `alphabetized_functions`, `max_file_length` | Style-check parameters. |
+| `mode`, `max_lines` | `alphabetized_functions`, `max_file_length` | Style-check parameters. `mode` is `all`, `public_only` or `separate` (a leading colon is accepted); any other token fails the load. |
 
 **`forbidden_patterns` — module-name globs (dot-bounded).** A `*` crosses dots,
 so `*.Adapters.*` matches `MyApp.Contacts.Adapters.Repository`, but the `.`

@@ -36,5 +36,15 @@ defmodule Anchor.Domain.ConfigPathsTest do
       # to "/.anchor.yml", so the list collapses to a single entry.
       assert ConfigPaths.candidates("/", true) == ["/.anchor.yml"]
     end
+
+    # DND-1265 miss case: a relative cwd would be expanded against whatever the
+    # process cwd happens to be, so the lookup would search the wrong place and
+    # report "not found" for the wrong path. The malformed key is rejected
+    # where it is produced.
+    # Sabotage record: ../../sabotage_records/config-20260929-dnd_1265_anchor_fail_closed.md
+    test "a relative cwd is rejected, not expanded against the process cwd" do
+      assert_raise ArgumentError, ~r/absolute/, fn -> ConfigPaths.candidates("proj", false) end
+      assert_raise ArgumentError, ~r/absolute/, fn -> ConfigPaths.candidates("", false) end
+    end
   end
 end

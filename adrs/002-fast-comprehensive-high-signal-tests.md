@@ -6,6 +6,11 @@ Accepted. Ported from walt_ui `adrs/002-fast-comprehensive-high-signal-test-suit
 and `backend/adrs/018-fast-comprehensive-high-signal-tests.md` on 2026-09-12,
 adapted for a single Mix library.
 
+Amended 2026-09-29 (DND-1265): the Adapters bullet said a missing config file
+yields "the documented default". Since DND-1265 it yields a documented error.
+Standard unchanged — see "Amendment: a missing config is an error" under
+Per-bucket rules.
+
 ## Context
 
 A test suite has three properties worth paying for, and they are usually
@@ -47,7 +52,7 @@ like the testing pyramid. The bucket vocabulary is ADR 001's.
   off the boundary, and the Domain object that goes back. For
   `Anchor.Adapters.ConfigFile` that is: given YAML content, the parsed
   `%Anchor.Config{}` has the right rules; given a missing file, the documented
-  default. The IO itself is not the subject. (The pure parsing that turns a
+  error. The IO itself is not the subject. (The pure parsing that turns a
   decoded YAML map into `%Anchor.Config{}` lives in the Domain module
   `Anchor.Config` and is tested exhaustively there, per the Domain bullet
   above.)
@@ -62,6 +67,16 @@ like the testing pyramid. The bucket vocabulary is ADR 001's.
 - **E2E** — rare. For Anchor, an end-to-end test is running the real checks
   against a real `.anchor.yml` over sample source; keep these to the few
   critical paths.
+
+#### Amendment: a missing config is an error (2026-09-29, DND-1265)
+
+The Adapters bullet said a missing config file yields "the documented default".
+It was written when `ConfigFile.load/0` returned an empty config for a missing
+file, which let every check read green while checking nothing. DND-1265 made
+it return `{:error, {:config_not_found, searched}}`, which the Framework reports
+as a Credo issue. The rule for adapter tests is unchanged: test the conversion
+at the boundary, and that includes the error a missing file converts to. Only
+the example's wording changed, from "default" to "error".
 
 ### Arrange with fixtures; assert through the real path
 

@@ -48,12 +48,12 @@ defmodule Anchor.Managers.LintTest do
                violations
     end
 
-    test "propagates {:error, reason} when the loader fails (checks are skipped)" do
+    test "propagates {:error, reason} when the loader fails (the Framework reports it)" do
       source_file = SourceFile.parse("defmodule X do\nend\n", "lib/x.ex")
 
-      expect(ConfigLoaderMock, :load, fn -> {:error, {:config_load_failed, :enoent}} end)
+      expect(ConfigLoaderMock, :load, fn -> {:error, {:config_not_found, ["/p/.anchor.yml"]}} end)
 
-      assert {:error, {:config_load_failed, :enoent}} =
+      assert {:error, {:config_not_found, ["/p/.anchor.yml"]}} =
                Lint.run(MustUseModule, [source_file], [], config_loader: ConfigLoaderMock)
     end
   end
@@ -248,6 +248,90 @@ defmodule Anchor.Managers.LintTest do
 
       assert {:ok, [{^source_file, [%Violation{trigger: "MyApp.Repo", line: 2}]}]} =
                Lint.run(NoDependency, [source_file], [], config_loader: ConfigLoaderMock)
+    end
+  end
+
+  # DND-1265: a file Anchor cannot parse is reported, never silently skipped.
+  # Sabotage record: ../../sabotage_records/lint-20260929-dnd_1265_anchor_fail_closed.md
+  # Sabotage record (the parse error's line and text): ../../sabotage_records/source-20260929-dnd_1265_anchor_fail_closed.md
+  describe "run/4 unparseable source file" do
+    setup do
+      broken = SourceFile.parse("defmodule Broken do\n  def go(\nend\n", "lib/broken.ex")
+
+      rule = %{
+        type: :must_use_module,
+        paths: ["lib/*.ex"],
+        recursive: false,
+        required_modules: [MyApp.Base]
+      }
+
+      {:ok, broken: broken, rule: rule}
+    end
+
+    test "the shared-failure reporter gets a parse violation for the file", %{
+      broken: broken,
+      rule: rule
+    } do
+      expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
+
+      assert {:ok, [{^broken, [%Violation{} = violation]}]} =
+               Lint.run(MustUseModule, [broken], [], config_loader: ConfigLoaderMock)
+
+      assert violation.message =~ "could not parse"
+      assert violation.message =~ "Fix:"
+      assert is_integer(violation.line)
+    end
+
+    test "a non-reporter check gets no violation, and no detection runs on it", %{
+      broken: broken,
+      rule: rule
+    } do
+      expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
+
+      assert {:ok, [{^broken, []}]} =
+               Lint.run(MustUseModule, [broken], [],
+                 config_loader: ConfigLoaderMock,
+                 report_shared_failures: false
+               )
+    end
+
+    test "a graph-needing check builds its graph from the parseable files only", %{
+      broken: broken
+    } do
+      file_a =
+        SourceFile.parse(
+          "defmodule A do\n  use SelectMe\n  def go, do: B.call()\nend\n",
+          "lib/a.ex"
+        )
+
+      file_b =
+        SourceFile.parse("defmodule B do\n  def call, do: MyApp.Repo.query()\nend\n", "lib/b.ex")
+
+      rule = %{
+        type: :no_transitive_dependency,
+        uses_module: "SelectMe",
+        forbidden_modules: [MyApp.Repo]
+      }
+
+      expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
+
+      assert {:ok,
+              [
+                {^broken, [%Violation{kind: :fail_closed}]},
+                {^file_a, [%Violation{trigger: "MyApp.Repo"}]},
+                {^file_b, []}
+              ]} =
+               Lint.run(NoTransitiveDependency, [broken, file_a, file_b], [],
+                 config_loader: ConfigLoaderMock
+               )
+    end
+
+    test "parseable files in the same run are still checked", %{broken: broken, rule: rule} do
+      good = SourceFile.parse("defmodule Good do\nend\n", "lib/good.ex")
+      expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
+
+      assert {:ok, [{^broken, [_parse_violation]}, {^good, [%Violation{trigger: "MyApp.Base"}]}]} =
+               Lint.run(MustUseModule, [broken, good], [], config_loader: ConfigLoaderMock)
     end
   end
 end
