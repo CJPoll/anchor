@@ -18,7 +18,8 @@ defmodule Anchor.Domain.RuleMatching do
 
   A rule carrying none of these selects nothing (deny by default). A config
   cannot load such a rule: `Anchor.Domain.RuleSchema` rejects it (DND-1286),
-  so it never reads green. These selector fields are the ones
+  so it never reads green. Nor can it load a rule carrying two, since only the
+  first would be read (DND-1290). These selector fields are the ones
   `Anchor.Domain.RuleSchema` requires; a new selector must be added to both.
   """
 

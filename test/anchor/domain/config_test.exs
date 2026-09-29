@@ -7,9 +7,12 @@ defmodule Anchor.Domain.ConfigTest do
   # rules-less document): ../../sabotage_records/config-20260929-dnd_1265_anchor_fail_closed.md
   # Sabotage record (DND-1286 selector fixtures and schema wiring):
   # ../../sabotage_records/config-20260929-dnd_1286_rule_key_allowlist.md
+  # Sabotage record (DND-1290 relation fixtures):
+  # ../../sabotage_records/config-20260929-dnd_1290_empty_relation_list.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config
+  alias Anchor.Domain.RuleSchema
 
   describe "parse_rule/1 (test-matrix: config.ex -> parse_rule/1)" do
     # Row 1
@@ -33,6 +36,8 @@ defmodule Anchor.Domain.ConfigTest do
       rule =
         parse_rule(%{
           "type" => "must_use_module",
+          # DND-1290: `recursive` is read only beside `paths`.
+          "paths" => ["lib/**/*.ex"],
           "required_modules" => ["MyApp.Schema"],
           "recursive" => false
         })
@@ -232,7 +237,9 @@ defmodule Anchor.Domain.ConfigTest do
 
     # Matrix row 2 — Validation (A): absent forbidden_patterns defaults to [].
     test "an absent forbidden_patterns defaults to an empty list" do
-      rule = parse_rule(%{"type" => "no_direct_dependency"})
+      # DND-1290: the rule needs a relation, so it names forbidden_modules.
+      rule =
+        parse_rule(%{"type" => "no_direct_dependency", "forbidden_modules" => ["MyApp.Repo"]})
 
       assert rule.forbidden_patterns == []
     end
@@ -389,7 +396,14 @@ defmodule Anchor.Domain.ConfigTest do
     test "an invalid same_context rule makes parse_config surface an error" do
       data = %{
         "rules" => [
-          %{"type" => "no_direct_dependency", "pattern" => "*", "same_context" => true}
+          # DND-1290: forbidden_modules gives the rule a relation, so the
+          # same_context check is the one that refuses it.
+          %{
+            "type" => "no_direct_dependency",
+            "pattern" => "*",
+            "forbidden_modules" => ["MyApp.Repo"],
+            "same_context" => true
+          }
         ]
       }
 
@@ -451,11 +465,47 @@ defmodule Anchor.Domain.ConfigTest do
   # about other keys, so a rule that names no selector of its own gets a
   # module-pattern one before it is parsed. The selector rows live in
   # rule_schema_test.exs.
+  # These rows test parsing, not selection or relations, so a rule with no
+  # selector gets a match-everything `pattern` (DND-1286), and a relation-bearing
+  # rule with no relation gets a placeholder one (DND-1290): neither would load
+  # otherwise. A row that asserts a relation key's default must name another.
   defp parse_rule(rule) when is_map(rule) do
-    if Enum.any?(Anchor.Domain.RuleSchema.selector_keys(), &Map.has_key?(rule, &1)),
-      do: Config.parse_rule(rule),
-      else: Config.parse_rule(Map.put(rule, "pattern", "*"))
+    rule
+    |> with_placeholder_selector()
+    |> with_placeholder_relation()
+    |> Config.parse_rule()
   end
 
   defp parse_rule(rule), do: Config.parse_rule(rule)
+
+  defp with_placeholder_selector(rule) do
+    if Enum.any?(RuleSchema.selector_keys(), &Map.has_key?(rule, &1)),
+      do: rule,
+      else: Map.put(rule, "pattern", "*")
+  end
+
+  defp with_placeholder_relation(%{"type" => type} = rule) when is_binary(type) do
+    keys = type |> String.trim_leading(":") |> relation_keys()
+
+    if keys == [] or Enum.any?(keys, &Map.has_key?(rule, &1)),
+      do: rule,
+      else: Map.put(rule, placeholder_relation_key(keys), ["Placeholder.Relation"])
+  end
+
+  defp with_placeholder_relation(rule), do: rule
+
+  # A type string no rule type spells (a misspelling row) has no relation to
+  # add; it is never turned into an atom.
+  defp relation_keys(type_name) do
+    case Enum.find(RuleSchema.rule_types(), &(Atom.to_string(&1) == type_name)) do
+      nil -> []
+      type -> RuleSchema.relation_keys(type)
+    end
+  end
+
+  # `forbidden_patterns` when the type has it, so a row may assert that
+  # `forbidden_modules` defaults to [].
+  defp placeholder_relation_key(keys) do
+    if "forbidden_patterns" in keys, do: "forbidden_patterns", else: hd(keys)
+  end
 end

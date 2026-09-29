@@ -6,9 +6,12 @@ defmodule Anchor.Domain.ConfigFailClosedTest do
   # Sabotage record: ../../sabotage_records/config-20260929-dnd_1265_anchor_fail_closed.md
   # Sabotage record (DND-1286 selector fixtures):
   # ../../sabotage_records/config-20260929-dnd_1286_rule_key_allowlist.md
+  # Sabotage record (DND-1290 relation fixtures):
+  # ../../sabotage_records/config-20260929-dnd_1290_empty_relation_list.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config
+  alias Anchor.Domain.RuleSchema
 
   describe "parse_rule/1 rule type (A8)" do
     test "an unknown type fails, naming the token and the known types" do
@@ -147,7 +150,7 @@ defmodule Anchor.Domain.ConfigFailClosedTest do
     test "an invalid rule names its 1-based position in the document" do
       data = %{
         "rules" => [
-          %{"type" => "no_direct_dependency", "pattern" => "*"},
+          %{"type" => "no_direct_dependency", "pattern" => "*", "forbidden_modules" => ["A"]},
           %{"type" => "no_direct_dependancy", "pattern" => "*"}
         ]
       }
@@ -162,11 +165,38 @@ defmodule Anchor.Domain.ConfigFailClosedTest do
   # about other keys, so a rule that names no selector of its own gets a
   # module-pattern one before it is parsed. The selector rows live in
   # rule_schema_test.exs.
+  # These rows test the type, match and mode tokens, so a rule with no selector
+  # gets a match-everything `pattern` (DND-1286) and a relation-bearing rule
+  # with no relation gets a placeholder one (DND-1290).
   defp parse_rule(rule) when is_map(rule) do
-    if Enum.any?(Anchor.Domain.RuleSchema.selector_keys(), &Map.has_key?(rule, &1)),
-      do: Config.parse_rule(rule),
-      else: Config.parse_rule(Map.put(rule, "pattern", "*"))
+    rule
+    |> with_placeholder_selector()
+    |> with_placeholder_relation()
+    |> Config.parse_rule()
   end
 
   defp parse_rule(rule), do: Config.parse_rule(rule)
+
+  defp with_placeholder_selector(rule) do
+    if has_any?(rule, RuleSchema.selector_keys()),
+      do: rule,
+      else: Map.put(rule, "pattern", "*")
+  end
+
+  defp with_placeholder_relation(%{"type" => type} = rule) when is_binary(type) do
+    case Enum.find(RuleSchema.rule_types(), &(":#{&1}" == type or "#{&1}" == type)) do
+      nil -> rule
+      known -> put_relation(rule, RuleSchema.relation_keys(known))
+    end
+  end
+
+  defp with_placeholder_relation(rule), do: rule
+
+  defp put_relation(rule, []), do: rule
+
+  defp put_relation(rule, [key | _rest] = keys) do
+    if has_any?(rule, keys), do: rule, else: Map.put(rule, key, ["Placeholder.Relation"])
+  end
+
+  defp has_any?(rule, keys), do: Enum.any?(keys, &Map.has_key?(rule, &1))
 end

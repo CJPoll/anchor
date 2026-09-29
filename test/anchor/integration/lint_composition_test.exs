@@ -98,7 +98,10 @@ defmodule Anchor.Integration.LintCompositionTest do
       source_file = SourceFile.parse(source, "lib/widget.ex")
       rule = %{type: :must_use_module, uses_module: "Ecto.Schema", required_modules: [App.Base]}
 
-      assert {:ok, [{^source_file, []}]} = run(MustUseModule, source_file, rule)
+      # DND-1290: the file gets no violation. The rule, having selected no file
+      # in the run, is the one config entry: it checked nothing.
+      assert {:ok, [{^source_file, []}, {:config, [%Violation{kind: :fail_closed}]}]} =
+               run(MustUseModule, source_file, rule)
     end
   end
 end

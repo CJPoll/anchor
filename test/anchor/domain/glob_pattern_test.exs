@@ -84,4 +84,31 @@ defmodule Anchor.Domain.GlobPatternTest do
       refute GlobPattern.matches_module_pattern?("AppXSchemasXUser", "*.Schemas.*")
     end
   end
+
+  # DND-1290: a module name reaches the matcher fully qualified
+  # (`Elixir.MyApp.Web.Foo`, from `to_string/1`), so a pattern written in alias
+  # form (`MyApp.Web.*`, as the README's own examples are) matched nothing, and
+  # a rule selecting or forbidding by it checked nothing.
+  # Sabotage record: ../../sabotage_records/glob_pattern-20260929-dnd_1290_empty_relation_list.md
+  describe "matches_module_pattern?/2 (alias-form patterns, DND-1290)" do
+    test "an alias-form pattern matches the fully-qualified Elixir module name" do
+      assert GlobPattern.matches_module_pattern?("Elixir.MyApp.Web.Foo", "MyApp.Web.*")
+      assert GlobPattern.matches_module_pattern?("Elixir.MyApp.Repo", "MyApp.Repo")
+    end
+
+    test "a pattern with the Elixir. prefix, or a leading *, still matches" do
+      assert GlobPattern.matches_module_pattern?("Elixir.MyApp.Web.Foo", "Elixir.MyApp.Web.*")
+      assert GlobPattern.matches_module_pattern?("Elixir.MyApp.Web.Foo", "*.Web.*")
+    end
+
+    test "an alias-form pattern still does not match a different module" do
+      refute GlobPattern.matches_module_pattern?("Elixir.MyApp.Domain.Foo", "MyApp.Web.*")
+      refute GlobPattern.matches_module_pattern?("Elixir.OtherApp.Web.Foo", "MyApp.Web.*")
+    end
+
+    test "an Erlang module name is matched as written" do
+      assert GlobPattern.matches_module_pattern?("telemetry", "telemetry*")
+      refute GlobPattern.matches_module_pattern?("telemetry", "Elixir.telemetry")
+    end
+  end
 end

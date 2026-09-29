@@ -31,6 +31,14 @@ defmodule Anchor.Check.Base do
   Credo's runner iterates. Every other Anchor check stays quiet about them. These
   issues are raised to `:higher` priority, so Credo shows them without
   `--strict`.
+
+  ## Rules that checked nothing (DND-1290)
+
+  `lint_opts/3` tells the Manager what only the execution knows: whether the
+  run saw the whole file set (`whole_file_set?/2`; a rule's selection floor
+  applies only then), and which rule types some enabled check reads
+  (`enabled_rule_types/1`; the reporter names a rule whose check is off). The
+  resulting violations sit on the config file.
   """
 
   @doc """
@@ -56,6 +64,82 @@ defmodule Anchor.Check.Base do
   # No check list the runner could iterate (none, or a hand-built shape): no
   # other check is known to report, so this one does.
   def shared_failure_reporter?(_exec, _check), do: true
+
+  @doc """
+  Returns `true` when the run handed the checks every file its configuration
+  covers (DND-1290), so a rule that selected too few files really did.
+
+  A run is a subset when files were named on the command line
+  (`mix credo lib/a.ex`) or excluded there (`--files-excluded`, which replaces
+  the configured exclude list), the path is not the working directory
+  (`mix credo lib/`), the source comes from stdin, or it is a watch-mode rerun
+  of changed files. An execution with no CLI options (a check run directly) is
+  the whole set: the rule errs toward reporting.
+  """
+  @spec whole_file_set?(Credo.Execution.t(), keyword()) :: boolean()
+  def whole_file_set?(%Credo.Execution{} = exec, params) do
+    not exec.read_from_stdin and
+      Credo.Check.Params.get_rerun_files_that_changed(params) == [] and
+      whole_cli_file_set?(exec.cli_options)
+  end
+
+  defp whole_cli_file_set?(%Credo.CLI.Options{path: path, switches: switches}) do
+    switches = switches || %{}
+
+    Map.get(switches, :files_included) in [nil, []] and
+      Map.get(switches, :files_excluded) in [nil, []] and
+      (is_nil(path) or
+         Path.expand(path) == Path.expand(Map.get(switches, :working_dir) || File.cwd!()))
+  end
+
+  defp whole_cli_file_set?(_cli_options), do: true
+
+  @doc """
+  Returns `{:ok, types}`, the sorted rule types some enabled Anchor check in the
+  run reads, or `:unknown` (DND-1290). It is `:unknown` when the execution has
+  no check list, or when `--checks`/`--ignore-checks` (or their tag forms)
+  narrowed it: that run skips checks on purpose, so a rule it does not read is
+  not a finding.
+  """
+  @spec enabled_rule_types(Credo.Execution.t()) :: {:ok, [atom()]} | :unknown
+  def enabled_rule_types(%Credo.Execution{checks: %{enabled: _enabled}} = exec) do
+    if narrowed?(exec) do
+      :unknown
+    else
+      {checks, _only, _ignored} = Credo.Execution.checks(exec)
+
+      {:ok,
+       checks
+       |> Enum.flat_map(&enabled_anchor_check/1)
+       |> Enum.map(& &1.rule_type())
+       |> Enum.uniq()
+       |> Enum.sort()}
+    end
+  end
+
+  def enabled_rule_types(_exec), do: :unknown
+
+  defp narrowed?(exec) do
+    Enum.any?(
+      [exec.only_checks, exec.only_checks_tags, exec.ignore_checks, exec.ignore_checks_tags],
+      &(&1 not in [nil, []])
+    )
+  end
+
+  @doc false
+  # The options `Anchor.Managers.Lint.run/4` takes from the execution.
+  @spec lint_opts(Credo.Execution.t(), module(), keyword()) :: keyword()
+  def lint_opts(exec, check, params) do
+    [
+      report_shared_failures: shared_failure_reporter?(exec, check),
+      enforce_selection_floors: whole_file_set?(exec, params),
+      enabled_rule_types: known_types(enabled_rule_types(exec)),
+      checks_by_type: Map.new(Anchor.checks(), &{&1.rule_type(), &1})
+    ]
+  end
+
+  defp known_types({:ok, types}), do: types
+  defp known_types(:unknown), do: :unknown
 
   # A check tuple is `{module, params}`, or `{module}` in Credo's older notation.
   defp enabled_anchor_check({_module, false}), do: []
@@ -87,10 +171,11 @@ defmodule Anchor.Check.Base do
 
       @impl true
       def run_on_all_source_files(exec, source_files, params) do
-        reporter? = Anchor.Check.Base.shared_failure_reporter?(exec, __MODULE__)
+        lint_opts = Anchor.Check.Base.lint_opts(exec, __MODULE__, params)
+        reporter? = Keyword.fetch!(lint_opts, :report_shared_failures)
 
         issues =
-          case Lint.run(__MODULE__, source_files, params, report_shared_failures: reporter?) do
+          case Lint.run(__MODULE__, source_files, params, lint_opts) do
             {:ok, results} ->
               Enum.flat_map(results, fn {source_file, violations} ->
                 violations_to_issues(source_file, violations)

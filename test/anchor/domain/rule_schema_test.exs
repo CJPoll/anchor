@@ -19,8 +19,10 @@ defmodule Anchor.Domain.RuleSchemaTest do
     "context_depth" => 3,
     "forbidden_modules" => ["MyApp.Repo"],
     "forbidden_patterns" => ["*.Adapters.*"],
+    "id" => "r1",
     "match" => "call",
     "max_lines" => 200,
+    "min_files" => 1,
     "mode" => "all",
     "paths" => ["lib/**/*.ex"],
     "pattern" => "*.Domain.*",
@@ -71,8 +73,8 @@ defmodule Anchor.Domain.RuleSchemaTest do
 
       assert reason =~
                "known keys for no_direct_dependency: context_depth, forbidden_modules, " <>
-                 "forbidden_patterns, match, paths, pattern, recursive, same_context, type, " <>
-                 "uses_module"
+                 "forbidden_patterns, id, match, min_files, paths, pattern, recursive, " <>
+                 "same_context, type, uses_module"
     end
 
     test "the reason suggests the key a near-miss spelling was meant to be" do
@@ -136,7 +138,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
     test "parse_config names the rule's 1-based position" do
       data = %{
         "rules" => [
-          rule(:must_use_module),
+          rule(:must_use_module, %{"required_modules" => ["A"]}),
           rule(:must_use_module, %{"patern" => "*.X"})
         ]
       }
@@ -147,10 +149,15 @@ defmodule Anchor.Domain.RuleSchemaTest do
   end
 
   describe "the positive case" do
+    # DND-1290: a rule takes exactly one selector, so the rule carries `paths`
+    # (and `recursive`, which reads it) and leaves out `pattern` and
+    # `uses_module`, which the selector tests below cover one at a time.
     test "every documented key of every type is accepted" do
       for type <- Config.rule_types() do
         data =
-          for key <- RuleSchema.known_keys(type), key != "type", into: %{"type" => "#{type}"} do
+          for key <- RuleSchema.known_keys(type),
+              key not in ~w(type pattern uses_module),
+              into: %{"type" => "#{type}"} do
             {key, Map.fetch!(@valid_values, key)}
           end
 
@@ -160,7 +167,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
 
     test "every rule type accepts the common keys" do
       for type <- Config.rule_types() do
-        assert ~w(paths pattern recursive type uses_module) --
+        assert ~w(id min_files paths pattern recursive type uses_module) --
                  RuleSchema.known_keys(type) == []
       end
     end
@@ -174,17 +181,22 @@ defmodule Anchor.Domain.RuleSchemaTest do
 
     # Doc drift guard: the README's per-type key table is the allowlist. A key
     # added to one without the other turns this red.
-    test "the README lists exactly the keys each rule type accepts" do
+    test "the README lists exactly the keys each rule type accepts, and its relation" do
       rows = readme_rows()
-      documented = Map.new(rows)
+      documented = Map.new(rows, fn {type, keys, relation} -> {type, {keys, relation}} end)
 
       # One row per type: a duplicated row fails here instead of being merged.
       assert rows |> Enum.map(&elem(&1, 0)) |> Enum.sort() == RuleSchema.rule_types()
 
       for type <- RuleSchema.rule_types() do
-        assert Enum.sort(documented[type] ++ RuleSchema.common_keys()) ==
-                 RuleSchema.known_keys(type),
-               "README row for #{type}"
+        {keys, relation} = documented[type]
+
+        assert Enum.sort(keys ++ RuleSchema.common_keys()) == RuleSchema.known_keys(type),
+               "README keys for #{type}"
+
+        # DND-1290: the relation column is `@relations_by_type`.
+        assert Enum.sort(relation) == RuleSchema.relation_keys(type),
+               "README relation for #{type}"
       end
     end
   end
@@ -292,9 +304,9 @@ defmodule Anchor.Domain.RuleSchemaTest do
     |> Enum.reject(&(&1 == key))
   end
 
-  # The rows of the README table, in order, as `{type, keys}`. Only the table
-  # paragraph under the heading is read, and rows are kept as a list, so a
-  # duplicated row is visible to the caller rather than merged into a map.
+  # The rows of the README table, in order, as `{type, keys, relation}`. Only
+  # the table paragraph under the heading is read, and rows are kept as a list,
+  # so a duplicated row is visible to the caller rather than merged into a map.
   defp readme_rows do
     [_before, section] =
       "../../../README.md"
@@ -304,11 +316,14 @@ defmodule Anchor.Domain.RuleSchemaTest do
 
     table = section |> String.split("\n\n") |> Enum.find(&String.starts_with?(&1, "| Rule type"))
 
-    ~r/^\| `([a-z_]+)` \| (.+) \|$/m
+    ~r/^\| `([a-z_]+)` \| ([^|]+) \| ([^|]+) \|$/m
     |> Regex.scan(table, capture: :all_but_first)
-    |> Enum.map(fn [type, keys] ->
-      {String.to_existing_atom(type),
-       ~r/`([a-z_]+)`/ |> Regex.scan(keys, capture: :all_but_first) |> List.flatten()}
+    |> Enum.map(fn [type, keys, relation] ->
+      {String.to_existing_atom(type), backticked(keys), backticked(relation)}
     end)
+  end
+
+  defp backticked(cell) do
+    ~r/`([a-z_]+)`/ |> Regex.scan(cell, capture: :all_but_first) |> List.flatten()
   end
 end

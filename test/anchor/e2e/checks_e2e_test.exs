@@ -86,15 +86,23 @@ defmodule Anchor.E2E.ChecksE2ETest do
     test "a file whose path the rule does not select produces no issues" do
       # `paths: ["lib/**/*.ex"]` does not select a test/ file, so rule selection
       # in Anchor.Check.Base filters it out before check_file/3 ever runs.
+      # DND-1290: the run also holds a clean selected file, so the rule meets its
+      # floor of one selected file; a rule that selects nothing is its own issue
+      # (see "selection floor" below).
       source = """
       defmodule SomeTest do
         def go, do: MyApp.Repo.all(Q)
       end
       """
 
+      clean = "defmodule MyApp.Domain.Clean do\n  def go, do: :ok\nend\n"
+
       issues =
         with_anchor_config(@yaml, fn ->
-          [to_source_file(source, "test/domain/some_test.ex")]
+          [
+            to_source_file(source, "test/domain/some_test.ex"),
+            to_source_file(clean, "lib/domain/clean.ex")
+          ]
           |> run_check(NoDependency)
         end)
 
@@ -390,6 +398,155 @@ defmodule Anchor.E2E.ChecksE2ETest do
       assert [issue] = issues
       assert issue.check == MustUseModule
       assert issue.filename == "lib/broken.ex"
+    end
+  end
+
+  # DND-1290: a rule that loads but checks nothing. Load-time cases fail the
+  # load; the zero-files case is decided at run time, over the files the check
+  # ran on.
+  # Sabotage record: ../../sabotage_records/lint-20260929-dnd_1290_empty_relation_list.md
+  describe "a rule that checks nothing (DND-1290)" do
+    @thing """
+    defmodule MyApp.Domain.Thing do
+      def go, do: MyApp.Repo.all(Q)
+    end
+    """
+
+    test "a relation-less rule is one issue on the config file" do
+      yaml = """
+      rules:
+        - type: must_use_module
+          paths:
+            - "lib/**/*.ex"
+          recursive: true
+      """
+
+      {issues, dir} =
+        with_anchor_config(yaml, fn ->
+          {all_issues([to_source_file(@thing, "lib/domain/thing.ex")], MustUseModule),
+           File.cwd!()}
+        end)
+
+      assert [issue] = issues
+      assert issue.filename == Path.join(dir, ".anchor.yml")
+      assert issue.message =~ "rule 1: a must_use_module rule has no relation"
+      assert issue.message =~ "required_modules is missing or empty"
+      assert issue.message =~ "no Anchor rule was checked"
+      assert issue.message =~ ~r/Fix: [^\n]+\z/
+    end
+
+    test "a rule that selects zero files is one issue on the config file" do
+      yaml = """
+      rules:
+        - type: no_direct_dependency
+          id: web-no-repo
+          paths:
+            - "lib/my_app_web/**/*.ex"
+          recursive: true
+          forbidden_modules:
+            - MyApp.Repo
+      """
+
+      {issues, dir} =
+        with_anchor_config(yaml, fn ->
+          {all_issues([to_source_file(@thing, "lib/domain/thing.ex")], NoDependency), File.cwd!()}
+        end)
+
+      assert [issue] = issues
+      assert issue.filename == Path.join(dir, ".anchor.yml")
+      assert issue.priority >= Credo.Priority.to_integer(:higher)
+
+      assert issue.message =~
+               ~s|rule 1 (id: "web-no-repo", no_direct_dependency) selected 0 of the 1 file|
+
+      assert issue.message =~ "so it checked nothing"
+      assert issue.message =~ ~r/Fix: [^\n]+\z/
+    end
+
+    test "a run over explicit files does not apply the floor" do
+      yaml = """
+      rules:
+        - type: no_direct_dependency
+          paths:
+            - "lib/my_app_web/**/*.ex"
+          recursive: true
+          forbidden_modules:
+            - MyApp.Repo
+      """
+
+      exec = %{
+        Credo.Execution.build()
+        | cli_options: %Credo.CLI.Options{
+            path: File.cwd!(),
+            switches: %{files_included: ["lib/domain/thing.ex"]}
+          }
+      }
+
+      issues =
+        with_anchor_config(yaml, fn ->
+          :ok =
+            NoDependency.run_on_all_source_files(
+              exec,
+              [to_source_file(@thing, "lib/domain/thing.ex")],
+              []
+            )
+
+          Credo.Execution.get_issues(exec)
+        end)
+
+      assert issues == []
+    end
+
+    test "a rule whose check is not enabled is one issue on the config file" do
+      yaml = """
+      rules:
+        - type: no_direct_dependency
+          paths:
+            - "lib/**/*.ex"
+          recursive: true
+          forbidden_modules:
+            - MyApp.Nope
+        - type: single_control_flow
+          paths:
+            - "lib/**/*.ex"
+          recursive: true
+      """
+
+      exec = exec_with_checks([{NoDependency, []}])
+
+      issues =
+        with_anchor_config(yaml, fn ->
+          :ok =
+            NoDependency.run_on_all_source_files(
+              exec,
+              [to_source_file(@thing, "lib/domain/thing.ex")],
+              []
+            )
+
+          Credo.Execution.get_issues(exec)
+        end)
+
+      assert [issue] = issues
+      assert issue.message =~ "rule 2 (single_control_flow) is not checked"
+      assert issue.message =~ "Fix:"
+    end
+
+    test "an alias-form module pattern selects and forbids (the README's own form)" do
+      yaml = """
+      rules:
+        - type: no_direct_dependency
+          pattern: "MyApp.Domain.*"
+          forbidden_patterns:
+            - "MyApp.Repo*"
+      """
+
+      issues =
+        with_anchor_config(yaml, fn ->
+          all_issues([to_source_file(@thing, "lib/domain/thing.ex")], NoDependency)
+        end)
+
+      assert [issue] = issues
+      assert issue.trigger == "MyApp.Repo"
     end
   end
 

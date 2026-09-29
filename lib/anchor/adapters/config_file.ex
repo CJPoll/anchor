@@ -55,7 +55,7 @@ defmodule Anchor.Adapters.ConfigFile do
          # `parse_config/1` returns `{:error, reason}` for an invalid document or
          # rule, so it fails the load instead of loading as a no-op.
          %Config{} = config <- Config.parse_config(data) do
-      {:ok, config}
+      {:ok, %{config | path: path}}
     else
       {:error, detail} -> {:error, {:config_load_failed, path, detail}}
     end

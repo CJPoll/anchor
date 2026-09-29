@@ -334,4 +334,201 @@ defmodule Anchor.Managers.LintTest do
                Lint.run(MustUseModule, [broken, good], [], config_loader: ConfigLoaderMock)
     end
   end
+
+  # DND-1290 (folds in DND-1268, T5): a rule that selects fewer files than its
+  # floor checked nothing, or less than it says, and used to read green. The
+  # floor is `min_files` (default 1). Load time cannot decide it (it depends on
+  # the file set), so the Manager reports it as a `:fail_closed` violation on the
+  # config file, in a `{:config, violations}` entry after the per-file results.
+  # Each check reports the floors of its own type's rules, over the files it ran
+  # on, so each floor is reported once per run.
+  # Sabotage record: ../../sabotage_records/lint-20260929-dnd_1290_empty_relation_list.md
+  # Sabotage record (Anchor.Domain.RuleCoverage):
+  # ../../sabotage_records/rule_coverage-20260929-dnd_1290_empty_relation_list.md
+  describe "run/4 selection floor (min_files)" do
+    setup do
+      thing =
+        SourceFile.parse("defmodule MyApp.Thing do\n  use Ecto.Schema\nend\n", "lib/thing.ex")
+
+      other = SourceFile.parse("defmodule MyApp.Other do\nend\n", "lib/other.ex")
+      {:ok, thing: thing, other: other}
+    end
+
+    test "a rule that selects no file is one fail-closed violation on the config", %{
+      thing: thing
+    } do
+      rule = %{
+        type: :must_use_module,
+        index: 2,
+        id: "contexts",
+        paths: ["lib/contexts/**/*.ex"],
+        recursive: true,
+        required_modules: [MyApp.Base]
+      }
+
+      expect(ConfigLoaderMock, :load, fn ->
+        {:ok, %Config{rules: [rule], path: "/p/.anchor.yml"}}
+      end)
+
+      assert {:ok, [{^thing, []}, {:config, [violation]}]} =
+               Lint.run(MustUseModule, [thing], [], config_loader: ConfigLoaderMock)
+
+      assert %Violation{kind: :fail_closed, filename: "/p/.anchor.yml"} = violation
+      assert violation.message =~ ~s|rule 2 (id: "contexts", must_use_module) selected 0 of|
+      assert violation.message =~ "so it checked nothing"
+      assert violation.message =~ ~r/Fix: [^\n]+\z/
+    end
+
+    test "min_files raises the floor", %{thing: thing, other: other} do
+      rule = %{
+        type: :must_use_module,
+        index: 1,
+        min_files: 3,
+        paths: ["lib/*.ex"],
+        recursive: false,
+        required_modules: [Ecto.Schema]
+      }
+
+      expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
+
+      assert {:ok, [{^thing, []}, {^other, [_missing_use]}, {:config, [violation]}]} =
+               Lint.run(MustUseModule, [thing, other], [], config_loader: ConfigLoaderMock)
+
+      assert violation.message =~ "selected 2 of the 2 files"
+      assert violation.message =~ "below its floor of 3 (min_files)"
+      # With no config path known, the violation sits on the default name.
+      assert violation.filename == ".anchor.yml"
+    end
+
+    test "a rule at its floor reports nothing", %{thing: thing, other: other} do
+      rule = %{
+        type: :must_use_module,
+        min_files: 2,
+        paths: ["lib/*.ex"],
+        recursive: false,
+        required_modules: [Ecto.Schema]
+      }
+
+      expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
+
+      assert {:ok, [{^thing, []}, {^other, [_missing_use]}]} =
+               Lint.run(MustUseModule, [thing, other], [], config_loader: ConfigLoaderMock)
+    end
+
+    test "a module-selector rule counts the files it selects", %{thing: thing, other: other} do
+      rule = %{type: :must_use_module, pattern: "MyApp.Nope.*", required_modules: [MyApp.Base]}
+
+      expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
+
+      assert {:ok, [_, _, {:config, [violation]}]} =
+               Lint.run(MustUseModule, [thing, other], [], config_loader: ConfigLoaderMock)
+
+      assert violation.message =~ "(must_use_module) selected 0 of the 2 files"
+    end
+
+    test "another type's rule is not this check's floor", %{thing: thing} do
+      rule = %{type: :no_direct_dependency, pattern: "Nope.*", forbidden_modules: [MyApp.Repo]}
+
+      expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
+
+      assert {:ok, [{^thing, []}]} =
+               Lint.run(MustUseModule, [thing], [], config_loader: ConfigLoaderMock)
+    end
+
+    test "a partial file set (enforce_selection_floors: false) reports no floor", %{
+      thing: thing
+    } do
+      rule = %{type: :must_use_module, pattern: "Nope.*", required_modules: [MyApp.Base]}
+
+      expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
+
+      assert {:ok, [{^thing, []}]} =
+               Lint.run(MustUseModule, [thing], [],
+                 config_loader: ConfigLoaderMock,
+                 enforce_selection_floors: false
+               )
+    end
+
+    test "an unparseable file still counts toward a paths rule's floor" do
+      broken = SourceFile.parse("defmodule Broken do\n  def go(\nend\n", "lib/broken.ex")
+
+      rule = %{
+        type: :must_use_module,
+        paths: ["lib/*.ex"],
+        recursive: false,
+        required_modules: [MyApp.Base]
+      }
+
+      expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
+
+      assert {:ok, [{^broken, [%Violation{kind: :fail_closed}]}]} =
+               Lint.run(MustUseModule, [broken], [], config_loader: ConfigLoaderMock)
+    end
+
+    # Review round: a module selector cannot be read off an unparseable file.
+    # The file is already reported, so it may be the one the rule selects; a
+    # floor report telling the user to fix the selector would be wrong advice.
+    test "an unparseable file may be what a module-selector rule selects" do
+      broken = SourceFile.parse("defmodule MyApp.Nope do\n  def go(\nend\n", "lib/broken.ex")
+      rule = %{type: :must_use_module, pattern: "MyApp.Nope", required_modules: [MyApp.Base]}
+
+      expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
+
+      assert {:ok, [{^broken, [%Violation{kind: :fail_closed}]}]} =
+               Lint.run(MustUseModule, [broken], [], config_loader: ConfigLoaderMock)
+    end
+  end
+
+  # DND-1290: a rule whose type no enabled check reads loads and checks nothing.
+  # The run's shared-failure reporter names it, when the Framework knows the
+  # enabled types (`enabled_rule_types`); `:unknown` reports nothing.
+  describe "run/4 a rule no enabled check reads" do
+    setup do
+      thing =
+        SourceFile.parse("defmodule MyApp.Thing do\n  use Ecto.Schema\nend\n", "lib/thing.ex")
+
+      rule = %{
+        type: :single_control_flow,
+        index: 3,
+        paths: ["lib/*.ex"],
+        recursive: false
+      }
+
+      {:ok, thing: thing, rule: rule}
+    end
+
+    test "the reporter names it as one fail-closed violation", %{thing: thing, rule: rule} do
+      expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
+
+      assert {:ok, [{^thing, []}, {:config, [violation]}]} =
+               Lint.run(MustUseModule, [thing], [],
+                 config_loader: ConfigLoaderMock,
+                 enabled_rule_types: [:must_use_module],
+                 checks_by_type: %{single_control_flow: Anchor.Check.SingleControlFlow}
+               )
+
+      assert %Violation{kind: :fail_closed} = violation
+      assert violation.message =~ "rule 3 (single_control_flow) is not checked"
+      assert violation.message =~ "Anchor.Check.SingleControlFlow"
+      assert violation.message =~ "Fix:"
+    end
+
+    test "a non-reporter check does not name it", %{thing: thing, rule: rule} do
+      expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
+
+      assert {:ok, [{^thing, []}]} =
+               Lint.run(MustUseModule, [thing], [],
+                 config_loader: ConfigLoaderMock,
+                 report_shared_failures: false,
+                 enabled_rule_types: [:must_use_module]
+               )
+    end
+
+    test "unknown enabled types report nothing", %{thing: thing, rule: rule} do
+      expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
+
+      assert {:ok, [{^thing, []}]} =
+               Lint.run(MustUseModule, [thing], [], config_loader: ConfigLoaderMock)
+    end
+  end
 end
