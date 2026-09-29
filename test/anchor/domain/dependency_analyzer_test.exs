@@ -499,7 +499,7 @@ defmodule Anchor.Domain.DependencyAnalyzerTest do
   end
 
   describe "alias and import resolution (DND-1266)" do
-    # Sabotage record: ../sabotage_records/dependency_analyzer-20260929-dnd_1266_alias_import_resolution.md
+    # Sabotage record: ../../sabotage_records/dependency_analyzer-20260929-dnd_1266_alias_import_resolution.md
 
     test "reference mode records a multi-alias's full names, not its prefix or short names" do
       src = """

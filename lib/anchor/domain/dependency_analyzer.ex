@@ -92,8 +92,11 @@ defmodule Anchor.Domain.DependencyAnalyzer do
   @type_attributes [:spec, :type, :typep, :opaque, :callback, :macrocallback]
 
   # Calls an unrestricted import can never own: every `Kernel` function and
-  # macro (by name and arity), and every special form or piece of call-shaped
-  # syntax (by name — special forms are variadic).
+  # macro (by name and arity) that `Kernel` still imports, and every special
+  # form or piece of call-shaped syntax (by name — special forms are variadic).
+  # Read at compile time from the Elixir that compiles Anchor, not the one the
+  # analysed project runs; a `Kernel` function added in a later Elixir is not in
+  # the set, which errs toward reporting.
   @kernel_calls MapSet.new(Kernel.__info__(:functions) ++ Kernel.__info__(:macros))
   @syntax_names MapSet.new(
                   Keyword.keys(Kernel.SpecialForms.__info__(:macros)) ++
@@ -107,6 +110,7 @@ defmodule Anchor.Domain.DependencyAnalyzer do
     in_quote: false,
     aliases: %{},
     imports: [],
+    kernel: :all,
     locals: MapSet.new()
   }
 
@@ -384,6 +388,10 @@ defmodule Anchor.Domain.DependencyAnalyzer do
   # recorded as unresolved, and a name it binds resolves to nothing.
   defp step_directive(:import, target, opts, line, env, acc) do
     case resolve_target(target, env) do
+      [{:ok, Kernel, _short, _line} = resolved] ->
+        acc = record_directive_target(resolved, acc, env, line)
+        {%{env | kernel: import_filter(opts)}, acc}
+
       [{:ok, module, _short, _line} = resolved] ->
         acc = record_directive_target(resolved, acc, env, line)
         {add_import(env, module, import_filter(opts)), acc}
@@ -628,14 +636,16 @@ defmodule Anchor.Domain.DependencyAnalyzer do
   defp concat(module, []), do: module
   defp concat(module, tail), do: Module.concat([module | tail])
 
-  # A bare call `name/arity` belongs to the first import in scope that can own
-  # it. The enclosing module's own functions always win.
+  # A bare call `name/arity` is recorded against EVERY import in scope that can
+  # own it. Elixir rejects an ambiguous call, so at most one really does; when
+  # the pass cannot tell which, it over-reports rather than guessing. The
+  # enclosing module's own functions always win.
   defp record_bare_call(acc, %{mode: :call} = env, name, arity, line) do
     if MapSet.member?(env.locals, {name, arity}) do
       acc
     else
       env.imports
-      |> Enum.filter(fn {_module, filter} -> imports?(filter, name, arity) end)
+      |> Enum.filter(fn {_module, filter} -> imports?(filter, name, arity, env.kernel) end)
       |> Enum.reduce(acc, fn {module, _filter}, acc ->
         record_reference(acc, env, module, line)
       end)
@@ -644,15 +654,24 @@ defmodule Anchor.Domain.DependencyAnalyzer do
 
   defp record_bare_call(acc, _env, _name, _arity, _line), do: acc
 
-  defp imports?({:only, pairs}, name, arity), do: MapSet.member?(pairs, {name, arity})
+  defp imports?({:only, pairs}, name, arity, _kernel), do: MapSet.member?(pairs, {name, arity})
 
-  defp imports?({:except, pairs}, name, arity),
-    do: not MapSet.member?(pairs, {name, arity}) and not builtin_call?(name, arity)
+  defp imports?({:except, pairs}, name, arity, kernel),
+    do: not MapSet.member?(pairs, {name, arity}) and not builtin_call?(name, arity, kernel)
 
-  defp imports?(:all, name, arity), do: not builtin_call?(name, arity)
+  defp imports?(:all, name, arity, kernel), do: not builtin_call?(name, arity, kernel)
 
-  defp builtin_call?(name, arity),
-    do: MapSet.member?(@syntax_names, name) or MapSet.member?(@kernel_calls, {name, arity})
+  # A special form is always built in. A `Kernel` call is built in only while
+  # `Kernel` still imports it: `import Kernel, except: [inspect: 1]` hands
+  # `inspect/1` to whichever import provides it.
+  defp builtin_call?(name, arity, kernel) do
+    MapSet.member?(@syntax_names, name) or
+      (MapSet.member?(@kernel_calls, {name, arity}) and filter_covers?(kernel, name, arity))
+  end
+
+  defp filter_covers?(:all, _name, _arity), do: true
+  defp filter_covers?({:only, pairs}, name, arity), do: MapSet.member?(pairs, {name, arity})
+  defp filter_covers?({:except, pairs}, name, arity), do: not MapSet.member?(pairs, {name, arity})
 
   # ---- local definitions (the enclosing module's own functions) ----
 

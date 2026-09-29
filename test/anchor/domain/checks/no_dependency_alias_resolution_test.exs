@@ -301,6 +301,19 @@ defmodule Anchor.Domain.Checks.NoDependencyAliasResolutionTest do
       assert detect(source, [Forbidden.Target], :call) == []
     end
 
+    test "a later alias of the same short name replaces the earlier one" do
+      source = """
+      defmodule W do
+        alias Forbidden.Target
+        alias Elsewhere.Target
+
+        def f, do: Target.run()
+      end
+      """
+
+      assert detect(source, [Forbidden.Target], :call) == []
+    end
+
     test "an import in one module does not resolve bare calls in its sibling" do
       source = """
       defmodule First do
@@ -394,6 +407,19 @@ defmodule Anchor.Domain.Checks.NoDependencyAliasResolutionTest do
       assert detect(source, [Forbidden.Target], :call) == []
     end
 
+    test "import Kernel, except: hands a Kernel name to an unrestricted import" do
+      source = """
+      defmodule W do
+        import Kernel, except: [inspect: 1]
+        import Forbidden.Target
+
+        def f(x), do: inspect(x)
+      end
+      """
+
+      assert triggers(source, [Forbidden.Target], :call) == ["Forbidden.Target"]
+    end
+
     test "a piped bare call counts the piped argument toward its arity" do
       source = """
       defmodule W do
@@ -454,6 +480,19 @@ defmodule Anchor.Domain.Checks.NoDependencyAliasResolutionTest do
       assert [%Violation{line: 4}] = detect(source, [Forbidden.Target], :call)
     end
 
+    test "a module called twice is reported once, at its first call" do
+      source = """
+      defmodule W do
+        alias Forbidden.Target
+
+        def f, do: Target.run()
+        def g, do: Target.run()
+      end
+      """
+
+      assert [%Violation{line: 4}] = detect(source, [Forbidden.Target], :call)
+    end
+
     test "reference mode reports a multi-alias element's line" do
       source = """
       defmodule W do
@@ -498,6 +537,22 @@ defmodule Anchor.Domain.Checks.NoDependencyAliasResolutionTest do
         """
 
         assert [%Violation{trigger: "import", line: 2}] = detect(source, [Forbidden.Target], mode)
+      end
+
+      test "is reported once per file, not once per rule", %{mode: mode} do
+        source = """
+        defmodule W do
+          alias @target, as: T
+        end
+        """
+
+        rules =
+          for forbidden <- [Forbidden.Target, Forbidden.Other] do
+            %{forbidden_modules: [forbidden], forbidden_patterns: [], match: mode}
+          end
+
+        assert [%Violation{trigger: "alias", line: 2}] =
+                 NoDependency.detect_violations(Code.string_to_quoted!(source), rules)
       end
 
       test "a non-literal directive inside a quote stays opaque", %{mode: mode} do
