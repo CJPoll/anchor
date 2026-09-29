@@ -79,7 +79,10 @@ defmodule Anchor.Managers.Lint do
     # the check context so `same_context` detection can derive the file's context.
     facts = file_facts(source_file, ast)
     matching_rules = matching_rules(check_module, facts, rules)
-    violations = detect(check_module, source_file, ast, matching_rules, modules_map, facts, params)
+
+    violations =
+      detect(check_module, source_file, ast, matching_rules, modules_map, facts, params)
+
     {source_file, violations}
   end
 
