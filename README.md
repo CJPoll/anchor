@@ -309,6 +309,26 @@ instead.
   the "Domain-router-holds-atoms" carve-out: holding an adapter atom is allowed,
   calling it is not.
 
+Both modes resolve modules the way the compiler does, lexically per module:
+
+- `alias A.B`, `alias A.B, as: C`, `alias A.{B, C}` and `require A.B, as: C`
+  make `B.f()` / `C.f()` a dependency on the **full** module (`A.B`, `A.C`). A
+  multi-alias never counts as a dependency on its bare prefix `A`.
+- A nested `defmodule Child` makes `Child` mean `Parent.Child`, and
+  `alias __MODULE__.Sub` / `__MODULE__.Sub.f()` resolve against the enclosing
+  module.
+- Under `match: call`, `import A.B` makes a bare call (`f(x)`, `x |> f()`,
+  `&f/1`) a call on `A.B`. `only: [f: 1]` narrows that to exactly the listed
+  name/arity pairs, and `except:` removes pairs. An unrestricted import claims
+  every bare call that is not a function the module defines itself or a
+  `Kernel`/special-form call, because the imported module's exports are not
+  visible to a source-only check.
+- A directive applies to the code after it in the same block and to everything
+  nested in it. It never leaks out of its module or function.
+- A directive whose target is not a literal module (`alias @target, as: T`) is
+  itself reported, with a `Fix:` line: references made through it cannot be
+  checked, and the rule must not read green over them.
+
 ```yaml
 # A Domain router may HOLD adapter atoms (a lookup table) but must never CALL them.
 - type: no_direct_dependency

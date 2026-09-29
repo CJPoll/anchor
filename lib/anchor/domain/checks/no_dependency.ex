@@ -17,17 +17,20 @@ defmodule Anchor.Domain.Checks.NoDependency do
 
   ## What it detects
 
-  For each rule, every `forbidden_modules` entry the file directly references
-  (per `Anchor.Domain.DependencyAnalyzer.extract_direct_dependencies/1`) yields
-  one violation. A forbidden module that appears more than once is reported once,
-  at the **first** reference line (the earliest occurrence in pre-order source
-  traversal); when the module cannot be located in the AST the line is `nil`
-  (Credo then defaults it).
+  For each rule, every forbidden module the file depends on in the rule's `match`
+  mode (per `Anchor.Domain.DependencyAnalyzer.dependency_lines/2`, which resolves
+  aliases and imports — DND-1266) yields one violation. A forbidden module that
+  appears more than once is reported once, at the line of its **first**
+  occurrence in source order; `nil` only when the AST carries no line (Credo then
+  defaults it).
 
   A `forbidden_modules` entry may be an Elixir alias (`MyApp.Repo`) or a bare
-  Erlang/OTP atom (`:telemetry`); the latter matches a bare-atom remote call and
-  is located by its call-callee node (never `Module.split/1`, which raises on a
-  non-Elixir atom).
+  Erlang/OTP atom (`:telemetry`); the latter matches a bare-atom remote call.
+
+  An `alias`/`import`/`require` whose target cannot be resolved statically
+  (`DependencyAnalyzer.unresolved_directives/1`) hides every reference made
+  through it, so it is reported too — **once per file**, when at least one rule
+  applies, never once per rule.
 
   ## Same-context scoping (Gap F)
 
@@ -82,34 +85,66 @@ defmodule Anchor.Domain.Checks.NoDependency do
   pattern match is reported exactly as before (hard back-compat guarantee).
   """
   @spec detect_violations(Macro.t(), [map()], [String.t()] | nil) :: [Violation.t()]
+  def detect_violations(_ast, [], _file_context), do: []
+
   def detect_violations(ast, rules, file_context) do
-    Enum.flat_map(rules, fn rule ->
-      dependencies = dependencies_for(ast, Map.get(rule, :match, :reference))
+    dependencies_by_mode =
+      rules
+      |> Enum.map(&rule_mode/1)
+      |> Enum.uniq()
+      |> Map.new(&{&1, dependencies_for(ast, &1)})
+
+    rules
+    |> Enum.flat_map(fn rule ->
+      dependencies = Map.fetch!(dependencies_by_mode, rule_mode(rule))
       forbidden_modules = rule.forbidden_modules || []
       forbidden_patterns = Map.get(rule, :forbidden_patterns, []) || []
       same_context = Map.get(rule, :same_context, false)
       context_depth = Map.get(rule, :context_depth, 2)
 
       dependencies
-      |> Enum.filter(
-        &forbidden?(
-          &1,
+      |> Enum.filter(fn {dependency, _line} ->
+        forbidden?(
+          dependency,
           forbidden_modules,
           forbidden_patterns,
           same_context,
           context_depth,
           file_context
         )
-      )
-      |> Enum.map(&build_violation(&1, ast))
+      end)
+      |> Enum.map(&build_violation/1)
     end)
+    |> Enum.concat(unresolved_violations(ast))
   end
 
-  # Gap A' (DND-142): the dependency set the rule consults. `:call` mode looks at
+  defp rule_mode(rule), do: if(Map.get(rule, :match) == :call, do: :call, else: :reference)
+
+  # Gap A' (DND-142): the dependency set a rule consults, as `{module, line}`
+  # with each module's first-occurrence line. `:call` mode looks at
   # call-position dependencies only (honoring the router carve-out); `:reference`
-  # (default) at every referenced module, as before.
-  defp dependencies_for(ast, :call), do: DependencyAnalyzer.extract_call_dependencies(ast)
-  defp dependencies_for(ast, _match), do: DependencyAnalyzer.extract_direct_dependencies(ast)
+  # (default) at every referenced module. Both resolve aliases and imports
+  # (DND-1266). Computed once per mode per file, not once per rule.
+  defp dependencies_for(ast, mode), do: DependencyAnalyzer.dependency_lines(ast, mode)
+
+  # DND-1266: a directive whose target cannot be resolved statically hides every
+  # reference made through it. It is reported once per file (the caller has at
+  # least one applicable rule), so no rule can read green over code it could not
+  # check, and N rules do not produce N copies of the same issue.
+  defp unresolved_violations(ast) do
+    ast
+    |> DependencyAnalyzer.unresolved_directives()
+    |> Enum.map(fn {directive, line} ->
+      %Violation{
+        message:
+          "Anchor cannot statically resolve the target of this `#{directive}`, so references " <>
+            "made through it cannot be checked for forbidden dependencies. " <>
+            "Fix: name the module literally (e.g. `#{directive} MyApp.Foo`).",
+        line: line,
+        trigger: Atom.to_string(directive)
+      }
+    end)
+  end
 
   # A dependency is forbidden when it is an exact `forbidden_modules` entry (Gap
   # B lets that be a bare Erlang atom) OR its module name matches a
@@ -179,58 +214,16 @@ defmodule Anchor.Domain.Checks.NoDependency do
     Enum.any?(patterns, &GlobPattern.matches_module_pattern?(module_name, &1))
   end
 
-  defp build_violation(forbidden_module, ast) do
+  # `line` is the dependency's first occurrence in source order, as the analyzer
+  # resolved it — so an aliased or imported reference points at the line that
+  # reaches the module, not at a literal spelling of its full name.
+  defp build_violation({forbidden_module, line}) do
     %Violation{
       message: "Module has forbidden direct dependency on #{inspect(forbidden_module)}",
-      line: first_reference_line(ast, forbidden_module),
+      line: line,
       trigger: inspect(forbidden_module)
     }
   end
 
-  # The line of the FIRST reference to `module` in `ast`. Pre-order traversal
-  # visits the earliest source occurrence first, so once a line is recorded it is
-  # never overwritten by a later match. `nil` when the module is not located.
-  #
-  # An Elixir alias module (`MyApp.Repo`) is located by its `:__aliases__` parts.
-  # A bare-atom Erlang/OTP module (`:telemetry`) is located by its remote-call
-  # callee node instead — `Module.split/1` raises on a non-Elixir atom, so it is
-  # never called for one.
-  defp first_reference_line(ast, module) do
-    if elixir_module?(module) do
-      alias_reference_line(ast, module |> Module.split() |> Enum.map(&String.to_atom/1))
-    else
-      atom_reference_line(ast, module)
-    end
-  end
-
   defp elixir_module?(module), do: match?("Elixir." <> _, Atom.to_string(module))
-
-  defp alias_reference_line(ast, module_parts) do
-    {_ast, line} =
-      Macro.prewalk(ast, nil, fn
-        {:__aliases__, meta, ^module_parts} = node, nil ->
-          {node, Keyword.get(meta, :line)}
-
-        {{:., _, [{:__aliases__, meta, ^module_parts}, _]}, _, _} = node, nil ->
-          {node, Keyword.get(meta, :line)}
-
-        node, acc ->
-          {node, acc}
-      end)
-
-    line
-  end
-
-  defp atom_reference_line(ast, atom) do
-    {_ast, line} =
-      Macro.prewalk(ast, nil, fn
-        {{:., _, [^atom, _fun]}, meta, _args} = node, nil ->
-          {node, Keyword.get(meta, :line)}
-
-        node, acc ->
-          {node, acc}
-      end)
-
-    line
-  end
 end
