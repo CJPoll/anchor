@@ -12,8 +12,9 @@ defmodule Anchor.Domain.Checks.NoDependencyAliasResolutionTest do
   # the resolution is scoped: a same-named module that is not the target is not
   # reported, and a directive in another module's scope does not apply.
   #
-  # Sabotage record:
+  # Sabotage records:
   #   ../../../sabotage_records/dependency_analyzer-20260929-dnd_1266_alias_import_resolution.md
+  #   ../../../sabotage_records/no_dependency-20260929-dnd_1266_alias_import_resolution.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Checks.NoDependency
