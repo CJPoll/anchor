@@ -343,6 +343,8 @@ defmodule Anchor.Managers.LintTest do
   # Each check reports the floors of its own type's rules, over the files it ran
   # on, so each floor is reported once per run.
   # Sabotage record: ../../sabotage_records/lint-20260929-dnd_1290_empty_relation_list.md
+  # Sabotage record (Anchor.Domain.RuleCoverage):
+  # ../../sabotage_records/rule_coverage-20260929-dnd_1290_empty_relation_list.md
   describe "run/4 selection floor (min_files)" do
     setup do
       thing =

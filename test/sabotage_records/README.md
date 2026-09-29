@@ -64,7 +64,11 @@ before coining a synonym.
 - `rule_matching` — `Anchor.Domain.RuleMatching` (pure rule-selection predicate).
 - `rule_schema` — `Anchor.Domain.RuleSchema` (DND-1286): the per-rule-type key
   allowlist, the selector every rule needs, and the README table that mirrors
-  the allowlist.
+  the allowlist. Since DND-1290 also the relation each type needs and the rest
+  of "a rule that loads but checks nothing".
+- `rule_coverage` — `Anchor.Domain.RuleCoverage` (DND-1290): which rules
+  checked nothing in a run (below their `min_files` floor, or of a type no
+  enabled check reads).
 - `must_use_module` — the `must_use_module` check: the extracted Domain
   detection (`Anchor.Domain.Checks.MustUseModule`) and its thin Framework shell
   (`Anchor.Check.MustUseModule`).

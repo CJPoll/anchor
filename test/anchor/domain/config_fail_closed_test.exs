@@ -6,6 +6,8 @@ defmodule Anchor.Domain.ConfigFailClosedTest do
   # Sabotage record: ../../sabotage_records/config-20260929-dnd_1265_anchor_fail_closed.md
   # Sabotage record (DND-1286 selector fixtures):
   # ../../sabotage_records/config-20260929-dnd_1286_rule_key_allowlist.md
+  # Sabotage record (DND-1290 relation fixtures):
+  # ../../sabotage_records/config-20260929-dnd_1290_empty_relation_list.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config
