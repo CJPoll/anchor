@@ -498,6 +498,94 @@ defmodule Anchor.Domain.DependencyAnalyzerTest do
     end
   end
 
+  describe "alias and import resolution (DND-1266)" do
+    # Sabotage record: ../sabotage_records/dependency_analyzer-20260929-dnd_1266_alias_import_resolution.md
+
+    test "reference mode records a multi-alias's full names, not its prefix or short names" do
+      src = """
+      defmodule W do
+        alias A.{B, C}
+      end
+      """
+
+      assert DependencyAnalyzer.extract_direct_dependencies(ast(src)) == [A.B, A.C]
+    end
+
+    test "reference mode records the aliased module, never the as: name" do
+      src = """
+      defmodule W do
+        alias A.B, as: C
+
+        def f, do: C.run()
+      end
+      """
+
+      assert DependencyAnalyzer.extract_direct_dependencies(ast(src)) == [A.B]
+    end
+
+    test "call mode resolves an aliased call to the full module" do
+      src = """
+      defmodule W do
+        alias A.B
+
+        def f, do: B.run()
+      end
+      """
+
+      assert DependencyAnalyzer.extract_call_dependencies(ast(src)) == [A.B]
+    end
+
+    test "call mode resolves an imported bare call and nothing else" do
+      src = """
+      defmodule W do
+        import A.B, only: [run: 1]
+
+        def f(x), do: run(x) + helper(x)
+
+        defp helper(x), do: x
+      end
+      """
+
+      assert DependencyAnalyzer.extract_call_dependencies(ast(src)) == [A.B]
+    end
+
+    test "module_dependencies resolves an outer alias inside a nested module's node" do
+      src = """
+      defmodule Outer do
+        alias A.B
+
+        defmodule Inner do
+          def f, do: B.run()
+        end
+      end
+      """
+
+      nodes = Map.new(DependencyAnalyzer.module_dependencies(ast(src)))
+
+      assert nodes[Outer].direct_dependencies == [A.B]
+      assert nodes[Outer.Inner].direct_dependencies == [A.B]
+    end
+
+    test "module_dependencies does not leak a nested module's alias to its sibling" do
+      src = """
+      defmodule Outer do
+        defmodule Inner do
+          alias A.B
+        end
+
+        defmodule Sibling do
+          def f, do: B.run()
+        end
+      end
+      """
+
+      nodes = Map.new(DependencyAnalyzer.module_dependencies(ast(src)))
+
+      assert nodes[Outer.Inner].direct_dependencies == [A.B]
+      assert nodes[Outer.Sibling].direct_dependencies == [B]
+    end
+  end
+
   describe "find_transitive_dependencies/3" do
     # Row 1
     test "reaches a module through one hop" do

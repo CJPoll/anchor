@@ -83,6 +83,8 @@ defmodule Anchor.Domain.Checks.NoDependency do
   """
   @spec detect_violations(Macro.t(), [map()], [String.t()] | nil) :: [Violation.t()]
   def detect_violations(ast, rules, file_context) do
+    unresolved = unresolved_violations(ast)
+
     Enum.flat_map(rules, fn rule ->
       dependencies = dependencies_for(ast, Map.get(rule, :match, :reference))
       forbidden_modules = rule.forbidden_modules || []
@@ -91,25 +93,46 @@ defmodule Anchor.Domain.Checks.NoDependency do
       context_depth = Map.get(rule, :context_depth, 2)
 
       dependencies
-      |> Enum.filter(
-        &forbidden?(
-          &1,
+      |> Enum.filter(fn {dependency, _line} ->
+        forbidden?(
+          dependency,
           forbidden_modules,
           forbidden_patterns,
           same_context,
           context_depth,
           file_context
         )
-      )
-      |> Enum.map(&build_violation(&1, ast))
+      end)
+      |> Enum.map(&build_violation/1)
+      |> Enum.concat(unresolved)
     end)
   end
 
-  # Gap A' (DND-142): the dependency set the rule consults. `:call` mode looks at
+  # Gap A' (DND-142): the dependency set the rule consults, as `{module, line}`
+  # with each module's first-occurrence line. `:call` mode looks at
   # call-position dependencies only (honoring the router carve-out); `:reference`
-  # (default) at every referenced module, as before.
-  defp dependencies_for(ast, :call), do: DependencyAnalyzer.extract_call_dependencies(ast)
-  defp dependencies_for(ast, _match), do: DependencyAnalyzer.extract_direct_dependencies(ast)
+  # (default) at every referenced module. Both resolve aliases and imports
+  # (DND-1266).
+  defp dependencies_for(ast, :call), do: DependencyAnalyzer.dependency_lines(ast, :call)
+  defp dependencies_for(ast, _match), do: DependencyAnalyzer.dependency_lines(ast, :reference)
+
+  # DND-1266: a directive whose target cannot be resolved statically hides every
+  # reference made through it. Each applicable rule reports it, so the rule can
+  # never read green over code it could not check.
+  defp unresolved_violations(ast) do
+    ast
+    |> DependencyAnalyzer.unresolved_directives()
+    |> Enum.map(fn {directive, line} ->
+      %Violation{
+        message:
+          "Anchor cannot statically resolve the target of this `#{directive}`, so references " <>
+            "made through it cannot be checked for forbidden dependencies. " <>
+            "Fix: name the module literally (e.g. `#{directive} MyApp.Foo`).",
+        line: line,
+        trigger: Atom.to_string(directive)
+      }
+    end)
+  end
 
   # A dependency is forbidden when it is an exact `forbidden_modules` entry (Gap
   # B lets that be a bare Erlang atom) OR its module name matches a
@@ -179,58 +202,16 @@ defmodule Anchor.Domain.Checks.NoDependency do
     Enum.any?(patterns, &GlobPattern.matches_module_pattern?(module_name, &1))
   end
 
-  defp build_violation(forbidden_module, ast) do
+  # `line` is the dependency's first occurrence in source order, as the analyzer
+  # resolved it — so an aliased or imported reference points at the line that
+  # reaches the module, not at a literal spelling of its full name.
+  defp build_violation({forbidden_module, line}) do
     %Violation{
       message: "Module has forbidden direct dependency on #{inspect(forbidden_module)}",
-      line: first_reference_line(ast, forbidden_module),
+      line: line,
       trigger: inspect(forbidden_module)
     }
   end
 
-  # The line of the FIRST reference to `module` in `ast`. Pre-order traversal
-  # visits the earliest source occurrence first, so once a line is recorded it is
-  # never overwritten by a later match. `nil` when the module is not located.
-  #
-  # An Elixir alias module (`MyApp.Repo`) is located by its `:__aliases__` parts.
-  # A bare-atom Erlang/OTP module (`:telemetry`) is located by its remote-call
-  # callee node instead — `Module.split/1` raises on a non-Elixir atom, so it is
-  # never called for one.
-  defp first_reference_line(ast, module) do
-    if elixir_module?(module) do
-      alias_reference_line(ast, module |> Module.split() |> Enum.map(&String.to_atom/1))
-    else
-      atom_reference_line(ast, module)
-    end
-  end
-
   defp elixir_module?(module), do: match?("Elixir." <> _, Atom.to_string(module))
-
-  defp alias_reference_line(ast, module_parts) do
-    {_ast, line} =
-      Macro.prewalk(ast, nil, fn
-        {:__aliases__, meta, ^module_parts} = node, nil ->
-          {node, Keyword.get(meta, :line)}
-
-        {{:., _, [{:__aliases__, meta, ^module_parts}, _]}, _, _} = node, nil ->
-          {node, Keyword.get(meta, :line)}
-
-        node, acc ->
-          {node, acc}
-      end)
-
-    line
-  end
-
-  defp atom_reference_line(ast, atom) do
-    {_ast, line} =
-      Macro.prewalk(ast, nil, fn
-        {{:., _, [^atom, _fun]}, meta, _args} = node, nil ->
-          {node, Keyword.get(meta, :line)}
-
-        node, acc ->
-          {node, acc}
-      end)
-
-    line
-  end
 end

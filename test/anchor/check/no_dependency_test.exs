@@ -299,6 +299,35 @@ defmodule Anchor.Check.NoDependencyTest do
     end
   end
 
+  describe "check_file/3 — alias and import resolution (DND-1266)" do
+    # End-to-end through the Credo shell: a multi-alias evaded both match modes
+    # before DND-1266, so a forbidden module reached through `alias A.{B, C}`
+    # produced no issue at all.
+    # Sabotage record: ../../sabotage_records/dependency_analyzer-20260929-dnd_1266_alias_import_resolution.md
+    for mode <- [:reference, :call] do
+      test "flags a forbidden module reached through a multi-alias (match: #{mode})" do
+        source = """
+        defmodule W do
+          alias MyApp.{Repo, Other}
+
+          def f, do: Repo.all(Q)
+        end
+        """
+
+        source_file = SourceFile.parse(source, "lib/some_module.ex")
+
+        rule = %{
+          type: :no_direct_dependency,
+          forbidden_modules: [MyApp.Repo],
+          match: unquote(mode)
+        }
+
+        assert [issue] = NoDependency.check_file(source_file, [rule], [])
+        assert issue.trigger == "MyApp.Repo"
+      end
+    end
+  end
+
   describe "rule_type/0" do
     test "is :no_direct_dependency" do
       assert NoDependency.rule_type() == :no_direct_dependency
