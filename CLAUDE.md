@@ -80,6 +80,27 @@ per-type key allowlist has one home, `Anchor.Domain.RuleSchema`. A new rule key
 goes there, into `Anchor.Config.parse_rule/1`, and into the README table "Keys
 each rule type accepts" (a test compares the table with the allowlist).
 
+A rule that loads but checks nothing fails too (DND-1290), as one class:
+more than one selector, `recursive` without `paths`, a relation-bearing rule
+with no relation, a relation list of empty strings, a match-all
+`allowed_functions` entry, a bad `min_files` or `id`. The relation each type
+checks against has one home, `@relations_by_type` in `Anchor.Domain.RuleSchema`
+(`[]` means the type has none). What load time cannot decide is reported at run
+time by `Anchor.Managers.Lint` through `Anchor.Domain.RuleCoverage`: a rule that
+selects fewer files than its `min_files` (default 1), and a rule whose check is
+not enabled.
+
+Extension rule:
+- A key the rule checks against goes into its type's `@relations_by_type` list
+  as well as `@keys_by_type`, and then satisfies the relation alone. T3
+  (DND-1267) adds `forbidden_functions` to `no_direct_dependency` this way, so a
+  rule with only `forbidden_functions` has a relation.
+- A new key or rule type MUST add its rows to its type's table in
+  `test/anchor/domain/rule_checks_nothing_test.exs`: a refused row per way it
+  can make a rule check nothing, and a positive row. A test fails until every
+  accepted key has a row, and compilation fails when a type has no
+  `@relations_by_type` entry.
+
 ## Important Notes
 
 - When running Elixir code, use: `mix run -e "<elixir code>"`

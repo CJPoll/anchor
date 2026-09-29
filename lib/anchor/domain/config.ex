@@ -68,7 +68,9 @@ defmodule Anchor.Config do
 
   alias Anchor.Domain.RuleSchema
 
-  defstruct rules: []
+  # `path` is where the config was read from, set by the loader (nil when the
+  # config was built in memory). A run-time report about a rule sits on it.
+  defstruct rules: [], path: nil
 
   @matches %{"call" => :call, "reference" => :reference}
 
@@ -81,7 +83,7 @@ defmodule Anchor.Config do
 
   @top_level_keys ["rules"]
 
-  @type t :: %__MODULE__{rules: [map()]}
+  @type t :: %__MODULE__{rules: [map()], path: String.t() | nil}
 
   @doc """
   The rule `type`s Anchor knows: one per shipped check's `rule_type/0`
@@ -174,24 +176,57 @@ defmodule Anchor.Config do
   # position, so a malformed rule fails the load (via
   # `Anchor.Adapters.ConfigFile`) instead of becoming a silent green no-op.
   defp parse_rules(rules) do
-    rules
-    |> Enum.with_index(1)
+    with {:ok, parsed} <- rules |> Enum.with_index(1) |> parse_indexed_rules() do
+      refuse_shared_ids(parsed)
+    end
+  end
+
+  defp parse_indexed_rules(indexed_rules) do
+    indexed_rules
     |> Enum.reduce_while({:ok, []}, &parse_indexed_rule/2)
     |> reverse_parsed()
   end
 
+  # DND-1290: a parsed rule carries its 1-based position, so a run-time report
+  # (`Anchor.Domain.Failures`) can name it as a load-time one does. A refused
+  # rule is named by its position and, when it has one, its `id`.
   defp parse_indexed_rule({rule, index}, {:ok, acc}) do
     case parse_rule(rule) do
       {:error, {:invalid_rule, reason}} ->
-        {:halt, {:error, {:invalid_rule, "rule #{index}: #{reason}"}}}
+        {:halt, {:error, {:invalid_rule, "#{raw_rule_label(rule, index)}: #{reason}"}}}
 
       parsed ->
-        {:cont, {:ok, [parsed | acc]}}
+        {:cont, {:ok, [Map.put(parsed, :index, index) | acc]}}
     end
   end
 
+  defp raw_rule_label(%{"id" => id}, index) when is_binary(id) and id != "" do
+    "rule #{index} (id: #{inspect(id)})"
+  end
+
+  defp raw_rule_label(_rule, index), do: "rule #{index}"
+
   defp reverse_parsed({:ok, parsed}), do: {:ok, Enum.reverse(parsed)}
   defp reverse_parsed(error), do: error
+
+  # DND-1290 (DND-1268): an `id` names one rule, so a report or a ratchet keyed
+  # on it cannot be ambiguous. Two rules sharing one fail the load.
+  defp refuse_shared_ids(parsed) do
+    parsed
+    |> Enum.reject(&is_nil(&1.id))
+    |> Enum.group_by(& &1.id, & &1.index)
+    |> Enum.find(fn {_id, indexes} -> length(indexes) > 1 end)
+    |> shared_id_result(parsed)
+  end
+
+  defp shared_id_result(nil, parsed), do: {:ok, parsed}
+
+  defp shared_id_result({id, indexes}, _parsed) do
+    {:error,
+     {:invalid_rule,
+      "rules #{Enum.join(indexes, " and ")} share the id #{inspect(id)}; " <>
+        "an id names one rule, so give each rule its own"}}
+  end
 
   # DND-1265 (A8): the type must name a shipped check. The lookup is a map of
   # known strings, so an arbitrary token is never turned into a new atom.
@@ -228,6 +263,13 @@ defmodule Anchor.Config do
   defp build_rule(rule, type, match, mode) do
     %{
       type: type,
+      # DND-1290 (DND-1268): an optional name for the rule, carried into its
+      # reports, and the fewest files it must select (default 1). A rule that
+      # selects fewer checked nothing, or less than it says, and
+      # `Anchor.Managers.Lint` reports it. `:index` (the rule's position) is
+      # added by `parse_config/1`.
+      id: rule["id"],
+      min_files: rule["min_files"] || 1,
       # Gap D (DND-140): surface an ABSENT `paths` as `nil`, not `[]`. An empty
       # list is a valid list, which `RuleMatching`'s path clause would match and
       # then shadow the `pattern`/`uses_module` selectors with `Enum.any?([], …)`.

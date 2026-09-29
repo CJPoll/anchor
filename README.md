@@ -123,6 +123,8 @@ failed, and ends with a `Fix:` line.
 | Invalid YAML | that path | `Anchor could not parse /proj/.anchor.yml as YAML, so no Anchor rule was checked: ... Fix: ...` |
 | A document or rule Anchor rejects (below) | that path | `Anchor rejected /proj/.anchor.yml, so no Anchor rule was checked: rule 2: unknown rule type "no_direct_dependancy"; known types: ... Fix: ...` |
 | A source file that does not parse | that file, at the parser's line | `Anchor could not parse this file, so no Anchor rule was checked against it: ... Fix: ...` |
+| A rule that selected fewer files than its floor (`min_files`, default 1) | the config file | `Anchor rule 2 (id: "web-no-repo", no_direct_dependency) selected 0 of the 214 files this check ran on, below its floor of 1 (min_files), so it checked nothing. Fix: ...` |
+| A rule whose type no enabled Credo check reads | the config file | `Anchor rule 3 (single_control_flow) is not checked: no enabled Credo check reads single_control_flow rules, so it checked nothing. Fix: enable Anchor.Check.SingleControlFlow in .credo.exs, ...` |
 
 The load rejects, rather than silently ignoring:
 
@@ -144,10 +146,65 @@ The load rejects, rather than silently ignoring:
   `public_only`, `separate`). A leading colon is accepted on `type`, `match`
   and `mode`, so `mode: :all` means `:all`;
 - the `same_context` / `context_depth` errors described under
-  [Same-context scoping](#same-context-scoping-same_context--context_depth).
+  [Same-context scoping](#same-context-scoping-same_context--context_depth);
+- any other rule that would load but check nothing. See
+  [A rule that checks nothing](#a-rule-that-checks-nothing).
 
 A config failure is reported **once per run**, by the first Anchor check in the
-enabled list, whichever Anchor checks you enable. So is an unparseable file.
+enabled list, whichever Anchor checks you enable. So is an unparseable file, and
+so is a rule whose type no enabled check reads. A rule below its floor is
+reported once per run by the check that reads it.
+
+### A rule that checks nothing
+
+A rule that loads but checks nothing reads the same as a rule that found
+nothing: green. Anchor refuses every such rule it can decide at load, naming the
+rule's position (and its `id`, when it has one) and ending with `Fix:`:
+
+- no selector, or **more than one** (`paths` with `pattern`, or `pattern` with
+  `uses_module`). Only the first of `paths`, `pattern`, `uses_module` was ever
+  read, so the second one narrowed nothing;
+- `recursive` without `paths` (nothing reads it), or a `recursive` that is not
+  `true`/`false`;
+- a relation-bearing rule with no **relation**: a `no_direct_dependency` or
+  `no_transitive_dependency` rule whose `forbidden_modules` and
+  `forbidden_patterns` are both missing or empty, or a `must_use_module` rule
+  with no `required_modules`. The table below lists each type's relation;
+- a relation list that is not a list of non-blank strings
+  (`forbidden_modules: [""]`, or a bare `-` in YAML);
+- an `allowed_functions` entry of only `*`, which allows every function;
+- a `min_files` that is not a positive integer, an `id` that is not a
+  non-empty string, and two rules sharing one `id`.
+
+Two members depend on the files, so they are reported at run time instead:
+
+- **A rule that selects too few files.** Every rule must select at least
+  `min_files` of the files its check runs on (default 1). A moved directory
+  used to turn a `paths` rule into a silent no-op. `min_files: N` raises the
+  floor, like a guard that expects at least 50 modules:
+
+  ```yaml
+  - type: must_use_module
+    id: contexts-use-base
+    paths: ["lib/my_app/contexts/**/*.ex"]
+    recursive: true
+    min_files: 12
+    required_modules:
+      - MyApp.Context
+  ```
+
+  The floor applies only when credo ran over the whole project. It is skipped
+  when files or a subdirectory were named on the command line
+  (`mix credo lib/a.ex`), for stdin, and for a watch-mode rerun.
+- **A rule whose check is not enabled.** Credo runs only the checks
+  `.credo.exs` enables, so a `single_control_flow` rule does nothing while
+  `Anchor.Check.SingleControlFlow` is off. This is skipped when
+  `--checks`/`--ignore-checks` narrowed the run on purpose.
+
+Each rule type's table of such configs is in
+`test/anchor/domain/rule_checks_nothing_test.exs`. **A new rule key or rule
+type must add its rows there**, one refused row per way it can make a rule check
+nothing, plus a positive row; a test fails until every accepted key has a row.
 These issues use `:higher` priority, so they show without `--strict`. They take
 that first check's category, so which bit of the exit status they set depends
 on which Anchor check is listed first; the exit status is non-zero either way.
@@ -176,7 +233,8 @@ selectors, tried in this order:
    `"Ecto.Schema"`).
 
 A rule that carries **none** of these selectors would match nothing, so it
-fails the load instead of reading green. So does a selector of the wrong shape,
+fails the load instead of reading green. A rule that carries **two** would be
+selected by the first alone, so it fails the load too. So does a selector of the wrong shape,
 such as `paths: "lib/a.ex"` (a string, not a list).
 
 Omitting `paths` is meaningful: a rule with no `paths` key is parsed with
@@ -200,7 +258,9 @@ semantics and edge cases.
 | `paths` | any rule | Path-glob selector. **Absent** ⇒ parsed as `nil`, so selection falls through to `pattern`/`uses_module`; this differs only cosmetically from an explicit `[]` (also "no path selector"). A present list selects by path (recursive `**` when `recursive: true`). |
 | `pattern` | any rule | Module-name-glob selector (`*` crosses dots). |
 | `uses_module` | any rule | Selects files that `use` the named module. |
-| `recursive` | any rule | `true` gives `paths` globs `**` (across-segment) semantics. |
+| `recursive` | any rule with `paths` | `true` gives `paths` globs `**` (across-segment) semantics. Without `paths`, nothing reads it, so it fails the load. |
+| `min_files` | any rule | Positive integer, default `1`. The fewest files the rule must select in a whole-project run; fewer is an issue. See [A rule that checks nothing](#a-rule-that-checks-nothing). |
+| `id` | any rule | A name for the rule, unique in the file. It appears beside the rule's position in its load errors and floor reports (`rule 2 (id: "web-no-repo", ...)`). |
 | `forbidden_modules` / `required_modules` | `no_direct_dependency`, `no_transitive_dependency` / `must_use_module` | Exact module tokens (see the token syntax below). |
 | `forbidden_patterns` | `no_direct_dependency`, `no_transitive_dependency` | Module-name globs; forbids any referenced/reachable module whose name matches. |
 | `match` | `no_direct_dependency` | `reference` (default) or `call` — which dependency set the rule inspects. Any other token fails the load. |
@@ -212,42 +272,57 @@ semantics and edge cases.
 #### Keys each rule type accepts
 
 A rule may carry only the keys its type reads. Every type accepts the common
-keys: `type`, `paths`, `pattern`, `uses_module` and `recursive`. The table lists
+keys: `type`, `paths`, `pattern`, `uses_module`, `recursive`, `min_files` and
+`id`. The table lists
 the keys each type accepts beyond those. Any other key fails the load, and the
 message names the rule, the unknown key, the nearest known key and every key the
 type accepts. So a misspelling such as `forbiden_patterns:` or `patern:` is an
 error, not a rule that silently checks less than it says. A key that belongs to
 another type (`match` on a `no_transitive_dependency` rule) is unknown too.
 
-| Rule type | Keys beyond the common ones |
-|---|---|
-| `alphabetized_functions` | `mode` |
-| `case_on_bare_arg` | none |
-| `max_file_length` | `max_lines` |
-| `module_pattern_restrictions` | `allowed_functions` |
-| `must_use_module` | `required_modules` |
-| `no_comparison_in_if` | none |
-| `no_direct_dependency` | `context_depth`, `forbidden_modules`, `forbidden_patterns`, `match`, `same_context` |
-| `no_discarding_arrow_in_with` | none |
-| `no_transitive_dependency` | `forbidden_modules`, `forbidden_patterns` |
-| `no_tuple_match_in_head` | none |
-| `single_control_flow` | none |
-| `struct_getter_convention` | none |
+| Rule type | Keys beyond the common ones | Relation (needs one, non-empty) |
+|---|---|---|
+| `alphabetized_functions` | `mode` | none |
+| `case_on_bare_arg` | none | none |
+| `max_file_length` | `max_lines` | none |
+| `module_pattern_restrictions` | `allowed_functions` | none |
+| `must_use_module` | `required_modules` | `required_modules` |
+| `no_comparison_in_if` | none | none |
+| `no_direct_dependency` | `context_depth`, `forbidden_modules`, `forbidden_patterns`, `match`, `same_context` | `forbidden_modules`, `forbidden_patterns` |
+| `no_discarding_arrow_in_with` | none | none |
+| `no_transitive_dependency` | `forbidden_modules`, `forbidden_patterns` | `forbidden_modules`, `forbidden_patterns` |
+| `no_tuple_match_in_head` | none | none |
+| `single_control_flow` | none | none |
+| `struct_getter_convention` | none | none |
 
-Every rule also needs a **selector**: a non-empty `paths` list, a `pattern`
-string or a `uses_module` string. A rule with none selects no file, so it fails
-the load. `recursive` alone is not a selector, and neither is `paths: []`. A
-selector of the wrong shape fails the load too: `paths` must be a list of
-strings, and `pattern` and `uses_module` must be non-empty strings.
+Every rule also needs exactly one **selector**: a non-empty `paths` list, a
+`pattern` string or a `uses_module` string. A rule with none selects no file,
+and a rule with two reads only the first, so both fail the load. `recursive`
+alone is not a selector, and neither is `paths: []`. A selector of the wrong
+shape fails the load too: `paths` must be a list of strings, and `pattern` and
+`uses_module` must be non-empty strings.
 
-The allowlist lives in one place, `Anchor.Domain.RuleSchema`. A new key is added
-there, to its type's list, and to this table; a test compares the two.
+A rule of a type with a **relation** (the last column) must carry at least one
+of its relation keys as a non-empty list, or it checks nothing and fails the
+load. A type with `none` has nothing to require: it checks every file it
+selects, or (`module_pattern_restrictions`) an empty allow-list forbids every
+function.
+
+The allowlist and the relations live in one place, `Anchor.Domain.RuleSchema`.
+A new key is added there, to its type's list (and to its relation list, if the
+rule checks against it), to this table, and to its type's rows in
+`test/anchor/domain/rule_checks_nothing_test.exs`. A test compares this table
+with the module, and another fails until the new key has a row.
 
 **`forbidden_patterns` — module-name globs (dot-bounded).** A `*` crosses dots,
 so `*.Adapters.*` matches `MyApp.Contacts.Adapters.Repository`, but the `.`
 between segments is literal, so the pattern is dot-bounded: it matches a
-`.Adapters.` segment and does **not** match `Foo.AdaptersHelper`. Patterns are
-matched against the fully-qualified name (`Elixir.MyApp…`), so lead with `*`.
+`.Adapters.` segment and does **not** match `Foo.AdaptersHelper`. A module name
+matches in its alias form (`MyApp.Web.Foo`) and its fully-qualified form
+(`Elixir.MyApp.Web.Foo`), so `MyApp.Web.*`, `Elixir.MyApp.Web.*` and `*.Web.*`
+all match it. (Before DND-1290 only the fully-qualified form was tried, so a
+pattern such as `MyApp.Web.*` matched nothing.) The same holds for the
+`pattern` selector.
 
 ```yaml
 - type: no_direct_dependency

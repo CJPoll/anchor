@@ -50,11 +50,22 @@ defmodule Anchor.Domain.GlobPattern do
   Unlike `matches_pattern?/2`, a `*` here may cross dots, so `*.Schemas.*`
   matches `App.Schemas.User` and `*Queries` matches `App.UserQueries`. The match
   is anchored.
+
+  An Elixir module name arrives fully qualified (`Elixir.App.Web.User`, as
+  `to_string/1` gives it), and also matches in its alias form (`App.Web.User`).
+  So `App.Web.*`, the way a module is written in code, matches it, as do
+  `Elixir.App.Web.*` and `*.Web.*`. Before DND-1290 only the qualified form was
+  tried, and an alias-form pattern matched nothing, so a rule selecting or
+  forbidding by one checked nothing.
   """
   @spec matches_module_pattern?(String.t(), String.t()) :: boolean()
   def matches_module_pattern?(module_name, pattern) do
-    Regex.match?(module_pattern_to_regex(pattern), module_name)
+    regex = module_pattern_to_regex(pattern)
+    Enum.any?(module_name_forms(module_name), &Regex.match?(regex, &1))
   end
+
+  defp module_name_forms("Elixir." <> alias_form = module_name), do: [module_name, alias_form]
+  defp module_name_forms(module_name), do: [module_name]
 
   defp pattern_to_regex(pattern) do
     pattern
