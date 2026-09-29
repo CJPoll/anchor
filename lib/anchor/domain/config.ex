@@ -20,9 +20,12 @@ defmodule Anchor.Config do
     * `:max_lines` — an integer (or `nil` when absent) read by
       `Anchor.Check.MaxFileLength`.
     * `:mode` — an atom (`:all` / `:public_only` / `:separate`), coerced from a
-      bare YAML token, read by `Anchor.Check.AlphabetizedFunctions`. An unknown
-      token coerces to `:separate`; an absent `mode` stays `nil` so the check
-      applies its own default.
+      bare YAML token (a leading colon is accepted), read by
+      `Anchor.Check.AlphabetizedFunctions`. An unknown token fails the rule
+      (DND-1265); an absent `mode` stays `nil` so the check applies its own
+      default.
+    * `:match` — `:reference` (default) or `:call`, coerced the same way. An
+      unknown token fails the rule (DND-1265, A9).
     * `:same_context` — a boolean (default `false`) on a `no_direct_dependency`
       rule (Gap F, DND-149). When `true`, a `forbidden_patterns` match is a
       violation only if the dependency shares the checked file's own context;
@@ -38,6 +41,15 @@ defmodule Anchor.Config do
   `parse_config/1` propagates so a malformed rule fails the load (via
   `Anchor.Adapters.ConfigFile`) rather than becoming a silent green no-op.
 
+  ## Failing closed (DND-1265)
+
+  A config that names something Anchor does not know is rejected, never parsed
+  into a rule that checks nothing: a missing or unknown rule `type`, an unknown
+  `match` or `mode` token, a rule that is not a mapping, and a document whose
+  shape is not `rules: [...]` (empty, a misspelt top-level key, a non-list
+  `rules`). `Anchor.Domain.Failures` turns each rejection into the Credo issue
+  the user sees.
+
   ## Module tokens (`forbidden_modules` / `required_modules`)
 
   Each entry is turned into the module it names. A CamelCase token
@@ -50,48 +62,154 @@ defmodule Anchor.Config do
 
   defstruct rules: []
 
+  @matches %{"call" => :call, "reference" => :reference}
+
+  @modes %{"all" => :all, "public_only" => :public_only, "separate" => :separate}
+
+  # One entry per shipped check's `rule_type/0`. A drift test pins this to
+  # `Anchor.checks/0`; the Domain cannot ask the (Framework) checks itself.
+  @rule_types Map.new(
+                ~w(alphabetized_functions case_on_bare_arg max_file_length
+                   module_pattern_restrictions must_use_module no_comparison_in_if
+                   no_direct_dependency no_discarding_arrow_in_with no_transitive_dependency
+                   no_tuple_match_in_head single_control_flow struct_getter_convention)a,
+                &{Atom.to_string(&1), &1}
+              )
+
+  @top_level_keys ["rules"]
+
   @type t :: %__MODULE__{rules: [map()]}
+
+  @doc """
+  The rule `type`s Anchor knows: one per shipped check's `rule_type/0`
+  (`Anchor.checks/0`). A rule of any other type fails the load (DND-1265, A8),
+  because no check would ever read it.
+  """
+  @spec rule_types() :: [atom()]
+  def rule_types, do: Map.values(@rule_types)
 
   @doc """
   Builds a `%Anchor.Config{}` from a decoded YAML document.
 
-  A map is read for its `"rules"` list; anything else (for example the `nil` an
-  empty document decodes to) yields an empty config.
+  The document must be a mapping whose only key is `rules`, holding a list of
+  rule mappings. Anything else fails with `{:error, {:invalid_config, reason}}`
+  (DND-1265): an empty document (the `nil` an empty file decodes to), a missing
+  or misspelt `rules` key, and a `rules` that is not a list would each
+  otherwise load as zero rules and check nothing. An explicit `rules: []` is a
+  deliberate empty config and loads.
+
+  A rule that fails validation surfaces `{:error, {:invalid_rule, reason}}`,
+  its reason prefixed with the rule's 1-based position (`rule 2: ...`).
   """
   def parse_config(data) when is_map(data) do
-    rules = Map.get(data, "rules", [])
-    parsed = Enum.map(rules, &parse_rule/1)
-
-    # Gap F (DND-149): a rule that fails validation surfaces `{:error, reason}`
-    # from `parse_rule/1`. Propagate the FIRST such error so a malformed rule
-    # fails the load (via `Anchor.Adapters.ConfigFile`) instead of becoming a
-    # silent green no-op. A document of only valid rules yields a `%Config{}`.
-    case Enum.find(parsed, &match?({:error, _}, &1)) do
-      nil -> %__MODULE__{rules: parsed}
-      {:error, _reason} = error -> error
+    with :ok <- validate_top_level_keys(data),
+         {:ok, rules} <- fetch_rules(data),
+         {:ok, parsed} <- parse_rules(rules) do
+      %__MODULE__{rules: parsed}
     end
   end
 
-  def parse_config(_data), do: %__MODULE__{}
+  def parse_config(nil) do
+    {:error, {:invalid_config, "the document is empty; it needs a `rules:` list"}}
+  end
+
+  def parse_config(data) do
+    {:error,
+     {:invalid_config,
+      "the top level must be a mapping with a `rules:` list, got: #{inspect(data)}"}}
+  end
 
   @doc """
   Parses a single YAML rule map (string keys) into the internal rule map
   (atom keys).
 
   Returns the atom-keyed rule map, or `{:error, {:invalid_rule, reason}}` when
-  the rule fails validation of the Gap F (`same_context` / `context_depth`)
-  keys — surfaced up through `parse_config/1` and the load adapter so a
-  malformed rule never silently becomes a green no-op.
+  the rule fails validation — surfaced up through `parse_config/1` and the load
+  adapter so a malformed rule never silently becomes a green no-op. Validated:
+  the Gap F `same_context` / `context_depth` keys, and (DND-1265) the `type`
+  (present and one of `rule_types/0`), the `match` token and the `mode` token.
+  A rule that is not a mapping is rejected too.
   """
   def parse_rule(rule) when is_map(rule) do
-    with :ok <- validate_new_keys(rule) do
-      build_rule(rule)
+    with :ok <- validate_new_keys(rule),
+         {:ok, type} <- parse_type(rule["type"]),
+         {:ok, match} <- parse_match(rule["match"], type),
+         {:ok, mode} <- parse_mode(rule["mode"], type) do
+      build_rule(rule, type, match, mode)
     end
   end
 
-  defp build_rule(rule) do
+  def parse_rule(rule) do
+    {:error, {:invalid_rule, "a rule must be a mapping, got: #{inspect(rule)}"}}
+  end
+
+  defp validate_top_level_keys(data) do
+    case data |> Map.keys() |> Enum.reject(&(&1 in @top_level_keys)) do
+      [] ->
+        :ok
+
+      unknown ->
+        {:error,
+         {:invalid_config,
+          "unknown top-level key(s) #{Enum.map_join(unknown, ", ", &inspect/1)}; " <>
+            "the only top-level key is `rules`"}}
+    end
+  end
+
+  defp fetch_rules(%{"rules" => rules}) when is_list(rules), do: {:ok, rules}
+
+  defp fetch_rules(%{"rules" => rules}) do
+    {:error, {:invalid_config, "`rules` must be a list of rules, got: #{inspect(rules)}"}}
+  end
+
+  defp fetch_rules(_data), do: {:error, {:invalid_config, "the document has no `rules:` list"}}
+
+  # Gap F (DND-149) / DND-1265: propagate the FIRST invalid rule, naming its
+  # position, so a malformed rule fails the load (via
+  # `Anchor.Adapters.ConfigFile`) instead of becoming a silent green no-op.
+  defp parse_rules(rules) do
+    rules
+    |> Enum.with_index(1)
+    |> Enum.reduce_while({:ok, []}, &parse_indexed_rule/2)
+    |> reverse_parsed()
+  end
+
+  defp parse_indexed_rule({rule, index}, {:ok, acc}) do
+    case parse_rule(rule) do
+      {:error, {:invalid_rule, reason}} ->
+        {:halt, {:error, {:invalid_rule, "rule #{index}: #{reason}"}}}
+
+      parsed ->
+        {:cont, {:ok, [parsed | acc]}}
+    end
+  end
+
+  defp reverse_parsed({:ok, parsed}), do: {:ok, Enum.reverse(parsed)}
+  defp reverse_parsed(error), do: error
+
+  # DND-1265 (A8): the type must name a shipped check. The lookup is a map of
+  # known strings, so an arbitrary token is never turned into a new atom.
+  defp parse_type(type) when is_binary(type) do
+    case Map.fetch(@rule_types, type) do
+      {:ok, atom} -> {:ok, atom}
+      :error -> {:error, {:invalid_rule, "unknown rule type #{inspect(type)}; " <> known_types()}}
+    end
+  end
+
+  defp parse_type(nil), do: {:error, {:invalid_rule, "the rule has no `type`; " <> known_types()}}
+
+  defp parse_type(type) do
+    {:error,
+     {:invalid_rule, "the rule type must be a string, got: #{inspect(type)}; " <> known_types()}}
+  end
+
+  defp known_types do
+    "known types: " <> (@rule_types |> Map.keys() |> Enum.sort() |> Enum.join(", "))
+  end
+
+  defp build_rule(rule, type, match, mode) do
     %{
-      type: rule["type"] |> to_string() |> String.to_atom(),
+      type: type,
       # Gap D (DND-140): surface an ABSENT `paths` as `nil`, not `[]`. An empty
       # list is a valid list, which `RuleMatching`'s path clause would match and
       # then shadow the `pattern`/`uses_module` selectors with `Enum.any?([], …)`.
@@ -111,13 +229,13 @@ defmodule Anchor.Config do
       allowed_functions: rule["allowed_functions"] || [],
       recursive: rule["recursive"] || false,
       max_lines: rule["max_lines"],
-      mode: parse_mode(rule["mode"]),
+      mode: mode,
       # Gap A' (DND-142): which dependency set the `no_direct_dependency` check
       # consults — `:reference` (default, every referenced module) or `:call`
       # (only modules in call position, honoring ADR-001's Domain-router-holds-
-      # atoms carve-out). Coerced from a bare YAML token; an unknown token falls
-      # back to `:reference` WITHOUT raising.
-      match: parse_match(rule["match"]),
+      # atoms carve-out). Coerced from a bare YAML token by `parse_match/2`; an
+      # unknown token fails the rule (DND-1265, A9).
+      match: match,
       # Gap F (DND-149): scope a `no_direct_dependency` `forbidden_patterns`
       # match to the checked file's own context. `same_context` (default
       # `false`) turns scoping on; `context_depth` (default `2`) is how many
@@ -165,7 +283,10 @@ defmodule Anchor.Config do
     end
   end
 
-  defp rule_type(rule), do: rule["type"] || "unknown"
+  defp rule_type(%{"type" => type}) when is_binary(type), do: type
+  defp rule_type(%{"type" => nil}), do: "unknown"
+  defp rule_type(%{"type" => type}), do: inspect(type)
+  defp rule_type(_rule), do: "unknown"
 
   defp parse_modules(nil), do: []
 
@@ -181,19 +302,32 @@ defmodule Anchor.Config do
   defp parse_module_token(":" <> rest) when byte_size(rest) > 0, do: String.to_atom(rest)
   defp parse_module_token(token), do: Module.concat([token])
 
-  # BUG 2: `mode` arrives as a bare YAML token (a string), not a colon-prefixed
-  # atom. Coerce the known tokens; fall back to `:separate` for an unknown
-  # token, and leave an absent `mode` as `nil` so the check applies its default.
-  defp parse_mode(nil), do: nil
-  defp parse_mode("all"), do: :all
-  defp parse_mode("public_only"), do: :public_only
-  defp parse_mode("separate"), do: :separate
-  defp parse_mode(_token), do: :separate
+  # BUG 2: `mode` arrives as a bare YAML token (a string), not an atom. An absent
+  # `mode` stays `nil` so the check applies its own default. DND-1265: an
+  # unknown token fails the rule; it used to fall back to `:separate`, which is
+  # also what the README's own `mode: :all` (the string ":all") silently became.
+  # A leading colon is accepted, so the README's spelling means what it says.
+  defp parse_mode(nil, _type), do: {:ok, nil}
+  defp parse_mode(token, type), do: parse_token("mode", token, @modes, type)
 
-  # Gap A' (DND-142): `match` arrives as a bare YAML token (a string). Coerce the
-  # two known tokens; an absent `match` and any unknown token both default to
-  # `:reference` (current behavior), never raising.
-  defp parse_match("call"), do: :call
-  defp parse_match("reference"), do: :reference
-  defp parse_match(_token), do: :reference
+  # Gap A' (DND-142): `match` arrives as a bare YAML token (a string). An absent
+  # `match` defaults to `:reference`. DND-1265 (A9): an unknown token fails the
+  # rule instead of falling back to `:reference`. A leading colon is accepted.
+  defp parse_match(nil, _type), do: {:ok, :reference}
+  defp parse_match(token, type), do: parse_token("match", token, @matches, type)
+
+  defp parse_token(key, ":" <> token, known, type), do: parse_token(key, token, known, type)
+
+  defp parse_token(key, token, known, type) do
+    case Map.fetch(known, token) do
+      {:ok, value} ->
+        {:ok, value}
+
+      :error ->
+        {:error,
+         {:invalid_rule,
+          "unknown #{key} #{inspect(token)} (rule type: #{type}); expected one of: " <>
+            (known |> Map.keys() |> Enum.join(", "))}}
+    end
+  end
 end

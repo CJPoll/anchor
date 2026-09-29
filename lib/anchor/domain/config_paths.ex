@@ -27,8 +27,17 @@ defmodule Anchor.Domain.ConfigPaths do
 
   Paths are expanded, so a candidate that resolves to the same file as another
   is removed by the final de-duplication.
+
+  `cwd` must be an absolute path. A relative one would be expanded against
+  whatever the process cwd happens to be, so the lookup would search, and then
+  report, the wrong place. It raises `ArgumentError` instead (DND-1265): the
+  malformed key is rejected where it is produced, not where it fails to match.
   """
-  def candidates(cwd, apps?) when is_boolean(apps?) do
+  def candidates(cwd, apps?) when is_binary(cwd) and is_boolean(apps?) do
+    if Path.type(cwd) != :absolute do
+      raise ArgumentError, "the cwd must be an absolute path, got: #{inspect(cwd)}"
+    end
+
     root = Path.expand(@config_filename, cwd)
 
     [root | umbrella_root_candidates(cwd, apps?)]

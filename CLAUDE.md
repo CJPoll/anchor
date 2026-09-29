@@ -47,32 +47,32 @@ All checks inherit from `Anchor.Check.Base` and are located in `lib/anchor/check
 
 ## Configuration Format
 
-Anchor rules are defined in `.anchor.yml`:
+Anchor rules are defined in `.anchor.yml`, as a `rules:` list. The README's
+Configuration section is the reference; this is the shape:
 
 ```yaml
-anchors:
-  - type: no_dependency
-    from: "MyApp.Domain.*"
-    to: "MyApp.Web.*"
-    
+rules:
+  - type: no_direct_dependency
+    pattern: "*.Domain.*"
+    forbidden_patterns:
+      - "*.Web.*"
+
   - type: must_use_module
-    in: "MyApp.*.Controller"
-    must_use_module: "MyApp.ControllerHelpers"
-    
+    pattern: "*.Controller"
+    required_modules:
+      - MyApp.ControllerHelpers
+
   - type: module_pattern_restrictions
-    module_pattern: "MyApp.*.Queries"
+    pattern: "*.Queries"
     allowed_functions:
       - with_*
       - new
-      
-  - type: module_pattern_restrictions
-    uses_module: "Ecto.Schema"
-    allowed_functions:
-      - changeset
-      - __changeset__
-      - __schema__
-      - __struct__
 ```
+
+Anchor fails closed (DND-1265): a missing `.anchor.yml`, a config that does not
+load (bad YAML, an unknown top-level key, an unknown rule `type`, `match` or
+`mode`), and an unparseable source file are each reported as a Credo issue with
+a `Fix:` line, never as a clean run. `Anchor.Domain.Failures` holds the messages.
 
 ## Important Notes
 

@@ -53,6 +53,12 @@ before coining a synonym.
   lint entry that composes config loading, AST acquisition, fact derivation, rule
   selection, and detection). Used for end-to-end/integration runs that mutate the
   Manager wiring rather than a single check's Domain detection.
+- `base` — `Anchor.Check.Base`, the shared Framework layer every check `use`s:
+  mapping violations to Credo issues and choosing the run's shared-failure
+  reporter (DND-1265).
+- `failures` — `Anchor.Domain.Failures`, the text of every fail-closed report
+  (missing or invalid config, unparseable file).
+- `source` — `Anchor.Check.Source`, the AST/source acquisition edge.
 - `glob_pattern` — `Anchor.Domain.GlobPattern` (glob / module-name pattern
   matching for rule selection).
 - `rule_matching` — `Anchor.Domain.RuleMatching` (pure rule-selection predicate).

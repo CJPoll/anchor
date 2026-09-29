@@ -180,22 +180,149 @@ defmodule Anchor.E2E.ChecksE2ETest do
     end
   end
 
-  describe "no configuration present" do
-    test "checks are silent when there is no .anchor.yml (graceful no-op)" do
+  # DND-1265: Anchor fails closed. A run that could not check anything reports
+  # that as a Credo issue carrying a `Fix:` line, never an empty issue list.
+  # These rows read EVERY issue in the execution (`all_issues/2`), because the
+  # config issues sit on the config path, not on a checked source file.
+  #
+  # Sabotage record: ../../sabotage_records/base-20260929-dnd_1265_anchor_fail_closed.md
+  describe "no configuration present (A6)" do
+    test "reports one issue naming the searched path, with a Fix: line" do
       source = """
       defmodule MyApp.Domain.Thing do
         def go, do: MyApp.Repo.all(Q)
       end
       """
 
-      issues =
+      {issues, dir} =
         with_anchor_config(nil, fn ->
-          [to_source_file(source, "lib/domain/thing.ex")]
-          |> run_check(NoDependency)
+          {all_issues([to_source_file(source, "lib/domain/thing.ex")], NoDependency), File.cwd!()}
         end)
 
-      assert issues == []
+      searched = Path.join(dir, ".anchor.yml")
+      assert [issue] = issues
+      assert issue.filename == searched
+      assert issue.message =~ "Searched: #{searched}"
+      assert issue.message =~ "Fix:"
+      assert issue.check == NoDependency
+      # Raised so Credo shows it without --strict.
+      assert issue.priority == Credo.Priority.to_integer(:higher)
     end
+  end
+
+  describe "config load error (A7)" do
+    test "malformed YAML is one issue on the config file, not a skip" do
+      {issues, dir} =
+        with_anchor_config("rules: [unterminated", fn ->
+          {all_issues([to_source_file("defmodule A do\nend\n", "lib/a.ex")], NoDependency),
+           File.cwd!()}
+        end)
+
+      assert [issue] = issues
+      assert issue.filename == Path.join(dir, ".anchor.yml")
+      assert issue.message =~ "YAML"
+      assert issue.message =~ "Fix:"
+    end
+
+    test "an unknown rule type (A8) is one issue on the config file" do
+      yaml = """
+      rules:
+        - type: no_direct_dependancy
+          paths:
+            - "lib/**/*.ex"
+          forbidden_modules:
+            - MyApp.Repo
+          recursive: true
+      """
+
+      source = """
+      defmodule MyApp.Domain.Thing do
+        def go, do: MyApp.Repo.all(Q)
+      end
+      """
+
+      {issues, dir} =
+        with_anchor_config(yaml, fn ->
+          {all_issues([to_source_file(source, "lib/domain/thing.ex")], NoDependency), File.cwd!()}
+        end)
+
+      assert [issue] = issues
+      assert issue.filename == Path.join(dir, ".anchor.yml")
+      assert issue.message =~ ~s("no_direct_dependancy")
+      assert issue.message =~ "Fix:"
+    end
+
+    test "an unknown match token (A9) is one issue on the config file" do
+      yaml = """
+      rules:
+        - type: no_direct_dependency
+          paths:
+            - "lib/**/*.ex"
+          forbidden_modules:
+            - MyApp.Repo
+          match: calls
+          recursive: true
+      """
+
+      issues =
+        with_anchor_config(yaml, fn ->
+          all_issues([to_source_file("defmodule A do\nend\n", "lib/a.ex")], NoDependency)
+        end)
+
+      assert [issue] = issues
+      assert issue.message =~ ~s("calls")
+      assert issue.message =~ "Fix:"
+    end
+  end
+
+  describe "unparseable source file (A9)" do
+    test "a file anchor cannot parse is an issue on that file" do
+      broken = Credo.SourceFile.parse("defmodule Broken do\n  def go(\nend\n", "lib/broken.ex")
+
+      issues = with_anchor_config(@yaml, fn -> all_issues([broken], NoDependency) end)
+
+      assert [issue] = issues
+      assert issue.filename == "lib/broken.ex"
+      assert issue.line_no == 2
+      assert issue.priority >= Credo.Priority.to_integer(:higher)
+      assert issue.message =~ "could not parse"
+      # The parser's full text, including the token it stopped at.
+      assert issue.message =~ "unexpected reserved word: end"
+      assert issue.message =~ "Fix:"
+    end
+  end
+
+  describe "one failure report per run" do
+    test "only the first enabled Anchor check reports a config failure" do
+      exec =
+        exec_with_checks([
+          {Credo.Check.Readability.ModuleNames, []},
+          {MustUseModule, []},
+          {NoDependency, []}
+        ])
+
+      files = [to_source_file("defmodule A do\nend\n", "lib/a.ex")]
+
+      issues =
+        with_anchor_config(nil, fn ->
+          :ok = NoDependency.run_on_all_source_files(exec, files, [])
+          :ok = MustUseModule.run_on_all_source_files(exec, files, [])
+          Credo.Execution.get_issues(exec)
+        end)
+
+      assert [issue] = issues
+      assert issue.check == MustUseModule
+    end
+  end
+
+  defp all_issues(source_files, check) do
+    exec = Credo.Execution.build()
+    :ok = check.run_on_all_source_files(exec, source_files, [])
+    Credo.Execution.get_issues(exec)
+  end
+
+  defp exec_with_checks(checks) do
+    %{Credo.Execution.build() | checks: %{enabled: checks, disabled: []}}
   end
 
   # Runs `fun` with the cwd set to a fresh temp directory. When `yaml` is a
