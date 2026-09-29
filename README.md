@@ -195,11 +195,16 @@ Two members depend on the files, so they are reported at run time instead:
 
   The floor applies only when credo ran over the whole project. It is skipped
   when files or a subdirectory were named on the command line
-  (`mix credo lib/a.ex`), for stdin, and for a watch-mode rerun.
+  (`mix credo lib/a.ex`), when `--files-excluded` was given, for stdin, and for
+  a watch-mode rerun. A file that does not parse still counts for a `paths`
+  rule, and counts as possibly selected by a `pattern` or `uses_module` rule
+  (its parse error is reported on its own).
 - **A rule whose check is not enabled.** Credo runs only the checks
   `.credo.exs` enables, so a `single_control_flow` rule does nothing while
   `Anchor.Check.SingleControlFlow` is off. This is skipped when
-  `--checks`/`--ignore-checks` narrowed the run on purpose.
+  `--checks`/`--ignore-checks` narrowed the run on purpose. One case stays
+  silent: when **no** Anchor check is enabled, Credo never calls Anchor, so
+  nothing can report it.
 
 Each rule type's table of such configs is in
 `test/anchor/domain/rule_checks_nothing_test.exs`. **A new rule key or rule

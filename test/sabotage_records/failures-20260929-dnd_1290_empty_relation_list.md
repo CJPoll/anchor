@@ -18,4 +18,12 @@ The functions did not exist on 044f5ae; their fail-first is the Manager's (see
 
 | # | Mutation | Tests failed | Failure string |
 |---|---|---|---|
-| Q | the floor message loses its `Fix:` line | 2 | `code: assert violation.message =~ ~r/Fix: [^\n]+\z/` / `left: "Anchor rule 2 (id: \"contexts\", must_use_module) selected 0 of the 1 file this check ran on, below its floor of 1 (min_files), so it checked nothing. Correct its selector (paths, pattern or uses_module) in /p/.anchor.yml ..."` |
+| Q | the floor message loses its `Fix:` line | 2 (before the review round's direct tests) | `code: assert violation.message =~ ~r/Fix: [^\n]+\z/` / `left: "Anchor rule 2 (id: \"contexts\", must_use_module) selected 0 of the 1 file this check ran on, below its floor of 1 (min_files), so it checked nothing. Correct its selector (paths, pattern or uses_module) in /p/.anchor.yml ..."` |
+
+## Review round
+
+The ADR review asked for Domain-level tests. `test/anchor/domain/failures_test.exs`
+now tests `rule_label/1`, `selection_floor_violation/4` (both messages and the
+`.anchor.yml` fallback) and `unchecked_rule_violation/3` (with and without a
+known check) directly. They were written after the functions, so they have no
+fail-first of their own; mutation Q's `Fix:` assertion is repeated there.

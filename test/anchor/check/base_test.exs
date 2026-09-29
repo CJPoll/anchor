@@ -111,6 +111,40 @@ defmodule Anchor.Check.BaseTest do
       params = Credo.Check.Params.put_rerun_files_that_changed([], ["lib/a.ex"])
       refute Base.whole_file_set?(exec_with_cli(File.cwd!(), %{}), params)
     end
+
+    # Review round: `--files-excluded` replaces the configured exclude list,
+    # so the checks see fewer files than the config covers.
+    test "files excluded on the command line are a subset" do
+      refute Base.whole_file_set?(
+               exec_with_cli(File.cwd!(), %{files_excluded: ["lib/my_app_web"]}),
+               []
+             )
+    end
+  end
+
+  # Review round: the shapes above are hand-built. These build the CLI options
+  # with Credo's own parser from real argv, so a Credo change to how it records
+  # a path or a file list turns them red.
+  describe "whole_file_set?/2 over Credo-parsed argv" do
+    test "a bare run is the whole set" do
+      assert Base.whole_file_set?(exec_from_argv([]), [])
+    end
+
+    test "a named file is a subset" do
+      refute Base.whole_file_set?(exec_from_argv(["lib/anchor.ex"]), [])
+    end
+
+    test "a subdirectory is a subset" do
+      refute Base.whole_file_set?(exec_from_argv(["lib"]), [])
+    end
+
+    test "--files-excluded is a subset" do
+      refute Base.whole_file_set?(exec_from_argv(["--files-excluded", "lib/anchor.ex"]), [])
+    end
+
+    test "--working-dir with no path is the whole set of that directory" do
+      assert Base.whole_file_set?(exec_from_argv(["--working-dir", File.cwd!()]), [])
+    end
   end
 
   # DND-1290: the rule types some enabled Anchor check reads, or `:unknown`.
@@ -169,5 +203,17 @@ defmodule Anchor.Check.BaseTest do
 
   defp exec_with_cli(path, switches) do
     %{Credo.Execution.build() | cli_options: %Credo.CLI.Options{path: path, switches: switches}}
+  end
+
+  # The switches `mix credo` defines for the file set (Credo 1.7's suggest
+  # command), parsed as `Credo.Execution.Task.ParseOptions` parses them, with
+  # unknown args read as files.
+  defp exec_from_argv(argv) do
+    switches = [files_included: :keep, files_excluded: :keep, working_dir: :string]
+
+    options =
+      Credo.CLI.Options.parse(true, argv, File.cwd!(), ["suggest"], nil, [], switches, [], true)
+
+    %{Credo.Execution.build() | cli_options: options}
   end
 end

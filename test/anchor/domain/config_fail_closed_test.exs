@@ -170,11 +170,17 @@ defmodule Anchor.Domain.ConfigFailClosedTest do
   # with no relation gets a placeholder one (DND-1290).
   defp parse_rule(rule) when is_map(rule) do
     rule
-    |> then(
-      &if(has_any?(&1, RuleSchema.selector_keys()), do: &1, else: Map.put(&1, "pattern", "*"))
-    )
+    |> with_placeholder_selector()
     |> with_placeholder_relation()
     |> Config.parse_rule()
+  end
+
+  defp parse_rule(rule), do: Config.parse_rule(rule)
+
+  defp with_placeholder_selector(rule) do
+    if has_any?(rule, RuleSchema.selector_keys()),
+      do: rule,
+      else: Map.put(rule, "pattern", "*")
   end
 
   defp with_placeholder_relation(%{"type" => type} = rule) when is_binary(type) do
@@ -193,6 +199,4 @@ defmodule Anchor.Domain.ConfigFailClosedTest do
   end
 
   defp has_any?(rule, keys), do: Enum.any?(keys, &Map.has_key?(rule, &1))
-
-  defp parse_rule(rule), do: Config.parse_rule(rule)
 end

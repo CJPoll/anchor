@@ -66,6 +66,7 @@ defmodule Anchor.Config do
   dependency such as `:telemetry.execute(...)`.
   """
 
+  alias Anchor.Domain.RuleCoverage
   alias Anchor.Domain.RuleSchema
 
   # `path` is where the config was read from, set by the loader (nil when the
@@ -224,8 +225,14 @@ defmodule Anchor.Config do
   defp shared_id_result({id, indexes}, _parsed) do
     {:error,
      {:invalid_rule,
-      "rules #{Enum.join(indexes, " and ")} share the id #{inspect(id)}; " <>
+      "rules #{join_positions(indexes)} share the id #{inspect(id)}; " <>
         "an id names one rule, so give each rule its own"}}
+  end
+
+  # "1 and 3", "1, 2 and 4".
+  defp join_positions(indexes) do
+    {init, [last]} = Enum.split(indexes, -1)
+    Enum.join(init, ", ") <> " and #{last}"
   end
 
   # DND-1265 (A8): the type must name a shipped check. The lookup is a map of
@@ -269,7 +276,7 @@ defmodule Anchor.Config do
       # `Anchor.Managers.Lint` reports it. `:index` (the rule's position) is
       # added by `parse_config/1`.
       id: rule["id"],
-      min_files: rule["min_files"] || 1,
+      min_files: rule["min_files"] || RuleCoverage.default_min_files(),
       # Gap D (DND-140): surface an ABSENT `paths` as `nil`, not `[]`. An empty
       # list is a valid list, which `RuleMatching`'s path clause would match and
       # then shadow the `pattern`/`uses_module` selectors with `Enum.any?([], …)`.

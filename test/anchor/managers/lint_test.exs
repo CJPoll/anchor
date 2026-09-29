@@ -464,6 +464,19 @@ defmodule Anchor.Managers.LintTest do
       assert {:ok, [{^broken, [%Violation{kind: :fail_closed}]}]} =
                Lint.run(MustUseModule, [broken], [], config_loader: ConfigLoaderMock)
     end
+
+    # Review round: a module selector cannot be read off an unparseable file.
+    # The file is already reported, so it may be the one the rule selects; a
+    # floor report telling the user to fix the selector would be wrong advice.
+    test "an unparseable file may be what a module-selector rule selects" do
+      broken = SourceFile.parse("defmodule MyApp.Nope do\n  def go(\nend\n", "lib/broken.ex")
+      rule = %{type: :must_use_module, pattern: "MyApp.Nope", required_modules: [MyApp.Base]}
+
+      expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
+
+      assert {:ok, [{^broken, [%Violation{kind: :fail_closed}]}]} =
+               Lint.run(MustUseModule, [broken], [], config_loader: ConfigLoaderMock)
+    end
   end
 
   # DND-1290: a rule whose type no enabled check reads loads and checks nothing.

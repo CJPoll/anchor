@@ -80,6 +80,15 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
     assert reason =~ ~s(rules 1 and 3 share the id "style")
   end
 
+  test "three rules sharing an id are named in one list" do
+    rule = Map.put(base(:single_control_flow), "id", "style")
+
+    assert {:error, {:invalid_rule, reason}} =
+             Config.parse_config(%{"rules" => [rule, rule, base(:case_on_bare_arg), rule]})
+
+    assert reason =~ ~s(rules 1, 2 and 4 share the id "style")
+  end
+
   test "a refused rule with an id names the id beside its position" do
     rule = base(:must_use_module) |> Map.delete("required_modules") |> Map.put("id", "bases")
 

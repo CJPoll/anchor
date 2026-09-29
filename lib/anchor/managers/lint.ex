@@ -42,7 +42,8 @@ defmodule Anchor.Managers.Lint do
       (`Anchor.Check.Base.whole_file_set?/2`);
     * for the shared-failure reporter only, a rule whose type is not in
       `:enabled_rule_types` (the types some enabled check reads; `:unknown`,
-      the default, reports nothing).
+      the default, reports nothing). When no Anchor check is enabled at all,
+      Credo never calls this Manager, so that case cannot be reported here.
 
   Each violation sits on the config the rule came from.
 
@@ -208,8 +209,11 @@ defmodule Anchor.Managers.Lint do
     |> Enum.filter(&RuleMatching.rule_matches_file?(&1, facts))
   end
 
-  # The facts of a file with no AST: its path only.
-  defp path_facts(source_file), do: %{filename: source_file.filename, module_names: [], uses: []}
+  # The facts of a file with no AST: its path only, marked unparsed so the floor
+  # does not read its missing module names as "selects nothing".
+  defp path_facts(source_file) do
+    %{filename: source_file.filename, module_names: [], uses: [], parsed?: false}
+  end
 
   defp file_facts(source_file, ast) do
     %{

@@ -485,7 +485,7 @@ defmodule Anchor.Domain.ConfigTest do
   end
 
   defp with_placeholder_relation(%{"type" => type} = rule) when is_binary(type) do
-    keys = type |> String.trim_leading(":") |> String.to_existing_atom() |> relation_keys()
+    keys = type |> String.trim_leading(":") |> relation_keys()
 
     if keys == [] or Enum.any?(keys, &Map.has_key?(rule, &1)),
       do: rule,
@@ -494,8 +494,13 @@ defmodule Anchor.Domain.ConfigTest do
 
   defp with_placeholder_relation(rule), do: rule
 
-  defp relation_keys(type) do
-    if type in RuleSchema.rule_types(), do: RuleSchema.relation_keys(type), else: []
+  # A type string no rule type spells (a misspelling row) has no relation to
+  # add; it is never turned into an atom.
+  defp relation_keys(type_name) do
+    case Enum.find(RuleSchema.rule_types(), &(Atom.to_string(&1) == type_name)) do
+      nil -> []
+      type -> RuleSchema.relation_keys(type)
+    end
   end
 
   # `forbidden_patterns` when the type has it, so a row may assert that

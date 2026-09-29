@@ -70,7 +70,8 @@ defmodule Anchor.Check.Base do
   covers (DND-1290), so a rule that selected too few files really did.
 
   A run is a subset when files were named on the command line
-  (`mix credo lib/a.ex`), the path is not the working directory
+  (`mix credo lib/a.ex`) or excluded there (`--files-excluded`, which replaces
+  the configured exclude list), the path is not the working directory
   (`mix credo lib/`), the source comes from stdin, or it is a watch-mode rerun
   of changed files. An execution with no CLI options (a check run directly) is
   the whole set: the rule errs toward reporting.
@@ -86,6 +87,7 @@ defmodule Anchor.Check.Base do
     switches = switches || %{}
 
     Map.get(switches, :files_included) in [nil, []] and
+      Map.get(switches, :files_excluded) in [nil, []] and
       (is_nil(path) or
          Path.expand(path) == Path.expand(Map.get(switches, :working_dir) || File.cwd!()))
   end

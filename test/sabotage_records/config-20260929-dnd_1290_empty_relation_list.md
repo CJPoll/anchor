@@ -49,3 +49,23 @@ unchanged under the new schema (checked with a `mix run` probe over
 |---|---|---|---|
 | U | two rules sharing an id load (`> 99`) | 1 | `code: assert {:error, {:invalid_rule, reason}} =` / `Config.parse_config(%{"rules" => [rule, base(:case_on_bare_arg), rule]})` / `right: %Anchor.Config{` |
 | V | a refused rule's label drops its id | 1 | `code: assert reason =~ ~s\|rule 1 (id: "bases"): \|` / `left: "rule 1: a must_use_module rule has no relation, so it checks nothing: ..."` |
+
+## Review round (fail-first, then mutation)
+
+Three or more rules sharing an id read "rules 1 and 2 and 4". Against the
+pre-fix head:
+
+```
+  2) test three rules sharing an id are named in one list (Anchor.Domain.RuleChecksNothingTest)
+     code:  assert reason =~ ~s(rules 1, 2 and 4 share the id "style")
+     left:  "rules 1 and 2 and 4 share the id \"style\"; an id names one rule, so give each rule its own"
+```
+
+The default floor moved to one home (`RuleCoverage.default_min_files/0`, read
+by `build_rule`). The `config_test.exs` fixture helper no longer calls
+`String.to_existing_atom/1` on a type string, and `config_fail_closed_test.exs`
+keeps its `parse_rule/1` clauses together (both from the critic).
+
+| # | Mutation | Tests failed | Failure string |
+|---|---|---|---|
+| Y | shared-id positions joined with " and " only | 1 | `three rules sharing an id are named in one list`: `Assertion with =~ failed` |
