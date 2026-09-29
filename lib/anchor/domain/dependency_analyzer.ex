@@ -330,7 +330,11 @@ defmodule Anchor.Domain.DependencyAnalyzer do
   # An aliased remote call `Foo.Bar.baz(...)` (or `__MODULE__.Sub.f(...)`): record
   # the resolved callee module, then descend into the ARGUMENTS only (the callee
   # alias node itself is already accounted for and carries no further call).
-  defp collect_call_deps({{:., _dmeta, [{:__aliases__, _ameta, parts}, _fun]}, _meta, args}, scope, acc)
+  defp collect_call_deps(
+         {{:., _dmeta, [{:__aliases__, _ameta, parts}, _fun]}, _meta, args},
+         scope,
+         acc
+       )
        when is_list(parts) do
     acc = record_alias(parts, scope, acc)
     collect_call_arg_list(args, scope, acc)
