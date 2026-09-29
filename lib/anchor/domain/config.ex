@@ -50,6 +50,12 @@ defmodule Anchor.Config do
   `rules`). `Anchor.Domain.Failures` turns each rejection into the Credo issue
   the user sees.
 
+  One level down (DND-1286), a key inside a rule that its type does not read,
+  and a rule with no selector (or a selector of the wrong shape), are rejected
+  too. The per-type key allowlist and the selector rule live in
+  `Anchor.Domain.RuleSchema`, and nowhere else: a new rule key is added there,
+  then parsed here.
+
   ## Module tokens (`forbidden_modules` / `required_modules`)
 
   Each entry is turned into the module it names. A CamelCase token
@@ -60,21 +66,18 @@ defmodule Anchor.Config do
   dependency such as `:telemetry.execute(...)`.
   """
 
+  alias Anchor.Domain.RuleSchema
+
   defstruct rules: []
 
   @matches %{"call" => :call, "reference" => :reference}
 
   @modes %{"all" => :all, "public_only" => :public_only, "separate" => :separate}
 
-  # One entry per shipped check's `rule_type/0`. A drift test pins this to
+  # The rule types are the keys of the per-type key allowlist, which holds one
+  # entry per shipped check's `rule_type/0`. A drift test pins it to
   # `Anchor.checks/0`; the Domain cannot ask the (Framework) checks itself.
-  @rule_types Map.new(
-                ~w(alphabetized_functions case_on_bare_arg max_file_length
-                   module_pattern_restrictions must_use_module no_comparison_in_if
-                   no_direct_dependency no_discarding_arrow_in_with no_transitive_dependency
-                   no_tuple_match_in_head single_control_flow struct_getter_convention)a,
-                &{Atom.to_string(&1), &1}
-              )
+  @rule_types Map.new(RuleSchema.rule_types(), &{Atom.to_string(&1), &1})
 
   @top_level_keys ["rules"]
 
@@ -127,12 +130,15 @@ defmodule Anchor.Config do
   the rule fails validation — surfaced up through `parse_config/1` and the load
   adapter so a malformed rule never silently becomes a green no-op. Validated:
   the Gap F `same_context` / `context_depth` keys, and (DND-1265) the `type`
-  (present and one of `rule_types/0`), the `match` token and the `mode` token.
-  A rule that is not a mapping is rejected too.
+  (present and one of `rule_types/0`), the `match` token and the `mode` token,
+  and (DND-1286) every key against its type's allowlist and the selector,
+  through `Anchor.Domain.RuleSchema.validate/2`. A rule that is not a mapping is
+  rejected too.
   """
   def parse_rule(rule) when is_map(rule) do
-    with :ok <- validate_new_keys(rule),
-         {:ok, type} <- parse_type(rule["type"]),
+    with {:ok, type} <- parse_type(rule["type"]),
+         :ok <- validate_schema(rule, type),
+         :ok <- validate_new_keys(rule, type),
          {:ok, match} <- parse_match(rule["match"], type),
          {:ok, mode} <- parse_mode(rule["mode"], type) do
       build_rule(rule, type, match, mode)
@@ -206,6 +212,15 @@ defmodule Anchor.Config do
      {:invalid_rule, "the rule type must be a string, got: #{inspect(type)}; " <> known_types()}}
   end
 
+  # DND-1286: an unknown key inside the rule, and a rule with no selector, fail
+  # the rule. The allowlist lives in `Anchor.Domain.RuleSchema`, and only there.
+  defp validate_schema(rule, type) do
+    case RuleSchema.validate(rule, type) do
+      :ok -> :ok
+      {:error, reason} -> {:error, {:invalid_rule, reason}}
+    end
+  end
+
   defp known_types do
     "known types: " <> (@rule_types |> Map.keys() |> Enum.sort() |> Enum.join(", "))
   end
@@ -244,7 +259,7 @@ defmodule Anchor.Config do
       # `false`) turns scoping on; `context_depth` (default `2`) is how many
       # leading namespace segments define a context. These keys are ADDITIVE —
       # detection (A2) is unchanged here, so a rule lacking them behaves exactly
-      # as today. Validation of the keys happens in `validate_new_keys/1` before
+      # as today. Validation of the keys happens in `validate_new_keys/2` before
       # this map is built.
       same_context: Map.get(rule, "same_context", false),
       context_depth: Map.get(rule, "context_depth", 2)
@@ -256,8 +271,9 @@ defmodule Anchor.Config do
   # that would be a silent no-op. Order: type of `same_context`, then
   # positivity of `context_depth`, then the "same_context true needs something to
   # scope" cross-check. An absent `same_context`/`context_depth` is valid and
-  # defaults applied in `build_rule/1`.
-  defp validate_new_keys(rule) do
+  # defaults applied in `build_rule/1`. `type` is the parsed type atom, so a
+  # leading-colon spelling reads the same as a bare one in the message.
+  defp validate_new_keys(rule, type) do
     same_context = Map.get(rule, "same_context")
     context_depth = Map.get(rule, "context_depth")
     forbidden_patterns = rule["forbidden_patterns"] || []
@@ -267,29 +283,24 @@ defmodule Anchor.Config do
         {:error,
          {:invalid_rule,
           "same_context must be a boolean, got: #{inspect(same_context)} " <>
-            "(rule type: #{rule_type(rule)})"}}
+            "(rule type: #{type})"}}
 
       not is_nil(context_depth) and not (is_integer(context_depth) and context_depth > 0) ->
         {:error,
          {:invalid_rule,
           "context_depth must be a positive integer, got: #{inspect(context_depth)} " <>
-            "(rule type: #{rule_type(rule)})"}}
+            "(rule type: #{type})"}}
 
       same_context == true and forbidden_patterns == [] ->
         {:error,
          {:invalid_rule,
           "same_context: true requires forbidden_patterns to scope (nothing to scope) " <>
-            "(rule type: #{rule_type(rule)})"}}
+            "(rule type: #{type})"}}
 
       true ->
         :ok
     end
   end
-
-  defp rule_type(%{"type" => type}) when is_binary(type), do: type
-  defp rule_type(%{"type" => nil}), do: "unknown"
-  defp rule_type(%{"type" => type}), do: inspect(type)
-  defp rule_type(_rule), do: "unknown"
 
   defp parse_modules(nil), do: []
 

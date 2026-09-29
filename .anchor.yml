@@ -12,11 +12,11 @@
 # check here without the tree already conforming would redden real `lib/` code,
 # and T8 is a config-and-wiring ticket that must not groom production modules.
 #
-# Selection note: only the `paths` selector fires from a real `.anchor.yml`.
-# `Anchor.Config.parse_rule/1` stamps every parsed rule with `paths: []`, which
-# short-circuits the `pattern`/`uses_module` selectors in
-# `Anchor.Domain.RuleMatching.rule_matches_file?/2`. So every rule below selects
-# its files by `paths` globs, never by module pattern.
+# Selection note: every rule below selects its files by `paths` globs. (An
+# older note here said only `paths` could fire from a real `.anchor.yml`; Gap D,
+# DND-140, fixed that, and `pattern`/`uses_module` select too.) Each rule carries
+# only the keys its type accepts, and a selector: an unknown key or a rule with
+# no selector fails the load (DND-1286; see `Anchor.Domain.RuleSchema`).
 
 rules:
   # --- Rule 1: Domain must stay pure (side-effect-free, framework-free) ---

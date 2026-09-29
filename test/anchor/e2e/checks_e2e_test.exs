@@ -274,6 +274,67 @@ defmodule Anchor.E2E.ChecksE2ETest do
       assert issue.message =~ ~s("calls")
       assert issue.message =~ "Fix:"
     end
+
+    # DND-1286: a misspelt key inside a rule used to be ignored, so this rule
+    # forbade nothing and the forbidden call below read green.
+    # Sabotage record: ../../sabotage_records/rule_schema-20260929-dnd_1286_rule_key_allowlist.md
+    test "an unknown key inside a rule is one issue on the config file" do
+      yaml = """
+      rules:
+        - type: no_direct_dependency
+          paths:
+            - "lib/**/*.ex"
+          forbiden_patterns:
+            - "*.Repo"
+          recursive: true
+      """
+
+      source = """
+      defmodule MyApp.Domain.Thing do
+        def go, do: MyApp.Repo.all(Q)
+      end
+      """
+
+      {issues, dir} =
+        with_anchor_config(yaml, fn ->
+          {all_issues([to_source_file(source, "lib/domain/thing.ex")], NoDependency), File.cwd!()}
+        end)
+
+      assert [issue] = issues
+      assert issue.filename == Path.join(dir, ".anchor.yml")
+      assert issue.message =~ ~s(rule 1: unknown key "forbiden_patterns")
+      assert issue.message =~ ~s(did you mean "forbidden_patterns"?)
+      assert issue.message =~ "no Anchor rule was checked"
+      assert issue.message =~ ~r/Fix: [^\n]+\z/
+      # The Fix: line points at the per-type key table.
+      assert issue.message =~ ~s(table "Keys each rule type accepts")
+    end
+
+    # DND-1286: a rule with no selector selected no file and read green.
+    # Sabotage record: ../../sabotage_records/rule_schema-20260929-dnd_1286_rule_key_allowlist.md
+    test "a rule with no selector is one issue on the config file" do
+      yaml = """
+      rules:
+        - type: no_direct_dependency
+          forbidden_modules:
+            - MyApp.Repo
+      """
+
+      source = """
+      defmodule MyApp.Domain.Thing do
+        def go, do: MyApp.Repo.all(Q)
+      end
+      """
+
+      issues =
+        with_anchor_config(yaml, fn ->
+          all_issues([to_source_file(source, "lib/domain/thing.ex")], NoDependency)
+        end)
+
+      assert [issue] = issues
+      assert issue.message =~ "rule 1: the rule has no selector"
+      assert issue.message =~ "Fix:"
+    end
   end
 
   describe "unparseable source file (A9)" do

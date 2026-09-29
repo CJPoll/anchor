@@ -10,6 +10,7 @@ defmodule Anchor.Adapters.ConfigFileTest do
   #
   # Sabotage record: ../../sabotage_records/config-20260913-dnd_123_t3_config_split.md
   # Sabotage record (DND-1265 fail-closed rows): ../../sabotage_records/config-20260929-dnd_1265_anchor_fail_closed.md
+  # Sabotage record (DND-1286 README blocks, selector fixtures): ../../sabotage_records/config-20260929-dnd_1286_rule_key_allowlist.md
   use ExUnit.Case, async: false
 
   alias Anchor.Adapters.ConfigFile
@@ -99,19 +100,26 @@ defmodule Anchor.Adapters.ConfigFileTest do
       yaml = """
       rules:
         - type: no_direct_dependency
+          pattern: "*.Domain.*"
           same_context: true
           forbidden_modules:
             - MyApp.Repo
       """
 
+      # DND-1286: the rule carries a selector, so it fails for its same_context
+      # (the reason is asserted), not for selecting nothing.
       with_config_file(yaml, fn path ->
-        assert {:error, {:config_load_failed, ^path, {:invalid_rule, _reason}}} =
+        assert {:error, {:config_load_failed, ^path, {:invalid_rule, reason}}} =
                  ConfigFile.load_from_path(path)
+
+        assert reason =~ "same_context: true requires forbidden_patterns"
       end)
     end
 
     # DND-1265: the shipped example and the dogfood config must load under the
     # strict parser, so neither documents a config Anchor rejects.
+    # DND-1286: that now includes the per-type key allowlist and the selector
+    # requirement.
     test "the repo's .anchor.yml and .anchor.example.yml both load" do
       assert {:ok, %Config{rules: [_ | _]}} = ConfigFile.load_from_path(".anchor.yml")
       assert {:ok, %Config{rules: [_ | _]}} = ConfigFile.load_from_path(".anchor.example.yml")
@@ -132,6 +140,34 @@ defmodule Anchor.Adapters.ConfigFileTest do
         assert Enum.any?(rules, &(&1.mode == :separate))
       end)
     end
+
+    # DND-1286: every rule the README shows must load under the per-type key
+    # allowlist and the selector requirement, so no example teaches a key
+    # Anchor rejects. A block that is a bare list of rules is loaded under a
+    # `rules:` key; a block with no rule in it (a shell snippet's YAML) is skipped.
+    # Sabotage record: ../../sabotage_records/rule_schema-20260929-dnd_1286_rule_key_allowlist.md
+    test "every rule in every README YAML block loads" do
+      blocks =
+        ~r/```yaml\n(.*?)```/s
+        |> Regex.scan(File.read!("README.md"), capture: :all_but_first)
+        |> List.flatten()
+        |> Enum.filter(&(&1 =~ ~r/^\s*- type:/m))
+
+      assert length(blocks) > 10
+
+      for block <- blocks do
+        with_config_file(as_document(block), fn path ->
+          assert {:ok, %Config{rules: [_ | _]}} = ConfigFile.load_from_path(path),
+                 "README block failed to load:\n#{block}"
+        end)
+      end
+    end
+  end
+
+  defp as_document("rules:" <> _rest = block), do: block
+
+  defp as_document(block) do
+    "rules:\n" <> (block |> String.split("\n") |> Enum.map_join("\n", &("  " <> &1)))
   end
 
   describe "load/0 (test-matrix: config.ex -> load/0 and load_from_path/1)" do
@@ -150,6 +186,7 @@ defmodule Anchor.Adapters.ConfigFileTest do
       yaml = """
       rules:
         - type: no_direct_dependency
+          pattern: "*.Domain.*"
           forbidden_modules:
             - MyApp.Repo
       """

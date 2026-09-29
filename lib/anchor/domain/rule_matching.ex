@@ -16,7 +16,10 @@ defmodule Anchor.Domain.RuleMatching do
        names.
     3. `uses_module` — the file `use`s the named module.
 
-  A rule carrying none of these selects nothing (deny by default).
+  A rule carrying none of these selects nothing (deny by default). A config
+  cannot load such a rule: `Anchor.Domain.RuleSchema` rejects it (DND-1286),
+  so it never reads green. These selector fields are the ones
+  `Anchor.Domain.RuleSchema` requires; a new selector must be added to both.
   """
 
   alias Anchor.Domain.GlobPattern

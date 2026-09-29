@@ -62,6 +62,9 @@ before coining a synonym.
 - `glob_pattern` — `Anchor.Domain.GlobPattern` (glob / module-name pattern
   matching for rule selection).
 - `rule_matching` — `Anchor.Domain.RuleMatching` (pure rule-selection predicate).
+- `rule_schema` — `Anchor.Domain.RuleSchema` (DND-1286): the per-rule-type key
+  allowlist, the selector every rule needs, and the README table that mirrors
+  the allowlist.
 - `must_use_module` — the `must_use_module` check: the extracted Domain
   detection (`Anchor.Domain.Checks.MustUseModule`) and its thin Framework shell
   (`Anchor.Check.MustUseModule`).
