@@ -131,6 +131,15 @@ The load rejects, rather than silently ignoring:
   `rules: []` is a deliberate empty config and loads;
 - a rule that is not a mapping, or has no `type`, or a `type` that no Anchor
   check reads (a typo such as `no_direct_dependancy`);
+- a key inside a rule that its type does not read (a typo such as
+  `forbiden_patterns:`, or a key of another type), and a rule with no selector
+  or a selector of the wrong shape. See
+  [Keys each rule type accepts](#keys-each-rule-type-accepts). The message
+  names the rule's position, the unknown key, the nearest known key and every
+  key the type accepts:
+  `rule 1: unknown key "forbiden_patterns" in a no_direct_dependency rule
+  ("forbiden_patterns": did you mean "forbidden_patterns"?); known keys for
+  no_direct_dependency: context_depth, forbidden_modules, ...`;
 - an unknown `match` token (`reference` or `call`) or `mode` token (`all`,
   `public_only`, `separate`). A leading colon is accepted on `type`, `match`
   and `mode`, so `mode: :all` means `:all`;
@@ -166,13 +175,15 @@ selectors, tried in this order:
 3. `uses_module` — selects files that `use` the named module (for example
    `"Ecto.Schema"`).
 
-A rule that carries **none** of these selectors matches nothing (deny by
-default).
+A rule that carries **none** of these selectors would match nothing, so it
+fails the load instead of reading green. So does a selector of the wrong shape,
+such as `paths: "lib/a.ex"` (a string, not a list).
 
 Omitting `paths` is meaningful: a rule with no `paths` key is parsed with
 `paths: nil` (an *absent* selector), so selection falls through to `pattern` or
 `uses_module`. This differs from `paths: []` (an empty list), which is also
-treated as "no path selector". In other words, a `pattern`- or
+treated as "no path selector": valid beside a `pattern` or `uses_module`, and a
+load error on its own. In other words, a `pattern`- or
 `uses_module`-only rule does **not** need an empty or placeholder `paths` entry
 — leave `paths` off entirely and the module selector is honored.
 
@@ -190,13 +201,47 @@ semantics and edge cases.
 | `pattern` | any rule | Module-name-glob selector (`*` crosses dots). |
 | `uses_module` | any rule | Selects files that `use` the named module. |
 | `recursive` | any rule | `true` gives `paths` globs `**` (across-segment) semantics. |
-| `forbidden_modules` / `required_modules` | dependency / `must_use_module` | Exact module tokens (see the token syntax below). |
+| `forbidden_modules` / `required_modules` | `no_direct_dependency`, `no_transitive_dependency` / `must_use_module` | Exact module tokens (see the token syntax below). |
 | `forbidden_patterns` | `no_direct_dependency`, `no_transitive_dependency` | Module-name globs; forbids any referenced/reachable module whose name matches. |
 | `match` | `no_direct_dependency` | `reference` (default) or `call` — which dependency set the rule inspects. Any other token fails the load. |
 | `same_context` | `no_direct_dependency` | Boolean, default `false`. When `true`, a `forbidden_patterns` match is a violation **only if** the dependency shares the checked file's own context. Exact `forbidden_modules` matches are never scoped. |
 | `context_depth` | `no_direct_dependency` | Positive integer, default `2`. Number of leading module-namespace segments that define a "context/subdomain". Inert unless `same_context: true`. |
 | `allowed_functions` | `module_pattern_restrictions` | Function-name allow-list (globs). |
 | `mode`, `max_lines` | `alphabetized_functions`, `max_file_length` | Style-check parameters. `mode` is `all`, `public_only` or `separate` (a leading colon is accepted); any other token fails the load. |
+
+#### Keys each rule type accepts
+
+A rule may carry only the keys its type reads. Every type accepts the common
+keys: `type`, `paths`, `pattern`, `uses_module` and `recursive`. The table lists
+the keys each type accepts beyond those. Any other key fails the load, and the
+message names the rule, the unknown key, the nearest known key and every key the
+type accepts. So a misspelling such as `forbiden_patterns:` or `patern:` is an
+error, not a rule that silently checks less than it says. A key that belongs to
+another type (`match` on a `no_transitive_dependency` rule) is unknown too.
+
+| Rule type | Keys beyond the common ones |
+|---|---|
+| `alphabetized_functions` | `mode` |
+| `case_on_bare_arg` | none |
+| `max_file_length` | `max_lines` |
+| `module_pattern_restrictions` | `allowed_functions` |
+| `must_use_module` | `required_modules` |
+| `no_comparison_in_if` | none |
+| `no_direct_dependency` | `context_depth`, `forbidden_modules`, `forbidden_patterns`, `match`, `same_context` |
+| `no_discarding_arrow_in_with` | none |
+| `no_transitive_dependency` | `forbidden_modules`, `forbidden_patterns` |
+| `no_tuple_match_in_head` | none |
+| `single_control_flow` | none |
+| `struct_getter_convention` | none |
+
+Every rule also needs a **selector**: a non-empty `paths` list, a `pattern`
+string or a `uses_module` string. A rule with none selects no file, so it fails
+the load. `recursive` alone is not a selector, and neither is `paths: []`. A
+selector of the wrong shape fails the load too: `paths` must be a list of
+strings, and `pattern` and `uses_module` must be non-empty strings.
+
+The allowlist lives in one place, `Anchor.Domain.RuleSchema`. A new key is added
+there, to its type's list, and to this table; a test compares the two.
 
 **`forbidden_patterns` — module-name globs (dot-bounded).** A `*` crosses dots,
 so `*.Adapters.*` matches `MyApp.Contacts.Adapters.Repository`, but the `.`

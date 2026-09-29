@@ -5,6 +5,8 @@ defmodule Anchor.Domain.ConfigTest do
   # Sabotage record: ../../sabotage_records/config-20260913-dnd_123_t3_config_split.md
   # Sabotage record (rows DND-1265 rewrote: unknown mode/match, empty or
   # rules-less document): ../../sabotage_records/config-20260929-dnd_1265_anchor_fail_closed.md
+  # Sabotage record (DND-1286 selector fixtures and schema wiring):
+  # ../../sabotage_records/config-20260929-dnd_1286_rule_key_allowlist.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config
@@ -13,7 +15,7 @@ defmodule Anchor.Domain.ConfigTest do
     # Row 1
     test "parses a no_direct_dependency rule" do
       rule =
-        Config.parse_rule(%{
+        parse_rule(%{
           "type" => "no_direct_dependency",
           "paths" => ["lib/web/**/*.ex"],
           "forbidden_modules" => ["MyApp.Repo"],
@@ -29,7 +31,7 @@ defmodule Anchor.Domain.ConfigTest do
     # Row 2
     test "parses a must_use_module rule" do
       rule =
-        Config.parse_rule(%{
+        parse_rule(%{
           "type" => "must_use_module",
           "required_modules" => ["MyApp.Schema"],
           "recursive" => false
@@ -43,7 +45,7 @@ defmodule Anchor.Domain.ConfigTest do
     # Row 3
     test "module strings become module atoms via Module.concat" do
       rule =
-        Config.parse_rule(%{
+        parse_rule(%{
           "type" => "no_direct_dependency",
           "forbidden_modules" => ["MyApp.Repo", "Ecto.Query"]
         })
@@ -55,7 +57,7 @@ defmodule Anchor.Domain.ConfigTest do
     # nil (Gap D, DND-140): an absent `paths` must be distinguishable from an
     # explicit empty list so RuleMatching can fall through to pattern/uses_module.
     test "absent list fields default to [] (paths surfaces as nil)" do
-      rule = Config.parse_rule(%{"type" => "no_direct_dependency"})
+      rule = parse_rule(%{"type" => "no_direct_dependency"})
 
       assert rule.paths == nil
       assert rule.forbidden_modules == []
@@ -65,7 +67,7 @@ defmodule Anchor.Domain.ConfigTest do
 
     # Row 5
     test "absent recursive defaults to false" do
-      rule = Config.parse_rule(%{"type" => "no_direct_dependency"})
+      rule = parse_rule(%{"type" => "no_direct_dependency"})
 
       assert rule.recursive == false
     end
@@ -73,7 +75,7 @@ defmodule Anchor.Domain.ConfigTest do
     # Row 6
     test "pattern and uses_module are preserved (uses_module nil when absent)" do
       rule =
-        Config.parse_rule(%{
+        parse_rule(%{
           "type" => "module_pattern_restrictions",
           "pattern" => "*.Schemas.*"
         })
@@ -85,7 +87,7 @@ defmodule Anchor.Domain.ConfigTest do
     # Row 7
     test "allowed_functions preserved verbatim" do
       rule =
-        Config.parse_rule(%{
+        parse_rule(%{
           "type" => "module_pattern_restrictions",
           "allowed_functions" => ["new", "with_*"]
         })
@@ -96,7 +98,7 @@ defmodule Anchor.Domain.ConfigTest do
     # Row 8 (BUG 2)
     test "max_lines surfaced as an atom-keyed integer" do
       rule =
-        Config.parse_rule(%{
+        parse_rule(%{
           "type" => "max_file_length",
           "max_lines" => 10
         })
@@ -107,21 +109,21 @@ defmodule Anchor.Domain.ConfigTest do
     # Row 9 (BUG 2)
     test "bare mode: all coerced to :all" do
       rule =
-        Config.parse_rule(%{"type" => "alphabetized_functions", "mode" => "all"})
+        parse_rule(%{"type" => "alphabetized_functions", "mode" => "all"})
 
       assert rule.mode == :all
     end
 
     # Row 10 (BUG 2)
     test "bare mode: public_only coerced to :public_only" do
-      rule = Config.parse_rule(%{"type" => "alphabetized_functions", "mode" => "public_only"})
+      rule = parse_rule(%{"type" => "alphabetized_functions", "mode" => "public_only"})
 
       assert rule.mode == :public_only
     end
 
     # Row 11 (BUG 2)
     test "bare mode: separate coerced to :separate" do
-      rule = Config.parse_rule(%{"type" => "alphabetized_functions", "mode" => "separate"})
+      rule = parse_rule(%{"type" => "alphabetized_functions", "mode" => "separate"})
 
       assert rule.mode == :separate
     end
@@ -131,12 +133,12 @@ defmodule Anchor.Domain.ConfigTest do
     # config_fail_closed_test.exs for the full fail-closed matrix.
     test "an unknown mode token fails the rule without crashing" do
       assert {:error, {:invalid_rule, _reason}} =
-               Config.parse_rule(%{"type" => "alphabetized_functions", "mode" => "sideways"})
+               parse_rule(%{"type" => "alphabetized_functions", "mode" => "sideways"})
     end
 
     # Row 13
     test "absent max_lines/mode leave the check on its own default (nil)" do
-      rule = Config.parse_rule(%{"type" => "alphabetized_functions"})
+      rule = parse_rule(%{"type" => "alphabetized_functions"})
 
       assert rule.max_lines == nil
       assert rule.mode == nil
@@ -150,7 +152,7 @@ defmodule Anchor.Domain.ConfigTest do
     # pattern/uses_module selectors.
     test "Gap D row 3: absent paths surfaces as nil, not []" do
       rule =
-        Config.parse_rule(%{"type" => "no_direct_dependency", "pattern" => "*.Schemas.*"})
+        parse_rule(%{"type" => "no_direct_dependency", "pattern" => "*.Schemas.*"})
 
       assert rule.paths == nil
     end
@@ -158,7 +160,7 @@ defmodule Anchor.Domain.ConfigTest do
     # Matrix row 4 (regression guard): a present `paths` list is preserved as-is.
     test "Gap D row 4: present paths preserved as a list" do
       rule =
-        Config.parse_rule(%{"type" => "no_direct_dependency", "paths" => ["lib/**/*.ex"]})
+        parse_rule(%{"type" => "no_direct_dependency", "paths" => ["lib/**/*.ex"]})
 
       assert rule.paths == ["lib/**/*.ex"]
     end
@@ -171,7 +173,7 @@ defmodule Anchor.Domain.ConfigTest do
     # Matrix row 9 — Validation (leading-`:` token -> String.to_atom, NOT Module.concat)
     test "a leading-colon forbidden_modules token is kept as a raw atom" do
       rule =
-        Config.parse_rule(%{
+        parse_rule(%{
           "type" => "no_direct_dependency",
           "forbidden_modules" => [":telemetry"]
         })
@@ -182,7 +184,7 @@ defmodule Anchor.Domain.ConfigTest do
     # Matrix row 10 — Happy Path (regression guard: ordinary module string still concats)
     test "an ordinary CamelCase forbidden_modules token still becomes a module atom" do
       rule =
-        Config.parse_rule(%{
+        parse_rule(%{
           "type" => "no_direct_dependency",
           "forbidden_modules" => ["MyApp.Repo"]
         })
@@ -193,7 +195,7 @@ defmodule Anchor.Domain.ConfigTest do
     # Matrix row 11 — Validation (mixed list preserved element-wise)
     test "a mixed atom + module forbidden_modules list is preserved element-wise" do
       rule =
-        Config.parse_rule(%{
+        parse_rule(%{
           "type" => "no_direct_dependency",
           "forbidden_modules" => [":telemetry", "MyApp.Repo"]
         })
@@ -204,7 +206,7 @@ defmodule Anchor.Domain.ConfigTest do
     # required_modules honors the same leading-colon rule (symmetry).
     test "a leading-colon required_modules token is kept as a raw atom" do
       rule =
-        Config.parse_rule(%{
+        parse_rule(%{
           "type" => "must_use_module",
           "required_modules" => [":cowboy", "MyApp.Schema"]
         })
@@ -220,7 +222,7 @@ defmodule Anchor.Domain.ConfigTest do
     # Matrix row 1 — Happy Path (A): forbidden_patterns surfaced as a list.
     test "surfaces forbidden_patterns as a list" do
       rule =
-        Config.parse_rule(%{
+        parse_rule(%{
           "type" => "no_direct_dependency",
           "forbidden_patterns" => ["*.Adapters.*"]
         })
@@ -230,28 +232,28 @@ defmodule Anchor.Domain.ConfigTest do
 
     # Matrix row 2 — Validation (A): absent forbidden_patterns defaults to [].
     test "an absent forbidden_patterns defaults to an empty list" do
-      rule = Config.parse_rule(%{"type" => "no_direct_dependency"})
+      rule = parse_rule(%{"type" => "no_direct_dependency"})
 
       assert rule.forbidden_patterns == []
     end
 
     # Matrix row 5 — Validation (A'): absent match defaults to :reference.
     test "an absent match defaults to :reference" do
-      rule = Config.parse_rule(%{"type" => "no_direct_dependency"})
+      rule = parse_rule(%{"type" => "no_direct_dependency"})
 
       assert rule.match == :reference
     end
 
     # Matrix row 6 — Happy Path (A'): "call" coerced to :call.
     test "match: \"call\" is coerced to :call" do
-      rule = Config.parse_rule(%{"type" => "no_direct_dependency", "match" => "call"})
+      rule = parse_rule(%{"type" => "no_direct_dependency", "match" => "call"})
 
       assert rule.match == :call
     end
 
     # Matrix row 7 — Validation (A'): "reference" coerced to :reference.
     test "match: \"reference\" is coerced to :reference" do
-      rule = Config.parse_rule(%{"type" => "no_direct_dependency", "match" => "reference"})
+      rule = parse_rule(%{"type" => "no_direct_dependency", "match" => "reference"})
 
       assert rule.match == :reference
     end
@@ -261,14 +263,14 @@ defmodule Anchor.Domain.ConfigTest do
     # still does NOT raise.
     test "an unknown match token fails the rule without raising" do
       assert {:error, {:invalid_rule, _reason}} =
-               Config.parse_rule(%{"type" => "no_direct_dependency", "match" => "sideways"})
+               parse_rule(%{"type" => "no_direct_dependency", "match" => "sideways"})
     end
 
     # Matrix row 12 — Control Flow Decisioning (A): forbidden_patterns and
     # forbidden_modules coexist on one rule.
     test "forbidden_patterns and forbidden_modules coexist on one rule" do
       rule =
-        Config.parse_rule(%{
+        parse_rule(%{
           "type" => "no_direct_dependency",
           "forbidden_modules" => ["MyApp.Repo"],
           "forbidden_patterns" => ["*.Adapters.*"]
@@ -286,7 +288,7 @@ defmodule Anchor.Domain.ConfigTest do
     # Matrix row 1 — Happy Path: same_context: true with default depth.
     test "row 1: same_context true surfaces true with default context_depth 2" do
       rule =
-        Config.parse_rule(%{
+        parse_rule(%{
           "type" => "no_direct_dependency",
           "forbidden_patterns" => ["A.*.Managers.*"],
           "same_context" => true
@@ -299,7 +301,7 @@ defmodule Anchor.Domain.ConfigTest do
     # Matrix row 2 — Happy Path: explicit context_depth carried.
     test "row 2: an explicit context_depth is carried through" do
       rule =
-        Config.parse_rule(%{
+        parse_rule(%{
           "type" => "no_direct_dependency",
           "forbidden_patterns" => ["A.*.Managers.*"],
           "same_context" => true,
@@ -315,7 +317,7 @@ defmodule Anchor.Domain.ConfigTest do
     # same_context defaults to false. Detection (A2) is unchanged by these keys.
     test "row 3: keys absent default to same_context false and context_depth 2" do
       rule =
-        Config.parse_rule(%{
+        parse_rule(%{
           "type" => "no_direct_dependency",
           "forbidden_patterns" => ["A.*.Managers.*"]
         })
@@ -328,7 +330,7 @@ defmodule Anchor.Domain.ConfigTest do
     # (nothing to scope) fails, naming the rule.
     test "row 4: same_context true with no forbidden_patterns is rejected, naming the rule" do
       result =
-        Config.parse_rule(%{
+        parse_rule(%{
           "type" => "no_direct_dependency",
           "same_context" => true,
           "forbidden_modules" => ["Repo"]
@@ -342,7 +344,7 @@ defmodule Anchor.Domain.ConfigTest do
     # Matrix row 5 — Validation: non-boolean same_context is rejected.
     test "row 5: a non-boolean same_context is rejected" do
       result =
-        Config.parse_rule(%{
+        parse_rule(%{
           "type" => "no_direct_dependency",
           "forbidden_patterns" => ["A.*.Managers.*"],
           "same_context" => "yes"
@@ -355,7 +357,7 @@ defmodule Anchor.Domain.ConfigTest do
     # Matrix row 6 — Validation: non-positive context_depth is rejected.
     test "row 6: a non-positive context_depth is rejected" do
       result =
-        Config.parse_rule(%{
+        parse_rule(%{
           "type" => "no_direct_dependency",
           "forbidden_patterns" => ["A.*.Managers.*"],
           "same_context" => true,
@@ -370,7 +372,7 @@ defmodule Anchor.Domain.ConfigTest do
     # (parses, same_context false, no forbidden_patterns requirement applies).
     test "row 7: context_depth without same_context parses inertly (same_context false)" do
       rule =
-        Config.parse_rule(%{
+        parse_rule(%{
           "type" => "no_direct_dependency",
           "context_depth" => 3
         })
@@ -387,11 +389,12 @@ defmodule Anchor.Domain.ConfigTest do
     test "an invalid same_context rule makes parse_config surface an error" do
       data = %{
         "rules" => [
-          %{"type" => "no_direct_dependency", "same_context" => true}
+          %{"type" => "no_direct_dependency", "pattern" => "*", "same_context" => true}
         ]
       }
 
-      assert {:error, {:invalid_rule, _reason}} = Config.parse_config(data)
+      assert {:error, {:invalid_rule, reason}} = Config.parse_config(data)
+      assert reason =~ "same_context"
     end
 
     test "a document of only valid rules still yields a %Config{}" do
@@ -399,6 +402,7 @@ defmodule Anchor.Domain.ConfigTest do
         "rules" => [
           %{
             "type" => "no_direct_dependency",
+            "pattern" => "*",
             "forbidden_patterns" => ["A.*.Managers.*"],
             "same_context" => true
           }
@@ -414,8 +418,12 @@ defmodule Anchor.Domain.ConfigTest do
     test "maps every rule in the document through parse_rule/1" do
       data = %{
         "rules" => [
-          %{"type" => "no_direct_dependency", "forbidden_modules" => ["MyApp.Repo"]},
-          %{"type" => "must_use_module", "required_modules" => ["MyApp.Schema"]}
+          %{
+            "type" => "no_direct_dependency",
+            "pattern" => "*",
+            "forbidden_modules" => ["MyApp.Repo"]
+          },
+          %{"type" => "must_use_module", "pattern" => "*", "required_modules" => ["MyApp.Schema"]}
         ]
       }
 
@@ -438,4 +446,16 @@ defmodule Anchor.Domain.ConfigTest do
       assert {:error, {:invalid_config, _reason}} = Config.parse_config(nil)
     end
   end
+
+  # DND-1286: a rule must carry a selector, or it fails the load. These rows are
+  # about other keys, so a rule that names no selector of its own gets a
+  # module-pattern one before it is parsed. The selector rows live in
+  # rule_schema_test.exs.
+  defp parse_rule(rule) when is_map(rule) do
+    if Enum.any?(Anchor.Domain.RuleSchema.selector_keys(), &Map.has_key?(rule, &1)),
+      do: Config.parse_rule(rule),
+      else: Config.parse_rule(Map.put(rule, "pattern", "*"))
+  end
+
+  defp parse_rule(rule), do: Config.parse_rule(rule)
 end

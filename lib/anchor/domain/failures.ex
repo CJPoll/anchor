@@ -25,7 +25,8 @@ defmodule Anchor.Domain.Failures do
   alias Anchor.Domain.Violation
 
   @config_filename ".anchor.yml"
-  @schema_pointer "the README section \"Config schema: rule keys at a glance\""
+  @schema_pointer "the README section \"Config schema: rule keys at a glance\" and its " <>
+                    "table \"Keys each rule type accepts\""
 
   @type config_reason ::
           {:config_not_found, [String.t()]}

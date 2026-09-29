@@ -74,6 +74,12 @@ load (bad YAML, an unknown top-level key, an unknown rule `type`, `match` or
 `mode`), and an unparseable source file are each reported as a Credo issue with
 a `Fix:` line, never as a clean run. `Anchor.Domain.Failures` holds the messages.
 
+A rule may carry only the keys its type reads, and needs a selector (`paths`,
+`pattern` or `uses_module`); anything else fails the load (DND-1286). The
+per-type key allowlist has one home, `Anchor.Domain.RuleSchema`. A new rule key
+goes there, into `Anchor.Config.parse_rule/1`, and into the README table "Keys
+each rule type accepts" (a test compares the table with the allowlist).
+
 ## Important Notes
 
 - When running Elixir code, use: `mix run -e "<elixir code>"`

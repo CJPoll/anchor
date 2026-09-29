@@ -4,6 +4,8 @@ defmodule Anchor.Domain.ConfigFailClosedTest do
   # silently checks nothing. Pure Domain parser, no IO.
   #
   # Sabotage record: ../../sabotage_records/config-20260929-dnd_1265_anchor_fail_closed.md
+  # Sabotage record (DND-1286 selector fixtures):
+  # ../../sabotage_records/config-20260929-dnd_1286_rule_key_allowlist.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config
@@ -11,7 +13,7 @@ defmodule Anchor.Domain.ConfigFailClosedTest do
   describe "parse_rule/1 rule type (A8)" do
     test "an unknown type fails, naming the token and the known types" do
       assert {:error, {:invalid_rule, reason}} =
-               Config.parse_rule(%{
+               parse_rule(%{
                  "type" => "no_direct_dependancy",
                  "forbidden_modules" => ["X"]
                })
@@ -23,13 +25,13 @@ defmodule Anchor.Domain.ConfigFailClosedTest do
 
     test "a missing type fails" do
       assert {:error, {:invalid_rule, reason}} =
-               Config.parse_rule(%{"forbidden_modules" => ["X"]})
+               parse_rule(%{"forbidden_modules" => ["X"]})
 
       assert reason =~ "type"
     end
 
     test "a non-string type fails" do
-      assert {:error, {:invalid_rule, reason}} = Config.parse_rule(%{"type" => 42})
+      assert {:error, {:invalid_rule, reason}} = parse_rule(%{"type" => 42})
       assert reason =~ "42"
     end
 
@@ -37,19 +39,19 @@ defmodule Anchor.Domain.ConfigFailClosedTest do
     # (here, same_context); the load fails with a reason, not an exception.
     test "a mapping as the type fails with a reason, not a crash" do
       assert {:error, {:invalid_rule, reason}} =
-               Config.parse_rule(%{"type" => %{"x" => 1}, "same_context" => "yes"})
+               parse_rule(%{"type" => %{"x" => 1}, "same_context" => "yes"})
 
       assert reason =~ ~s(%{"x" => 1})
     end
 
     test "a leading-colon type is accepted, as for match and mode" do
       assert %{type: :no_direct_dependency} =
-               Config.parse_rule(%{"type" => ":no_direct_dependency"})
+               parse_rule(%{"type" => ":no_direct_dependency"})
     end
 
     test "every known type parses to its atom" do
       for type <- Config.rule_types() do
-        assert %{type: ^type} = Config.parse_rule(%{"type" => Atom.to_string(type)})
+        assert %{type: ^type} = parse_rule(%{"type" => Atom.to_string(type)})
       end
     end
 
@@ -67,7 +69,7 @@ defmodule Anchor.Domain.ConfigFailClosedTest do
   describe "parse_rule/1 match token (A9)" do
     test "an unknown match token fails instead of falling back to :reference" do
       assert {:error, {:invalid_rule, reason}} =
-               Config.parse_rule(%{"type" => "no_direct_dependency", "match" => "sideways"})
+               parse_rule(%{"type" => "no_direct_dependency", "match" => "sideways"})
 
       assert reason =~ ~s("sideways")
       assert reason =~ "reference"
@@ -76,14 +78,14 @@ defmodule Anchor.Domain.ConfigFailClosedTest do
 
     test "a leading-colon match token is accepted (YAML `match: :call`)" do
       assert %{match: :call} =
-               Config.parse_rule(%{"type" => "no_direct_dependency", "match" => ":call"})
+               parse_rule(%{"type" => "no_direct_dependency", "match" => ":call"})
     end
   end
 
   describe "parse_rule/1 mode token (same class as A9)" do
     test "an unknown mode token fails instead of falling back to :separate" do
       assert {:error, {:invalid_rule, reason}} =
-               Config.parse_rule(%{"type" => "alphabetized_functions", "mode" => "sideways"})
+               parse_rule(%{"type" => "alphabetized_functions", "mode" => "sideways"})
 
       assert reason =~ ~s("sideways")
       assert reason =~ "public_only"
@@ -93,19 +95,19 @@ defmodule Anchor.Domain.ConfigFailClosedTest do
     # which the old parser did not recognise and silently turned into :separate.
     test "the README's leading-colon mode tokens parse to their mode" do
       assert %{mode: :all} =
-               Config.parse_rule(%{"type" => "alphabetized_functions", "mode" => ":all"})
+               parse_rule(%{"type" => "alphabetized_functions", "mode" => ":all"})
 
       assert %{mode: :public_only} =
-               Config.parse_rule(%{"type" => "alphabetized_functions", "mode" => ":public_only"})
+               parse_rule(%{"type" => "alphabetized_functions", "mode" => ":public_only"})
 
       assert %{mode: :separate} =
-               Config.parse_rule(%{"type" => "alphabetized_functions", "mode" => ":separate"})
+               parse_rule(%{"type" => "alphabetized_functions", "mode" => ":separate"})
     end
   end
 
   describe "parse_rule/1 non-map rule" do
     test "a rule that is not a mapping fails" do
-      assert {:error, {:invalid_rule, reason}} = Config.parse_rule("no_direct_dependency")
+      assert {:error, {:invalid_rule, reason}} = parse_rule("no_direct_dependency")
       assert reason =~ "mapping"
     end
   end
@@ -145,8 +147,8 @@ defmodule Anchor.Domain.ConfigFailClosedTest do
     test "an invalid rule names its 1-based position in the document" do
       data = %{
         "rules" => [
-          %{"type" => "no_direct_dependency"},
-          %{"type" => "no_direct_dependancy"}
+          %{"type" => "no_direct_dependency", "pattern" => "*"},
+          %{"type" => "no_direct_dependancy", "pattern" => "*"}
         ]
       }
 
@@ -155,4 +157,16 @@ defmodule Anchor.Domain.ConfigFailClosedTest do
       assert reason =~ ~s("no_direct_dependancy")
     end
   end
+
+  # DND-1286: a rule must carry a selector, or it fails the load. These rows are
+  # about other keys, so a rule that names no selector of its own gets a
+  # module-pattern one before it is parsed. The selector rows live in
+  # rule_schema_test.exs.
+  defp parse_rule(rule) when is_map(rule) do
+    if Enum.any?(Anchor.Domain.RuleSchema.selector_keys(), &Map.has_key?(rule, &1)),
+      do: Config.parse_rule(rule),
+      else: Config.parse_rule(Map.put(rule, "pattern", "*"))
+  end
+
+  defp parse_rule(rule), do: Config.parse_rule(rule)
 end
