@@ -186,6 +186,7 @@ defmodule Anchor.E2E.ChecksE2ETest do
   # config issues sit on the config path, not on a checked source file.
   #
   # Sabotage record: ../../sabotage_records/base-20260929-dnd_1265_anchor_fail_closed.md
+  # Sabotage record (the parse error's line and text): ../../sabotage_records/source-20260929-dnd_1265_anchor_fail_closed.md
   describe "no configuration present (A6)" do
     test "reports one issue naming the searched path, with a Fix: line" do
       source = """
@@ -312,6 +313,22 @@ defmodule Anchor.E2E.ChecksE2ETest do
 
       assert [issue] = issues
       assert issue.check == MustUseModule
+    end
+
+    test "only the first enabled Anchor check reports an unparseable file" do
+      exec = exec_with_checks([{MustUseModule, []}, {NoDependency, []}])
+      broken = Credo.SourceFile.parse("defmodule Broken do\n  def go(\nend\n", "lib/broken.ex")
+
+      issues =
+        with_anchor_config(@yaml, fn ->
+          :ok = NoDependency.run_on_all_source_files(exec, [broken], [])
+          :ok = MustUseModule.run_on_all_source_files(exec, [broken], [])
+          Credo.Execution.get_issues(exec)
+        end)
+
+      assert [issue] = issues
+      assert issue.check == MustUseModule
+      assert issue.filename == "lib/broken.ex"
     end
   end
 

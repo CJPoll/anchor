@@ -106,8 +106,11 @@ For umbrella applications, you can place the configuration at the root or in ind
 ### Where Anchor looks, and what happens when it cannot check
 
 Anchor searches for `.anchor.yml` in the directory credo runs from. Run from an
-umbrella app (`apps/<app>`), it also searches the umbrella root. The first file
-found is used.
+umbrella app (`apps/<app>`), it also searches the umbrella root. Run from a
+directory that holds an `apps/` directory, it also searches two directories up
+(a long-standing quirk of the lookup; keep `.anchor.yml` in the directory you
+run credo from). The first file found is used, and a "not found" issue names
+every path searched.
 
 Anchor **fails closed**: a run that could not check something reports it as a
 Credo issue, never as a clean run. Each message says what was searched or what
@@ -116,7 +119,7 @@ failed, and ends with a `Fix:` line.
 | Condition | Where the issue sits | Example message |
 |---|---|---|
 | No `.anchor.yml` found | the first searched path | `Anchor found no .anchor.yml, so no Anchor rule was checked. Searched: /proj/.anchor.yml. Fix: ...` |
-| `.anchor.yml` exists but cannot be read (for example, it is a directory) | that path | `Anchor could not read /proj/.anchor.yml (eisdir: ...), so no Anchor rule was checked. Fix: ...` |
+| `.anchor.yml` exists but cannot be read (for example, it is a directory) | that path | `Anchor could not read /proj/.anchor.yml (:eisdir), so no Anchor rule was checked. Fix: ...` |
 | Invalid YAML | that path | `Anchor could not parse /proj/.anchor.yml as YAML, so no Anchor rule was checked: ... Fix: ...` |
 | A document or rule Anchor rejects (below) | that path | `Anchor rejected /proj/.anchor.yml, so no Anchor rule was checked: rule 2: unknown rule type "no_direct_dependancy"; known types: ... Fix: ...` |
 | A source file that does not parse | that file, at the parser's line | `Anchor could not parse this file, so no Anchor rule was checked against it: ... Fix: ...` |
@@ -129,14 +132,20 @@ The load rejects, rather than silently ignoring:
 - a rule that is not a mapping, or has no `type`, or a `type` that no Anchor
   check reads (a typo such as `no_direct_dependancy`);
 - an unknown `match` token (`reference` or `call`) or `mode` token (`all`,
-  `public_only`, `separate`). A leading colon is accepted, so `mode: :all`
-  means `:all`;
+  `public_only`, `separate`). A leading colon is accepted on `type`, `match`
+  and `mode`, so `mode: :all` means `:all`;
 - the `same_context` / `context_depth` errors described under
   [Same-context scoping](#same-context-scoping-same_context--context_depth).
 
 A config failure is reported **once per run**, by the first Anchor check in the
 enabled list, whichever Anchor checks you enable. So is an unparseable file.
-These issues use `:higher` priority, so they show without `--strict`.
+These issues use `:higher` priority, so they show without `--strict`. They take
+that first check's category, so which bit of the exit status they set depends
+on which Anchor check is listed first; the exit status is non-zero either way.
+
+A config issue sits on `.anchor.yml`, which is not one of credo's source files.
+`mix credo` and `mix credo --strict` print it. `mix credo list` prints issues
+per source file, so it omits it, though its exit status is still non-zero.
 
 One limit comes from Credo itself: `mix credo` drops a file it cannot parse
 before any check runs, and prints only `Some source files could not be parsed

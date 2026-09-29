@@ -51,9 +51,9 @@ defmodule Anchor.Managers.LintTest do
     test "propagates {:error, reason} when the loader fails (the Framework reports it)" do
       source_file = SourceFile.parse("defmodule X do\nend\n", "lib/x.ex")
 
-      expect(ConfigLoaderMock, :load, fn -> {:error, {:config_load_failed, :enoent}} end)
+      expect(ConfigLoaderMock, :load, fn -> {:error, {:config_not_found, ["/p/.anchor.yml"]}} end)
 
-      assert {:error, {:config_load_failed, :enoent}} =
+      assert {:error, {:config_not_found, ["/p/.anchor.yml"]}} =
                Lint.run(MustUseModule, [source_file], [], config_loader: ConfigLoaderMock)
     end
   end
@@ -253,6 +253,7 @@ defmodule Anchor.Managers.LintTest do
 
   # DND-1265: a file Anchor cannot parse is reported, never silently skipped.
   # Sabotage record: ../../sabotage_records/lint-20260929-dnd_1265_anchor_fail_closed.md
+  # Sabotage record (the parse error's line and text): ../../sabotage_records/source-20260929-dnd_1265_anchor_fail_closed.md
   describe "run/4 unparseable source file" do
     setup do
       broken = SourceFile.parse("defmodule Broken do\n  def go(\nend\n", "lib/broken.ex")

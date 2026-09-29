@@ -42,6 +42,11 @@ defmodule Anchor.Domain.ConfigFailClosedTest do
       assert reason =~ ~s(%{"x" => 1})
     end
 
+    test "a leading-colon type is accepted, as for match and mode" do
+      assert %{type: :no_direct_dependency} =
+               Config.parse_rule(%{"type" => ":no_direct_dependency"})
+    end
+
     test "every known type parses to its atom" do
       for type <- Config.rule_types() do
         assert %{type: ^type} = Config.parse_rule(%{"type" => Atom.to_string(type)})

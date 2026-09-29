@@ -189,6 +189,9 @@ defmodule Anchor.Config do
 
   # DND-1265 (A8): the type must name a shipped check. The lookup is a map of
   # known strings, so an arbitrary token is never turned into a new atom.
+  # A leading colon is accepted, as for `match` and `mode`.
+  defp parse_type(":" <> type), do: parse_type(type)
+
   defp parse_type(type) when is_binary(type) do
     case Map.fetch(@rule_types, type) do
       {:ok, atom} -> {:ok, atom}
@@ -327,7 +330,7 @@ defmodule Anchor.Config do
         {:error,
          {:invalid_rule,
           "unknown #{key} #{inspect(token)} (rule type: #{type}); expected one of: " <>
-            (known |> Map.keys() |> Enum.join(", "))}}
+            (known |> Map.keys() |> Enum.sort() |> Enum.join(", "))}}
     end
   end
 end

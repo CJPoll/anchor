@@ -3,6 +3,8 @@ defmodule Anchor.Domain.ConfigTest do
   # file-boundary tests.
   #
   # Sabotage record: ../../sabotage_records/config-20260913-dnd_123_t3_config_split.md
+  # Sabotage record (rows DND-1265 rewrote: unknown mode/match, empty or
+  # rules-less document): ../../sabotage_records/config-20260929-dnd_1265_anchor_fail_closed.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config

@@ -86,8 +86,8 @@ defmodule Anchor.Domain.Failures do
   end
 
   defp load_failed_message(path, {:read, posix}) do
-    "Anchor could not read #{path} (#{posix}: #{:file.format_error(posix)}), so no Anchor rule " <>
-      "was checked. Fix: make #{path} a readable file."
+    "Anchor could not read #{path} (#{inspect(posix)}), so no Anchor rule was checked. " <>
+      "Fix: make #{path} a readable file."
   end
 
   defp load_failed_message(path, {:yaml, message}) do

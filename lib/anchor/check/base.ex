@@ -44,7 +44,7 @@ defmodule Anchor.Check.Base do
   the report. The rule errs toward reporting twice, never toward not reporting.
   """
   @spec shared_failure_reporter?(Credo.Execution.t(), module()) :: boolean()
-  def shared_failure_reporter?(exec, check) do
+  def shared_failure_reporter?(%Credo.Execution{checks: %{enabled: _enabled}} = exec, check) do
     {checks, _only, _ignored} = Credo.Execution.checks(exec)
 
     case Enum.flat_map(checks, &enabled_anchor_check/1) do
@@ -52,6 +52,10 @@ defmodule Anchor.Check.Base do
       listed -> check not in listed
     end
   end
+
+  # No check list the runner could iterate (none, or a hand-built shape): no
+  # other check is known to report, so this one does.
+  def shared_failure_reporter?(_exec, _check), do: true
 
   # A check tuple is `{module, params}`, or `{module}` in Credo's older notation.
   defp enabled_anchor_check({_module, false}), do: []

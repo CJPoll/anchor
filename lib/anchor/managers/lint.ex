@@ -70,65 +70,41 @@ defmodule Anchor.Managers.Lint do
 
     case config_loader.load() do
       {:ok, %Config{rules: rules}} ->
-        # Each file is parsed once, here, and the result reused for the module
-        # graph and for detection.
-        parsed = Enum.map(source_files, &{&1, Source.ast(&1)})
-        modules_map = build_modules_map(check_module, parsed)
+        run_context = %{
+          check: check_module,
+          rules: rules,
+          modules_map: build_modules_map(check_module, source_files),
+          params: params,
+          report_shared_failures?: report_shared_failures?
+        }
 
-        results =
-          Enum.map(
-            parsed,
-            &result_for_file(
-              &1,
-              check_module,
-              rules,
-              modules_map,
-              params,
-              report_shared_failures?
-            )
-          )
-
-        {:ok, results}
+        # Each file is parsed as it is checked and dropped afterwards, so a run
+        # never holds every file's AST at once.
+        {:ok, Enum.map(source_files, &result_for_file(&1, run_context))}
 
       {:error, reason} ->
         {:error, reason}
     end
   end
 
+  defp result_for_file(source_file, run_context) do
+    source_file
+    |> Source.ast()
+    |> result_for_parse(source_file, run_context)
+  end
+
   # DND-1265: a file Anchor cannot parse is reported, never checked as if it
   # were empty. The report is not specific to this check, so only the run's
   # shared-failure reporter makes it (see `Anchor.Check.Base`); every other
   # check skips the file.
-  defp result_for_file(
-         {source_file, {:error, {line, message}}},
-         _check,
-         _rules,
-         _map,
-         _params,
-         true
-       ) do
+  defp result_for_parse({:error, {line, message}}, source_file, %{report_shared_failures?: true}) do
     {source_file, [Failures.unparseable_violation(line, message)]}
   end
 
-  defp result_for_file(
-         {source_file, {:error, _parse_error}},
-         _check,
-         _rules,
-         _map,
-         _params,
-         false
-       ) do
-    {source_file, []}
-  end
+  defp result_for_parse({:error, _parse_error}, source_file, _run_context), do: {source_file, []}
 
-  defp result_for_file(
-         {source_file, {:ok, ast}},
-         check_module,
-         rules,
-         modules_map,
-         params,
-         _report?
-       ) do
+  defp result_for_parse({:ok, ast}, source_file, run_context) do
+    %{check: check_module, rules: rules, modules_map: modules_map, params: params} = run_context
     detect_for_file(check_module, source_file, ast, rules, modules_map, params)
   end
 
@@ -169,19 +145,19 @@ defmodule Anchor.Managers.Lint do
     }
   end
 
-  defp build_modules_map(check_module, parsed) do
+  defp build_modules_map(check_module, source_files) do
     if check_module.needs_module_graph?() do
-      Enum.reduce(parsed, %{}, &put_module_analyses/2)
+      Enum.reduce(source_files, %{}, &put_module_analyses(Source.ast(&1), &2))
     else
       %{}
     end
   end
 
   # An unparseable file contributes no modules to the graph; it is reported on
-  # its own (see `result_for_file/6`).
-  defp put_module_analyses({_source_file, {:error, _parse_error}}, acc), do: acc
+  # its own (see `result_for_parse/3`).
+  defp put_module_analyses({:error, _parse_error}, acc), do: acc
 
-  defp put_module_analyses({_source_file, {:ok, ast}}, acc) do
+  defp put_module_analyses({:ok, ast}, acc) do
     ast
     |> DependencyAnalyzer.module_dependencies()
     |> Enum.reduce(acc, fn {module, analysis}, acc -> Map.put(acc, module, analysis) end)

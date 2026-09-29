@@ -56,6 +56,24 @@ defmodule Anchor.Check.BaseTest do
 
       assert Base.shared_failure_reporter?(exec, MustUseModule)
     end
+
+    test "--checks (only_checks) filtering is honoured" do
+      exec = %{
+        exec_with_checks([{NoDependency, []}, {MustUseModule, []}])
+        | only_checks: ["MustUseModule"]
+      }
+
+      assert Base.shared_failure_reporter?(exec, MustUseModule)
+    end
+
+    # A shape Credo.Execution.checks/1 does not accept must not raise: a raise
+    # inside a check is rescued by Credo's runner, and the check would then
+    # report nothing at all.
+    test "an execution whose check list has an unexpected shape reports" do
+      exec = %{Credo.Execution.build() | checks: [{NoDependency, []}]}
+
+      assert Base.shared_failure_reporter?(exec, NoDependency)
+    end
   end
 
   describe "check_file/3 on an unparseable file" do
