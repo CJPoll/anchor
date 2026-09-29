@@ -54,7 +54,7 @@ defmodule Anchor do
   Returns the list of available Anchor checks.
   """
   def checks do
-    [
+        [
       Anchor.Check.NoDependency,
       Anchor.Check.NoTransitiveDependency,
       Anchor.Check.MustUseModule,
