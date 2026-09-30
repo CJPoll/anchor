@@ -29,6 +29,10 @@ defmodule Anchor.Domain.RuleSchema do
     * a `forbidden_functions` entry that does not name exactly one function
       (`"MyApp.Repo"`, `"MyApp.Repo.*"`, `"MyApp.Repo.insert/x"`), per
       `Anchor.Domain.FunctionRef`'s grammar (DND-1267);
+    * an `allowed_callers` entry that is not exactly one Elixir module name: a
+      glob (`"*"` allows every caller, so the rule checks nothing; any other
+      glob widens it with every later module of a matching name), an Erlang
+      module, or a malformed name (`Anchor.Domain.AllowedCallers`, DND-1269);
     * a relation-bearing rule whose relation is missing or empty (see below);
     * a `module_pattern_restrictions` rule whose `allowed_functions` holds a
       match-all glob (only wildcards: `*`, `**`), which allows every function.
@@ -73,8 +77,8 @@ defmodule Anchor.Domain.RuleSchema do
 
   ## Extending it
 
-  **To add a key** (as DND-1267 did for `forbidden_functions`, and a later
-  ticket does for `allowed_callers`):
+  **To add a key** (as DND-1267 did for `forbidden_functions`, and DND-1269
+  for `allowed_callers`):
 
     1. Add it to its rule type's list in `@keys_by_type` (or to `@common_keys`
        if every type reads it).
@@ -84,7 +88,9 @@ defmodule Anchor.Domain.RuleSchema do
        key alone: T3 (DND-1267) added `forbidden_functions` to
        `no_direct_dependency` this way, and a rule carrying only
        `forbidden_functions` has a relation. If the key holds a list of
-       strings, add it to `@string_list_keys`.
+       strings, add it to `@string_list_keys`. A key that narrows a rule
+       rather than giving it something to check (`allowed_callers`, DND-1269)
+       is not a relation.
     3. Parse it in `Anchor.Config.parse_rule/1`.
     4. Add it to the README tables "Keys each rule type accepts" (its keys and
        relation columns) and "Config schema: rule keys at a glance". A test
@@ -109,6 +115,7 @@ defmodule Anchor.Domain.RuleSchema do
   path selector" and stays valid beside a `pattern` or `uses_module`.
   """
 
+  alias Anchor.Domain.AllowedCallers
   alias Anchor.Domain.FunctionRef
   alias Anchor.Domain.GlobPattern
 
@@ -124,7 +131,8 @@ defmodule Anchor.Domain.RuleSchema do
     must_use_module: ~w(required_modules),
     no_comparison_in_if: [],
     no_direct_dependency:
-      ~w(context_depth forbidden_functions forbidden_modules forbidden_patterns match same_context),
+      ~w(allowed_callers context_depth forbidden_functions forbidden_modules forbidden_patterns
+         match same_context),
     no_discarding_arrow_in_with: [],
     no_transitive_dependency: ~w(forbidden_modules forbidden_patterns),
     no_tuple_match_in_head: [],
@@ -158,8 +166,8 @@ defmodule Anchor.Domain.RuleSchema do
   }
 
   # Keys whose value is a list of strings, each of which must be non-blank.
-  @string_list_keys ~w(allowed_functions forbidden_functions forbidden_modules forbidden_patterns
-                       required_modules)
+  @string_list_keys ~w(allowed_callers allowed_functions forbidden_functions forbidden_modules
+                       forbidden_patterns required_modules)
 
   @selector_keys ~w(paths pattern uses_module)
 
@@ -229,6 +237,7 @@ defmodule Anchor.Domain.RuleSchema do
          :ok <- validate_id(rule),
          :ok <- validate_string_lists(rule),
          :ok <- validate_function_refs(rule),
+         :ok <- validate_allowed_callers(rule),
          :ok <- require_relation(rule, type),
          :ok <- refuse_unread_match(rule) do
       refuse_allow_all(rule)
@@ -405,6 +414,24 @@ defmodule Anchor.Domain.RuleSchema do
     case FunctionRef.parse(token) do
       {:ok, _ref} -> nil
       {:error, reason} -> {:error, "`forbidden_functions` entry #{reason}"}
+    end
+  end
+
+  # DND-1269: every `allowed_callers` entry must name exactly one Elixir module
+  # (`Anchor.Domain.AllowedCallers`). A glob would widen the rule with every
+  # later module of a matching name (`*` allows every caller, so the rule would
+  # check nothing). Runs after `validate_string_lists/1`, so each entry is a
+  # non-blank string here.
+  defp validate_allowed_callers(rule) do
+    rule
+    |> Map.get("allowed_callers", [])
+    |> Enum.find_value(:ok, &allowed_caller_error/1)
+  end
+
+  defp allowed_caller_error(token) do
+    case AllowedCallers.parse(token) do
+      {:ok, _module} -> nil
+      {:error, reason} -> {:error, "`allowed_callers` entry #{inspect(token)} #{reason}"}
     end
   end
 

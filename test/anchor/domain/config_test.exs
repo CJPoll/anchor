@@ -428,6 +428,45 @@ defmodule Anchor.Domain.ConfigTest do
     end
   end
 
+  # Sabotage record: ../../sabotage_records/rule_schema-20260929-dnd_1269_allowed_callers.md
+  describe "parse_rule/1 — allowed_callers (DND-1269)" do
+    test "parses each entry into the module it names" do
+      rule =
+        parse_rule(%{
+          "type" => "no_direct_dependency",
+          "paths" => ["lib/**/*.ex"],
+          "forbidden_functions" => ["Athena.Slack.user_info"],
+          "allowed_callers" => ["Athena.Priorities.SlackNameAdapter", "Athena.Priorities"]
+        })
+
+      assert rule.allowed_callers == [Athena.Priorities.SlackNameAdapter, Athena.Priorities]
+    end
+
+    test "an absent allowed_callers is []" do
+      rule =
+        parse_rule(%{
+          "type" => "no_direct_dependency",
+          "paths" => ["lib/**/*.ex"],
+          "forbidden_modules" => ["MyApp.Repo"]
+        })
+
+      assert rule.allowed_callers == []
+    end
+
+    test "a glob fails the load, naming the rule, the entry and the fix" do
+      rule = %{
+        "type" => "no_direct_dependency",
+        "paths" => ["lib/**/*.ex"],
+        "forbidden_modules" => ["MyApp.Repo"],
+        "allowed_callers" => ["MyApp.Adapters.*"]
+      }
+
+      assert {:error, {:invalid_rule, reason}} = Config.parse_config(%{"rules" => [rule]})
+      assert reason =~ ~s(rule 1: `allowed_callers` entry "MyApp.Adapters.*" is a glob)
+      assert reason =~ "name each allowed module exactly"
+    end
+  end
+
   describe "parse_rule/1 — forbidden_functions (DND-1267)" do
     test "parses each token into a function reference" do
       rule =

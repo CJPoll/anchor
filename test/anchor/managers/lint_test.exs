@@ -479,6 +479,98 @@ defmodule Anchor.Managers.LintTest do
     end
   end
 
+  # DND-1269: an `allowed_callers` entry that no selected file defines is dead
+  # config a later module of that name would silently revive (a rename leaves
+  # the old name in the list). Like the floor, it needs the whole file set, so it
+  # is reported only on a whole run.
+  # Sabotage record: ../../sabotage_records/lint-20260929-dnd_1269_allowed_callers.md
+  describe "run/4 allowed callers that no selected file defines" do
+    setup do
+      adapter =
+        SourceFile.parse(
+          "defmodule MyApp.Adapter do\n  def a, do: MyApp.Repo.all(Q)\nend\n",
+          "lib/adapter.ex"
+        )
+
+      other =
+        SourceFile.parse(
+          "defmodule MyApp.Other do\n  def b, do: MyApp.Repo.all(Q)\nend\n",
+          "lib/other.ex"
+        )
+
+      {:ok, adapter: adapter, other: other}
+    end
+
+    defp allowed_rule(allowed) do
+      %{
+        type: :no_direct_dependency,
+        index: 1,
+        id: "repo-via-adapter",
+        paths: ["lib/*.ex"],
+        recursive: false,
+        forbidden_modules: [MyApp.Repo],
+        allowed_callers: allowed
+      }
+    end
+
+    test "the allowed caller is exempt, the other caller is reported", %{
+      adapter: adapter,
+      other: other
+    } do
+      expect(ConfigLoaderMock, :load, fn ->
+        {:ok, %Config{rules: [allowed_rule([MyApp.Adapter])]}}
+      end)
+
+      assert {:ok, [{^adapter, []}, {^other, [%Violation{trigger: "MyApp.Repo", line: 2}]}]} =
+               Lint.run(NoDependency, [adapter, other], [], config_loader: ConfigLoaderMock)
+    end
+
+    test "a missing caller is one fail-closed violation on the config, naming it", %{
+      adapter: adapter,
+      other: other
+    } do
+      rule = allowed_rule([MyApp.Adapter, MyApp.RenamedAdapter])
+
+      expect(ConfigLoaderMock, :load, fn ->
+        {:ok, %Config{rules: [rule], path: "/p/.anchor.yml"}}
+      end)
+
+      assert {:ok, [{^adapter, []}, {^other, [_repo]}, {:config, [violation]}]} =
+               Lint.run(NoDependency, [adapter, other], [], config_loader: ConfigLoaderMock)
+
+      assert %Violation{kind: :fail_closed, filename: "/p/.anchor.yml"} = violation
+
+      assert violation.message =~
+               ~s|rule 1 (id: "repo-via-adapter", no_direct_dependency) lists MyApp.RenamedAdapter in allowed_callers|
+
+      refute violation.message =~ "MyApp.Adapter,"
+      assert violation.message =~ ~r/Fix: [^\n]+\z/
+    end
+
+    test "a partial file set (enforce_selection_floors: false) reports no missing caller", %{
+      other: other
+    } do
+      expect(ConfigLoaderMock, :load, fn ->
+        {:ok, %Config{rules: [allowed_rule([MyApp.Adapter])]}}
+      end)
+
+      assert {:ok, [{^other, [_repo]}]} =
+               Lint.run(NoDependency, [other], [],
+                 config_loader: ConfigLoaderMock,
+                 enforce_selection_floors: false
+               )
+    end
+
+    test "another check does not report this type's missing callers", %{other: other} do
+      expect(ConfigLoaderMock, :load, fn ->
+        {:ok, %Config{rules: [allowed_rule([MyApp.Gone])]}}
+      end)
+
+      assert {:ok, [{^other, []}]} =
+               Lint.run(MustUseModule, [other], [], config_loader: ConfigLoaderMock)
+    end
+  end
+
   # DND-1290: a rule whose type no enabled check reads loads and checks nothing.
   # The run's shared-failure reporter names it, when the Framework knows the
   # enabled types (`enabled_rule_types`); `:unknown` reports nothing.

@@ -83,6 +83,71 @@ defmodule Anchor.E2E.ChecksE2ETest do
     end
   end
 
+  # DND-1269: G1 of the DND-1263 design, from YAML to Credo issue, with no mocks.
+  describe "allowed_callers through the real pipeline" do
+    @allowed_yaml """
+    rules:
+      - type: no_direct_dependency
+        id: slack-name-reads-single-caller
+        paths:
+          - "lib/**/*.ex"
+        recursive: true
+        match: call
+        forbidden_modules:
+          - Athena.Slack.Internal
+        forbidden_functions:
+          - "Athena.Slack.user_info"
+        allowed_callers:
+          - Athena.Priorities.SlackNameAdapter
+    """
+
+    test "only the allowed caller may call; a second module in its file may not" do
+      source = """
+      defmodule Athena.Priorities.SlackNameAdapter do
+        alias Athena.Slack
+        def user(id), do: Slack.user_info(id)
+        def raw(id), do: Athena.Slack.Internal.get(id)
+      end
+
+      defmodule Athena.Priorities.Sneaky do
+        def user(id), do: Athena.Slack.user_info(id)
+      end
+      """
+
+      issues =
+        with_anchor_config(@allowed_yaml, fn ->
+          all_issues(
+            [to_source_file(source, "lib/priorities/slack_name_adapter.ex")],
+            NoDependency
+          )
+        end)
+
+      assert Enum.map(issues, &{&1.line_no, &1.trigger}) == [{8, "Athena.Slack.user_info/1"}]
+    end
+
+    test "a renamed allowed caller is one issue on the config file" do
+      source = """
+      defmodule Athena.Priorities.SlackNames do
+        def user(id), do: Athena.Slack.user_info(id)
+      end
+      """
+
+      {issues, dir} =
+        with_anchor_config(@allowed_yaml, fn ->
+          {all_issues([to_source_file(source, "lib/priorities/slack_names.ex")], NoDependency),
+           File.cwd!()}
+        end)
+
+      assert [config_issue] = Enum.filter(issues, &(&1.filename == Path.join(dir, ".anchor.yml")))
+
+      assert config_issue.message =~
+               "lists Athena.Priorities.SlackNameAdapter in allowed_callers, but no file it selects defines it"
+
+      assert config_issue.message =~ ~r/Fix: [^\n]+\z/
+      assert Enum.any?(issues, &(&1.trigger == "Athena.Slack.user_info/1"))
+    end
+  end
+
   describe "NoDependency through the real pipeline" do
     @yaml """
     rules:

@@ -59,6 +59,72 @@ defmodule Anchor.Domain.RuleCoverageTest do
     end
   end
 
+  # DND-1269: an allowed caller no selected file defines is dead config that a
+  # later module of that name would silently revive, so it is reported.
+  # Sabotage record: ../../sabotage_records/rule_coverage-20260929-dnd_1269_allowed_callers.md
+  describe "missing_allowed_callers/2" do
+    @adapter %{
+      filename: "lib/adapter.ex",
+      module_names: ["Elixir.App.Adapter"],
+      uses: [],
+      defined_modules: [App.Adapter, String.Chars.App.Adapter]
+    }
+    @other %{
+      filename: "lib/other.ex",
+      module_names: ["Elixir.App.Other"],
+      uses: [],
+      defined_modules: [App.Other]
+    }
+    @test_file %{
+      filename: "test/gone.ex",
+      module_names: ["Elixir.App.Gone"],
+      uses: [],
+      defined_modules: [App.Gone]
+    }
+
+    defp dep_rule(allowed, globs \\ ["lib/*.ex"]) do
+      %{type: :no_direct_dependency, paths: globs, recursive: false, allowed_callers: allowed}
+    end
+
+    test "a caller a selected file defines is not reported" do
+      rule = dep_rule([App.Adapter])
+      assert RuleCoverage.missing_allowed_callers([rule], [@adapter, @other]) == []
+    end
+
+    test "a caller no file defines is reported, with every missing entry in order" do
+      rule = dep_rule([App.Renamed, App.Adapter, App.AlsoGone])
+
+      assert RuleCoverage.missing_allowed_callers([rule], [@adapter, @other]) ==
+               [{rule, [App.Renamed, App.AlsoGone]}]
+    end
+
+    test "a caller defined only in a file the rule does not select is reported" do
+      rule = dep_rule([App.Gone])
+
+      assert RuleCoverage.missing_allowed_callers([rule], [@adapter, @test_file]) ==
+               [{rule, [App.Gone]}]
+    end
+
+    test "a defimpl module counts as defined" do
+      rule = dep_rule([String.Chars.App.Adapter])
+      assert RuleCoverage.missing_allowed_callers([rule], [@adapter]) == []
+    end
+
+    test "a rule with no allowed callers is never reported" do
+      assert RuleCoverage.missing_allowed_callers([dep_rule([]), %{type: :x}], [@adapter]) == []
+    end
+
+    test "a rule that selects no file is left to the floor report" do
+      assert RuleCoverage.missing_allowed_callers([dep_rule([App.Gone], ["x/*.ex"])], [@adapter]) ==
+               []
+    end
+
+    test "a rule that may select an unparsed file is not reported (the parse failure is)" do
+      rule = dep_rule([App.Gone])
+      assert RuleCoverage.missing_allowed_callers([rule], [@adapter, @unparsed]) == []
+    end
+  end
+
   describe "min_files/1" do
     test "is the rule's min_files, or the default of 1" do
       assert RuleCoverage.min_files(%{min_files: 4}) == 4

@@ -83,6 +83,16 @@ defmodule Anchor.Domain.FunctionRef do
       (is_nil(function) or ref.function == function) and arity_matches?(ref.arity, arity)
   end
 
+  @doc """
+  Whether `name` is an Elixir module name in this grammar's `Mod`: one or more
+  alias segments (`A-Z`, then letters, digits or `_`) joined by `.`. The one
+  definition of a module name that `Anchor.Domain.AllowedCallers` shares
+  (DND-1269).
+  """
+  @spec alias_name?(String.t()) :: boolean()
+  def alias_name?(name) when is_binary(name),
+    do: name |> String.split(".") |> Enum.all?(&alias_segment?/1)
+
   defp arity_matches?(:any, _arity), do: true
   defp arity_matches?(_expected, :any), do: true
   defp arity_matches?(expected, arity), do: expected == arity

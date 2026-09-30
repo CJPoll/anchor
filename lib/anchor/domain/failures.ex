@@ -22,6 +22,8 @@ defmodule Anchor.Domain.Failures do
       `selection_floor_violation/4`, on the config the rule came from.
     * **A rule no enabled check reads** (DND-1290) —
       `unchecked_rule_violation/3`, on the config the rule came from.
+    * **An allowed caller no selected file defines** (DND-1269) —
+      `missing_allowed_callers_violation/3`, on the config the rule came from.
 
   A rule is named as `rule_label/1` names it: its position and, when it has
   one, its `id` (`rule 2 (id: "web", no_direct_dependency)`).
@@ -142,6 +144,25 @@ defmodule Anchor.Domain.Failures do
   end
 
   @doc """
+  Builds the violation for a rule that lists allowed callers no file it selects
+  defines (DND-1269), naming each one in the order the rule lists them.
+  """
+  @spec missing_allowed_callers_violation(map(), [module()], String.t() | nil) :: Violation.t()
+  def missing_allowed_callers_violation(rule, missing, config_path) do
+    config = config_path || @config_filename
+    names = Enum.map_join(missing, ", ", &inspect/1)
+
+    rule_violation(
+      rule,
+      config,
+      "Anchor #{rule_label(rule)} lists #{names} in allowed_callers, but no file it selects " <>
+        "defines #{pronoun(missing)}, so it allows nothing today and would silently allow " <>
+        "any module later given that name. Fix: in #{config}, rename each such entry to the " <>
+        "module that now does this work, or remove it."
+    )
+  end
+
+  @doc """
   Builds the violation for a rule whose type no enabled Credo check reads
   (DND-1290), naming `check`, the Anchor check that would read it.
   """
@@ -219,6 +240,9 @@ defmodule Anchor.Domain.Failures do
   # carries them, and they are the analyser's whole state.
   defp frame_arity(args) when is_list(args), do: length(args)
   defp frame_arity(arity), do: arity
+
+  defp pronoun([_one]), do: "it"
+  defp pronoun(_many), do: "them"
 
   defp files(1), do: "1 file"
   defp files(count), do: "#{count} files"

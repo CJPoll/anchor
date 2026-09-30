@@ -15,6 +15,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
   # One valid value for every documented key, so the positive case can build a
   # rule carrying all of a type's keys at once.
   @valid_values %{
+    "allowed_callers" => ["MyApp.Adapter"],
     "allowed_functions" => ["new"],
     "context_depth" => 3,
     "forbidden_functions" => ["MyApp.Repo.insert/2"],
@@ -73,7 +74,8 @@ defmodule Anchor.Domain.RuleSchemaTest do
                Config.parse_rule(rule(:no_direct_dependency, %{"forbiden_patterns" => ["*.X.*"]}))
 
       assert reason =~
-               "known keys for no_direct_dependency: context_depth, forbidden_functions, " <>
+               "known keys for no_direct_dependency: allowed_callers, context_depth, " <>
+                 "forbidden_functions, " <>
                  "forbidden_modules, " <>
                  "forbidden_patterns, id, match, min_files, paths, pattern, recursive, " <>
                  "same_context, type, uses_module"

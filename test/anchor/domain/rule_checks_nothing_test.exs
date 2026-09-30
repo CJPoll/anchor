@@ -22,6 +22,8 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
   #   ../../sabotage_records/rule_schema-20260929-dnd_1292_glob_escape.md
   # The DND-1267 `forbidden_functions` rows:
   #   ../../sabotage_records/rule_schema-20260929-dnd_1267_forbidden_functions.md
+  # The DND-1269 `allowed_callers` rows:
+  #   ../../sabotage_records/rule_schema-20260929-dnd_1269_allowed_callers.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config
@@ -272,7 +274,7 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
        }), :accepted},
       {"same_context with nothing to scope", Map.put(base, "same_context", true),
        {:refused, "same_context: true requires forbidden_patterns"}}
-    ] ++ forbidden_functions_rows()
+    ] ++ forbidden_functions_rows() ++ allowed_callers_rows()
   end
 
   defp extra_rows(:no_transitive_dependency), do: []
@@ -328,6 +330,61 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
       {"forbidden_functions on no_transitive_dependency (not its key)",
        Map.put(base(:no_transitive_dependency), "forbidden_functions", ["MyApp.Slack.f"]),
        {:refused, ~s(unknown key "forbidden_functions" in a no_transitive_dependency rule)}}
+    ]
+  end
+
+  # DND-1269: `allowed_callers` narrows a rule, so it is not a relation, and
+  # every entry must name exactly one Elixir module. A glob would widen the rule
+  # to every module a later change gives a matching name (and `*` allows every
+  # caller, so the rule checks nothing); an Erlang module is never defined in
+  # Elixir source, so it could never be found. A listed caller that the run does
+  # not find is the run-time report, tested in `Anchor.Domain.RuleCoverageTest`.
+  defp allowed_callers_rows do
+    base = base(:no_direct_dependency)
+    no_relation = Map.drop(base, ~w(forbidden_modules forbidden_patterns))
+    not_a_module = "is not a module name"
+    glob = "is a glob"
+
+    [
+      {"positive: allowed_callers beside forbidden_modules",
+       Map.put(base, "allowed_callers", ["MyApp.Adapter"]), :accepted},
+      {"positive: allowed_callers beside forbidden_functions",
+       Map.merge(no_relation, %{
+         "forbidden_functions" => ["MyApp.Slack.user_info"],
+         "allowed_callers" => ["MyApp.Adapter", "MyApp.Other.Adapter"]
+       }), :accepted},
+      {"positive: allowed_callers: [] (no caller exempt)", Map.put(base, "allowed_callers", []),
+       :accepted},
+      {"allowed_callers alone is no relation",
+       Map.put(no_relation, "allowed_callers", ["MyApp.Adapter"]),
+       {:refused, missing_relation(:no_direct_dependency)}},
+      {"a match-all allowed_callers glob allows every caller, so the rule checks nothing",
+       Map.put(base, "allowed_callers", ["*"]), {:refused, glob}},
+      {"a ** allowed_callers glob allows every caller", Map.put(base, "allowed_callers", ["**"]),
+       {:refused, glob}},
+      {"an allowed_callers namespace glob widens with every new module",
+       Map.put(base, "allowed_callers", ["MyApp.Adapters.*"]), {:refused, glob}},
+      {"an allowed_callers Erlang module is never defined in source",
+       Map.put(base, "allowed_callers", [":telemetry"]), {:refused, "an Erlang module"}},
+      {"an allowed_callers entry that is not a module name",
+       Map.put(base, "allowed_callers", ["my_app.adapter"]), {:refused, not_a_module}},
+      {"an allowed_callers entry with an empty segment",
+       Map.put(base, "allowed_callers", ["MyApp..Adapter"]), {:refused, not_a_module}},
+      {"an allowed_callers entry naming a function",
+       Map.put(base, "allowed_callers", ["MyApp.Adapter.call/1"]), {:refused, not_a_module}},
+      {"a malformed allowed_callers entry after a valid one",
+       Map.put(base, "allowed_callers", ["MyApp.Adapter", "MyApp.adapter"]),
+       {:refused, ~s("MyApp.adapter")}},
+      {"allowed_callers of empty strings", Map.put(base, "allowed_callers", [""]),
+       {:refused, "`allowed_callers` must be a list of non-empty strings"}},
+      {"allowed_callers that is a string", Map.put(base, "allowed_callers", "MyApp.Adapter"),
+       {:refused, "`allowed_callers` must be a list of non-empty strings"}},
+      {"an allowed_callers nil entry (a bare `-` in YAML)",
+       Map.put(base, "allowed_callers", [nil]),
+       {:refused, "`allowed_callers` must be a list of non-empty strings"}},
+      {"allowed_callers on no_transitive_dependency (not its key)",
+       Map.put(base(:no_transitive_dependency), "allowed_callers", ["MyApp.Adapter"]),
+       {:refused, ~s(unknown key "allowed_callers" in a no_transitive_dependency rule)}}
     ]
   end
 
