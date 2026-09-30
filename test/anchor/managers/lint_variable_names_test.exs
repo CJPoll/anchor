@@ -11,7 +11,11 @@ defmodule Anchor.Managers.LintVariableNamesTest do
   # everything else is real: parsing, facts, selection, the module graph and
   # every check's detection.
   #
-  # Sabotage record: test/sabotage_records/dependency_analyzer-20260929-dnd_1310_analyzer_quote_crash.md
+  # Sabotage records:
+  #   ../../sabotage_records/dependency_analyzer-20260929-dnd_1310_analyzer_quote_crash.md
+  #   ../../sabotage_records/single_control_flow-20260929-dnd_1310_analyzer_quote_crash.md
+  #   ../../sabotage_records/struct_getter_convention-20260929-dnd_1310_analyzer_quote_crash.md
+  #   ../../sabotage_records/lint-20260929-dnd_1310_analyzer_quote_crash.md (paired mutations)
   use ExUnit.Case, async: true
 
   import Hammox

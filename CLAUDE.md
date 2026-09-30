@@ -73,7 +73,8 @@ Anchor fails closed (DND-1265): a missing `.anchor.yml`, a config that does not
 load (bad YAML, an unknown top-level key, an unknown rule `type`, `match` or
 `mode`), and an unparseable source file are each reported as a Credo issue with
 a `Fix:` line, never as a clean run. So is a check that raises on a file
-(DND-1310): `Anchor.Managers.Lint` rescues it per file, per check. `Anchor.Domain.Failures`
+(DND-1310): `Anchor.Managers.Lint` catches it per file (see its moduledoc,
+"Analysis crashes"). `Anchor.Domain.Failures`
 holds the messages.
 
 An AST clause that matches a special form or directive by name (`quote`,

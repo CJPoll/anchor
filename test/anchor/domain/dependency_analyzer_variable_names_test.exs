@@ -5,7 +5,7 @@ defmodule Anchor.Domain.DependencyAnalyzerVariableNamesTest do
   # `quote` (`walk_children(nil)`), which stopped every Anchor check on the file.
   # Every such name must read exactly as a variable with a plain name does.
   #
-  # Sabotage record: test/sabotage_records/dependency_analyzer-20260929-dnd_1310_analyzer_quote_crash.md
+  # Sabotage record: ../../sabotage_records/dependency_analyzer-20260929-dnd_1310_analyzer_quote_crash.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.DependencyAnalyzer

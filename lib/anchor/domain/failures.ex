@@ -15,9 +15,9 @@ defmodule Anchor.Domain.Failures do
       on `path` and says what failed.
     * **A source file Anchor could not parse** — `unparseable_violation/2`,
       on that file at the parser's line.
-    * **A check that crashed on a source file** (DND-1310) —
-      `analysis_crash_violation/3`, on that file, naming the check and the
-      exception.
+    * **A crash analysing a source file** (DND-1310) —
+      `analysis_crash_violation/4`, on that file, naming the check (or Anchor's
+      shared per-file analysis) and the reason.
     * **A rule that selected fewer files than its floor** (DND-1290) —
       `selection_floor_violation/4`, on the config the rule came from.
     * **A rule no enabled check reads** (DND-1290) —
@@ -36,6 +36,7 @@ defmodule Anchor.Domain.Failures do
   alias Anchor.Domain.Violation
 
   @config_filename ".anchor.yml"
+  @crash_reason_limit 300
   @schema_pointer "the README section \"Config schema: rule keys at a glance\" and its " <>
                     "table \"Keys each rule type accepts\""
 
@@ -88,24 +89,32 @@ defmodule Anchor.Domain.Failures do
   end
 
   @doc """
-  Builds the violation for `check` raising `exception` while analysing a source
-  file (DND-1310). It sits on that file (`filename: nil`) and names the check,
-  the exception and, from `stacktrace`, the frame that raised, so the report
-  can go to Anchor as it stands.
+  Builds the violation for a crash while analysing a source file (DND-1310):
+  `kind` and `reason` as a `catch kind, reason` sees them, and its
+  `stacktrace`. It sits on that file (`filename: nil`) and names what crashed,
+  the reason (at most #{@crash_reason_limit} characters) and the frame that
+  raised, so the report can go to Anchor as it stands.
+
+  `subject` is the check whose detection or module-graph build crashed, or
+  `:file_analysis` for the per-file facts every check shares (reported once
+  per run, like an unparseable file).
   """
-  @spec analysis_crash_violation(module(), Exception.t(), Exception.stacktrace()) ::
-          Violation.t()
-  def analysis_crash_violation(check, exception, stacktrace) do
+  @spec analysis_crash_violation(
+          module() | :file_analysis,
+          :error | :exit | :throw,
+          term(),
+          Exception.stacktrace()
+        ) :: Violation.t()
+  def analysis_crash_violation(subject, kind, reason, stacktrace) do
     %Violation{
       line: nil,
-      trigger: inspect(check),
+      trigger: crash_trigger(subject),
       kind: :fail_closed,
       message:
-        "Anchor check #{inspect(check)} crashed on this file, so it checked no Anchor rule " <>
-          "against it: #{inspect(exception.__struct__)}: #{Exception.message(exception)}" <>
+        "#{crash_opening(subject)}: #{crash_reason(kind, reason, stacktrace)}" <>
           "#{raised_at(stacktrace)}. Fix: this is a defect in Anchor, not in this file; " <>
-          "report it to Anchor with the file (or the construct at that line). Excluding the " <>
-          "file from Credo silences this and leaves the file unchecked."
+          "report it to Anchor with the file (or a minimal snippet that reproduces it). " <>
+          "Excluding the file from Credo silences this and leaves the file unchecked."
     }
   end
 
@@ -163,13 +172,53 @@ defmodule Anchor.Domain.Failures do
     end
   end
 
+  defp crash_trigger(:file_analysis), do: "Anchor"
+  defp crash_trigger(check), do: inspect(check)
+
+  defp crash_opening(:file_analysis),
+    do: "Anchor crashed analysing this file, so no Anchor rule was checked against it"
+
+  defp crash_opening(check),
+    do:
+      "Anchor check #{inspect(check)} crashed on this file, so it checked no Anchor rule against it"
+
+  # The reason can hold a whole AST or the analyser's state (a `MatchError`
+  # prints its term), so it is capped.
+  defp crash_reason(:error, reason, stacktrace) do
+    exception = Exception.normalize(:error, reason, stacktrace)
+    "#{inspect(exception.__struct__)}: #{capped(Exception.message(exception))}"
+  end
+
+  defp crash_reason(kind, reason, _stacktrace), do: "#{kind}: #{capped(inspect(reason))}"
+
+  defp capped(text) do
+    if String.length(text) > @crash_reason_limit,
+      do: String.slice(text, 0, @crash_reason_limit) <> "...",
+      else: text
+  end
+
+  # Built from the frame alone. `Exception.format_stacktrace_entry/1` is not
+  # used: it reads the VM's application table (and `format_file_line/2` the
+  # cwd), so the same frame would give different text.
+  defp raised_at([{module, function, arity_or_args, location} | _rest]) when is_list(location) do
+    " (raised at #{frame_location(location)}" <>
+      "#{Exception.format_mfa(module, function, frame_arity(arity_or_args))})"
+  end
+
+  defp raised_at(_stacktrace), do: ""
+
+  defp frame_location(location) do
+    case {Keyword.get(location, :file), Keyword.get(location, :line)} do
+      {nil, _line} -> ""
+      {file, nil} -> "#{file}: "
+      {file, line} -> "#{file}:#{line}: "
+    end
+  end
+
   # The frame's arity, never its arguments: a `FunctionClauseError` frame
   # carries them, and they are the analyser's whole state.
-  defp raised_at([{module, function, args, location} | _rest]) when is_list(args),
-    do: raised_at([{module, function, length(args), location}])
-
-  defp raised_at([frame | _rest]), do: " (raised at #{Exception.format_stacktrace_entry(frame)})"
-  defp raised_at(_stacktrace), do: ""
+  defp frame_arity(args) when is_list(args), do: length(args)
+  defp frame_arity(arity), do: arity
 
   defp files(1), do: "1 file"
   defp files(count), do: "#{count} files"
