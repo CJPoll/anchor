@@ -164,14 +164,21 @@ rule's position (and its `id`, when it has one) and ending with `Fix:`:
 - no selector, or **more than one** (`paths` with `pattern`, or `pattern` with
   `uses_module`). Only the first of `paths`, `pattern`, `uses_module` was ever
   read, so the second one narrowed nothing;
+- `match` on a rule with neither `forbidden_modules` nor `forbidden_patterns`:
+  `forbidden_functions` is matched in every call shape whatever `match` says,
+  so nothing reads it;
 - `recursive` without `paths` (nothing reads it), or a `recursive` that is not
   `true`/`false`;
-- a relation-bearing rule with no **relation**: a `no_direct_dependency` or
-  `no_transitive_dependency` rule whose `forbidden_modules` and
-  `forbidden_patterns` are both missing or empty, or a `must_use_module` rule
-  with no `required_modules`. The table below lists each type's relation;
+- a relation-bearing rule with no **relation**: a `no_direct_dependency` rule
+  whose `forbidden_functions`, `forbidden_modules` and `forbidden_patterns` are
+  all missing or empty, a `no_transitive_dependency` rule whose
+  `forbidden_modules` and `forbidden_patterns` are both missing or empty, or a
+  `must_use_module` rule with no `required_modules`. The table below lists each
+  type's relation;
 - a relation list that is not a list of non-blank strings
   (`forbidden_modules: [""]`, or a bare `-` in YAML);
+- a `forbidden_functions` entry that does not name exactly one function
+  (`"MyApp.Repo"`, `"MyApp.Repo.*"`, `"MyApp.Repo.insert/x"`);
 - an `allowed_functions` entry of only wildcards (`*`, `**`), which allows
   every function. Every other glob character is a literal (see
   [Glob syntax](#glob-syntax)), so `*?` allows the functions ending in `?`, not
@@ -289,6 +296,7 @@ semantics and edge cases.
 | `id` | any rule | A name for the rule, unique in the file. It appears beside the rule's position in its load errors and floor reports (`rule 2 (id: "web-no-repo", ...)`). |
 | `forbidden_modules` / `required_modules` | `no_direct_dependency`, `no_transitive_dependency` / `must_use_module` | Exact module tokens (see the token syntax below). |
 | `forbidden_patterns` | `no_direct_dependency`, `no_transitive_dependency` | Module-name globs; forbids any referenced/reachable module whose name matches. |
+| `forbidden_functions` | `no_direct_dependency` | `"Module.function"` or `"Module.function/arity"` tokens; forbids calling (or capturing) that function, in every call shape. A malformed token fails the load. See [Forbidding functions](#forbidding-functions-forbidden_functions). |
 | `match` | `no_direct_dependency` | `reference` (default) or `call` — which dependency set the rule inspects. Any other token fails the load. |
 | `same_context` | `no_direct_dependency` | Boolean, default `false`. When `true`, a `forbidden_patterns` match is a violation **only if** the dependency shares the checked file's own context. Exact `forbidden_modules` matches are never scoped. |
 | `context_depth` | `no_direct_dependency` | Positive integer, default `2`. Number of leading module-namespace segments that define a "context/subdomain". Inert unless `same_context: true`. |
@@ -314,7 +322,7 @@ another type (`match` on a `no_transitive_dependency` rule) is unknown too.
 | `module_pattern_restrictions` | `allowed_functions` | none |
 | `must_use_module` | `required_modules` | `required_modules` |
 | `no_comparison_in_if` | none | none |
-| `no_direct_dependency` | `context_depth`, `forbidden_modules`, `forbidden_patterns`, `match`, `same_context` | `forbidden_modules`, `forbidden_patterns` |
+| `no_direct_dependency` | `context_depth`, `forbidden_functions`, `forbidden_modules`, `forbidden_patterns`, `match`, `same_context` | `forbidden_functions`, `forbidden_modules`, `forbidden_patterns` |
 | `no_discarding_arrow_in_with` | none | none |
 | `no_transitive_dependency` | `forbidden_modules`, `forbidden_patterns` | `forbidden_modules`, `forbidden_patterns` |
 | `no_tuple_match_in_head` | none | none |
@@ -494,6 +502,85 @@ lead with `*`.) Every character other than `*` is a literal; see
     - MyApp.Repo
 ```
 
+#### Forbidding functions (`forbidden_functions`)
+
+`forbidden_functions` forbids calling one function of a module, not the whole
+module. Use it when many files may use a module but only a few may call one of
+its functions:
+
+```yaml
+- type: no_direct_dependency
+  paths: ["lib/**/*.ex"]
+  recursive: true
+  forbidden_functions:
+    - "Athena.Slack.user_info"        # every arity
+    - "Athena.Slack.rule_post/2"      # only rule_post/2
+    - ":ets.delete_all_objects"       # an Erlang/OTP module
+```
+
+Each entry is `"Module.function"` or `"Module.function/arity"`. The module is an
+Elixir alias or a leading-colon Erlang module, as in `forbidden_modules`. The
+function is an identifier, optionally ending in `?` or `!`. An entry that does
+not name exactly one function fails the load: `"MyApp.Repo"` (no function),
+`"MyApp.Repo.*"` (a glob; use `forbidden_patterns`), `"MyApp.Repo.insert/x"`.
+`forbidden_functions` alone is a relation, so a rule may carry only it.
+
+A call is resolved the way the compiler resolves it (aliases, imports,
+`__MODULE__`; see below), and **every shape that reaches the function** is
+reported, whatever `match` says. (`match` still governs the rule's
+`forbidden_modules` and `forbidden_patterns`; on a rule with only
+`forbidden_functions` it fails the load, because nothing reads it.)
+
+| Shape | Example |
+|---|---|
+| Remote call, through any alias | `Athena.Slack.user_info(id)`, `Slack.user_info(id)`, `S.user_info(id)` after `alias Athena.Slack, as: S` or `alias Athena.{Slack, Other}` |
+| Imported bare call (`only:`/`except:` honoured) | `user_info(id)` after `import Athena.Slack` |
+| Pipe (the piped value counts toward the arity) | `id \|> Slack.user_info()`, `id \|> user_info()` |
+| Capture | `&Slack.user_info/1`, `&Slack.user_info(&1)`, `&user_info/1` via import |
+| `apply/3` and the other MFA dispatchers | `apply(Slack, :user_info, [id])`, `Slack \|> apply(:user_info, [id])`, `Kernel.apply/3`, `:erlang.apply/3`, `Function.capture/3`, `:erlang.make_fun/3` |
+| An MFA held as data (module, atom and a literal argument list, in a row) | `spawn(Slack, :user_info, [id])`, `Task.start(Slack, :user_info, [id])`, `{Slack, :user_info, [id]}` |
+| `defdelegate` | `defdelegate lookup(id), to: Athena.Slack, as: :user_info` |
+| A module attribute bound to a literal module in the same module | `@slack Athena.Slack` then `@slack.user_info(id)` or `apply(@slack, :user_info, [id])` |
+| A bare `Kernel` call (for a `Kernel.*` token) | `send(pid, msg)`, `pid \|> send(msg)`, `&send/2` match `"Kernel.send/2"` while `Kernel` owns `send/2` |
+
+Each function reached is reported once per rule, at its first line. Where the
+source does not show an arity (`apply(M, :f, args)`), the call matches every
+arity. An arity token matches that arity only, as Elixir counts it:
+`"MyApp.Repo.insert/2"` does not match `Repo.insert(changeset)`, even when a
+default argument makes that call reach `insert/2`. Leave the arity off to
+forbid every arity. A module's call to its **own** function (`user_info(id)` inside
+`Athena.Slack`) is local, not a call on the module, and is not reported.
+Neither is a module held as a value, an `alias` line, a typespec, or a string.
+A module next to an atom without an argument list is not an MFA:
+`GenServer.call(Athena.Slack, :user_info)` sends a message to a process, and
+`%{Athena.Slack => :user_info}` and `{Athena.Slack, :user_info}` are data.
+
+A call whose module or function the source cannot show is reported, not
+skipped, when it **could** reach a forbidden function: `mod.user_info(id)` on a
+variable or call-result module, or on an attribute not bound to a literal
+module, `apply(mod, :user_info, args)`, `apply(Athena.Slack, fun, args)`,
+`apply(mod, fun, args)`, `&mod.user_info/1`, `&apply/3`,
+`defdelegate ..., to: @unbound`, and an unquote fragment outside a `quote`
+(`Athena.Slack.unquote(name)(id)`, `defdelegate unquote(name)(id), to:
+Athena.Slack` in a comprehension). The issue names the functions it could reach
+and ends with `Fix:`. A dynamic call that cannot reach one (`mod.fetch(x)` when
+only `user_info` is forbidden) is not reported. Each such call site is reported
+once, however many rules apply.
+
+Limits a source check cannot close:
+
+- A call a macro injects (`use Foo` that expands into `Athena.Slack.user_info`)
+  is not in the source. Keep a compiled-code check for it.
+- An anonymous call `fun.(x)` is not reported: the function value was made by
+  a capture, `Function.capture/3` or `:erlang.make_fun/3`, and that site is
+  checked. `map.field` without parens reads a field and is not a call.
+- An MFA-taking API other than the dispatchers above is matched only when its
+  module and function are literal. Anchor cannot know which arguments of an
+  arbitrary function are an MFA, so a dynamic one there is not reported.
+- A call inside a `quote` is checked (the macro emits it), but a dynamic one
+  there (`unquote(mod).f()`) is macro code and is skipped, as a non-literal
+  directive in a `quote` is.
+
 #### Reference vs. call matching (`match`)
 
 `match` selects which dependencies the rule inspects:
@@ -502,6 +589,16 @@ lead with `*`.) Every character other than `*` is a literal; see
   **any** position — a call, a value held in a map or keyword list, a typespec.
 - `match: call` flags a forbidden module only when it appears in **call
   position** (`Foo.Adapters.L.enrich(x)` or `apply(Foo.Adapters.L, :enrich, [x])`).
+  Call position includes a pipe (`Foo.Adapters.L |> apply(:enrich, [x])`), the
+  other MFA dispatchers (`Kernel.apply/3`, `:erlang.apply/3`,
+  `Function.capture/3`, `:erlang.make_fun/3`), `defdelegate ..., to:
+  Foo.Adapters.L` (DND-1280), and a call on a module attribute bound to a
+  literal module (`@loader Foo.Adapters.L` then `@loader.run(x)`). An existing
+  `match: call` rule may report these new call sites. A call on a variable
+  module is dynamic dispatch and is not reported at module level: any such call
+  could reach any module. An MFA held as data (`{Foo.Adapters.L, :run, []}`) is
+  held, not called, so it is not a call dependency; a `forbidden_functions`
+  rule does count it.
   A module merely **held as an atom** — e.g. a Domain router keeping an adapter
   module as a map value it never itself calls — passes under `call`. This honors
   the "Domain-router-holds-atoms" carve-out: holding an adapter atom is allowed,

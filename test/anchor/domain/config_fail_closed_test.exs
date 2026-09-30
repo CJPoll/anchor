@@ -194,9 +194,17 @@ defmodule Anchor.Domain.ConfigFailClosedTest do
 
   defp put_relation(rule, []), do: rule
 
-  defp put_relation(rule, [key | _rest] = keys) do
-    if has_any?(rule, keys), do: rule, else: Map.put(rule, key, ["Placeholder.Relation"])
+  # A module-level relation key when the type has one, so a `match` the row
+  # carries has something to read (DND-1267 refuses a `match` nothing reads).
+  defp put_relation(rule, [first | _rest] = keys) do
+    key = Enum.find(keys, first, &(&1 != "forbidden_functions"))
+    if has_any?(rule, keys), do: rule, else: Map.put(rule, key, [placeholder(key)])
   end
+
+  # A `forbidden_functions` entry names a function (DND-1267); every other
+  # relation key holds module names or module globs.
+  defp placeholder("forbidden_functions"), do: "Placeholder.Relation.run"
+  defp placeholder(_key), do: "Placeholder.Relation"
 
   defp has_any?(rule, keys), do: Enum.any?(keys, &Map.has_key?(rule, &1))
 end

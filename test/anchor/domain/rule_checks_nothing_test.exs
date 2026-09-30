@@ -20,6 +20,8 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
   # Sabotage record: ../../sabotage_records/rule_schema-20260929-dnd_1290_empty_relation_list.md
   # The DND-1292 rows (glob metacharacters, the `***` match-all, `*?`):
   #   ../../sabotage_records/rule_schema-20260929-dnd_1292_glob_escape.md
+  # The DND-1267 `forbidden_functions` rows:
+  #   ../../sabotage_records/rule_schema-20260929-dnd_1267_forbidden_functions.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config
@@ -68,6 +70,9 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
     assert with_relation == [:must_use_module, :no_direct_dependency, :no_transitive_dependency]
 
     assert RuleSchema.relation_keys(:no_direct_dependency) ==
+             ~w(forbidden_functions forbidden_modules forbidden_patterns)
+
+    assert RuleSchema.relation_keys(:no_transitive_dependency) ==
              ~w(forbidden_modules forbidden_patterns)
 
     assert RuleSchema.relation_keys(:must_use_module) == ~w(required_modules)
@@ -153,7 +158,7 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
 
   defp table(type) when type in [:no_direct_dependency, :no_transitive_dependency] do
     no_relation = Map.drop(base(type), ~w(forbidden_modules forbidden_patterns))
-    missing = "forbidden_modules and forbidden_patterns are missing or empty"
+    missing = missing_relation(type)
 
     common_rows(type) ++
       [
@@ -267,10 +272,70 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
        }), :accepted},
       {"same_context with nothing to scope", Map.put(base, "same_context", true),
        {:refused, "same_context: true requires forbidden_patterns"}}
-    ]
+    ] ++ forbidden_functions_rows()
   end
 
   defp extra_rows(:no_transitive_dependency), do: []
+
+  # DND-1267: `forbidden_functions` is a relation of `no_direct_dependency`
+  # alone, so it satisfies the relation on its own, and every entry must name
+  # exactly one function. The token grammar's full table is in
+  # `Anchor.Domain.FunctionRefTest`; these rows prove the load refuses it.
+  defp forbidden_functions_rows do
+    no_relation = Map.drop(base(:no_direct_dependency), ~w(forbidden_modules forbidden_patterns))
+    missing = missing_relation(:no_direct_dependency)
+    malformed = "is not a function reference"
+
+    [
+      {"positive: forbidden_functions alone",
+       Map.put(no_relation, "forbidden_functions", ["MyApp.Slack.user_info"]), :accepted},
+      {"positive: forbidden_functions with arities and an Erlang module",
+       Map.put(no_relation, "forbidden_functions", ["MyApp.Slack.user_info/2", ":ets.insert"]),
+       :accepted},
+      {"positive: an empty forbidden_functions beside forbidden_modules",
+       Map.put(base(:no_direct_dependency), "forbidden_functions", []), :accepted},
+      {"forbidden_functions: []", Map.put(no_relation, "forbidden_functions", []),
+       {:refused, missing}},
+      {"forbidden_functions of empty strings", Map.put(no_relation, "forbidden_functions", [""]),
+       {:refused, "`forbidden_functions` must be a list of non-empty strings"}},
+      {"forbidden_functions of blank strings",
+       Map.put(no_relation, "forbidden_functions", ["  "]),
+       {:refused, "`forbidden_functions` must be a list of non-empty strings"}},
+      {"forbidden_functions that is a string",
+       Map.put(no_relation, "forbidden_functions", "MyApp.Slack.user_info"),
+       {:refused, "`forbidden_functions` must be a list of non-empty strings"}},
+      {"a forbidden_functions nil entry (a bare `-` in YAML)",
+       Map.put(no_relation, "forbidden_functions", [nil]),
+       {:refused, "`forbidden_functions` must be a list of non-empty strings"}},
+      {"a forbidden_functions entry naming a module only",
+       Map.put(no_relation, "forbidden_functions", ["MyApp.Slack"]), {:refused, malformed}},
+      {"a forbidden_functions entry with a bad arity",
+       Map.put(no_relation, "forbidden_functions", ["MyApp.Slack.user_info/x"]),
+       {:refused, malformed}},
+      {"match on a rule with only forbidden_functions (nothing reads it)",
+       Map.merge(no_relation, %{"forbidden_functions" => ["MyApp.Slack.f"], "match" => "call"}),
+       {:refused, "`match` applies only to `forbidden_modules` and `forbidden_patterns`"}},
+      {"positive: match beside forbidden_functions and forbidden_modules",
+       Map.merge(base(:no_direct_dependency), %{
+         "forbidden_functions" => ["MyApp.Slack.f"],
+         "match" => "call"
+       }), :accepted},
+      {"a forbidden_functions glob (globs are forbidden_patterns' job)",
+       Map.put(no_relation, "forbidden_functions", ["MyApp.Slack.*"]), {:refused, malformed}},
+      {"a malformed entry after a valid one",
+       Map.put(no_relation, "forbidden_functions", ["MyApp.Slack.user_info", "slack.user_info"]),
+       {:refused, ~s("slack.user_info")}},
+      {"forbidden_functions on no_transitive_dependency (not its key)",
+       Map.put(base(:no_transitive_dependency), "forbidden_functions", ["MyApp.Slack.f"]),
+       {:refused, ~s(unknown key "forbidden_functions" in a no_transitive_dependency rule)}}
+    ]
+  end
+
+  defp missing_relation(:no_direct_dependency),
+    do: "forbidden_functions, forbidden_modules and forbidden_patterns are missing or empty"
+
+  defp missing_relation(:no_transitive_dependency),
+    do: "forbidden_modules and forbidden_patterns are missing or empty"
 
   defp base(type) do
     Map.merge(

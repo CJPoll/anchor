@@ -66,6 +66,9 @@ before coining a synonym.
   allowlist, the selector every rule needs, and the README table that mirrors
   the allowlist. Since DND-1290 also the relation each type needs and the rest
   of "a rule that loads but checks nothing".
+- `function_ref` — `Anchor.Domain.FunctionRef` (DND-1267): the
+  `forbidden_functions` token grammar and the comparison of a call (or an
+  unresolvable call) with a token.
 - `rule_coverage` — `Anchor.Domain.RuleCoverage` (DND-1290): which rules
   checked nothing in a run (below their `min_files` floor, or of a type no
   enabled check reads).

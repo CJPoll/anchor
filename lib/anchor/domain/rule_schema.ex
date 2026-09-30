@@ -19,10 +19,16 @@ defmodule Anchor.Domain.RuleSchema do
       (`Anchor.Domain.RuleMatching` reads only the first of `paths`, `pattern`,
       `uses_module`, so a second one was silently ignored);
     * `recursive` without `paths` (nothing reads it), or not a boolean;
+    * `match` on a `no_direct_dependency` rule with neither `forbidden_modules`
+      nor `forbidden_patterns` (DND-1267): `forbidden_functions` is matched in
+      every call shape whatever `match` says, so nothing reads it;
     * a `min_files` that is not a positive integer (a floor of 0 is no floor),
       or an `id` that is not a non-empty string;
     * a relation list of the wrong shape: not a list, or holding an entry that
       is not a non-blank string (`forbidden_modules: [""]`, a bare `-`);
+    * a `forbidden_functions` entry that does not name exactly one function
+      (`"MyApp.Repo"`, `"MyApp.Repo.*"`, `"MyApp.Repo.insert/x"`), per
+      `Anchor.Domain.FunctionRef`'s grammar (DND-1267);
     * a relation-bearing rule whose relation is missing or empty (see below);
     * a `module_pattern_restrictions` rule whose `allowed_functions` holds a
       match-all glob (only wildcards: `*`, `**`), which allows every function.
@@ -46,8 +52,9 @@ defmodule Anchor.Domain.RuleSchema do
   relation-bearing type lists its relation keys in `@relations_by_type`, and a
   rule of that type must carry **at least one of them as a non-empty list**:
 
-    * `no_direct_dependency`, `no_transitive_dependency`: `forbidden_modules`,
+    * `no_direct_dependency`: `forbidden_functions`, `forbidden_modules`,
       `forbidden_patterns`;
+    * `no_transitive_dependency`: `forbidden_modules`, `forbidden_patterns`;
     * `must_use_module`: `required_modules`.
 
   Every other type maps to `[]`, which says, explicitly, that the type has no
@@ -66,15 +73,15 @@ defmodule Anchor.Domain.RuleSchema do
 
   ## Extending it
 
-  **To add a key** (as later tickets do for `forbidden_functions` and
-  `allowed_callers`):
+  **To add a key** (as DND-1267 did for `forbidden_functions`, and a later
+  ticket does for `allowed_callers`):
 
     1. Add it to its rule type's list in `@keys_by_type` (or to `@common_keys`
        if every type reads it).
     2. If it is something the rule checks against, add it to that type's list
        in `@relations_by_type` too, with a description in
        `@relation_descriptions`. A rule then satisfies its relation with that
-       key alone: T3 (DND-1267) adds `forbidden_functions` to
+       key alone: T3 (DND-1267) added `forbidden_functions` to
        `no_direct_dependency` this way, and a rule carrying only
        `forbidden_functions` has a relation. If the key holds a list of
        strings, add it to `@string_list_keys`.
@@ -102,6 +109,7 @@ defmodule Anchor.Domain.RuleSchema do
   path selector" and stays valid beside a `pattern` or `uses_module`.
   """
 
+  alias Anchor.Domain.FunctionRef
   alias Anchor.Domain.GlobPattern
 
   @common_keys ~w(id min_files paths pattern recursive type uses_module)
@@ -116,7 +124,7 @@ defmodule Anchor.Domain.RuleSchema do
     must_use_module: ~w(required_modules),
     no_comparison_in_if: [],
     no_direct_dependency:
-      ~w(context_depth forbidden_modules forbidden_patterns match same_context),
+      ~w(context_depth forbidden_functions forbidden_modules forbidden_patterns match same_context),
     no_discarding_arrow_in_with: [],
     no_transitive_dependency: ~w(forbidden_modules forbidden_patterns),
     no_tuple_match_in_head: [],
@@ -134,7 +142,7 @@ defmodule Anchor.Domain.RuleSchema do
     module_pattern_restrictions: [],
     must_use_module: ~w(required_modules),
     no_comparison_in_if: [],
-    no_direct_dependency: ~w(forbidden_modules forbidden_patterns),
+    no_direct_dependency: ~w(forbidden_functions forbidden_modules forbidden_patterns),
     no_discarding_arrow_in_with: [],
     no_transitive_dependency: ~w(forbidden_modules forbidden_patterns),
     no_tuple_match_in_head: [],
@@ -143,13 +151,15 @@ defmodule Anchor.Domain.RuleSchema do
   }
 
   @relation_descriptions %{
+    "forbidden_functions" => ~s(a list of "Module.function" or "Module.function/arity"),
     "forbidden_modules" => "a list of module names",
     "forbidden_patterns" => "a list of module-name globs",
     "required_modules" => "a list of module names"
   }
 
   # Keys whose value is a list of strings, each of which must be non-blank.
-  @string_list_keys ~w(allowed_functions forbidden_modules forbidden_patterns required_modules)
+  @string_list_keys ~w(allowed_functions forbidden_functions forbidden_modules forbidden_patterns
+                       required_modules)
 
   @selector_keys ~w(paths pattern uses_module)
 
@@ -218,10 +228,30 @@ defmodule Anchor.Domain.RuleSchema do
          :ok <- validate_floor(rule),
          :ok <- validate_id(rule),
          :ok <- validate_string_lists(rule),
-         :ok <- require_relation(rule, type) do
+         :ok <- validate_function_refs(rule),
+         :ok <- require_relation(rule, type),
+         :ok <- refuse_unread_match(rule) do
       refuse_allow_all(rule)
     end
   end
+
+  # DND-1267: `match` chooses which module-level dependency set
+  # `forbidden_modules` and `forbidden_patterns` are checked against. A
+  # `forbidden_functions` token is matched against every call shape whatever
+  # `match` says, so on a rule with neither module-level key nothing reads it,
+  # and it would read as if it narrowed the rule.
+  defp refuse_unread_match(%{"match" => _match} = rule) do
+    if Enum.all?(~w(forbidden_modules forbidden_patterns), &(rule[&1] in [nil, []])) do
+      {:error,
+       "`match` applies only to `forbidden_modules` and `forbidden_patterns`, and the rule " <>
+         "has neither, so nothing reads it (`forbidden_functions` matches every call shape " <>
+         "whatever `match` says); remove `match`"}
+    else
+      :ok
+    end
+  end
+
+  defp refuse_unread_match(_rule), do: :ok
 
   defp validate_keys(rule, type) do
     known = known_keys(type)
@@ -360,6 +390,23 @@ defmodule Anchor.Domain.RuleSchema do
   end
 
   defp non_blank_string?(value), do: is_binary(value) and String.trim(value) != ""
+
+  # DND-1267: every `forbidden_functions` entry must name exactly one function.
+  # A token that names none would match nothing, so the rule would check less
+  # than it says. Runs after `validate_string_lists/1`, so each entry is a
+  # non-blank string here.
+  defp validate_function_refs(rule) do
+    rule
+    |> Map.get("forbidden_functions", [])
+    |> Enum.find_value(:ok, &function_ref_error/1)
+  end
+
+  defp function_ref_error(token) do
+    case FunctionRef.parse(token) do
+      {:ok, _ref} -> nil
+      {:error, reason} -> {:error, "`forbidden_functions` entry #{reason}"}
+    end
+  end
 
   defp require_relation(rule, type) do
     case relation_keys(type) do

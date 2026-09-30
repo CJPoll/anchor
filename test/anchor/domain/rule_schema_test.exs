@@ -17,6 +17,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
   @valid_values %{
     "allowed_functions" => ["new"],
     "context_depth" => 3,
+    "forbidden_functions" => ["MyApp.Repo.insert/2"],
     "forbidden_modules" => ["MyApp.Repo"],
     "forbidden_patterns" => ["*.Adapters.*"],
     "id" => "r1",
@@ -72,7 +73,8 @@ defmodule Anchor.Domain.RuleSchemaTest do
                Config.parse_rule(rule(:no_direct_dependency, %{"forbiden_patterns" => ["*.X.*"]}))
 
       assert reason =~
-               "known keys for no_direct_dependency: context_depth, forbidden_modules, " <>
+               "known keys for no_direct_dependency: context_depth, forbidden_functions, " <>
+                 "forbidden_modules, " <>
                  "forbidden_patterns, id, match, min_files, paths, pattern, recursive, " <>
                  "same_context, type, uses_module"
     end

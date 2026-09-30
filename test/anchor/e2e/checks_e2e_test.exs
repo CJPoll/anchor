@@ -38,6 +38,51 @@ defmodule Anchor.E2E.ChecksE2ETest do
   alias Anchor.Check.MustUseModule
   alias Anchor.Check.NoDependency
 
+  # DND-1267: a function-level rule, from YAML to Credo issue, with no mocks.
+  describe "forbidden_functions through the real pipeline" do
+    @functions_yaml """
+    rules:
+      - type: no_direct_dependency
+        paths:
+          - "lib/**/*.ex"
+        recursive: true
+        forbidden_functions:
+          - "Athena.Slack.user_info"
+          - "Athena.Slack.rule_post/2"
+    """
+
+    test "flags aliased, imported, delegated and captured calls; not other functions" do
+      source = """
+      defmodule MyApp.Priorities.Thing do
+        alias Athena.Slack
+        import Athena.Slack, only: [rule_post: 2]
+
+        defdelegate lookup(id), to: Athena.Slack, as: :user_info
+
+        def a(id), do: Slack.user_info(id)
+        def b(x), do: x |> rule_post(:c)
+        def c, do: &Slack.rule_post/2
+        def d(id), do: Slack.workspace_url(id)
+        def e(x), do: Slack.rule_post(x)
+      end
+      """
+
+      issues =
+        with_anchor_config(@functions_yaml, fn ->
+          [to_source_file(source, "lib/priorities/thing.ex")]
+          |> run_check(NoDependency)
+        end)
+
+      # One issue per function reached, at its first line (as a module-level
+      # rule reports each module once). The per-shape table is
+      # Anchor.Domain.Checks.NoDependencyForbiddenFunctionsTest.
+      assert issues |> Enum.map(&{&1.line_no, &1.trigger}) |> Enum.sort() == [
+               {5, "Athena.Slack.user_info/1"},
+               {8, "Athena.Slack.rule_post/2"}
+             ]
+    end
+  end
+
   describe "NoDependency through the real pipeline" do
     @yaml """
     rules:
