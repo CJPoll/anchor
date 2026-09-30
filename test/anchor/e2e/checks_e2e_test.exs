@@ -84,6 +84,7 @@ defmodule Anchor.E2E.ChecksE2ETest do
   end
 
   # DND-1269: G1 of the DND-1263 design, from YAML to Credo issue, with no mocks.
+  # Sabotage record: ../../sabotage_records/lint-20260929-dnd_1269_allowed_callers.md
   describe "allowed_callers through the real pipeline" do
     @allowed_yaml """
     rules:

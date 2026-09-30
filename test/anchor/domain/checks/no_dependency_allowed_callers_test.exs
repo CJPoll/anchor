@@ -239,6 +239,21 @@ defmodule Anchor.Domain.Checks.NoDependencyAllowedCallersTest do
        end
      end
      """, @allowed, [5]},
+    {"a top-level alias cannot dress another module in the allowed name",
+     """
+     alias Evil.Ns, as: App
+     defmodule App.Allowed do
+       def a, do: Bad.Web.f(1)
+     end
+     """, @allowed, [3]},
+    {"the allowed caller spelled through __MODULE__ in its parent",
+     """
+     defmodule App do
+       defmodule __MODULE__.Allowed do
+         def a, do: Bad.Web.f(1)
+       end
+     end
+     """, @allowed, []},
     {"no allowed callers: every caller is reported",
      """
      defmodule App.Allowed do

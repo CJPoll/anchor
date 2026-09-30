@@ -122,6 +122,11 @@ defmodule Anchor.Domain.DependencyAnalyzer do
   its **owner**, so a rule can exempt one module (`allowed_callers`) without
   exempting the file around it:
 
+    * a module is named as Elixir names it (`Kernel.defmodule/2`): at the top
+      level, or with an `Elixir.` head, through the aliases in scope (`alias
+      Evil.Ns, as: App` then `defmodule App.Allowed` is `Evil.Ns.Allowed`);
+      nested with a plain head, as the parent's child whatever is aliased; a
+      `__MODULE__` head is the parent;
     * a `defmodule` nested in another is its own module, in both directions: a
       call in the child is the child's, and a call in the parent after the
       child is the parent's;
@@ -546,7 +551,7 @@ defmodule Anchor.Domain.DependencyAnalyzer do
   end
 
   defp step({:defmodule, _meta, [name_ast, body_kw]}, env, acc) do
-    step_defmodule(literal_alias_parts(name_ast), body_kw, env, acc)
+    step_defmodule(literal_alias_parts(name_ast), module_scope(name_ast, env), body_kw, env, acc)
   end
 
   # `quote` with arguments. A variable named `quote` is `{:quote, meta, context}`
@@ -564,7 +569,7 @@ defmodule Anchor.Domain.DependencyAnalyzer do
   end
 
   defp step({:defprotocol, _meta, [name_ast | _rest]} = node, env, acc) do
-    step_owned(node, nested_scope(env.owner_scope, literal_alias_parts(name_ast)), env, acc)
+    step_owned(node, module_scope(name_ast, env), env, acc)
   end
 
   defp step({directive, meta, [target | opts]}, env, acc)
@@ -599,7 +604,7 @@ defmodule Anchor.Domain.DependencyAnalyzer do
   # imports in scope. When nested, it also aliases its first name segment
   # (`defmodule Child` inside `Parent` makes `Child` mean `Parent.Child`), in its
   # own body and in the rest of the enclosing block.
-  defp step_defmodule({:ok, [head | _rest] = parts}, body_kw, env, acc) do
+  defp step_defmodule({:ok, [head | _rest] = parts}, scope, body_kw, env, acc) do
     full = (env.enclosing || []) ++ parts
     body = do_block(body_kw)
     outer_env = nested_module_alias(env, head)
@@ -610,14 +615,16 @@ defmodule Anchor.Domain.DependencyAnalyzer do
         current: Module.concat(full),
         locals: local_definitions(body),
         attributes: %{},
-        owner_scope: nested_scope(env.owner_scope, {:ok, parts})
+        owner_scope: scope
     }
 
     {outer_env, walk(body, inner_env, record_defined(acc, inner_env))}
   end
 
-  defp step_defmodule(:error, body_kw, env, acc),
-    do: {env, walk(do_block(body_kw), %{env | owner_scope: :unknown}, acc)}
+  defp step_defmodule(:error, scope, body_kw, env, acc) do
+    inner_env = %{env | owner_scope: scope}
+    {env, walk(do_block(body_kw), inner_env, record_defined(acc, inner_env))}
+  end
 
   # ---- attribution (DND-1269) ----
   #
@@ -631,9 +638,45 @@ defmodule Anchor.Domain.DependencyAnalyzer do
     {env, visit(node, inner_env, record_defined(acc, inner_env))}
   end
 
+  # The module a `defmodule` or `defprotocol` named `name_ast` defines, named
+  # the way Elixir names it (`Kernel.defmodule/2`), so an alias cannot dress one
+  # module in another's name:
+  #
+  #   * nested, a name with a plain head is the parent's child, whatever is
+  #     aliased (`alias X.Foo` then `defmodule Foo.Bar` in `O` is `O.Foo.Bar`),
+  #     and a `__MODULE__` head is the parent;
+  #   * otherwise (at the top level, or an `Elixir.` head) the name is expanded
+  #     through the aliases in scope: `alias Evil.Ns, as: App` then
+  #     `defmodule App.Allowed` defines `Evil.Ns.Allowed`.
+  #
+  # Anything else, and anything nested where the module is unknown, is unknown.
+  defp module_scope(_name_ast, %{owner_scope: :unknown}), do: :unknown
+
+  defp module_scope(
+         {:__aliases__, _meta, [head | _rest]} = name_ast,
+         %{owner_scope: {:module, _}} = env
+       )
+       when is_atom(head) and head != :"Elixir",
+       do: nested_scope(env.owner_scope, literal_alias_parts(name_ast))
+
+  defp module_scope(
+         {:__aliases__, _meta, [{:__MODULE__, _m, ctx} | tail]},
+         %{owner_scope: {:module, _}} = env
+       )
+       when is_atom(ctx),
+       do: nested_scope(env.owner_scope, literal_alias_parts({:__aliases__, [], tail}))
+
+  defp module_scope(name_ast, env) do
+    with {:ok, module} <- resolve_module(name_ast, env),
+         true <- elixir_module?(module) do
+      {:module, Module.split(module)}
+    else
+      _unknown -> :unknown
+    end
+  end
+
   # A module nested in another is qualified by it; one nested where the module
   # is unknown is unknown too. A non-literal name is unknown.
-  defp nested_scope(:top, {:ok, parts}), do: {:module, parts}
   defp nested_scope({:module, outer}, {:ok, parts}), do: {:module, outer ++ parts}
   defp nested_scope(_scope, _parts), do: :unknown
 

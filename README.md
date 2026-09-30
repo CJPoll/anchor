@@ -615,7 +615,10 @@ that may read Slack user names:
 ```
 
 - **Exact names only.** Each entry is one Elixir module, spelled as its
-  `defmodule` spells it in full. It is not resolved through aliases. A glob
+  `defmodule` spells it in full. The entry is not resolved through aliases,
+  but the source is: Anchor names each module the way Elixir does, so after a
+  top-level `alias Evil.Ns, as: MyApp`, `defmodule MyApp.Adapter` defines
+  `Evil.Ns.Adapter`, which is not exempt. A glob
   fails the load: it would widen the rule every time a later change adds a
   module with a matching name, with no config change to review.
 - **Per defining module, not per file.** Each call and reference belongs to

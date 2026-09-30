@@ -40,6 +40,23 @@ defmodule Anchor.Domain.DependencyAnalyzerOwnersTest do
        "    end\n  end\nend\n", [A]},
     {"a variable named defmodule is not a module (DND-1310)",
      "defmodule A do\n  def f(defimpl), do: defimpl\nend\n", [A]},
+    # Elixir expands a top-level `defmodule` name through the aliases in scope,
+    # and an `Elixir.`- or `__MODULE__`-headed name wherever it is. A nested
+    # name with a plain head is the parent's child, whatever is aliased.
+    # Each expected value below is what `elixir` itself defines.
+    {"a top-level alias as: renames the module a defmodule defines",
+     "alias Evil.Ns, as: Athena\ndefmodule Athena.Allowed do\nend\n", [Evil.Ns.Allowed]},
+    {"a top-level alias renames the module a defmodule defines",
+     "alias Evil.Athena\ndefmodule Athena.Allowed do\nend\n", [Evil.Athena.Allowed]},
+    {"a top-level alias renames the module a defprotocol defines",
+     "alias Evil.Ns, as: P9\ndefprotocol P9.Proto do\n  def m(t)\nend\n", [Evil.Ns.Proto]},
+    {"a top-level Elixir. prefix", "defmodule Elixir.T.Allowed do\nend\n", [T.Allowed]},
+    {"a nested name ignores the aliases in scope",
+     "defmodule O do\n  alias X.Foo\n  defmodule Foo.Bar do\n  end\nend\n", [O, O.Foo.Bar]},
+    {"a nested Elixir. prefix is absolute",
+     "defmodule O do\n  defmodule Elixir.T.Mod do\n  end\nend\n", [O, T.Mod]},
+    {"a nested __MODULE__ prefix is the parent",
+     "defmodule O do\n  defmodule __MODULE__.Inner do\n  end\nend\n", [O, O.Inner]},
     {"no module", "x = 1\n", []}
   ]
 
