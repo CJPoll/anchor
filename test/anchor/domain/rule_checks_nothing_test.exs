@@ -18,6 +18,8 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
   # `Anchor.Managers.LintTest` and the e2e suite.
   #
   # Sabotage record: ../../sabotage_records/rule_schema-20260929-dnd_1290_empty_relation_list.md
+  # The DND-1292 rows (glob metacharacters, the `***` match-all, `*?`):
+  #   ../../sabotage_records/rule_schema-20260929-dnd_1292_glob_escape.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config
@@ -122,6 +124,11 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
        Map.merge(no_selector, %{"paths" => [], "pattern" => "*.Domain.*"}), :accepted},
       {"positive: min_files and id", Map.merge(base, %{"min_files" => 2, "id" => "r"}),
        :accepted},
+      # DND-1292: a regex metacharacter in a selector glob is a literal.
+      {"positive: a paths glob with regex metacharacters (literal)",
+       Map.put(base, "paths", ["lib/c++/(old)/**/*.ex"]), :accepted},
+      {"positive: a pattern glob with regex metacharacters (literal)",
+       Map.put(no_selector, "pattern", "*.Webs?.*"), :accepted},
       {"no selector", no_selector, {:refused, "the rule has no selector"}},
       {"paths: [] alone", Map.put(no_selector, "paths", []), {:refused, "no selector"}},
       {"paths and pattern (only paths was read)", Map.put(base, "pattern", "*.Domain.*"),
@@ -152,6 +159,9 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
       [
         {"positive: forbidden_patterns alone",
          Map.put(no_relation, "forbidden_patterns", ["*.Web.*"]), :accepted},
+        # DND-1292: a regex metacharacter in a module glob is a literal.
+        {"positive: forbidden_patterns with regex metacharacters (literal)",
+         Map.put(no_relation, "forbidden_patterns", ["*.Webs?.*", "*.C++.*"]), :accepted},
         {"positive: an empty forbidden_modules beside forbidden_patterns",
          Map.merge(no_relation, %{"forbidden_modules" => [], "forbidden_patterns" => ["*.W.*"]}),
          :accepted},
@@ -209,6 +219,15 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
         {"allowed_functions: [\"**\"] allows every function",
          Map.put(base, "allowed_functions", ["**"]),
          {:refused, "allows every function, so the rule checks nothing"}},
+        # DND-1292: after escaping, a glob of only wildcards is the one match-all.
+        {"allowed_functions: [\"***\"] allows every function",
+         Map.put(base, "allowed_functions", ["***"]),
+         {:refused, "allows every function, so the rule checks nothing"}},
+        # DND-1292: `*?` was a lazy regex match-all that loaded and checked
+        # nothing. `?` is now a literal, so it allows the predicates only (the
+        # matcher side is tested in the check's and GlobPattern's suites).
+        {"positive: `*?` allows the predicates (a literal `?`)",
+         Map.put(base, "allowed_functions", ["*?", "*!"]), :accepted},
         {"allowed_functions that is a string", Map.put(base, "allowed_functions", "new"),
          {:refused, "`allowed_functions` must be a list of non-empty strings"}},
         {"allowed_functions of empty strings", Map.put(base, "allowed_functions", [""]),

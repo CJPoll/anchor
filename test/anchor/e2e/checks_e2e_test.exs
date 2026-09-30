@@ -34,6 +34,7 @@ defmodule Anchor.E2E.ChecksE2ETest do
   # ExUnit runs sync modules in isolation, so the cwd change is safe.
   use Credo.Test.Case, async: false
 
+  alias Anchor.Check.ModulePatternRestrictions
   alias Anchor.Check.MustUseModule
   alias Anchor.Check.NoDependency
 
@@ -543,6 +544,54 @@ defmodule Anchor.E2E.ChecksE2ETest do
       issues =
         with_anchor_config(yaml, fn ->
           all_issues([to_source_file(@thing, "lib/domain/thing.ex")], NoDependency)
+        end)
+
+      assert [issue] = issues
+      assert issue.trigger == "MyApp.Repo"
+    end
+  end
+
+  # DND-1292: every glob character but `*`/`**` is a literal. `*?` used to be a
+  # lazy regex match-all that allowed every function, and a `+` in a path glob
+  # selected the wrong directory and not its own.
+  # Sabotage record: ../../sabotage_records/glob_pattern-20260929-dnd_1292_glob_escape.md
+  describe "regex metacharacters in globs are literal (DND-1292)" do
+    test "allowed_functions `*?` allows the predicates and flags the rest" do
+      yaml = """
+      rules:
+        - type: module_pattern_restrictions
+          pattern: "MyApp.Domain.*"
+          allowed_functions: ["*?"]
+      """
+
+      source = """
+      defmodule MyApp.Domain.Thing do
+        def valid?(x), do: x
+        def run(x), do: x
+      end
+      """
+
+      issues =
+        with_anchor_config(yaml, fn ->
+          all_issues([to_source_file(source, "lib/domain/thing.ex")], ModulePatternRestrictions)
+        end)
+
+      assert [issue] = issues
+      assert issue.trigger == "run"
+    end
+
+    test "a `paths` glob with `+` selects its own directory" do
+      yaml = """
+      rules:
+        - type: no_direct_dependency
+          paths: ["lib/c++/**/*.ex"]
+          recursive: true
+          forbidden_modules: [MyApp.Repo]
+      """
+
+      issues =
+        with_anchor_config(yaml, fn ->
+          all_issues([to_source_file(@thing, "lib/c++/domain/thing.ex")], NoDependency)
         end)
 
       assert [issue] = issues

@@ -172,7 +172,10 @@ rule's position (and its `id`, when it has one) and ending with `Fix:`:
   with no `required_modules`. The table below lists each type's relation;
 - a relation list that is not a list of non-blank strings
   (`forbidden_modules: [""]`, or a bare `-` in YAML);
-- an `allowed_functions` entry of only `*`, which allows every function;
+- an `allowed_functions` entry of only wildcards (`*`, `**`), which allows
+  every function. Every other glob character is a literal (see
+  [Glob syntax](#glob-syntax)), so `*?` allows the functions ending in `?`, not
+  every function;
 - a `min_files` that is not a positive integer, an `id` that is not a
   non-empty string, and two rules sharing one `id`.
 
@@ -249,6 +252,24 @@ treated as "no path selector": valid beside a `pattern` or `uses_module`, and a
 load error on its own. In other words, a `pattern`- or
 `uses_module`-only rule does **not** need an empty or placeholder `paths` entry
 — leave `paths` off entirely and the module selector is honored.
+
+### Glob syntax
+
+`paths`, `pattern`, `forbidden_patterns` and `allowed_functions` take globs. A
+glob matches the **whole** string, and has exactly these wildcards:
+
+| Wildcard | In `paths` | In `paths` with `recursive: true` | In `pattern`, `forbidden_patterns` | In `allowed_functions` |
+|---|---|---|---|---|
+| `*` | any run of characters within one path segment (not `/`) | same | any run of characters, dots included | any run of characters |
+| `**` | same as `*` | any number of segments: `lib/**/*.ex` matches `lib/a.ex` and `lib/a/b/c.ex`; `lib/**` matches `lib` and everything under it | same as `*` | same as `*` |
+
+**Every other character is a literal**, including `.`, `?`, `+`, `(`, `)`,
+`[`, `]`, `{`, `}`, `|`, `^`, `$` and `\`. There is no `?` single-character
+wildcard and no `[abc]` or `{a,b}` alternation. So `lib/c++/*.ex` selects the
+`c++` directory, `*.Webs?` matches a module named `Webs?`, and
+`allowed_functions: ["*?"]` allows exactly the functions whose names end in `?`.
+(Before DND-1292 only `.` was literal, and the rest were live regex: `*?` was a
+match-all, and `lib/(old/*.ex` crashed the check.)
 
 ### Config schema: rule keys at a glance
 
@@ -455,13 +476,13 @@ does **not** match `Foo.AdaptersHelper` (there is no dot after `Adapters`).
 `forbidden_modules` and `forbidden_patterns` may be combined on one rule; a
 module matched by both is reported once.
 
-A pattern is matched against the module's **fully-qualified** name, which
-includes the `Elixir.` prefix for Elixir modules (e.g.
-`Elixir.MyApp.Contacts.Adapters.Repository`). Because `*` crosses dots, lead a
-pattern with `*` (as every example here does) to match from the front — a
-start-anchored pattern such as `MyApp.Adapters.*` would never match, since the
-name begins with `Elixir.`. Write `*.Adapters.*` (or `*MyApp.Adapters.*`)
-instead.
+A pattern is matched against the module's fully-qualified name
+(`Elixir.MyApp.Contacts.Adapters.Repository`) **and** its alias form
+(`MyApp.Contacts.Adapters.Repository`), so a start-anchored pattern such as
+`MyApp.Adapters.*` matches, as do `Elixir.MyApp.Adapters.*` and `*.Adapters.*`.
+(Before DND-1290 only the fully-qualified name was tried, and a pattern had to
+lead with `*`.) Every character other than `*` is a literal; see
+[Glob syntax](#glob-syntax).
 
 ```yaml
 # Forbid any adapter module, named or not, plus one exact module.

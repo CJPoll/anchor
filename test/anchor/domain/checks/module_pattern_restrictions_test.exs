@@ -187,4 +187,50 @@ defmodule Anchor.Domain.Checks.ModulePatternRestrictionsTest do
       assert ModulePatternRestrictions.detect_violations(ast, []) == []
     end
   end
+
+  # DND-1292: `allowed_functions: ["*?"]` was a lazy regex match-all, so the
+  # rule allowed every function and checked nothing. It now allows exactly the
+  # functions whose names end in `?`.
+  # Sabotage record: ../../../sabotage_records/module_pattern_restrictions-20260929-dnd_1292_glob_escape.md
+  describe "detect_violations/2 — allowed_functions metacharacters (DND-1292)" do
+    test "`*?` allows predicates and flags everything else" do
+      ast =
+        ast("""
+        defmodule S do
+          use Ecto.Schema
+          def valid?(x), do: x
+          def run(x), do: x
+        end
+        """)
+
+      assert [%Violation{trigger: "run"}] =
+               ModulePatternRestrictions.detect_violations(ast, [uses_rule(["*?"])])
+    end
+
+    test "a `*` entry matches a user-defined `/` operator too (a name, not a path)" do
+      ast =
+        ast("""
+        defmodule S do
+          use Ecto.Schema
+          def left / right, do: {left, right}
+        end
+        """)
+
+      assert ModulePatternRestrictions.detect_violations(ast, [uses_rule(["*"])]) == []
+    end
+
+    test "`*!` allows bang functions only" do
+      ast =
+        ast("""
+        defmodule S do
+          use Ecto.Schema
+          def fetch!(x), do: x
+          def fetch(x), do: x
+        end
+        """)
+
+      assert [%Violation{trigger: "fetch"}] =
+               ModulePatternRestrictions.detect_violations(ast, [uses_rule(["*!"])])
+    end
+  end
 end

@@ -25,7 +25,9 @@ defmodule Anchor.Domain.RuleSchema do
       is not a non-blank string (`forbidden_modules: [""]`, a bare `-`);
     * a relation-bearing rule whose relation is missing or empty (see below);
     * a `module_pattern_restrictions` rule whose `allowed_functions` holds a
-      match-all glob (`*`), which allows every function.
+      match-all glob (only wildcards: `*`, `**`), which allows every function.
+      Since DND-1292 every other glob character is a literal, so no other entry
+      matches everything (`Anchor.Domain.GlobPattern.wildcard_only?/1`).
 
   What load time cannot decide is decided at run time: a rule that selects
   fewer files than its floor (`min_files`, default 1), and a rule whose type no
@@ -99,6 +101,8 @@ defmodule Anchor.Domain.RuleSchema do
   reads, in that order, stopping at the first. An explicit `paths: []` is "no
   path selector" and stays valid beside a `pattern` or `uses_module`.
   """
+
+  alias Anchor.Domain.GlobPattern
 
   @common_keys ~w(id min_files paths pattern recursive type uses_module)
 
@@ -386,10 +390,12 @@ defmodule Anchor.Domain.RuleSchema do
 
   defp relation_description(key), do: Map.fetch!(@relation_descriptions, key)
 
-  # An allow-list entry of only `*` matches every function name, so the rule
-  # allows everything and checks nothing.
+  # An allow-list entry of only wildcards (`*`, `**`, …) matches every function
+  # name, so the rule allows everything and checks nothing. Since DND-1292 every
+  # other glob character is a literal, so this is the only match-all entry
+  # (`*?` allows the predicates, not everything); `GlobPattern` decides it.
   defp refuse_allow_all(rule) do
-    case Enum.find(rule["allowed_functions"] || [], &match_all?/1) do
+    case Enum.find(rule["allowed_functions"] || [], &GlobPattern.wildcard_only?/1) do
       nil ->
         :ok
 
@@ -399,6 +405,4 @@ defmodule Anchor.Domain.RuleSchema do
            "checks nothing; list the functions the module may define, or remove the rule"}
     end
   end
-
-  defp match_all?(entry), do: String.trim(entry, "*") == ""
 end
