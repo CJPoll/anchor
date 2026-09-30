@@ -125,6 +125,14 @@ defmodule Anchor.Domain.DependencyAnalyzer do
   code and is skipped rather than reported. Every such construct degrades
   gracefully — it is skipped, never crashes, and no claim is emitted about code
   the pass cannot see.
+
+  ## Variables named like special forms (DND-1310)
+
+  A variable is `{name, meta, context_atom}`; a call is `{name, meta, [args]}`.
+  A clause that matches a special form or a directive by name (`quote`,
+  `alias`, `import`, `defmodule`, ...) matches the call only (`args` a list),
+  so a variable with that name (`<<?\\\\, quote, t::binary>>` in Elixir's own
+  `OptionParser.split/1`) is an ordinary variable.
   """
 
   @def_kinds [:def, :defp, :defmacro, :defmacrop, :defguard, :defguardp, :defdelegate]
@@ -378,7 +386,7 @@ defmodule Anchor.Domain.DependencyAnalyzer do
     [{name_ast, do_block(body_kw)}]
   end
 
-  defp top_defmodules({:quote, _meta, _args}), do: []
+  defp top_defmodules({:quote, _meta, args}) when is_list(args), do: []
 
   defp top_defmodules({_form, _meta, args}) when is_list(args),
     do: Enum.flat_map(args, &top_defmodules/1)
@@ -430,7 +438,10 @@ defmodule Anchor.Domain.DependencyAnalyzer do
     step_defmodule(literal_alias_parts(name_ast), body_kw, env, acc)
   end
 
-  defp step({:quote, _meta, args}, env, acc) do
+  # `quote` with arguments. A variable named `quote` is `{:quote, meta, context}`
+  # (DND-1310: Elixir's own OptionParser.split/1 has one); it is a plain variable
+  # and falls through to `visit/3`.
+  defp step({:quote, _meta, args}, env, acc) when is_list(args) do
     {env, walk_children(args, %{env | in_quote: true}, acc)}
   end
 
@@ -1033,10 +1044,10 @@ defmodule Anchor.Domain.DependencyAnalyzer do
   defp local_definitions(body) do
     {_ast, locals} =
       Macro.prewalk(body, MapSet.new(), fn
-        {:defmodule, _meta, _args}, locals ->
+        {:defmodule, _meta, args}, locals when is_list(args) ->
           {nil, locals}
 
-        {:quote, _meta, _args}, locals ->
+        {:quote, _meta, args}, locals when is_list(args) ->
           {nil, locals}
 
         {kind, _meta, [head | _rest]} = node, locals when kind in @def_kinds ->

@@ -25,10 +25,13 @@ defmodule Anchor.Domain.Checks.SingleControlFlow do
   single pipe chain (however many `|>` stages) counts as **one** structure,
   not one per stage — only the outermost `|>` of a chain increments the
   count; a nested/chained `|>` (its left operand is itself a `|>`) is
-  skipped so it isn't double-counted.
+  skipped so it isn't double-counted. A variable that shares a structure's
+  name (`case = ...`) is not a structure (DND-1310).
   """
 
   alias Anchor.Domain.Violation
+
+  @control_flow_structures [:cond, :with, :case, :if, :unless, :for, :receive]
 
   @doc """
   Returns the `%Violation{}` list for `ast` against the already-selected
@@ -95,25 +98,10 @@ defmodule Anchor.Domain.Checks.SingleControlFlow do
             {node, acc + 1}
           end
 
-        {:cond, _, _} = node, acc ->
-          {node, acc + 1}
-
-        {:with, _, _} = node, acc ->
-          {node, acc + 1}
-
-        {:case, _, _} = node, acc ->
-          {node, acc + 1}
-
-        {:if, _, _} = node, acc ->
-          {node, acc + 1}
-
-        {:unless, _, _} = node, acc ->
-          {node, acc + 1}
-
-        {:for, _, _} = node, acc ->
-          {node, acc + 1}
-
-        {:receive, _, _} = node, acc ->
+        # A call only: a variable named `case` (`{:case, meta, context}`) is not
+        # a control-flow structure (DND-1310).
+        {structure, _, args} = node, acc
+        when structure in @control_flow_structures and is_list(args) ->
           {node, acc + 1}
 
         node, acc ->

@@ -91,10 +91,13 @@ defmodule Anchor.Managers.Lint do
 
     case config_loader.load() do
       {:ok, %Config{rules: rules} = config} ->
+        {modules_map, graph_crashes} = build_modules_map(check_module, source_files)
+
         run_context = %{
           check: check_module,
           rules: rules,
-          modules_map: build_modules_map(check_module, source_files),
+          modules_map: modules_map,
+          graph_crashes: graph_crashes,
           params: params,
           report_shared_failures?: report_shared_failures?
         }
@@ -175,17 +178,28 @@ defmodule Anchor.Managers.Lint do
     {source_file, [], path_facts(source_file)}
   end
 
+  # DND-1310: a crash deriving the file's facts is reported on the file, and the
+  # file counts toward a floor as an unparsed one does. So is a crash building
+  # this file's part of the module graph.
   defp result_for_parse({:ok, ast}, source_file, run_context) do
-    %{check: check_module, rules: rules, modules_map: modules_map, params: params} = run_context
-    detect_for_file(check_module, source_file, ast, rules, modules_map, params)
+    graph_violations = Map.get(run_context.graph_crashes, source_file.filename, [])
+
+    case guarded(run_context.check, fn -> file_facts(source_file, ast) end) do
+      {:ok, facts} ->
+        {source_file, violations, facts} = detect_for_file(source_file, ast, facts, run_context)
+        {source_file, graph_violations ++ violations, facts}
+
+      {:crashed, violation} ->
+        {source_file, graph_violations ++ [violation], path_facts(source_file)}
+    end
   end
 
-  defp detect_for_file(check_module, source_file, ast, rules, modules_map, params) do
+  defp detect_for_file(source_file, ast, facts, run_context) do
+    %{check: check_module, rules: rules, modules_map: modules_map, params: params} = run_context
     # Gap F (DND-150): the file's facts (its own module names among them) are
     # computed ONCE here and reused for BOTH rule selection and the check
     # context — no second AST walk. The file's `module_names` are threaded into
     # the check context so `same_context` detection can derive the file's context.
-    facts = file_facts(source_file, ast)
     matching_rules = matching_rules(check_module, facts, rules)
 
     violations =
@@ -198,7 +212,36 @@ defmodule Anchor.Managers.Lint do
 
   defp detect(check_module, source_file, ast, matching_rules, modules_map, facts, params) do
     context = %{modules_map: modules_map, params: params, module_names: facts.module_names}
-    check_module.detect_violations(source_file, ast, matching_rules, context)
+    detect_file(check_module, source_file, ast, matching_rules, context)
+  end
+
+  @doc """
+  Runs `check_module`'s detection on one parsed file with the rules already
+  selected for it, and returns the violations.
+
+  An exception in the detection becomes one `:fail_closed` violation on that
+  file, naming the check and the exception (DND-1310,
+  `Anchor.Domain.Failures.analysis_crash_violation/3`). It never escapes: Credo's
+  runner would either abort the whole run on it or, with `crash_on_error:
+  false`, drop every issue the check found, which reads as a pass.
+  """
+  @spec detect_file(module(), Credo.SourceFile.t(), Macro.t(), [map()], map()) ::
+          [Anchor.Domain.Violation.t()]
+  def detect_file(check_module, source_file, ast, rules, context) do
+    case guarded(check_module, fn ->
+           check_module.detect_violations(source_file, ast, rules, context)
+         end) do
+      {:ok, violations} -> violations
+      {:crashed, violation} -> [violation]
+    end
+  end
+
+  # `{:ok, result}`, or `{:crashed, violation}` when `fun` raised.
+  defp guarded(check_module, fun) do
+    {:ok, fun.()}
+  rescue
+    exception ->
+      {:crashed, Failures.analysis_crash_violation(check_module, exception, __STACKTRACE__)}
   end
 
   defp matching_rules(check_module, facts, rules) do
@@ -223,21 +266,27 @@ defmodule Anchor.Managers.Lint do
     }
   end
 
+  # `{modules_map, crashes}`: the graph, and, by filename, the violation for a
+  # file whose analysis crashed (DND-1310), reported on that file.
   defp build_modules_map(check_module, source_files) do
     if check_module.needs_module_graph?() do
-      Enum.reduce(source_files, %{}, &put_module_analyses(Source.ast(&1), &2))
+      Enum.reduce(source_files, {%{}, %{}}, &put_module_analyses(check_module, &1, &2))
     else
-      %{}
+      {%{}, %{}}
     end
   end
 
   # An unparseable file contributes no modules to the graph; it is reported on
-  # its own (see `result_for_parse/3`).
-  defp put_module_analyses({:error, _parse_error}, acc), do: acc
-
-  defp put_module_analyses({:ok, ast}, acc) do
-    ast
-    |> DependencyAnalyzer.module_dependencies()
-    |> Enum.reduce(acc, fn {module, analysis}, acc -> Map.put(acc, module, analysis) end)
+  # its own (see `result_for_parse/3`). Neither does a file whose analysis
+  # crashed; its crash is reported on it.
+  defp put_module_analyses(check_module, source_file, {graph, crashes}) do
+    with {:ok, ast} <- Source.ast(source_file),
+         {:ok, nodes} <-
+           guarded(check_module, fn -> DependencyAnalyzer.module_dependencies(ast) end) do
+      {Enum.into(nodes, graph), crashes}
+    else
+      {:error, _parse_error} -> {graph, crashes}
+      {:crashed, violation} -> {graph, Map.put(crashes, source_file.filename, [violation])}
+    end
   end
 end

@@ -15,6 +15,9 @@ defmodule Anchor.Domain.Failures do
       on `path` and says what failed.
     * **A source file Anchor could not parse** — `unparseable_violation/2`,
       on that file at the parser's line.
+    * **A check that crashed on a source file** (DND-1310) —
+      `analysis_crash_violation/3`, on that file, naming the check and the
+      exception.
     * **A rule that selected fewer files than its floor** (DND-1290) —
       `selection_floor_violation/4`, on the config the rule came from.
     * **A rule no enabled check reads** (DND-1290) —
@@ -85,6 +88,28 @@ defmodule Anchor.Domain.Failures do
   end
 
   @doc """
+  Builds the violation for `check` raising `exception` while analysing a source
+  file (DND-1310). It sits on that file (`filename: nil`) and names the check,
+  the exception and, from `stacktrace`, the frame that raised, so the report
+  can go to Anchor as it stands.
+  """
+  @spec analysis_crash_violation(module(), Exception.t(), Exception.stacktrace()) ::
+          Violation.t()
+  def analysis_crash_violation(check, exception, stacktrace) do
+    %Violation{
+      line: nil,
+      trigger: inspect(check),
+      kind: :fail_closed,
+      message:
+        "Anchor check #{inspect(check)} crashed on this file, so it checked no Anchor rule " <>
+          "against it: #{inspect(exception.__struct__)}: #{Exception.message(exception)}" <>
+          "#{raised_at(stacktrace)}. Fix: this is a defect in Anchor, not in this file; " <>
+          "report it to Anchor with the file (or the construct at that line). Excluding the " <>
+          "file from Credo silences this and leaves the file unchecked."
+    }
+  end
+
+  @doc """
   Builds the violation for a rule that selected fewer files than its floor
   (`min_files`, default 1) among the `file_count` files its check ran on
   (DND-1290). It sits on the config the rule came from, `config_path` (or
@@ -137,6 +162,14 @@ defmodule Anchor.Domain.Failures do
       id -> "#{position} (id: #{inspect(id)}, #{rule.type})"
     end
   end
+
+  # The frame's arity, never its arguments: a `FunctionClauseError` frame
+  # carries them, and they are the analyser's whole state.
+  defp raised_at([{module, function, args, location} | _rest]) when is_list(args),
+    do: raised_at([{module, function, length(args), location}])
+
+  defp raised_at([frame | _rest]), do: " (raised at #{Exception.format_stacktrace_entry(frame)})"
+  defp raised_at(_stacktrace), do: ""
 
   defp files(1), do: "1 file"
   defp files(count), do: "#{count} files"

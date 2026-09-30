@@ -123,6 +123,7 @@ failed, and ends with a `Fix:` line.
 | Invalid YAML | that path | `Anchor could not parse /proj/.anchor.yml as YAML, so no Anchor rule was checked: ... Fix: ...` |
 | A document or rule Anchor rejects (below) | that path | `Anchor rejected /proj/.anchor.yml, so no Anchor rule was checked: rule 2: unknown rule type "no_direct_dependancy"; known types: ... Fix: ...` |
 | A source file that does not parse | that file, at the parser's line | `Anchor could not parse this file, so no Anchor rule was checked against it: ... Fix: ...` |
+| An Anchor check crashed on a source file (a defect in Anchor) | that file | `Anchor check Anchor.Check.NoDependency crashed on this file, so it checked no Anchor rule against it: FunctionClauseError: ... Fix: this is a defect in Anchor, not in this file; report it ...` |
 | A rule that selected fewer files than its floor (`min_files`, default 1) | the config file | `Anchor rule 2 (id: "web-no-repo", no_direct_dependency) selected 0 of the 214 files this check ran on, below its floor of 1 (min_files), so it checked nothing. Fix: ...` |
 | A rule whose type no enabled Credo check reads | the config file | `Anchor rule 3 (single_control_flow) is not checked: no enabled Credo check reads single_control_flow rules, so it checked nothing. Fix: enable Anchor.Check.SingleControlFlow in .credo.exs, ...` |
 
@@ -153,7 +154,8 @@ The load rejects, rather than silently ignoring:
 A config failure is reported **once per run**, by the first Anchor check in the
 enabled list, whichever Anchor checks you enable. So is an unparseable file, and
 so is a rule whose type no enabled check reads. A rule below its floor is
-reported once per run by the check that reads it.
+reported once per run by the check that reads it. A check that crashed on a
+file is reported by that check, on that file; the other files are still checked.
 
 ### A rule that checks nothing
 

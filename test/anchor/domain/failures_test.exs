@@ -163,4 +163,63 @@ defmodule Anchor.Domain.FailuresTest do
       assert violation.filename == ".anchor.yml"
     end
   end
+
+  # DND-1310. Sabotage record:
+  # ../../sabotage_records/failures-20260929-dnd_1310_analyzer_quote_crash.md
+  describe "analysis_crash_violation/3" do
+    test "sits on the file, names the check, the exception and the frame that raised" do
+      # A module in no loaded application, so the frame carries no
+      # `(app version)` prefix and the text does not depend on Anchor's version.
+      frame = {Sample.Walker, :walk_children, 3, [file: ~c"lib/a.ex", line: 7]}
+
+      violation =
+        Failures.analysis_crash_violation(
+          Anchor.Check.NoDependency,
+          %FunctionClauseError{
+            module: Anchor.Domain.DependencyAnalyzer,
+            function: :walk_children,
+            arity: 3
+          },
+          [frame]
+        )
+
+      assert %Violation{kind: :fail_closed, filename: nil, line: nil} = violation
+      assert violation.trigger == "Anchor.Check.NoDependency"
+
+      assert violation.message ==
+               "Anchor check Anchor.Check.NoDependency crashed on this file, so it checked no " <>
+                 "Anchor rule against it: FunctionClauseError: no function clause matching in " <>
+                 "Anchor.Domain.DependencyAnalyzer.walk_children/3 (raised at lib/a.ex:7: " <>
+                 "Sample.Walker.walk_children/3). Fix: this is a defect in " <>
+                 "Anchor, not in this file; report it to Anchor with the file (or the construct " <>
+                 "at that line). Excluding the file from Credo silences this and leaves the file " <>
+                 "unchecked."
+    end
+
+    test "a frame carrying the arguments (a FunctionClauseError's) names the arity only" do
+      frame =
+        {Sample.Walker, :walk_children, [nil, %{secret: :state}], [file: ~c"lib/a.ex", line: 7]}
+
+      violation =
+        Failures.analysis_crash_violation(
+          Anchor.Check.NoDependency,
+          %ArgumentError{message: "x"},
+          [frame]
+        )
+
+      assert violation.message =~ "(raised at lib/a.ex:7: Sample.Walker.walk_children/2). Fix: "
+      refute violation.message =~ "secret"
+    end
+
+    test "without a stacktrace it still reports, naming no frame" do
+      violation =
+        Failures.analysis_crash_violation(
+          Anchor.Check.NoDependency,
+          %ArgumentError{message: "x"},
+          []
+        )
+
+      assert violation.message =~ "against it: ArgumentError: x. Fix: "
+    end
+  end
 end

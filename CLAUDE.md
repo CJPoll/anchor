@@ -72,7 +72,14 @@ rules:
 Anchor fails closed (DND-1265): a missing `.anchor.yml`, a config that does not
 load (bad YAML, an unknown top-level key, an unknown rule `type`, `match` or
 `mode`), and an unparseable source file are each reported as a Credo issue with
-a `Fix:` line, never as a clean run. `Anchor.Domain.Failures` holds the messages.
+a `Fix:` line, never as a clean run. So is a check that raises on a file
+(DND-1310): `Anchor.Managers.Lint` rescues it per file, per check. `Anchor.Domain.Failures`
+holds the messages.
+
+An AST clause that matches a special form or directive by name (`quote`,
+`import`, `case`, ...) matches the call only (`args` a list): a variable with that
+name is `{name, meta, context_atom}` (DND-1310). The table in
+`test/fixtures/special_variable_names.txt` drives the analyzer and every check.
 
 A rule may carry only the keys its type reads, and needs a selector (`paths`,
 `pattern` or `uses_module`); anything else fails the load (DND-1286). The
