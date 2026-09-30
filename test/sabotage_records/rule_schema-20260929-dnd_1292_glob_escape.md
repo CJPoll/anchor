@@ -28,6 +28,21 @@ now means "the predicates" and loads correctly.
 |---|---|---|---|
 | H | `refuse_allow_all/1` finds nothing (`&(GlobPattern.wildcard_only?(&1) and false)`) | 1 of 661 | `module_pattern_restrictions: every rule that checks nothing is refused…` / `allowed_functions: ["*"] allows every function: LOADED: %Anchor.Config{…}` |
 
+## Rows that stayed green on unfixed 87269a3, and why
+
+Moving the match-all check from a private `String.trim/2` test to
+`GlobPattern.wildcard_only?/1` changes no load result. So the `***` refused row,
+the `*?`/`*!` positive row and the `paths`/`pattern`/`forbidden_patterns`
+metacharacter positive rows all passed before the fix too: loading never
+compiled a glob. They pin the load side; the matcher side of the same defect
+failed first in `glob_pattern_test.exs`, the check suites and the e2e suite
+(primary record). Mutation H reddens the refused rows; no mutation of the load
+path reddens the metacharacter positive rows, since no load-time code reads a
+glob's characters beyond `wildcard_only?/1` (mutation G in the primary record
+reddens the `*?` row). That is a measured zero for those three positive rows,
+recorded here on purpose: they guard against a future load-time glob check that
+refuses a legitimate metacharacter.
+
 The first attempt at H (`fn _ -> false end`) left the `GlobPattern` alias
 unused and failed compilation under `--warnings-as-errors`; it was rewritten
 warning-free and re-run. The `wildcard_only?/1` mutations (F, G) are in the

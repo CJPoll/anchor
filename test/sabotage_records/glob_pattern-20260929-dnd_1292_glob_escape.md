@@ -84,4 +84,26 @@ Each applied alone over the whole suite, then restored.
 | G | `wildcard_only?/1` over-broad (any leading `*`) | 3 of 661 | `a glob with any literal character does not` / `*?`; plus the `*?` positive row refused and the e2e `*?` row |
 | J | a second regex compiler added to `lib/anchor/domain/checks/must_use_module.ex` | 1 of 661 | `no other lib/ file builds or runs a regex` / `anchor/domain/checks/must_use_module.ex uses Regex.` |
 
-No measured zeros. Every mutation compiled under `--warnings-as-errors`.
+Review round (commit after b005db3), over the whole suite of 665 tests:
+
+| # | Mutation | Tests failed | First failure |
+|---|---|---|---|
+| L | path `*` widened to `.*` (crosses `/`) | 6 of 665 | `row 7: non-recursive single-* paths rule does not select a nested file` / `Expected false or nil, got true` |
+| M | `/**` becomes `/.*` (requires a trailing segment) | 6 of 665 | `#2 **/ matches zero segments` / `Expected truthy, got false` |
+
+Mutation K (`allowed_functions` back on the path flavor) is in the
+`module_pattern_restrictions` record.
+
+Verbatim, mutation B:
+
+```
+  1) test regex metacharacters are literal (DND-1292) the match is anchored at the very end: a trailing newline is not ignored (Anchor.Domain.GlobPatternTest)
+     Assertion with == failed
+     code:  assert row_failure(flavor, "a", "a\n", false) == nil
+     left:  "path: glob \"a\" on \"a\\n\": want false, got true"
+     right: nil
+```
+
+The table cells are shortened; the full output of every run is reproducible by
+re-applying the mutation. No measured zeros. Every mutation compiled under
+`--warnings-as-errors`.

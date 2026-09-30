@@ -6,7 +6,7 @@ defmodule Anchor.Domain.GlobPattern do
   They never read a file, never parse an AST, and never call Credo — the same
   inputs always produce the same output.
 
-  Three flavors of matching, each anchored (a full-string match, never a partial
+  Four flavors of matching, each anchored (a full-string match, never a partial
   match):
 
     * `matches_pattern?/2` — a glob where a single `*` matches within one path
@@ -16,6 +16,8 @@ defmodule Anchor.Domain.GlobPattern do
       trailing segments) while a single `*` still stays within a segment.
     * `matches_module_pattern?/2` — a glob over a module name where `*` may
       cross dots (module separators), so `*.Schemas.*` matches `App.Schemas.User`.
+    * `matches_name_pattern?/2` — a glob over a function name (`allowed_functions`)
+      where `*` matches any run of characters.
 
   ## The glob syntax is `*` and `**`, and nothing else
 
@@ -78,10 +80,22 @@ defmodule Anchor.Domain.GlobPattern do
   end
 
   @doc """
+  Returns `true` when `name` (a function name) matches a name glob `pattern`.
+
+  A `*` matches any run of characters, `/` included, so `*` matches every
+  function name, a user-defined `/` operator too. The match is anchored. Every
+  other character is a literal, so `*?` matches the names ending in `?`.
+  """
+  @spec matches_name_pattern?(String.t(), String.t()) :: boolean()
+  def matches_name_pattern?(name, pattern) do
+    Regex.match?(to_regex(pattern, :name), name)
+  end
+
+  @doc """
   Returns `true` when `pattern` is made only of wildcards (`*`, `**`, `***`, …).
 
-  Such a glob has no literal character, so it matches every name that has no
-  `/` in it: every function name, and every module name. Since DND-1292 this is
+  Such a glob has no literal character, so it matches every function name
+  (`matches_name_pattern?/2`) and every module name. Since DND-1292 this is
   the only glob that does: any other character is a literal that a name must
   contain. `Anchor.Domain.RuleSchema` refuses it where matching everything
   defeats the key (an `allowed_functions` entry that allows every function).
@@ -113,7 +127,7 @@ defmodule Anchor.Domain.GlobPattern do
   defp translate("**/", :recursive), do: "(.*/)?"
   defp translate("/**", :recursive), do: "(/.*)?"
   defp translate("**", :recursive), do: ".*"
-  defp translate("*", :module), do: ".*"
+  defp translate("*", flavor) when flavor in [:module, :name], do: ".*"
   defp translate("*", _path_flavor), do: "[^/]*"
   defp translate(literal, _flavor), do: Regex.escape(literal)
 end

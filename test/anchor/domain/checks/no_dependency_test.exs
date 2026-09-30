@@ -413,6 +413,18 @@ defmodule Anchor.Domain.Checks.NoDependencyTest do
   # make the character before it optional, so `*.Webs?.*` also forbade `.Web.`.
   # Sabotage record: ../../../sabotage_records/glob_pattern-20260929-dnd_1292_glob_escape.md
   describe "detect_violations/2 — forbidden_patterns metacharacters (DND-1292)" do
+    test "positive control: the same source is flagged by the plain `*.Web.*`" do
+      source = """
+      defmodule W do
+        def f, do: App.Web.Foo.call(q)
+      end
+      """
+
+      rule = %{forbidden_modules: [], forbidden_patterns: ["*.Web.*"], match: :reference}
+
+      assert [%Violation{trigger: "App.Web.Foo"}] = detect(source, rule)
+    end
+
     test "a `?` in a forbidden pattern is a literal" do
       source = """
       defmodule W do

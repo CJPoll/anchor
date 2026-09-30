@@ -18,6 +18,8 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
   # `Anchor.Managers.LintTest` and the e2e suite.
   #
   # Sabotage record: ../../sabotage_records/rule_schema-20260929-dnd_1290_empty_relation_list.md
+  # The DND-1292 rows (glob metacharacters, the `***` match-all, `*?`):
+  #   ../../sabotage_records/rule_schema-20260929-dnd_1292_glob_escape.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config

@@ -128,8 +128,10 @@ defmodule Anchor.Domain.GlobPatternTest do
     module: &GlobPattern.matches_module_pattern?/2
   ]
 
-  # Every character PCRE gives a meaning to, outside the glob's own `*`, plus a
-  # space (meaningful under the `x` flag).
+  # Every character PCRE gives a meaning to somewhere, outside the glob's own
+  # `*`. Some (`=`, `!`, `<`, `>`, `:`, `-`, `#`, space) were already literal in
+  # the old unescaped position and passed before the fix; they stay as a guard
+  # against a future flag or context that gives them a meaning.
   @metacharacters [".", "\\", "+", "?", "[", "]", "^", "$", "(", ")", "{", "}"] ++
                     ["|", "=", "!", "<", ">", ":", "-", "#", " "]
 
@@ -263,15 +265,14 @@ defmodule Anchor.Domain.GlobPatternTest do
   end
 
   # The class guard: a config string becomes a matcher in GlobPattern and
-  # nowhere else, so the escaping cannot be skipped by a second compiler. A new
-  # regex elsewhere in lib/ fails here; route it through GlobPattern (or, for a
-  # constant regex that never sees config text, add the file below with a
-  # reason).
+  # nowhere else, so the escaping cannot be skipped by a second compiler. Any
+  # regex elsewhere in lib/, constant or not, fails here: there is no allowlist,
+  # so a regex that never sees config text is a deliberate edit to this test.
   describe "GlobPattern is the only regex compiler in lib/ (DND-1292)" do
     test "no other lib/ file builds or runs a regex" do
       lib = Path.expand("../../../lib", __DIR__)
       own = Path.join(lib, "anchor/domain/glob_pattern.ex")
-      needles = ["Regex.", "=~", "String.match?", "~r"]
+      needles = ["Regex.", "=~", "String.match?", "~r", "~R", ":re."]
 
       offenders =
         for file <- Path.wildcard(Path.join(lib, "**/*.ex")),
@@ -281,6 +282,22 @@ defmodule Anchor.Domain.GlobPatternTest do
             do: "#{Path.relative_to(file, lib)} uses #{needle}"
 
       assert offenders == [], Enum.join(offenders, "\n")
+    end
+  end
+
+  describe "matches_name_pattern?/2 (function-name globs, DND-1292)" do
+    test "`*` matches every function name, a `/` operator included" do
+      for name <- ["run", "valid?", "fetch!", "/", "//", "<>"],
+          do: assert(GlobPattern.matches_name_pattern?(name, "*"), name)
+    end
+
+    test "every other character is a literal" do
+      assert GlobPattern.matches_name_pattern?("valid?", "*?")
+      refute GlobPattern.matches_name_pattern?("run", "*?")
+      assert GlobPattern.matches_name_pattern?("with_status", "with_*")
+      refute GlobPattern.matches_name_pattern?("without", "with_*")
+      assert GlobPattern.matches_name_pattern?("new", "new")
+      refute GlobPattern.matches_name_pattern?("renew", "new")
     end
   end
 

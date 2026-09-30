@@ -36,7 +36,7 @@ defmodule Anchor.Domain.Checks.ModulePatternRestrictions do
   ## Allowed-function matching
 
   An `allowed_functions` entry is a name glob (`with_*` allows `with_status`),
-  matched through `Anchor.Domain.GlobPattern.matches_pattern?/2`. `*` is the only
+  matched through `Anchor.Domain.GlobPattern.matches_name_pattern?/2`. `*` is the only
   wildcard; every other character is a literal (DND-1292), so an entry with no
   `*` matches exactly its own name, and `*?` allows the functions whose names end
   in `?`.
@@ -100,7 +100,7 @@ defmodule Anchor.Domain.Checks.ModulePatternRestrictions do
   # literal, so it matches exactly its own name, and a `?`/`!` in any entry is a
   # literal. There is no second matcher here to disagree with it.
   defp function_matches?(function_name, entry) do
-    GlobPattern.matches_pattern?(function_name, entry)
+    GlobPattern.matches_name_pattern?(function_name, entry)
   end
 
   defp extract_defined_functions(ast) do
