@@ -31,6 +31,9 @@ defmodule Anchor.Config do
       violation only if the dependency shares the checked file's own context;
       exact `forbidden_modules` matches are never scoped. See
       `Anchor.Domain.Checks.NoDependency` for the detection semantics.
+    * `:forbidden_functions` — a list of `%Anchor.Domain.FunctionRef{}` (default
+      `[]`) on a `no_direct_dependency` rule (DND-1267), parsed from
+      `"Mod.fun"` / `"Mod.fun/arity"` tokens. A malformed token fails the rule.
     * `:context_depth` — a positive integer (default `2`) on a
       `no_direct_dependency` rule: how many leading namespace segments define a
       "context". Inert unless `:same_context` is `true`.
@@ -66,6 +69,7 @@ defmodule Anchor.Config do
   dependency such as `:telemetry.execute(...)`.
   """
 
+  alias Anchor.Domain.FunctionRef
   alias Anchor.Domain.RuleCoverage
   alias Anchor.Domain.RuleSchema
 
@@ -286,6 +290,10 @@ defmodule Anchor.Config do
       pattern: rule["pattern"],
       uses_module: rule["uses_module"],
       forbidden_modules: parse_modules(rule["forbidden_modules"]),
+      # DND-1267: `"Mod.fun"` / `"Mod.fun/arity"` tokens, as
+      # `%Anchor.Domain.FunctionRef{}`s. `RuleSchema.validate/2` has already
+      # refused a malformed token, so every one parses here. Absent => `[]`.
+      forbidden_functions: parse_function_refs(rule["forbidden_functions"]),
       required_modules: parse_modules(rule["required_modules"]),
       # Gap A (DND-142): module-name globs (e.g. `"*.Adapters.*"`), matched with
       # `Anchor.Domain.GlobPattern.matches_module_pattern?/2`. Absent ⇒ `[]`.
@@ -349,6 +357,15 @@ defmodule Anchor.Config do
       true ->
         :ok
     end
+  end
+
+  defp parse_function_refs(nil), do: []
+
+  defp parse_function_refs(tokens) do
+    Enum.map(tokens, fn token ->
+      {:ok, ref} = FunctionRef.parse(token)
+      ref
+    end)
   end
 
   defp parse_modules(nil), do: []

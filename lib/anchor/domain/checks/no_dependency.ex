@@ -27,6 +27,15 @@ defmodule Anchor.Domain.Checks.NoDependency do
   A `forbidden_modules` entry may be an Elixir alias (`MyApp.Repo`) or a bare
   Erlang/OTP atom (`:telemetry`); the latter matches a bare-atom remote call.
 
+  ## Forbidden functions (DND-1267)
+
+  A rule's `forbidden_functions` (`%Anchor.Domain.FunctionRef{}`s) is checked
+  against every function the file calls or captures
+  (`DependencyAnalyzer.function_references/1`), whatever the rule's `match`:
+  one violation per rule per function reached, at its first line. A call site
+  whose module or function the source cannot show is reported once, however
+  many rules apply, when it could reach a forbidden function of any of them.
+
   An `alias`/`import`/`require` whose target cannot be resolved statically
   (`DependencyAnalyzer.unresolved_directives/1`) hides every reference made
   through it, so it is reported too — **once per file**, when at least one rule
@@ -45,6 +54,7 @@ defmodule Anchor.Domain.Checks.NoDependency do
   """
 
   alias Anchor.Domain.DependencyAnalyzer
+  alias Anchor.Domain.FunctionRef
   alias Anchor.Domain.GlobPattern
   alias Anchor.Domain.Violation
 
@@ -115,7 +125,72 @@ defmodule Anchor.Domain.Checks.NoDependency do
       end)
       |> Enum.map(&build_violation/1)
     end)
+    |> Enum.concat(function_violations(ast, rules))
     |> Enum.concat(unresolved_violations(ast))
+  end
+
+  # DND-1267: `forbidden_functions`. Every function the file calls or captures
+  # (`DependencyAnalyzer.function_references/1`) that a rule's token names is
+  # one violation per rule, at its first line. A function is reached only by a
+  # call, so the rule's `match` mode does not apply here.
+  #
+  # A call site whose module or function cannot be resolved is reported once
+  # (not once per rule) when it could reach a forbidden function of any
+  # applicable rule, so no rule reads green over a call it could not check.
+  # One that could not (`m.fetch(x)` when only `user_info` is forbidden) is not.
+  defp function_violations(ast, rules) do
+    refs_by_rule = Enum.map(rules, &(Map.get(&1, :forbidden_functions) || []))
+
+    if Enum.all?(refs_by_rule, &(&1 == [])) do
+      []
+    else
+      %{calls: calls, dynamic: dynamic} = DependencyAnalyzer.function_references(ast)
+      all_refs = refs_by_rule |> List.flatten() |> Enum.uniq()
+
+      Enum.flat_map(refs_by_rule, &forbidden_calls(calls, &1)) ++
+        Enum.flat_map(dynamic, &dynamic_violation(&1, all_refs))
+    end
+  end
+
+  defp forbidden_calls(_calls, []), do: []
+
+  defp forbidden_calls(calls, refs) do
+    for {{module, function, arity}, line} <- calls,
+        Enum.any?(refs, &FunctionRef.matches?(&1, module, function, arity)) do
+      called = FunctionRef.format(module, function, arity)
+
+      %Violation{
+        message: "Module calls forbidden function #{called}#{unknown_arity(arity)}",
+        line: line,
+        trigger: called
+      }
+    end
+  end
+
+  defp unknown_arity(:any), do: " (arity unknown)"
+  defp unknown_arity(_arity), do: ""
+
+  defp dynamic_violation(site, refs) do
+    case Enum.filter(refs, &FunctionRef.may_reach?(&1, site.module, site.function, site.arity)) do
+      [] ->
+        []
+
+      reachable ->
+        names = Enum.map_join(reachable, ", ", &FunctionRef.to_string/1)
+
+        [
+          %Violation{
+            message:
+              "Anchor cannot statically resolve the module or function of this call, so it " <>
+                "cannot rule out a call to a forbidden function (#{names}). Fix: call it " <>
+                "through a literal module and function name (e.g. `MyApp.Mod.fun(x)`, " <>
+                "`apply(MyApp.Mod, :fun, [x])`) so the rule can check it; if it can never " <>
+                "reach #{names}, disable this check for the line with a Credo comment.",
+            line: site.line,
+            trigger: site.function && Atom.to_string(site.function)
+          }
+        ]
+    end
   end
 
   defp rule_mode(rule), do: if(Map.get(rule, :match) == :call, do: :call, else: :reference)

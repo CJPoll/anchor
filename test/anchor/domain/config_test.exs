@@ -428,6 +428,56 @@ defmodule Anchor.Domain.ConfigTest do
     end
   end
 
+  describe "parse_rule/1 — forbidden_functions (DND-1267)" do
+    test "parses each token into a function reference" do
+      rule =
+        parse_rule(%{
+          "type" => "no_direct_dependency",
+          "paths" => ["lib/**/*.ex"],
+          "forbidden_functions" => [
+            "Athena.Slack.user_info",
+            "Athena.Slack.rule_post/2",
+            ":ets.insert"
+          ]
+        })
+
+      assert rule.forbidden_functions == [
+               %Anchor.Domain.FunctionRef{
+                 module: Athena.Slack,
+                 function: :user_info,
+                 arity: :any
+               },
+               %Anchor.Domain.FunctionRef{module: Athena.Slack, function: :rule_post, arity: 2},
+               %Anchor.Domain.FunctionRef{module: :ets, function: :insert, arity: :any}
+             ]
+
+      assert rule.forbidden_modules == []
+    end
+
+    test "an absent forbidden_functions is []" do
+      rule =
+        parse_rule(%{
+          "type" => "no_direct_dependency",
+          "paths" => ["lib/**/*.ex"],
+          "forbidden_modules" => ["MyApp.Repo"]
+        })
+
+      assert rule.forbidden_functions == []
+    end
+
+    test "a malformed token fails the load, naming the rule and the token" do
+      rule = %{
+        "type" => "no_direct_dependency",
+        "paths" => ["lib/**/*.ex"],
+        "forbidden_functions" => ["Athena.Slack"]
+      }
+
+      assert {:error, {:invalid_rule, reason}} = Config.parse_config(%{"rules" => [rule]})
+      assert reason =~ ~s(rule 1: `forbidden_functions` entry "Athena.Slack" is not a function)
+      assert reason =~ ~s("Module.function" or "Module.function/arity")
+    end
+  end
+
   describe "parse_config/1" do
     test "maps every rule in the document through parse_rule/1" do
       data = %{

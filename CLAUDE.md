@@ -87,6 +87,15 @@ are the only wildcards, and every other character is escaped with
 `String.match?`, `~r`, `:re.`); a test in `glob_pattern_test.exs` enforces it.
 A new glob-bearing key calls `GlobPattern`.
 
+`no_direct_dependency` takes `forbidden_functions: ["Mod.fun", "Mod.fun/arity"]`
+(DND-1267). The token grammar has one home, `Anchor.Domain.FunctionRef` (string
+functions, no regex; globs are refused). Every call shape that reaches a
+function is recorded in one place, `DependencyAnalyzer.function_references/1`;
+a new shape goes there, with a row in the table test
+`test/anchor/domain/checks/no_dependency_forbidden_functions_test.exs`. A call
+the source cannot resolve is recorded as dynamic and reported when it could
+reach a forbidden function, never dropped.
+
 A rule that loads but checks nothing fails too (DND-1290), as one class:
 more than one selector, `recursive` without `paths`, a relation-bearing rule
 with no relation, a relation list of empty strings, a match-all
