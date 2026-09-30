@@ -184,6 +184,9 @@ rule's position (and its `id`, when it has one) and ending with `Fix:`:
   (`forbidden_modules: [""]`, or a bare `-` in YAML);
 - a `forbidden_functions` entry that does not name exactly one function
   (`"MyApp.Repo"`, `"MyApp.Repo.*"`, `"MyApp.Repo.insert/x"`);
+- an `allowed_callers` entry that is not exactly one Elixir module name: a glob
+  (`"*"` allows every caller, so the rule checks nothing), an Erlang module
+  (`":ets"`), or a malformed name (`"MyApp.adapter"`, `"MyApp.Repo.insert/1"`);
 - an `allowed_functions` entry of only wildcards (`*`, `**`), which allows
   every function. Every other glob character is a literal (see
   [Glob syntax](#glob-syntax)), so `*?` allows the functions ending in `?`, not
@@ -191,7 +194,7 @@ rule's position (and its `id`, when it has one) and ending with `Fix:`:
 - a `min_files` that is not a positive integer, an `id` that is not a
   non-empty string, and two rules sharing one `id`.
 
-Two members depend on the files, so they are reported at run time instead:
+Three members depend on the files, so they are reported at run time instead:
 
 - **A rule that selects too few files.** Every rule must select at least
   `min_files` of the files its check runs on (default 1). A moved directory
@@ -214,6 +217,13 @@ Two members depend on the files, so they are reported at run time instead:
   a watch-mode rerun. A file that does not parse still counts for a `paths`
   rule, and counts as possibly selected by a `pattern` or `uses_module` rule
   (its parse error is reported on its own).
+- **An allowed caller that no longer exists.** An `allowed_callers` entry that
+  no file the rule selects defines allows nothing today, and would silently
+  allow whatever module is given that name later. A rename or a move leaves
+  the old name behind, so it is an issue on `.anchor.yml`, naming each such
+  entry. Like the floor, it is checked only when credo ran over the whole
+  project, and it is not reported for a rule that may select a file that does
+  not parse. See [Allowing named callers](#allowing-named-callers-allowed_callers).
 - **A rule whose check is not enabled.** Credo runs only the checks
   `.credo.exs` enables, so a `single_control_flow` rule does nothing while
   `Anchor.Check.SingleControlFlow` is off. This is skipped when
@@ -302,6 +312,7 @@ semantics and edge cases.
 | `forbidden_modules` / `required_modules` | `no_direct_dependency`, `no_transitive_dependency` / `must_use_module` | Exact module tokens (see the token syntax below). |
 | `forbidden_patterns` | `no_direct_dependency`, `no_transitive_dependency` | Module-name globs; forbids any referenced/reachable module whose name matches. |
 | `forbidden_functions` | `no_direct_dependency` | `"Module.function"` or `"Module.function/arity"` tokens; forbids calling (or capturing) that function, in every call shape. A malformed token fails the load. See [Forbidding functions](#forbidding-functions-forbidden_functions). |
+| `allowed_callers` | `no_direct_dependency` | Exact module names, default `[]`. Code in a listed module is exempt from every relation of this rule. A glob, an Erlang module or a malformed name fails the load; an entry no selected file defines is an issue. See [Allowing named callers](#allowing-named-callers-allowed_callers). |
 | `match` | `no_direct_dependency` | `reference` (default) or `call` — which dependency set the rule inspects. Any other token fails the load. |
 | `same_context` | `no_direct_dependency` | Boolean, default `false`. When `true`, a `forbidden_patterns` match is a violation **only if** the dependency shares the checked file's own context. Exact `forbidden_modules` matches are never scoped. |
 | `context_depth` | `no_direct_dependency` | Positive integer, default `2`. Number of leading module-namespace segments that define a "context/subdomain". Inert unless `same_context: true`. |
@@ -327,7 +338,7 @@ another type (`match` on a `no_transitive_dependency` rule) is unknown too.
 | `module_pattern_restrictions` | `allowed_functions` | none |
 | `must_use_module` | `required_modules` | `required_modules` |
 | `no_comparison_in_if` | none | none |
-| `no_direct_dependency` | `context_depth`, `forbidden_functions`, `forbidden_modules`, `forbidden_patterns`, `match`, `same_context` | `forbidden_functions`, `forbidden_modules`, `forbidden_patterns` |
+| `no_direct_dependency` | `allowed_callers`, `context_depth`, `forbidden_functions`, `forbidden_modules`, `forbidden_patterns`, `match`, `same_context` | `forbidden_functions`, `forbidden_modules`, `forbidden_patterns` |
 | `no_discarding_arrow_in_with` | none | none |
 | `no_transitive_dependency` | `forbidden_modules`, `forbidden_patterns` | `forbidden_modules`, `forbidden_patterns` |
 | `no_tuple_match_in_head` | none | none |
@@ -585,6 +596,55 @@ Limits a source check cannot close:
 - A call inside a `quote` is checked (the macro emits it), but a dynamic one
   there (`unquote(mod).f()`) is macro code and is skipped, as a non-literal
   directive in a `quote` is.
+
+#### Allowing named callers (`allowed_callers`)
+
+`allowed_callers` names the modules that may do what the rule forbids every
+other module. Use it for a single sanctioned caller, such as the one adapter
+that may read Slack user names:
+
+```yaml
+- type: no_direct_dependency
+  id: slack-name-reads-single-caller
+  paths: ["lib/**/*.ex"]
+  recursive: true
+  forbidden_functions:
+    - "Athena.Slack.user_info"
+  allowed_callers:
+    - Athena.Priorities.SlackNameAdapter
+```
+
+- **Exact names only.** Each entry is one Elixir module, spelled as its
+  `defmodule` spells it in full. The entry is not resolved through aliases,
+  but the source is: Anchor names each module the way Elixir does, so after a
+  top-level `alias Evil.Ns, as: MyApp`, `defmodule MyApp.Adapter` defines
+  `Evil.Ns.Adapter`, which is not exempt. A glob
+  fails the load: it would widen the rule every time a later change adds a
+  module with a matching name, with no config change to review.
+- **Per defining module, not per file.** Each call and reference belongs to
+  the module whose body it is in. A second module in the allowed module's
+  file is not exempt, so a file cannot launder a call through its second
+  module. A module nested in an allowed one is its own module and is not
+  exempt; an allowed module nested in another is exempt, and the code of the
+  enclosing module after it is not.
+- **Protocols.** A `defprotocol` is a module. A `defimpl Proto, for: Type` is
+  the module `Proto.Type` (aliases resolved; without `for:`, the enclosing
+  module), so list that name to exempt it. A `defimpl` with a `for:` list
+  defines one module per type, so its code is never exempt.
+- **Never exempt:** code outside every module, code inside a `quote` (it runs
+  in whichever module the macro expands into), and a `defmodule` whose name is
+  not a literal, with everything in it.
+- **What it exempts.** Every relation of this rule: `forbidden_modules`,
+  `forbidden_patterns`, `forbidden_functions`, and a dynamic call that could
+  reach one of its forbidden functions. For this rule only: another rule that
+  does not list the module still reports it. A directive whose target cannot be
+  resolved is reported whatever the rules say. `same_context` still scopes the
+  callers that are not listed.
+- **A listed module that no longer exists** is an issue on `.anchor.yml` in a
+  whole-project run (see [A rule that checks nothing](#a-rule-that-checks-nothing)).
+
+`allowed_callers` narrows a rule, so it is not a relation: a rule needs one of
+`forbidden_functions`, `forbidden_modules` or `forbidden_patterns` beside it.
 
 #### Reference vs. call matching (`match`)
 

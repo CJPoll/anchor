@@ -34,6 +34,10 @@ defmodule Anchor.Config do
     * `:forbidden_functions` — a list of `%Anchor.Domain.FunctionRef{}` (default
       `[]`) on a `no_direct_dependency` rule (DND-1267), parsed from
       `"Mod.fun"` / `"Mod.fun/arity"` tokens. A malformed token fails the rule.
+    * `:allowed_callers` — a list of module atoms (default `[]`) on a
+      `no_direct_dependency` rule (DND-1269): the modules exempt from the rule.
+      Each entry names one module exactly; a glob, an Erlang module or a
+      malformed name fails the rule (`Anchor.Domain.AllowedCallers`).
     * `:context_depth` — a positive integer (default `2`) on a
       `no_direct_dependency` rule: how many leading namespace segments define a
       "context". Inert unless `:same_context` is `true`.
@@ -69,6 +73,7 @@ defmodule Anchor.Config do
   dependency such as `:telemetry.execute(...)`.
   """
 
+  alias Anchor.Domain.AllowedCallers
   alias Anchor.Domain.FunctionRef
   alias Anchor.Domain.RuleCoverage
   alias Anchor.Domain.RuleSchema
@@ -294,6 +299,10 @@ defmodule Anchor.Config do
       # `%Anchor.Domain.FunctionRef{}`s. `RuleSchema.validate/2` has already
       # refused a malformed token, so every one parses here. Absent => `[]`.
       forbidden_functions: parse_function_refs(rule["forbidden_functions"]),
+      # DND-1269: the modules exempt from a `no_direct_dependency` rule, each
+      # named exactly (`Anchor.Domain.AllowedCallers`). `RuleSchema.validate/2`
+      # has already refused a malformed entry. Absent => `[]` (no exemption).
+      allowed_callers: parse_allowed_callers(rule["allowed_callers"]),
       required_modules: parse_modules(rule["required_modules"]),
       # Gap A (DND-142): module-name globs (e.g. `"*.Adapters.*"`), matched with
       # `Anchor.Domain.GlobPattern.matches_module_pattern?/2`. Absent ⇒ `[]`.
@@ -365,6 +374,15 @@ defmodule Anchor.Config do
     Enum.map(tokens, fn token ->
       {:ok, ref} = FunctionRef.parse(token)
       ref
+    end)
+  end
+
+  defp parse_allowed_callers(nil), do: []
+
+  defp parse_allowed_callers(tokens) do
+    Enum.map(tokens, fn token ->
+      {:ok, module} = AllowedCallers.parse(token)
+      module
     end)
   end
 

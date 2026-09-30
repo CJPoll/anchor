@@ -115,6 +115,39 @@ defmodule Anchor.Domain.DependencyAnalyzer do
   In call mode, `defdelegate ..., to: M`, every dispatcher's literal module and
   a call on a bound attribute are call dependencies too (DND-1280).
 
+  ## Attribution (DND-1269)
+
+  `attributed_dependency_lines/2` and `attributed_function_references/1`
+  attribute every dependency and call to the module whose body it occurs in,
+  its **owner**, so a rule can exempt one module (`allowed_callers`) without
+  exempting the file around it:
+
+    * a module is named as Elixir names it (`Kernel.defmodule/2`): at the top
+      level, or with an `Elixir.` head, through the aliases in scope (`alias
+      Evil.Ns, as: App` then `defmodule App.Allowed` is `Evil.Ns.Allowed`);
+      nested with a plain head, as the parent's child whatever is aliased; a
+      `__MODULE__` head is the parent;
+    * a `defmodule` nested in another is its own module, in both directions: a
+      call in the child is the child's, and a call in the parent after the
+      child is the parent's;
+    * a `defprotocol` is a module, nested like a `defmodule`;
+    * a `defimpl Protocol, for: For` is the module `Protocol.For` (protocol and
+      `for:` resolved through the aliases in scope), and without `for:` it is
+      for the enclosing module;
+    * a module nested in a `defimpl` is qualified by the impl module.
+
+  The owner is `nil`, which no allow-list matches, wherever the source cannot
+  show the module: code outside every module, code inside a `quote` (it runs
+  in whichever module the macro expands into), a `defmodule` with a
+  non-literal name and everything nested in it, and a `defimpl` whose protocol
+  or `for:` is not a literal module, or whose `for:` is a list (one module per
+  type).
+
+  `defined_modules/1` names exactly the modules this attribution can produce.
+  Attribution changes nothing else: alias resolution and the module graph
+  (`module_dependencies/1`) still read a `defimpl`/`defprotocol` body as part of
+  the enclosing module.
+
   ## Static-analysis boundary (macro/quote)
 
   A static pass never runs macros, so macro-expansion-time constructs are out of
@@ -164,7 +197,8 @@ defmodule Anchor.Domain.DependencyAnalyzer do
     imports: [],
     kernel: :all,
     locals: MapSet.new(),
-    attributes: %{}
+    attributes: %{},
+    owner_scope: :top
   }
 
   # The calls that take a module and a function as data and call (or capture)
@@ -178,7 +212,16 @@ defmodule Anchor.Domain.DependencyAnalyzer do
     {:erlang, :make_fun, 3}
   ]
 
-  @initial_acc %{file: %{}, by_module: %{}, unresolved: [], calls: %{}, dynamic: []}
+  @initial_acc %{
+    file: %{},
+    by_module: %{},
+    unresolved: [],
+    calls: %{},
+    dynamic: [],
+    owned: %{},
+    owned_calls: %{},
+    defined: MapSet.new()
+  }
 
   @typedoc """
   A call whose module or function a source pass cannot resolve: `module` and
@@ -190,6 +233,12 @@ defmodule Anchor.Domain.DependencyAnalyzer do
           arity: arity() | :any,
           line: pos_integer() | nil
         }
+
+  @typedoc """
+  The module a piece of code belongs to (DND-1269), or `nil` when the source
+  cannot show it. See the moduledoc, *Attribution*.
+  """
+  @type owner :: module() | nil
 
   @doc """
   Returns every `defmodule` name in `ast`, fully qualified, in pre-order DFS
@@ -288,8 +337,75 @@ defmodule Anchor.Domain.DependencyAnalyzer do
           dynamic: [dynamic_call()]
         }
   def function_references(ast) do
+    %{calls: calls, dynamic: dynamic} = attributed_function_references(ast)
+    %{calls: calls, dynamic: Enum.map(dynamic, &Map.delete(&1, :owner))}
+  end
+
+  @doc """
+  `dependency_lines/2`, plus each dependency attributed to the module whose
+  body it occurs in (DND-1269, see *Attribution*).
+
+    * `:file` — exactly `dependency_lines(ast, mode)`;
+    * `:by_owner` — `[{owner, module, line}]`, sorted, one entry per distinct
+      `{owner, module}` at its first line in that owner.
+  """
+  @spec attributed_dependency_lines(Macro.t(), :reference | :call) :: %{
+          file: [{module(), pos_integer() | nil}],
+          by_owner: [{owner(), module(), pos_integer() | nil}]
+        }
+  def attributed_dependency_lines(ast, mode) do
+    acc = analyze(ast, mode)
+
+    %{
+      file: Enum.sort(acc.file),
+      by_owner:
+        acc.owned
+        |> Enum.map(fn {{owner, module}, line} -> {owner, module, line} end)
+        |> Enum.sort()
+    }
+  end
+
+  @doc """
+  `function_references/1`, plus each call attributed to the module whose body
+  it occurs in (DND-1269, see *Attribution*).
+
+    * `:calls` — exactly `function_references(ast).calls`;
+    * `:by_owner` — `[{owner, {module, function, arity}, line}]`, sorted, one
+      entry per distinct `{owner, mfa}` at its first line in that owner;
+    * `:dynamic` — `function_references(ast).dynamic`, each site carrying its
+      `:owner`.
+  """
+  @spec attributed_function_references(Macro.t()) :: %{
+          calls: [{{module(), atom(), arity() | :any}, pos_integer() | nil}],
+          by_owner: [{owner(), {module(), atom(), arity() | :any}, pos_integer() | nil}],
+          dynamic: [%{owner: owner()}]
+        }
+  def attributed_function_references(ast) do
     acc = analyze(ast, :call)
-    %{calls: Enum.sort(acc.calls), dynamic: Enum.reverse(acc.dynamic)}
+
+    %{
+      calls: Enum.sort(acc.calls),
+      by_owner:
+        acc.owned_calls
+        |> Enum.map(fn {{owner, mfa}, line} -> {owner, mfa, line} end)
+        |> Enum.sort(),
+      dynamic: Enum.reverse(acc.dynamic)
+    }
+  end
+
+  @doc """
+  Every module `ast` defines that code can be attributed to (DND-1269), sorted:
+  a literal `defmodule` or `defprotocol` (qualified by the module it is nested
+  in) and a `defimpl` whose protocol and `for:` are literal modules
+  (`Protocol.For`). A module inside a `quote` belongs to the macro's caller, so
+  it is not this file's. See the moduledoc, *Attribution*.
+  """
+  @spec defined_modules(Macro.t()) :: [module()]
+  def defined_modules(ast) do
+    ast
+    |> analyze(:reference)
+    |> Map.fetch!(:defined)
+    |> Enum.sort()
   end
 
   @doc """
@@ -435,7 +551,7 @@ defmodule Anchor.Domain.DependencyAnalyzer do
   end
 
   defp step({:defmodule, _meta, [name_ast, body_kw]}, env, acc) do
-    step_defmodule(literal_alias_parts(name_ast), body_kw, env, acc)
+    step_defmodule(literal_alias_parts(name_ast), module_scope(name_ast, env), body_kw, env, acc)
   end
 
   # `quote` with arguments. A variable named `quote` is `{:quote, meta, context}`
@@ -443,6 +559,17 @@ defmodule Anchor.Domain.DependencyAnalyzer do
   # and falls through to `visit/3`.
   defp step({:quote, _meta, args}, env, acc) when is_list(args) do
     {env, walk_children(args, %{env | in_quote: true}, acc)}
+  end
+
+  # A `defimpl` or `defprotocol` defines a module of its own, so the code in it
+  # belongs to that module (DND-1269). Only the attribution changes: aliases,
+  # imports and the module graph read it as before.
+  defp step({:defimpl, _meta, [protocol | rest]} = node, env, acc) do
+    step_owned(node, impl_scope(protocol, rest, env), env, acc)
+  end
+
+  defp step({:defprotocol, _meta, [name_ast | _rest]} = node, env, acc) do
+    step_owned(node, module_scope(name_ast, env), env, acc)
   end
 
   defp step({directive, meta, [target | opts]}, env, acc)
@@ -477,7 +604,7 @@ defmodule Anchor.Domain.DependencyAnalyzer do
   # imports in scope. When nested, it also aliases its first name segment
   # (`defmodule Child` inside `Parent` makes `Child` mean `Parent.Child`), in its
   # own body and in the rest of the enclosing block.
-  defp step_defmodule({:ok, [head | _rest] = parts}, body_kw, env, acc) do
+  defp step_defmodule({:ok, [head | _rest] = parts}, scope, body_kw, env, acc) do
     full = (env.enclosing || []) ++ parts
     body = do_block(body_kw)
     outer_env = nested_module_alias(env, head)
@@ -487,13 +614,105 @@ defmodule Anchor.Domain.DependencyAnalyzer do
       | enclosing: full,
         current: Module.concat(full),
         locals: local_definitions(body),
-        attributes: %{}
+        attributes: %{},
+        owner_scope: scope
     }
 
-    {outer_env, walk(body, inner_env, acc)}
+    {outer_env, walk(body, inner_env, record_defined(acc, inner_env))}
   end
 
-  defp step_defmodule(:error, body_kw, env, acc), do: {env, walk(do_block(body_kw), env, acc)}
+  defp step_defmodule(:error, scope, body_kw, env, acc) do
+    inner_env = %{env | owner_scope: scope}
+    {env, walk(do_block(body_kw), inner_env, record_defined(acc, inner_env))}
+  end
+
+  # ---- attribution (DND-1269) ----
+  #
+  # `owner_scope` is the module the code at a node belongs to: `:top` outside
+  # every module, `{:module, parts}` inside one, `:unknown` where the source
+  # cannot show it. It is separate from `enclosing`/`current`, which alias
+  # resolution and the module graph read, so attribution changes neither.
+
+  defp step_owned(node, scope, env, acc) do
+    inner_env = %{env | owner_scope: scope}
+    {env, visit(node, inner_env, record_defined(acc, inner_env))}
+  end
+
+  # The module a `defmodule` or `defprotocol` named `name_ast` defines, named
+  # the way Elixir names it (`Kernel.defmodule/2`), so an alias cannot dress one
+  # module in another's name:
+  #
+  #   * nested, a name with a plain head is the parent's child, whatever is
+  #     aliased (`alias X.Foo` then `defmodule Foo.Bar` in `O` is `O.Foo.Bar`),
+  #     and a `__MODULE__` head is the parent;
+  #   * otherwise (at the top level, or an `Elixir.` head) the name is expanded
+  #     through the aliases in scope: `alias Evil.Ns, as: App` then
+  #     `defmodule App.Allowed` defines `Evil.Ns.Allowed`.
+  #
+  # Anything else, and anything nested where the module is unknown, is unknown.
+  defp module_scope(_name_ast, %{owner_scope: :unknown}), do: :unknown
+
+  defp module_scope(
+         {:__aliases__, _meta, [head | _rest]} = name_ast,
+         %{owner_scope: {:module, _}} = env
+       )
+       when is_atom(head) and head != :"Elixir",
+       do: nested_scope(env.owner_scope, literal_alias_parts(name_ast))
+
+  defp module_scope(
+         {:__aliases__, _meta, [{:__MODULE__, _m, ctx} | tail]},
+         %{owner_scope: {:module, _}} = env
+       )
+       when is_atom(ctx),
+       do: nested_scope(env.owner_scope, literal_alias_parts({:__aliases__, [], tail}))
+
+  defp module_scope(name_ast, env) do
+    with {:ok, module} <- resolve_module(name_ast, env),
+         true <- elixir_module?(module) do
+      {:module, Module.split(module)}
+    else
+      _unknown -> :unknown
+    end
+  end
+
+  # A module nested in another is qualified by it; one nested where the module
+  # is unknown is unknown too. A non-literal name is unknown.
+  defp nested_scope({:module, outer}, {:ok, parts}), do: {:module, outer ++ parts}
+  defp nested_scope(_scope, _parts), do: :unknown
+
+  # `defimpl Protocol, for: For` defines `Protocol.For`, not nested in the
+  # enclosing module; without `for:` it is for the enclosing module. A `for:`
+  # list defines one module per type, so no single module owns the code.
+  defp impl_scope(protocol, rest, env) do
+    opts = rest |> Enum.filter(&is_list/1) |> Enum.concat()
+
+    with {:ok, protocol} <- resolve_module(protocol, env),
+         {:ok, for_module} <- impl_for(Keyword.fetch(opts, :for), env),
+         true <- elixir_module?(protocol) and elixir_module?(for_module) do
+      {:module, Module.split(Module.concat(protocol, for_module))}
+    else
+      _unknown -> :unknown
+    end
+  end
+
+  defp impl_for({:ok, for_ast}, env), do: resolve_module(for_ast, env)
+  defp impl_for(:error, %{owner_scope: {:module, parts}}), do: {:ok, Module.concat(parts)}
+  defp impl_for(:error, _env), do: :error
+
+  defp elixir_module?(module), do: match?("Elixir." <> _, Atom.to_string(module))
+
+  defp record_defined(acc, env) do
+    case owner(env) do
+      nil -> acc
+      module -> %{acc | defined: MapSet.put(acc.defined, module)}
+    end
+  end
+
+  # The module the code at `env` belongs to. Code in a `quote` runs wherever
+  # the macro expands it, so it belongs to no module here.
+  defp owner(%{in_quote: true}), do: nil
+  defp owner(%{owner_scope: {:module, parts}}), do: Module.concat(parts)
+  defp owner(_env), do: nil
 
   defp nested_module_alias(%{enclosing: nil} = env, _head), do: env
 
@@ -1092,21 +1311,33 @@ defmodule Anchor.Domain.DependencyAnalyzer do
     by_module =
       Map.update(acc.by_module, env.current, MapSet.new([module]), &MapSet.put(&1, module))
 
-    %{acc | file: Map.put_new(acc.file, module, line), by_module: by_module}
+    %{
+      acc
+      | file: Map.put_new(acc.file, module, line),
+        by_module: by_module,
+        owned: Map.put_new(acc.owned, {owner(env), module}, line)
+    }
   end
 
   # A call on `module.function/arity` (DND-1267), first line wins. Recorded
   # only by the call-mode walk that `function_references/1` runs.
-  defp record_call(acc, %{mode: :call}, module, function, arity, line),
-    do: %{acc | calls: Map.put_new(acc.calls, {module, function, arity}, line)}
+  defp record_call(acc, %{mode: :call} = env, module, function, arity, line) do
+    mfa = {module, function, arity}
+
+    %{
+      acc
+      | calls: Map.put_new(acc.calls, mfa, line),
+        owned_calls: Map.put_new(acc.owned_calls, {owner(env), mfa}, line)
+    }
+  end
 
   defp record_call(acc, _env, _module, _function, _arity, _line), do: acc
 
   # A call the pass cannot resolve (DND-1267). Inside a `quote` it is macro
   # code (`unquote(mod).f()`), outside the static boundary, and is skipped as a
   # non-literal directive is.
-  defp record_dynamic(acc, %{mode: :call, in_quote: false}, module, function, arity, line) do
-    site = %{module: module, function: function, arity: arity, line: line}
+  defp record_dynamic(acc, %{mode: :call, in_quote: false} = env, module, function, arity, line) do
+    site = %{module: module, function: function, arity: arity, line: line, owner: owner(env)}
     %{acc | dynamic: [site | acc.dynamic]}
   end
 

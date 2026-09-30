@@ -40,6 +40,8 @@ defmodule Anchor.Managers.Lint do
       its floor (`min_files`, default 1). The Framework turns this off with
       `enforce_selection_floors: false` when the run saw only some of the files
       (`Anchor.Check.Base.whole_file_set?/2`);
+    * under the same switch, a rule of this check's type that lists an
+      `allowed_callers` entry no file it selects defines (DND-1269);
     * for the shared-failure reporter only, a rule whose type is not in
       `:enabled_rule_types` (the types some enabled check reads; `:unknown`,
       the default, reports nothing). When no Anchor check is enabled at all,
@@ -119,7 +121,8 @@ defmodule Anchor.Managers.Lint do
           modules_map: modules_map,
           graph_crashes: graph_crashes,
           params: params,
-          report_shared_failures?: report_shared_failures?
+          report_shared_failures?: report_shared_failures?,
+          defined_modules?: lists_allowed_callers?(check_module, rules)
         }
 
         # Each file is parsed as it is checked and dropped afterwards, so a run
@@ -151,19 +154,43 @@ defmodule Anchor.Managers.Lint do
     end
   end
 
+  # DND-1269: an allowed caller no selected file defines needs the whole file
+  # set to tell, as a floor does, so it is reported only when floors are.
   defp floor_violations(check_module, %Config{rules: rules, path: path}, facts, opts) do
     if Keyword.get(opts, :enforce_selection_floors, true) do
-      rule_type = check_module.rule_type()
+      own_rules = own_rules(check_module, rules)
 
-      rules
-      |> Enum.filter(&RuleMatching.rule_matches_type?(&1, rule_type))
-      |> RuleCoverage.below_floor(facts)
-      |> Enum.map(fn {rule, selected} ->
-        Failures.selection_floor_violation(rule, selected, length(facts), path)
-      end)
+      below_floor =
+        own_rules
+        |> RuleCoverage.below_floor(facts)
+        |> Enum.map(fn {rule, selected} ->
+          Failures.selection_floor_violation(rule, selected, length(facts), path)
+        end)
+
+      missing_callers =
+        own_rules
+        |> RuleCoverage.missing_allowed_callers(facts)
+        |> Enum.map(fn {rule, missing} ->
+          Failures.missing_allowed_callers_violation(rule, missing, path)
+        end)
+
+      below_floor ++ missing_callers
     else
       []
     end
+  end
+
+  defp own_rules(check_module, rules) do
+    rule_type = check_module.rule_type()
+    Enum.filter(rules, &RuleMatching.rule_matches_type?(&1, rule_type))
+  end
+
+  # Whether a file's facts need the modules it defines: only when a rule this
+  # check reads lists allowed callers, so no other run pays for the walk.
+  defp lists_allowed_callers?(check_module, rules) do
+    check_module
+    |> own_rules(rules)
+    |> Enum.any?(&(Map.get(&1, :allowed_callers) not in [nil, []]))
   end
 
   defp unchecked_violations(%Config{rules: rules, path: path}, opts) do
@@ -206,7 +233,7 @@ defmodule Anchor.Managers.Lint do
   defp result_for_parse({:ok, ast}, source_file, run_context) do
     %{analyzer: analyzer, graph_crashes: graph_crashes} = run_context
 
-    case guarded(:file_analysis, fn -> file_facts(analyzer, source_file, ast) end) do
+    case guarded(:file_analysis, fn -> file_facts(analyzer, source_file, ast, run_context) end) do
       {:ok, facts} ->
         {source_file, violations, facts} = detect_for_file(source_file, ast, facts, run_context)
         graph_violations = graph_crashes |> Map.get(source_file.filename) |> List.wrap()
@@ -285,13 +312,22 @@ defmodule Anchor.Managers.Lint do
     %{filename: source_file.filename, module_names: [], uses: [], parsed?: false}
   end
 
-  defp file_facts(analyzer, source_file, ast) do
-    %{
+  defp file_facts(analyzer, source_file, ast, run_context) do
+    facts = %{
       filename: source_file.filename,
       module_names: Enum.map(analyzer.extract_module_names(ast), &to_string/1),
       uses: analyzer.extract_uses(ast)
     }
+
+    put_defined_modules(facts, analyzer, ast, run_context)
   end
+
+  # DND-1269: the modules code in the file can be attributed to, for
+  # `RuleCoverage.missing_allowed_callers/2`.
+  defp put_defined_modules(facts, analyzer, ast, %{defined_modules?: true}),
+    do: Map.put(facts, :defined_modules, analyzer.defined_modules(ast))
+
+  defp put_defined_modules(facts, _analyzer, _ast, _run_context), do: facts
 
   # `{modules_map, crashes}`: the graph, and, by filename, the violation for a
   # file whose graph nodes crashed (DND-1310), reported on that file.
