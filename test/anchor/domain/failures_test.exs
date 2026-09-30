@@ -163,4 +163,104 @@ defmodule Anchor.Domain.FailuresTest do
       assert violation.filename == ".anchor.yml"
     end
   end
+
+  # DND-1310. Sabotage record:
+  # ../../sabotage_records/failures-20260929-dnd_1310_analyzer_quote_crash.md
+  describe "analysis_crash_violation/4" do
+    test "sits on the file, names the check, the exception and the frame that raised" do
+      # A frame in a loaded application (anchor): the text is the frame's
+      # alone, with no `(app version)` prefix read from the VM.
+      frame =
+        {Anchor.Domain.DependencyAnalyzer, :walk_children, 3, [file: ~c"lib/a.ex", line: 7]}
+
+      violation =
+        Failures.analysis_crash_violation(
+          Anchor.Check.NoDependency,
+          :error,
+          %FunctionClauseError{
+            module: Anchor.Domain.DependencyAnalyzer,
+            function: :walk_children,
+            arity: 3
+          },
+          [frame]
+        )
+
+      assert %Violation{kind: :fail_closed, filename: nil, line: nil} = violation
+      assert violation.trigger == "Anchor.Check.NoDependency"
+
+      assert violation.message ==
+               "Anchor check Anchor.Check.NoDependency crashed on this file, so it checked no " <>
+                 "Anchor rule against it: FunctionClauseError: no function clause matching in " <>
+                 "Anchor.Domain.DependencyAnalyzer.walk_children/3 (raised at lib/a.ex:7: " <>
+                 "Anchor.Domain.DependencyAnalyzer.walk_children/3). Fix: this is a defect in " <>
+                 "Anchor, not in this file; report it to Anchor with the file (or a minimal " <>
+                 "snippet that reproduces it). Excluding the file from Credo silences this and " <>
+                 "leaves the file unchecked."
+    end
+
+    test "a crash in the shared per-file analysis names Anchor, not a check" do
+      violation =
+        Failures.analysis_crash_violation(
+          :file_analysis,
+          :error,
+          %ArgumentError{message: "x"},
+          []
+        )
+
+      assert violation.trigger == "Anchor"
+
+      assert violation.message =~
+               "Anchor crashed analysing this file, so no Anchor rule was checked against it: " <>
+                 "ArgumentError: x. Fix: "
+    end
+
+    test "a raw Erlang error, a throw and an exit are each named" do
+      error = Failures.analysis_crash_violation(:file_analysis, :error, :badarg, [])
+      thrown = Failures.analysis_crash_violation(:file_analysis, :throw, :oops, [])
+      exited = Failures.analysis_crash_violation(:file_analysis, :exit, :normal, [])
+
+      assert error.message =~ "against it: ArgumentError: argument error. Fix: "
+      assert thrown.message =~ "against it: throw: :oops. Fix: "
+      assert exited.message =~ "against it: exit: :normal. Fix: "
+    end
+
+    test "a long reason is capped at 300 characters" do
+      reason = %MatchError{term: String.duplicate("a", 1000)}
+      violation = Failures.analysis_crash_violation(:file_analysis, :error, reason, [])
+
+      [_opening, rest] = String.split(violation.message, "against it: MatchError: ", parts: 2)
+      [shown, _fix] = String.split(rest, ". Fix: ", parts: 2)
+
+      assert String.length(shown) == 303
+      assert String.ends_with?(shown, "...")
+    end
+
+    test "a frame carrying the arguments (a FunctionClauseError's) names the arity only" do
+      frame =
+        {Sample.Walker, :walk_children, [nil, %{secret: :state}], [file: ~c"lib/a.ex", line: 7]}
+
+      violation =
+        Failures.analysis_crash_violation(
+          Anchor.Check.NoDependency,
+          :error,
+          %ArgumentError{message: "x"},
+          [frame]
+        )
+
+      assert violation.message =~ "(raised at lib/a.ex:7: Sample.Walker.walk_children/2). Fix: "
+      refute violation.message =~ "secret"
+    end
+
+    test "without a stacktrace it still reports, naming no frame" do
+      violation =
+        Failures.analysis_crash_violation(
+          Anchor.Check.NoDependency,
+          :error,
+          %ArgumentError{message: "x"},
+          []
+        )
+
+      assert violation.message =~ "against it: ArgumentError: x. Fix: "
+    end
+  end
 end

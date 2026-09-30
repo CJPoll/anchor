@@ -197,14 +197,15 @@ defmodule Anchor.Check.Base do
       # SELECTION are deliberately NOT exercised here — that path belongs to the
       # Manager; the caller passes the already-selected rules, exactly as the old
       # `check_file/3` was called. A file that does not parse is reported
-      # (DND-1265), never checked as if it were empty.
+      # (DND-1265), never checked as if it were empty, and a detection that
+      # raises is reported on the file (DND-1310), as `Lint.run/4` reports it.
       def check_file(source_file, rules, params) do
         case Source.ast(source_file) do
           {:ok, ast} ->
             context = %{modules_map: %{}, params: params}
 
-            source_file
-            |> detect_violations(ast, rules, context)
+            __MODULE__
+            |> Lint.detect_file(source_file, ast, rules, context)
             |> then(&violations_to_issues(source_file, &1))
 
           {:error, {line, message}} ->

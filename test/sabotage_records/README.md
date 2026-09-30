@@ -57,8 +57,11 @@ before coining a synonym.
   mapping violations to Credo issues and choosing the run's shared-failure
   reporter (DND-1265).
 - `failures` — `Anchor.Domain.Failures`, the text of every fail-closed report
-  (missing or invalid config, unparseable file).
+  (missing or invalid config, unparseable file, a check that crashed on a file).
 - `source` — `Anchor.Check.Source`, the AST/source acquisition edge.
+- `dependency_analyzer` — `Anchor.Domain.DependencyAnalyzer`, the pure AST
+  walk behind every dependency fact (module names, references, calls, uses,
+  the module graph).
 - `glob_pattern` — `Anchor.Domain.GlobPattern` (glob / module-name pattern
   matching for rule selection).
 - `rule_matching` — `Anchor.Domain.RuleMatching` (pure rule-selection predicate).

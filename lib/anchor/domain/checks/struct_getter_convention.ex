@@ -100,8 +100,9 @@ defmodule Anchor.Domain.Checks.StructGetterConvention do
     |> Enum.filter(&function_def?/1)
   end
 
-  defp function_def?({:def, _, _}), do: true
-  defp function_def?({:defp, _, _}), do: true
+  # A definition only: a variable named `def` is `{:def, meta, context}` (DND-1310).
+  defp function_def?({:def, _, args}) when is_list(args), do: true
+  defp function_def?({:defp, _, args}) when is_list(args), do: true
   defp function_def?(_), do: false
 
   # --- Struct fields (literal defstruct only) --------------------------------
