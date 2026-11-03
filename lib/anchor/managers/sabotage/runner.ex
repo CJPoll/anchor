@@ -46,7 +46,11 @@ defmodule Anchor.Managers.Sabotage.Runner do
        touch, run its tests (bounded by `timeout`), and in an `after` block
        write the original back, touch, check its sha256 and only then delete
        the journal. A restore that does not reproduce the original stops the
-       run (exit 2) with the journal kept.
+       run (exit 2) with the journal kept. A mutant whose run another mutant
+       already made (the same edit to the same file, the same tests:
+       `Anchor.Domain.Sabotage.SharedRun`; the targets of one
+       `defimpl P, for: [T1, T2]`) is not applied again: it takes that run's
+       verdict, and is still listed as its own outcome (DND-5639).
    10. The run is saved to `<build_path>/anchor/sabotage/last-run.etf`, where
        `build_path` is the fact the task gathered from Mix
        (`Mix.Project.build_path/0`: `_build/<env>`, or what `MIX_BUILD_PATH`
@@ -109,6 +113,7 @@ defmodule Anchor.Managers.Sabotage.Runner do
   alias Anchor.Domain.Sabotage.Record
   alias Anchor.Domain.Sabotage.RecordNaming
   alias Anchor.Domain.Sabotage.Run
+  alias Anchor.Domain.Sabotage.SharedRun
   alias Anchor.Domain.Sabotage.TestRun
   alias Anchor.Domain.Sabotage.TestSelection
   alias Anchor.Managers.Sabotage
@@ -630,14 +635,41 @@ defmodule Anchor.Managers.Sabotage.Runner do
       "the `timeout` binary was not found, so a test run could not be bounded. " <>
         "Fix: install coreutils timeout"
 
+  # DND-5639: a mutant whose run (`SharedRun.key/2`) was already measured,
+  # another target of the same `defimpl ..., for: [...]` edit selecting the
+  # same tests, takes that run's verdict instead of running it again.
   defp mutants(run, facts, config, sources, planned, ports) do
-    Enum.reduce_while(planned, run, fn {mutant, selection}, run ->
-      case mutant_outcome(mutant, selection, facts, config, sources, ports) do
-        {:ok, outcome} -> {:cont, %{run | outcomes: run.outcomes ++ [outcome]}}
-        {:refuse, code, message} -> {:halt, %{run | refusal: {code, message}}}
+    planned
+    |> Enum.reduce_while({run, %{}}, fn {mutant, selection}, {run, measured} ->
+      key = SharedRun.key(mutant, selection)
+
+      case measured_outcome(
+             Map.fetch(measured, key),
+             {mutant, selection},
+             facts,
+             config,
+             sources,
+             ports
+           ) do
+        {:ok, outcome} ->
+          {:cont,
+           {%{run | outcomes: run.outcomes ++ [outcome]}, measured(measured, key, outcome)}}
+
+        {:refuse, code, message} ->
+          {:halt, {%{run | refusal: {code, message}}, measured}}
       end
     end)
+    |> elem(0)
   end
+
+  defp measured_outcome({:ok, outcome}, {mutant, selection}, _facts, _config, _sources, _ports),
+    do: {:ok, SharedRun.attribute(outcome, mutant, selection)}
+
+  defp measured_outcome(:error, {mutant, selection}, facts, config, sources, ports),
+    do: mutant_outcome(mutant, selection, facts, config, sources, ports)
+
+  defp measured(measured, nil, _outcome), do: measured
+  defp measured(measured, key, outcome), do: Map.put_new(measured, key, outcome)
 
   defp mutant_outcome(mutant, {:none, []} = selection, _facts, config, _sources, _ports) do
     looked =

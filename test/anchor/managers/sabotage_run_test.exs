@@ -1538,4 +1538,136 @@ defmodule Anchor.Managers.SabotageRunTest do
       assert runs == List.duplicate({command, ["test/calc_test.exs"]}, 3)
     end
   end
+
+  describe "run/2: a multi-target defimpl mutant (DND-5639)" do
+    # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5639_sabotage_followups.md
+    # `for: [Calc, Other]`: one changed function is two targets, String.Chars.Calc
+    # and String.Chars.Other, each with one mutant of the same edit.
+    @listed "defimpl String.Chars, for: [Calc, Other] do\n  def to_string(c) do\n    c.a\n  end\nend\n"
+    @listed_cov_opts @opts ++ [coverage_store: Anchor.CoverageStoreMock]
+
+    defp expect_listed_scope do
+      expect_journal(:none)
+      expect_config()
+      expect_ignored()
+      expect(ChangeSourceMock, :merge_base, fn @root, "origin/main" -> {:ok, "abc"} end)
+      expect(ChangeSourceMock, :diff, fn @root, "abc" -> {:ok, @diff} end)
+      expect(ChangeSourceMock, :untracked, fn @root -> {:ok, []} end)
+      expect(ChangeSourceMock, :read, 2, fn @root, "lib/calc.ex" -> {:ok, @listed} end)
+      expect(ChangeSourceMock, :show, fn @root, "abc", "lib/calc.ex" -> {:ok, @listed} end)
+      expect_clean()
+    end
+
+    # The patcher of `n` applied mutants of @listed.
+    defp expect_listed_patcher(n) do
+      expect(SourceMutationMock, :write_journal, n, fn @root, %Journal{} = entry ->
+        call({:write_journal, entry.mutant_id}, :ok)
+      end)
+
+      expect(SourceMutationMock, :write_file, 2 * n, fn @file_path, _bytes -> :ok end)
+      expect(SourceMutationMock, :touch_ahead, 2 * n, fn @file_path -> :ok end)
+
+      expect(SourceMutationMock, :sha256_file, n, fn @file_path ->
+        {:ok, Journal.sha256(@listed)}
+      end)
+
+      expect_delete_journal(n)
+    end
+
+    test "T1: two targets with one test set: one run, both carry its verdict, each listed" do
+      expect_listed_scope()
+      expect_tests_exist(true)
+      expect_listed_patcher(1)
+      expect_save()
+
+      expect(TestExecutionMock, :run, 2, fn _argv, ["test/calc_test.exs"], _opts ->
+        if calls_seen(:baseline),
+          do: call(:tests, test_run(:failed, [@killer])),
+          else: call(:baseline, test_run(:passed))
+      end)
+
+      run = Sabotage.run(@facts, @opts)
+
+      assert run.refusal == nil
+      assert Enum.count(calls(), &(&1 == :tests)) == 1
+
+      assert [
+               %{mutant: first, status: :killed, killers: [killer]},
+               %{mutant: second, status: :killed, killers: [killer]}
+             ] = run.outcomes
+
+      assert killer == {"test/calc_test.exs", 4, "test adds"}
+      assert Enum.sort([first.module, second.module]) == [String.Chars.Calc, String.Chars.Other]
+      assert first.id != second.id
+      assert {first.range, first.replacement} == {second.range, second.replacement}
+      assert Enum.all?(run.outcomes, &(&1.selection == {:mirror, ["test/calc_test.exs"]}))
+      assert Report.exit_code(run) == 0
+    end
+
+    test "T2: positive control: two targets with different test sets run twice" do
+      map = %{
+        version: 1,
+        commit: "c0ffee0000000000000000000000000000000000",
+        elixir: "1.19.4",
+        otp: "28",
+        tests: [
+          %{
+            file: "test/other_test.exs",
+            line: 12,
+            name: "test renders",
+            module: "OtherTest",
+            functions: ["String.Chars.Calc.to_string/1"]
+          }
+        ],
+        modules_traced: 3,
+        outside_windows: 0,
+        late_events: 0,
+        suite_exit: 0
+      }
+
+      expect_listed_scope()
+
+      expect(SourceMutationMock, :existing, fn paths ->
+        assert Enum.sort(paths) == ["/repo/test/calc_test.exs", "/repo/test/other_test.exs"]
+        paths
+      end)
+
+      expect(Anchor.CoverageStoreMock, :read, fn "/repo/cov.etf" -> {:ok, map} end)
+      expect(GitWorktreeMock, :head_sha, fn @root -> {:ok, "headsha"} end)
+
+      expect(GitWorktreeMock, :ancestor?, fn @root, "c0ffee0000000000000000000000000000000000" ->
+        {:ok, true}
+      end)
+
+      expect(GitWorktreeMock, :changed_since, fn @root,
+                                                 "c0ffee0000000000000000000000000000000000" ->
+        {:ok, []}
+      end)
+
+      expect_listed_patcher(2)
+      expect_save()
+
+      expect(TestExecutionMock, :run, 3, fn _argv, tests, _opts ->
+        if calls_seen(:baseline),
+          do: call({:tests, tests}, test_run(:failed, [@killer])),
+          else: call(:baseline, test_run(:passed))
+      end)
+
+      run = Sabotage.run(Map.put(@facts, :coverage, "cov.etf"), @listed_cov_opts)
+
+      assert run.refusal == nil
+
+      assert Enum.sort(for {:tests, tests} <- calls(), do: tests) == [
+               ["test/calc_test.exs"],
+               ["test/other_test.exs:12"]
+             ]
+
+      assert Enum.sort(Enum.map(run.outcomes, &{&1.mutant.module, &1.selection})) == [
+               {String.Chars.Calc, {:coverage, ["test/other_test.exs:12"]}},
+               {String.Chars.Other, {:mirror, ["test/calc_test.exs"]}}
+             ]
+
+      assert Enum.all?(run.outcomes, &(&1.status == :killed))
+    end
+  end
 end

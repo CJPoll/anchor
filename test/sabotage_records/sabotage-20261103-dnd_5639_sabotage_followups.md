@@ -63,3 +63,26 @@ each see `/builds/repo-test/...` (a build path that is not
 TO1 and TO3 pin behaviour the runner already had (they passed on the unfixed
 code); S9 and S10 are their reds. T4 is the positive control added after U7:
 a `:failed` run with no failure frame stays `{:killed, []}`, as before.
+
+## DND-5639 — the targets of one multi-target mutant share one run per test set
+
+- **Code under test:** `Anchor.Domain.Sabotage.SharedRun` (`key/2`: the
+  file, range, replacement and sorted unique tests; `nil` with no test;
+  `attribute/3`), `Anchor.Managers.Sabotage.Runner` (`mutants/6` reuses a
+  measured run by key)
+- **Suite run:** `mix test test/anchor/domain/sabotage/shared_run_test.exs
+  test/anchor/managers/sabotage_run_test.exs --timeout 2000 --max-cases 2`
+  (82 tests; green after the fix and after every row)
+
+| # | Mutation | Tests failed | First failure, verbatim |
+|---|---|---|---|
+| U8 | the unfixed runner (T1 and T2 written first; 78 tests) | 1 | T1 `** (Mox.UnexpectedCallError) expected Anchor.SourceMutationMock.write_journal/2 to be called once but it has been called 2 times` |
+| P1 | the key drops the tests (`Enum.take(tests, 0)`) | 2 | G2 `code: refute SharedRun.key(calc, {:mirror, ["test/a_test.exs"]}) ==` `left: {"lib/calc.ex", {{3, 5}, {3, 29}}, "_ = {\"rendering\"}", []}` (also T2) |
+| P2 | the key drops the range | 1 | G3 `code: refute SharedRun.key(calc, tests) == SharedRun.key(moved, tests)` `left: {"lib/calc.ex", nil, "_ = {\"rendering\"}", ["test/a_test.exs"]}` |
+| P3 | the key drops the replacement | 16 | G3 `code: refute SharedRun.key(calc, tests) == SharedRun.key(replaced, tests)` `left: {"lib/calc.ex", {{3, 5}, {3, 29}}, nil, ["test/a_test.exs"]}` (and 15 runner tests whose mutants of one site took one verdict, e.g. `code:  assert Report.exit_code(run) == 1`) |
+| P4 | the key drops the file | 1 | G4 `left: {nil, {{3, 5}, {3, 29}}, "_ = {\"rendering\"}", ["test/a_test.exs"]}` |
+| P5 | a mutant with no test gets a key | 1 | G5 `code:  assert SharedRun.key(calc, {:none, []}) == nil` `left:  {"lib/calc.ex", {{3, 5}, {3, 29}}, "_ = {\"rendering\"}", []}` |
+| P6 | the tests not sorted (selection order is part of the key) | 1 | G1 `code:  assert SharedRun.key(other, {:coverage, ["test/b_test.exs", "test/a_test.exs"]}) == key` |
+| P7 | `attribute/3` keeps the first target's mutant | 2 | G6 `code:  assert shared == %{` (also T1) |
+| P8 | `attribute/3` keeps the first target's selection | 1 | G6 `code:  assert shared == %{` |
+| P9 | the runner never records a measured run | 1 | T1 `** (Mox.UnexpectedCallError) expected Anchor.SourceMutationMock.write_journal/2 to be called once but it has been called 2 times` |
