@@ -630,15 +630,18 @@ defmodule Anchor.Domain.Failures do
   @doc """
   The issue for a base config that could not be read at the `--base` ref
   (DND-5629): each baseline's base copy is found by its rule's id there, so
-  GREW could not be judged for any rule. On the config.
+  GREW could not be judged for any rule. On the config, once per run, naming
+  every rule `ids` it left unjudged (DND-5648).
   """
-  @spec baseline_base_config_unreadable(String.t(), String.t(), term()) :: Violation.t()
-  def baseline_base_config_unreadable(config, ref, reason) do
+  @spec baseline_base_config_unreadable(String.t(), String.t(), term(), [String.t(), ...]) ::
+          Violation.t()
+  def baseline_base_config_unreadable(config, ref, reason, [_ | _] = ids) do
     graph_issue(
       config,
       nil,
       "Anchor could not read #{config} at #{ref} (#{capped(inspect(reason))}), so no " <>
-        "baseline's copy there could be found by its rule's id and GREW could not be judged. " <>
+        "baseline's copy there could be found by its rule's id and GREW could not be judged " <>
+        "for rules #{Enum.map_join(ids, ", ", &inspect/1)}. " <>
         "Fix: pass a --base ref whose #{config} loads, or drop --base."
     )
   end

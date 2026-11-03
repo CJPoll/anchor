@@ -7,6 +7,7 @@ defmodule Anchor.Managers.GraphBaselineTest do
   #
   # Sabotage record: ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
   # DND-5629 (base found by rule id): ../../sabotage_records/baseline_rename-20261103-dnd_5441_graph_rules_a.md
+  # DND-5648 (one base-config issue): ../../sabotage_records/baseline-20261103-dnd_5648_graph_followups.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -370,6 +371,57 @@ defmodule Anchor.Managers.GraphBaselineTest do
                report.findings,
                &(&1.file == ".anchor.yml" and &1.message =~ "could not read .anchor.yml at main")
              )
+    end
+
+    # DND-5648: one cause, one issue. Three baselined rules and a base config
+    # that does not load gave three copies of the same issue.
+    test "a base config that cannot be read is one issue naming every baselined rule", %{
+      beam: beam
+    } do
+      ids = ["f", "g", "h"]
+      expect_run(Enum.map(ids, &rule(%{id: &1, baseline: ".anchor/baselines/#{&1}.txt"})), beam)
+
+      expect(BaselineStoreMock, :read, 3, fn @root, ".anchor/baselines/" <> file ->
+        id = Path.rootname(file)
+        Baseline.parse("#{id}|AnchorFixtures.GraphBaselineTest.User|found\n")
+      end)
+
+      expect(GitBaseMock, :rules, fn @root, "main", ".anchor.yml" ->
+        {:error, {:invalid_config, "the document is empty"}}
+      end)
+
+      expect(GitBaseMock, :show, 0, fn _root, _ref, _path -> {:error, :absent} end)
+
+      report = Graph.run(request(%{base: "main"}), deps())
+
+      assert report.exit_code == 1
+
+      assert [issue] =
+               Enum.filter(report.findings, &(&1.message =~ "could not read .anchor.yml at main"))
+
+      assert issue.file == ".anchor.yml"
+      assert issue.message =~ ~s|rules "f", "g", "h"|
+      assert issue.message =~ "the document is empty"
+      assert issue.message =~ "Fix: "
+
+      # The verdict is unchanged: GREW was not judged, so every finding stands
+      # and none is held.
+      assert report.held == []
+
+      assert Enum.sort(Enum.map(Enum.filter(report.findings, & &1.key), & &1.key)) ==
+               Enum.map(ids, &"#{&1}|AnchorFixtures.GraphBaselineTest.User|found")
+    end
+
+    test "positive control: a base config that loads gives no config issue", %{beam: beam} do
+      expect_run([rule()], beam)
+      expect_baseline("#{@key}\n")
+      expect_base_rules("main", [rule()])
+      expect(GitBaseMock, :show, fn @root, "main", @path -> Baseline.parse("#{@key}\n") end)
+
+      report = Graph.run(request(%{base: "main"}), deps())
+
+      assert report.exit_code == 0
+      refute Enum.any?(messages(report), &(&1 =~ "could not read .anchor.yml"))
     end
   end
 

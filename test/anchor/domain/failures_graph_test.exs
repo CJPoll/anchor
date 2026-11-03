@@ -11,6 +11,7 @@ defmodule Anchor.Domain.FailuresGraphTest do
   #   ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
   # DND-5584 (graph_app_no_modules): ../../sabotage_records/graph_runner-20261103-dnd_5441_graph_rules_a.md
   # DND-5628 (the symlink rows): ../../sabotage_records/baseline_symlink-20261103-dnd_5441_graph_rules_a.md
+  # DND-5648 (baseline_base_config_unreadable/4): ../../sabotage_records/baseline-20261103-dnd_5648_graph_followups.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Failures
@@ -135,6 +136,15 @@ defmodule Anchor.Domain.FailuresGraphTest do
          "could not read b.txt at main (:boom)",
          "(GREW) could not be judged",
          "Fix: pass a --base"
+       ]},
+      # DND-5648: one issue for the config, naming every rule it left unjudged.
+      {"baseline_base_config_unreadable",
+       Failures.baseline_base_config_unreadable(".anchor.yml", "main", :boom, ["web", "core"]),
+       ".anchor.yml",
+       [
+         "Anchor could not read .anchor.yml at main (:boom)",
+         ~s|GREW could not be judged for rules "web", "core"|,
+         "Fix: pass a --base ref whose .anchor.yml loads"
        ]},
       {"baseline_first_landing", Failures.baseline_first_landing("b.txt", "main"), "b.txt",
        ["NOTE: first landing of b.txt (absent at main); review is the gate.", "Fix: review"]},

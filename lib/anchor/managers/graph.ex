@@ -239,7 +239,8 @@ defmodule Anchor.Managers.Graph do
       |> Enum.map(&Finding.fail_closed(&1, @config_file))
 
     GraphReport.new(
-      fail_closed ++ Enum.flat_map(ran, & &1.findings) ++ artifact_notes,
+      fail_closed ++
+        Enum.flat_map(ran, & &1.findings) ++ base_config_issues(deps, ran) ++ artifact_notes,
       [],
       request
       |> counts(map_size(graph.modules), length(rules), length(Model.opaque(model)))
@@ -373,6 +374,11 @@ defmodule Anchor.Managers.Graph do
     else
       {:fail, violation} ->
         %{findings: findings ++ [Finding.fail_closed(violation, path)], held: [], refused: []}
+
+      # The base config did not load: the rule's findings all stand, and the
+      # run's one issue on that config names it (`base_config_issues/2`).
+      :unjudged ->
+        %{findings: findings, held: [], refused: [], base_unjudged: rule.id}
     end
   end
 
@@ -393,8 +399,8 @@ defmodule Anchor.Managers.Graph do
   # DND-5629: under `--base REF`, the graph rules of the config at REF, read
   # once and only when a rule has a baseline: each baseline's base copy is
   # found by its rule's id there, never by the branch's path. `nil` without
-  # `--base`; a failed read is an issue for every baselined rule, never "no
-  # growth".
+  # `--base`; a failed read leaves every baselined rule's GREW unjudged, never
+  # "no growth", and is one issue naming them all (DND-5648).
   defp base_config(git, request, config) do
     ref = Map.get(request.opts, :base)
 
@@ -407,9 +413,28 @@ defmodule Anchor.Managers.Graph do
     case git.rules(root, ref, config) do
       {:ok, rules} -> {:ok, rules}
       {:error, :absent} -> {:ok, :absent}
-      {:error, reason} -> {:fail, Failures.baseline_base_config_unreadable(config, ref, reason)}
+      {:error, reason} -> {:unreadable, config, ref, reason}
     end
   end
+
+  # DND-5648: a base config that does not load is one cause, so it is one
+  # issue, naming every rule whose GREW it left unjudged; each of those rules
+  # keeps every finding (nothing held), as before.
+  defp base_config_issues(%{base: {:unreadable, config, ref, reason}}, ran) do
+    case for(%{base_unjudged: id} <- ran, do: id) do
+      [] ->
+        []
+
+      ids ->
+        [
+          config
+          |> Failures.baseline_base_config_unreadable(ref, reason, ids)
+          |> Finding.fail_closed(config)
+        ]
+    end
+  end
+
+  defp base_config_issues(_deps, _ran), do: []
 
   defp config_path(path, root),
     do: if(Path.type(path) == :relative, do: path, else: Path.relative_to(path, root))
@@ -419,7 +444,9 @@ defmodule Anchor.Managers.Graph do
   # `:absent` for a file absent at REF, and `{:ok, []}` for a rule that had no
   # baseline there. A failed read is an issue, never "no growth".
   defp base_entries(%{base: nil}, _request, _rule), do: {:ok, nil}
-  defp base_entries(%{base: {:fail, violation}}, _request, _rule), do: {:fail, violation}
+
+  defp base_entries(%{base: {:unreadable, _config, _ref, _reason}}, _request, _rule),
+    do: :unjudged
 
   defp base_entries(%{base: {:ok, base_rules}} = deps, request, rule) do
     case BaselineBase.locate(base_rules, rule.id) do
