@@ -32,7 +32,12 @@ defmodule Anchor.Adapters.BaselineFile do
   reports with a `Fix:` line. Winning that race needs a process that already
   writes the repository's directories, so it gains nothing that access did
   not give; the committed symlink of DND-5628 needs no such process, and the
-  lstat walk refuses it before any write.
+  lstat walk refuses it before any write. The detection has limits, named
+  here so it is not read as more: a second swap, putting the directory back
+  before the check, hides the escape; one that moves the link again between
+  the check and the removal points the removal elsewhere; and a real path
+  that cannot be resolved (more than 40 links) is that error, with the file
+  left where it landed.
 
   `create/4` takes `before_write:`, a zero-arity function run between the
   checks and the write: the seam a test swaps a directory in, at a fixed
