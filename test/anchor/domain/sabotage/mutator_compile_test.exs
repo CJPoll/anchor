@@ -82,8 +82,11 @@ defmodule Anchor.Domain.Sabotage.MutatorCompileTest do
     for {mutant, index} <- Enum.with_index(mutants) do
       mutated = Patch.apply_range(canary, mutant.range, mutant.replacement)
 
-      assert compile(mutated, "M#{index}") == {:ok, []},
-             "#{mutant.operator} #{inspect(mutant.variant)} #{inspect(mutant.target)}"
+      compiled = compile(mutated, "M#{index}")
+
+      assert compiled == {:ok, []},
+             "#{mutant.operator} #{inspect(mutant.variant)} #{inspect(mutant.target)}: " <>
+               inspect(compiled)
     end
   end
 
