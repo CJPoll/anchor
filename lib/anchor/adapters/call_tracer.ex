@@ -21,17 +21,24 @@ defmodule Anchor.Adapters.CallTracer do
 
     * `:every_call` (DND-5474): the collector is the tracer, and the project
       patterns are `true`: one message per call.
-    * `:first_hit` (DND-5652): one message per function per test window, the
-      same sets. The window number is the VM's trace control word, saved and
-      set to 0 here: the `test_started`/`test_finished` match spec adds one
-      to it inside the traced call, so it moves before the test runs. Every
-      project call message carries the word (`Anchor.Adapters.FirstHitGate.match_spec/1`),
-      and the tracer is an `Anchor.Adapters.FirstHitGate`, which forwards
-      each message to the collector and silences a function for the rest of
-      the window it first called in. Nothing has to switch it back on: the
-      next window's number no longer matches. A call from a process a test
-      left running is still traced in each later window it calls in, by the
-      first caller there.
+    * `:first_hit` (DND-5652): the same test -> function sets with a bounded
+      number of messages. The window number is the VM's trace control word,
+      saved and set to 0 here: the `test_started`/`test_finished` match spec
+      adds one to it inside the traced call, so it moves before the test
+      runs, and puts the new word in the boundary's message. Every project
+      call message carries the word (`Anchor.Adapters.FirstHitGate.match_spec/1`),
+      and the tracer is an `Anchor.Adapters.FirstHitGate`. It forwards a
+      function's first `Anchor.Domain.Sabotage.FirstHit.threshold/0` messages
+      in a window to the collector, then silences the function for the rest
+      of that window and drops what was already in flight. Nothing has to
+      switch it back on: the next window's number no longer matches. Measured
+      on CI (DND-5652): anchor's own graph analysis is 72 million calls of 676
+      functions, 51 s of trace messages to a process that only counts them;
+      silenced, it is under a million messages and about the untraced 4 s.
+      A call from a process a test left running is traced in each later
+      window it calls in until its function is silenced there, so
+      `CoverageMap`'s window leaks count the forwarded calls (see its
+      moduledoc).
 
   `stop/0` turns every flag off for all processes and then waits for
   `:erlang.trace_delivered(:all)`: trace messages reach the tracer later than
@@ -63,7 +70,12 @@ defmodule Anchor.Adapters.CallTracer do
   @impl Anchor.Adapters.Tracing
   # TEMPORARY (DND-5652 equality run): DND5652_EVERY_CALL=1 builds the map the old way.
   def start(collector, modules),
-    do: start(collector, modules, if(System.get_env("DND5652_EVERY_CALL"), do: :every_call, else: :first_hit))
+    do:
+      start(
+        collector,
+        modules,
+        if(System.get_env("DND5652_EVERY_CALL"), do: :every_call, else: :first_hit)
+      )
 
   @doc "`start/2` in a given mode: `:first_hit` (the default) or `:every_call`."
   @spec start(pid(), [module()], :first_hit | :every_call) :: :ok | {:error, :already_tracing}

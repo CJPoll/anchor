@@ -458,8 +458,16 @@ defmodule Anchor.Adapters.CallTracerTest do
       assert drain([]) ==
                List.duplicate(early, threshold + 5) ++ List.duplicate(inside, threshold)
     after
-      capture_io(:stderr, fn -> :ok = Anchor.Adapters.FirstHitGate.flush(gate) end)
+      report = capture_io(:stderr, fn -> :ok = Anchor.Adapters.FirstHitGate.flush(gate) end)
       :erlang.trace_pattern({a, :_, :_}, false, [:local])
+
+      # 1 boundary + (threshold + 5) early + threshold inside + 1 in flight.
+      assert report =~
+               "first-hit gate: messages: #{2 * threshold + 7}, " <>
+                 "forwarded: #{2 * threshold + 6}, dropped: 1; " <>
+                 "silences: 1, in trace_pattern: "
+
+      assert report =~ "most in one window: 1\n"
     end
   end
 

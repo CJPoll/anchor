@@ -25,6 +25,11 @@ defmodule Anchor.Domain.Sabotage.CoverageMap do
   than one already released is counted in `late_events`, never attributed and
   never dropped silently: the map and the summary say how many there were.
 
+  The tracer forwards a function's first calls in a window and silences it
+  after that (`Anchor.Domain.Sabotage.FirstHit`, DND-5652), so the events here
+  are those, not every call: `outside_windows` and the leak counts below count
+  forwarded calls.
+
   A released call inside an open window adds its function to that test's set
   (a set: a thousand calls cost one element). A call outside every window
   (`setup_all`, a process that outlived its test) counts in `outside_windows`.

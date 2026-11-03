@@ -1237,6 +1237,16 @@ library). It writes the map test -> functions that test executed, private ones
 included, to `PATH` (default `_build/test/anchor/coverage.etf`). `TEST_ARGS`
 go to `mix test`.
 
+Tracing every call of a whole suite is too many messages for the tests
+that analyse Anchor's own graph (72 million calls of 676 functions in one
+test), so the tracer forwards a function's first 64 calls in a test window
+and then silences the function for the rest of that window (DND-5652). The
+window number is the VM's trace control word, which the traced
+`test_started`/`test_finished` calls advance themselves, so the next test
+traces the function again with nothing to switch back on. The map (test ->
+functions) is the same; `outside_windows` and the leak counts below count the
+calls that were forwarded.
+
 A test's window is read from traced calls of `ExUnit.EventManager.test_started/2`
 and `test_finished/2`, stamped with strict monotonic timestamps, never from a
 formatter: ExUnit notifies formatters asynchronously, so a formatter cannot
@@ -1262,13 +1272,17 @@ application process (a server, a cache) idle until a test first calls it is
 first seen in that test, so its later calls for other tests are reported too.
 A line names a process to look at, not proof the earlier test leaked it. A
 process first seen outside every window (one that called project code at
-boot, `setup_all`) is never a leak.
+boot, `setup_all`) is never a leak. Because a function is silenced after
+its first 64 calls in a window, a leak's call count stops at 64 per function
+per window, and a process whose only calls in the credited window are to
+functions already silenced there is not reported.
 
 It is **CI only by default**: without `CI=true` it refuses, exit 2, and
 traces nothing (`Fix: run it in CI, or pass --local where that load is
 acceptable`). Anchor's own map is built by `.github/workflows/coverage-map.yml`
-(on push to main, weekly, and by hand) and uploaded as the artifact
-`anchor-coverage` (30 days).
+(on every pull request, on push to main, weekly, and by hand) and uploaded
+as the artifact `anchor-coverage` (30 days) by every run but a pull request's,
+whose map is built from unmerged code.
 
 | Condition | Exit |
 |---|---|
