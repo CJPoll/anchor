@@ -22,7 +22,8 @@ defmodule Anchor.Domain.Aggregates.WriteSource do
     4. a call `S.f(...)` on a schema module: `{:schema, S}`;
     5. a call into `Ecto.Changeset`: its first argument;
     6. a call into `Ecto.Query`, `Ecto.Query.Builder.*` or `Ecto.Queryable`:
-       the first argument that traces to a schema or table;
+       the first argument that traces to a schema or table, a string
+       argument (a prefix) never counting as a table;
     7. a parameter of the function: (a) its `@spec` type `S.t()` with `S` a
        schema; else (b) the union, over every project call site of the
        function, of the argument there. A function used as a value (a
@@ -292,14 +293,24 @@ defmodule Anchor.Domain.Aggregates.WriteSource do
       String.starts_with?(name, "Elixir.Ecto.Query.Builder")
   end
 
+  # Rule 6: a string argument of a query call (a prefix, a name) is never the
+  # table, so an unresolved query stays unresolved. A schema module (a
+  # literal atom) and a literal `%Ecto.Query{}` map are still traced; a table
+  # reaches a query through `from/2`, whose `%Ecto.Query{}` rule 2 reads.
   defp first_resolved(args, env, ctx, seen) do
-    Enum.find_value(args, {:unresolved, seen}, fn arg ->
+    args
+    |> Enum.reject(&string?/1)
+    |> Enum.find_value({:unresolved, seen}, fn arg ->
       case trace(arg, env, ctx) do
         {:ok, _sources} = ok -> ok
         _other -> nil
       end
     end)
   end
+
+  defp string?(node),
+    do:
+      (:cerl.is_literal(node) and is_binary(:cerl.concrete(node))) or :cerl.type(node) == :binary
 
   defp apply_node(node, env, ctx) do
     op = :cerl.apply_op(node)

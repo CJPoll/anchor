@@ -50,6 +50,8 @@ defmodule Anchor.Domain.Aggregates.RealEctoTest do
     def e2_piped(v), do: from(t in Thread, where: t.x == ^v) |> Repo.update_all(set: [x: "1"])
     def e3, do: Repo.delete_all(from(t in "threads"))
     def e5(v), do: Repo.delete_all(where(Thread, [t], t.x == ^v))
+    def e6(q), do: Repo.delete_all(put_query_prefix(q, "tenant_a"))
+    def e6_known, do: Repo.delete_all(put_query_prefix(Thread, "tenant_a"))
 
     def e4 do
       Multi.new()
@@ -95,6 +97,13 @@ defmodule Anchor.Domain.Aggregates.RealEctoTest do
     analysis: a
   } do
     assert %{sources: [{:schema, @thread}], unresolved: nil} = site(a, :e5)
+  end
+
+  test "E6: a query call's literal argument is never the table; an unknown query stays unknown",
+       %{analysis: a} do
+    assert %{sources: [], unresolved: seen} = site(a, :e6)
+    refute seen =~ "tenant_a"
+    assert %{sources: [{:schema, @thread}], unresolved: nil} = site(a, :e6_known)
   end
 
   test "E4: a real Multi pipeline's scope keys are exactly the written schemas", %{analysis: a} do
