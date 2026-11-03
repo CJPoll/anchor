@@ -9,6 +9,7 @@ defmodule Anchor.Domain.Graph.BuilderTest do
   # Sabotage record: ../../../sabotage_records/builder-20261103-dnd_5551_graph_hardening.md
   # Sabotage record: ../../../sabotage_records/inlines-20261103-dnd_5551_graph_hardening.md
   # Sabotage record: ../../../sabotage_records/graph_runner-20261103-dnd_5581_hardening_batch.md (DND-5588)
+  # Sabotage record: ../../../sabotage_records/builder-20261103-dnd_5581_hardening_batch.md (DND-5587)
   # DND-5548 (the per-module walk guard): ../../../sabotage_records/builder-20261103-dnd_5440_graph_runner.md
   use ExUnit.Case, async: true
 
@@ -399,6 +400,54 @@ defmodule Anchor.Domain.Graph.BuilderTest do
       refute Graph.module(graph, B)
       refute Enum.any?(graph.calls, &(elem(&1.from, 0) == B))
       assert %ModuleNode{} = Graph.module(graph, A)
+    end
+  end
+
+  # DND-5587: the guard catches every kind, not only a raise. A module's
+  # struct fields are enumerated while its node is built, so a lazy stream
+  # there throws or exits inside the walk, from data alone.
+  describe "build/2 a module whose walk throws or exits (DND-5587)" do
+    for kind <- [:throw, :exit] do
+      @tag crash: kind
+      test "#{kind} in a module's walk is its {:walk_crashed, _}; the others are built", %{
+        pair: pair,
+        crash: kind
+      } do
+        [a | _] = Enum.filter(pair, &(&1.module == A))
+
+        crashing =
+          Stream.map([:field], fn _field ->
+            case kind do
+              :throw -> throw(:walk_boom)
+              :exit -> exit(:walk_boom)
+            end
+          end)
+
+        broken = %{
+          a
+          | module: AnchorFixtures.BuilderTest.Broken,
+            path: "ebin/broken.beam",
+            elixir: Map.put(a.elixir, :struct, crashing)
+        }
+
+        graph = Builder.build([broken | pair], %{})
+
+        assert [
+                 %{
+                   path: "ebin/broken.beam",
+                   module: AnchorFixtures.BuilderTest.Broken,
+                   reason: {:walk_crashed, summary}
+                 }
+               ] = graph.unreadable
+
+        assert summary =~ "#{kind}: :walk_boom"
+        refute Graph.module(graph, AnchorFixtures.BuilderTest.Broken)
+
+        # Positive control: the good modules are built, with their edges.
+        assert %ModuleNode{} = Graph.module(graph, A)
+        assert %ModuleNode{} = Graph.module(graph, B)
+        assert Enum.count(graph.calls, &(&1.from == {A, :f, 1})) == 1
+      end
     end
   end
 
