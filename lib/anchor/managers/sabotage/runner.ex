@@ -55,7 +55,8 @@ defmodule Anchor.Managers.Sabotage.Runner do
        a mutant) the naming is checked: a detached `HEAD` with no `--slot`,
        `ticket_nn_what` with no ticket key and no `--ticket`, and `{app}` in
        the records dir for a file outside `apps/<app>/` are each exit 2. A
-       record that cannot be written sets `record_error` (exit 2).
+       record that cannot be written sets `record_error`: said loudly, and
+       exit 2 only when every measured mutant passed (DND-5641).
 
   Selection also reads the kill maps of the records already there (DND-5484):
   a record whose `anchor-kills` block does not parse is skipped for selection

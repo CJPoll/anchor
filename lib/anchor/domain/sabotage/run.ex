@@ -27,8 +27,9 @@ defmodule Anchor.Domain.Sabotage.Run do
       that yielded no mutant (`Anchor.Domain.Sabotage.NoMutant.reason/1`).
     * `records` — the sabotage records written (DND-5484), `{:create |
       :append, path}`;
-    * `record_error` — `nil`, or why a record could not be written (exit 2;
-      the outcomes still stand).
+    * `record_error` — `nil`, or why a record could not be written. The
+      outcomes still stand and keep their verdict: a survivor stays exit 1
+      and an unmeasured run exit 3; only a pass becomes exit 2 (DND-5641).
   """
 
   alias Anchor.Domain.Sabotage.Mutant
