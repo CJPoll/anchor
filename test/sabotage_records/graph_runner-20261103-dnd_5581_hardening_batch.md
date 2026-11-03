@@ -208,35 +208,33 @@ inputs apart, and C fails it.
 
 # Source paths outside the project root (DND-5588)
 
-- **Code under test:** `Anchor.Domain.Graph.ProjectFile.place/2` (new), `Anchor.Domain.Graph.Builder.build/3`
-  (`root:`), `Anchor.Managers.Graph` (`read_beams/2`, `source_facts/3`), `Anchor.Domain.GraphReport`
-  (`excluded` count) — `ProjectFile` and `Builder` rows are the `builder` domain's, labelled here
+- **Code under test:** `Anchor.Managers.Graph` (`read_beams/2`, `outside_notes/2`, `source_facts/3`) and
+  `Anchor.Domain.GraphReport` (the `excluded` count). `ProjectFile` and the builder's `build/3` are the
+  `builder` domain's: `builder-20261103-dnd_5581_hardening_batch.md`; the two new `Failures` messages are
+  `failures-20261103-dnd_5581_hardening_batch.md`.
 - **Suite run:** per mutation, `mix test --timeout 2000 --max-cases 2 test/anchor/domain/graph/builder_test.exs
   test/anchor/managers/graph_test.exs test/anchor/domain/graph_report_test.exs
-  test/anchor/domain/graph/project_file_test.exs`, restored byte-for-byte (`cmp`) after each run.
+  test/anchor/domain/graph/project_file_test.exs test/anchor/domain/failures_graph_test.exs`, restored
+  byte-for-byte (`cmp`) after each run.
 
 The compiler writes a beam's `relative_file` relative to the directory it ran in, and leaves it absolute
 for a file outside it. The runner used that path as it stood: an absolute path inside the root matched no
-`paths:` glob and was read as an absolute file, and one outside the root (a path dependency's, a generated
-file) was classified like a project module. Now: inside the root, it is made relative (the node, the source
-read and the classification all use the relative path; Core's lines are still read against the beam's own
-path); outside, the module is left out of the graph and counted, as `(<n> dependency modules excluded)`. A
-run that read only dependency modules is COULD NOT MEASURE.
+`paths:` glob and was read as an absolute file. Now an absolute path inside the root is made relative; a
+module whose source is outside the root (an `elixirc_paths` entry such as `../shared`, a generated file) is
+left out of the graph, counted as `(<n> outside the root, excluded)` and named with its path in a `[report]`
+note; a run whose every module is outside the root is COULD NOT MEASURE.
+
+The first draft called those modules "dependencies" and only counted them. The review floor found that the
+runner reads the project's own ebins only, so such a module is project code compiled from outside the root,
+and a bare count dropped it from every rule with no name: it is now named per module, and the wording is
+"outside the root". The mutations below are re-run on that version.
 
 ## The regression, on the unfixed code
 
-`57 tests, 6 failures` over `builder_test.exs`, `graph_test.exs` and `graph_report_test.exs` (the new
-`project_file_test.exs` ran `2 tests, 2 failures` with no module: `UndefinedFunctionError`):
+`57 tests, 6 failures` over `builder_test.exs`, `graph_test.exs` and `graph_report_test.exs` (first draft of
+the tests; the new `project_file_test.exs` ran `2 tests, 2 failures` with no module):
 
 ```
-  3) test run/2 source paths outside the project root (DND-5588) an absolute path outside the root is a dependency: left out, counted, never read (Anchor.Managers.GraphTest)
-     test/anchor/managers/graph_test.exs:501
-     match (=) failed
-     code:  assert %GraphReport{exit_code: 0, findings: [], could_not_check: []} = report
-     ...
-                  file: "/deps/dep/lib/dep/thing.ex",
-                  message: "Anchor could not read the source of /deps/dep/lib/dep/thing.ex (:enoent), so its uses_module selectors and generated? are unknown. ..."
-
   5) test run/2 source paths outside the project root (DND-5588) an absolute path inside the root is a project module, read and classified by its relative path (Anchor.Managers.GraphTest)
      test/anchor/managers/graph_test.exs:487
      ...
@@ -247,82 +245,68 @@ run that read only dependency modules is COULD NOT MEASURE.
      ** (Mox.UnexpectedCallError) no expectation defined for Anchor.SourceSourceMock.read/2 in process #PID<0.436.0> with args ["/proj", ["/deps/dep/lib/dep/thing.ex"]]
 ```
 
-The other three were the builder's `build/3` (undefined), the report's count and the happy path's exact
-`counts` map (no `excluded` key). After: the four files and the task and canary tests run `67 tests, 0
-failures`.
+The outside-the-root module was read and reported as an unreadable source (`/deps/dep/lib/dep/thing.ex
+(:enoent)`). After: the five files run `77 tests, 0 failures` (with the task and canary tests, `85 tests, 0
+failures`).
 
 ## Mutations
 
 | # | Mutation | Tests that failed | Run |
 |---|---|---|---|
-| A | `dependency?/2` is always false (nothing excluded) | outside-the-root, only-dependencies (the source read then hits the `{:project, _}` match: a loud `MatchError`) | `59 tests, 2 failures` |
-| B | (builder) `project_file/2` keeps the absolute path | builder `build/3`, inside-the-root | `59 tests, 2 failures` |
-| C | `source_facts/3` reads the beam's absolute path | inside-the-root | `59 tests, 1 failure` |
-| D | (builder) `ProjectFile` treats every absolute path as the project's | the table, outside-the-root, only-dependencies | `59 tests, 3 failures` |
-| E | (builder) `ProjectFile` does not `Path.expand/1` the file | none: equivalent on Elixir 1.19, whose `Path.relative_to/2` resolves `..` itself; kept for the `~> 1.18` floor | `59 tests, 0 failures` |
-| F | the summary never notes `excluded` | the report's count test, outside-the-root | `59 tests, 2 failures` |
-| G | (builder) the walker reads Core against the relativised path | builder `build/3` (the line becomes `:def`) | `59 tests, 1 failure` |
+| A | `outside_root?/2` is always false (nothing left out) | outside-the-root, only-outside (the source read then hits the `{:project, _}` match: a loud `MatchError`) | `77 tests, 2 failures` |
+| C | `source_facts/3` reads the beam's absolute path | inside-the-root | `77 tests, 1 failure` |
+| F | the summary never notes `excluded` | the report's count test, outside-the-root | `77 tests, 2 failures` |
+| H | `outside_notes/2` names no module | outside-the-root | `77 tests, 1 failure` |
+| I | an all-outside run gets the plain zero-modules message | only-outside | `77 tests, 1 failure` |
 
 ## Failure strings (verbatim)
 
 ### A
 
 ```
-  1) test run/2 source paths outside the project root (DND-5588) an absolute path outside the root is a dependency: left out, counted, never read (Anchor.Managers.GraphTest)
-     test/anchor/managers/graph_test.exs:501
+  1) test run/2 source paths outside the project root (DND-5588) an absolute path outside the root is left out, counted and named, never read (Anchor.Managers.GraphTest)
+     test/anchor/managers/graph_test.exs:502
      ** (MatchError) no match of right hand side value:
 
-         :dependency
-```
-
-### B
-
-```
-  1) test build/3 with a root: a source path inside the root is relativised for the node and the source facts; edges keep their own lines (Anchor.Domain.Graph.BuilderTest)
-     test/anchor/domain/graph/builder_test.exs:496
-     match (=) failed
-     code:  assert %ModuleNode{source_file: "lib/far.ex", generated?: false} =
-              graph.modules[AnchorFixtures.BuilderTest.Far]
-     right: %Anchor.Domain.Graph.ModuleNode{
-              module: AnchorFixtures.BuilderTest.Far,
-              source_file: "/anchor-builder-root/lib/far.ex",
+         :outside_root
 ```
 
 ### C
 
 ```
   1) test run/2 source paths outside the project root (DND-5588) an absolute path inside the root is a project module, read and classified by its relative path (Anchor.Managers.GraphTest)
-     test/anchor/managers/graph_test.exs:487
+     test/anchor/managers/graph_test.exs:488
      match (=) failed
      code:  assert %GraphReport{exit_code: 0, findings: [], could_not_check: []} = report
-                  file: "/proj/lib/my_app/domain/inside.ex",
-```
-
-### D
-
-```
-  1) test the table (Anchor.Domain.Graph.ProjectFileTest)
-     test/anchor/domain/graph/project_file_test.exs:11
-     "/work/dep/lib/dep.ex"
 ```
 
 ### F
 
 ```
-  1) test render/2 dependency modules excluded (DND-5588) are counted in the summary and the JSON when there are any (Anchor.Domain.GraphReportTest)
-     test/anchor/domain/graph_report_test.exs:111
+  1) test render/2 modules outside the root, excluded (DND-5588) are counted in the summary and the JSON when there are any (Anchor.Domain.GraphReportTest)
+     test/anchor/domain/graph_report_test.exs:112
      Assertion with == failed
      left:  "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 baselined)"
-     right: "anchor.graph: 12 modules (4 dependency modules excluded) in 2 apps, 3 rules, 0 violations (0 report-only, 0 baselined)"
+     right: "anchor.graph: 12 modules (4 outside the root, excluded) in 2 apps, 3 rules, 0 violations (0 report-only, 0 baselined)"
 ```
 
-### G
+### H
 
 ```
-  1) test build/3 with a root: a source path inside the root is relativised for the node and the source facts; edges keep their own lines (Anchor.Domain.Graph.BuilderTest)
-     test/anchor/domain/graph/builder_test.exs:496
+  1) test run/2 source paths outside the project root (DND-5588) an absolute path outside the root is left out, counted and named, never read (Anchor.Managers.GraphTest)
+     test/anchor/managers/graph_test.exs:502
      match (=) failed
-     code:  assert [%Call{to: {Enum, :count, 1}, line: 2, line_source: :call}] =
-              Graph.calls_from(graph, {AnchorFixtures.BuilderTest.Far, :f, 1})
-     right: [%Anchor.Domain.Graph.Call{..., to: {Enum, :count, 1}, kind: :remote, line: 2, line_source: :def}]
+     code:  assert [%{enforcement: :report, file: @outside_path, message: message}] = report.findings
+     left:  [%{enforcement: :report, file: "/shared/lib/shared.ex", message: message}]
+     right: []
+```
+
+### I
+
+```
+  1) test run/2 source paths outside the project root (DND-5588) only modules outside the root read is COULD NOT MEASURE, never an empty pass (Anchor.Managers.GraphTest)
+     test/anchor/managers/graph_test.exs:527
+     Assertion with =~ failed
+     code:  assert message =~ "read 1 modules from #{@ebin}, and every one has a source file outside"
+     left:  "COULD NOT MEASURE: read 0 modules from /proj/_build/test/lib/my_app/ebin. Fix: run mix compile in this project; check that the ebin dirs above are the project's."
 ```

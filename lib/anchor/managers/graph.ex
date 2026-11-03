@@ -10,10 +10,10 @@ defmodule Anchor.Managers.Graph do
        invalid config is COULD NOT MEASURE (exit 3), and so is a config with no
        `architecture:` section: nothing could be classified;
     2. read every beam of the project's ebins (`Anchor.Adapters.BeamSource`)
-       and leave out each module whose source is a dependency's: an absolute
-       path outside the root (`Anchor.Domain.Graph.ProjectFile`, DND-5588),
-       counted in the summary; zero project modules read is COULD NOT
-       MEASURE (exit 3);
+       and leave out each module whose source is an absolute path outside the
+       root (`Anchor.Domain.Graph.ProjectFile`, DND-5588): counted in the
+       summary and named, with its path, in a report-only note; a run that
+       read no module inside the root is COULD NOT MEASURE (exit 3);
     3. read each module's source file's facts (`Anchor.Adapters.SourceSource`):
        its literal `defmodule`s and `use`s (`Anchor.Domain.Graph.SourceFacts`),
        by its path relative to the root (an absolute path inside the root is
@@ -74,8 +74,8 @@ defmodule Anchor.Managers.Graph do
 
     with {:ok, config} <- load_config(deps.config_loader),
          {:ok, rules} <- graph_rules(config, request, deps.graph_rules),
-         {:ok, beams, excluded} <- read_beams(deps.beam_source, request) do
-      measured(request, config, rules, {beams, excluded}, deps)
+         {:ok, beams, outside} <- read_beams(deps.beam_source, request) do
+      measured(request, config, rules, {beams, outside}, deps)
     else
       {:could_not_check, violation} ->
         GraphReport.new(
@@ -131,23 +131,41 @@ defmodule Anchor.Managers.Graph do
     end
   end
 
-  # A dependency's module (its source outside the root) is left out before
-  # anything is built, and counted; a run that read only those read no
-  # project module (DND-5588).
+  # A module whose source is outside the root is left out before anything is
+  # built; it is counted and named (`outside_notes/2`), never dropped
+  # silently. A run whose every module was outside the root read no project
+  # module (DND-5588).
   defp read_beams(source, %Request{apps: apps, root: root}) do
-    {excluded, beams} = apps |> source.read_ebins() |> Enum.split_with(&dependency?(&1, root))
+    {outside, beams} = apps |> source.read_ebins() |> Enum.split_with(&outside_root?(&1, root))
+    ebins = Enum.map(apps, &elem(&1, 1))
 
-    if Enum.any?(beams, &match?(%Beam{}, &1)),
-      do: {:ok, beams, length(excluded)},
-      else: {:could_not_check, Failures.graph_no_modules(Enum.map(apps, &elem(&1, 1)))}
+    cond do
+      Enum.any?(beams, &match?(%Beam{}, &1)) ->
+        {:ok, beams, outside}
+
+      outside != [] ->
+        {:could_not_check, Failures.graph_all_outside_root(length(outside), root, ebins)}
+
+      true ->
+        {:could_not_check, Failures.graph_no_modules(ebins)}
+    end
   end
 
-  defp dependency?(%Beam{elixir: %{relative_file: file}}, root) when is_binary(file),
-    do: ProjectFile.place(file, root) == :dependency
+  defp outside_root?(%Beam{elixir: %{relative_file: file}}, root) when is_binary(file),
+    do: ProjectFile.place(file, root) == :outside_root
 
-  defp dependency?(_beam, _root), do: false
+  defp outside_root?(_beam, _root), do: false
 
-  defp measured(request, config, rules, {beams, excluded}, deps) do
+  # One report-only note per module left out: the verdict stands, and the
+  # module is named with its path.
+  defp outside_notes(outside, root) do
+    for %Beam{module: module, elixir: %{relative_file: file}} <- outside do
+      violation = Failures.graph_module_outside_root(module, file, root)
+      %{Finding.fail_closed(violation, file) | enforcement: :report}
+    end
+  end
+
+  defp measured(request, config, rules, {beams, outside}, deps) do
     {source_facts, source_issues} = source_facts(deps.source_source, request.root, beams)
     graph = Builder.build(beams, source_facts, root: request.root)
     {model, class_issues} = Model.build(graph, config, source_facts)
@@ -157,17 +175,19 @@ defmodule Anchor.Managers.Graph do
     artifact_notes =
       write_artifact(deps.graph_store, request, {beams, source_facts}, config, graph)
 
+    outside_notes = outside_notes(outside, request.root)
+
     fail_closed =
       (unreadable_issues ++ source_issues ++ class_issues)
       |> Enum.map(&Finding.fail_closed(&1, @config_file))
 
     GraphReport.new(
-      fail_closed ++ rule_findings ++ artifact_notes,
+      fail_closed ++ rule_findings ++ outside_notes ++ artifact_notes,
       [],
       request
       |> counts(map_size(graph.modules), length(rules), length(Model.opaque(model)))
       |> Map.put(:no_core, no_core_count(graph))
-      |> Map.put(:excluded, excluded)
+      |> Map.put(:excluded, length(outside))
     )
   end
 
@@ -175,6 +195,8 @@ defmodule Anchor.Managers.Graph do
     files =
       beams
       |> Enum.flat_map(fn
+        # `read_beams/2` already left out every module outside the root, so
+        # each path here places as the project's.
         %Beam{elixir: %{relative_file: file}} when is_binary(file) ->
           {:project, relative} = ProjectFile.place(file, root)
           [relative]

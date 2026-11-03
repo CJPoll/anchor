@@ -108,12 +108,12 @@ defmodule Anchor.Domain.GraphReportTest do
     end
   end
 
-  describe "render/2 dependency modules excluded (DND-5588)" do
+  describe "render/2 modules outside the root, excluded (DND-5588)" do
     test "are counted in the summary and the JSON when there are any" do
       report = GraphReport.new([], [], %{@counts | excluded: 4})
 
       assert GraphReport.render(report, :text) ==
-               "anchor.graph: 12 modules (4 dependency modules excluded) in 2 apps, " <>
+               "anchor.graph: 12 modules (4 outside the root, excluded) in 2 apps, " <>
                  "3 rules, 0 violations (0 report-only, 0 baselined)"
 
       assert %{"excluded" => 4} = JSON.decode!(GraphReport.render(report, :json))

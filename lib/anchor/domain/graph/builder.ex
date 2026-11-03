@@ -164,7 +164,7 @@ defmodule Anchor.Domain.Graph.Builder do
   defp project_file(file, root) do
     case ProjectFile.place(file, root) do
       {:project, relative} -> relative
-      :dependency -> file
+      :outside_root -> file
     end
   end
 

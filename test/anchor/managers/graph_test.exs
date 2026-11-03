@@ -53,7 +53,8 @@ defmodule Anchor.Managers.GraphTest do
   """
 
   # DND-5588: compiled from absolute paths outside this test's cwd, so each
-  # beam's relative_file is absolute: one inside the root, one outside it.
+  # beam's relative_file is absolute: one inside the root, one outside it (as
+  # an `elixirc_paths: ["lib", "../shared"]` entry would compile it).
   @inside_path "/proj/lib/my_app/domain/inside.ex"
   @inside_file "lib/my_app/domain/inside.ex"
   @inside_source """
@@ -61,9 +62,9 @@ defmodule Anchor.Managers.GraphTest do
     def i(x), do: x
   end
   """
-  @dep_path "/deps/dep/lib/dep/thing.ex"
-  @dep_source """
-  defmodule AnchorFixtures.GraphManagerTest.DepThing do
+  @outside_path "/shared/lib/shared.ex"
+  @outside_source """
+  defmodule AnchorFixtures.GraphManagerTest.Shared do
     def t(x), do: x
   end
   """
@@ -79,7 +80,7 @@ defmodule Anchor.Managers.GraphTest do
         {@accounts_source, @accounts_file},
         {@stray_source, @stray_file},
         {@inside_source, @inside_path},
-        {@dep_source, @dep_path}
+        {@outside_source, @outside_path}
       ]
       |> compile_all_unloaded()
       |> Map.new(fn {module, binary} ->
@@ -482,7 +483,7 @@ defmodule Anchor.Managers.GraphTest do
 
   describe "run/2 source paths outside the project root (DND-5588)" do
     @inside AnchorFixtures.GraphManagerTest.Inside
-    @dep AnchorFixtures.GraphManagerTest.DepThing
+    @outside AnchorFixtures.GraphManagerTest.Shared
 
     test "an absolute path inside the root is a project module, read and classified by its relative path",
          %{beams: beams} do
@@ -498,31 +499,44 @@ defmodule Anchor.Managers.GraphTest do
       assert %{modules: 3, excluded: 0} = report.counts
     end
 
-    test "an absolute path outside the root is a dependency: left out, counted, never read",
+    test "an absolute path outside the root is left out, counted and named, never read",
          %{beams: beams} do
-      assert beams[@dep].elixir.relative_file == @dep_path
+      assert beams[@outside].elixir.relative_file == @outside_path
 
-      # The source double answers only the project's files: a read of the
-      # dependency's would be an unreadable-source issue.
-      expect_run(config([rule(:stub_ok, "ok")]), classified(beams) ++ [beams[@dep]])
+      # The source double answers only the files inside the root: a read of
+      # the outside one would be an unreadable-source issue.
+      expect_run(config([rule(:stub_ok, "ok")]), classified(beams) ++ [beams[@outside]])
 
       report = Graph.run(request(), deps())
 
-      assert %GraphReport{exit_code: 0, findings: [], could_not_check: []} = report
+      # Report-only: the verdict stands, and the module is named, not dropped.
+      assert %GraphReport{exit_code: 0, could_not_check: []} = report
+
+      assert [%{enforcement: :report, file: @outside_path, message: message}] = report.findings
+
+      assert message =~
+               "AnchorFixtures.GraphManagerTest.Shared was compiled from #{@outside_path}"
+
+      assert message =~ "outside the project root #{@root}"
+      assert message =~ "Fix: "
+
       assert %{modules: 2, excluded: 1} = report.counts
-      assert GraphReport.summary(report) =~ "2 modules (1 dependency modules excluded) in 1 apps"
+      assert GraphReport.summary(report) =~ "2 modules (1 outside the root, excluded) in 1 apps"
     end
 
-    test "only dependency modules read is COULD NOT MEASURE, never an empty pass", %{beams: beams} do
+    test "only modules outside the root read is COULD NOT MEASURE, never an empty pass", %{
+      beams: beams
+    } do
       expect(ConfigLoaderMock, :load, fn -> {:ok, config([rule(:stub_ok, "ok")])} end)
-      Mox.expect(BeamSourceMock, :read_ebins, fn [{:my_app, @ebin}] -> [beams[@dep]] end)
+      Mox.expect(BeamSourceMock, :read_ebins, fn [{:my_app, @ebin}] -> [beams[@outside]] end)
       expect(GraphStoreMock, :write, 0, fn _dir, _key, _term -> :ok end)
 
       report = Graph.run(request(), deps())
 
       assert report.exit_code == 3
       assert [%{message: message}] = report.could_not_check
-      assert message =~ "read 0 modules from #{@ebin}"
+      assert message =~ "read 1 modules from #{@ebin}, and every one has a source file outside"
+      assert message =~ "Fix: run mix anchor.graph from the project root"
     end
   end
 
