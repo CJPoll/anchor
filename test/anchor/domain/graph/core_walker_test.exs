@@ -90,6 +90,12 @@ defmodule Anchor.Domain.Graph.CoreWalkerTest do
 
     def plain(m), do: [%{a: :x}, %{m | a: :y}, Other.f(m)] # plain
 
+    def put(m, k), do: Map.put(m, k, 1) # put
+    def puts(m), do: m |> Map.put(:a, 1) |> Map.put(:b, 2) # puts
+    def erlput(m), do: :maps.put(:k, 1, m) # erlput
+    def merge(a, b), do: Map.merge(a, b) # merge
+    def built(x, k), do: %{:a => 1, k => x} # built
+
     defp helper(x), do: x
   end
   """
@@ -207,7 +213,9 @@ defmodule Anchor.Domain.Graph.CoreWalkerTest do
 
     test "a struct map built on a variable (not on %{}) is an :update" do
       s = :cerl.c_var(:s)
-      pair = :cerl.c_map_pair(:cerl.c_atom(:__struct__), :cerl.c_atom(S))
+      # `:=`, as Elixir writes a struct update (`=>` on a variable is an
+      # inlined Map.put, DND-5551).
+      pair = :cerl.c_map_pair_exact(:cerl.c_atom(:__struct__), :cerl.c_atom(S))
       body = :cerl.ann_c_map([{3, 1}], s, [pair])
 
       assert {[], [%StructUse{struct: S, op: :update, line: 3, line_source: :call}]} =
@@ -335,6 +343,44 @@ defmodule Anchor.Domain.Graph.CoreWalkerTest do
     test "a plain map and a plain map update are no struct use", %{binary: binary} do
       assert uses(binary, {:plain, 1}) == []
       assert Enum.any?(calls(binary, {:plain, 1}), &(&1.to == {Other, :f, 1}))
+    end
+  end
+
+  describe "walk/3 stdlib calls Elixir inlines (DND-5551)" do
+    test "Map.put/3 lowered to a map update is a :remote call to :maps.put/3", %{binary: binary} do
+      assert [call({M, :put, 2}, {:maps, :put, 3}, :remote, "# put")] ==
+               Enum.filter(calls(binary, {:put, 2}), &(&1.to == {:maps, :put, 3}))
+    end
+
+    test "puts in a row that Core folds into one update are one edge each", %{binary: binary} do
+      assert [%Call{line: line, line_source: :call}, %Call{line: line, line_source: :call}] =
+               Enum.filter(calls(binary, {:puts, 1}), &(&1.to == {:maps, :put, 3}))
+
+      assert line == line("# puts")
+    end
+
+    test ":maps.put/3 written in source lowers the same way", %{binary: binary} do
+      assert [call({M, :erlput, 1}, {:maps, :put, 3}, :remote, "# erlput")] ==
+               Enum.filter(calls(binary, {:erlput, 1}), &(&1.to == {:maps, :put, 3}))
+    end
+
+    test "Map.merge/2 stays a call, named :maps.merge/2", %{binary: binary} do
+      assert calls(binary, {:merge, 2}) ==
+               [call({M, :merge, 2}, {:maps, :merge, 2}, :remote, "# merge")]
+    end
+
+    test "a map built from values on %{} is no put", %{binary: binary} do
+      calls = calls(binary, {:built, 2})
+      refute Enum.any?(calls, &(&1.to == {:maps, :put, 3}))
+      # Positive control: the same node shape on a variable is one.
+      assert Enum.any?(calls(binary, {:put, 2}), &(&1.to == {:maps, :put, 3}))
+    end
+
+    test "a map literal and a := map update are no put", %{binary: binary} do
+      calls = calls(binary, {:plain, 1})
+      refute Enum.any?(calls, &(&1.to == {:maps, :put, 3}))
+      # Positive control: the same walk finds the plain call beside them.
+      assert Enum.any?(calls, &(&1.to == {Other, :f, 1}))
     end
   end
 

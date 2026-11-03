@@ -327,6 +327,64 @@ defmodule Anchor.Domain.Graph.BuilderTest do
       assert Graph.calls_to(graph, {A, :nope, 0}) == []
     end
 
+    # DND-5551: Elixir inlines Map.put and Map.merge before Core, so the edge
+    # names :maps; a query by either spelling finds the call.
+    test "a stdlib call Elixir inlines is found by its Elixir and its Erlang name" do
+      inlined = AnchorFixtures.BuilderTest.Inlined
+
+      graph =
+        """
+        defmodule AnchorFixtures.BuilderTest.Inlined do
+          def put(map), do: Map.put(map, :k, 1)
+          def merge(a, b), do: Map.merge(a, b)
+          def erlang_put(map), do: :maps.put(:k, 1, map)
+          def get(map), do: Map.get(map, :k)
+        end
+        """
+        |> compile_unloaded("lib/inlined.ex")
+        |> decode!()
+        |> Builder.build(%{})
+
+      put = %Call{
+        from: {inlined, :put, 1},
+        to: {:maps, :put, 3},
+        kind: :remote,
+        line: 2,
+        line_source: :call
+      }
+
+      merge = %Call{
+        from: {inlined, :merge, 2},
+        to: {:maps, :merge, 2},
+        kind: :remote,
+        line: 3,
+        line_source: :call
+      }
+
+      erlang_put = %Call{
+        from: {inlined, :erlang_put, 1},
+        to: {:maps, :put, 3},
+        kind: :remote,
+        line: 4,
+        line_source: :call
+      }
+
+      # Core lowers Map.put to an is_map guard and a map update; the walker
+      # reads the update as the inlined :maps.put/3.
+      assert put in Graph.calls_from(graph, {inlined, :put, 1})
+      assert Graph.calls_to(graph, {Map, :put, 3}) == [erlang_put, put]
+      assert Graph.calls_to(graph, {:maps, :put, 3}) == [erlang_put, put]
+      assert Graph.calls_to(graph, {Map, :merge, 2}) == [merge]
+      assert Graph.calls_to(graph, {:maps, :merge, 2}) == [merge]
+
+      assert Enum.sort(Graph.calls_to(graph, Map)) ==
+               Enum.sort([put, merge, erlang_put] ++ Graph.calls_from(graph, {inlined, :get, 1}))
+
+      # Positive control: Map.get/2 is not inlined, so Core names it as written.
+      assert [%Call{to: {Map, :get, 2}, line: 5}] = Graph.calls_to(graph, {Map, :get, 2})
+      assert Graph.calls_to(graph, {:maps, :get, 2}) == []
+    end
+
     test "Graph.module/2 and function/2 answer nil for what is not there", %{pair: pair} do
       graph = Builder.build(pair, %{})
       assert Graph.module(graph, Nope) == nil

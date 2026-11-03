@@ -154,7 +154,13 @@ cause, never skipped. `Anchor.Domain.Graph.Builder` builds `%Anchor.Domain.Graph
 from those records and `Anchor.Domain.Graph.SourceFacts` (literal `defmodule`s,
 for `generated?`); `Anchor.Domain.Graph.CoreWalker` reads call and struct-use
 edges from Core. A new Core shape goes into the walker with a row in
-`test/anchor/domain/graph/core_walker_test.exs`. Graph test fixtures are
+`test/anchor/domain/graph/core_walker_test.exs`. Elixir rewrites some stdlib
+calls before Core (`Map.merge/2` is `:maps.merge/2`; `Map.put/3` becomes a map
+update, read back as `:maps.put/3`), so an edge names the Erlang function.
+`Anchor.Domain.Graph.Inlines` carries the table, derived from Elixir's own
+rewrite rules when Anchor compiles, never copied by hand (DND-5551). A rule
+that names a stdlib function matches every spelling, through
+`Inlines.spellings/1` (`Graph.calls_to/2` already does). Graph test fixtures are
 compiled in the test with `Anchor.Test.BeamFixtures.compile_unloaded/2`, which
 unloads every fixture module and turns `debug_info` on per module (`mix test`
 compiles with it off).

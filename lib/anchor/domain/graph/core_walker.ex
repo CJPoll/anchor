@@ -33,6 +33,17 @@ defmodule Anchor.Domain.Graph.CoreWalker do
       `{:badstruct, S, s}`, which is `:update` (its pattern is not also a
       `:match`).
 
+    * A map update with `=>` on a map that is not a literal (`~{K=>V|M}~`)
+      is an inlined `Map.put/3` (or `:maps.put/3`), which the compiler lowers
+      to no call at all: one `:remote` edge to `{:maps, :put, 3}` per `=>`
+      pair (puts in a row fold into one update). Elixir source has no other
+      way to write it: `%{m | k => v}` and a struct update are `:=`. A put
+      onto a literal map folds into a literal and is not seen (DND-5551).
+
+  Elixir rewrites other stdlib calls before Core too (`Map.merge/2` is
+  `:maps.merge/2`); an edge names the Erlang function, and
+  `Anchor.Domain.Graph.Inlines` maps it back to its Elixir names.
+
   Calls into the helpers the compiler emits (`:erlang` BIFs in guards,
   `:erlang.error/1` on a failed struct update) are kept as `:remote` calls:
   filtering is a rule's job.
@@ -46,6 +57,8 @@ defmodule Anchor.Domain.Graph.CoreWalker do
 
   alias Anchor.Domain.Graph.Call
   alias Anchor.Domain.Graph.StructUse
+
+  @maps_put {:maps, :put, 3}
 
   @doc """
   Walks `core_fun`, the Core `c_fun` of `module.name/arity`, and returns its
@@ -289,7 +302,20 @@ defmodule Anchor.Domain.Graph.CoreWalker do
         struct -> add_struct_use(acc, node, struct, map_op(node, ctx), ctx)
       end
 
+    acc = Enum.reduce(inlined_puts(node, ctx), acc, &add_call(&2, &1, @maps_put, :remote, ctx))
     visit_children(node, ctx, acc)
+  end
+
+  # `Map.put/3` (and `:maps.put/3`) reach Core as no call at all: the compiler
+  # lowers the call to a map update with `=>` on a map that is not a literal
+  # (`~{K=>V|M}~`, beside an `is_map(M)` guard), and folds puts in a row into
+  # one update. Elixir source has no other way to write that node (`%{m | k
+  # => v}` and a struct update are `:=`), so each `=>` pair is one inlined
+  # call. A put onto a literal map folds into a literal and is not seen.
+  defp inlined_puts(node, ctx) do
+    if ctx.pattern? or :cerl.is_c_map_pattern(node) or :cerl.is_literal(:cerl.map_arg(node)),
+      do: [],
+      else: Enum.filter(:cerl.map_es(node), &(literal(:cerl.map_pair_op(&1)) == {:ok, :assoc}))
   end
 
   defp map_struct(node) do
