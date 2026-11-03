@@ -558,3 +558,54 @@ Run summary: `31 tests, 1 failure`
 ...............
 ```
 
+## DND-5634: GitShow's tests capture git's stderr instead of printing it
+
+**Code under test:** the test "a path git cannot look up at a resolved ref is a git error, never :absent" in `git_show_test.exs`, now run in a child VM whose stderr it asserts, and `Anchor.Adapters.GitShow`'s stderr handling it pins.
+
+**Before:** `mix test test/anchor/adapters/git_show_test.exs test/anchor/adapters/git_env_isolation_test.exs` printed `error: Could not read 7f4545ae8fe823c97fa59dedae2c47fe6b00535a` between the dots of a green run. **After:** `git_show_test.exs` prints no git line (`grep -c 'Could not read'` on its output: 0), `14 tests, 0 failures`.
+
+**Suite run:** one `test-slot` ran `sab.py` per mutation (wait 1.1 s, write, `mix test --timeout 2000 --max-cases 2 <tests>`, restore, wait 1.1 s).
+
+| ID | Mutation | Tests | Result | Failing tests |
+|---|---|---|---|---|
+| GS-A | git's stderr merged into the output it reads (`lib/anchor/adapters/git_show.ex`) | `git_show_test.exs` | `14 tests, 1 failure` (red) | a path git cannot look up at a resolved ref is a git error, never :absent |
+| GS-B | a failed path probe reads as an absent file (`lib/anchor/adapters/git_show.ex`) | `git_show_test.exs` | `14 tests, 1 failure` (red) | a path git cannot look up at a resolved ref is a git error, never :absent |
+
+### GS-A: git's stderr merged into the output it reads
+
+Run summary: `14 tests, 1 failure`
+
+```text
+
+
+  1) test a path git cannot look up at a resolved ref is a git error, never :absent (Anchor.Adapters.GitShowTest)
+     test/anchor/adapters/git_show_test.exs:87
+     Assertion with == failed
+     code:  assert message == "error: Could not read #{tree}"
+     left:  "{:error,"
+     right: "error: Could not read 7f4545ae8fe823c97fa59dedae2c47fe6b00535a"
+     stacktrace:
+       test/anchor/adapters/git_show_test.exs:106: (test)
+
+.....
+```
+
+### GS-B: a failed path probe reads as an absent file
+
+Run summary: `14 tests, 1 failure`
+
+```text
+
+
+  1) test a path git cannot look up at a resolved ref is a git error, never :absent (Anchor.Adapters.GitShowTest)
+     test/anchor/adapters/git_show_test.exs:87
+     Assertion with =~ failed
+     code:  assert result =~ ~r/^\{:error, \{:git, [1-9]\d*, ""\}\}$/
+     left:  "{:error, :absent}"
+     right: ~r/^\{:error, \{:git, [1-9]\d*, ""\}\}$/
+     stacktrace:
+       test/anchor/adapters/git_show_test.exs:107: (test)
+
+...
+```
+
