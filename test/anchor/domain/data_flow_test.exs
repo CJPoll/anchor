@@ -1,6 +1,7 @@
 defmodule Anchor.Domain.DataFlowTest do
   # DND-5439: intra-function data flow over one clause's source AST.
   # Sabotage record: ../../sabotage_records/data_flow-20261103-dnd_5439.md
+  # Sabotage record (refutable case/with sinks, DND-5471): ../../sabotage_records/data_flow-20261103-dnd_5471.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.DataFlow
@@ -365,9 +366,15 @@ defmodule Anchor.Domain.DataFlowTest do
           log(1)
           q = k()
           q
+
+        other ->
+          other
       end
       :done
       """
+
+      # The catch-all clause keeps the case irrefutable (DND-5471), so it is
+      # not a sink of its own.
 
       flow = flow!(source)
       # The predicate sees each node's whole AST, so it matches the call itself,
@@ -432,9 +439,11 @@ defmodule Anchor.Domain.DataFlowTest do
     end
 
     test "the nodes of a dead branch are dead, sorted by line" do
-      flow = flow!("case v do\n  :a ->\n    x = 1\n    x\nend\n:ok")
+      # The catch-all clause keeps the case irrefutable (DND-5471).
+      flow = flow!("case v do\n  :a ->\n    x = 1\n    x\n  other -> other\nend\n:ok")
 
-      assert DataFlow.dead(flow, @no_effects) == [id_at(flow, 1), id_at(flow, 3), id_at(flow, 4)]
+      assert DataFlow.dead(flow, @no_effects) ==
+               [id_at(flow, 1), id_at(flow, 3), id_at(flow, 4), id_at(flow, 5)]
     end
   end
 
@@ -608,6 +617,63 @@ defmodule Anchor.Domain.DataFlowTest do
 
       refute node_at(flow, 1).refutable
       assert DataFlow.dead(flow, @no_effects) == [id_at(flow, 1)]
+    end
+
+    # DND-5471 (architect's answer on DND-5439): a case with no catch-all clause
+    # and a with step written with a refutable `=` can raise on a value, so
+    # each is a :refutable sink. A catch-all is a clause whose pattern is `_` or
+    # a bare variable with no guard; exhaustiveness is not judged by type.
+    test "a case with no catch-all clause is refutable: its scrutinee is a sink" do
+      for source <- [
+            "case r do\n  {:ok, v} -> v\n  {:error, _} -> nil\nend\n:ok",
+            "case r do\n  :a -> 1\n  x when is_atom(x) -> 2\nend\n:ok",
+            "case r do\n  _ when r > 1 -> 1\nend\n:ok",
+            "x = case r do\n  {:ok, v} -> v\nend\n:ok",
+            "y = h(case r do\n  {:ok, v} -> v\nend)\n:ok"
+          ] do
+        flow = flow!(source)
+
+        assert node_at(flow, 1).refutable, source
+        assert DataFlow.dead(flow, @no_effects) == [], source
+      end
+    end
+
+    test "case positive control: a catch-all clause (`_` or a bare variable) is not refutable" do
+      for source <- [
+            "case r do\n  {:ok, v} -> v\n  _ -> nil\nend\n:ok",
+            "case r do\n  {:ok, v} -> v\n  other -> other\nend\n:ok",
+            "case r do\n  {:ok, v} -> v\n  _ignored -> nil\nend\n:ok"
+          ] do
+        flow = flow!(source)
+
+        refute node_at(flow, 1).refutable, source
+        assert id_at(flow, 1) in DataFlow.dead(flow, @no_effects), source
+      end
+    end
+
+    test "a with step written with a refutable `=` is refutable (it raises MatchError)" do
+      for source <- [
+            "with {:ok, a} = f() do\n  a\nend\n:ok",
+            "with {:ok, a} <- f(),\n     [b] = g(a) do\n  b\nend\n:ok",
+            "y = h(with {:ok, a} = f(), do: a)\n:ok"
+          ] do
+        flow = flow!(source)
+
+        assert node_at(flow, 1).refutable, source
+        assert DataFlow.dead(flow, @no_effects) == [], source
+      end
+    end
+
+    test "with positive control: `<-` steps and a bare-variable `=` step are not refutable" do
+      for source <- [
+            "with {:ok, a} <- f() do\n  a\nend\n:ok",
+            "with {:ok, a} <- f(),\n     b = g(a) do\n  b\nend\n:ok"
+          ] do
+        flow = flow!(source)
+
+        refute node_at(flow, 1).refutable, source
+        assert id_at(flow, 1) in DataFlow.dead(flow, @no_effects), source
+      end
     end
 
     test "try else clauses read the do value's scope of their own" do

@@ -13,7 +13,12 @@ defmodule Anchor.Domain.DataFlow.Forms do
       `{:match, pattern, guards, rhs}` or `{:expr, ast}`), its `body` (`:none`
       when the source has none, e.g. an `if` with no `else`) and whether the
       body's value is the form's value (`value: false` only for `try`'s
-      `after`).
+      `after`);
+    * `refutable` — whether the form itself can raise on a value (DND-5471):
+      a `case` with no catch-all clause (one whose pattern is `_` or a bare
+      variable, with no guard; exhaustiveness is not judged by type), or a
+      `with` with a step written with a refutable `=` (it raises `MatchError`;
+      a `<-` step's mismatch goes to `else`). Every other form is `false`.
 
   A form whose shape is not the documented one is `:error`, and the caller
   reads it as an ordinary call: every variable in it is a use.
@@ -33,13 +38,20 @@ defmodule Anchor.Domain.DataFlow.Forms do
           form: atom(),
           kind: :branch | :fn | :for,
           head: [Macro.t()],
-          clauses: [clause()]
+          clauses: [clause()],
+          refutable: boolean()
         }
 
   @doc "The description of a scoping form, or `:error` for anything else."
   @spec decompose(Macro.t()) :: {:ok, desc()} | :error
   def decompose({:case, _meta, [scrutinee, [do: clauses]]}) do
-    with {:ok, parsed} <- arrows(clauses), do: {:ok, desc(:case, :branch, [scrutinee], parsed)}
+    with {:ok, parsed} <- arrows(clauses) do
+      {:ok,
+       %{
+         desc(:case, :branch, [scrutinee], parsed)
+         | refutable: not Enum.any?(parsed, &catch_all?/1)
+       }}
+    end
   end
 
   def decompose({:cond, _meta, [[do: clauses]]}) do
@@ -125,9 +137,11 @@ defmodule Anchor.Domain.DataFlow.Forms do
   def refutable?(_pattern), do: true
 
   @doc """
-  Whether any `=` in `asts` (outermost first, nested forms included) has a
-  refutable pattern: the expression asserts a shape, so removing it changes
-  behaviour even when nothing reads what it binds.
+  Whether anything in `asts` (outermost first, nested forms included) can
+  raise on a value: a `=` with a refutable pattern, or a `case` or `with` whose
+  description is `refutable` (see the moduledoc). The expression asserts a
+  shape, so removing it changes behaviour even when nothing reads what it
+  binds.
   """
   @spec refutable_match?([Macro.t()]) :: boolean()
   def refutable_match?(asts) do
@@ -209,8 +223,11 @@ defmodule Anchor.Domain.DataFlow.Forms do
 
   defp cond_clause(_clause), do: :error
 
+  defp catch_all?(%{patterns: [pattern], guards: []}), do: not refutable?(pattern)
+  defp catch_all?(_clause), do: false
+
   defp desc(form, kind, head, clauses),
-    do: %{form: form, kind: kind, head: head, clauses: clauses}
+    do: %{form: form, kind: kind, head: head, clauses: clauses, refutable: false}
 
   defp line_step({_form, meta, _args} = node, lines) when is_list(meta) do
     case Keyword.get(meta, :line) do
@@ -297,18 +314,20 @@ defmodule Anchor.Domain.DataFlow.Forms do
   defp steps_desc(form, args) do
     with {:ok, steps, opts} <- split_steps(args) do
       pre = Enum.map(steps, &step/1)
-      steps_clauses(form, pre, opts)
+      steps_clauses(form, steps, pre, opts)
     end
   end
 
-  defp steps_clauses(:with, pre, opts) do
+  defp steps_clauses(:with, steps, pre, opts) do
     with {:ok, else_clauses} <- optional_arrows(opts, :else) do
-      {:ok,
-       desc(:with, :branch, [], [clause([], [], pre, Keyword.fetch!(opts, :do)) | else_clauses])}
+      desc =
+        desc(:with, :branch, [], [clause([], [], pre, Keyword.fetch!(opts, :do)) | else_clauses])
+
+      {:ok, %{desc | refutable: Enum.any?(steps, &refutable_equals_step?/1)}}
     end
   end
 
-  defp steps_clauses(:for, pre, opts) do
+  defp steps_clauses(:for, _steps, pre, opts) do
     head = opts |> Keyword.delete(:do) |> Keyword.values()
 
     case arrows(Keyword.fetch!(opts, :do)) do
@@ -338,8 +357,18 @@ defmodule Anchor.Domain.DataFlow.Forms do
   defp try_after({:ok, body}), do: [%{block_clause(body) | value: false}]
   defp try_after(:error), do: []
 
-  defp refutable_step({:=, _meta, [pattern, _rhs]} = node, false), do: {node, refutable?(pattern)}
-  defp refutable_step(node, found?), do: {node, found?}
+  defp refutable_equals_step?({:=, _meta, [pattern, _rhs]}), do: refutable?(pattern)
+  defp refutable_equals_step?(_step), do: false
+
+  defp refutable_node?({:=, _meta, [pattern, _rhs]}), do: refutable?(pattern)
+
+  defp refutable_node?({form, _meta, args} = node) when form in [:case, :with] and is_list(args),
+    do: match?({:ok, %{refutable: true}}, decompose(node))
+
+  defp refutable_node?(_node), do: false
+
+  defp refutable_step(node, false), do: {node, refutable_node?(node)}
+  defp refutable_step(node, true), do: {node, true}
 
   defp unquote_step({form, _meta, [expr]} = node, acc) when form in [:unquote, :unquote_splicing],
     do: {node, [expr | acc]}
