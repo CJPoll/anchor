@@ -45,3 +45,26 @@ fails `--warnings-as-errors` and proves nothing. Failure text is verbatim.
   `unquote/1` is a special form, so it was never pure and the row passed with
   the quote walked. D16 now quotes `b + 1` (pure) with a positive control
   outside the quote, and G fails it.
+
+## Critic round 1 (on d5db360): two false reports, fixed
+
+The judge found two shapes the rule reported although they can have an
+effect. Each regression row was run against d5db360's detector first:
+
+```
+1) test detect_violations/2 D9: a stdlib call that calls a function held in a value is not reported
+   expression Enum.each(xs, fun)
+2) test detect_violations/2 D14: a pure_patterns module's imported or injected calls are not reported
+   code:  assert detect(source, [%{pure_patterns: ["MyApp.*"]}]) == []
+   (left: violations with trigger: "field(:a, :string)", line: 6 and trigger: "helper(a)", line: 11)
+25 tests, 2 failures
+```
+
+and both pass on the fix. Mutations of the fix:
+
+| # | Mutation | Failed | Failure |
+|---|---|---|---|
+| K | No stdlib argument is callable (`... && []`) | D9 (value) | `expression Enum.each(xs, fun)` |
+| K2 | A callable position accepts any pure value (`written_value?(arg) or true`) | D9 (value) | `expression Enum.each(xs, fun)` |
+| L | A local call need not be the module's own function | D14 (imports) | `code: assert detect(source, [%{pure_patterns: ["MyApp.*"]}]) == []` `left: [` |
+

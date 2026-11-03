@@ -18,14 +18,19 @@ defmodule Anchor.Domain.Checks.NoDiscardedPureExpressionTest do
     |> Check.detect_violations(rules)
   end
 
-  # One function body holding `expr` in a non-final position.
+  # One function body holding `expr` in a non-final position. The module also
+  # defines `add/2`, so a pure_patterns module's own local call can be judged.
   defp discarded(expr, module \\ "App.X") do
     """
     defmodule #{module} do
+      @handler &IO.puts/1
+
       def f(m, a, b, x, xs, s, pid, mod, fun) do
         #{expr}
-        {m, a, b, x, xs, s, pid, mod, fun}
+        {m, a, b, x, xs, s, pid, mod, fun, @handler}
       end
+
+      defp add(a, b), do: a + b
     end
     """
   end
@@ -160,6 +165,34 @@ defmodule Anchor.Domain.Checks.NoDiscardedPureExpressionTest do
       assert detect(discarded("Enum.map(xs, &foo/1)")) == []
     end
 
+    # Critic round 1 on d5db360: a function held in a variable, a field or an
+    # attribute may be any function, so a stdlib call that calls it is not pure.
+    test "D9: a stdlib call that calls a function held in a value is not reported" do
+      for expr <- [
+            "Enum.each(xs, fun)",
+            "Enum.each(xs, x.callback)",
+            "Enum.each(xs, @handler)",
+            "xs |> Enum.map(fun)",
+            "Enum.reduce(xs, a, fun)",
+            "Map.update(m, :a, 1, fun)",
+            "Enum.into(xs, s)",
+            "Enum.sort(xs, fun)"
+          ] do
+        assert detect(discarded(expr)) == [], "expression #{expr}"
+      end
+
+      # Positive control: the same calls with data or a pure literal are reported.
+      for expr <- [
+            "Enum.each(xs, fn y -> y end)",
+            "Enum.reduce(xs, a, &+/2)",
+            "Enum.sort(xs, :desc)",
+            "Map.update(m, :a, 1, &(&1 + 1))",
+            "Enum.into(xs, %{})"
+          ] do
+        assert [_one] = detect(discarded(expr)), "expression #{expr}"
+      end
+    end
+
     test "D10: a pure-module call whose function argument is pure is reported" do
       assert [_one] = detect(discarded("Enum.each(xs, fn x -> x + 1 end)"))
       assert [_one] = detect(discarded("Enum.map(xs, &String.trim/1)"))
@@ -270,6 +303,30 @@ defmodule Anchor.Domain.Checks.NoDiscardedPureExpressionTest do
       """
 
       assert detect(source, [%{pure_patterns: ["*Calc*"]}]) == []
+    end
+
+    # Critic round 1 on d5db360: a local call in a pure_patterns module is
+    # pure only when that module defines the function; an imported or
+    # `use`-injected macro (`field/2`) is unknown.
+    test "D14: a pure_patterns module's imported or injected calls are not reported" do
+      source = """
+      defmodule MyApp.Domain.Thing do
+        use Ecto.Schema
+        import MyApp.Helpers
+
+        embedded_schema do
+          field :a, :string
+          field :b, :string
+        end
+
+        def f(a) do
+          helper(a)
+          a
+        end
+      end
+      """
+
+      assert detect(source, [%{pure_patterns: ["MyApp.*"]}]) == []
     end
 
     test "D15: an operator with an unknown operand is not reported" do

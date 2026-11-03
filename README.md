@@ -1009,10 +1009,16 @@ An expression is **pure**, by Anchor's definition, exactly when it is:
    `Time`, `Tuple`, `URI`, except the clock reads (`Date.utc_today`,
    `NaiveDateTime.utc_now`, `NaiveDateTime.local_now`, `Time.utc_now`), the
    random reads (`Enum.random`, `Enum.shuffle`, `Enum.take_random`) and
-   `Stream.run`;
-6. a local call `f(args)` in a module whose name matches a `pure_patterns`
-   glob, `f` not ending in `!` and not a `Kernel` function or special form,
-   every argument pure;
+   `Stream.run`. An argument a stdlib function may call (its `@spec` types it
+   as a function, or as a `Collectable.t()`) must be written out: an `fn` or
+   a capture literal that is pure, or a literal value. A function held in a
+   variable, a field or an attribute may be any function, so
+   `Enum.each(xs, notify)` is not pure. A stdlib function with no spec is
+   judged as calling every argument;
+6. a local call `f(args)` to a function its own module defines (`def` or
+   `defp`), in a module whose name matches a `pure_patterns` glob, `f` not
+   ending in `!`, every argument pure. A name an `import` or a `use` brings in
+   (`field/2` inside `embedded_schema`) is unknown, so not pure;
 7. a `Kernel` pure function over pure arguments: `abs div rem max min length
    elem hd tl tuple_size map_size byte_size bit_size to_string inspect` and the
    `is_*` guards;
@@ -1046,7 +1052,8 @@ be to a module outside pure_patterns and the stdlib pure set.`
     - "MyApp.*.Domain.*"
 ```
 
-Known limits, each a miss rather than a false report, except the first two:
+Known limits. The first four can report code that does have an effect; the
+rest are misses or cosmetic:
 
 - Raising is an effect only for a bang function and `raise`/`throw`/`exit`. A
   non-bang call kept only for its raise (`String.to_integer(s)` as
@@ -1054,8 +1061,13 @@ Known limits, each a miss rather than a false report, except the first two:
 - A variable holding a lazy stream with effects (`File.stream!/1`) is a pure
   value here, so `Enum.each(stream, fn _ -> nil end)` on it is reported. The
   graph engine's effects inference (DND-5447) knows better.
-- A local call in a `pure_patterns` module is pure even when an `import`
-  brought the function in from another module.
+- A `pure_patterns` module's arguments are judged as data: a function value
+  passed to one of its functions is trusted to be called purely, because the
+  declaration says the module is pure. Keep callbacks with effects out of
+  `pure_patterns` modules.
+- `mod.f` written without parentheses on a variable reads as a field read, so
+  a zero-arity call through a module held in a variable is judged pure
+  (Elixir warns on that form).
 - A bare literal carries no line in the parsed source, so its issue sits on
   the nearest enclosing line.
 - Purity of your own functions is not inferred from the call graph: that is
