@@ -71,6 +71,10 @@ before coining a synonym.
   `Anchor.Domain.Roots`, `Anchor.Domain.Effects`,
   `Anchor.Domain.GraphRules.EffectsMatchBucket`, and their wiring in the graph
   runner.
+- `struct_flow` — the `struct_owned_by_module_flow` graph rule (DND-5454):
+  `Anchor.Domain.StructTypes`, `Anchor.Domain.StructFlow`,
+  `Anchor.Domain.GraphRules.StructOwnedByModuleFlow`, and the scope it shares
+  with the AST rule, `Anchor.Domain.StructOwnership`.
 - `sabotage` — the causal sabotage generator (DND-5471): every
   `Anchor.Domain.Sabotage.*` module that makes mutants (`Mutator`,
   `Operators`, `OrphanCheck`, `SourceTree`, `Patch`, `MutantId`,

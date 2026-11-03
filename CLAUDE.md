@@ -303,6 +303,26 @@ buckets with `infer: true`. Its canary is its own tree,
 declares its extra effects (tracing, `Path.wildcard`, `Mix.Task.run`) and a
 first-landing baseline.
 
+## The struct_owned_by_module_flow rule (DND-5454)
+
+The graph half of struct ownership; the AST rule `struct_owned_by_module`
+(DND-5453) is the literal half, and both read their scope from
+`Anchor.Domain.StructOwnership` (`owned_namespaces`, exact names with a
+prefix rule). `Anchor.Domain.StructTypes.index/1` reads `@type t` fields and
+`@spec` returns from `ModuleNode.types`/`specs` (one project struct, named
+exactly, or unknown). `Anchor.Domain.StructFlow` walks one function's Core
+with a lexical environment (a `case` body is evaluated in its clause's
+scope), finds a `fun`'s parameter from the `Map.update!/3`/`update/4` it is
+handed to by a fixpoint over seeds, and returns writes `%{struct, op, line,
+how}`. The rule owns a `defimpl` by its `__impl__(:for)` spec, or by its
+protocol when several impls share protocol, file and line (`for: [A, B]`).
+It skips the AST rule's sites: a line with another struct's `:build` or
+`:update` struct use, and a `:matched` write in a function whose clauses
+carry no macro `:context`. One violation per (function, line). In a `for`
+comprehension a `x = expr` line is a filter: bind a value that may be false
+with `x <- [expr]`. Fixtures that hold a `defimpl` put `@compile {:debug_info,
+true}` in its body (BeamFixtures adds it to `defmodule`s only).
+
 ## Higher-order flow (DND-5497)
 
 `Anchor.Domain.Cfa.analyze/3` is a whole-program 0-CFA over every

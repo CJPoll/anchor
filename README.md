@@ -419,7 +419,7 @@ semantics and edge cases.
 | `same_context` | `no_direct_dependency` | Boolean, default `false`. When `true`, a `forbidden_patterns` match is a violation **only if** the dependency shares the checked file's own context. Exact `forbidden_modules` matches are never scoped. |
 | `context_depth` | `no_direct_dependency` | Positive integer, default `2`. Number of leading module-namespace segments that define a "context/subdomain". Inert unless `same_context: true`. |
 | `allowed_functions` | `module_pattern_restrictions` | Function-name allow-list (globs). |
-| `owned_namespaces` | `struct_owned_by_module` | Exact module names, default: every struct. Limits the check to structs equal to or nested under an entry, and reports a selected top-level module outside them. `[]`, a glob, an Erlang module or a malformed name fails the load. See [`struct_owned_by_module`](#struct_owned_by_module). |
+| `owned_namespaces` | `struct_owned_by_module`, `struct_owned_by_module_flow` | Exact module names, default: every struct. Limits the check to structs equal to or nested under an entry, and reports a selected top-level module outside them. `[]`, a glob, an Erlang module or a malformed name fails the load. See [`struct_owned_by_module`](#struct_owned_by_module). |
 | `pure_patterns` | `no_discarded_pure_expression` | Module-name globs, default `[]`: modules whose functions are pure, beside the stdlib pure set. A non-list, a blank entry or a match-all glob (`*`, `**`) fails the load. See [`no_discarded_pure_expression`](#no_discarded_pure_expression). |
 | `mode`, `max_lines` | `alphabetized_functions`, `max_file_length` | Style-check parameters. `mode` is `all`, `public_only` or `separate` (a leading colon is accepted); any other token fails the load. |
 
@@ -439,7 +439,8 @@ another type (`match` on a `no_transitive_dependency` rule) is unknown too.
 The Engine column is the one engine that runs the type: `ast` rules run as
 Credo checks over source, `graph` rules run under `mix anchor.graph` over the
 compiled code (DND-5440; `layering`, DND-5442, `context_acyclic`, DND-5445, and
-`effects_match_bucket`, DND-5447). Credo never reports a
+`effects_match_bucket`, DND-5447, `struct_owned_by_module_flow`,
+DND-5454). Credo never reports a
 `graph` rule as unchecked.
 
 | Rule type | Keys beyond the common ones | Relation (needs one, non-empty) | Engine |
@@ -462,6 +463,7 @@ compiled code (DND-5440; `layering`, DND-5442, `context_acyclic`, DND-5445, and
 | `single_control_flow` | none | none | `ast` |
 | `struct_getter_convention` | none | none | `ast` |
 | `struct_owned_by_module` | `owned_namespaces` | none | `ast` |
+| `struct_owned_by_module_flow` | `owned_namespaces` | none | `graph` |
 
 Every rule also needs exactly one **selector**: a non-empty `paths` list, a
 `pattern` string or a `uses_module` string. A rule with none selects no file,
@@ -842,6 +844,74 @@ lib/my_app/orders/pricing.ex:12: [enforce] rule 4 (id: "effects_match_bucket", e
 The summary adds `; effects: <n> functions (domain <a>, managers <b>, adapters
 <c>, framework <d>), <u> unresolved dynamic calls`. Anchor's own `.anchor.yml`
 runs it over `lib/` with a baseline holding what it found when it landed.
+
+### The `struct_owned_by_module_flow` rule (DND-5454)
+
+```yaml
+rules:
+  - type: struct_owned_by_module_flow
+    id: struct_owned_by_module_flow
+    paths: ["lib/**/*.ex"]
+    owned_namespaces: ["MyApp"]   # optional, as in struct_owned_by_module
+
+architecture:
+  contexts:
+    depth: 2
+  buckets:
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/**/*.ex"]
+  calls:
+    domain: [domain]
+```
+
+The graph half of struct ownership. `struct_owned_by_module` (above, under
+the AST rules) decides what one file's text shows; this rule reads the
+compiled code, so it knows what a value is from the typespecs of every
+module and sees writes a macro injected. In each selected function's Core it
+follows each value (`Anchor.Domain.StructFlow`) and reports a write that
+changes a value known as another module's struct `S`:
+
+- a map update (`%{v | k: x}`, op `map update`), `Map.put`, `merge`,
+  `replace`, `replace!`, `update`, `update!`, `delete`, `drop`, `put_new`,
+  `put_new_lazy`, `struct/2`, `struct!/2`, and `put_in`, `update_in`,
+  `get_and_update_in`, `pop_in` (a dotted `put_in(g.turn.status, v)` judges
+  `g` and `g.turn`, never the leaf).
+
+A value is **known** as `S` when:
+
+- a pattern matches it as `%S{}`;
+- it is what a call returns whose every `@spec` returns `S` (`S.t()`,
+  `%S{}`, a named type that is one of those; `nil | S.t()` counts as `S`):
+  `Turn.new() |> Map.put(:status, :idle)`;
+- it is a field of a known struct whose `@type t` types that field as `S`:
+  `%{state.turn | status: :idle}`, `%Game{turn: t}` in a head;
+- it flows unchanged through a `let` or a `case` clause variable.
+
+Anything else is unknown and never reported: a union of two structs,
+`map()`, a type outside the project, a type variable, a call on a variable
+module, a variable rebound to `Map.from_struct/1`.
+
+The owner and scope rules are the AST rule's: the struct's own module owns
+it, `defimpl P, for: S` is `S`'s own code (`for: [A, B]` is the protocol's),
+and `owned_namespaces` limits the structs judged; a selected module that
+defines a struct outside them is itself a violation.
+
+**One finding per site.** A site the AST rule reports is not reported again:
+a line holding literal struct syntax for another module's struct (`%S{...}`,
+`%S{s | ...}`), and a write on a value known only by a match in code the
+source holds (the AST rule knows that variable). A match in code a macro
+injected is this rule's, reported at the `use` line. A site with several
+writes gives one violation, on the value the site starts from. Keyed
+`<id>|<Mod.fun/a>|<S>|<op>`:
+
+```
+lib/my_app/decider.ex:12: [enforce] rule 5 (id: "struct_owned_by_module_flow", struct_owned_by_module_flow) MyApp.Decider.finish/1 changes MyApp.Turn (Map.put; known as MyApp.Turn by the @type t of MyApp.Game (field :turn)) outside MyApp.Turn: call a function on MyApp.Turn instead (e.g. MyApp.Turn.put_<field>/2). Fix: only a struct's own module builds or changes it: call a function on the struct's module (e.g. S.new/1, S.put_<field>/2) instead; read fields and pattern-match freely
+```
+
+Anchor's own `.anchor.yml` runs it over `lib/` with a baseline holding what
+it found when it landed.
 
 The only file it writes is `<build_path>/anchor/graph.etf` (Mix's build path:
 `_build/<env>`, or the directory `MIX_BUILD_PATH` names), the graph keyed by
@@ -1938,6 +2008,10 @@ or stop selecting this file.`
 Each build or change issue names the struct and ends with `Fix: call a
 function on S's own module that builds or changes it (e.g. S.new/1,
 S.put_<field>/2); read fields and pattern-match freely.`
+
+What a typespec in another file says (a field typed as a struct, a
+function's return) and what a macro injects is the graph rule
+[`struct_owned_by_module_flow`](#the-struct_owned_by_module_flow-rule-dnd-5454)'s.
 
 Known limits, each a miss: a value bound to a function's return
 (`s = Turn.new()`) or a field typed as a struct (`state.turn`) is not known,

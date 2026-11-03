@@ -62,7 +62,8 @@ defmodule Anchor.Domain.RuleSchemaTest do
     no_tuple_match_in_head: "pahts",
     single_control_flow: "pahts",
     struct_getter_convention: "pahts",
-    struct_owned_by_module: "owned_namespace"
+    struct_owned_by_module: "owned_namespace",
+    struct_owned_by_module_flow: "owned_namespace"
   }
 
   defp rule(type, extra \\ %{}) do

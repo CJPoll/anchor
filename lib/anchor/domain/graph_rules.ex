@@ -40,6 +40,7 @@ defmodule Anchor.Domain.GraphRules do
   alias Anchor.Domain.GraphRules.ContextAcyclic
   alias Anchor.Domain.GraphRules.EffectsMatchBucket
   alias Anchor.Domain.GraphRules.Layering
+  alias Anchor.Domain.GraphRules.StructOwnedByModuleFlow
   alias Anchor.Domain.Model
 
   @default_min_modules 1
@@ -49,7 +50,7 @@ defmodule Anchor.Domain.GraphRules do
 
   # Every module implementing `Anchor.Domain.GraphRule`. The rule tickets add
   # theirs here (see the moduledoc).
-  @rules [Layering, ContextAcyclic, EffectsMatchBucket]
+  @rules [Layering, ContextAcyclic, EffectsMatchBucket, StructOwnedByModuleFlow]
 
   @doc "Every graph rule module."
   @spec all() :: [module()]
