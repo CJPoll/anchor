@@ -412,3 +412,15 @@ review. It reads the list through the graph's baseline ports
 (`BaselineStore`, `GitBase`) and compares through `Baseline.compare/2`: never
 a second comparator. It is not a graph baseline (`.anchor/baselines/`), and
 the run never writes it.
+
+## Replay (DND-5485)
+
+`mix anchor.sabotage replay` re-applies each landed record's `killed` and
+`timeout` rows (`Anchor.Domain.Sabotage.Replay`, `KillerRef`; the Manager
+`Anchor.Managers.Sabotage.Replay` calls `Runner`'s lock, journal and
+`mutant_outcome/6`, so the journal discipline is one code path). Killers run
+by name (`--only test:<name>`); a row whose killers all pass is LOST POWER
+(exit 1), one that cannot be replayed as recorded is drifted, and zero rows
+or every row drifted is exit 3. A row's file must be inside the project
+(`Replay.inside?/1`) before it is read or written. CI:
+`.github/workflows/sabotage-replay.yml` (weekly, `workflow_dispatch`).

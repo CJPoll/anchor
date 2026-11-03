@@ -172,7 +172,10 @@ defmodule Anchor.Managers.Sabotage.Runner do
 
   # A raise or a throw releases the lock and goes on up; a VM kill leaves it,
   # and the next run takes a dead holder's lock over.
-  defp locked(run, root, %{patcher: patcher}, body) do
+  @doc false
+  # Shared with the replay (DND-5485): the run lock around `body`.
+  @spec locked(map(), String.t(), map(), (-> map())) :: map()
+  def locked(run, root, %{patcher: patcher}, body) do
     case patcher.take_lock(root) do
       :ok ->
         try do
@@ -280,7 +283,10 @@ defmodule Anchor.Managers.Sabotage.Runner do
     end
   end
 
-  defp ports(opts) do
+  @doc false
+  # The adapters from `opts`; shared with the replay (DND-5485).
+  @spec ports(keyword()) :: map()
+  def ports(opts) do
     %{
       config: Keyword.get(opts, :config_loader, ConfigFile),
       change: Keyword.get(opts, :change_source, GitChangeSource),
@@ -297,7 +303,11 @@ defmodule Anchor.Managers.Sabotage.Runner do
 
   # -- 1. the leftover journal -------------------------------------------------
 
-  defp recover(run, root, %{patcher: patcher}) do
+  @doc false
+  # Step 1, shared with the replay (DND-5485).
+  @spec recover(map(), String.t(), map()) ::
+          {:ok, map()} | {:refuse, map(), pos_integer(), String.t()}
+  def recover(run, root, %{patcher: patcher}) do
     case patcher.read_journal(root) do
       :none ->
         {:ok, run}
@@ -380,7 +390,10 @@ defmodule Anchor.Managers.Sabotage.Runner do
 
   # -- 2..5. config, journal ignored, scope, clean targets -------------------
 
-  defp config(root, %{config: loader}) do
+  @doc false
+  # Step 2, shared with the replay (DND-5485).
+  @spec config(String.t(), map()) :: {:ok, term()} | {:refuse, pos_integer(), String.t()}
+  def config(root, %{config: loader}) do
     case loader.load_in(root) do
       {:ok, %{sabotage: nil}} ->
         {:refuse, 3,
@@ -395,7 +408,10 @@ defmodule Anchor.Managers.Sabotage.Runner do
     end
   end
 
-  defp journal_ignored(root, %{git: git}) do
+  @doc false
+  # Step 3, shared with the replay (DND-5485).
+  @spec journal_ignored(String.t(), map()) :: :ok | {:refuse, pos_integer(), String.t()}
+  def journal_ignored(root, %{git: git}) do
     case git.ignored?(root, Journal.path()) do
       {:ok, true} ->
         :ok
@@ -703,21 +719,26 @@ defmodule Anchor.Managers.Sabotage.Runner do
   defp measured(measured, nil, _outcome), do: measured
   defp measured(measured, key, outcome), do: Map.put_new(measured, key, outcome)
 
-  defp mutant_outcome(mutant, {:none, []} = selection, _facts, config, _sources, _ports) do
+  @doc false
+  # Step 9 for one mutant (journal, write, run, restore), shared with the
+  # replay (DND-5485).
+  @spec mutant_outcome(Mutant.t(), Run.selection(), map(), term(), map(), map()) ::
+          {:ok, map()} | {:refuse, pos_integer(), String.t()}
+  def mutant_outcome(mutant, {:none, []} = selection, _facts, config, _sources, _ports) do
     looked =
       TestSelection.mirror_path(mutant, config.test_mirror) || "(no test_mirror rule matches)"
 
     {:ok, outcome(mutant, :no_tests, [], selection, looked)}
   end
 
-  defp mutant_outcome(
-         %Mutant{} = mutant,
-         {_source, tests} = selection,
-         facts,
-         config,
-         sources,
-         ports
-       ) do
+  def mutant_outcome(
+        %Mutant{} = mutant,
+        {_source, tests} = selection,
+        facts,
+        config,
+        sources,
+        ports
+      ) do
     {:ok, original} = Map.fetch!(sources, mutant.file)
     mutated = Patch.apply_range(original, mutant.range, mutant.replacement)
     entry = Journal.entry(mutant.file, mutant.id, original, mutated)
@@ -784,19 +805,23 @@ defmodule Anchor.Managers.Sabotage.Runner do
     end
   end
 
-  defp runner_error_code(:timeout_not_found), do: 2
-  defp runner_error_code({:results_not_removed, _path, _posix}), do: 3
-  defp runner_error_code({:results_dir_not_created, _dir, _posix}), do: 3
+  @doc false
+  @spec runner_error_code(term()) :: pos_integer()
+  def runner_error_code(:timeout_not_found), do: 2
+  def runner_error_code({:results_not_removed, _path, _posix}), do: 3
+  def runner_error_code({:results_dir_not_created, _dir, _posix}), do: 3
 
-  defp runner_error(:timeout_not_found), do: timeout_missing()
+  @doc false
+  @spec runner_error(term()) :: String.t()
+  def runner_error(:timeout_not_found), do: timeout_missing()
 
-  defp runner_error({:results_not_removed, path, posix}) do
+  def runner_error({:results_not_removed, path, posix}) do
     "COULD NOT MEASURE: the previous results file #{path} could not be removed " <>
       "(#{inspect(posix)}), so a test run's failures could be an earlier run's. " <>
       "Fix: remove #{path} by hand"
   end
 
-  defp runner_error({:results_dir_not_created, dir, posix}) do
+  def runner_error({:results_dir_not_created, dir, posix}) do
     "COULD NOT MEASURE: the results directory #{dir} could not be made " <>
       "(#{inspect(posix)}), so no test run's failures can be read. Fix: make #{dir} " <>
       "(or its parent) a writable directory"
@@ -833,7 +858,10 @@ defmodule Anchor.Managers.Sabotage.Runner do
   defp outcome(mutant, status, killers, selection, reason),
     do: %{mutant: mutant, status: status, killers: killers, selection: selection, reason: reason}
 
-  defp test_run(tests, facts, config, %{tests: runner}) do
+  @doc false
+  # One bounded test run, shared with the replay (DND-5485).
+  @spec test_run([String.t()], map(), term(), map()) :: {:ok, TestRun.t()} | {:error, term()}
+  def test_run(tests, facts, config, %{tests: runner}) do
     runner.run(config.test_command, tests,
       cd: facts.root,
       results_path: build_path(facts, "results.bin"),

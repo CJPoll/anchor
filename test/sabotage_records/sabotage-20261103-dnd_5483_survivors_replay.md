@@ -42,3 +42,24 @@ the scope filter), U3 (judge unrun entries) and U4 (ignore `no_tests`).
 After every row was restored: `survivors_test.exs` 27 tests, 0 failures;
 `report_test.exs` 41 tests, 0 failures; `sabotage_run_test.exs` 86 tests,
 0 failures.
+
+## DND-5485: replaying landed records
+
+The QA plan's three required breaks are P1 (treat drifted as lost power),
+P2 (exit 0 on zero rows) and P3 (skip the baseline). P6 and P7 also ran the
+integration test (a real tmp project, no doubles).
+
+| # | Mutation | Tests failed | First failure, verbatim |
+|---|---|---|---|
+| P1 | `exit_code/1` counts every drifted row as lost power | 2 of 23: exit_code "4: rows, every one drifted: 3", "5: some drifted, the rest still killed: 0" | `code:  assert Replay.exit_code(r) == 3` `left:  1` `right: 3` |
+| P2 | zero rows is exit 0 | 3 of 30: exit_code "3: zero rows: 3"; manager "zero rows: exit 3, naming the directories searched ...", "--records names the directory globs read ..." | `code:  assert Replay.exit_code(%Result{rows: 0}) == 3` `left:  0` `right: 3` |
+| P3 | the baseline (killers with no mutant) skipped | 4 of 7: manager rows 1-4 | `** (Mox.VerificationError) error while verifying mocks` (row 1: the mutant was applied with main red) |
+| P4 | `KillerRef.parse/1` splits on the last `:<digits> ` | 1 of 7: "2: a name holding : and digits is split on the first :<digits> only" | `left:  {:error, {:bad_path, :not_a_test_file}}` |
+| P5 | the inside-the-project check on a row's file always passes | 1 of 23: plan "a row whose file is outside the project is drifted before anything is read" | `code:  assert plan([i], facts(%{sources: %{file => true}})).drifted == [{i, :file_outside}]` |
+| P6 | `to_test_args/1` drops the `--only test:` filters (whole files) | 6 of 15: killer_ref row 3; manager rows 2, 3; the integration test (two tests ran, not one) | `** (FunctionClauseError) no function clause matching in anonymous fn/3 in Anchor.Managers.SabotageReplayTest."test 3: ..."` (the double was called with the file alone) |
+| P7 | `judge/2` reads a survived run as still killed | 3 of 31: judge "3: passed"; manager row 3; the integration test | `code:  assert Replay.judge(item(), %{status: :survived, reason: nil}) ==` `left:  :still_killed` |
+| P8 | the dirty-file check given no files | 5 of 7: "a replayable row's file with uncommitted changes refuses, exit 2 ..." and rows 1-4 | `** (Mox.UnexpectedCallError) no expectation defined for Anchor.TestExecutionMock.run/3` |
+
+After every row was restored: `replay_test.exs` and `killer_ref_test.exs`
+30 tests, 0 failures; `sabotage_replay_test.exs` 7 tests, 0 failures;
+`sabotage_replay_integration_test.exs` 1 test, 0 failures.

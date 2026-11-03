@@ -1271,6 +1271,46 @@ it. A base copy that cannot be read for any reason but its absence is exit 3.
 survivor, with the placeholder reason to replace. The run never writes the
 list.
 
+### Sabotage: replaying landed records
+
+```bash
+mix anchor.sabotage replay [--max N|all] [--records DIR_GLOB]...
+```
+
+A record proves a test failed once; a test can lose that power later (an
+assertion loosened, a setup changed). `replay` (DND-5485) reads every
+`killed` or `timeout` row of the `anchor-kills` blocks under
+`sabotage.records.dir` (or each `--records` directory glob, inside the
+project), and for each row:
+
+1. regenerates the mutants of its `Module.fun/arity` on the current tree,
+   with every operator, and finds the one with the recorded id (ids do not
+   depend on lines, so a moved function still replays);
+2. checks its killers' test files exist;
+3. applies the mutant under `run`'s journal and lock, runs the killers by
+   file and test name (`<file> --only test:<full name>`, so a moved test
+   still runs), and restores the file.
+
+Before any row, every killer runs once with no mutant; if any fails, main is
+red and nothing can be judged (exit 3). The cap is `--max` (else
+`max_mutants`); rows past it are listed `not replayed (cap)`. A `timeout`
+row that names no test (`(timeout)`) runs the killer files of its
+function's other killed rows in the same record, whole, and says so.
+
+| Row | Printed | Exit |
+|---|---|---|
+| a killer failed (or the run timed out) | `still killed <id> ...` | 0 |
+| every killer passed | `LOST POWER <id> M.f/a operator (<record>)`, each killer on `no longer failed by:`, and a `Fix:` | 1 |
+| the run crashed | `CRASHED <id> ...` with a `Fix:` | 1 |
+| it cannot be replayed as recorded: its file is gone or outside the project, its function is gone, no mutant has its id (the function changed), a killer's file or test is gone, it no longer compiles | `drifted (<reason>) <id> ...` | never on its own |
+| zero rows, or every row drifted | `COULD NOT MEASURE` with `Fix:` | 3 |
+
+A record whose kill map does not parse is named (`could not read ...`) and
+skipped. Like `run`, a replay refuses (exit 2) on a dirty row file, the run
+lock held, or the journal not git-ignored, and never writes a record or the
+survivors list. Anchor runs it weekly and on demand in CI
+(`.github/workflows/sabotage-replay.yml`, `--max all`).
+
 ### Sabotage: the per-test coverage map
 
 ```bash

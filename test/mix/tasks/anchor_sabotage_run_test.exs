@@ -71,6 +71,34 @@ defmodule Mix.Tasks.Anchor.SabotageRunTest do
     assert output =~ ".anchor/sabotage/in-flight.json cannot be read"
   end
 
+  test "DND-5485: replay_facts/1 maps --max and --records; a glob outside the project is usage" do
+    # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5483_survivors_replay.md
+    assert {:ok, %{max: :all, records: ["a/*/records", "b"]}} =
+             Sabotage.replay_facts(["--max", "all", "--records", "a/*/records", "--records", "b"])
+
+    assert {:ok, %{max: nil, records: [], build_path: build_path}} = Sabotage.replay_facts([])
+    assert build_path == Mix.Project.build_path()
+
+    for argv <- [
+          ["--max", "0"],
+          ["--records", "../x"],
+          ["--records", "/abs"],
+          ["extra"],
+          ["--bogus"]
+        ] do
+      assert Sabotage.replay_facts(argv) == :usage, inspect(argv)
+    end
+  end
+
+  test "DND-5485: replay with a bad flag is a usage error, exit 2, naming the replay form" do
+    stderr =
+      capture_io(:stderr, fn ->
+        assert catch_exit(Sabotage.run(["replay", "--records", "../x"], @opts)) == {:shutdown, 2}
+      end)
+
+    assert stderr =~ "mix anchor.sabotage replay [--max N|all] [--records DIR_GLOB]..."
+  end
+
   test "DND-5483: run_facts/1 maps --print-survivor-lines; off by default" do
     # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5483_survivors_replay.md
     assert {:ok, %{print_survivor_lines: true}} = Sabotage.run_facts(["--print-survivor-lines"])

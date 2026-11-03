@@ -1,5 +1,5 @@
 defmodule Mix.Tasks.Anchor.Sabotage do
-  @shortdoc "Generated sabotage: scope, run and restore"
+  @shortdoc "Generated sabotage: scope, run, restore, replay and coverage"
 
   @moduledoc """
   Generated sabotage for the functions a change touched, the **Framework**
@@ -73,6 +73,24 @@ defmodule Mix.Tasks.Anchor.Sabotage do
   without a test; the survivors file, or its copy at `--base`, cannot be
   read).
 
+  ## replay (DND-5485)
+
+      mix anchor.sabotage replay [--max N|all] [--records DIR_GLOB]...
+
+  Re-applies each `killed` or `timeout` row of the landed sabotage records
+  (the `anchor-kills` blocks under `sabotage.records.dir`, or each
+  `--records` directory glob) on the current tree and runs the tests that
+  killed it, by file and test name (`Anchor.Managers.Sabotage.Replay`). A
+  row whose killers all pass is LOST POWER; a row that can no longer be
+  replayed as recorded is drifted (its file, function or killer is gone, no
+  mutant has its id, it no longer compiles), reported by reason. `--max`
+  overrides the `max_mutants` cap (`--max all` for CI).
+
+  Exit codes: 0 every replayed row still killed; 1 a row lost power or its
+  run crashed; 2 a refusal or usage error (as `run`, and a `--records` glob
+  that is absolute or has a `..` segment); 3 `COULD NOT MEASURE` (zero rows,
+  every row drifted, the killers fail with no mutant: main is red).
+
   ## coverage (DND-5474)
 
       MIX_ENV=test mix anchor.sabotage coverage [--out PATH] [--local] [-- TEST_ARGS]
@@ -92,6 +110,7 @@ defmodule Mix.Tasks.Anchor.Sabotage do
   use Mix.Task
 
   alias Anchor.Domain.Failures
+  alias Anchor.Domain.Sabotage.Replay
   alias Anchor.Domain.Sabotage.Report
   alias Anchor.Domain.Sabotage.Scope
   alias Anchor.Managers.Sabotage
@@ -104,6 +123,7 @@ defmodule Mix.Tasks.Anchor.Sabotage do
                                  [--coverage PATH] [--no-record] [--domain D]
                                  [--ticket KEY] [--slot S] [--print-survivor-lines]
          mix anchor.sabotage restore
+         mix anchor.sabotage replay [--max N|all] [--records DIR_GLOB]...
          MIX_ENV=test mix anchor.sabotage coverage [--out PATH] [--local] [-- TEST_ARGS]
   Fix: use one of these forms; --max takes a positive integer or `all`\
   """
@@ -134,6 +154,13 @@ defmodule Mix.Tasks.Anchor.Sabotage do
   end
 
   def run(["restore"], opts), do: report(Sabotage.restore(%{root: File.cwd!()}, opts))
+
+  def run(["replay" | argv], opts) do
+    case replay_facts(argv) do
+      {:ok, facts} -> replay_report(Sabotage.replay(facts, opts))
+      :usage -> usage()
+    end
+  end
 
   def run(["coverage" | argv], opts) do
     {own, test_args} = split_test_args(argv)
@@ -188,6 +215,29 @@ defmodule Mix.Tasks.Anchor.Sabotage do
       {:ok, facts}
     else
       _invalid -> :usage
+    end
+  end
+
+  @doc false
+  # The facts `replay` passes the Manager, from its argv; exposed for its test.
+  @spec replay_facts([String.t()]) :: {:ok, map()} | :usage
+  def replay_facts(argv) do
+    with {parsed, [], []} <- OptionParser.parse(argv, strict: [max: :string, records: :keep]),
+         {:ok, max} <- max(parsed[:max]),
+         globs = Keyword.get_values(parsed, :records),
+         true <- Enum.all?(globs, &Replay.inside?/1) do
+      {:ok, %{root: File.cwd!(), build_path: Mix.Project.build_path(), max: max, records: globs}}
+    else
+      _invalid -> :usage
+    end
+  end
+
+  defp replay_report(result) do
+    Mix.shell().info(Replay.render(result))
+
+    case Replay.exit_code(result) do
+      0 -> :ok
+      code -> exit({:shutdown, code})
     end
   end
 
