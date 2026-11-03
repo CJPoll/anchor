@@ -35,7 +35,7 @@ defmodule Anchor.Domain.Checks.NoDiscardedPureExpression do
        scope (`Anchor.Domain.DependencyAnalyzer.resolved_modules/1`), is in
        the stdlib pure set or matches a `pure_patterns` glob, `f` does not end
        in `!`, `{M, f}` is not a stdlib effect (a clock or random read,
-       `Stream.run/1`), and every argument is pure. An argument a stdlib
+       an atom-table write or lookup, `Stream.run/1`), and every argument is pure. An argument a stdlib
        function may call (`@callable_positions`, read from its `@spec`) must
        be a written value (an `fn` or capture literal judged pure, a literal):
        a function held in a variable, field or attribute may be any function;
@@ -53,8 +53,11 @@ defmodule Anchor.Domain.Checks.NoDiscardedPureExpression do
   `apply/3`, `fun.()`), `send`, `raise`, `throw`, `exit`, `spawn`, a bang
   function, and every control-flow form (`case`, `cond`, `if`, `with`,
   `receive`, `try`), which is judged inside, not as a whole. A name the
-  resolver cannot place is unknown, so not pure: a miss is possible, a false
-  positive should not be.
+  resolver cannot place is unknown, so not pure. A miss is possible; a false
+  report is possible only in the shapes the README lists under the rule's
+  known limits (a non-bang call kept for its raise, an effectful value held in
+  a variable, a callback passed to a `pure_patterns` module, `mod.f` without
+  parentheses).
   """
 
   alias Anchor.Domain.DependencyAnalyzer
@@ -86,18 +89,23 @@ defmodule Anchor.Domain.Checks.NoDiscardedPureExpression do
     URI
   ]
 
-  # Functions of the pure set that read the clock or the random state, or
-  # whose whole job is an effect. Every arity. A test holds every function of
-  # the pure set whose spec returns only `:ok` to this list (`Enum.each/2`
-  # aside: with a pure function it does nothing).
+  # Functions of the pure set that read the clock or the random state, act on
+  # the global atom table, or whose whole job is an effect. Every arity. Two
+  # tests hold this list closed: every function of the pure set whose spec
+  # returns only `:ok` (`Enum.each/2` aside: with a pure function it does
+  # nothing), and every `to_atom`/`to_existing_atom`.
   @stdlib_effectful [
     {Date, :utc_today},
     {Enum, :random},
     {Enum, :shuffle},
     {Enum, :take_random},
+    {List, :to_atom},
+    {List, :to_existing_atom},
     {NaiveDateTime, :local_now},
     {NaiveDateTime, :utc_now},
     {Stream, :run},
+    {String, :to_atom},
+    {String, :to_existing_atom},
     {Time, :utc_now},
     {URI, :default_port}
   ]
@@ -153,8 +161,10 @@ defmodule Anchor.Domain.Checks.NoDiscardedPureExpression do
                               do: index
                         end
 
+                        # A module whose beam carries no specs (a stripped build)
+                        # is left out: every argument of it is judged callable.
                         for module <- @stdlib_pure,
-                            {:ok, specs} = Code.Typespec.fetch_specs(module),
+                            {:ok, specs} <- [Code.Typespec.fetch_specs(module)],
                             {name, arity} <- module.__info__(:functions),
                             match =
                               specs

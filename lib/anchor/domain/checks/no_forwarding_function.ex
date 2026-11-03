@@ -56,7 +56,7 @@ defmodule Anchor.Domain.Checks.NoForwardingFunction do
   @spec shape(map()) :: String.t()
   def shape(_rule), do: @shape
 
-  # ---- module bodies (innermost defmodule; quote and defimpl skipped) ----
+  # ---- module bodies (innermost defmodule; quote skipped; a defimpl is never one) ----
 
   defp module_bodies({:defmodule, _meta, [_name, [{:do, body} | _rest]]}, acc) do
     module_bodies(statements(body), [statements(body) | acc])

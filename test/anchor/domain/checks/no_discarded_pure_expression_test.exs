@@ -215,7 +215,12 @@ defmodule Anchor.Domain.Checks.NoDiscardedPureExpressionTest do
             "Enum.shuffle(xs)",
             "Stream.run(s)",
             # Critic round 2 on a3f6621: a setter of global config.
-            ~s|URI.default_port("ftp", 21)|
+            ~s|URI.default_port("ftp", 21)|,
+            # Review floor: a write to (or a raising read of) the atom table.
+            "String.to_atom(name)",
+            "List.to_atom(chars)",
+            "String.to_existing_atom(name)",
+            "List.to_existing_atom(chars)"
           ] do
         assert detect(discarded(expr)) == [], "expression #{expr}"
       end
@@ -424,6 +429,30 @@ defmodule Anchor.Domain.Checks.NoDiscardedPureExpressionTest do
       expr = "#{inspect(module)}.#{name}(#{args})"
       source = "defmodule App.X do\n  def f(a1, a2, a3) do\n    #{expr}\n    :ok\n  end\nend\n"
       assert detect(source) == [], "#{expr} returns only :ok, so it is an effect"
+    end
+  end
+
+  # Review floor, closing the class: a function of the stdlib pure set that
+  # makes or looks up an atom (`to_atom`, `to_existing_atom`) acts on the
+  # global atom table, an effect its spec does not show. Every such function
+  # must be excluded, so one a later Elixir adds fails here.
+  test "every stdlib pure-set function that makes or looks up an atom is treated as an effect" do
+    atom_table =
+      for module <-
+            [Access, Atom, Base, Bitwise, Date, Enum, Float, Integer, Keyword, List] ++
+              [Map, MapSet, NaiveDateTime, Range, Stream, String, Time, Tuple, URI],
+          {name, arity} <- module.__info__(:functions),
+          String.ends_with?(Atom.to_string(name), "_atom"),
+          String.contains?(Atom.to_string(name), "to_"),
+          do: {module, name, arity}
+
+    assert {String, :to_atom, 1} in atom_table, "positive control"
+
+    for {module, name, arity} <- atom_table do
+      args = Enum.map_join(1..arity//1, ", ", &"a#{&1}")
+      expr = "#{inspect(module)}.#{name}(#{args})"
+      source = "defmodule App.X do\n  def f(a1, a2, a3) do\n    #{expr}\n    :ok\n  end\nend\n"
+      assert detect(source) == [], "#{expr} acts on the atom table, so it is an effect"
     end
   end
 

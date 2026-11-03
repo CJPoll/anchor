@@ -1015,8 +1015,10 @@ An expression is **pure**, by Anchor's definition, exactly when it is:
    `List`, `Map`, `MapSet`, `NaiveDateTime`, `Range`, `Stream`, `String`,
    `Time`, `Tuple`, `URI`, except the clock reads (`Date.utc_today`,
    `NaiveDateTime.utc_now`, `NaiveDateTime.local_now`, `Time.utc_now`), the
-   random reads (`Enum.random`, `Enum.shuffle`, `Enum.take_random`),
-   `Stream.run` and `URI.default_port/2` (a setter). An argument a stdlib function may call (its `@spec` types it
+   random reads (`Enum.random`, `Enum.shuffle`, `Enum.take_random`), the
+   atom-table writes and lookups (`String.to_atom`, `List.to_atom`,
+   `String.to_existing_atom`, `List.to_existing_atom`), `Stream.run` and
+   `URI.default_port/2` (a setter). An argument a stdlib function may call (its `@spec` types it
    as a function, or as a `Collectable.t()`) must be written out: an `fn` or
    a capture literal that is pure (not the `&1` placeholder), `:asc`,
    `:desc`, a boolean or `nil`, or a container literal naming no module. A

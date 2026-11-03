@@ -13,6 +13,13 @@
   `test/anchor/e2e/checks_e2e_test.exs` ("struct_owned_by_module through the
   real pipeline", F1, F2 = crew's test exemption as selection),
   `test/anchor/domain/rule_checks_nothing_test.exs` (`table(:struct_owned_by_module)`)
+- **Suite run:** from the worktree root,
+  `mix test test/anchor/domain/checks/struct_owned_by_module_test.exs` for
+  every row but **shell** (`mix test test/anchor/check/struct_owned_by_module_test.exs
+  test/anchor/e2e/checks_e2e_test.exs`) and **config**
+  (`mix test test/anchor/e2e/checks_e2e_test.exs`)
+- **Related record (same run):** `rule_schema-20261103-dnd_5451_ast_batch.md` (the
+  `owned_namespaces` load refusals, mutations **empty** and **grammar**)
 - **Base:** c733831 (DND-5452's commit); mutated tree: this ticket's code
   before its commit
 
@@ -29,7 +36,7 @@ restored. Failure text is verbatim.
 | agree | Any agreeing struct makes a variable known (`MapSet.delete(set, :unknown)`) | K1, K2, K3, R5 | K1: `code: assert detect(source) == []` `left: [` |
 | unknown | An unknown variable counts (`module != :unknown or true`) | K4, R4 | K4: `code: assert detect(source) == []` `left: [` |
 | drop | `Map.drop` of `:__struct__` not exempt | M5 | `code: assert detect(source) == []` `left: [` |
-| delete | `Map.delete(v, :__struct__)` not exempt | M5 | same |
+| delete | `Map.delete(v, :__struct__)` not exempt | M5 | `code:  assert detect(source) == []` `left: [` `trigger: "Map.delete",` `right: []` |
 | owned | `owned_namespaces` ignored | N1, N3, the prefix row | N1: `code: assert detect(source, @owned) == []` `left: [`; N3: `left: "%NewApp.Other{"` `right: "NewApp.Thing"` |
 | unowned | The unowned-module report removed | N3 | `code: assert [violation] = detect(source, @owned)` `left: [violation]` `right: []` |
 | prefix | A namespace matches any name it prefixes | the prefix row | `left: ["%App.Deep.Turn{", "%AppOther.Turn{", "%App{"]` `right: ["%App.Deep.Turn{", "%App{"]` |
@@ -42,8 +49,6 @@ restored. Failure text is verbatim.
 | message | The message drops its Fix | B1 | `code: assert String.ends_with?(violation.message, "Fix: " <> @shape)` |
 | shell | The shell returns no violations | check row 1, e2e F1 | `left: [issue]` `right: []`; e2e: `left: []` `right: [{2, "%App.Turn{"}]` |
 | config | `owned_namespaces` not parsed (`nil && ...`) | e2e F1 | `left: [{2, "%App.Turn{"}, {3, "%{uri \|"}]` `right: [{2, "%App.Turn{"}]` |
-| empty | `owned_namespaces: []` accepted | the type's table | `struct_owned_by_module / owned_namespaces: [] checks no struct: LOADED: %Anchor.Config{rules: [%{id: nil, index: 1, ...}], ...}` |
-| grammar | A non-module entry accepted | the type's table | `struct_owned_by_module / an owned_namespaces glob: RAISED: no match of right hand side value:` (and the Erlang and malformed rows) |
 
 ## Measured zero, fixed in the same run
 

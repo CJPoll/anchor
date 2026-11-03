@@ -24,7 +24,8 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
   #   ../../sabotage_records/rule_schema-20260929-dnd_1267_forbidden_functions.md
   # The DND-1269 `allowed_callers` rows:
   #   ../../sabotage_records/rule_schema-20260929-dnd_1269_allowed_callers.md
-  # The DND-5451 `pure_patterns` rows:
+  # The DND-5451 `pure_patterns`, DND-5452 `no_forwarding_function` and
+  # DND-5453 `owned_namespaces` rows:
   #   ../../sabotage_records/rule_schema-20261103-dnd_5451_ast_batch.md
   use ExUnit.Case, async: true
 

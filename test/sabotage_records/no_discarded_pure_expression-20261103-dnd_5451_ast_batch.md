@@ -10,6 +10,11 @@
   (rows D1-D19, S1), `test/anchor/check/no_discarded_pure_expression_test.exs`
   (F1, F3), `test/anchor/e2e/checks_e2e_test.exs` ("no_discarded_pure_expression
   through the real pipeline", F1, F2)
+- **Suite run:** from the worktree root,
+  `mix test test/anchor/domain/checks/no_discarded_pure_expression_test.exs`
+  for every row but **CFG** (`mix test test/anchor/e2e/checks_e2e_test.exs`)
+  and **FW** (`mix test test/anchor/check/no_discarded_pure_expression_test.exs
+  test/anchor/e2e/checks_e2e_test.exs`)
 - **Merge base:** `origin/main` = 185ecc9; mutated tree: the ticket's code
   before its commit
 - **Related records (same run):**
@@ -22,7 +27,7 @@ fails `--warnings-as-errors` and proves nothing. Failure text is verbatim.
 
 | # | Mutation | Failed | Failure |
 |---|---|---|---|
-| A | Pure is true for anything unknown (`pure?(_other, _ctx)` returns `true`) | D7 | `expression fun.()` (the row's loop names the first expression reported) |
+| A | Pure is true for anything unknown (`pure?(_other, _ctx)` returns `true`) | D7 | `expression fun.()` `code: for expr <- [` |
 | A2 | A name the resolver cannot place counts as pure (`:unknown -> true`) | "a call on a name the resolver cannot place" | `code: assert detect(source, [%{pure_patterns: ["*Calc*"]}]) == []` `left: [` (one violation) `right: []` |
 | B | The final expression of a block is judged too | 18 of 22, D12 among them | D12: `code: assert detect(source) == []` `left: [` ... `line: 6,` `trigger: "Map.put(m, :a, 1)",` (the final expression of `g/1`) |
 | C | The bang exclusion removed (`bang?/1` is `fun == :__never__`) | D8, D14 | `code: assert detect(discarded("Map.fetch!(m, :k)")) == []` `left: [` `right: []` |
@@ -92,3 +97,30 @@ so a setter a later Elixir adds fails it. Mutations of the fix:
 | M2 | Any atom is an option atom | D9 | `expression Enum.sort(xs, :lists)` |
 | M3 | `&1` counts as a written function | D9 | `expression Enum.map(xs, &Enum.each(s, &1))` |
 
+
+## Review floor (on cfef696): the atom table, fixed
+
+The code reviewer found `String.to_atom/1` and `List.to_atom/1` reported
+although they write to the global atom table. The class is every
+`to_atom`/`to_existing_atom` of the pure set; a test now reads them from the
+modules' function lists. Run against cfef696's detector first
+(`mix test test/anchor/domain/checks/no_discarded_pure_expression_test.exs`):
+
+```
+1) test every stdlib pure-set function that makes or looks up an atom is treated as an effect
+   List.to_atom(a1) acts on the atom table, so it is an effect
+2) test detect_violations/2 D11: a clock or random read is not reported
+   expression String.to_atom(name)
+27 tests, 2 failures
+```
+
+Mutations of the fix (same suite run):
+
+| # | Mutation | Failed | Failure |
+|---|---|---|---|
+| N1 | `{String, :to_atom}` dropped from the stdlib effects | D11, the atom-table class row | `expression String.to_atom(name)`; `String.to_atom(a1) acts on the atom table, so it is an effect` |
+| N2 | `{List, :to_existing_atom}` dropped | D11, the atom-table class row | `expression List.to_existing_atom(chars)`; `List.to_existing_atom(a1) acts on the atom table, so it is an effect` |
+| N3 | A module's specs are not read (`module != Enum`), as on a stripped build | D5, D9, D10 | D5: `left:  [%{trigger: "_ = Enum.map(xs, &(&1 * 2))"}]` `right: []` |
+
+N3 shows the spec fallback's direction: a module without specs has every
+argument judged callable, so its calls are missed, never falsely reported.

@@ -36,6 +36,8 @@ defmodule Anchor.Domain.RuleSchema do
     * a relation-bearing rule whose relation is missing or empty (see below);
     * a `pure_patterns` entry that is a match-all glob, which declares every
       module pure (DND-5451);
+    * an `owned_namespaces` list that is empty, which checks no struct, or that
+      holds an entry that is not exactly one Elixir module name (DND-5453);
     * a `module_pattern_restrictions` rule whose `allowed_functions` holds a
       match-all glob (only wildcards: `*`, `**`), which allows every function.
       Since DND-1292 every other glob character is a literal, so no other entry

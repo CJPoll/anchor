@@ -9,6 +9,11 @@
   for an alias or `__MODULE__` callee)
 - **Tests:** `test/anchor/domain/dependency_analyzer_resolved_modules_test.exs`;
   `test/anchor/domain/checks/no_discarded_pure_expression_test.exs` reads it
+- **Suite run:** from the worktree root,
+  `mix test test/anchor/domain/dependency_analyzer_resolved_modules_test.exs
+  test/anchor/domain/checks/no_discarded_pure_expression_test.exs` for DA1 and
+  DA3, `mix test test/anchor/domain/dependency_analyzer_resolved_modules_test.exs`
+  for DA2 and DA5
 - **Primary record (same run):** `no_discarded_pure_expression-20261103-dnd_5451_ast_batch.md`
 
 Failure text is verbatim.
