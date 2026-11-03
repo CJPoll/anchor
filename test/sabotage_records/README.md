@@ -185,6 +185,9 @@ before coining a synonym.
 - `graph_algorithms` — `Anchor.Domain.GraphAlgorithms` (DND-5444):
   dominators and post-dominators from a virtual root/exit, union-find
   components, Tarjan SCCs, the condensation and cyclic SCCs.
+- `cfa` — the 0-CFA (DND-5497): `Anchor.Domain.Cfa`, `Cfa.Eval` and
+  `Cfa.Value`, with the Core labels it reads (`Anchor.Domain.Core`) and the
+  library invokers table (`Anchor.Domain.HigherOrder`), in one record.
 - `digraph` — `Anchor.Domain.Digraph` (DND-5444), the plain immutable graph
   value the graph algorithms run over.
 - `dialyzer_boundary` — the DND-5499 spike runner

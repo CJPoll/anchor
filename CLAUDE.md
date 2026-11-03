@@ -159,6 +159,19 @@ compiled in the test with `Anchor.Test.BeamFixtures.compile_unloaded/2`, which
 unloads every fixture module and turns `debug_info` on per module (`mix test`
 compiles with it off).
 
+## Higher-order flow (DND-5497)
+
+`Anchor.Domain.Cfa.analyze/3` is a whole-program 0-CFA over every
+`def`/`defp`'s Core: each apply site (`fun.(x)`, `apply/2`, the invocation
+inside an `Anchor.Domain.HigherOrder` function such as `Enum.map/2`) is
+`{:ok, closures}` or `:any`, counted per function and in total, never dropped.
+Lambdas, sites and container allocation sites are numbered by
+`Anchor.Domain.Core.label/1`. Roots come in as a seed (`Cfa.default_seed/1` is
+the open world: every exported function's parameters are `any`). The worklist
+is bounded by `:max_steps`; a run that hits it reports every site `:any`. A
+library function that calls an argument gets a row in `HigherOrder`'s table;
+a missing row costs precision (its arguments escape), never soundness.
+
 ## Important Notes
 
 - When running Elixir code, use: `mix run -e "<elixir code>"`
