@@ -47,6 +47,7 @@ rules:
       - File
       - YamlElixir
       - Anchor.Adapters.ConfigFile
+      - Anchor.Adapters.BeamReader
       - Anchor.Adapters.GitChangeSource
       - Anchor.Managers.Lint
       - Anchor.Managers.Sabotage

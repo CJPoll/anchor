@@ -1,0 +1,165 @@
+defmodule Anchor.Domain.Graph.Builder do
+  @moduledoc """
+  Builds `Anchor.Domain.Graph` from decoded beams and source facts —
+  **Domain**, pure (DND-5438).
+
+  Module-level facts come from each beam's `elixir_v1` metadata: the source
+  file (`relative_file`), behaviours and the other persisted attributes, struct
+  fields, and each definition's kind and def line. Each function is joined with
+  its Core Erlang `c_fun` (`def`/`defp` keep `name/arity` in Core; a macro is
+  `MACRO-name/arity+1`, mapped back), and `Anchor.Domain.Graph.CoreWalker`
+  reads its call and struct-use edges. Specs and types are turned into quoted
+  form with `Code.Typespec`.
+
+  `generated?` compares the module's name with the literal `defmodule`s of its
+  source file (`Anchor.Domain.Graph.SourceFacts`): absent there, the module is
+  macro output. With no facts for the file, facts that are
+  `{:error, :unparseable}`, or a file that also has a `defmodule` with a
+  non-literal name (which may be this module), it is `:unknown`, never `false`
+  and never a guessed `true`.
+
+  A decode error is carried into `graph.unreadable` (in path order), never
+  dropped; the good beams beside it are all built. Two beams of one module (a
+  stale copy in a second ebin) build the first by path, and the other is in
+  `unreadable` as `{:duplicate_module, kept_path}`.
+  """
+
+  alias Anchor.Domain.Graph
+  alias Anchor.Domain.Graph.Beam
+  alias Anchor.Domain.Graph.CoreWalker
+  alias Anchor.Domain.Graph.FunctionNode
+  alias Anchor.Domain.Graph.ModuleNode
+  alias Anchor.Domain.Graph.SourceFacts
+
+  @doc """
+  Builds the graph. `source_facts` maps a source file (as the beams'
+  `relative_file` names it) to its `SourceFacts.from_source/2` result.
+  """
+  @spec build([Beam.t() | Beam.decode_error()], %{
+          String.t() => SourceFacts.t() | {:error, :unparseable}
+        }) :: Graph.t()
+  def build(beams, source_facts) do
+    {decoded, errors} = Enum.split_with(beams, &match?(%Beam{}, &1))
+    {kept, duplicates} = first_per_module(decoded)
+    nodes = Enum.map(kept, &module_node(&1, source_facts))
+    # Core's `{:file, _}` annotations hold the cwd-relative path, which the
+    # node keeps as `source_file` (`elixir_v1` `:relative_file`).
+    edges = Enum.map(nodes, &module_edges(&1, &1.source_file))
+
+    %Graph{
+      modules: Map.new(nodes, &{&1.module, &1}),
+      calls: Enum.flat_map(edges, &elem(&1, 0)),
+      struct_uses: Enum.flat_map(edges, &elem(&1, 1)),
+      unreadable:
+        errors
+        |> Enum.map(fn {:error, error} -> error end)
+        |> Enum.concat(duplicates)
+        |> Enum.sort_by(& &1.path)
+    }
+  end
+
+  # One beam per module: the first by path. Every other beam of that module (a
+  # stale copy in a second ebin) is reported, naming the beam that was kept.
+  defp first_per_module(decoded) do
+    decoded
+    |> Enum.sort_by(& &1.path)
+    |> Enum.group_by(& &1.module)
+    |> Enum.reduce({[], []}, fn {_module, [first | others]}, {kept, duplicates} ->
+      extra =
+        Enum.map(
+          others,
+          &%{path: &1.path, module: &1.module, reason: {:duplicate_module, first.path}}
+        )
+
+      {[first | kept], extra ++ duplicates}
+    end)
+  end
+
+  defp module_node(%Beam{module: module, elixir: elixir} = beam, source_facts) do
+    source_file = Map.get(elixir, :relative_file)
+    attributes = Map.get(elixir, :attributes, [])
+    core_defs = core_defs(beam.core)
+
+    %ModuleNode{
+      module: module,
+      app: beam.app,
+      source_file: source_file,
+      behaviours: attributes |> Keyword.get_values(:behaviour) |> List.flatten(),
+      attributes: attributes,
+      specs: specs(beam.specs),
+      types: types(beam.types),
+      struct_fields: struct_fields(Map.get(elixir, :struct)),
+      functions:
+        elixir
+        |> Map.get(:definitions, [])
+        |> Map.new(&function_node(module, &1, core_defs)),
+      generated?: generated(module, Map.get(source_facts, source_file))
+    }
+  end
+
+  defp module_edges(%ModuleNode{module: module, functions: functions}, file) do
+    functions
+    |> Enum.sort_by(fn {name_arity, _node} -> name_arity end)
+    |> Enum.map(fn {name_arity, node} -> function_edges(module, name_arity, node, file) end)
+    |> Enum.unzip()
+    |> then(fn {calls, uses} -> {List.flatten(calls), List.flatten(uses)} end)
+  end
+
+  defp function_edges(_module, _name_arity, %FunctionNode{core: nil}, _file), do: {[], []}
+
+  defp function_edges(module, name_arity, %FunctionNode{core: core, line: line}, file),
+    do: CoreWalker.walk(module, name_arity, core, line, file)
+
+  defp function_node(module, {{name, arity}, kind, meta, clauses}, core_defs) do
+    node = %FunctionNode{
+      module: module,
+      name: name,
+      arity: arity,
+      kind: kind,
+      line: Keyword.get(meta, :line),
+      clauses: clauses,
+      core: Map.get(core_defs, core_name(kind, name, arity))
+    }
+
+    {{name, arity}, node}
+  end
+
+  defp core_name(kind, name, arity) when kind in [:defmacro, :defmacrop],
+    do: {:"MACRO-#{name}", arity + 1}
+
+  defp core_name(_kind, name, arity), do: {name, arity}
+
+  defp core_defs(nil), do: %{}
+
+  defp core_defs(core) do
+    Map.new(:cerl.module_defs(core), fn {fname, fun} -> {:cerl.var_name(fname), fun} end)
+  end
+
+  defp generated(_module, nil), do: :unknown
+  defp generated(_module, {:error, :unparseable}), do: :unknown
+
+  defp generated(module, %{defmodules: names, nonliteral_defmodule?: nonliteral?}) do
+    cond do
+      module_name(module) in names -> false
+      nonliteral? -> :unknown
+      true -> true
+    end
+  end
+
+  defp module_name(module), do: module |> Atom.to_string() |> String.replace_prefix("Elixir.", "")
+
+  defp struct_fields(nil), do: nil
+  defp struct_fields(fields), do: Enum.map(fields, & &1.field)
+
+  defp specs(specs) do
+    Map.new(specs, fn {{name, arity}, forms} ->
+      {{name, arity}, Enum.map(forms, &Code.Typespec.spec_to_quoted(name, &1))}
+    end)
+  end
+
+  defp types(types) do
+    Map.new(types, fn {kind, {name, _body, args} = type} ->
+      {{name, length(args)}, {kind, Code.Typespec.type_to_quoted(type)}}
+    end)
+  end
+end
