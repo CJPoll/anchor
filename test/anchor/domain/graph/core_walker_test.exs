@@ -5,6 +5,8 @@ defmodule Anchor.Domain.Graph.CoreWalkerTest do
   # (each line is found in the fixture source by its snippet).
   #
   # Sabotage record: ../../../sabotage_records/core_walker-20261103-dnd_5438.md
+  # Sabotage record: ../../../sabotage_records/inlines-20261103-dnd_5551_graph_hardening.md
+  # Sabotage record: ../../../sabotage_records/core_walker-20261103-dnd_5551_graph_hardening.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -35,6 +37,10 @@ defmodule Anchor.Domain.Graph.CoreWalkerTest do
     def funapp(fun, x), do: fun.(x) # funapp
     def app3(mod, x), do: apply(mod, :f, [x]) # app3
     def app2(fun, x), do: apply(fun, [x]) # app2
+    def app3lit(x), do: apply(Other, :f, [x]) # app3lit
+    def app3erl(x), do: apply(:lists, :reverse, [x]) # app3erl
+    def app3args(args), do: apply(Other, :f, args) # app3args
+    def app3fun(f, x), do: apply(Other, f, [x]) # app3fun
     def varmod(mod, x), do: mod.f(x) # varmod
     def computed(x), do: Module.concat([A, B]).f(x) # computed
     def dyncap(mod), do: &mod.f/1 # dyncap
@@ -159,6 +165,49 @@ defmodule Anchor.Domain.Graph.CoreWalkerTest do
     test "apply/3 is :apply, naming the function and arity it can see", %{binary: binary} do
       assert calls(binary, {:app3, 2}) ==
                [call({M, :app3, 2}, {:dynamic, :f, 1, :call}, :apply, "# app3")]
+    end
+
+    # DND-5547: the callee is as static as a direct call.
+    test "apply/3 with a literal module, function and argument list is a static :apply edge", %{
+      binary: binary
+    } do
+      assert calls(binary, {:app3lit, 1}) ==
+               [call({M, :app3lit, 1}, {Other, :f, 1}, :apply, "# app3lit")]
+
+      assert calls(binary, {:app3erl, 1}) ==
+               [call({M, :app3erl, 1}, {:lists, :reverse, 1}, :apply, "# app3erl")]
+    end
+
+    test "apply/3 stays dynamic when the argument count or the function is not literal", %{
+      binary: binary
+    } do
+      assert calls(binary, {:app3args, 1}) ==
+               [call({M, :app3args, 1}, {:dynamic, :f, nil, :call}, :apply, "# app3args")]
+
+      assert calls(binary, {:app3fun, 2}) ==
+               [call({M, :app3fun, 2}, {:dynamic, nil, 1, :call}, :apply, "# app3fun")]
+    end
+
+    test "apply/3 on a variable let-bound to literals is a static :apply edge" do
+      mod = :cerl.c_var(:mod)
+      fun = :cerl.c_var(:fun)
+
+      apply =
+        :cerl.c_call(:cerl.c_atom(:erlang), :cerl.c_atom(:apply), [
+          mod,
+          fun,
+          :cerl.abstract([1, 2])
+        ])
+
+      body =
+        :cerl.c_let(
+          [mod],
+          :cerl.c_atom(Other),
+          :cerl.c_let([fun], :cerl.c_atom(:g), apply)
+        )
+
+      assert {[%Call{to: {Other, :g, 2}, kind: :apply}], []} =
+               CoreWalker.walk(M, {:h, 0}, :cerl.c_fun([], body), 1)
     end
 
     test "apply/2 is :apply with no name", %{binary: binary} do

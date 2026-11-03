@@ -20,7 +20,10 @@ defmodule Anchor.Domain.Graph.CoreWalker do
     * `call 'erlang':'make_fun'(M, F, A)`, or a literal external fun — `:capture`
       to `{M, F, A}`; a module function name used as a value (`&f/a`) —
       `:capture` to `{module, f, a}`.
-    * `call 'erlang':'apply'(...)` (`apply/2,3`) — `:apply` to
+    * `call 'erlang':'apply'(M, F, Args)` (`apply/3`) with `M` and `F`
+      literal atoms (or variables let-bound to them) and `Args` a list of known
+      length — `:apply` to `{M, F, length}`, as static as a direct call
+      (DND-5547). Any other `apply/2,3` — `:apply` to
       `{:dynamic, name | nil, arity | nil, :call}`; `apply V(...)` where `V` is
       a variable (`fun.(x)`) — `:apply` to `{:dynamic, nil, arity, :variable}`.
     * `call V:'f'(...)` — `{:dynamic, f, arity, :variable}`, or `:call` when
@@ -152,8 +155,20 @@ defmodule Anchor.Domain.Graph.CoreWalker do
     visit_all([fun, args_list], ctx, acc)
   end
 
+  # `apply(M, :f, [a, b])` with a literal (or let-bound literal) module and
+  # function and an argument list of known length names its callee as surely
+  # as a direct call (DND-5547).
   defp apply_call(node, [m, f, args_list], ctx, acc) do
-    to = {:dynamic, atom_or_nil(literal(f)), list_length(args_list), :call}
+    to =
+      case {resolved_literal(m, ctx), resolved_literal(f, ctx), list_length(args_list)} do
+        {{:ok, mod}, {:ok, fun}, arity}
+        when is_atom(mod) and is_atom(fun) and is_integer(arity) ->
+          {mod, fun, arity}
+
+        {_mod, fun, arity} ->
+          {:dynamic, atom_or_nil(fun), arity, :call}
+      end
+
     acc = add_call(acc, node, to, :apply, ctx)
     visit_all([m, f, args_list], ctx, acc)
   end
@@ -162,7 +177,7 @@ defmodule Anchor.Domain.Graph.CoreWalker do
     arity = length(args)
 
     to =
-      case {resolved_module(module, ctx), literal(name)} do
+      case {resolved_literal(module, ctx), literal(name)} do
         {{:ok, mod}, {:ok, fun}} when is_atom(mod) and is_atom(fun) -> {mod, fun, arity}
         {_mod, name_lit} -> {:dynamic, atom_or_nil(name_lit), arity, receiver(module, ctx)}
       end
@@ -396,14 +411,15 @@ defmodule Anchor.Domain.Graph.CoreWalker do
     if :cerl.is_literal(node), do: {:ok, :cerl.concrete(node)}, else: :error
   end
 
-  defp resolved_module(module, ctx) do
-    case literal(module) do
+  # A literal, or a variable let-bound to one.
+  defp resolved_literal(node, ctx) do
+    case literal(node) do
       {:ok, value} ->
         {:ok, value}
 
       :error ->
-        if :cerl.is_c_var(module) do
-          case Map.get(ctx.env, :cerl.var_name(module)) do
+        if :cerl.is_c_var(node) do
+          case Map.get(ctx.env, :cerl.var_name(node)) do
             {:literal, value} -> {:ok, value}
             _other -> :error
           end
