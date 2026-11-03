@@ -77,3 +77,28 @@ broken): adapter "9: output within the bound drops nothing", outcome
 Bound, not a kill: the adapter hang rows ("5" and "7") carry their own
 `@tag timeout`, because the `timeout` binary's 1 s plus the VM's start-up is
 longer than the load rule's 2000 ms.
+
+## DND-5563 — OrphanCheck tracks imports per imported name
+
+- **Code under test:** `Anchor.Domain.Sabotage.OrphanCheck` (`module_refs/5`,
+  `tracked/1`, `tracked_key/2`, `call_key/4`, `listed?/3`, `open?/3`)
+- **Suite run:** `mix test test/anchor/domain/sabotage/orphan_check_imports_test.exs
+  --timeout 2000 --max-cases 2` (7 tests, green after the fix and after
+  every row; the whole `test/anchor/domain/sabotage` directory, 179 tests,
+  green after the fix)
+- **What the compiler says** (Elixir 1.19.4, checked): `import M, only:
+  [a: 1, b: 1]` with `b` unused warns `unused import M.b/1` (per listed name);
+  `import M` warns `unused import M` only when no call reaches it. The test
+  compiles every mutant it expects (zero diagnostics) and every edit it
+  refuses (an `unused import` warning).
+
+| # | Mutation | Tests failed | First failure, verbatim |
+|---|---|---|---|
+| U3 | the unfixed code (tests against the old `OrphanCheck`, which tracked every non-builtin undefined call as its own key) | 4 | "3: another function's call keeps the import used ..." `code:  assert targets(result.mutants) == ["upcase(x)"]` `left:  []`; "1: removing the last call of one name ..." `left:  []`; "6: ..." and "2: positive control ..." on the reason text |
+| O1 | the comparison is with `later.uses` again (the group key is never seen as still used) | 3 | "3: another function's call keeps the import used: the mutant is not refused" `code:  assert targets(result.mutants) == ["upcase(x)"]` |
+| O2 | calls that may reach an open import are untracked | 2 | "6: the listed name is its own import; the unlisted calls share the other" `Assertion with == failed` |
+| O3 | a name in an `only:` list is untracked | 2 | "4: removing the last call of a listed name is refused ..." `code:  assert result.mutants == []` |
+| O5 | a `Kernel` function or operator counts as a call that reaches an import | 2 | "2: positive control: removing the only call that reaches the import is refused, and it would warn" `code:  assert result.mutants == []` |
+| O8 | a call counts as reaching an import when the module has none | 1 | "7: no import at all: a call to a name a `use` brought in ..." `code:  assert targets(result.mutants) == ["brought_in(x)"]` `left:  []` |
+
+O0 (the same text replaced by itself) was green, as the driver's check.
