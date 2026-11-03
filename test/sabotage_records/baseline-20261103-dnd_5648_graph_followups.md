@@ -1645,3 +1645,228 @@ Run summary: `19 tests, 1 failure`
 ...
 ```
 
+
+## anchor.graph after the merge of main: the new graph rules judge this branch clean
+
+**Code under test:** after the merge of origin/main, its new graph rules `effects_match_bucket` (DND-5447) and `struct_owned_by_module_flow` (DND-5454) judged this branch's code: 7 NEW violations. Fixed: `Anchor.Domain.GraphRules.narrows?/3` asks a rule by name (no closure, no `Code.ensure_loaded?/1`), and `Anchor.Domain.Enforcement` gets the rule module; `Anchor.Managers.Lint` takes the root from its caller (`root!/3` raises when a baselined rule has none); `Anchor.Domain.Violation.with_enforcement/2` and `Anchor.Domain.GraphReport.Finding.with_enforcement/2` replace map updates of those structs in Enforcement, Managers.Lint and Managers.AstBaseline.
+
+**Suite run:** FX-R is the new tests on the unfixed code (`mix test --timeout 2000 --max-cases 2` over graph_rules, enforcement, violation, graph_report and lint_baseline tests, in `test-slot`). FX-A to FX-D were run by `sab.py` (wait 1.1 s, write, run, restore, wait 1.1 s). FX-A's first form (the call to `root!/3` removed) did not compile (`function root!/3 is unused`, warnings as errors), so it was rerun as the mutation inside `root!/3` below. With every source restored: `135 tests, 0 failures` over the touched tests, and `MIX_ENV=dev mix anchor.graph`: `0 violations (0 report-only, 120 baselined)`.
+
+Rows FX-B and FX-D (GraphRules, GraphReport.Finding) are in `graph_runner-20261103-dnd_5648_graph_followups.md` (ADR 003).
+
+| ID | Mutation | Tests | Result | Failing tests |
+|---|---|---|---|---|
+| FX-R | regression: the unfixed code, with the new tests (`lib/anchor/managers/lint.ex`) | `graph_rules_test.exs`, `enforcement_test.exs`, `violation_test.exs`, `graph_report_test.exs`, `lint_baseline_test.exs` | `77 tests, 7 failures` (red) | with_enforcement/2 sets the enforcement and keeps every other field; Finding.with_enforcement/2 sets the enforcement and keeps every other field; judge/4 an added entry narrowing a removed one is a report NOTE, not GREW; narrows?/3 a rule without it, or no rule, narrows nothing; narrows?/3 narrowing/0 is every registered rule that declares narrows?/2; narrows?/3 a rule declaring narrows?/2 is asked; the project root a baselined rule with no :root given raises, naming the option |
+| FX-A | root!/3 never sees a baselined rule (no root is never refused) (`lib/anchor/managers/lint.ex`) | `lint_baseline_test.exs` | `21 tests, 1 failure` (red) | the project root a baselined rule with no :root given raises, naming the option |
+| FX-C | Violation.with_enforcement/2 keeps the old enforcement (`lib/anchor/domain/violation.ex`) | `violation_test.exs`, `lint_baseline_test.exs`, `ast_baseline_test.exs` | `44 tests, 6 failures` (red) | with_enforcement/2 sets the enforcement and keeps every other field; grew/2 a rule id new since the ref, and a file absent there, are report-only notes; grew/2 GREW takes the rule's enforcement: report (exit 0); write/2 creates the rule's baseline from its keys alone, sorted, and notes it (exit 0); grew/2 a new rule's note names only the baselined rules gone from the whole config; a baselined rule's findings STALE takes the rule's enforcement: report |
+
+### FX-R: regression: the unfixed code, with the new tests
+
+Run summary: `77 tests, 7 failures`
+
+```text
+  1) test with_enforcement/2 sets the enforcement and keeps every other field (Anchor.Domain.ViolationTest)
+     test/anchor/domain/violation_test.exs:37
+     ** (UndefinedFunctionError) function Anchor.Domain.Violation.with_enforcement/2 is undefined or private
+     code: reported = Violation.with_enforcement(violation, :report)
+     stacktrace:
+       (anchor 0.1.0) Anchor.Domain.Violation.with_enforcement(%Anchor.Domain.Violation{line: 3, trigger: "t", message: "m", filename: nil, kind: :rule, key: "k", rule_id: "r", enforcement: :enforce}, :report)
+       test/anchor/domain/violation_test.exs:39: (test)
+
+..............
+
+  2) test Finding.with_enforcement/2 sets the enforcement and keeps every other field (Anchor.Domain.GraphReportTest)
+     test/anchor/domain/graph_report_test.exs:310
+     ** (UndefinedFunctionError) function Anchor.Domain.GraphReport.Finding.with_enforcement/2 is undefined or private. Did you mean:
+
+         * enforcement/1
+
+     code: reported = Finding.with_enforcement(finding, :report)
+     stacktrace:
+       (anchor 0.1.0) Anchor.Domain.GraphReport.Finding.with_enforcement(%Anchor.Domain.GraphReport.Finding{rule_id: nil, type: nil, label: "rule 1", enforcement: :enforce, key: "k", file: "lib/a.ex", line: 2, message: "m"}, :report)
+       test/anchor/domain/graph_report_test.exs:320: (test)
+
+....................
+
+  3) test judge/4 an added entry narrowing a removed one is a report NOTE, not GREW (Anchor.Domain.EnforcementTest)
+     test/anchor/domain/enforcement_test.exs:130
+     Assertion with == failed
+     code:  assert note.enforcement == :report
+     left:  :enforce
+     right: :report
+     stacktrace:
+       test/anchor/domain/enforcement_test.exs:136: (test)
+
+.......     warning: Anchor.Domain.GraphReport.Finding.with_enforcement/2 is undefined or private. Did you mean:
+
+         * enforcement/1
+
+     │
+ 320 │       reported = Finding.with_enforcement(finding, :report)
+     │                          ~
+     │
+     └─ test/anchor/domain/graph_report_test.exs:320:26: Anchor.Domain.GraphReportTest."test Finding.with_enforcement/2 sets the enforcement and keeps every other field"/1
+
+    warning: Anchor.Domain.Violation.with_enforcement/2 is undefined or private
+    │
+ 39 │       reported = Violation.with_enforcement(violation, :report)
+    │                            ~
+    │
+    └─ test/anchor/domain/violation_test.exs:39:28: Anchor.Domain.ViolationTest."test with_enforcement/2 sets the enforcement and keeps every other field"/1
+
+  4) test narrows?/3 a rule without it, or no rule, narrows nothing (Anchor.Domain.GraphRulesTest)
+     test/anchor/domain/graph_rules_test.exs:97
+     ** (UndefinedFunctionError) function Anchor.Domain.GraphRules.narrows?/3 is undefined or private. Did you mean:
+
+         * narrows/1
+
+     code: refute GraphRules.narrows?(Anchor.Domain.GraphRules.Layering, "c|A,B,C", "c|A,B")
+     stacktrace:
+       (anchor 0.1.0) Anchor.Domain.GraphRules.narrows?(Anchor.Domain.GraphRules.Layering, "c|A,B,C", "c|A,B")
+       test/anchor/domain/graph_rules_test.exs:98: (test)
+
+  5) test narrows?/3 narrowing/0 is every registered rule that declares narrows?/2 (Anchor.Domain.GraphRulesTest)
+     test/anchor/domain/graph_rules_test.exs:102
+     ** (UndefinedFunctionError) function Anchor.Domain.GraphRules.narrowing/0 is undefined or private. Did you mean:
+
+         * narrows/1
+
+     code: assert Enum.sort(GraphRules.narrowing()) == Enum.sort(declaring)
+     stacktrace:
+       (anchor 0.1.0) Anchor.Domain.GraphRules.narrowing()
+       test/anchor/domain/graph_rules_test.exs:110: (test)
+
+..
+
+  6) test narrows?/3 a rule declaring narrows?/2 is asked (Anchor.Domain.GraphRulesTest)
+     test/anchor/domain/graph_rules_test.exs:92
+     ** (UndefinedFunctionError) function Anchor.Domain.GraphRules.narrows?/3 is undefined or private. Did you mean:
+
+         * narrows/1
+
+     code: assert GraphRules.narrows?(Anchor.Domain.GraphRules.ContextAcyclic, "c|A,B,C", "c|A,B")
+     stacktrace:
+       (anchor 0.1.0) Anchor.Domain.GraphRules.narrows?(Anchor.Domain.GraphRules.ContextAcyclic, "c|A,B,C", "c|A,B")
+       test/anchor/domain/graph_rules_test.exs:93: (test)
+
+.................
+
+  7) test the project root a baselined rule with no :root given raises, naming the option (Anchor.Managers.LintBaselineTest)
+     test/anchor/managers/lint_baseline_test.exs:190
+     Expected exception ArgumentError but nothing was raised
+     code: assert_raise ArgumentError, ~r/:root/, fn ->
+     stacktrace:
+       test/anchor/managers/lint_baseline_test.exs:195: (test)
+
+...
+```
+
+### FX-A: root!/3 never sees a baselined rule (no root is never refused)
+
+Run summary: `21 tests, 1 failure`
+
+```text
+  1) test the project root a baselined rule with no :root given raises, naming the option (Anchor.Managers.LintBaselineTest)
+     test/anchor/managers/lint_baseline_test.exs:190
+     Expected exception ArgumentError but got FunctionClauseError (no function clause matching in IO.chardata_to_string/1)
+     code: assert_raise ArgumentError, ~r/:root/, fn ->
+     stacktrace:
+       (elixir 1.19.4) lib/io.ex:738: IO.chardata_to_string(nil)
+       (elixir 1.19.4) lib/path.ex:835: Path.expand_home/1
+       (elixir 1.19.4) lib/path.ex:224: Path.expand/2
+       (anchor 0.1.0) lib/anchor/managers/lint.ex:331: Anchor.Managers.Lint.relative/2
+       (anchor 0.1.0) lib/anchor/managers/lint.ex:287: anonymous fn/8 in Anchor.Managers.Lint.detect_for_file/4
+       (elixir 1.19.4) lib/enum.ex:4497: Enum.flat_map_list/2
+       (anchor 0.1.0) lib/anchor/managers/lint.ex:284: Anchor.Managers.Lint.detect_for_file/4
+       (anchor 0.1.0) lib/anchor/managers/lint.ex:260: Anchor.Managers.Lint.result_for_parse/3
+       (elixir 1.19.4) lib/enum.ex:1688: Enum."-map/2-lists^map/1-1-"/2
+       (anchor 0.1.0) lib/anchor/managers/lint.ex:139: Anchor.Managers.Lint.run/4
+       test/anchor/managers/lint_baseline_test.exs:195: (test)
+
+..........
+```
+
+### FX-C: Violation.with_enforcement/2 keeps the old enforcement
+
+Run summary: `44 tests, 6 failures`
+
+```text
+  1) test with_enforcement/2 sets the enforcement and keeps every other field (Anchor.Domain.ViolationTest)
+     test/anchor/domain/violation_test.exs:37
+     Assertion with == failed
+     code:  assert reported.enforcement == :report
+     left:  :enforce
+     right: :report
+     stacktrace:
+       test/anchor/domain/violation_test.exs:41: (test)
+
+......
+
+  2) test grew/2 a rule id new since the ref, and a file absent there, are report-only notes (Anchor.Managers.AstBaselineTest)
+     test/anchor/managers/ast_baseline_test.exs:237
+     Assertion with == failed
+     code:  assert report.exit_code == 0
+     left:  1
+     right: 0
+     stacktrace:
+       test/anchor/managers/ast_baseline_test.exs:243: (test)
+
+  3) test grew/2 GREW takes the rule's enforcement: report (exit 0) (Anchor.Managers.AstBaselineTest)
+     test/anchor/managers/ast_baseline_test.exs:196
+     Assertion with == failed
+     code:  assert report.exit_code == 0
+     left:  1
+     right: 0
+     stacktrace:
+       test/anchor/managers/ast_baseline_test.exs:205: (test)
+
+...........
+
+  4) test write/2 creates the rule's baseline from its keys alone, sorted, and notes it (exit 0) (Anchor.Managers.AstBaselineTest)
+     test/anchor/managers/ast_baseline_test.exs:49
+     match (=) failed
+     code:  assert [{@path, :report, "wrote 2 entries to " <> _rest}] = messages(report)
+     left:  [{".anchor/baselines/pure.txt", :report, "wrote 2 entries to " <> _rest}]
+     right: [
+              {".anchor/baselines/pure.txt", :enforce,
+               "wrote 2 entries to .anchor/baselines/pure.txt. Fix: review it in this change; from here it only shrinks."}
+            ]
+     stacktrace:
+       test/anchor/managers/ast_baseline_test.exs:76: (test)
+
+.....
+
+  5) test grew/2 a new rule's note names only the baselined rules gone from the whole config (Anchor.Managers.AstBaselineTest)
+     test/anchor/managers/ast_baseline_test.exs:261
+     Assertion with == failed
+     code:  assert report.exit_code == 0
+     left:  1
+     right: 0
+     stacktrace:
+       test/anchor/managers/ast_baseline_test.exs:272: (test)
+
+....
+
+  6) test a baselined rule's findings STALE takes the rule's enforcement: report (Anchor.Managers.LintBaselineTest)
+     test/anchor/managers/lint_baseline_test.exs:129
+     match (=) failed
+     code:  assert [%Violation{key: "pure|lib/gone.ex|File", enforcement: :report}] = config(results)
+     left:  [%Anchor.Domain.Violation{key: "pure|lib/gone.ex|File", enforcement: :report}]
+     right: [
+              %Anchor.Domain.Violation{
+                line: nil,
+                trigger: nil,
+                message: "pure|lib/gone.ex|File in .anchor/baselines/pure.txt matches no finding (it was fixed). Fix: delete that line from .anchor/baselines/pure.txt; a baseline only shrinks.",
+                filename: ".anchor/baselines/pure.txt",
+                kind: :rule,
+                key: "pure|lib/gone.ex|File",
+                rule_id: "pure",
+                enforcement: :enforce
+              }
+            ]
+     stacktrace:
+       test/anchor/managers/lint_baseline_test.exs:133: (test)
+
+.........
+```
+

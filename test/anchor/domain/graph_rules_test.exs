@@ -4,6 +4,7 @@ defmodule Anchor.Domain.GraphRulesTest do
   #
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5440_graph_runner.md
   # Sabotage record (DND-5633): ../../sabotage_records/context_acyclic-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (FX-B): ../../sabotage_records/graph_runner-20261103-dnd_5648_graph_followups.md
   # Sabotage record (DND-5447, DND-5454 rows): ../../sabotage_records/rule_schema-20261103-dnd_5447_graph_rules_c.md
   # (needs/1, DND-5574: ../../sabotage_records/graph_runner-20261103-dnd_5574_cfa_wiring.md)
   use ExUnit.Case, async: true
@@ -85,17 +86,18 @@ defmodule Anchor.Domain.GraphRulesTest do
     Anchor.Domain.GraphRule in behaviours
   end
 
-  # DND-5633: a rule's narrows?/2, or one that narrows nothing.
-  describe "narrows/1" do
-    test "a rule declaring narrows?/2 gives it" do
-      narrows = GraphRules.narrows(Anchor.Domain.GraphRules.ContextAcyclic)
-      assert narrows.("c|A,B,C", "c|A,B")
-      refute narrows.("c|A,B", "c|A,B,C")
+  # DND-5633: a rule's narrows?/2, or one that narrows nothing. Asked by
+  # name (no closure, no module loading in Domain), any rule module.
+  describe "narrows?/3" do
+    test "a rule declaring narrows?/2 is asked" do
+      assert GraphRules.narrows?(Anchor.Domain.GraphRules.ContextAcyclic, "c|A,B,C", "c|A,B")
+      refute GraphRules.narrows?(Anchor.Domain.GraphRules.ContextAcyclic, "c|A,B", "c|A,B,C")
+      assert GraphRules.narrows?(Anchor.Test.GraphRuleStubs.FindsNarrowing, "r|wider", "r|found")
     end
 
-    test "a rule without it narrows nothing" do
-      narrows = GraphRules.narrows(Anchor.Domain.GraphRules.Layering)
-      refute narrows.("c|A,B,C", "c|A,B")
+    test "a rule without it, or no rule, narrows nothing" do
+      refute GraphRules.narrows?(Anchor.Domain.GraphRules.Layering, "c|A,B,C", "c|A,B")
+      refute GraphRules.narrows?(nil, "c|A,B,C", "c|A,B")
     end
   end
 

@@ -440,3 +440,89 @@ Run summary: `24 tests, 1 failure`
 
 ....
 ```
+
+## anchor.graph after the merge of main: the new graph rules judge this branch clean (FX-B, FX-D)
+
+**Run with:** the section of the same name in `baseline-20261103-dnd_5648_graph_followups.md`, which names the code under test and the suite run; filed here by the module mutated (ADR 003).
+
+| ID | Mutation | Tests | Result | Failing tests |
+|---|---|---|---|---|
+| FX-B | narrows?/3 asks no rule (`lib/anchor/domain/graph_rules.ex`) | `graph_rules_test.exs`, `enforcement_test.exs`, `graph_baseline_test.exs` | `53 tests, 3 failures` (red) | narrows?/3 a rule declaring narrows?/2 is asked; judge/4 an added entry narrowing a removed one is a report NOTE, not GREW; run/2 --base REF (GREW) an entry narrowing one removed since REF is a NOTE, by the rule's narrows?/2 |
+| FX-D | Finding.with_enforcement/2 keeps the old enforcement (`lib/anchor/domain/graph_report/finding.ex`) | `graph_report_test.exs`, `enforcement_test.exs`, `graph_baseline_test.exs` | `64 tests, 3 failures` (red) | Finding.with_enforcement/2 sets the enforcement and keeps every other field; judge/4 an added entry narrowing a removed one is a report NOTE, not GREW; run/2 --base REF (GREW) an entry narrowing one removed since REF is a NOTE, by the rule's narrows?/2 |
+
+### FX-B: narrows?/3 asks no rule
+
+Run summary: `53 tests, 3 failures`
+
+```text
+  1) test narrows?/3 a rule declaring narrows?/2 is asked (Anchor.Domain.GraphRulesTest)
+     test/anchor/domain/graph_rules_test.exs:91
+     Expected truthy, got false
+     code: assert GraphRules.narrows?(Anchor.Domain.GraphRules.ContextAcyclic, "c|A,B,C", "c|A,B")
+     stacktrace:
+       test/anchor/domain/graph_rules_test.exs:92: (test)
+
+...............
+
+  2) test judge/4 an added entry narrowing a removed one is a report NOTE, not GREW (Anchor.Domain.EnforcementTest)
+     test/anchor/domain/enforcement_test.exs:130
+     Assertion with == failed
+     code:  assert note.enforcement == :report
+     left:  :enforce
+     right: :report
+     stacktrace:
+       test/anchor/domain/enforcement_test.exs:136: (test)
+
+....................
+
+  3) test run/2 --base REF (GREW) an entry narrowing one removed since REF is a NOTE, by the rule's narrows?/2 (Anchor.Managers.GraphBaselineTest)
+     test/anchor/managers/graph_baseline_test.exs:281
+     Assertion with == failed
+     code:  assert report.exit_code == 0
+     left:  1
+     right: 0
+     stacktrace:
+       test/anchor/managers/graph_baseline_test.exs:292: (test)
+
+.............
+```
+
+### FX-D: Finding.with_enforcement/2 keeps the old enforcement
+
+Run summary: `64 tests, 3 failures`
+
+```text
+  1) test Finding.with_enforcement/2 sets the enforcement and keeps every other field (Anchor.Domain.GraphReportTest)
+     test/anchor/domain/graph_report_test.exs:310
+     Assertion with == failed
+     code:  assert reported.enforcement == :report
+     left:  :enforce
+     right: :report
+     stacktrace:
+       test/anchor/domain/graph_report_test.exs:321: (test)
+
+.......
+
+  2) test judge/4 an added entry narrowing a removed one is a report NOTE, not GREW (Anchor.Domain.EnforcementTest)
+     test/anchor/domain/enforcement_test.exs:130
+     Assertion with == failed
+     code:  assert note.enforcement == :report
+     left:  :enforce
+     right: :report
+     stacktrace:
+       test/anchor/domain/enforcement_test.exs:136: (test)
+
+..........
+
+  3) test run/2 --base REF (GREW) an entry narrowing one removed since REF is a NOTE, by the rule's narrows?/2 (Anchor.Managers.GraphBaselineTest)
+     test/anchor/managers/graph_baseline_test.exs:281
+     Assertion with == failed
+     code:  assert report.exit_code == 0
+     left:  1
+     right: 0
+     stacktrace:
+       test/anchor/managers/graph_baseline_test.exs:292: (test)
+
+.......................
+```
+

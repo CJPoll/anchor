@@ -130,7 +130,7 @@ defmodule Anchor.Managers.Lint do
           params: params,
           report_shared_failures?: report_shared_failures?,
           defined_modules?: lists_allowed_callers?(check_module, rules),
-          root: Keyword.get_lazy(opts, :root, &File.cwd!/0)
+          root: root!(opts, check_module, rules)
         }
 
         # Each file is parsed as it is checked and dropped afterwards, so a run
@@ -311,6 +311,22 @@ defmodule Anchor.Managers.Lint do
   defp own_baselined(check_module, rules),
     do: check_module |> own_rules(rules) |> Enum.filter(&baselined?/1)
 
+  # The project root keys an ast rule's findings and finds its baseline
+  # (DND-5632). The caller names it (`Check.Base` passes the working
+  # directory): a Manager makes no file system call of its own (ADR 001). A
+  # run with a baselined rule and no root is a caller's mistake, said so.
+  defp root!(opts, check_module, rules) do
+    case {Keyword.get(opts, :root), own_baselined(check_module, rules)} do
+      {nil, [_ | _]} ->
+        raise ArgumentError,
+              "Anchor.Managers.Lint.run/4 needs opts[:root] (the project root) when a rule " <>
+                "has a baseline: it keys each finding by its path from the root"
+
+      {root, _rules} ->
+        root
+    end
+  end
+
   # A file's path relative to the project root, as an ast key names it.
   defp relative(filename, root), do: filename |> Path.expand(root) |> Path.relative_to(root)
 
@@ -366,7 +382,12 @@ defmodule Anchor.Managers.Lint do
       AstBaseline.judge(rule.id, keys, entries, scope)
 
     enforcement = RuleSchema.enforcement(rule)
-    stale = Enum.map(stale, &%{Failures.baseline_stale(path, &1) | enforcement: enforcement})
+
+    stale =
+      Enum.map(
+        stale,
+        &(path |> Failures.baseline_stale(&1) |> Violation.with_enforcement(enforcement))
+      )
 
     {held, stale ++ unjudged_note(path, unjudged)}
   end

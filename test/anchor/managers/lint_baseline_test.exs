@@ -182,6 +182,31 @@ defmodule Anchor.Managers.LintBaselineTest do
     end
   end
 
+  # The anchor.graph review (effects_match_bucket): the Manager no longer
+  # reads the working directory itself; the caller names the root
+  # (Check.Base passes File.cwd!()), and a run that needs it without one
+  # says so instead of keying against wherever it happens to run.
+  describe "the project root" do
+    test "a baselined rule with no :root given raises, naming the option" do
+      expect(ConfigLoaderMock, :load, fn ->
+        {:ok, %Config{rules: [rule()], path: ".anchor.yml"}}
+      end)
+
+      assert_raise ArgumentError, ~r/:root/, fn ->
+        Lint.run(NoDependency, files(), [], config_loader: ConfigLoaderMock)
+      end
+    end
+
+    test "with no baselined rule, no root is needed" do
+      expect(ConfigLoaderMock, :load, fn ->
+        {:ok, %Config{rules: [Map.delete(rule(), :baseline)], path: ".anchor.yml"}}
+      end)
+
+      assert {:ok, _results} =
+               Lint.run(NoDependency, files(), [], config_loader: ConfigLoaderMock)
+    end
+  end
+
   describe "a baseline the run cannot use" do
     test "unreadable: one fail-closed issue naming the writer, and every finding stands" do
       expect(BaselineStoreMock, :read, fn @root, @path -> {:error, :enoent} end)

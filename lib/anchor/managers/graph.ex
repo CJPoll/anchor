@@ -422,7 +422,7 @@ defmodule Anchor.Managers.Graph do
     case run_check(needs, analyses, rule, module, model, config_path) do
       {:ok, findings} ->
         ran =
-          ratchet(rule, findings, request, Map.put(deps, :narrows, GraphRules.narrows(module)))
+          ratchet(rule, findings, request, Map.put(deps, :rule_module, module))
 
         %{ran | findings: floor ++ ran.findings}
 
@@ -453,7 +453,7 @@ defmodule Anchor.Managers.Graph do
         label: Failures.rule_label(rule),
         path: path,
         ref: ref,
-        narrows: deps.narrows
+        rule_module: deps.rule_module
       }
 
       {standing, held} = Enforcement.judge(findings, entries, base, context)

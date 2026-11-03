@@ -107,15 +107,17 @@ defmodule Anchor.Domain.GraphRules do
   end
 
   @doc """
-  The rule module's `narrows?/2` (DND-5633), or a function that narrows
-  nothing when the module does not declare one.
+  Whether `key` narrows `base_key` under `module`'s `narrows?/2` (DND-5633);
+  `false` for a rule that declares none, or no rule (`nil`). `module` is a
+  rule whose `check/2` has run, so it is loaded: this asks whether it exports
+  the callback and loads nothing (`Code.ensure_loaded?/1` is an effect in
+  Anchor's own config), and it calls the rule by name, never a closure.
   """
-  @spec narrows(module()) :: (String.t(), String.t() -> boolean())
-  def narrows(module) do
-    if Code.ensure_loaded?(module) and function_exported?(module, :narrows?, 2),
-      do: &module.narrows?/2,
-      else: fn _base_key, _key -> false end
-  end
+  @spec narrows?(module() | nil, String.t(), String.t()) :: boolean()
+  def narrows?(nil, _base_key, _key), do: false
+
+  def narrows?(module, base_key, key) when is_atom(module),
+    do: function_exported?(module, :narrows?, 2) and module.narrows?(base_key, key)
 
   defp declared_needs(module) do
     if Code.ensure_loaded?(module) and function_exported?(module, :needs, 0),

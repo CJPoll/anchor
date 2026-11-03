@@ -21,7 +21,8 @@ defmodule Anchor.Domain.Enforcement do
       the base copy is found by the rule's id, `Anchor.Domain.BaselineBase`).
 
   An entry added since `REF` that narrows one removed since it (the
-  context's optional `:narrows`, the rule's `narrows?/2`, DND-5633) is not
+  context's optional `:rule_module`, its `narrows?/2` through
+  `Anchor.Domain.GraphRules.narrows?/3`, DND-5633) is not
   GREW: a report-only NOTE names both (`Failures.baseline_narrowed/4`).
 
   STALE and GREW take the rule's enforcement: a `report` rule reports them,
@@ -31,6 +32,7 @@ defmodule Anchor.Domain.Enforcement do
   alias Anchor.Domain.Baseline
   alias Anchor.Domain.Failures
   alias Anchor.Domain.GraphReport.Finding
+  alias Anchor.Domain.GraphRules
 
   @typedoc """
   The base branch's copy: `nil` (no `--base`), `:absent` (no file at the
@@ -46,7 +48,7 @@ defmodule Anchor.Domain.Enforcement do
           required(:label) => String.t(),
           required(:path) => String.t(),
           required(:ref) => String.t() | nil,
-          optional(:narrows) => (String.t(), String.t() -> boolean())
+          optional(:rule_module) => module() | nil
         }
 
   @doc "The findings that stand and the held ones; see the moduledoc."
@@ -77,26 +79,21 @@ defmodule Anchor.Domain.Enforcement do
   defp base_findings(entries, {:ok, base_entries}, context) do
     %{rule: rule, label: label, path: path, ref: ref} = context
 
-    narrows = Map.get(context, :narrows, fn _base_key, _key -> false end)
+    module = Map.get(context, :rule_module)
     removed = Baseline.grew(base_entries, entries)
 
     entries
     |> Baseline.grew(base_entries)
     |> Enum.map(fn key ->
-      case Enum.find(removed, &narrows.(&1, key)) do
+      case Enum.find(removed, &GraphRules.narrows?(module, &1, key)) do
         nil ->
           Finding.from_rule(Failures.baseline_grew(path, key, ref), rule, label, path)
 
         base_key ->
-          note =
-            Finding.from_rule(
-              Failures.baseline_narrowed(path, base_key, key, ref),
-              rule,
-              label,
-              path
-            )
-
-          %{note | enforcement: :report}
+          path
+          |> Failures.baseline_narrowed(base_key, key, ref)
+          |> Finding.from_rule(rule, label, path)
+          |> Finding.with_enforcement(:report)
       end
     end)
   end

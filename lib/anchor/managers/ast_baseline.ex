@@ -203,10 +203,14 @@ defmodule Anchor.Managers.AstBaseline do
 
     entries
     |> Baseline.grew(base_entries)
-    |> Enum.map(&%{Failures.baseline_grew(path, &1, ref) | enforcement: enforcement})
+    |> Enum.map(
+      &(path
+        |> Failures.baseline_grew(&1, ref)
+        |> Violation.with_enforcement(enforcement))
+    )
   end
 
-  defp note(violation), do: %{violation | enforcement: :report}
+  defp note(violation), do: Violation.with_enforcement(violation, :report)
 
   # The config's path relative to the project root: how git names it at a
   # ref, and how an issue on it is printed.

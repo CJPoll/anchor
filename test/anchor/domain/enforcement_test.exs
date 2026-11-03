@@ -5,10 +5,12 @@ defmodule Anchor.Domain.EnforcementTest do
   # Sabotage record: ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
   # DND-5629 (a new rule id): ../../sabotage_records/baseline_rename-20261103-dnd_5441_graph_rules_a.md
   # Sabotage record (DND-5633): ../../sabotage_records/baseline-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (FX-B, FX-D): ../../sabotage_records/graph_runner-20261103-dnd_5648_graph_followups.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Enforcement
   alias Anchor.Domain.GraphReport.Finding
+  alias Anchor.Domain.GraphRules.ContextAcyclic
 
   @path ".anchor/baselines/r.txt"
 
@@ -127,8 +129,7 @@ defmodule Anchor.Domain.EnforcementTest do
     # DND-5633: a cycle that lost a context changes its key; the narrower
     # entry replacing the removed one is a NOTE, not GREW.
     test "an added entry narrowing a removed one is a report NOTE, not GREW" do
-      narrows = fn base_key, key -> {base_key, key} == {"r|A,B,C", "r|A,B"} end
-      context = Map.put(context(rule(), "main"), :narrows, narrows)
+      context = Map.put(context(rule(), "main"), :rule_module, ContextAcyclic)
 
       {[note], _held} =
         Enforcement.judge([finding("r|A,B")], ["r|A,B"], {:ok, ["r|A,B,C"]}, context)
@@ -151,8 +152,7 @@ defmodule Anchor.Domain.EnforcementTest do
     end
 
     test "a narrowing of an entry still there is GREW (it replaced nothing)" do
-      narrows = fn _base_key, _key -> true end
-      context = Map.put(context(rule(), "main"), :narrows, narrows)
+      context = Map.put(context(rule(), "main"), :rule_module, ContextAcyclic)
 
       {standing, _held} =
         Enforcement.judge(

@@ -304,6 +304,25 @@ defmodule Anchor.Domain.GraphReportTest do
     end
   end
 
+  # The anchor.graph review (struct_owned_by_module_flow): a finding's
+  # enforcement is changed by its own module.
+  describe "Finding.with_enforcement/2" do
+    test "sets the enforcement and keeps every other field" do
+      finding = %Finding{
+        file: "lib/a.ex",
+        line: 2,
+        label: "rule 1",
+        message: "m",
+        key: "k",
+        enforcement: :enforce
+      }
+
+      reported = Finding.with_enforcement(finding, :report)
+      assert reported.enforcement == :report
+      assert %{reported | enforcement: :enforce} == finding
+    end
+  end
+
   describe "Finding.enforcement/1" do
     test "a rule is enforced unless it says report" do
       assert Finding.enforcement(%{}) == :enforce
