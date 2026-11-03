@@ -257,6 +257,15 @@ and compares (multisets: NEW, STALE, held; GREW against base), and
 no line, no message. `baseline` on an `ast` rule is refused at load until
 Credo compares baselines.
 
+CI judges a pull request twice (DND-5658): with its own `mix anchor.graph
+--base`, and with the anchor landed on its base. `bin/ci/judge-with-base.sh`
+runs the base's copy of `bin/ci/base-judge.sh`, which builds the base in a
+scratch worktree and runs its `mix anchor.graph --project <pull request>`. So a
+change to `Enforcement`, `Baseline`, `BaselineBase`, a rule's `check/2` or
+`narrows?/2` lands only after the landed judge passes it. A change the landed
+judge refuses (a new rule type or config key it cannot load, a narrowed rule) is
+landed by the owner. Self-test: `bin/tests/base-judge-test.sh`.
+
 ## The layering rule (DND-5442)
 
 `Anchor.Domain.GraphRules.Layering` judges every call in the graph whose

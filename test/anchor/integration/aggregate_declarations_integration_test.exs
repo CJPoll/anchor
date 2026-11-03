@@ -42,7 +42,7 @@ defmodule Anchor.Integration.AggregateDeclarationsIntegrationTest do
   end
 
   defp run(beams) do
-    expect(ConfigLoaderMock, :load, fn ->
+    expect(ConfigLoaderMock, :load_in, fn _root ->
       ConfigFile.load_from_path(Path.join(@root, ".anchor.yml"))
     end)
 

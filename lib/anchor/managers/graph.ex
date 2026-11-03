@@ -6,7 +6,8 @@ defmodule Anchor.Managers.Graph do
 
   `run/2` does, in order:
 
-    1. load `.anchor.yml` (`Anchor.Adapters.ConfigLoader`); a missing or
+    1. load `.anchor.yml` under the request's root
+       (`Anchor.Adapters.ConfigLoader.load_in/1`, DND-5658); a missing or
        invalid config is COULD NOT MEASURE (exit 3), and so is a config with no
        `architecture:` section: nothing could be classified;
     2. read every beam of the project's ebins (`Anchor.Adapters.BeamSource`):
@@ -110,7 +111,7 @@ defmodule Anchor.Managers.Graph do
   def run(%Request{} = request, deps \\ []) do
     deps = deps(deps)
 
-    with {:ok, config} <- load_config(deps.config_loader),
+    with {:ok, config} <- load_config(deps.config_loader, request.root),
          {:ok, rules} <- graph_rules(config, request, deps.graph_rules),
          :ok <- write_target(rules, request, config),
          {:ok, beams} <- read_beams(deps.beam_source, request) do
@@ -157,8 +158,10 @@ defmodule Anchor.Managers.Graph do
     }
   end
 
-  defp load_config(loader) do
-    case loader.load() do
+  # The config under the request's root, never the working directory: under
+  # `mix anchor.graph --project DIR` the root is the judged project (DND-5658).
+  defp load_config(loader, root) do
+    case loader.load_in(root) do
       {:ok, %Config{architecture: nil} = config} ->
         {:could_not_check, Failures.graph_no_architecture(config.path)}
 

@@ -91,7 +91,7 @@ defmodule Anchor.Managers.GraphBaselineTest do
     ]
 
   defp expect_run(rules, beam) do
-    expect(ConfigLoaderMock, :load, fn -> {:ok, config(rules)} end)
+    expect(ConfigLoaderMock, :load_in, fn _root -> {:ok, config(rules)} end)
     Mox.expect(BeamSourceMock, :read_ebins, fn _apps -> [beam] end)
 
     expect(SourceSourceMock, :read, fn @root, files ->
@@ -405,7 +405,7 @@ defmodule Anchor.Managers.GraphBaselineTest do
     end
 
     test "an id naming no rule with a baseline is refused (exit 2) before any beam is read" do
-      expect(ConfigLoaderMock, :load, fn -> {:ok, config([rule(%{baseline: nil})])} end)
+      expect(ConfigLoaderMock, :load_in, fn _root -> {:ok, config([rule(%{baseline: nil})])} end)
       Mox.expect(BeamSourceMock, :read_ebins, 0, fn _apps -> [] end)
       expect(BaselineStoreMock, :create, 0, fn _root, _path, _contents -> :ok end)
 

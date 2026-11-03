@@ -11,6 +11,7 @@ defmodule Mix.Tasks.Anchor.GraphTest do
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5630_graph_hardening.md
   # DND-5441 (--base, --write-baseline, --verbose):
   #   ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
+  # DND-5658 (--project): ../../sabotage_records/graph_runner-20261103-dnd_5658_ci_base_ratchet.md
   use ExUnit.Case, async: false
 
   import Anchor.Test.BeamFixtures
@@ -73,7 +74,7 @@ defmodule Mix.Tasks.Anchor.GraphTest do
   end
 
   defp expect_run(rules, beam) do
-    expect(ConfigLoaderMock, :load, fn -> {:ok, config(rules)} end)
+    expect(ConfigLoaderMock, :load_in, fn _root -> {:ok, config(rules)} end)
 
     Mox.expect(BeamSourceMock, :read_ebins, fn [{:anchor, ebin}] ->
       # The task gathers the project's own ebin from Mix.
@@ -133,7 +134,7 @@ defmodule Mix.Tasks.Anchor.GraphTest do
 
     System.put_env("MIX_BUILD_PATH", build)
 
-    expect(ConfigLoaderMock, :load, fn -> {:ok, config([rule(:stub_ok, "ok", 1)])} end)
+    expect(ConfigLoaderMock, :load_in, fn _root -> {:ok, config([rule(:stub_ok, "ok", 1)])} end)
 
     Mox.expect(BeamSourceMock, :read_ebins, fn [{:anchor, ebin}] ->
       assert ebin == Path.join(build, "lib/anchor/ebin")
@@ -187,7 +188,7 @@ defmodule Mix.Tasks.Anchor.GraphTest do
 
     rules = [%{type: :stub_finds, id: "a", bucket: "shared", index: 1}]
 
-    expect(ConfigLoaderMock, :load, fn ->
+    expect(ConfigLoaderMock, :load_in, fn _root ->
       {:ok, %Config{rules: rules, architecture: arch, path: ".anchor.yml"}}
     end)
 
@@ -232,7 +233,7 @@ defmodule Mix.Tasks.Anchor.GraphTest do
 
     rules = [%{type: :stub_finds, id: "a", bucket: "alpha", index: 1}]
 
-    expect(ConfigLoaderMock, :load, fn ->
+    expect(ConfigLoaderMock, :load_in, fn _root ->
       {:ok, %Config{rules: rules, architecture: arch, path: ".anchor.yml"}}
     end)
 
@@ -263,7 +264,9 @@ defmodule Mix.Tasks.Anchor.GraphTest do
   end
 
   test "could not measure exits {:shutdown, 3}" do
-    expect(ConfigLoaderMock, :load, fn -> {:error, {:config_not_found, ["/p/.anchor.yml"]}} end)
+    expect(ConfigLoaderMock, :load_in, fn _root ->
+      {:error, {:config_not_found, ["/p/.anchor.yml"]}}
+    end)
 
     output = capture_io(fn -> assert catch_exit(Graph.run([], opts())) == {:shutdown, 3} end)
     assert output =~ "Anchor found no .anchor.yml"
@@ -356,5 +359,100 @@ defmodule Mix.Tasks.Anchor.GraphTest do
 
     defp baseline_opts,
       do: opts() ++ [baseline_store: Anchor.BaselineStoreMock, git_base: Anchor.GitBaseMock]
+  end
+
+  # DND-5658: `--project DIR` judges another checkout with this checkout's
+  # Anchor, so CI can judge a pull request with the code landed on its base.
+  describe "--project DIR" do
+    setup do
+      dir = Path.join(System.tmp_dir!(), "anchor-project-#{System.unique_integer([:positive])}")
+      File.mkdir_p!(dir)
+      on_exit(fn -> File.rm_rf!(dir) end)
+      %{dir: dir}
+    end
+
+    test "reads DIR's config, beams, sources, baselines and git; the artifact stays the judge's",
+         %{beam: beam, dir: dir} do
+      rule = Map.merge(rule(:stub_finds, "a", 1), %{baseline: ".anchor/baselines/a.txt"})
+      key = "a|AnchorFixtures.AnchorGraphTaskTest.Thing|found"
+      expect(ConfigLoaderMock, :load_in, fn ^dir -> {:ok, config([rule])} end)
+
+      Mox.expect(BeamSourceMock, :read_ebins, fn [{:anchor, ebin}] ->
+        assert ebin == Path.join(dir, "_build/test/lib/anchor/ebin")
+        [beam]
+      end)
+
+      expect(SourceSourceMock, :read, fn ^dir, [@file_path] ->
+        %{@file_path => SourceFacts.from_source(@file_path, @source)}
+      end)
+
+      expect(GraphStoreMock, :write, fn artifact_dir, _key, _graph ->
+        assert artifact_dir == Path.join(Mix.Project.build_path(), "anchor")
+        :ok
+      end)
+
+      expect(Anchor.BaselineStoreMock, :read, fn ^dir, ".anchor/baselines/a.txt" ->
+        {:ok, [key, "a|Extra|x"]}
+      end)
+
+      expect(Anchor.GitBaseMock, :rules, fn ^dir, "origin/main", ".anchor.yml" ->
+        {:ok, [rule]}
+      end)
+
+      expect(Anchor.GitBaseMock, :show, fn ^dir, "origin/main", ".anchor/baselines/a.txt" ->
+        {:ok, [key]}
+      end)
+
+      opts = opts() ++ [baseline_store: Anchor.BaselineStoreMock, git_base: Anchor.GitBaseMock]
+
+      output =
+        capture_io(fn ->
+          assert catch_exit(Graph.run(["--project", dir, "--base", "origin/main"], opts)) ==
+                   {:shutdown, 1}
+        end)
+
+      assert_received :compiled
+      assert output =~ "a|Extra|x was added to .anchor/baselines/a.txt since origin/main."
+    end
+
+    test "a DIR that is not a directory, --write-baseline and an umbrella judge exit 2 with Fix:",
+         %{dir: dir} do
+      for {argv, extra, reason} <- [
+            {["--project", Path.join(dir, "missing")], [], "is not a directory"},
+            {["--project", dir, "--write-baseline", "a"], [], "--write-baseline writes"},
+            {["--project", dir], [apps_paths: %{web: "apps/web"}], "from an umbrella"}
+          ] do
+        stderr =
+          capture_io(:stderr, fn ->
+            assert catch_exit(Graph.run(argv, opts() ++ extra)) == {:shutdown, 2}
+          end)
+
+        assert stderr =~ "--project refused: "
+        assert stderr =~ reason
+        assert stderr =~ "Fix: "
+        refute_received :compiled
+      end
+    end
+
+    # sync: MIX_BUILD_PATH is the VM's OS environment.
+    test "a build path outside this checkout exits 2: DIR's ebin could not be found", %{dir: dir} do
+      previous = System.get_env("MIX_BUILD_PATH")
+
+      on_exit(fn ->
+        if previous,
+          do: System.put_env("MIX_BUILD_PATH", previous),
+          else: System.delete_env("MIX_BUILD_PATH")
+      end)
+
+      System.put_env("MIX_BUILD_PATH", Path.join(System.tmp_dir!(), "anchor-elsewhere"))
+
+      stderr =
+        capture_io(:stderr, fn ->
+          assert catch_exit(Graph.run(["--project", dir], opts())) == {:shutdown, 2}
+        end)
+
+      assert stderr =~ "is outside this checkout"
+      refute_received :compiled
+    end
   end
 end

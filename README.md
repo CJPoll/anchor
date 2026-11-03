@@ -577,7 +577,7 @@ mix credo --strict
 
 ```bash
 mix anchor.graph [--format text|json] [--only RULE_ID]... [--base REF]
-                 [--write-baseline RULE_ID] [--verbose]
+                 [--write-baseline RULE_ID] [--project DIR] [--verbose]
 ```
 
 Judges the project's compiled code against `.anchor.yml`'s `architecture:`
@@ -638,6 +638,31 @@ findings can only shrink along the way:
    with git, never from the branch: a baseline only shrinks, and adding to it
    is a review decision on the base branch. A baseline absent at `REF` is a
    first landing, printed as a NOTE.
+
+**The base branch judges a pull request (DND-5658).** `--base` reads the
+baselines at `REF`, but the code that compares them (`Enforcement`,
+`Baseline`, `BaselineBase`, each rule's `check/2` and `narrows?/2`) is the
+code that runs. In Anchor's own CI that is the pull request's code, so a pull
+request could change the judge that judges it. CI therefore also runs
+`bin/ci/judge-with-base.sh origin/<base>`: it takes `bin/ci/base-judge.sh` as
+it is on the base branch (never the pull request's copy), which checks the
+base out in a scratch worktree, builds it, compiles the pull request under
+`MIX_ENV=dev`, and runs the base's `mix anchor.graph --project <pull request>
+--base origin/<base>`. `--project DIR` judges the checkout at `DIR` (its
+`.anchor.yml`, sources, baselines, git, and its beams at this checkout's
+compile path relative to its root) with the Anchor of the checkout it runs
+in; it refuses (exit 2) a `DIR` that is not a directory, an umbrella judge, a
+build path outside the judge's own root, and `--write-baseline`. A base that
+cannot be checked out or built, a pull request that does not compile, and a
+judge that exits other than 0 or 1 are exit 3 (COULD NOT MEASURE), never a
+pass. A change the landed judge refuses (a new rule type or config key it
+cannot parse, a rule narrowed so a baselined finding is gone) is landed by
+the owner. The pull request's own `mix anchor.graph --base` step still runs:
+it is the product under test. A base with no `bin/ci/base-judge.sh` prints
+`BOOTSTRAP` and exits 0; only the pull request that adds the script meets
+one. Self-test: `bin/tests/base-judge-test.sh` (CI job `Base judge
+self-test`). Not caught: a pull request that edits `.github/workflows/ci.yml`
+or `bin/ci/judge-with-base.sh` itself; review is the gate for those.
 
 A baseline file holds one key per line; `#` comments and blank lines are
 ignored and the entries are a multiset (a key listed twice holds two
@@ -987,8 +1012,8 @@ line.
 | Findings of a `report` rule | 0 | the finding | printed `[report]` |
 
 Exit 2 is a usage error (an unknown option, `--format` other than `text` or
-`json`, an argument, a `--base` ref Anchor refuses) or a refused
-`--write-baseline` (the file exists, or the id names no rule with a
+`json`, an argument, a `--base` ref Anchor refuses), a refused `--project`, or
+a refused `--write-baseline` (the file exists, or the id names no rule with a
 `baseline:`), with a `Fix:` line.
 
 ## Generated sabotage: the functions a change touched

@@ -79,7 +79,7 @@ defmodule Anchor.Managers.GraphRuleFailClosedTest do
   end
 
   defp run(rule, beam, opts \\ %{}) do
-    expect(ConfigLoaderMock, :load, fn -> {:ok, config(rule)} end)
+    expect(ConfigLoaderMock, :load_in, fn _root -> {:ok, config(rule)} end)
     Mox.expect(BeamSourceMock, :read_ebins, fn _apps -> [beam] end)
 
     expect(SourceSourceMock, :read, fn @root, files ->

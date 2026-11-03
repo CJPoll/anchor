@@ -58,7 +58,7 @@ defmodule Anchor.Integration.GraphCanaryTest do
   # rules (`Anchor.Test.GraphRuleStubs`) have no RuleSchema type, so they can
   # not be written into its .anchor.yml.
   defp run(beams, root \\ @root, opts \\ %{}, extra_rules \\ []) do
-    expect(ConfigLoaderMock, :load, fn ->
+    expect(ConfigLoaderMock, :load_in, fn _root ->
       {:ok, config} = ConfigFile.load_from_path(Path.join(root, ".anchor.yml"))
       {:ok, %{config | rules: config.rules ++ extra_rules}}
     end)

@@ -8,7 +8,7 @@ defmodule Mix.Tasks.Anchor.Graph do
   calls no adapter itself.
 
       mix anchor.graph [--format text|json] [--only RULE_ID]... [--base REF]
-                       [--write-baseline RULE_ID] [--verbose]
+                       [--write-baseline RULE_ID] [--project DIR] [--verbose]
 
   It builds the graph fresh from this compile's beams every run (never a
   cached verdict), classifies every project module into exactly one bucket of
@@ -32,6 +32,18 @@ defmodule Mix.Tasks.Anchor.Graph do
   that rule's baseline from its current findings, and refuses (exit 2) when
   the file exists.
 
+  `--project DIR` (DND-5658) judges another checkout with this one's
+  Anchor: DIR's `.anchor.yml`, sources, baselines and git (`--base` resolves
+  there), and DIR's beams, at this project's compile path relative to its
+  root (`_build/dev/lib/anchor/ebin` under `MIX_ENV=dev`), which DIR's own
+  compile wrote. This checkout is still compiled (it is the judge); DIR is
+  not, and an ebin with no beams is COULD NOT MEASURE. CI runs it from a
+  checkout of the base branch (`bin/ci/base-judge.sh`), so the ratchet that
+  judges a pull request is the code landed on its base, never the pull
+  request's own. It refuses (exit 2) a DIR that is not a directory, an
+  umbrella judge, a compile path outside this checkout (`MIX_BUILD_PATH`), and
+  `--write-baseline`: the judge never writes the judged tree.
+
   It reads beams with `:beam_lib` only: no project module is loaded or run.
   The only file it writes is `<build_path>/anchor/graph.etf` (Mix's build
   path: `_build/<env>`, or what `MIX_BUILD_PATH` names), the graph for
@@ -41,8 +53,8 @@ defmodule Mix.Tasks.Anchor.Graph do
   Exit codes: 0 pass (report-only and held findings print); 1 a violation
   or a fail-closed issue (a module Anchor could not read or classify, a
   floor, a rule that crashed, a baseline that could not be read, STALE or
-  GREW); 2 usage, a `--base` ref Anchor refuses to pass to git, or a
-  `--write-baseline` refusal; 3 COULD NOT MEASURE (no or invalid config, no
+  GREW); 2 usage, a `--base` ref Anchor refuses to pass to git, a
+  `--project` refusal, or a `--write-baseline` refusal; 3 COULD NOT MEASURE (no or invalid config, no
   `architecture:` section, zero modules read).
   """
 
@@ -54,13 +66,14 @@ defmodule Mix.Tasks.Anchor.Graph do
   alias Anchor.Managers.Graph.Request
 
   @usage "Usage: mix anchor.graph [--format text|json] [--only RULE_ID]... [--base REF] " <>
-           "[--write-baseline RULE_ID] [--verbose]"
+           "[--write-baseline RULE_ID] [--project DIR] [--verbose]"
 
   @switches [
     format: :string,
     only: :keep,
     base: :string,
     write_baseline: :string,
+    project: :string,
     verbose: :boolean
   ]
 
@@ -77,7 +90,7 @@ defmodule Mix.Tasks.Anchor.Graph do
   @spec run([String.t()], keyword()) :: :ok
   def run(argv, opts) do
     case OptionParser.parse(argv, strict: @switches) do
-      {parsed, [], []} -> run_parsed(request_opts(parsed), opts)
+      {parsed, [], []} -> run_parsed(request_opts(parsed), parsed[:project], opts)
       _invalid -> usage()
     end
   end
@@ -102,19 +115,20 @@ defmodule Mix.Tasks.Anchor.Graph do
     end
   end
 
-  defp run_parsed(:invalid, _opts), do: usage()
+  defp run_parsed(:invalid, _project, _opts), do: usage()
 
-  defp run_parsed(request_opts, opts) do
+  defp run_parsed(request_opts, project, opts) do
     {compile, deps} = Keyword.pop(opts, :compile, &compile/0)
     {apps_paths, deps} = Keyword.pop_lazy(deps, :apps_paths, &Mix.Project.apps_paths/0)
+    target = target(project, apps_paths, request_opts)
     compile.()
 
     request = %Request{
-      apps: ebins(apps_paths),
+      apps: target.apps,
       # An umbrella app's beams carry paths relative to its own directory,
       # where Mix compiled it (DND-5637).
       source_dirs: apps_paths || %{},
-      root: File.cwd!(),
+      root: target.root,
       build_path: Mix.Project.build_path(),
       env: Mix.env(),
       opts: request_opts
@@ -130,6 +144,45 @@ defmodule Mix.Tasks.Anchor.Graph do
   end
 
   defp compile, do: Mix.Task.run("compile", [])
+
+  # What is judged: this project (its root and ebins), or under `--project
+  # DIR` (DND-5658) the checkout at DIR, read at this project's own compile
+  # path relative to its root. The judge's build stays its own: the graph
+  # artifact is written under this checkout's build path, never DIR's.
+  defp target(nil, apps_paths, _request_opts),
+    do: %{root: File.cwd!(), apps: ebins(apps_paths)}
+
+  defp target(project, apps_paths, request_opts) do
+    root = Path.expand(project)
+    compile_path = Path.relative_to(Mix.Project.compile_path(), File.cwd!())
+
+    cond do
+      request_opts.write_baseline != nil ->
+        refuse_project("--write-baseline writes the judged tree; run it in #{project} itself")
+
+      not File.dir?(root) ->
+        refuse_project("#{project} is not a directory")
+
+      apps_paths != nil ->
+        refuse_project("judging another checkout from an umbrella is not supported")
+
+      Path.type(compile_path) != :relative ->
+        refuse_project("the compile path #{compile_path} is outside this checkout")
+
+      true ->
+        %{root: root, apps: [{Mix.Project.config()[:app], Path.join(root, compile_path)}]}
+    end
+  end
+
+  defp refuse_project(reason) do
+    Mix.shell().error(
+      "anchor.graph: --project refused: #{reason}. Fix: pass --project the root of a " <>
+        "compiled single-project checkout, from a checkout whose build path is under its " <>
+        "own root (unset MIX_BUILD_PATH)."
+    )
+
+    exit({:shutdown, 2})
+  end
 
   defp ebins(apps_paths) do
     case apps_paths do
@@ -159,7 +212,7 @@ defmodule Mix.Tasks.Anchor.Graph do
       @usage <>
         "\nFix: pass only --format text|json, --only RULE_ID (repeatable), --base REF (a " <>
         "branch, tag or commit: letters, digits and _ . / @ ^ ~ -, not starting with -), " <>
-        "--write-baseline RULE_ID and --verbose."
+        "--write-baseline RULE_ID, --project DIR and --verbose."
     )
 
     exit({:shutdown, 2})

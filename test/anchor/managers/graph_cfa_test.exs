@@ -85,7 +85,7 @@ defmodule Anchor.Managers.GraphCfaTest do
   end
 
   defp run(rules, beams, opts \\ []) do
-    expect(ConfigLoaderMock, :load, fn -> {:ok, config(rules)} end)
+    expect(ConfigLoaderMock, :load_in, fn _root -> {:ok, config(rules)} end)
     Mox.expect(BeamSourceMock, :read_ebins, fn [{:my_app, @ebin}] -> beams end)
 
     expect(SourceSourceMock, :read, fn @root, files ->

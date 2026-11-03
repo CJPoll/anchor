@@ -93,6 +93,8 @@ before coining a synonym.
   the stdlib calls Elixir inlines before Core, derived from `:elixir_rewrite`,
   their two spellings in `Graph.calls_to/2`, and the inlined `Map.put` the
   walker reads from a map update.
+- `base_judge` — CI's base-branch judge (DND-5658): `bin/ci/judge-with-base.sh`,
+  `bin/ci/base-judge.sh` and their self-test `bin/tests/base-judge-test.sh`.
 - `graph_runner` — `mix anchor.graph` (DND-5440): the Manager
   (`Anchor.Managers.Graph`), the task, the model (`Anchor.Domain.Model`), the
   rule registry and floors (`Anchor.Domain.GraphRules`), the report

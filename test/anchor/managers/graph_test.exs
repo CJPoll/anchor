@@ -9,6 +9,8 @@ defmodule Anchor.Managers.GraphTest do
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5581_hardening_batch.md
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5630_graph_hardening.md
   # DND-5584 (per-app, and AE-O with DND-5588): ../../sabotage_records/graph_runner-20261103-dnd_5441_graph_rules_a.md
+  # DND-5658 (config loaded under the request's root):
+  #   ../../sabotage_records/graph_runner-20261103-dnd_5658_ci_base_ratchet.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -145,7 +147,7 @@ defmodule Anchor.Managers.GraphTest do
   }
 
   defp expect_run(config, beams, opts \\ []) do
-    expect(ConfigLoaderMock, :load, fn -> {:ok, config} end)
+    expect(ConfigLoaderMock, :load_in, fn @root -> {:ok, config} end)
     Mox.expect(BeamSourceMock, :read_ebins, fn [{:my_app, @ebin}] -> beams end)
 
     sources = Keyword.get(opts, :sources, @sources)
@@ -259,7 +261,7 @@ defmodule Anchor.Managers.GraphTest do
 
   describe "run/2 could not measure (exit 3)" do
     test "a missing config is exit 3 with config_violation's message; no beam is read, no artifact written" do
-      expect(ConfigLoaderMock, :load, fn ->
+      expect(ConfigLoaderMock, :load_in, fn @root ->
         {:error, {:config_not_found, ["/proj/.anchor.yml"]}}
       end)
 
@@ -275,7 +277,10 @@ defmodule Anchor.Managers.GraphTest do
     end
 
     test "a config with no architecture: section is exit 3" do
-      expect(ConfigLoaderMock, :load, fn -> {:ok, config([rule(:stub_ok, "ok")], nil)} end)
+      expect(ConfigLoaderMock, :load_in, fn @root ->
+        {:ok, config([rule(:stub_ok, "ok")], nil)}
+      end)
+
       Mox.expect(BeamSourceMock, :read_ebins, 0, fn _apps -> [] end)
       expect(GraphStoreMock, :write, 0, fn _dir, _key, _term -> :ok end)
 
@@ -286,7 +291,7 @@ defmodule Anchor.Managers.GraphTest do
     end
 
     test "zero modules read is exit 3, COULD NOT MEASURE naming the ebins; no artifact written" do
-      expect(ConfigLoaderMock, :load, fn -> {:ok, config([])} end)
+      expect(ConfigLoaderMock, :load_in, fn @root -> {:ok, config([])} end)
       Mox.expect(BeamSourceMock, :read_ebins, fn _apps -> [] end)
       expect(GraphStoreMock, :write, 0, fn _dir, _key, _term -> :ok end)
 
@@ -298,7 +303,7 @@ defmodule Anchor.Managers.GraphTest do
     end
 
     test "only undecodable beams is zero modules read: exit 3" do
-      expect(ConfigLoaderMock, :load, fn -> {:ok, config([])} end)
+      expect(ConfigLoaderMock, :load_in, fn @root -> {:ok, config([])} end)
 
       Mox.expect(BeamSourceMock, :read_ebins, fn _apps ->
         [{:error, %{path: "#{@ebin}/x.beam", module: X, reason: :no_debug_info}}]
@@ -317,7 +322,7 @@ defmodule Anchor.Managers.GraphTest do
     @two_apps [{:my_app, @ebin}, {:other, @other_ebin}]
 
     defp expect_two_apps(beams) do
-      expect(ConfigLoaderMock, :load, fn -> {:ok, config([rule(:stub_ok, "ok")])} end)
+      expect(ConfigLoaderMock, :load_in, fn @root -> {:ok, config([rule(:stub_ok, "ok")])} end)
       Mox.expect(BeamSourceMock, :read_ebins, fn @two_apps -> beams end)
 
       expect(SourceSourceMock, :read, fn @root, files ->
@@ -542,7 +547,7 @@ defmodule Anchor.Managers.GraphTest do
 
   describe "run/2 --only naming no rule" do
     test "is exit 3: a narrowed run that checks nothing must not read clean" do
-      expect(ConfigLoaderMock, :load, fn -> {:ok, config([rule(:stub_ok, "ok")])} end)
+      expect(ConfigLoaderMock, :load_in, fn @root -> {:ok, config([rule(:stub_ok, "ok")])} end)
       Mox.expect(BeamSourceMock, :read_ebins, 0, fn _apps -> [] end)
       expect(GraphStoreMock, :write, 0, fn _dir, _key, _term -> :ok end)
 
@@ -618,7 +623,7 @@ defmodule Anchor.Managers.GraphTest do
     # from outside the root did read a module. It is judged like any other,
     # never reported as an empty ebin.
     test "an app whose only module is outside the root is not an empty ebin", %{beams: beams} do
-      expect(ConfigLoaderMock, :load, fn ->
+      expect(ConfigLoaderMock, :load_in, fn @root ->
         {:ok, config([rule(:stub_ok, "ok")], architecture([shared_bucket()]))}
       end)
 
@@ -772,7 +777,9 @@ defmodule Anchor.Managers.GraphTest do
         rule(:stub_finds, "beta", %{bucket: "beta", index: 2})
       ]
 
-      expect(ConfigLoaderMock, :load, fn -> {:ok, config(rules, umbrella_architecture())} end)
+      expect(ConfigLoaderMock, :load_in, fn @root ->
+        {:ok, config(rules, umbrella_architecture())}
+      end)
 
       Mox.expect(BeamSourceMock, :read_ebins, fn [{:alpha, @alpha_ebin}, {:beta, @beta_ebin}] ->
         umbrella
@@ -833,7 +840,7 @@ defmodule Anchor.Managers.GraphTest do
     # checkouts with the same build output) get two keys.
     test "the key changes with the project root", %{beams: beams} do
       key = fn root ->
-        expect(ConfigLoaderMock, :load, fn -> {:ok, config([rule(:stub_ok, "ok")])} end)
+        expect(ConfigLoaderMock, :load_in, fn ^root -> {:ok, config([rule(:stub_ok, "ok")])} end)
         Mox.expect(BeamSourceMock, :read_ebins, fn _apps -> classified(beams) end)
 
         expect(SourceSourceMock, :read, fn ^root, files ->
