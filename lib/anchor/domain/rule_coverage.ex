@@ -28,6 +28,7 @@ defmodule Anchor.Domain.RuleCoverage do
 
   alias Anchor.Domain.AllowedCallers
   alias Anchor.Domain.RuleMatching
+  alias Anchor.Domain.RuleSchema
 
   @default_min_files 1
 
@@ -72,9 +73,18 @@ defmodule Anchor.Domain.RuleCoverage do
   @spec min_files(map()) :: pos_integer()
   def min_files(rule), do: Map.get(rule, :min_files) || @default_min_files
 
-  @doc "The rules in `rules` whose type is not one of `enabled_types`."
-  @spec unchecked([map()], [atom()]) :: [map()]
-  def unchecked(rules, enabled_types), do: Enum.reject(rules, &(&1.type in enabled_types))
+  @doc """
+  The AST-engine rules in `rules` whose type is not one of `enabled_types`.
+
+  A graph-engine rule (DND-5437) is run by `mix anchor.graph`, never by a Credo
+  check, so no enabled check reading it is not a gap and it is never reported
+  here. `engine_of` gives a type's engine; it defaults to
+  `Anchor.Domain.RuleSchema.engine/1`.
+  """
+  @spec unchecked([map()], [atom()], (atom() -> RuleSchema.engine())) :: [map()]
+  def unchecked(rules, enabled_types, engine_of \\ &RuleSchema.engine/1) do
+    Enum.reject(rules, &(engine_of.(&1.type) == :graph or &1.type in enabled_types))
+  end
 
   defp may_select?(rule, %{parsed?: false} = file) do
     RuleMatching.rule_matches_file?(rule, file) or not path_selected?(rule)

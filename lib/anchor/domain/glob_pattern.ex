@@ -103,6 +103,20 @@ defmodule Anchor.Domain.GlobPattern do
   @spec wildcard_only?(String.t()) :: boolean()
   def wildcard_only?(pattern), do: pattern != "" and String.trim(pattern, "*") == ""
 
+  @doc """
+  Returns `true` when `pattern` has no literal character besides `separator`
+  (`"/"` for a path glob, `"."` for a module-name glob): `**`, `**/*`, `*.*`.
+
+  Such a glob matches every path (or every module name of that many
+  segments), so it selects everything rather than a part of the codebase.
+  `Anchor.Domain.Architecture.Selector` refuses it in a bucket or root
+  selector (DND-5437).
+  """
+  @spec literal_free?(String.t(), String.t()) :: boolean()
+  def literal_free?(pattern, separator) when separator in ["/", "."] do
+    pattern != "" and pattern |> String.replace(separator, "") |> wildcard_only?()
+  end
+
   defp module_name_forms("Elixir." <> alias_form = module_name), do: [module_name, alias_form]
   defp module_name_forms(module_name), do: [module_name]
 

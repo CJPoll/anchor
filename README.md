@@ -131,8 +131,10 @@ failed, and ends with a `Fix:` line.
 The load rejects, rather than silently ignoring:
 
 - a document that is empty, has no `rules:` list, has a top-level key other than
-  `rules` (for example `anchors:`), or whose `rules` is not a list. An explicit
-  `rules: []` is a deliberate empty config and loads;
+  `rules` and `architecture` (for example `anchors:`), or whose `rules` is not a
+  list. An explicit `rules: []` is a deliberate empty config and loads;
+- an `architecture:` section that could check nothing, or less than it says
+  (see [The `architecture:` section](#the-architecture-section));
 - a rule that is not a mapping, or has no `type`, or a `type` that no Anchor
   check reads (a typo such as `no_direct_dependancy`);
 - a key inside a rule that its type does not read (a typo such as
@@ -293,6 +295,97 @@ wildcard and no `[abc]` or `{a,b}` alternation. So `lib/c++/*.ex` selects the
 (Before DND-1292 only `.` was literal, and the rest were live regex: `*?` was a
 match-all, and `lib/(old/*.ex` crashed the check.)
 
+### The `architecture:` section
+
+`.anchor.yml` may carry an `architecture:` key beside `rules:` (`rules:` stays
+required; a repo with no rules yet writes `rules: []`). It is the one model of
+the codebase's architecture that the graph engine (`mix anchor.graph`, DND-5440)
+and its placement answers are to read: every project module lands in exactly one bucket, and
+the calls matrix says which buckets each bucket may call. A config with no
+`architecture:` loads exactly as before.
+
+```yaml
+architecture:
+  contexts:
+    depth: 2                     # the first N module-name segments name the context
+  buckets:                       # every project module lands in exactly one
+    - name: domain               # unique, lower-case letters and _
+      role: domain               # framework | ui | adapters | domain | managers
+      select:                    # a module matching any selector is in the bucket
+        - paths: ["apps/*/lib/**/domain/**/*.ex"]
+      min_modules: 178           # positive integer floor, default 1
+      infer: true                # default true
+    - name: framework
+      role: framework
+      select:
+        - paths: ["apps/*/lib/**/framework/**/*.ex"]
+        - uses_module: GenServer
+        - behaviour: Supervisor
+        - exports_function: "__aggregate__/0"
+        - pattern: "Mix.Tasks.*"
+    # ... one bucket per remaining role
+  calls:                         # a row per bucket; deny by default
+    framework: [framework, ui, domain, managers]
+    ui: [ui, domain]
+    adapters: [adapters, domain, "managers:other_context"]
+    domain: [domain]
+    managers: [managers, adapters, domain]
+  interfaces:
+    buckets: [managers]          # these buckets' modules are their context's interface
+    exports: []                  # extra exact module names callable from other contexts
+  effects: ["Req", ":gen_tcp.connect"]   # extra effect primitives
+  roots:                         # extra roots beyond role=framework buckets' public functions
+    - pattern: "Mix.Tasks.*"
+  extract_pure_regions_from: [managers, framework]
+```
+
+| Key | Required | Default | Meaning |
+|---|---|---|---|
+| `contexts.depth` | yes | | Positive integer. A module's context is its first `depth` name segments; a module with fewer (or an Erlang module) has none. |
+| `buckets` | yes | | Non-empty list. Each bucket has a unique `name` (`[a-z_]+`), a `role` (`framework`, `ui`, `adapters`, `domain`, `managers`) and a non-empty `select` list. |
+| `buckets[].select[]` | yes | | Exactly one selector key per entry: `paths` (source-path globs, `**` always recursive), `pattern` (a module-name glob), `uses_module` (a literal `use` in the module's own `defmodule` body), `behaviour` (a declared behaviour; `:gen_server` for an Erlang one), `exports_function` (`"name/arity"`, arity required). |
+| `buckets[].min_modules` | no | `1` | Positive integer: the fewest modules the bucket must select. |
+| `buckets[].infer` | no | `true` | Boolean: whether placement compares the effects-inferred role. |
+| `calls` | yes | | A row for every bucket, and only for buckets. Each value lists the buckets it may call: a bucket name, or `"<bucket>:same_context"` / `"<bucket>:other_context"` to restrict by context. `[]` calls nothing. A call within one module is always allowed; a call to a module outside the project is not a bucket edge. |
+| `interfaces.buckets` | no | `[]` | Buckets whose modules are their context's interface. |
+| `interfaces.exports` | no | `[]` | Extra modules callable from other contexts, each one exact Elixir module name. |
+| `effects` | no | `[]` | Extra effect primitives: a module (`"Req"`, `":gen_tcp"`) or a function (`"File.write!/2"`, `":gen_tcp.connect"`). |
+| `roots` | no | `[]` | Extra roots, as selector entries. |
+| `extract_pure_regions_from` | no | `[managers, framework]` | Roles whose functions pure-region extraction reads. |
+
+A module matched by one bucket is classified into it. There is no precedence
+between buckets, ever: a module two buckets select is **ambiguous** and one no
+bucket selects is **unclassified**. Reporting both, a bucket below its
+`min_modules` and an `interfaces.exports` entry that names no module is the
+graph runner's job (`mix anchor.graph`, DND-5440). Until it lands, Anchor parses
+and validates the section at load (below) and nothing reads it at run time, so
+no module is yet held to it.
+
+An optional key given an empty YAML value (`effects:` with nothing after it)
+reads as absent; a required key, or a bucket key, given one is refused.
+
+The load refuses, each with a message that starts with the key path
+(`architecture.buckets[1].select[0]`, 0-based indexes) and carries a `Fix:`:
+
+- an unknown key at any level, and a section, `contexts` or `interfaces` that
+  is not a mapping;
+- a missing `contexts.depth`, or one that is not a positive integer;
+- no buckets; a duplicate bucket name or one that is not `[a-z_]+`; an unknown
+  `role`; a bucket with no `select` or an empty one; a selector entry with zero
+  or two selector keys, an empty `paths` (or an empty glob in it), a `paths`
+  glob or `pattern` with no literal character (`**`, `**/*`, `*`, `*.*`), a `uses_module` or `behaviour` that is not one module named
+  exactly, an `exports_function` without an arity;
+- a `min_modules` that is not a positive integer, an `infer` that is not a
+  boolean;
+- a missing `calls`, a row for an unknown bucket, a bucket with no row, a row
+  that is not a list, an unknown bucket in a row, an unknown scope suffix;
+- an `interfaces.buckets` entry naming an unknown bucket; an
+  `interfaces.exports` entry that is not one exact Elixir module name (a glob,
+  an Erlang module, a blank);
+- an `effects` token that names no module or function;
+- a `roots` entry refused as a `select` entry would be;
+- an `extract_pure_regions_from` entry that is not a role.
+
 ### Config schema: rule keys at a glance
 
 A single reference for the rule keys, including the four added for full
@@ -330,20 +423,25 @@ type accepts. So a misspelling such as `forbiden_patterns:` or `patern:` is an
 error, not a rule that silently checks less than it says. A key that belongs to
 another type (`match` on a `no_transitive_dependency` rule) is unknown too.
 
-| Rule type | Keys beyond the common ones | Relation (needs one, non-empty) |
-|---|---|---|
-| `alphabetized_functions` | `mode` | none |
-| `case_on_bare_arg` | none | none |
-| `max_file_length` | `max_lines` | none |
-| `module_pattern_restrictions` | `allowed_functions` | none |
-| `must_use_module` | `required_modules` | `required_modules` |
-| `no_comparison_in_if` | none | none |
-| `no_direct_dependency` | `allowed_callers`, `context_depth`, `forbidden_functions`, `forbidden_modules`, `forbidden_patterns`, `match`, `same_context` | `forbidden_functions`, `forbidden_modules`, `forbidden_patterns` |
-| `no_discarding_arrow_in_with` | none | none |
-| `no_transitive_dependency` | `forbidden_modules`, `forbidden_patterns` | `forbidden_modules`, `forbidden_patterns` |
-| `no_tuple_match_in_head` | none | none |
-| `single_control_flow` | none | none |
-| `struct_getter_convention` | none | none |
+The Engine column is the one engine that runs the type: `ast` rules run as
+Credo checks over source, `graph` rules run under `mix anchor.graph` over the
+compiled code (DND-5440; no `graph` type ships yet). Credo never reports a
+`graph` rule as unchecked.
+
+| Rule type | Keys beyond the common ones | Relation (needs one, non-empty) | Engine |
+|---|---|---|---|
+| `alphabetized_functions` | `mode` | none | `ast` |
+| `case_on_bare_arg` | none | none | `ast` |
+| `max_file_length` | `max_lines` | none | `ast` |
+| `module_pattern_restrictions` | `allowed_functions` | none | `ast` |
+| `must_use_module` | `required_modules` | `required_modules` | `ast` |
+| `no_comparison_in_if` | none | none | `ast` |
+| `no_direct_dependency` | `allowed_callers`, `context_depth`, `forbidden_functions`, `forbidden_modules`, `forbidden_patterns`, `match`, `same_context` | `forbidden_functions`, `forbidden_modules`, `forbidden_patterns` | `ast` |
+| `no_discarding_arrow_in_with` | none | none | `ast` |
+| `no_transitive_dependency` | `forbidden_modules`, `forbidden_patterns` | `forbidden_modules`, `forbidden_patterns` | `ast` |
+| `no_tuple_match_in_head` | none | none | `ast` |
+| `single_control_flow` | none | none | `ast` |
+| `struct_getter_convention` | none | none | `ast` |
 
 Every rule also needs exactly one **selector**: a non-empty `paths` list, a
 `pattern` string or a `uses_module` string. A rule with none selects no file,
@@ -450,6 +548,44 @@ Then run:
 ```bash
 mix credo --strict
 ```
+
+## Generated sabotage: the functions a change touched
+
+```bash
+mix anchor.sabotage scope [--base REF] [--format text|json]
+```
+
+Prints the functions the working tree changed relative to the merge-base of
+`REF` (default `origin/main`) and `HEAD`: committed, staged and unstaged
+changes from `git diff --unified=0`, plus every untracked `.ex` file as wholly
+added. Each changed line inside a `def` or `defp` clause puts that function,
+`{module, name, arity}`, in scope; a multi-clause function appears once. A
+removed line maps to the function it was in at the merge-base (read with
+`git show`), so deleting lines or a whole clause of a function that still
+exists keeps it in scope; a function deleted whole is gone, and counted as a
+hunk outside a function. It reads git and source files only: nothing
+is compiled and no project code runs. Generated sabotage (the runner, later)
+mutates only these functions.
+
+Text output is one TSV line per function (`file, module, name/arity, kind,
+changed line ranges`), then a summary that counts what was left out:
+
+```
+lib/a.ex	A	f/1	def	3-5,8
+anchor.sabotage scope: 1 functions in 1 files; excluded: 0 test files, 0 non-source files, 0 deleted files, 1 hunks outside a function, 0 macros
+```
+
+Left out, and counted: test files (a `test` path segment or `_test.exs`),
+non-source files (not `.ex`, or under `deps`/`_build`), deleted files, hunks
+outside any function (attributes, docs, a deleted function), and macros
+(`defmacro`, `defmacrop`, `defguard`, `defguardp`, and any def inside `quote`).
+`--format json` carries the same fields.
+
+| Condition | Exit |
+|---|---|
+| measured (a clean diff prints `0 functions`) | 0 |
+| an unknown option, format or subcommand | 2 |
+| not a git work tree; `REF` unresolvable or no merge-base; git failing; a diff Anchor cannot read; a changed `.ex` file that does not parse or cannot be read | 3, `COULD NOT MEASURE` with `Fix:` |
 
 ## Check Types
 

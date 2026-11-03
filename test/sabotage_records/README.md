@@ -59,6 +59,11 @@ before coining a synonym.
 - `failures` — `Anchor.Domain.Failures`, the text of every fail-closed report
   (missing or invalid config, unparseable file, a check that crashed on a file).
 - `source` — `Anchor.Check.Source`, the AST/source acquisition edge.
+- `sabotage_scope` — `mix anchor.sabotage scope` (DND-5472): the diff parser
+  (`Anchor.Domain.Sabotage.DiffHunks`), the function spans
+  (`Anchor.Domain.Sabotage.FunctionSpans`), the mapping and its counts
+  (`Anchor.Domain.Sabotage.Scope`), the git adapter
+  (`Anchor.Adapters.GitChangeSource`), the `scope/2` Manager path and the task.
 - `dependency_analyzer` — `Anchor.Domain.DependencyAnalyzer`, the pure AST
   walk behind every dependency fact (module names, references, calls, uses,
   the module graph).
@@ -72,6 +77,12 @@ before coining a synonym.
 - `function_ref` — `Anchor.Domain.FunctionRef` (DND-1267): the
   `forbidden_functions` token grammar and the comparison of a call (or an
   unresolvable call) with a token.
+- `architecture` — `Anchor.Domain.Architecture` and its `Bucket` and `Selector`
+  (DND-5437): the `architecture:` section of `.anchor.yml`, parsed fail-closed,
+  and a selector matched against a module's facts.
+- `classification` — `Anchor.Domain.Classification` (DND-5437): which bucket a
+  module is in (exactly one, no precedence), its context, and each bucket's
+  count against its `min_modules` floor.
 - `rule_coverage` — `Anchor.Domain.RuleCoverage` (DND-1290): which rules
   checked nothing in a run (below their `min_files` floor, or of a type no
   enabled check reads).
@@ -137,6 +148,16 @@ before coining a synonym.
   `defstruct`, and the foreign-struct `location_violation` that recovers the
   real module name) and the `Anchor.Check.StructGetterConvention` shell that
   delegates to it.
+- `data_flow` — `Anchor.Domain.DataFlow` and its `DataFlow.*` modules
+  (DND-5439): def-use over one clause's source AST, backward slices with
+  control dependence, dead expressions, single-exit regions, the orphan check
+  and the unsliceable forms (`receive`, the process dictionary, `var!`,
+  `binding()`).
+- `graph_algorithms` — `Anchor.Domain.GraphAlgorithms` (DND-5444):
+  dominators and post-dominators from a virtual root/exit, union-find
+  components, Tarjan SCCs, the condensation and cyclic SCCs.
+- `digraph` — `Anchor.Domain.Digraph` (DND-5444), the plain immutable graph
+  value the graph algorithms run over.
 - `dialyzer_boundary` — the DND-5499 spike runner
   `test/fixtures/dialyzer_boundary/run.exs` (not a check: it measures what
   Dialyzer reports for clause reachability on the fixtures beside it, so F8
