@@ -5,10 +5,11 @@
 - **Date:** 2026-11-03
 - **Code under test:** `Anchor.Domain.FunctionRef.parse_name_arity/1`, `erlang_module_name?/1`
 - **Tests:** `test/anchor/domain/function_ref_test.exs`, and the `exports_function` rows of `architecture_checks_nothing_test.exs`
-- **Suite run:** each mutation applied alone to 97cf553 and the command named under
-  it run (`mix test <files>`), then the file restored with `git checkout --`.
-  The full suite (`mix test`) was green before and after.
-- **Merge base:** `origin/main` = 185ecc9; **fix commit:** 97cf553
+- **Suite run:** each mutation applied alone to fecac77, then
+  `MIX_ENV=test mix compile --force` and the `mix test` command named under it,
+  then the file restored with `git checkout --`. The full suite (`mix test`)
+  was green before and after.
+- **Merge base:** `origin/main` = 185ecc9; **fix commit:** fecac77
 
 ## Fail-first
 
@@ -40,6 +41,8 @@ Both functions are new; the rest of the file existed.
 ```
 
 
+An earlier run of these mutations, without the forced recompile, let two edits of one file inside one second pass Mix's stale check, so a mutation ran on the previous mutation's beams (M4 recorded M3's failure, G2 recorded G1's). The critic caught it; every mutation here is from the forced-recompile run.
+
 ## Mutations
 
 | # | Mutation | Result |
@@ -51,7 +54,7 @@ Both functions are new; the rest of the file existed.
 ### F1: parse_name_arity/1 accepts a missing arity
 
 - File mutated: `lib/anchor/domain/function_ref.ex`
-- Command: `mix test test/anchor/domain/function_ref_test.exs test/anchor/domain/architecture_checks_nothing_test.exs`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/function_ref_test.exs test/anchor/domain/architecture_checks_nothing_test.exs`
 - Result: `45 tests, 3 failures`
 
 ```
@@ -67,7 +70,7 @@ Both functions are new; the rest of the file existed.
 ### M8: erlang_module_name?/1 accepts a capital first letter
 
 - File mutated: `lib/anchor/domain/function_ref.ex`
-- Command: `mix test test/anchor/domain/function_ref_test.exs`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/function_ref_test.exs`
 - Result: `9 tests, 1 failure`
 
 ```
@@ -80,7 +83,7 @@ Both functions are new; the rest of the file existed.
 ### M13: parse_name_arity/1 accepts any non-empty name
 
 - File mutated: `lib/anchor/domain/function_ref.ex`
-- Command: `mix test test/anchor/domain/function_ref_test.exs test/anchor/domain/architecture_checks_nothing_test.exs`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/function_ref_test.exs test/anchor/domain/architecture_checks_nothing_test.exs`
 - Result: `45 tests, 3 failures`
 
 ```

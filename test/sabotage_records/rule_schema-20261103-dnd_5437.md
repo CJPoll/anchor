@@ -5,10 +5,11 @@
 - **Date:** 2026-11-03
 - **Code under test:** `Anchor.Domain.RuleSchema` (`@engine_by_type`, its compile-time completeness check, `engine/1`, `rule_types_for_engine/1`) and the README Engine column
 - **Tests:** `test/anchor/domain/rule_schema_test.exs` ("engine/1", and the extended README drift test)
-- **Suite run:** each mutation applied alone to 97cf553 and the command named under
-  it run (`mix test <files>`), then the file restored with `git checkout --`.
-  The full suite (`mix test`) was green before and after.
-- **Merge base:** `origin/main` = 185ecc9; **fix commit:** 97cf553
+- **Suite run:** each mutation applied alone to fecac77, then
+  `MIX_ENV=test mix compile --force` and the `mix test` command named under it,
+  then the file restored with `git checkout --`. The full suite (`mix test`)
+  was green before and after.
+- **Merge base:** `origin/main` = 185ecc9; **fix commit:** fecac77
 
 ## Fail-first
 
@@ -51,6 +52,8 @@
 
 S1 is the completeness proof AC6 asks for: deleting one type's engine fails compilation, so no runtime test is needed.
 
+An earlier run of these mutations, without the forced recompile, let two edits of one file inside one second pass Mix's stale check, so a mutation ran on the previous mutation's beams (M4 recorded M3's failure, G2 recorded G1's). The critic caught it; every mutation here is from the forced-recompile run.
+
 ## Mutations
 
 | # | Mutation | Result |
@@ -62,7 +65,7 @@ S1 is the completeness proof AC6 asks for: deleting one type's engine fails comp
 ### S1: delete struct_getter_convention from @engine_by_type
 
 - File mutated: `lib/anchor/domain/rule_schema.ex`
-- Command: `mix test test/anchor/domain/rule_schema_test.exs`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/rule_schema_test.exs`
 - Result: compilation fails
 
 ```
@@ -72,7 +75,7 @@ S1 is the completeness proof AC6 asks for: deleting one type's engine fails comp
 ### S2: README Engine column says graph for one type
 
 - File mutated: `README.md`
-- Command: `mix test test/anchor/domain/rule_schema_test.exs`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/rule_schema_test.exs`
 - Result: `26 tests, 1 failure`
 
 ```
@@ -85,7 +88,7 @@ S1 is the completeness proof AC6 asks for: deleting one type's engine fails comp
 ### S3: rule_types_for_engine/1 ignores the engine
 
 - File mutated: `lib/anchor/domain/rule_schema.ex`
-- Command: `mix test test/anchor/domain/rule_schema_test.exs`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/rule_schema_test.exs`
 - Result: `26 tests, 1 failure`
 
 ```

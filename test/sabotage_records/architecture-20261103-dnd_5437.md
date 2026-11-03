@@ -5,10 +5,11 @@
 - **Date:** 2026-11-03
 - **Code under test:** `Anchor.Domain.Architecture.parse/1`, `Anchor.Domain.Architecture.Selector` (`parse/2`, `matches?/2`)
 - **Tests:** `test/anchor/domain/architecture_checks_nothing_test.exs`, `test/anchor/domain/architecture/selector_test.exs`, and `test/anchor/domain/classification_test.exs` (which calls `Selector.matches?/2`: A2 goes red there too)
-- **Suite run:** each mutation applied alone to 97cf553 and the command named under
-  it run (`mix test <files>`), then the file restored with `git checkout --`.
-  The full suite (`mix test`) was green before and after.
-- **Merge base:** `origin/main` = 185ecc9; **fix commit:** 97cf553
+- **Suite run:** each mutation applied alone to fecac77, then
+  `MIX_ENV=test mix compile --force` and the `mix test` command named under it,
+  then the file restored with `git checkout --`. The full suite (`mix test`)
+  was green before and after.
+- **Merge base:** `origin/main` = 185ecc9; **fix commit:** fecac77
 
 ## Fail-first
 
@@ -37,6 +38,8 @@ The modules are new in this run.
 
 A1: with the "no row" refusal gone, the bucket is still refused (its row reads as `nil`, "must be a list"), but with a message naming the wrong fault; the table row asserts the message's leading key path, so it fails. A6 adds a key the parser would read with no table: the meta-tests fail. M5 covers both `buckets[].role` and `extract_pure_regions_from` (they share `parse_role/2`).
 
+An earlier run of these mutations, without the forced recompile, let two edits of one file inside one second pass Mix's stale check, so a mutation ran on the previous mutation's beams (M4 recorded M3's failure, G2 recorded G1's). The critic caught it; every mutation here is from the forced-recompile run.
+
 ## Mutations
 
 | # | Mutation | Result |
@@ -54,7 +57,7 @@ A1: with the "no row" refusal gone, the bucket is still refused (its row reads a
 | M1 | uses_module selector never matches | `15 tests, 1 failure` |
 | M2 | behaviour selector never matches | `15 tests, 1 failure` |
 | M3 | exports_function selector never matches | `15 tests, 1 failure` |
-| M4 | pattern selector never matches | `15 tests, 1 failure` |
+| M4 | pattern selector never matches | `15 tests, 2 failures` |
 | M5 | any role (and any extract_pure_regions_from entry) accepted | `36 tests, 4 failures` |
 | M6 | infer accepts a string | `36 tests, 1 failure` |
 | M7 | any non-blank effects token accepted | `36 tests, 1 failure` |
@@ -74,7 +77,7 @@ A1: with the "no row" refusal gone, the bucket is still refused (its row reads a
 ### A1: drop the 'bucket with no calls row' refusal
 
 - File mutated: `lib/anchor/domain/architecture.ex`
-- Command: `mix test test/anchor/domain/architecture_checks_nothing_test.exs`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/architecture_checks_nothing_test.exs`
 - Result: `36 tests, 1 failure`
 
 ```
@@ -87,38 +90,40 @@ A1: with the "no row" refusal gone, the bucket is still refused (its row reads a
 ### A2: paths selectors non-recursive
 
 - File mutated: `lib/anchor/domain/architecture/selector.ex`
-- Command: `mix test test/anchor/domain/architecture/selector_test.exs test/anchor/domain/classification_test.exs`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/architecture/selector_test.exs test/anchor/domain/classification_test.exs`
 - Result: `28 tests, 7 failures`
 
 ```
-  1) test classify/2 a module listed in interfaces.exports is an interface module (Anchor.Domain.ClassificationTest)
-     test/anchor/domain/classification_test.exs:114
-     match (=) failed
-     code:  assert {:ok, %Classification{bucket: "domain", interface?: true}} =
-              Classification.classify(facts(MyApp.Accounts.Api, "lib/a/domain/api.ex"), arch)
-     left:  {:ok, %Anchor.Domain.Classification{bucket: "domain", interface?: true}}
-     right: {:error, {:unclassified, MyApp.Accounts.Api}}
+  1) test bucket_counts/2 counts each bucket's modules, in config order (Anchor.Domain.ClassificationTest)
+     test/anchor/domain/classification_test.exs:155
+     Assertion with == failed
+     code:  assert arch |> then(&Classification.bucket_counts(facts, &1)) |> names_and_counts() == [
+              {"domain", 3},
+              {"managers", 1}
+            ]
+     left:  [{"domain", 0}, {"managers", 0}]
+     right: [{"domain", 3}, {"managers", 1}]
 ```
 
 ### A3: accept a match-all pattern selector
 
 - File mutated: `lib/anchor/domain/architecture/selector.ex`
-- Command: `mix test test/anchor/domain/architecture_checks_nothing_test.exs`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/architecture_checks_nothing_test.exs`
 - Result: `36 tests, 3 failures`
 
 ```
-  1) test buckets[].select[].pattern: every refusal is refused with its key path and Fix:, positives load (Anchor.Domain.ArchitectureChecksNothingTest)
+  1) test roots[].pattern: every refusal is refused with its key path and Fix:, positives load (Anchor.Domain.ArchitectureChecksNothingTest)
      test/anchor/domain/architecture_checks_nothing_test.exs:52
-     buckets[].select[].pattern / a match-all *: LOADED: %Anchor.Config{rules: [], path: nil, architecture: %Anchor.Domain.Architecture{context_depth: 2, buckets: [%Anchor.Domain.Architecture.Bucket{...}], ...}}
-     buckets[].select[].pattern / a match-all **: LOADED: %Anchor.Config{rules: [], path: nil, architecture: %Anchor.Domain.Architecture{context_depth: 2, buckets: [%Anchor.Domain.Architecture.Bucket{...}], ...}}
-     buckets[].select[].pattern / a match-all *.*: LOADED: %Anchor.Config{rules: [], path: nil, architecture: %Anchor.Domain.Architecture{context_depth: 2, buckets: [%Anchor.Domain.Architecture.Bucket{...}], ...}}
+     roots[].pattern / a match-all *: LOADED: %Anchor.Config{rules: [], path: nil, architecture: %Anchor.Domain.Architecture{context_depth: 2, buckets: [%Anchor.Domain.Architecture.Bucket{...}], ...}}
+     roots[].pattern / a match-all **: LOADED: %Anchor.Config{rules: [], path: nil, architecture: %Anchor.Domain.Architecture{context_depth: 2, buckets: [%Anchor.Domain.Architecture.Bucket{...}], ...}}
+     roots[].pattern / a match-all *.*: LOADED: %Anchor.Config{rules: [], path: nil, architecture: %Anchor.Domain.Architecture{context_depth: 2, buckets: [%Anchor.Domain.Architecture.Bucket{...}], ...}}
      code: assert failures == [], Enum.join(failures, "\n")
 ```
 
 ### A4: min_modules accepts 0
 
 - File mutated: `lib/anchor/domain/architecture.ex`
-- Command: `mix test test/anchor/domain/architecture_checks_nothing_test.exs`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/architecture_checks_nothing_test.exs`
 - Result: `36 tests, 1 failure`
 
 ```
@@ -131,7 +136,7 @@ A1: with the "no row" refusal gone, the bucket is still refused (its row reads a
 ### A5: unknown key of the section accepted
 
 - File mutated: `lib/anchor/domain/architecture.ex`
-- Command: `mix test test/anchor/domain/architecture_checks_nothing_test.exs`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/architecture_checks_nothing_test.exs`
 - Result: `36 tests, 1 failure`
 
 ```
@@ -144,12 +149,12 @@ A1: with the "no row" refusal gone, the bucket is still refused (its row reads a
 ### A6: a new section key with no table
 
 - File mutated: `lib/anchor/domain/architecture.ex`
-- Command: `mix test test/anchor/domain/architecture_checks_nothing_test.exs`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/architecture_checks_nothing_test.exs`
 - Result: `37 tests, 3 failures`
 
 ```
-  1) test every key path has a table with a refused row and an accepted row (Anchor.Domain.ArchitectureChecksNothingTest)
-     test/anchor/domain/architecture_checks_nothing_test.exs:61
+  1) test strict: every refusal is refused with its key path and Fix:, positives load (Anchor.Domain.ArchitectureChecksNothingTest)
+     test/anchor/domain/architecture_checks_nothing_test.exs:52
      ** (FunctionClauseError) no function clause matching in Anchor.Domain.ArchitectureChecksNothingTest.table/1
 
      The following arguments were given to Anchor.Domain.ArchitectureChecksNothingTest.table/1:
@@ -157,13 +162,13 @@ A1: with the "no row" refusal gone, the bucket is still refused (its row reads a
          # 1
          "strict"
 
-     code: for key_path <- Architecture.key_paths() do
+     code: key_path |> table() |> Enum.map(&row_failure(key_path, &1)) |> Enum.reject(&is_nil/1)
 ```
 
 ### A7: an unknown scope suffix reads as :any
 
 - File mutated: `lib/anchor/domain/architecture.ex`
-- Command: `mix test test/anchor/domain/architecture_checks_nothing_test.exs`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/architecture_checks_nothing_test.exs`
 - Result: `36 tests, 1 failure`
 
 ```
@@ -176,7 +181,7 @@ A1: with the "no row" refusal gone, the bucket is still refused (its row reads a
 ### A8: contexts.depth accepts 0
 
 - File mutated: `lib/anchor/domain/architecture.ex`
-- Command: `mix test test/anchor/domain/architecture_checks_nothing_test.exs`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/architecture_checks_nothing_test.exs`
 - Result: `36 tests, 1 failure`
 
 ```
@@ -189,7 +194,7 @@ A1: with the "no row" refusal gone, the bucket is still refused (its row reads a
 ### A9: interfaces.exports accepts any non-blank string (a glob)
 
 - File mutated: `lib/anchor/domain/architecture.ex`
-- Command: `mix test test/anchor/domain/architecture_checks_nothing_test.exs`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/architecture_checks_nothing_test.exs`
 - Result: `36 tests, 1 failure`
 
 ```
@@ -206,7 +211,7 @@ A1: with the "no row" refusal gone, the bucket is still refused (its row reads a
 ### A10: duplicate bucket names accepted
 
 - File mutated: `lib/anchor/domain/architecture.ex`
-- Command: `mix test test/anchor/domain/architecture_checks_nothing_test.exs`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/architecture_checks_nothing_test.exs`
 - Result: `36 tests, 1 failure`
 
 ```
@@ -219,7 +224,7 @@ A1: with the "no row" refusal gone, the bucket is still refused (its row reads a
 ### M1: uses_module selector never matches
 
 - File mutated: `lib/anchor/domain/architecture/selector.ex`
-- Command: `mix test test/anchor/domain/architecture/selector_test.exs`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/architecture/selector_test.exs`
 - Result: `15 tests, 1 failure`
 
 ```
@@ -246,7 +251,7 @@ A1: with the "no row" refusal gone, the bucket is still refused (its row reads a
 ### M2: behaviour selector never matches
 
 - File mutated: `lib/anchor/domain/architecture/selector.ex`
-- Command: `mix test test/anchor/domain/architecture/selector_test.exs`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/architecture/selector_test.exs`
 - Result: `15 tests, 1 failure`
 
 ```
@@ -273,7 +278,7 @@ A1: with the "no row" refusal gone, the bucket is still refused (its row reads a
 ### M3: exports_function selector never matches
 
 - File mutated: `lib/anchor/domain/architecture/selector.ex`
-- Command: `mix test test/anchor/domain/architecture/selector_test.exs`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/architecture/selector_test.exs`
 - Result: `15 tests, 1 failure`
 
 ```
@@ -303,26 +308,23 @@ A1: with the "no row" refusal gone, the bucket is still refused (its row reads a
 ### M4: pattern selector never matches
 
 - File mutated: `lib/anchor/domain/architecture/selector.ex`
-- Command: `mix test test/anchor/domain/architecture/selector_test.exs`
-- Result: `15 tests, 1 failure`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/architecture/selector_test.exs`
+- Result: `15 tests, 2 failures`
 
 ```
-  1) test matches?/2 with exports_function a module exporting name/arity matches (Anchor.Domain.Architecture.SelectorTest)
-     test/anchor/domain/architecture/selector_test.exs:76
+  1) test matches?/2 with pattern an Erlang module is matched by its own name (Anchor.Domain.Architecture.SelectorTest)
+     test/anchor/domain/architecture/selector_test.exs:50
      Expected truthy, got false
-     code: assert Selector.matches?(
-             {:exports_function, {:__aggregate__, 0}},
-             facts(exports: [__aggregate__: 0])
-           )
+     code: assert Selector.matches?({:pattern, "gen_*"}, facts(module: :gen_tcp))
      arguments:
 
          # 1
-         {:exports_function, {:__aggregate__, 0}}
+         {:pattern, "gen_*"}
 
          # 2
          %{
-           exports: [__aggregate__: 0],
-           module: MyApp.Domain.X,
+           exports: [],
+           module: :gen_tcp,
            behaviours: [],
            uses: [],
            app: :my_app,
@@ -333,28 +335,82 @@ A1: with the "no row" refusal gone, the bucket is still refused (its row reads a
 ### M5: any role (and any extract_pure_regions_from entry) accepted
 
 - File mutated: `lib/anchor/domain/architecture.ex`
-- Command: `mix test test/anchor/domain/architecture_checks_nothing_test.exs`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/architecture_checks_nothing_test.exs`
 - Result: `36 tests, 4 failures`
 
 ```
-  1) test the parsed struct bucket/2 and bucket_names/1 read the buckets in file order (Anchor.Domain.ArchitectureChecksNothingTest)
-     test/anchor/domain/architecture_checks_nothing_test.exs:129
-     match (=) failed
-     code:  assert %Bucket{role: :managers} = Architecture.bucket(architecture, "managers")
-     left:  %Anchor.Domain.Architecture.Bucket{role: :managers}
-     right: %Anchor.Domain.Architecture.Bucket{
-              name: "managers",
-              role: :domain,
-              selectors: [pattern: "*.Managers.*"],
-              min_modules: 1,
-              infer: true
+  1) test the worked example (shared contract 3.1) parses into %Architecture{} with every field populated (Anchor.Domain.ArchitectureChecksNothingTest)
+     test/anchor/domain/architecture_checks_nothing_test.exs:201
+     Assertion with == failed
+     code:  assert architecture == %Architecture{
+              context_depth: 2,
+              buckets: [
+                %Bucket{name: "domain", role: :domain, selectors: paths.("domain"), min_modules: 178},
+                %Bucket{
+                  name: "framework",
+                  role: :framework,
+                  selectors:
+                    paths.("framework") ++
+                      [
+                        uses_module: GenServer,
+                        behaviour: Supervisor,
+                        exports_function: {:__aggregate__, 0},
+                        pattern: "Mix.Tasks.*"
+                      ]
+                },
+                %Bucket{name: "ui", role: :ui, selectors: paths.("ui")},
+                %Bucket{name: "adapters", role: :adapters, selectors: paths.("adapters")},
+                %Bucket{name: "managers", role: :managers, selectors: paths.("managers")}
+              ],
+              calls: %{
+                "framework" => [{"framework", :any}, {"ui", :any}, {"domain", :any}, {"managers", :any}],
+                "ui" => [{"ui", :any}, {"domain", :any}],
+                "adapters" => [{"adapters", :any}, {"domain", :any}, {"managers", :other_context}],
+                "domain" => [{"domain", :any}],
+                "managers" => [{"managers", :any}, {"adapters", :any}, {"domain", :any}]
+              },
+              interface_buckets: ["managers"],
+              interface_exports: [],
+              effects: ["Req", ":gen_tcp.connect"],
+              roots: [pattern: "Mix.Tasks.*"],
+              extract_pure_regions_from: [:managers, :framework]
             }
+     left:  %Anchor.Domain.Architecture{
+              context_depth: 2,
+              buckets: [
+                %Anchor.Domain.Architecture.Bucket{
+                  name: "domain",
+                  role: :domain,
+                  selectors: [
+                    paths: ["apps/*/lib/**/domain/**/*.ex"]
+                  ],
+                  min_modules: 178,
+                  infer: true
+                },
+                %Anchor.Domain.Architecture.Bucket{
+                  name: "framework",
+                  role: :domain,
+                  selectors: [
+                    paths: ["apps/*/lib/**/framework/**/*.ex"],
+                    uses_module: GenServer,
+                    behaviour: Supervisor,
+                    exports_function: {:__aggregate__, 0},
+                    pattern: "Mix.Tasks.*"
+                  ],
+                  min_modules: 1,
+                  infer: true
+                },
+                %Anchor.Domain.Architecture.Bucket{
+                  name: "ui",
+                  role: :domain,
+                  selectors: [paths: ["apps/*/lib/**/ui/**/*.ex"]],
+                  min_mo
 ```
 
 ### M6: infer accepts a string
 
 - File mutated: `lib/anchor/domain/architecture.ex`
-- Command: `mix test test/anchor/domain/architecture_checks_nothing_test.exs`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/architecture_checks_nothing_test.exs`
 - Result: `36 tests, 1 failure`
 
 ```
@@ -367,7 +423,7 @@ A1: with the "no row" refusal gone, the bucket is still refused (its row reads a
 ### M7: any non-blank effects token accepted
 
 - File mutated: `lib/anchor/domain/architecture.ex`
-- Command: `mix test test/anchor/domain/architecture_checks_nothing_test.exs`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/architecture_checks_nothing_test.exs`
 - Result: `36 tests, 1 failure`
 
 ```
@@ -382,7 +438,7 @@ A1: with the "no row" refusal gone, the bucket is still refused (its row reads a
 ### M9: interfaces.buckets accepts an unknown bucket
 
 - File mutated: `lib/anchor/domain/architecture.ex`
-- Command: `mix test test/anchor/domain/architecture_checks_nothing_test.exs`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/architecture_checks_nothing_test.exs`
 - Result: `36 tests, 1 failure`
 
 ```
@@ -395,7 +451,7 @@ A1: with the "no row" refusal gone, the bucket is still refused (its row reads a
 ### M10: an empty select list accepted
 
 - File mutated: `lib/anchor/domain/architecture.ex`
-- Command: `mix test test/anchor/domain/architecture_checks_nothing_test.exs`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/architecture_checks_nothing_test.exs`
 - Result: `36 tests, 1 failure`
 
 ```
@@ -408,22 +464,22 @@ A1: with the "no row" refusal gone, the bucket is still refused (its row reads a
 ### M11: uses_module selector accepts any string
 
 - File mutated: `lib/anchor/domain/architecture/selector.ex`
-- Command: `mix test test/anchor/domain/architecture_checks_nothing_test.exs`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/architecture_checks_nothing_test.exs`
 - Result: `36 tests, 2 failures`
 
 ```
-  1) test roots[].uses_module: every refusal is refused with its key path and Fix:, positives load (Anchor.Domain.ArchitectureChecksNothingTest)
+  1) test buckets[].select[].uses_module: every refusal is refused with its key path and Fix:, positives load (Anchor.Domain.ArchitectureChecksNothingTest)
      test/anchor/domain/architecture_checks_nothing_test.exs:52
-     roots[].uses_module / blank: LOADED: %Anchor.Config{rules: [], path: nil, architecture: %Anchor.Domain.Architecture{context_depth: 2, buckets: [%Anchor.Domain.Architecture.Bucket{...}], ...}}
-     roots[].uses_module / a glob: LOADED: %Anchor.Config{rules: [], path: nil, architecture: %Anchor.Domain.Architecture{context_depth: 2, buckets: [%Anchor.Domain.Architecture.Bucket{...}], ...}}
-     roots[].uses_module / an Erlang module: LOADED: %Anchor.Config{rules: [], path: nil, architecture: %Anchor.Domain.Architecture{context_depth: 2, buckets: [%Anchor.Domain.Architecture.Bucket{...}], ...}}
+     buckets[].select[].uses_module / blank: LOADED: %Anchor.Config{rules: [], path: nil, architecture: %Anchor.Domain.Architecture{context_depth: 2, buckets: [%Anchor.Domain.Architecture.Bucket{...}], ...}}
+     buckets[].select[].uses_module / a glob: LOADED: %Anchor.Config{rules: [], path: nil, architecture: %Anchor.Domain.Architecture{context_depth: 2, buckets: [%Anchor.Domain.Architecture.Bucket{...}], ...}}
+     buckets[].select[].uses_module / an Erlang module: LOADED: %Anchor.Config{rules: [], path: nil, architecture: %Anchor.Domain.Architecture{context_depth: 2, buckets: [%Anchor.Domain.Architecture.Bucket{...}], ...}}
      code: assert failures == [], Enum.join(failures, "\n")
 ```
 
 ### M12: behaviour selector accepts any string
 
 - File mutated: `lib/anchor/domain/architecture/selector.ex`
-- Command: `mix test test/anchor/domain/architecture_checks_nothing_test.exs`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/architecture_checks_nothing_test.exs`
 - Result: `36 tests, 2 failures`
 
 ```
@@ -436,22 +492,22 @@ A1: with the "no row" refusal gone, the bucket is still refused (its row reads a
 ### M14: a literal-free paths glob (**) accepted
 
 - File mutated: `lib/anchor/domain/architecture/selector.ex`
-- Command: `mix test test/anchor/domain/architecture_checks_nothing_test.exs`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/architecture_checks_nothing_test.exs`
 - Result: `36 tests, 2 failures`
 
 ```
-  1) test roots[].paths: every refusal is refused with its key path and Fix:, positives load (Anchor.Domain.ArchitectureChecksNothingTest)
+  1) test buckets[].select[].paths: every refusal is refused with its key path and Fix:, positives load (Anchor.Domain.ArchitectureChecksNothingTest)
      test/anchor/domain/architecture_checks_nothing_test.exs:52
-     roots[].paths / a match-all ["**"]: LOADED: %Anchor.Config{rules: [], path: nil, architecture: %Anchor.Domain.Architecture{context_depth: 2, buckets: [%Anchor.Domain.Architecture.Bucket{...}], ...}}
-     roots[].paths / a match-all **/* beside a real glob: LOADED: %Anchor.Config{rules: [], path: nil, architecture: %Anchor.Domain.Architecture{context_depth: 2, buckets: [%Anchor.Domain.Architecture.Bucket{...}], ...}}
-     roots[].paths / a match-all *: LOADED: %Anchor.Config{rules: [], path: nil, architecture: %Anchor.Domain.Architecture{context_depth: 2, buckets: [%Anchor.Domain.Architecture.Bucket{...}], ...}}
+     buckets[].select[].paths / a match-all ["**"]: LOADED: %Anchor.Config{rules: [], path: nil, architecture: %Anchor.Domain.Architecture{context_depth: 2, buckets: [%Anchor.Domain.Architecture.Bucket{...}], ...}}
+     buckets[].select[].paths / a match-all **/* beside a real glob: LOADED: %Anchor.Config{rules: [], path: nil, architecture: %Anchor.Domain.Architecture{context_depth: 2, buckets: [%Anchor.Domain.Architecture.Bucket{...}], ...}}
+     buckets[].select[].paths / a match-all *: LOADED: %Anchor.Config{rules: [], path: nil, architecture: %Anchor.Domain.Architecture{context_depth: 2, buckets: [%Anchor.Domain.Architecture.Bucket{...}], ...}}
      code: assert failures == [], Enum.join(failures, "\n")
 ```
 
 ### M15: roots that is not a list reads as none
 
 - File mutated: `lib/anchor/domain/architecture.ex`
-- Command: `mix test test/anchor/domain/architecture_checks_nothing_test.exs`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/architecture_checks_nothing_test.exs`
 - Result: `36 tests, 1 failure`
 
 ```
@@ -464,7 +520,7 @@ A1: with the "no row" refusal gone, the bucket is still refused (its row reads a
 ### M16: extract_pure_regions_from that is not a list reads as the default
 
 - File mutated: `lib/anchor/domain/architecture.ex`
-- Command: `mix test test/anchor/domain/architecture_checks_nothing_test.exs`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/architecture_checks_nothing_test.exs`
 - Result: `36 tests, 1 failure`
 
 ```
@@ -477,7 +533,7 @@ A1: with the "no row" refusal gone, the bucket is still refused (its row reads a
 ### M17: interfaces accepts an unknown key
 
 - File mutated: `lib/anchor/domain/architecture.ex`
-- Command: `mix test test/anchor/domain/architecture_checks_nothing_test.exs`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/architecture_checks_nothing_test.exs`
 - Result: `36 tests, 1 failure`
 
 ```
@@ -490,7 +546,7 @@ A1: with the "no row" refusal gone, the bucket is still refused (its row reads a
 ### M19: contexts accepts an unknown key
 
 - File mutated: `lib/anchor/domain/architecture.ex`
-- Command: `mix test test/anchor/domain/architecture_checks_nothing_test.exs`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/architecture_checks_nothing_test.exs`
 - Result: `36 tests, 1 failure`
 
 ```
@@ -503,7 +559,7 @@ A1: with the "no row" refusal gone, the bucket is still refused (its row reads a
 ### M20: a calls row may name an unknown bucket
 
 - File mutated: `lib/anchor/domain/architecture.ex`
-- Command: `mix test test/anchor/domain/architecture_checks_nothing_test.exs`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/architecture_checks_nothing_test.exs`
 - Result: `36 tests, 1 failure`
 
 ```
@@ -517,7 +573,7 @@ A1: with the "no row" refusal gone, the bucket is still refused (its row reads a
 ### M21: a bucket name may hold any character
 
 - File mutated: `lib/anchor/domain/architecture.ex`
-- Command: `mix test test/anchor/domain/architecture_checks_nothing_test.exs`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/architecture_checks_nothing_test.exs`
 - Result: `36 tests, 1 failure`
 
 ```
@@ -531,7 +587,7 @@ A1: with the "no row" refusal gone, the bucket is still refused (its row reads a
 ### M22: a selector entry with two keys reads the first
 
 - File mutated: `lib/anchor/domain/architecture/selector.ex`
-- Command: `mix test test/anchor/domain/architecture_checks_nothing_test.exs`
+- Command: `MIX_ENV=test mix compile --force && mix test test/anchor/domain/architecture_checks_nothing_test.exs`
 - Result: `36 tests, 2 failures`
 
 ```
