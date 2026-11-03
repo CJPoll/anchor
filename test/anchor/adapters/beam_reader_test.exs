@@ -4,6 +4,7 @@ defmodule Anchor.Adapters.BeamReaderTest do
   # read_ebins/1 rows write binaries into an ExUnit tmp_dir.
   #
   # Sabotage record: ../../sabotage_records/beam_reader-20261103-dnd_5438.md
+  # Sabotage record (Failures.crash_summary/3): ../../sabotage_records/failures-20261103-dnd_5438.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
