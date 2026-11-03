@@ -6,6 +6,9 @@
 # DND-1288. GraphRules.by_type/1 calls rule_type/0 on the modules it is
 # given, which any check module could be. Mutator.generate/4 applies a
 # computed function name (apply(Operators, operator, args)).
+# Sabotage.Coverage.traced_suite/3 calls suite.run/1 on its injected suite
+# runner; judged against every module exporting run/1, the two Mix tasks
+# among them (merged from main with DND-5474).
 layering|Anchor.Domain.GraphRules.by_type/1|-> Anchor.Check.AlphabetizedFunctions.rule_type/0
 layering|Anchor.Domain.GraphRules.by_type/1|-> Anchor.Check.CaseOnBareArg.rule_type/0
 layering|Anchor.Domain.GraphRules.by_type/1|-> Anchor.Check.MaxFileLength.rule_type/0
@@ -84,3 +87,5 @@ layering|Anchor.Managers.Lint.own_rules/2|-> Anchor.Check.StructGetterConvention
 layering|Anchor.Managers.Lint.own_rules/2|-> Anchor.Check.StructOwnedByModule.rule_type/0
 layering|Anchor.Managers.Lint.put_module_analyses/4|-> Anchor.Check.Source.ast/1
 layering|Anchor.Managers.Lint.result_for_file/2|-> Anchor.Check.Source.ast/1
+layering|Anchor.Managers.Sabotage.Coverage.traced_suite/3|-> Mix.Tasks.Anchor.Graph.run/1
+layering|Anchor.Managers.Sabotage.Coverage.traced_suite/3|-> Mix.Tasks.Anchor.Sabotage.run/1

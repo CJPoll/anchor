@@ -3,5 +3,7 @@
 # the layering baseline holds (Lint and GraphRules.by_type/1 on computed
 # check modules, DND-1288), each judged against every module exporting the
 # function. Mutator.generate/4 applies a computed function name.
-context_acyclic|Anchor.Adapters,Anchor.Check,Anchor.Config,Anchor.Domain,Anchor.Managers
+# Since the merge of DND-5474 the cycle also runs through Anchor.Sabotage
+# and Mix.Tasks, by that same suite.run/1 call.
+context_acyclic|Anchor.Adapters,Anchor.Check,Anchor.Config,Anchor.Domain,Anchor.Managers,Anchor.Sabotage,Mix.Tasks
 context_acyclic|Anchor.Domain.Sabotage.Mutator.generate/4|-> dynamic ?/1
