@@ -6,11 +6,13 @@
 - **Code under test:** `Anchor.Domain.Graph.Builder` (`build/2`, the `{:no_core, _}` unreadable entry); `Anchor.Domain.Graph.functions_without_core/1`
 - **Suite run:** `mix test --timeout 2000 --max-cases 2 test/anchor/domain/graph/builder_test.exs`
 
-Each mutation replaced one exact text in the named file, the suite ran, and the file was restored from its saved copy (the driver prints `git status` after the run; only this branch's own edits were listed).
+Each mutation replaced one exact text in the named file, the suite ran, and the file was restored from its saved copy. After each run the driver printed `git status`, which listed only this branch's own edits; that check sees a leftover mutation in a file this branch had not yet changed, but not in one it had, so the mutated text was also grepped for after the batch, and none was left.
 
 Traps seen: NC-A's first form (`_missing -> []`) left `path` and `module` unused, which does not compile under warnings-as-errors; the row is the second form, which never takes the reporting branch.
 
 Measured on Anchor's own `_build/dev` (537 modules, deps included, 2026-11-03): 16 functions had no Core, all private (11 `defp` that nothing calls, 5 `defmacrop`); no public one. That is why a public one is an `unreadable` entry and a private one is only counted.
+
+Rows that stayed green, and why: no existing builder test moves under NC-A to NC-D; none builds a module with a function whose Core is missing.
 
 | # | Mutation | Tests failed | Failing test |
 |---|---|---|---|
@@ -116,7 +118,7 @@ Run summary: `15 tests, 1 failure`
 - **Code under test:** `Anchor.Domain.Graph.Builder` (`specs/2`, `macro_spec/3`, `without_caller/1`)
 - **Suite run:** `mix test --timeout 2000 --max-cases 2 test/anchor/domain/graph/builder_test.exs`
 
-Each mutation replaced one exact text in the named file, the suite ran, and the file was restored from its saved copy. Every mutation failed the one test "a macro's spec is keyed by the macro's own name and arity, without the caller", each on a different assertion (quoted below).
+Each mutation replaced one exact text in the named file, the suite ran, and the file was restored from its saved copy. After each run the driver printed `git status`, which listed only this branch's own edits; that check sees a leftover mutation in a file this branch had not yet changed, but not in one it had, so the mutated text was also grepped for after the batch, and none was left. Every mutation failed the one test "a macro's spec is keyed by the macro's own name and arity, without the caller", each on a different assertion (quoted below).
 
 | # | Mutation | Tests failed | Failing test |
 |---|---|---|---|

@@ -17,7 +17,32 @@ defmodule Anchor.Domain.Graph.InlinesTest do
     end
 
     test "is the table Elixir's rewrite rules give on the Elixir it runs on, not a copy" do
-      assert Inlines.table() == Derive.derive()
+      exports =
+        for module <- Application.spec(:elixir, :modules),
+            String.starts_with?(Atom.to_string(module), "Elixir."),
+            do: {module, module.module_info(:exports)}
+
+      assert Inlines.table() == Derive.derive(exports)
+    end
+
+    test "derive/1 reads only the exports it is given" do
+      assert Derive.derive([{Map, [put: 3, get: 2, module_info: 0]}]) ==
+               %{{Map, :put, 3} => {:maps, :put, 3}}
+    end
+
+    test "derive/1 refuses to give an empty table" do
+      assert_raise ArgumentError, ~r/derived no inline table.*Fix:/, fn ->
+        Derive.derive([{Map, [get: 2]}])
+      end
+    end
+
+    # One rewrite level is all spellings/1 follows, so a rewrite whose target
+    # is itself rewritten must fail here, not go unseen.
+    test "no entry rewrites into a function that is rewritten again" do
+      table = Inlines.table()
+      assert Enum.filter(Map.values(table), &Map.has_key?(table, &1)) == []
+      # Positive control: the table's keys are Elixir names it does hold.
+      assert Map.has_key?(table, {Map, :put, 3})
     end
 
     test "every entry follows Elixir's own rule for that function" do

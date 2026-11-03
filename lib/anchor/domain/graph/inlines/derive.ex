@@ -10,24 +10,27 @@ defmodule Anchor.Domain.Graph.Inlines.Derive do
   compiles the code, in two kinds: `inline/3` (same arguments) and
   `rewrite/5` (arguments changed). Copying them by hand would go stale with the
   next Elixir, so this module asks those two functions instead, for every
-  exported function of every `Elixir.*` module of the `:elixir` application.
-  Both are pure functions of their arguments; nothing is compiled or run.
+  exported function it is given. Both are pure functions of their arguments;
+  nothing is compiled or run, and nothing here reads global state.
 
   `Anchor.Domain.Graph.Inlines` carries the result as its table, computed when
-  Anchor compiles. Mix recompiles every dependency when the Elixir version
-  changes, so the table always belongs to the Elixir Anchor runs on.
+  Anchor compiles, from every exported function of every `Elixir.*` module of
+  the `:elixir` application (read there, once, at compile time). Mix
+  recompiles every dependency when the Elixir version changes, so the table
+  always belongs to the Elixir Anchor runs on.
   """
 
   @doc """
-  The table: `%{elixir_mfa => erlang_mfa}` for every exported Elixir stdlib
-  function that Elixir compiles into a call of another function. Raises when
-  it finds none: an empty table would read as "nothing is rewritten".
+  The table: `%{elixir_mfa => erlang_mfa}` for every function in `exports`
+  (`[{module, [{name, arity}]}]`, a module's `module_info(:exports)`) that
+  Elixir compiles into a call of another function. Raises when it finds none:
+  an empty table would read as "nothing is rewritten".
   """
-  @spec derive() :: %{mfa() => mfa()}
-  def derive do
+  @spec derive([{module(), [{atom(), arity()}]}]) :: %{mfa() => mfa()}
+  def derive(exports) do
     table =
-      for module <- stdlib_modules(),
-          {name, arity} <- module.module_info(:exports),
+      for {module, functions} <- exports,
+          {name, arity} <- functions,
           name not in [:module_info, :__info__],
           erlang = rewritten(module, name, arity),
           erlang != nil,
@@ -72,11 +75,4 @@ defmodule Anchor.Domain.Graph.Inlines.Derive do
 
   defp other(same, same), do: nil
   defp other(_elixir, erlang), do: erlang
-
-  defp stdlib_modules do
-    :elixir
-    |> Application.spec(:modules)
-    |> Enum.filter(&(&1 |> Atom.to_string() |> String.starts_with?("Elixir.")))
-    |> Enum.sort()
-  end
 end

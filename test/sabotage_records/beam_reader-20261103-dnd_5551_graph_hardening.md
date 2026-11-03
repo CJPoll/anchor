@@ -6,11 +6,13 @@
 - **Code under test:** `Anchor.Adapters.BeamReader` (`safe_compile_options/3`, `safe_option?/1`, `warning_option?/1`, `@safe_atoms`, `@safe_keys`)
 - **Suite run:** `mix test --timeout 2000 --max-cases 2 test/anchor/adapters/beam_reader_test.exs`
 
-Each mutation replaced one exact text in the named file, the suite ran, and the file was restored from its saved copy (the driver prints `git status` after the run; only this branch's own edits were listed).
+Each mutation replaced one exact text in the named file, the suite ran, and the file was restored from its saved copy. After each run the driver printed `git status`, which listed only this branch's own edits; that check sees a leftover mutation in a file this branch had not yet changed, but not in one it had, so the mutated text was also grepped for after the batch, and none was left.
 
 Traps seen: CO-E's first form compared a string with an atom, a typing warning that does not compile under warnings-as-errors; the row is the second form. A first CO-E rerun piped through `head -1`, which closed the pipe early; the tree was checked clean (no mutation left) and the run repeated without the pipe.
 
 Found while writing the tests: `:warnings_as_errors` is not on the allowlist. It runs no code, but on a module with any warning the backend's lowering fails (`{:core_v1_refused, :failed_conversion}`), which would name the wrong cause, so it is refused by name instead.
+
+Rows that stayed green, and why: the existing transform test and the decode rows do not move under CO-A, CO-B, CO-C, CO-E or CO-F, because their compile options are only `:debug_info` and a transform. Under CO-D the transform test moves too, which is why CO-D fails 2.
 
 | # | Mutation | Tests failed | Failing test |
 |---|---|---|---|

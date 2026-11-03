@@ -6,14 +6,20 @@
 - **Code under test:** `Anchor.Domain.Graph.Inlines.Derive` (`derive/0`, `rewritten/3`), `Anchor.Domain.Graph.Inlines` (`table/0`, `spellings/1`), `Anchor.Domain.Graph` (`calls_to/2`), `Anchor.Domain.Graph.CoreWalker` (the inlined `Map.put` read from a map update)
 - **Suite run:** `mix test --timeout 2000 --max-cases 2 test/anchor/domain/graph/inlines_test.exs test/anchor/domain/graph/builder_test.exs test/anchor/domain/graph/core_walker_test.exs`
 
-Each mutation replaced one exact text in the named file, the suite ran, and the file was restored from its saved copy (the driver prints `git status` after the run; only this branch's own edits were listed). Fixtures are compiled in the test (`Anchor.Test.BeamFixtures`).
+Each mutation replaced one exact text in the named file, the suite ran, and the file was restored from its saved copy. After each run the driver printed `git status`, which listed only this branch's own edits; that check sees a leftover mutation in a file this branch had not yet changed, but not in one it had, so the mutated text was also grepped for after the batch, and none was left. Fixtures are compiled in the test (`Anchor.Test.BeamFixtures`).
 
 Traps seen:
 
 - IN-B's first run (load1 near 15) failed only by `ExUnit.TimeoutError` at 2000 ms in "is the table Elixir's rewrite rules give ... not a copy": that test derives the table afresh, which loads every `Elixir.*` module of the `:elixir` app (about 100 ms cold on an idle host). A timeout is not a caught mutation, so IN-B was run again; the row below is that second run, which failed by assertion. The suite's normal 60 s timeout leaves wide headroom.
 - IN-A's first form (`false -> nil`) left `rewritten_call/3` unused, which does not compile under warnings-as-errors; the row is the second form, which never calls it.
 - IN-G's first form (`!= :never`) did not compile (a typing warning under warnings-as-errors); the row is the second form, which returns every pair.
-- IN-H stayed green on its first run (a measured zero: no test built a map from values on `%{}`). The test "a map built from values on %{} is no put" was added, and the row is the run after it.
+- IN-H stayed green on its first run: a measured zero, 0 tests failed, because no test built a map from values on `%{}`. The test "a map built from values on %{} is no put" was added, and the IN-H row below is the run after it (1 failure).
+- IN-K is a measured zero that stays: `derive/1`'s `erlang != nil` filter is redundant, because the generator's own binding `erlang = rewritten(...)` is a `for` filter already (a `nil` result is falsy). The line is kept for the reader; no test can tell it is gone.
+- The IN-B log was overwritten by its second run (its first, a timeout, is described above).
+
+Rows that stayed green, and why: the `builder` and `core_walker` tests that predate this ticket do not move under IN-A to IN-E or IN-J to IN-L, because they name no inlined function. Under IN-F to IN-I, only the walker's put rows and the struct-update row (built with `:=` since this ticket) move.
+
+IN-J to IN-L were run after the review floor, which moved the global read out of `Derive` (now `derive/1`, given the exports) into `Inlines`' compile-time `@table`.
 
 | # | Mutation | Tests failed | Failing test |
 |---|---|---|---|
@@ -26,6 +32,9 @@ Traps seen:
 | IN-G | every pair of a map update is a put, := included (`lib/anchor/domain/graph/core_walker.ex`) | 2 | walk/3 stdlib calls Elixir inlines (DND-5551) a map literal and a := map update are no put; walk/3 dynamic captures and shapes Core builds by hand a struct map built on a variable (not on %{}) is an :update |
 | IN-H | a map built on a literal is read as a put too (`lib/anchor/domain/graph/core_walker.ex`) | 1 | walk/3 stdlib calls Elixir inlines (DND-5551) a map built from values on %{} is no put |
 | IN-I | one put edge per map update, not per => pair (`lib/anchor/domain/graph/core_walker.ex`) | 1 | walk/3 stdlib calls Elixir inlines (DND-5551) puts in a row that Core folds into one update are one edge each |
+| IN-J | derive/1 returns an empty table instead of raising (`lib/anchor/domain/graph/inlines/derive.ex`) | 1 | table/0 derive/1 refuses to give an empty table |
+| IN-K | derive/1 keeps a function whose rewrite is itself (`lib/anchor/domain/graph/inlines/derive.ex`) | 0 | - |
+| IN-L | a rewrite whose target is rewritten again (a chained entry) in the table (`lib/anchor/domain/graph/inlines.ex`) | 4 | table/0 every entry follows Elixir's own rule for that function; spellings/1 the Erlang name gives both spellings; table/0 is the table Elixir's rewrite rules give on the Elixir it runs on, not a copy; table/0 no entry rewrites into a function that is rewritten again |
 
 ## IN-A — derive the table from inline/3 only, not rewrite/5
 
@@ -321,5 +330,49 @@ Run summary: `52 tests, 1 failure`
        test/anchor/domain/graph/core_walker_test.exs:355: (test)
 
 ............................
+```
+
+## IN-J — derive/1 returns an empty table instead of raising
+
+Run summary: `12 tests, 1 failure`
+
+```
+
+  1) test table/0 derive/1 refuses to give an empty table (Anchor.Domain.Graph.InlinesTest)
+     test/anchor/domain/graph/inlines_test.exs:33
+     Expected exception ArgumentError but nothing was raised
+     code: assert_raise ArgumentError, ~r/derived no inline table.*Fix:/, fn ->
+     stacktrace:
+       test/anchor/domain/graph/inlines_test.exs:34: (test)
+
+.......
+```
+
+## IN-K — derive/1 keeps a function whose rewrite is itself
+
+Run summary: `12 tests, 0 failures`
+
+```
+(no failure block)
+```
+
+## IN-L — a rewrite whose target is rewritten again (a chained entry) in the table
+
+Run summary: `13 tests, 4 failures`
+
+```
+
+  1) test table/0 every entry follows Elixir's own rule for that function (Anchor.Domain.Graph.InlinesTest)
+     test/anchor/domain/graph/inlines_test.exs:48
+     Assertion with == failed
+     code:  assert Derive.rewritten(module, name, arity) == erlang
+     left:  nil
+     right: {:maps, :merge_chained, 2}
+     stacktrace:
+       test/anchor/domain/graph/inlines_test.exs:51: anonymous fn/2 in Anchor.Domain.Graph.InlinesTest."test table/0 every entry follows Elixir's own rule for that function"/1
+       (stdlib 7.1) maps.erl:894: :maps.fold_1/4
+       test/anchor/domain/graph/inlines_test.exs:49: (test)
+
+.
 ```
 

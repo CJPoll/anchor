@@ -215,6 +215,12 @@ defmodule Anchor.Domain.Graph.Builder do
        ),
        do: {:type, line, :fun, [{:type, product_line, :product, args}, result]}
 
+  defp without_caller(form) do
+    raise ArgumentError,
+          "a macro spec of an unknown shape: #{inspect(form)}. Fix: Anchor's graph builder " <>
+            "must learn this spec shape (DND-5550)."
+  end
+
   defp types(types) do
     Map.new(types, fn {kind, {name, _body, args} = type} ->
       {{name, length(args)}, {kind, Code.Typespec.type_to_quoted(type)}}

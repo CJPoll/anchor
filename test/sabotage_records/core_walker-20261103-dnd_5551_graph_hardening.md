@@ -6,7 +6,7 @@
 - **Code under test:** `Anchor.Domain.Graph.CoreWalker` (`apply_call/4` for `apply/3`)
 - **Suite run:** `mix test --timeout 2000 --max-cases 2 test/anchor/domain/graph/core_walker_test.exs test/anchor/domain/graph/builder_test.exs`
 
-Each mutation replaced one exact text in the named file, the suite ran, and the file was restored from its saved copy (the driver prints `git status` after the run; only this branch's own edits were listed).
+Each mutation replaced one exact text in the named file, the suite ran, and the file was restored from its saved copy. After each run the driver printed `git status`, which listed only this branch's own edits; that check sees a leftover mutation in a file this branch had not yet changed, but not in one it had, so the mutated text was also grepped for after the batch, and none was left.
 
 Rows that stayed green and why: the existing row "apply/3 is :apply, naming the function and arity it can see" (a variable module) and "apply/2 is :apply with no name" do not move under these mutations; they pin the dynamic cases, which each mutation leaves alone.
 
