@@ -102,7 +102,7 @@ defmodule Anchor.Domain.FunctionRefTest do
 
   # DND-5437: the `architecture:` section reuses this grammar for an
   # `exports_function` selector ("name/arity") and Erlang module tokens.
-  # Sabotage record: ../../sabotage_records/architecture-20261103-dnd_5437.md
+  # Sabotage record: ../../sabotage_records/function_ref-20261103-dnd_5437.md
   describe "parse_name_arity/1" do
     test "a function name and an arity parse" do
       assert FunctionRef.parse_name_arity("__aggregate__/0") == {:ok, {:__aggregate__, 0}}

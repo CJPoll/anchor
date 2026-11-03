@@ -15,6 +15,8 @@ defmodule Anchor.Domain.ArchitectureChecksNothingTest do
   # accepted row. That test fails until it does.
   #
   # Sabotage record: ../../sabotage_records/architecture-20261103-dnd_5437.md
+  # The Config wiring (the top-level key, the section parsed at all):
+  #   ../../sabotage_records/config-20261103-dnd_5437.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config
