@@ -517,6 +517,17 @@ defmodule Anchor.Domain.ConfigTest do
     end
   end
 
+  # DND-5443. Sabotage record: ../../sabotage_records/interface-20261103-dnd_5443_graph_rules_b.md
+  describe "parse_rule/1 — interface (DND-5443)" do
+    test "max_width is carried as given; absent, it is nil" do
+      assert %{type: :interface, max_width: 12} =
+               Config.parse_rule(%{"type" => "interface", "bucket" => "b", "max_width" => 12})
+
+      assert %{type: :interface, max_width: nil} =
+               Config.parse_rule(%{"type" => "interface", "bucket" => "b"})
+    end
+  end
+
   describe "parse_config/1" do
     test "maps every rule in the document through parse_rule/1" do
       data = %{

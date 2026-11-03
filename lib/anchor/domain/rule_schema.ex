@@ -194,6 +194,9 @@ defmodule Anchor.Domain.RuleSchema do
     # DND-5445: context_acyclic reads only the graph common keys (the contexts
     # are the `architecture:` section's).
     context_acyclic: [],
+    # DND-5443: interface reads `max_width` (optional, a positive integer: a
+    # context whose interface exports more public functions is a violation).
+    interface: ~w(max_width),
     # DND-5442: the graph engine's layering rule reads only the graph common
     # keys (its matrix is the `architecture:` section's `calls`).
     layering: [],
@@ -221,6 +224,7 @@ defmodule Anchor.Domain.RuleSchema do
     alphabetized_functions: [],
     case_on_bare_arg: [],
     context_acyclic: [],
+    interface: [],
     layering: [],
     max_file_length: [],
     module_pattern_restrictions: [],
@@ -244,6 +248,7 @@ defmodule Anchor.Domain.RuleSchema do
     alphabetized_functions: :ast,
     case_on_bare_arg: :ast,
     context_acyclic: :graph,
+    interface: :graph,
     layering: :graph,
     max_file_length: :ast,
     module_pattern_restrictions: :ast,
@@ -414,6 +419,7 @@ defmodule Anchor.Domain.RuleSchema do
          :ok <- validate_recursive(rule, engine),
          :ok <- validate_floor(rule),
          :ok <- validate_min_modules(rule),
+         :ok <- validate_max_width(rule),
          :ok <- validate_id(rule),
          :ok <- validate_enforcement(rule) do
       validate_baseline(rule)
@@ -508,6 +514,17 @@ defmodule Anchor.Domain.RuleSchema do
   end
 
   defp validate_min_modules(_rule), do: :ok
+
+  # DND-5443: an interface rule's `max_width`. Zero would fail every context
+  # with an interface at all; a non-integer would compare as nothing.
+  defp validate_max_width(%{"max_width" => max})
+       when not is_integer(max) or max < 1 do
+    {:error,
+     "`max_width` must be a positive integer (the most public functions a context's " <>
+       "interface may export), got: #{inspect(max)}"}
+  end
+
+  defp validate_max_width(_rule), do: :ok
 
   # DND-5453: `owned_namespaces` names the namespaces whose structs are
   # checked, each one exact Elixir module name (`AllowedCallers`' grammar). A

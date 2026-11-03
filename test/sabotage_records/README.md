@@ -225,6 +225,10 @@ before coining a synonym.
 - `context_acyclic` — the `context_acyclic` graph rule (DND-5445):
   `Anchor.Domain.ContextGraph`, `GraphRules.ContextAcyclic`,
   `ViolationKey.graph_key/2` and its registration.
+- `interface` — the `interface` graph rule (DND-5443):
+  `Anchor.Domain.Interfaces`, `GraphRules.Interface`, its registration, its
+  RuleSchema row and `max_width`, and the interface width in `GraphReport`
+  and `Managers.Graph`.
 - `dialyzer_boundary` — the DND-5499 spike runner
   `test/fixtures/dialyzer_boundary/run.exs` (not a check: it measures what
   Dialyzer reports for clause reachability on the fixtures beside it, so F8

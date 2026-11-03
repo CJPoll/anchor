@@ -444,6 +444,24 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
     ])
   end
 
+  # DND-5443: interface's own key, `max_width`, a positive integer.
+  defp table(:interface) do
+    base = %{"type" => "interface", "bucket" => "domain"}
+
+    :layering
+    |> table()
+    |> Enum.map(fn {label, rule, expected} ->
+      {label, Map.put(rule, "type", "interface"), expected}
+    end)
+    |> Enum.concat([
+      {"positive: max_width", Map.put(base, "max_width", 12), :accepted},
+      {"max_width: 0 (fails every context with an interface)", Map.put(base, "max_width", 0),
+       {:refused, "`max_width` must be a positive integer"}},
+      {"max_width that is not an integer", Map.put(base, "max_width", "12"),
+       {:refused, "`max_width` must be a positive integer"}}
+    ])
+  end
+
   defp table(type), do: common_rows(type)
 
   defp extra_rows(:no_direct_dependency) do

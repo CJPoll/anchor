@@ -421,6 +421,7 @@ semantics and edge cases.
 | `allowed_functions` | `module_pattern_restrictions` | Function-name allow-list (globs). |
 | `owned_namespaces` | `struct_owned_by_module` | Exact module names, default: every struct. Limits the check to structs equal to or nested under an entry, and reports a selected top-level module outside them. `[]`, a glob, an Erlang module or a malformed name fails the load. See [`struct_owned_by_module`](#struct_owned_by_module). |
 | `pure_patterns` | `no_discarded_pure_expression` | Module-name globs, default `[]`: modules whose functions are pure, beside the stdlib pure set. A non-list, a blank entry or a match-all glob (`*`, `**`) fails the load. See [`no_discarded_pure_expression`](#no_discarded_pure_expression). |
+| `max_width` | `interface` | Positive integer, optional (DND-5443): a context whose interface exports more public functions is a violation; absent, the width is only printed. `0` or a non-integer fails the load. See [`interface`](#the-interface-rule-dnd-5443). |
 | `mode`, `max_lines` | `alphabetized_functions`, `max_file_length` | Style-check parameters. `mode` is `all`, `public_only` or `separate` (a leading colon is accepted); any other token fails the load. |
 
 #### Keys each rule type accepts
@@ -438,7 +439,7 @@ another type (`match` on a `no_transitive_dependency` rule) is unknown too.
 
 The Engine column is the one engine that runs the type: `ast` rules run as
 Credo checks over source, `graph` rules run under `mix anchor.graph` over the
-compiled code (DND-5440; `layering`, DND-5442, and `context_acyclic`, DND-5445). Credo never reports a
+compiled code (DND-5440; `layering`, DND-5442, `context_acyclic`, DND-5445, and `interface`, DND-5443). Credo never reports a
 `graph` rule as unchecked.
 
 | Rule type | Keys beyond the common ones | Relation (needs one, non-empty) | Engine |
@@ -446,6 +447,7 @@ compiled code (DND-5440; `layering`, DND-5442, and `context_acyclic`, DND-5445).
 | `alphabetized_functions` | `mode` | none | `ast` |
 | `case_on_bare_arg` | none | none | `ast` |
 | `context_acyclic` | none | none | `graph` |
+| `interface` | `max_width` | none | `graph` |
 | `layering` | none | none | `graph` |
 | `max_file_length` | `max_lines` | none | `ast` |
 | `module_pattern_restrictions` | `allowed_functions` | none | `ast` |
@@ -761,6 +763,70 @@ lib/my_app/billing/manager.ex:40: [enforce] rule 1 (id: "context_acyclic", conte
 Anchor's own `.anchor.yml` runs it over `lib/`, with a baseline holding what
 it found when it landed: one cycle through the dynamic calls of
 `Anchor.Managers.Lint` on the check modules, and `Mutator`'s `apply/3`.
+
+### The `interface` rule (DND-5443)
+
+```yaml
+rules:
+  - type: interface
+    id: interface
+    paths: ["lib/**/*.ex"]
+    max_width: 40            # optional
+
+architecture:
+  contexts:
+    depth: 2
+  buckets:
+    - name: managers
+      role: managers
+      select:
+        - paths: ["lib/**/managers/**/*.ex"]
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/**/domain/**/*.ex"]
+  calls:
+    managers: [managers, domain]
+    domain: [domain]
+  interfaces:
+    buckets: [managers]      # a managers module is its context's interface
+    exports: [MyApp.Accounts.Api]
+```
+
+A call from one context into another lands only on that context's interface:
+a module of an `interfaces.buckets` bucket, or one listed in
+`interfaces.exports`. This is Anchor's replacement for Boundary's exports and
+deps: Anchor neither reads nor requires Boundary, and a repo may run both.
+Every module is classified, so no module is left outside a boundary, and
+widening an interface (`exports`, `interfaces.buckets`) is a config change a
+baseline's GREW check sees.
+
+Calls are resolved as `layering` resolves them, apps are not a bypass (a call
+from another app of an umbrella is judged the same), and a call within one
+context is not judged here. Each forbidden (caller function, callee function)
+is one violation keyed `<id>|<Caller.f/a>|-> <Callee.g/b>`; its `Fix:` names
+the one interface module that reaches the callee inside its context, or lists
+the context's interface modules. A module with no context (fewer name segments
+than `contexts.depth`) that calls or is called across contexts is one violation
+keyed `<id>|<Mod>|no context`: its boundary cannot be checked, which is never
+a pass. A call whose function name is computed is one violation too.
+
+The run summary ends with each context's interface width, the public functions
+its interface modules export (functions the compiler generates not counted),
+and `--format json` carries it as `interface_width`. With `max_width: n`, a
+context of a selected module whose width is above `n` is a violation on the
+config, keyed `<id>|<context>|width`.
+
+```
+lib/my_app/billing/invoice.ex:12: [enforce] rule 1 (id: "interface", interface) MyApp.Billing.Invoice.issue/1 (context MyApp.Billing) calls MyApp.Accounts.User.name/1, which is not part of context MyApp.Accounts's interface. Fix: call MyApp.Accounts.Users instead.
+anchor.graph: 40 modules in 1 apps, 1 rules, 1 violations (0 report-only, 0 baselined); interface width: MyApp.Accounts=6, MyApp.Billing=3
+```
+
+Anchor's own `.anchor.yml` runs it over `lib/` with a baseline. Its depth-2
+contexts are its buckets, so `interfaces.buckets` names every bucket but
+framework there, and the baseline holds what it found when it landed: the
+calls of `Anchor.Managers.Lint` into the check modules (DND-1288), the
+top-level `Anchor` module (no context at depth 2) and `Mutator`'s `apply/3`.
 
 The only file it writes is `<build_path>/anchor/graph.etf` (Mix's build path:
 `_build/<env>`, or the directory `MIX_BUILD_PATH` names), the graph keyed by

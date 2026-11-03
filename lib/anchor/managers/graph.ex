@@ -92,6 +92,7 @@ defmodule Anchor.Managers.Graph do
   alias Anchor.Domain.GraphReport
   alias Anchor.Domain.GraphReport.Finding
   alias Anchor.Domain.GraphRules
+  alias Anchor.Domain.Interfaces
   alias Anchor.Domain.Model
   alias Anchor.Domain.Violation
   alias Anchor.Managers.Graph.Request
@@ -252,13 +253,21 @@ defmodule Anchor.Managers.Graph do
       |> counts(map_size(graph.modules), length(rules), length(Model.opaque(model)))
       |> Map.put(:no_core, no_core_count(graph))
       |> Map.put(:excluded, length(outside))
-      |> Map.put(:apply_sites, GraphReport.apply_sites(model.cfa)),
+      |> Map.put(:apply_sites, GraphReport.apply_sites(model.cfa))
+      |> Map.put(:interface_width, interface_width(rules, model)),
       held: Enum.flat_map(ran, & &1.held),
       refused: Enum.flat_map(ran, & &1.refused)
     )
   end
 
   defp analyze_cfa(graph), do: Cfa.analyze(graph, Cfa.default_seed(graph))
+
+  # DND-5443 (R4): each context's interface width, printed when an interface
+  # rule ran; `nil` otherwise, so a run without one prints nothing about it.
+  defp interface_width(rules, model) do
+    if Enum.any?(rules, fn {rule, _module, _needs} -> rule.type == :interface end),
+      do: Interfaces.width(model)
+  end
 
   # The analysis runs once, and only when a rule that runs needs it: `nil`
   # when none does, else the guarded result.
@@ -579,7 +588,8 @@ defmodule Anchor.Managers.Graph do
       opaque: opaque,
       no_core: 0,
       excluded: 0,
-      apply_sites: nil
+      apply_sites: nil,
+      interface_width: nil
     }
 
   # Every function the graph has no Core body for: no call in it was read, so

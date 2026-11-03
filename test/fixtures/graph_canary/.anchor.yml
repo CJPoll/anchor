@@ -8,6 +8,9 @@ rules:
   - type: context_acyclic
     id: context_acyclic
     paths: ["lib/canary/**/*.ex"]
+  - type: interface
+    id: interface
+    paths: ["lib/canary/managers/iface_left/**/*.ex"]
 
 architecture:
   contexts:

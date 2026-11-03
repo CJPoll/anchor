@@ -10,7 +10,8 @@ defmodule Anchor.Integration.GraphCanaryTest do
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5440_graph_runner.md
   # (the CFA run, DND-5574 R7: ../../sabotage_records/graph_runner-20261103-dnd_5574_cfa_wiring.md)
   # (layering rows: ../../sabotage_records/layering-20261103-dnd_5441_graph_rules_a.md;
-  # context_acyclic rows: ../../sabotage_records/context_acyclic-20261103-dnd_5441_graph_rules_a.md)
+  # context_acyclic rows: ../../sabotage_records/context_acyclic-20261103-dnd_5441_graph_rules_a.md;
+  # interface rows: ../../sabotage_records/interface-20261103-dnd_5443_graph_rules_b.md)
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -35,7 +36,8 @@ defmodule Anchor.Integration.GraphCanaryTest do
   @stray_file "lib/canary/unclassified.ex"
   @layering_violating "lib/canary/framework/layering/violating.ex"
   @cycle_violating "lib/canary/domain/cycle/cycle_b.ex"
-  @violating [@stray_file, @layering_violating, @cycle_violating]
+  @interface_violating "lib/canary/managers/iface_left/violating.ex"
+  @violating [@stray_file, @layering_violating, @cycle_violating, @interface_violating]
 
   setup_all do
     files =
@@ -90,7 +92,9 @@ defmodule Anchor.Integration.GraphCanaryTest do
     assert %GraphReport{exit_code: 0, findings: [], could_not_check: []} = report
 
     assert GraphReport.summary(report) ==
-             "anchor.graph: 6 modules in 1 apps, 2 rules, 0 violations (0 report-only, 0 baselined)"
+             "anchor.graph: 9 modules in 1 apps, 3 rules, 0 violations (0 report-only, 0 baselined)" <>
+               "; interface width: AnchorFixtures.CycleA=0, AnchorFixtures.GraphCanary=2, " <>
+               "AnchorFixtures.IfaceLeft=1, AnchorFixtures.IfaceRight=1"
   end
 
   test "positive control: the deliberately unclassified module gives exactly one issue", %{
@@ -103,7 +107,7 @@ defmodule Anchor.Integration.GraphCanaryTest do
     assert finding.file == @stray_file
     assert finding.line == 3
     assert finding.message =~ "AnchorFixtures.GraphCanary.Stray is in no architecture bucket."
-    assert report.counts.modules == 7
+    assert report.counts.modules == 10
   end
 
   test "layering (DND-5442): the violating module gives exactly one finding, with the route", %{
@@ -197,7 +201,7 @@ defmodule Anchor.Integration.GraphCanaryTest do
     report = run(without(beams, @violating) ++ one_way)
 
     assert %GraphReport{exit_code: 0, findings: []} = report
-    assert report.counts.modules == 7
+    assert report.counts.modules == 10
   end
 
   test "R7: a rule that needs the higher-order flow analysis gets it over the canary, with no " <>
@@ -218,8 +222,30 @@ defmodule Anchor.Integration.GraphCanaryTest do
            ] == %{total: 1, resolved: 1, any: 0}
 
     assert GraphReport.summary(report) ==
-             "anchor.graph: 6 modules in 1 apps, 3 rules, 1 violations " <>
-               "(0 report-only, 0 baselined); apply sites: 2 resolved, 0 any"
+             "anchor.graph: 9 modules in 1 apps, 4 rules, 1 violations " <>
+               "(0 report-only, 0 baselined); apply sites: 2 resolved, 0 any; interface width: " <>
+               "AnchorFixtures.CycleA=0, AnchorFixtures.GraphCanary=2, " <>
+               "AnchorFixtures.IfaceLeft=1, AnchorFixtures.IfaceRight=1"
+  end
+
+  test "interface (DND-5443): the violating module gives exactly one finding, with the route", %{
+    beams: beams
+  } do
+    report = run(without(beams, @violating -- [@interface_violating]))
+
+    assert report.exit_code == 1
+    assert [finding] = report.findings
+    assert finding.file == @interface_violating
+    assert finding.line == 7
+    assert finding.rule_id == "interface"
+
+    assert finding.key ==
+             "interface|AnchorFixtures.IfaceLeft.Violating.run/1|-> " <>
+               "AnchorFixtures.IfaceRight.Rules.allowed?/1"
+
+    assert finding.message =~
+             "which is not part of context AnchorFixtures.IfaceRight's interface. Fix: call " <>
+               "AnchorFixtures.IfaceRight.Api instead."
   end
 
   defp without(beams, files), do: Enum.reject(beams, &(&1.elixir.relative_file in files))

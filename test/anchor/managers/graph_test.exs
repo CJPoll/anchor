@@ -192,7 +192,8 @@ defmodule Anchor.Managers.GraphTest do
                opaque: 0,
                no_core: 0,
                excluded: 0,
-               apply_sites: nil
+               apply_sites: nil,
+               interface_width: nil
              }
     end
 
@@ -325,7 +326,8 @@ defmodule Anchor.Managers.GraphTest do
                opaque: 0,
                no_core: 0,
                excluded: 0,
-               apply_sites: nil
+               apply_sites: nil,
+               interface_width: nil
              }
     end
 

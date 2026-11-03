@@ -22,7 +22,9 @@ defmodule Anchor.Domain.GraphReport do
       outside the project root, left out of the graph (DND-5588; each is
       also a report-only finding naming it); `apply_sites` is `nil` when no
       rule that ran needed the higher-order flow analysis (DND-5574), else
-      `apply_sites/1` of it.
+      `apply_sites/1` of it; `interface_width` is `nil` when no `interface`
+      rule ran (DND-5443), else `%{context => public functions on its
+      interface}` (`Anchor.Domain.Interfaces.width/1`).
     * `exit_code` — `exit_code/1`.
 
   ## Exit code
@@ -42,7 +44,9 @@ defmodule Anchor.Domain.GraphReport do
   each held one prints as `path:line: [held] <label> <message>`. When the run
   computed the higher-order flow analysis, the summary ends with `; apply
   sites: <r> resolved, <a> any`, and with `(step bound hit: every site reads
-  any)` after it when the analysis hit its bound (DND-5574, R6).
+  any)` after it when the analysis hit its bound (DND-5574, R6). When an
+  `interface` rule ran, it ends with `; interface width: <context>=<n>, ...`,
+  by context (DND-5443, R4).
   """
 
   alias Anchor.Domain.Cfa
@@ -59,7 +63,8 @@ defmodule Anchor.Domain.GraphReport do
               opaque: 0,
               no_core: 0,
               excluded: 0,
-              apply_sites: nil
+              apply_sites: nil,
+              interface_width: nil
             },
             exit_code: 0
 
@@ -84,7 +89,8 @@ defmodule Anchor.Domain.GraphReport do
           required(:opaque) => non_neg_integer(),
           required(:no_core) => non_neg_integer(),
           required(:excluded) => non_neg_integer(),
-          required(:apply_sites) => apply_sites() | nil
+          required(:apply_sites) => apply_sites() | nil,
+          optional(:interface_width) => %{String.t() => non_neg_integer()} | nil
         }
 
   @type t :: %__MODULE__{
@@ -171,6 +177,7 @@ defmodule Anchor.Domain.GraphReport do
       "no_core" => report.counts.no_core,
       "excluded" => report.counts.excluded,
       "apply_sites" => apply_sites_json(report.counts.apply_sites),
+      "interface_width" => Map.get(report.counts, :interface_width),
       "exit_code" => report.exit_code,
       "findings" => Enum.map(report.findings, &Finding.to_json/1),
       "could_not_check" => Enum.map(report.could_not_check, &Finding.to_json/1),
@@ -195,7 +202,7 @@ defmodule Anchor.Domain.GraphReport do
     "anchor.graph: #{counts.modules} modules#{notes(counts)} in #{counts.apps} apps, " <>
       "#{counts.rules} rules, #{violations} violations " <>
       "(#{length(report_only)} report-only, #{length(report.held)} baselined)" <>
-      apply_sites_note(counts.apply_sites)
+      apply_sites_note(counts.apply_sites) <> width_note(Map.get(counts, :interface_width))
   end
 
   defp apply_sites_json(nil), do: nil
@@ -218,6 +225,15 @@ defmodule Anchor.Domain.GraphReport do
 
   defp apply_sites_note(%{resolved: resolved, any: any, bound_hit?: bound_hit?}),
     do: "; apply sites: #{resolved} resolved, #{any} any#{bound_note(bound_hit?)}"
+
+  # `nil`: no interface rule ran (DND-5443).
+  defp width_note(nil), do: ""
+  defp width_note(widths) when map_size(widths) == 0, do: "; interface width: no context"
+
+  defp width_note(widths) do
+    "; interface width: " <>
+      (widths |> Enum.sort() |> Enum.map_join(", ", fn {context, n} -> "#{context}=#{n}" end))
+  end
 
   defp bound_note(true), do: " (step bound hit: every site reads any)"
   defp bound_note(false), do: ""
