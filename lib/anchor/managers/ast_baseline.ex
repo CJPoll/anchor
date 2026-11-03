@@ -115,7 +115,7 @@ defmodule Anchor.Managers.AstBaseline do
     case lint_keys.keys() do
       {:ok, %{keys: keys, rule_ids: ids}} ->
         if rule.id in ids,
-          do: {:ok, Enum.filter(keys, &String.starts_with?(&1, rule.id <> "|"))},
+          do: {:ok, for({id, key} <- keys, id == rule.id, do: key)},
           else: report([Failures.ast_check_not_enabled(rule, config_file)], 1, 3)
 
       {:error, reason} ->

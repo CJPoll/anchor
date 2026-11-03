@@ -22,8 +22,7 @@ defmodule Anchor.Adapters.CredoKeys do
       %Credo.Execution{} = exec ->
         issues = Credo.Execution.get_issues(exec)
 
-        {:ok,
-         %{keys: meta(issues, :anchor_key), rule_ids: Enum.uniq(meta(issues, :anchor_rule_id))}}
+        {:ok, %{keys: rule_keys(issues), rule_ids: Enum.uniq(meta(issues, :anchor_rule_id))}}
     end
   end
 
@@ -42,6 +41,15 @@ defmodule Anchor.Adapters.CredoKeys do
     after
       GenServer.call(Shell, {:suppress_output, false})
     end
+  end
+
+  defp rule_keys(issues) do
+    for %Credo.Issue{meta: meta} <- issues,
+        meta = List.wrap(meta),
+        key = Keyword.get(meta, :anchor_key),
+        rule_id = Keyword.get(meta, :anchor_rule_id),
+        is_binary(key) and is_binary(rule_id),
+        do: {rule_id, key}
   end
 
   defp meta(issues, name) do

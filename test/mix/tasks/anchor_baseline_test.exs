@@ -52,7 +52,7 @@ defmodule Mix.Tasks.Anchor.BaselineTest do
     expect(BaselineStoreMock, :read, fn _root, @path -> {:error, :enoent} end)
 
     expect(LintKeysMock, :keys, fn ->
-      {:ok, %{keys: ["pure|lib/a.ex|File"], rule_ids: ["pure"]}}
+      {:ok, %{keys: [{"pure", "pure|lib/a.ex|File"}], rule_ids: ["pure"]}}
     end)
 
     expect(BaselineStoreMock, :create, fn root, @path, contents ->

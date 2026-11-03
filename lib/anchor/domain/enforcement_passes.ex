@@ -32,32 +32,55 @@ defmodule Anchor.Domain.EnforcementPasses do
   end
 
   @doc """
-  One copy of each violation in `violations` (same file, line, trigger, kind
-  and message), in first-seen order: the enforced copy when any copy is
-  enforced, so a finding never fails less for having been found twice
-  (DND-5632: a baselined ast rule is detected on its own pass, after the
-  ratchet has judged each pass's keyed copies).
+  A file's violations once a baselined rule's own pass is among them
+  (DND-5632), each finding printed once without losing what it means:
+
+    * a keyed copy (a baselined rule's finding, carrying its key) is always
+      kept: it is that rule's finding, and its key is what `mix
+      anchor.baseline --write` writes, so two baselined rules making one
+      finding print it once each;
+    * an unkeyed copy is dropped when a kept copy of the same finding (same
+      file, line, trigger, kind and message) fails at least as hard: an
+      enforced copy covers any, a report copy covers only a report one. So a
+      report rule's copy never hides an enforced finding, and an enforced
+      rule's copy is never dropped for a report one.
+
+  Order is first-seen.
   """
   @spec unique([Violation.t()]) :: [Violation.t()]
   def unique(violations) do
-    enforced =
-      for %Violation{enforcement: :enforce} = v <- violations,
-          into: MapSet.new(),
-          do: identity(v)
+    keyed = Enum.reject(violations, &is_nil(&1.key))
 
-    {kept, _seen} =
-      Enum.flat_map_reduce(violations, MapSet.new(), fn v, seen ->
-        id = identity(v)
-
+    {kept, _covered} =
+      Enum.flat_map_reduce(violations, coverage(keyed), fn v, covered ->
         cond do
-          MapSet.member?(seen, id) -> {[], seen}
-          v.enforcement == :report and MapSet.member?(enforced, id) -> {[], seen}
-          true -> {[v], MapSet.put(seen, id)}
+          not is_nil(v.key) ->
+            {[v], covered}
+
+          covers?(Map.get(covered, identity(v)), v.enforcement) ->
+            {[], covered}
+
+          true ->
+            {[v], Map.update(covered, identity(v), v.enforcement, &strongest(&1, v.enforcement))}
         end
       end)
 
     kept
   end
+
+  # Per finding, the strongest enforcement among `violations`.
+  defp coverage(violations) do
+    Enum.reduce(violations, %{}, fn v, acc ->
+      Map.update(acc, identity(v), v.enforcement, &strongest(&1, v.enforcement))
+    end)
+  end
+
+  defp covers?(nil, _enforcement), do: false
+  defp covers?(:enforce, _enforcement), do: true
+  defp covers?(:report, enforcement), do: enforcement == :report
+
+  defp strongest(:enforce, _other), do: :enforce
+  defp strongest(_report, other), do: other
 
   defp identities(violations), do: MapSet.new(violations, &identity/1)
 

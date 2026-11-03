@@ -7,8 +7,8 @@ defmodule Anchor.Adapters.LintKeys do
   (`Anchor.LintKeysMock`).
 
   `keys/0` runs every check `.credo.exs` enables over the whole file set,
-  from the working directory, and returns the key of every finding that has
-  one (a finding of an ast rule with a `baseline:`,
+  from the working directory, and returns `{rule_id, key}` for every finding
+  that has a key (a finding of an ast rule with a `baseline:`,
   `Anchor.Domain.ViolationKey.ast_key/3`) and the ids of the baselined rules
   some check judged (each finding and each baseline issue names its rule): a
   rule whose check is not enabled is in neither. It never returns a Credo
@@ -16,5 +16,6 @@ defmodule Anchor.Adapters.LintKeys do
   """
 
   @callback keys() ::
-              {:ok, %{keys: [String.t()], rule_ids: [String.t()]}} | {:error, term()}
+              {:ok, %{keys: [{String.t(), String.t()}], rule_ids: [String.t()]}}
+              | {:error, term()}
 end

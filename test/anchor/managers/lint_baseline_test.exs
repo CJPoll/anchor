@@ -234,7 +234,9 @@ defmodule Anchor.Managers.LintBaselineTest do
 
       unresolved = Enum.filter(violations, &(&1.message =~ "cannot statically resolve"))
       assert length(unresolved) == 1, inspect(violations)
-      assert Enum.all?(violations, &is_nil(&1.key))
+      # The baselined rule's keyed copy is the one kept: it is NEW (its
+      # baseline holds only File), and its key is what --write would write.
+      assert [%Violation{key: "pure|lib/c.ex|alias"}] = unresolved
     end
   end
 
@@ -266,6 +268,18 @@ defmodule Anchor.Managers.LintBaselineTest do
         run([Map.put(@plain, :enforcement, :report), rule()], files([{@b, "lib/b.ex"}]))
 
       assert [{_file, [%Violation{enforcement: :report, key: nil}]}] = results
+    end
+
+    test "with no baseline yet, two report rules' finding keeps the baselined rule's key (for --write)" do
+      expect(BaselineStoreMock, :read, fn @root, @path -> {:error, :enoent} end)
+
+      results =
+        run(
+          [Map.put(@plain, :enforcement, :report), rule(%{enforcement: :report})],
+          files([{@b, "lib/b.ex"}])
+        )
+
+      assert [{"lib/b.ex", "File", "pure|lib/b.ex|File"}] = findings(results)
     end
 
     test "two baselined rules each judge their own copy: both held, no false STALE" do

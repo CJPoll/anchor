@@ -53,7 +53,12 @@ defmodule Anchor.Managers.AstBaselineTest do
       expect(LintKeysMock, :keys, fn ->
         {:ok,
          %{
-           keys: ~w(pure|lib/b.ex|File other|lib/a.ex|IO pure|lib/a.ex|File),
+           keys: [
+             {"pure", "pure|lib/b.ex|File"},
+             {"other", "other|lib/a.ex|IO"},
+             {"pure", "pure|lib/a.ex|File"},
+             {"pure|x", "pure|x|lib/c.ex|File"}
+           ],
            rule_ids: ["pure"]
          }}
       end)

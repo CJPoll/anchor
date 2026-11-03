@@ -68,6 +68,27 @@ defmodule Anchor.Domain.EnforcementPassesTest do
                EnforcementPasses.unique([reported, enforced])
     end
 
+    test "a keyed copy is kept over an unkeyed one of the same enforcement (its key is written)" do
+      plain = v("a", %{enforcement: :report})
+      keyed = v("a", %{enforcement: :report, key: "pure|lib/a.ex|alias", rule_id: "pure"})
+
+      assert [%Violation{key: "pure|lib/a.ex|alias"}] = EnforcementPasses.unique([plain, keyed])
+    end
+
+    test "two baselined rules' keyed copies are both kept" do
+      a = v("a", %{key: "pure|lib/a.ex|alias", rule_id: "pure"})
+      b = v("a", %{key: "other|lib/a.ex|alias", rule_id: "other"})
+
+      assert EnforcementPasses.unique([a, b]) == [a, b]
+    end
+
+    test "an enforced unkeyed copy is kept beside a report keyed copy" do
+      plain = v("a")
+      keyed = v("a", %{enforcement: :report, key: "pure|lib/a.ex|alias", rule_id: "pure"})
+
+      assert EnforcementPasses.unique([plain, keyed]) == [plain, keyed]
+    end
+
     test "two report copies stay one report copy" do
       reported = v("a", %{enforcement: :report})
       assert [%Violation{enforcement: :report}] = EnforcementPasses.unique([reported, reported])
