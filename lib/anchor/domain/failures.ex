@@ -436,6 +436,36 @@ defmodule Anchor.Domain.Failures do
   end
 
   @doc """
+  The issue for an `aggregate_write_sources` rule when the project has no
+  Ecto repo (DND-5459), on the config: no write could be found, so the rule
+  would check nothing. Fail-closed: never baselined, never report-only.
+  """
+  @spec aggregate_no_repo(map(), String.t() | nil) :: Violation.t()
+  def aggregate_no_repo(rule, config_path) do
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "#{rule_label(rule)}: no Ecto repo found: no module declares @behaviour Ecto.Repo and " <>
+        "aggregates.repos is empty. Fix: list the repo under aggregates.repos."
+    )
+  end
+
+  @doc """
+  The issue for an `aggregate_write_sources` rule that finds no write in the
+  modules it selects (DND-5459), on the config. Fail-closed, like a rule
+  below its floor.
+  """
+  @spec aggregate_writes_none(map(), String.t(), String.t() | nil) :: Violation.t()
+  def aggregate_writes_none(rule, selector, config_path) do
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "#{rule_label(rule)} checks nothing: no write found in #{selector}. " <>
+        "Fix: correct the selector or aggregates.repos."
+    )
+  end
+
+  @doc """
   The issue for a graph rule whose `check/2` raised, threw or exited
   (DND-5440): one issue naming the rule and the reason (at most
   #{@crash_reason_limit} characters, with the frame that raised). The other

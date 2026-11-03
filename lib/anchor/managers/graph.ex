@@ -54,7 +54,9 @@ defmodule Anchor.Managers.Graph do
     9. return the `%Anchor.Domain.GraphReport{}`, with the apply-site
        counts (`GraphReport.apply_sites/1`) when the analysis ran, and the
        declared aggregates' counts (`Anchor.Domain.Aggregates.Index`,
-       DND-5476) when any is declared.
+       DND-5476) when any is declared, and the write analysis's counts
+       (`Anchor.Domain.Aggregates.Analysis`, DND-5459) when it ran with a
+       repo.
 
   Every per-module problem is an issue on that module (exit 1), never a
   skipped module: a beam it could not decode, a module whose graph walk
@@ -85,6 +87,7 @@ defmodule Anchor.Managers.Graph do
   alias Anchor.Adapters.GraphArtifact
   alias Anchor.Adapters.SourceReader
   alias Anchor.Config
+  alias Anchor.Domain.Aggregates.Analysis
   alias Anchor.Domain.Aggregates.Index
   alias Anchor.Domain.Baseline
   alias Anchor.Domain.BaselineBase
@@ -249,7 +252,8 @@ defmodule Anchor.Managers.Graph do
       |> Map.put(:no_core, no_core_count(graph))
       |> Map.put(:outside_root, outside_root_count(beams, request))
       |> Map.put(:apply_sites, GraphReport.apply_sites(model.cfa))
-      |> put_aggregates(model.aggregates),
+      |> put_aggregates(model.aggregates)
+      |> put_writes(model.aggregate_analysis),
       held: Enum.flat_map(ran, & &1.held),
       refused: Enum.flat_map(ran, & &1.refused)
     )
@@ -266,6 +270,12 @@ defmodule Anchor.Managers.Graph do
         Map.put(counts, :aggregates, %{declared: declared, tables_unknown: index.tables_unknown})
     end
   end
+
+  # DND-5459: the write analysis's counts, when the run made one with a repo.
+  defp put_writes(counts, %Analysis{no_repo?: false, counts: writes}),
+    do: Map.put(counts, :writes, writes)
+
+  defp put_writes(counts, _none), do: counts
 
   defp analyze_cfa(graph), do: Cfa.analyze(graph, Cfa.default_seed(graph))
 

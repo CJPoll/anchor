@@ -192,6 +192,9 @@ defmodule Anchor.Domain.RuleSchema do
     # DND-5476: aggregate_declarations reads only the graph common keys (the
     # declarations are the `aggregates:` section's and the modules').
     aggregate_declarations: [],
+    # DND-5459: aggregate_write_sources reads only the graph common keys (its
+    # repos, write and transaction functions are the `aggregates:` section's).
+    aggregate_write_sources: [],
     alphabetized_functions: ~w(mode),
     case_on_bare_arg: [],
     # DND-5445: context_acyclic reads only the graph common keys (the contexts
@@ -222,6 +225,7 @@ defmodule Anchor.Domain.RuleSchema do
   # the type has no relation to require (see the moduledoc for why, per type).
   @relations_by_type %{
     aggregate_declarations: [],
+    aggregate_write_sources: [],
     alphabetized_functions: [],
     case_on_bare_arg: [],
     context_acyclic: [],
@@ -246,6 +250,7 @@ defmodule Anchor.Domain.RuleSchema do
   # authoritative engine per type; compilation fails when a type has none.
   @engine_by_type %{
     aggregate_declarations: :graph,
+    aggregate_write_sources: :graph,
     alphabetized_functions: :ast,
     case_on_bare_arg: :ast,
     context_acyclic: :graph,
@@ -266,6 +271,11 @@ defmodule Anchor.Domain.RuleSchema do
   }
 
   @engines [:ast, :graph]
+
+  # DND-5459: the graph types that read the write analysis, which only an
+  # `aggregates:` section configures; a config enabling one without the section
+  # is refused at load (`Anchor.Config`). Later aggregate rules add theirs.
+  @needs_aggregates [:aggregate_write_sources]
 
   @relation_descriptions %{
     "forbidden_functions" => ~s(a list of "Module.function" or "Module.function/arity"),
@@ -357,6 +367,10 @@ defmodule Anchor.Domain.RuleSchema do
   @spec known_keys(atom()) :: [String.t()]
   def known_keys(type),
     do: Enum.sort(common_keys(engine(type)) ++ Map.fetch!(@keys_by_type, type))
+
+  @doc "Whether a rule of `type` needs the `aggregates:` section (DND-5459)."
+  @spec needs_aggregates?(atom()) :: boolean()
+  def needs_aggregates?(type), do: type in @needs_aggregates
 
   @doc """
   The relation keys of `type`, sorted: a rule of the type must carry at least

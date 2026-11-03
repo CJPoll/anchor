@@ -439,13 +439,15 @@ another type (`match` on a `no_transitive_dependency` rule) is unknown too.
 
 The Engine column is the one engine that runs the type: `ast` rules run as
 Credo checks over source, `graph` rules run under `mix anchor.graph` over the
-compiled code (DND-5440; `layering`, DND-5442, `context_acyclic`, DND-5445, and
-`aggregate_declarations`, DND-5476). Credo never reports a
+compiled code (DND-5440; `layering`, DND-5442, `context_acyclic`, DND-5445,
+`aggregate_declarations`, DND-5476, and `aggregate_write_sources`, DND-5459).
+Credo never reports a
 `graph` rule as unchecked.
 
 | Rule type | Keys beyond the common ones | Relation (needs one, non-empty) | Engine |
 |---|---|---|---|
 | `aggregate_declarations` | none | none | `graph` |
+| `aggregate_write_sources` | none | none | `graph` |
 | `alphabetized_functions` | `mode` | none | `ast` |
 | `case_on_bare_arg` | none | none | `ast` |
 | `context_acyclic` | none | none | `graph` |
@@ -609,7 +611,7 @@ and a `bucket` must name one of its buckets; both are refused at load
 otherwise. `uses_module`, `recursive` and `min_files` are `ast` keys and are
 refused on a graph rule. A finding of a rule with `enforcement: report` prints
 `[report]` and does not fail the run. `--format json` prints `{"modules",
-"apps", "rules", "opaque", "no_core", "outside_root", "apply_sites", "aggregates", "exit_code",
+"apps", "rules", "opaque", "no_core", "outside_root", "apply_sites", "aggregates", "writes", "exit_code",
 "findings":
 [{rule_id, type, enforcement, key, file, line, message, fix}],
 "could_not_check": [...], "refused": [...], "held": [...]}`. `--only RULE_ID` (repeatable) runs only the
@@ -934,6 +936,71 @@ Anchor's own `.anchor.yml` does not run the rule: Anchor has no database and
 declares no aggregate, so the rule could only say it checks nothing, which
 fails the run in either enforcement mode.
 
+### Writes and transactions: the `aggregate_write_sources` rule (DND-5459)
+
+With an `aggregates:` section, `mix anchor.graph` reads every database write
+and transaction from the compiled code (each function's Core Erlang, so an
+alias, a pipe and an `@repo` attribute are already resolved):
+
+- **Repos** are the modules whose beam declares `@behaviour Ecto.Repo`, plus
+  `aggregates.repos`.
+- **Writes** are the `Repo` writes on a repo (`insert`, `insert!`, `update`,
+  `update!`, `delete`, `delete!`, `insert_or_update`, `insert_or_update!`,
+  `insert_all`, `update_all`, `delete_all`), the `Ecto.Multi` writes (the same
+  without bangs), every `aggregates.write_functions` entry, and a `Repo` write
+  on the repo argument of a `Multi.run` callback.
+- **Each write's source** (its schema or table) is traced through Core: a
+  struct, a changeset built from one, a schema module, a call on a schema, a
+  `from` query, a literal table, `{table, schema}`, a parameter whose `@spec`
+  is `Schema.t()`, or else the arguments every project caller passes. Anything
+  else is **unresolved**, reported with what was seen, never dropped.
+- **Transactions** are `Repo.transaction/1,2` (and `Repo.transact/1,2` when the
+  repo exports it) and every `aggregates.transaction_functions` call, given a
+  function, a capture or an `Ecto.Multi`. A transaction's write set is the
+  writes in its body and those of every project function it calls,
+  transitively. A call Anchor cannot resolve, or an unresolved write, makes it
+  **incomplete**. Calls into dependencies are not followed.
+
+The summary line ends `; writes: <W> found, <R> resolved, <U> unresolved;
+transactions: <S>, <C> complete, <I> incomplete` (the JSON's `writes`), so an
+unresolved write or an incomplete transaction is always counted.
+
+```yaml
+rules:
+  - type: aggregate_write_sources
+    id: aggregate_write_sources
+    paths: ["lib/**/*.ex"]
+
+aggregates:
+  repos: [MyApp.Repo]
+
+architecture:
+  contexts:
+    depth: 2
+  buckets:
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/**/*.ex"]
+  calls:
+    domain: [domain]
+```
+
+| Finding | Example message |
+|---|---|
+| A write whose source is unresolved (at the write) | `Repo.insert in MyApp.X.save/1 writes a value Anchor cannot trace to a schema or table (parameter 1 of MyApp.X.save/1 has no @spec and no project caller). Fix: pass a struct, changeset or schema the call can see; add @spec with Schema.t() for the parameter; or list a wrapper under aggregates.write_functions.` |
+| An incomplete transaction (at the transaction) | `transaction 1 in MyApp.X.run/1 reaches 1 call(s) Anchor cannot resolve (first: MyApp.X.run/1 line 12), so its write set is incomplete. Fix: call a named function instead of a variable, ...` |
+
+The key is `<id>|<M.f/a>|unresolved <op> <seen>` or `<id>|<M.f/a>|incomplete
+<ordinal>`, where the ordinal is the transaction's position in its function:
+no line number. The rule's selector chooses whose findings are reported.
+
+`Anchor.Domain.Aggregates.Inference` turns the analysis into proposed
+aggregates: the connected components of the co-write graph (each
+transaction's written schemas are written together), printed as the exact
+`aggregates:` YAML above. `mix anchor.propose --level aggregate` prints it
+once DND-5449's `mix anchor.propose` lands.
+
 ### Graph rows of the fail-closed table
 
 Like the Credo checks, the graph engine fails closed: a run that could not
@@ -968,6 +1035,10 @@ line.
 | An `aggregates:` section of the wrong shape (DND-5476) | 3 | the config path | `aggregates.declare[1].schemas must be a list of exact module names: "MyApp.*" is not an exact Elixir module name (no glob, no Erlang module). Fix: name each module in full, as its defmodule spells it; aggregates: declare: - name: <Aggregate>, ...` |
 | An `aggregate_declarations` rule with no aggregate declared anywhere (DND-5476) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "aggregate_declarations", aggregate_declarations) checks nothing: no aggregate is declared in .anchor.yml or by an @anchor_aggregate attribute. Fix: declare one or remove the rule: ...` |
 | A schema whose `__schema__(:source)` is not a literal (DND-5476) | 0 | the summary | counted as `; aggregates: <N> declared, <U> tables unknown`, never dropped |
+| An `aggregate_write_sources` rule with no `aggregates:` section (DND-5459) | 3 | the config path | `rule 1 (id: "aggregate_write_sources"): aggregate_write_sources needs an aggregates: section in .anchor.yml. Fix: add aggregates: (repos:, declare:) or remove the rule.` |
+| An `aggregate_write_sources` rule in a project with no Ecto repo (DND-5459) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "aggregate_write_sources", aggregate_write_sources): no Ecto repo found: no module declares @behaviour Ecto.Repo and aggregates.repos is empty. Fix: list the repo under aggregates.repos.` |
+| An `aggregate_write_sources` rule whose modules hold no write (DND-5459) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "aggregate_write_sources", aggregate_write_sources) checks nothing: no write found in paths ["lib/**/*.ex"]. Fix: correct the selector or aggregates.repos.` |
+| A write Anchor cannot trace, or a transaction that reaches one or a call it cannot resolve (DND-5459) | the rule's enforcement | the write or transaction | an `aggregate_write_sources` finding, and counted in the summary as `; writes: ... unresolved; transactions: ... incomplete` |
 | A graph rule below its `min_modules` | 1 | the config | `rule 2 (id: "web", layering) selects 0 modules, below min_modules 1. Fix: correct the selector; ...` |
 | A graph rule that raises, throws or exits | 1 | the config | `rule 2 (id: "web", layering) could not run: RuntimeError: ... Fix: this is an Anchor bug; file it with this line.` The other rules still run. |
 | A `baseline:` file that is missing, unreadable, not UTF-8, or holds another rule's entry | 1 | the baseline path | `rule 2 (id: "web", layering)'s baseline .anchor/baselines/web.txt could not be read (:enoent), so none of its findings is held. Fix: create it with mix anchor.graph --write-baseline web ...` |

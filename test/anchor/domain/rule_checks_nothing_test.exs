@@ -30,6 +30,7 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
   # The DND-5441 rows (enforcement, ast baseline, the graph common keys):
   #   ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
   # DND-5476 (aggregate_declarations rows): ../../sabotage_records/aggregates-20261103-dnd_5476_aggregate_decls.md
+  # DND-5459 (aggregate_write_sources rows): ../../sabotage_records/aggregates-20261103-dnd_5459_write_sets.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config
@@ -429,7 +430,13 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
   # Their rows are the graph common rows, loaded through
   # `Config.parse_config/1` with an `architecture:` section (`parse_one/1`),
   # plus what only a whole document decides.
-  defp table(type) when type in [:aggregate_declarations, :layering, :context_acyclic] do
+  defp table(type)
+       when type in [
+              :aggregate_declarations,
+              :aggregate_write_sources,
+              :layering,
+              :context_acyclic
+            ] do
     name = Atom.to_string(type)
     base = %{"type" => name, "bucket" => "domain"}
 
@@ -603,10 +610,17 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
   end
 
   # A graph rule needs the `architecture:` section (DND-5441), so its rows
-  # load beside one that has a `domain` bucket.
+  # load beside one that has a `domain` bucket; a rule that reads the write
+  # analysis needs an `aggregates:` section too (DND-5459).
   defp document(rule, :ast), do: %{"rules" => [rule]}
 
-  defp document(rule, :graph) do
+  defp document(%{"type" => type} = rule, :graph) do
+    if RuleSchema.needs_aggregates?(String.to_existing_atom(type)),
+      do: Map.put(graph_document(rule), "aggregates", %{"repos" => ["MyApp.Repo"]}),
+      else: graph_document(rule)
+  end
+
+  defp graph_document(rule) do
     %{
       "rules" => [rule],
       "architecture" => %{

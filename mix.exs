@@ -35,7 +35,10 @@ defmodule Anchor.MixProject do
       {:yaml_elixir, "~> 2.9"},
       {:sourceror, "~> 1.7"},
       {:ex_doc, "~> 0.31", only: :dev, runtime: false},
-      {:hammox, "~> 0.7", only: :test}
+      {:hammox, "~> 0.7", only: :test},
+      # DND-5459: real Ecto macro shapes (use Ecto.Schema, from/2, Ecto.Multi) for
+      # the aggregate write-source fixtures; never a runtime dependency.
+      {:ecto, "~> 3.12", only: :test}
     ]
   end
 

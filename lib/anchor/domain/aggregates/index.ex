@@ -144,6 +144,15 @@ defmodule Anchor.Domain.Aggregates.Index do
     end
   end
 
+  @doc """
+  The non-empty UTF-8 string a Core node is: a literal binary, or a binary
+  built of literal byte segments (how Elixir's string literals look in Core
+  under `:no_copt`). `{:ok, string}`, else `:unknown`. DND-5459 reads table
+  names this way too.
+  """
+  @spec string_literal(:cerl.cerl()) :: {:ok, String.t()} | :unknown
+  def string_literal(node), do: literal_string(node)
+
   # --- collecting ---------------------------------------------------------
 
   defp config_declarations(nil), do: []

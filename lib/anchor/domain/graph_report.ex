@@ -24,7 +24,10 @@ defmodule Anchor.Domain.GraphReport do
       rule that ran needed the higher-order flow analysis (DND-5574), else
       `apply_sites/1` of it; `aggregates` (optional, DND-5476) is
       `%{declared, tables_unknown}` when any aggregate is declared, and the
-      JSON's `aggregates` is `null` otherwise.
+      JSON's `aggregates` is `null` otherwise; `writes` (optional, DND-5459)
+      is the write analysis's counts (`Anchor.Domain.Aggregates.Analysis`)
+      when the run made one with a repo, and the JSON's `writes` is `null`
+      otherwise.
     * `exit_code` — `exit_code/1`.
 
   ## Exit code
@@ -87,7 +90,15 @@ defmodule Anchor.Domain.GraphReport do
           required(:no_core) => non_neg_integer(),
           required(:outside_root) => non_neg_integer(),
           required(:apply_sites) => apply_sites() | nil,
-          optional(:aggregates) => %{declared: pos_integer(), tables_unknown: non_neg_integer()}
+          optional(:aggregates) => %{declared: pos_integer(), tables_unknown: non_neg_integer()},
+          optional(:writes) => %{
+            writes: non_neg_integer(),
+            resolved: non_neg_integer(),
+            unresolved: non_neg_integer(),
+            scopes: non_neg_integer(),
+            complete: non_neg_integer(),
+            incomplete: non_neg_integer()
+          }
         }
 
   @type t :: %__MODULE__{
@@ -175,6 +186,7 @@ defmodule Anchor.Domain.GraphReport do
       "outside_root" => report.counts.outside_root,
       "apply_sites" => apply_sites_json(report.counts.apply_sites),
       "aggregates" => aggregates_json(Map.get(report.counts, :aggregates)),
+      "writes" => writes_json(Map.get(report.counts, :writes)),
       "exit_code" => report.exit_code,
       "findings" => Enum.map(report.findings, &Finding.to_json/1),
       "could_not_check" => Enum.map(report.could_not_check, &Finding.to_json/1),
@@ -190,7 +202,9 @@ defmodule Anchor.Domain.GraphReport do
   every `:report` finding and `H` every held one. Opaque (Erlang) modules,
   functions with no Core body and modules compiled from outside the root are
   counted when there are any, and so are declared aggregates (DND-5476:
-  `; aggregates: <N> declared, <U> tables unknown`).
+  `; aggregates: <N> declared, <U> tables unknown`) and the write analysis
+  (DND-5459: `; writes: <W> found, <R> resolved, <U> unresolved;
+  transactions: <S>, <C> complete, <I> incomplete`).
   """
   @spec summary(t()) :: String.t()
   def summary(%__MODULE__{counts: counts} = report) do
@@ -200,8 +214,25 @@ defmodule Anchor.Domain.GraphReport do
     "anchor.graph: #{counts.modules} modules#{notes(counts)} in #{counts.apps} apps, " <>
       "#{counts.rules} rules, #{violations} violations " <>
       "(#{length(report_only)} report-only, #{length(report.held)} baselined)" <>
-      apply_sites_note(counts.apply_sites) <> aggregates_note(Map.get(counts, :aggregates))
+      apply_sites_note(counts.apply_sites) <>
+      aggregates_note(Map.get(counts, :aggregates)) <> writes_note(Map.get(counts, :writes))
   end
+
+  # DND-5459: every write and transaction the analysis found, and how many it
+  # could not judge: an unresolved write or an incomplete transaction is
+  # counted, never read as clean.
+  defp writes_note(nil), do: ""
+
+  defp writes_note(writes) do
+    "; writes: #{writes.writes} found, #{writes.resolved} resolved, " <>
+      "#{writes.unresolved} unresolved; transactions: #{writes.scopes}, " <>
+      "#{writes.complete} complete, #{writes.incomplete} incomplete"
+  end
+
+  defp writes_json(nil), do: nil
+
+  defp writes_json(writes),
+    do: Map.new(writes, fn {key, value} -> {Atom.to_string(key), value} end)
 
   # DND-5476: when any aggregate is declared, how many, and how many of their
   # schemas' tables could not be read (a `__schema__(:source)` that is not a

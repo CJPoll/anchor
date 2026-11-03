@@ -142,8 +142,9 @@ Extension rule:
 Every rule type has exactly one engine, `@engine_by_type` in
 `Anchor.Domain.RuleSchema` (DND-5437): `:ast` (a Credo check) or `:graph`
 (`mix anchor.graph`, DND-5440; the graph types are `layering`, DND-5442,
-`context_acyclic`, DND-5445, and `aggregate_declarations`, DND-5476). A new rule type adds its entry there too (compilation
-fails without it) and to the README table's Engine column (a test compares
+`context_acyclic`, DND-5445, `aggregate_declarations`, DND-5476, and
+`aggregate_write_sources`, DND-5459). A new rule type adds its entry there too
+(compilation fails without it) and to the README table's Engine column (a test compares
 them). Credo never reports a `:graph` rule as unchecked
 (`RuleCoverage.unchecked/3`).
 
@@ -168,6 +169,26 @@ a table in `test/anchor/domain/architecture_checks_nothing_test.exs` (a test
 fails until it does). `Anchor.Domain.Classification` classifies a module's facts
 into exactly one bucket, with no precedence between buckets; the graph runner
 (below) reads the section at run time.
+
+## Writes and transactions (DND-5459)
+
+With an `aggregates:` section, `Anchor.Domain.Model` builds
+`aggregate_analysis` (`Anchor.Domain.Aggregates.Analysis`): every database
+write, what it writes, every transaction's write set over its call closure,
+and the writes outside transactions, all read from Core.
+`Aggregates.FunctionWalk` is the one walk over a function's Core (node ids,
+`let`/`case` bindings, transaction-body tags); `WriteSites` finds the repos,
+writes, transactions and calls; `WriteSource` traces a write's source (rules
+1-9 in its moduledoc; a new Core shape goes there with a row in
+`write_source_test.exs`); `Scopes` and `NonTransactional` summarise per SCC;
+`Inference` proposes aggregates and renders the `aggregates:` YAML. Nothing is
+loaded or called. An unresolved write or a dynamic call is a gap, counted in
+the summary (`; writes: ...; transactions: ...`), never dropped; no repo is a
+fail-closed issue of the `aggregate_write_sources` rule, and a rule type in
+`RuleSchema.needs_aggregates?/1` with no `aggregates:` section is refused at
+load. Ecto is a test-only dependency: fixtures that pin real macro output
+(`use Ecto.Schema`, `from/2`, `Ecto.Multi`) compile against it. The canary has
+its own root, `test/fixtures/graph_canary/aggregate_write_sources/`.
 
 ## The causal graph (DND-5438)
 

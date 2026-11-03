@@ -22,6 +22,12 @@ defmodule Anchor.Domain.Model do
       `aggregates:` section and every module's persisted `@anchor_aggregate`;
       the index holds its own issues, which the `aggregate_declarations` rule
       reports;
+    * `aggregate_analysis` — the write analysis
+      (`%Anchor.Domain.Aggregates.Analysis{}`, DND-5459): every write, its
+      source, every transaction's write set and the writes outside
+      transactions. Built only when the config has an `aggregates:` section,
+      else `nil`. Its roots are the public functions of the framework
+      bucket's modules (none when no bucket has the framework role);
     * `config` — the `%Anchor.Config{}`;
     * `cfa` — the higher-order flow analysis (`%Anchor.Domain.Cfa{}`,
       DND-5574), set by the runner only when a rule that runs declares
@@ -39,6 +45,7 @@ defmodule Anchor.Domain.Model do
   """
 
   alias Anchor.Config
+  alias Anchor.Domain.Aggregates.Analysis
   alias Anchor.Domain.Aggregates.Index
   alias Anchor.Domain.Architecture
   alias Anchor.Domain.Cfa
@@ -49,13 +56,22 @@ defmodule Anchor.Domain.Model do
   alias Anchor.Domain.Violation
 
   @enforce_keys [:graph, :architecture, :classification, :config]
-  defstruct [:graph, :architecture, :classification, :config, aggregates: %Index{}, cfa: nil]
+  defstruct [
+    :graph,
+    :architecture,
+    :classification,
+    :config,
+    aggregates: %Index{},
+    aggregate_analysis: nil,
+    cfa: nil
+  ]
 
   @type t :: %__MODULE__{
           graph: Graph.t(),
           architecture: Architecture.t(),
           classification: %{module() => Classification.t()},
           aggregates: Index.t(),
+          aggregate_analysis: Analysis.t() | nil,
           config: Config.t(),
           cfa: Cfa.t() | nil
         }
@@ -96,7 +112,8 @@ defmodule Anchor.Domain.Model do
       architecture: architecture,
       classification: classification,
       config: config,
-      aggregates: Index.build(config.aggregates, graph)
+      aggregates: Index.build(config.aggregates, graph),
+      aggregate_analysis: analysis(graph, config, classification)
     }
 
     {model, uses_unknown(facts, architecture, source_facts) ++ issues ++ export_issues}
@@ -118,6 +135,29 @@ defmodule Anchor.Domain.Model do
       behaviours: node.behaviours,
       exports: exports(node)
     }
+  end
+
+  # DND-5459: the write analysis, only with an `aggregates:` section. Its
+  # roots are the framework bucket's public functions; with no framework
+  # bucket, every public function with no project caller is one.
+  defp analysis(_graph, %Config{aggregates: nil}, _classification), do: nil
+
+  defp analysis(graph, %Config{aggregates: aggregates}, classification) do
+    Analysis.build(graph, aggregates, roots: roots(graph, classification))
+  end
+
+  defp roots(graph, classification) do
+    framework = for {module, %Classification{role: :framework}} <- classification, do: module
+
+    if framework == [] do
+      nil
+    else
+      for module <- framework,
+          %ModuleNode{functions: functions} <- [Graph.module(graph, module)],
+          {{name, arity}, %{kind: :def}} <- functions,
+          into: MapSet.new(),
+          do: {module, name, arity}
+    end
   end
 
   @doc """

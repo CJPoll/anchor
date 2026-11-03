@@ -140,6 +140,7 @@ defmodule Anchor.Config do
          {:ok, architecture} <- parse_architecture(data),
          :ok <- validate_graph_rules(parsed, architecture),
          {:ok, aggregates} <- parse_aggregates(data),
+         :ok <- validate_aggregate_rules(parsed, aggregates),
          {:ok, sabotage} <- parse_sabotage(data) do
       %__MODULE__{
         rules: parsed,
@@ -231,6 +232,22 @@ defmodule Anchor.Config do
   # (no declarations).
   defp parse_aggregates(%{"aggregates" => section}), do: AggregatesConfig.parse(section)
   defp parse_aggregates(_data), do: {:ok, nil}
+
+  # DND-5459: a rule that reads the write analysis needs the `aggregates:`
+  # section (its repos, write and transaction functions); without it the rule
+  # would run on nothing configured, so the load is refused (exit 3).
+  defp validate_aggregate_rules(parsed, nil) do
+    Enum.find_value(parsed, :ok, fn rule ->
+      if RuleSchema.needs_aggregates?(rule.type) do
+        {:error,
+         {:invalid_rule,
+          "#{parsed_rule_label(rule)}: #{rule.type} needs an aggregates: section in " <>
+            ".anchor.yml. Fix: add aggregates: (repos:, declare:) or remove the rule."}}
+      end
+    end)
+  end
+
+  defp validate_aggregate_rules(_parsed, _aggregates), do: :ok
 
   # DND-5473: the `sabotage:` section is optional too; `mix anchor.sabotage run`
   # refuses to run without it.
