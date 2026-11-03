@@ -825,7 +825,10 @@ function; with none it is unresolved. A call whose function name is computed
 is unresolved. A closure application (`fun.(x)`, and the call inside
 `Enum.map(list, fun)`) reaches the closures the higher-order flow analysis
 finds there, and is unresolved where it finds a value from outside the
-project. **An unresolved call counts as an effect**: it never makes a
+project. A comprehension's collector (`for ..., into: target`) applies
+nothing to resolve when the target is a literal or a `Map.new`/`MapSet.new`
+the function builds itself; into any other target (a parameter, which may be
+an `IO.stream/0`), it is unresolved. **An unresolved call counts as an effect**: it never makes a
 function look pure, and the run prints how many there were.
 
 For each module the rule selects in a bucket of role `domain`, `adapters` or

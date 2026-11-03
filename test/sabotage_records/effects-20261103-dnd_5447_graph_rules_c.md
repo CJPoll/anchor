@@ -379,3 +379,51 @@ Run summary: `56 tests, 1 failure`
 
 ...........................................
 ```
+
+## Regression: a comprehension into a caller's collectable read as pure (whole-MR critic, 2026-11-03)
+
+The whole-MR critic found that `Effects` skipped the collector of every
+`for ..., into: target`, so `def dump(lines, sink), do: for(line <- lines,
+into: sink, do: line)` (a `sink` that may be an `IO.stream/0`) inferred
+`:domain`: an effect read as pure. The fix skips the collector only when the
+target is a literal or a `Map.new`/`MapSet.new` the function builds itself
+(`Effects.collectors/1`, `@pure_collections`).
+
+Regression test: canary `Notifier.dump/2` in
+`test/fixtures/graph_canary/effects/lib/effects/domain/notifier.ex`, expected
+as `effects|AnchorFixtures.EffectsCanary.Notifier.dump/2|managers` by
+`test/anchor/integration/effects_canary_test.exs`. Before the fix (the
+unfixed `collectors/1`), through `test-slot`:
+
+```
+  1) test the violating modules give one finding per bad function, the compliant none (Anchor.Integration.EffectsCanaryTest)
+     test/anchor/integration/effects_canary_test.exs:71
+     Assertion with == failed
+     code:  assert report.findings |> Enum.map(& &1.key) |> Enum.sort() == [
+              "effects|AnchorFixtures.EffectsCanary.Direct.load/1|adapters",
+              "effects|AnchorFixtures.EffectsCanary.Notifier.dump/2|managers",
+              "effects|AnchorFixtures.EffectsCanary.Notifier.log/1|adapters",
+              "effects|AnchorFixtures.EffectsCanary.Notifier.notify/2|adapters",
+              "effects|AnchorFixtures.EffectsCanary.Reader.read/1|adapters"
+            ]
+     left:  ["effects|AnchorFixtures.EffectsCanary.Direct.load/1|adapters",
+             "effects|AnchorFixtures.EffectsCanary.Notifier.log/1|adapters",
+             "effects|AnchorFixtures.EffectsCanary.Notifier.notify/2|adapters",
+             "effects|AnchorFixtures.EffectsCanary.Reader.read/1|adapters"]
+     right: ["effects|AnchorFixtures.EffectsCanary.Direct.load/1|adapters",
+             "effects|AnchorFixtures.EffectsCanary.Notifier.dump/2|managers",
+             "effects|AnchorFixtures.EffectsCanary.Notifier.log/1|adapters",
+             "effects|AnchorFixtures.EffectsCanary.Notifier.notify/2|adapters",
+             "effects|AnchorFixtures.EffectsCanary.Reader.read/1|adapters"]
+     stacktrace:
+       test/anchor/integration/effects_canary_test.exs:79: (test)
+
+.
+Finished in 0.2 seconds (0.2s async, 0.00s sync)
+3 tests, 1 failure
+```
+
+After the fix: `15 tests, 0 failures` (`effects_canary_test.exs`,
+`effects_test.exs`). `Pricing.skus/1` (`into: MapSet.new()`) stays pure, so
+EF-I still holds its row; Anchor's own `mix anchor.graph` is unchanged
+(0 violations, 128 baselined).

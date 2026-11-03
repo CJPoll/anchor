@@ -78,6 +78,7 @@ defmodule Anchor.Integration.EffectsCanaryTest do
 
     assert report.findings |> Enum.map(& &1.key) |> Enum.sort() == [
              "effects|AnchorFixtures.EffectsCanary.Direct.load/1|adapters",
+             "effects|AnchorFixtures.EffectsCanary.Notifier.dump/2|managers",
              "effects|AnchorFixtures.EffectsCanary.Notifier.log/1|adapters",
              "effects|AnchorFixtures.EffectsCanary.Notifier.notify/2|adapters",
              "effects|AnchorFixtures.EffectsCanary.Reader.read/1|adapters"

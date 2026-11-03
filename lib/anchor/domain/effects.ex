@@ -34,8 +34,10 @@ defmodule Anchor.Domain.Effects do
       already gives to that function), and a site reading `:any` is
       unresolved. A higher-order call given a literal where it could take a
       function (`Enum.with_index(list, 1)`) applies nothing there, and neither
-      does the collector a comprehension with `into:` applies (the
-      `Collectable` implementation of a target the function built itself).
+      does the collector a comprehension with `into:` applies when its target
+      is a literal (`into: %{}`) or a `Map.new`/`MapSet.new` the function
+      calls itself. A target from anywhere else (a parameter, which may be an
+      `IO.stream/0`) leaves the collector to the analysis, and unresolved.
       Without the analysis, every `fun.(x)` is unresolved.
 
   An unresolved call counts as reaching an effect: it never makes a function
@@ -66,6 +68,16 @@ defmodule Anchor.Domain.Effects do
   alias Anchor.Domain.HigherOrder
   alias Anchor.Domain.Model
   alias Anchor.Domain.Roots
+
+  # Stdlib collections whose Collectable implementation has no effect.
+  @pure_collections [
+    {Map, :new, 0},
+    {Map, :new, 1},
+    {Map, :new, 2},
+    {MapSet, :new, 0},
+    {MapSet, :new, 1},
+    {MapSet, :new, 2}
+  ]
 
   @type role :: :framework | :ui | :adapters | :domain | :managers
 
@@ -231,15 +243,19 @@ defmodule Anchor.Domain.Effects do
 
   # A comprehension with `into:` compiles to `{acc, fun} =
   # Collectable.into(target)` and applies `fun` per element: the collector of
-  # the target's Collectable implementation. Building the target is the
-  # function's own call (a `File.stream!/1` there is already an effect), so
-  # the collector's applications are not unresolved calls. Read from Core:
-  # the variables a case on a `Collectable.into/1` call binds as the second
-  # element of its tuple pattern.
+  # the target's Collectable implementation. When the target is a literal or a
+  # pure stdlib collection the function builds itself, that collector is
+  # stdlib code with no effect, so its applications are not unresolved calls.
+  # Any other target (a parameter, a call's result, a project struct with its
+  # own Collectable) may write to the world, and stays the analysis's. Read
+  # from Core: the variables a case on such a `Collectable.into/1` call binds
+  # as the second element of its tuple pattern.
   defp collectors(core) do
+    built = pure_collections(core)
+
     :cerl_trees.fold(
       fn node, acc ->
-        if :cerl.type(node) == :case and collectable_into?(:cerl.case_arg(node)),
+        if :cerl.type(node) == :case and collectable_into?(:cerl.case_arg(node), built),
           do: Enum.reduce(:cerl.case_clauses(node), acc, &collector_var/2),
           else: acc
       end,
@@ -248,8 +264,36 @@ defmodule Anchor.Domain.Effects do
     )
   end
 
-  defp collectable_into?(node),
-    do: :cerl.type(node) == :call and Core.call_mfa(node) == {Collectable, :into, 1}
+  # The variables `core` let-binds to a pure collection it builds.
+  defp pure_collections(core) do
+    :cerl_trees.fold(
+      fn node, acc ->
+        with :let <- :cerl.type(node),
+             [var] <- :cerl.let_vars(node),
+             true <- pure_collection?(:cerl.let_arg(node), MapSet.new()) do
+          MapSet.put(acc, :cerl.var_name(var))
+        else
+          _other -> acc
+        end
+      end,
+      MapSet.new(),
+      core
+    )
+  end
+
+  defp collectable_into?(node, built) do
+    :cerl.type(node) == :call and Core.call_mfa(node) == {Collectable, :into, 1} and
+      pure_collection?(hd(:cerl.call_args(node)), built)
+  end
+
+  defp pure_collection?(node, built) do
+    case :cerl.type(node) do
+      :literal -> true
+      :var -> MapSet.member?(built, :cerl.var_name(node))
+      :call -> Core.call_mfa(node) in @pure_collections
+      _other -> false
+    end
+  end
 
   defp collector_var(clause, acc) do
     with [pattern] <- :cerl.clause_pats(clause),
