@@ -90,8 +90,8 @@ defmodule Anchor.Domain.Demand.LatticeTest do
       assert Lattice.bound(three) == three
     end
 
-    test "bound is monotone over 20 triples, nested to the cut" do
-      for {a, b, _c} <- @triples, Lattice.leq?(a, b) do
+    test "bound is monotone over every ordered pair of samples, nested to the cut" do
+      for a <- @samples, b <- @samples, Lattice.leq?(a, b) do
         assert Lattice.leq?(Lattice.bound(nest(a)), Lattice.bound(nest(b)))
       end
     end

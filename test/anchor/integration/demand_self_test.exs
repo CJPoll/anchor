@@ -7,6 +7,11 @@ defmodule Anchor.Integration.DemandSelfTest do
   # Sabotage record: ../../sabotage_records/demand-20261103-dnd_5498_demand.md
   use ExUnit.Case, async: true
 
+  # The analysis of the whole of Anchor takes about a second; mutation runs
+  # pass a short global --timeout (2000 ms) that a loaded machine overruns, so
+  # this module keeps ExUnit's default bound.
+  @moduletag timeout: 60_000
+
   alias Anchor.Adapters.BeamReader
   alias Anchor.Domain.Cfa
   alias Anchor.Domain.Demand
