@@ -6,6 +6,8 @@ defmodule Anchor.Domain.Graph.BuilderTest do
   # gets plain data.
   #
   # Sabotage record: ../../../sabotage_records/builder-20261103-dnd_5438.md
+  # Sabotage record: ../../../sabotage_records/builder-20261103-dnd_5551_graph_hardening.md
+  # Sabotage record: ../../../sabotage_records/inlines-20261103-dnd_5551_graph_hardening.md
   # DND-5548 (the per-module walk guard): ../../../sabotage_records/builder-20261103-dnd_5440_graph_runner.md
   use ExUnit.Case, async: true
 
@@ -144,6 +146,54 @@ defmodule Anchor.Domain.Graph.BuilderTest do
     end
   end
 
+  describe "build/2 macro specs (DND-5550)" do
+    test "a macro's spec is keyed by the macro's own name and arity, without the caller" do
+      module = AnchorFixtures.BuilderTest.MacroSpecs
+
+      graph =
+        """
+        defmodule AnchorFixtures.BuilderTest.MacroSpecs do
+          @spec mac(Macro.t()) :: Macro.t()
+          defmacro mac(x), do: x
+
+          @spec bounded(a) :: a when a: Macro.t()
+          defmacro bounded(x), do: x
+
+          @spec run(integer()) :: integer()
+          def run(x), do: x
+
+          @spec unquote(:"MACRO-fake")(atom(), integer()) :: integer()
+          def unquote(:"MACRO-fake")(_env, x), do: x
+        end
+        """
+        |> compile_unloaded("lib/macro_specs.ex")
+        |> decode!()
+        |> Builder.build(%{})
+
+      specs = Graph.module(graph, module).specs
+
+      assert Enum.sort(Map.keys(specs)) == [
+               {:"MACRO-fake", 2},
+               {:bounded, 1},
+               {:mac, 1},
+               {:run, 1}
+             ]
+
+      assert Enum.map(specs[{:mac, 1}], &Macro.to_string/1) == ["mac(Macro.t()) :: Macro.t()"]
+
+      assert Enum.map(specs[{:bounded, 1}], &Macro.to_string/1) ==
+               ["bounded(a) :: a when a: Macro.t()"]
+
+      assert %FunctionNode{kind: :defmacro} = Graph.function(graph, {module, :mac, 1})
+      # A function whose name only looks like a macro's keeps its key and spec.
+      assert Enum.map(specs[{:"MACRO-fake", 2}], &Macro.to_string/1) ==
+               ["MACRO-fake(atom(), integer()) :: integer()"]
+
+      # Positive control: a function's spec is keyed as before.
+      assert Enum.map(specs[{:run, 1}], &Macro.to_string/1) == ["run(integer()) :: integer()"]
+    end
+  end
+
   describe "build/2 generated? (AC3)" do
     # Row 33
     test "a module a macro emits is a module node, generated?: true, with its calls", %{
@@ -214,6 +264,73 @@ defmodule Anchor.Domain.Graph.BuilderTest do
              ]
 
       assert %ModuleNode{} = Graph.module(graph, Plain)
+    end
+  end
+
+  describe "build/2 functions with no Core body (DND-5549)" do
+    test "a private macro and a private function nothing calls have no Core; each is counted" do
+      module = AnchorFixtures.BuilderTest.NoCore
+
+      graph =
+        """
+        defmodule AnchorFixtures.BuilderTest.NoCore do
+          defmacrop twice(x), do: quote(do: unquote(x) * 2)
+          def run(x), do: helper(twice(x))
+          defp helper(x), do: x
+          defp unused(x), do: x
+        end
+        """
+        |> compile_unloaded("lib/no_core.ex")
+        |> decode!()
+        |> Builder.build(%{})
+
+      assert Graph.functions_without_core(graph) == %{module => [{:twice, 1}, {:unused, 1}]}
+
+      assert %FunctionNode{kind: :defmacrop, core: nil} =
+               Graph.function(graph, {module, :twice, 1})
+
+      assert %FunctionNode{kind: :defp, core: nil} = Graph.function(graph, {module, :unused, 1})
+      # Positive control: the functions the beam holds have their Core.
+      assert %FunctionNode{core: core} = Graph.function(graph, {module, :helper, 1})
+      assert :cerl.is_c_fun(core)
+      # A private function the compiler emitted no code for is expected.
+      assert graph.unreadable == []
+    end
+
+    test "a public function with no Core is unreadable, naming it; the module is kept", %{
+      plain: plain
+    } do
+      [beam] = Enum.filter(plain, &(&1.module == Plain))
+
+      defs =
+        Enum.reject(:cerl.module_defs(beam.core), fn {fname, _fun} ->
+          :cerl.var_name(fname) in [{:run, 1}, {:"MACRO-m", 2}]
+        end)
+
+      core =
+        :cerl.update_c_module(
+          beam.core,
+          :cerl.module_name(beam.core),
+          :cerl.module_exports(beam.core),
+          :cerl.module_attrs(beam.core),
+          defs
+        )
+
+      graph = Builder.build([%{beam | core: core}], %{})
+
+      assert graph.unreadable == [
+               %{path: beam.path, module: Plain, reason: {:no_core, [{:m, 1}, {:run, 1}]}}
+             ]
+
+      assert Graph.functions_without_core(graph) == %{Plain => [{:m, 1}, {:run, 1}]}
+      assert %ModuleNode{} = Graph.module(graph, Plain)
+      assert Graph.calls_from(graph, {Plain, :run, 1}) == []
+    end
+
+    test "with every body present nothing is counted", %{pair: pair} do
+      graph = Builder.build(pair, %{})
+      assert Graph.functions_without_core(graph) == %{}
+      assert graph.unreadable == []
     end
   end
 
@@ -395,6 +512,64 @@ defmodule Anchor.Domain.Graph.BuilderTest do
       # The dynamic call could reach B.g/1, but names no callee.
       assert Graph.calls_to(graph, B) == [a_to_b]
       assert Graph.calls_to(graph, {A, :nope, 0}) == []
+    end
+
+    # DND-5551: Elixir inlines Map.put and Map.merge before Core, so the edge
+    # names :maps; a query by either spelling finds the call.
+    test "a stdlib call Elixir inlines is found by its Elixir and its Erlang name" do
+      inlined = AnchorFixtures.BuilderTest.Inlined
+
+      graph =
+        """
+        defmodule AnchorFixtures.BuilderTest.Inlined do
+          def put(map), do: Map.put(map, :k, 1)
+          def merge(a, b), do: Map.merge(a, b)
+          def erlang_put(map), do: :maps.put(:k, 1, map)
+          def get(map), do: Map.get(map, :k)
+        end
+        """
+        |> compile_unloaded("lib/inlined.ex")
+        |> decode!()
+        |> Builder.build(%{})
+
+      put = %Call{
+        from: {inlined, :put, 1},
+        to: {:maps, :put, 3},
+        kind: :remote,
+        line: 2,
+        line_source: :call
+      }
+
+      merge = %Call{
+        from: {inlined, :merge, 2},
+        to: {:maps, :merge, 2},
+        kind: :remote,
+        line: 3,
+        line_source: :call
+      }
+
+      erlang_put = %Call{
+        from: {inlined, :erlang_put, 1},
+        to: {:maps, :put, 3},
+        kind: :remote,
+        line: 4,
+        line_source: :call
+      }
+
+      # Core lowers Map.put to an is_map guard and a map update; the walker
+      # reads the update as the inlined :maps.put/3.
+      assert put in Graph.calls_from(graph, {inlined, :put, 1})
+      assert Graph.calls_to(graph, {Map, :put, 3}) == [erlang_put, put]
+      assert Graph.calls_to(graph, {:maps, :put, 3}) == [erlang_put, put]
+      assert Graph.calls_to(graph, {Map, :merge, 2}) == [merge]
+      assert Graph.calls_to(graph, {:maps, :merge, 2}) == [merge]
+
+      assert Enum.sort(Graph.calls_to(graph, Map)) ==
+               Enum.sort([put, merge, erlang_put] ++ Graph.calls_from(graph, {inlined, :get, 1}))
+
+      # Positive control: Map.get/2 is not inlined, so Core names it as written.
+      assert [%Call{to: {Map, :get, 2}, line: 5}] = Graph.calls_to(graph, {Map, :get, 2})
+      assert Graph.calls_to(graph, {:maps, :get, 2}) == []
     end
 
     test "Graph.module/2 and function/2 answer nil for what is not there", %{pair: pair} do

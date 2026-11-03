@@ -165,6 +165,7 @@ defmodule Anchor.Managers.Graph do
       [],
       request
       |> counts(map_size(graph.modules), length(rules), length(Model.opaque(model)))
+      |> Map.put(:no_core, no_core_count(graph))
       |> Map.put(:apply_sites, GraphReport.apply_sites(model.cfa))
     )
   end
@@ -347,5 +348,18 @@ defmodule Anchor.Managers.Graph do
   end
 
   defp counts(%Request{apps: apps}, modules, rules, opaque),
-    do: %{modules: modules, apps: length(apps), rules: rules, opaque: opaque, apply_sites: nil}
+    do: %{
+      modules: modules,
+      apps: length(apps),
+      rules: rules,
+      opaque: opaque,
+      no_core: 0,
+      apply_sites: nil
+    }
+
+  # Every function the graph has no Core body for: no call in it was read, so
+  # the summary counts them (DND-5549).
+  defp no_core_count(graph) do
+    graph |> Graph.functions_without_core() |> Map.values() |> Enum.map(&length/1) |> Enum.sum()
+  end
 end

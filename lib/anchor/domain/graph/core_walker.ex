@@ -20,7 +20,10 @@ defmodule Anchor.Domain.Graph.CoreWalker do
     * `call 'erlang':'make_fun'(M, F, A)`, or a literal external fun — `:capture`
       to `{M, F, A}`; a module function name used as a value (`&f/a`) —
       `:capture` to `{module, f, a}`.
-    * `call 'erlang':'apply'(...)` (`apply/2,3`) — `:apply` to
+    * `call 'erlang':'apply'(M, F, Args)` (`apply/3`) with `M` and `F`
+      literal atoms (or variables let-bound to them) and `Args` a list of known
+      length — `:apply` to `{M, F, length}`, as static as a direct call
+      (DND-5547). Any other `apply/2,3` — `:apply` to
       `{:dynamic, name | nil, arity | nil, :call}`; `apply V(...)` where `V` is
       a variable (`fun.(x)`) — `:apply` to `{:dynamic, nil, arity, :variable}`.
     * `call V:'f'(...)` — `{:dynamic, f, arity, :variable}`, or `:call` when
@@ -32,6 +35,17 @@ defmodule Anchor.Domain.Graph.CoreWalker do
       checks `s` against `%{__struct__: S}` and otherwise raises
       `{:badstruct, S, s}`, which is `:update` (its pattern is not also a
       `:match`).
+
+    * A map update with `=>` on a map that is not a literal (`~{K=>V|M}~`)
+      is an inlined `Map.put/3` (or `:maps.put/3`), which the compiler lowers
+      to no call at all: one `:remote` edge to `{:maps, :put, 3}` per `=>`
+      pair (puts in a row fold into one update). Elixir source has no other
+      way to write it: `%{m | k => v}` and a struct update are `:=`. A put
+      onto a literal map folds into a literal and is not seen (DND-5551).
+
+  Elixir rewrites other stdlib calls before Core too (`Map.merge/2` is
+  `:maps.merge/2`); an edge names the Erlang function, and
+  `Anchor.Domain.Graph.Inlines` maps it back to its Elixir names.
 
   Calls into the helpers the compiler emits (`:erlang` BIFs in guards,
   `:erlang.error/1` on a failed struct update) are kept as `:remote` calls:
@@ -46,6 +60,8 @@ defmodule Anchor.Domain.Graph.CoreWalker do
 
   alias Anchor.Domain.Graph.Call
   alias Anchor.Domain.Graph.StructUse
+
+  @maps_put {:maps, :put, 3}
 
   @doc """
   Walks `core_fun`, the Core `c_fun` of `module.name/arity`, and returns its
@@ -139,8 +155,20 @@ defmodule Anchor.Domain.Graph.CoreWalker do
     visit_all([fun, args_list], ctx, acc)
   end
 
+  # `apply(M, :f, [a, b])` with a literal (or let-bound literal) module and
+  # function and an argument list of known length names its callee as surely
+  # as a direct call (DND-5547).
   defp apply_call(node, [m, f, args_list], ctx, acc) do
-    to = {:dynamic, atom_or_nil(literal(f)), list_length(args_list), :call}
+    to =
+      case {resolved_literal(m, ctx), resolved_literal(f, ctx), list_length(args_list)} do
+        {{:ok, mod}, {:ok, fun}, arity}
+        when is_atom(mod) and is_atom(fun) and is_integer(arity) ->
+          {mod, fun, arity}
+
+        {_mod, fun, arity} ->
+          {:dynamic, atom_or_nil(fun), arity, :call}
+      end
+
     acc = add_call(acc, node, to, :apply, ctx)
     visit_all([m, f, args_list], ctx, acc)
   end
@@ -149,7 +177,7 @@ defmodule Anchor.Domain.Graph.CoreWalker do
     arity = length(args)
 
     to =
-      case {resolved_module(module, ctx), literal(name)} do
+      case {resolved_literal(module, ctx), literal(name)} do
         {{:ok, mod}, {:ok, fun}} when is_atom(mod) and is_atom(fun) -> {mod, fun, arity}
         {_mod, name_lit} -> {:dynamic, atom_or_nil(name_lit), arity, receiver(module, ctx)}
       end
@@ -289,7 +317,20 @@ defmodule Anchor.Domain.Graph.CoreWalker do
         struct -> add_struct_use(acc, node, struct, map_op(node, ctx), ctx)
       end
 
+    acc = Enum.reduce(inlined_puts(node, ctx), acc, &add_call(&2, &1, @maps_put, :remote, ctx))
     visit_children(node, ctx, acc)
+  end
+
+  # `Map.put/3` (and `:maps.put/3`) reach Core as no call at all: the compiler
+  # lowers the call to a map update with `=>` on a map that is not a literal
+  # (`~{K=>V|M}~`, beside an `is_map(M)` guard), and folds puts in a row into
+  # one update. Elixir source has no other way to write that node (`%{m | k
+  # => v}` and a struct update are `:=`), so each `=>` pair is one inlined
+  # call. A put onto a literal map folds into a literal and is not seen.
+  defp inlined_puts(node, ctx) do
+    if ctx.pattern? or :cerl.is_c_map_pattern(node) or :cerl.is_literal(:cerl.map_arg(node)),
+      do: [],
+      else: Enum.filter(:cerl.map_es(node), &(literal(:cerl.map_pair_op(&1)) == {:ok, :assoc}))
   end
 
   defp map_struct(node) do
@@ -370,14 +411,15 @@ defmodule Anchor.Domain.Graph.CoreWalker do
     if :cerl.is_literal(node), do: {:ok, :cerl.concrete(node)}, else: :error
   end
 
-  defp resolved_module(module, ctx) do
-    case literal(module) do
+  # A literal, or a variable let-bound to one.
+  defp resolved_literal(node, ctx) do
+    case literal(node) do
       {:ok, value} ->
         {:ok, value}
 
       :error ->
-        if :cerl.is_c_var(module) do
-          case Map.get(ctx.env, :cerl.var_name(module)) do
+        if :cerl.is_c_var(node) do
+          case Map.get(ctx.env, :cerl.var_name(node)) do
             {:literal, value} -> {:ok, value}
             _other -> :error
           end

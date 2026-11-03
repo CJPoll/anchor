@@ -10,9 +10,11 @@ defmodule Anchor.Domain.GraphReport do
       enforcement.
     * `could_not_check` — `%Finding{}`s for a run that could not measure at
       all (no config, no `architecture:` section, zero modules read).
-    * `counts` — `%{modules, apps, rules, opaque, apply_sites}` for the
-      summary line; `apply_sites` is `nil` when no rule that ran needed the
-      higher-order flow analysis (DND-5574), else `apply_sites/1` of it.
+    * `counts` — `%{modules, apps, rules, opaque, no_core, apply_sites}` for
+      the summary line; `no_core` is the number of functions whose Core body
+      the graph lacks, none of whose calls were read (DND-5549);
+      `apply_sites` is `nil` when no rule that ran needed the higher-order
+      flow analysis (DND-5574), else `apply_sites/1` of it.
     * `exit_code` — `exit_code/1`.
 
   ## Exit code
@@ -38,7 +40,7 @@ defmodule Anchor.Domain.GraphReport do
 
   defstruct findings: [],
             could_not_check: [],
-            counts: %{modules: 0, apps: 0, rules: 0, opaque: 0, apply_sites: nil},
+            counts: %{modules: 0, apps: 0, rules: 0, opaque: 0, no_core: 0, apply_sites: nil},
             exit_code: 0
 
   @type site_counts :: %{
@@ -60,6 +62,7 @@ defmodule Anchor.Domain.GraphReport do
           required(:apps) => non_neg_integer(),
           required(:rules) => non_neg_integer(),
           required(:opaque) => non_neg_integer(),
+          required(:no_core) => non_neg_integer(),
           required(:apply_sites) => apply_sites() | nil
         }
 
@@ -119,6 +122,7 @@ defmodule Anchor.Domain.GraphReport do
       "apps" => report.counts.apps,
       "rules" => report.counts.rules,
       "opaque" => report.counts.opaque,
+      "no_core" => report.counts.no_core,
       "apply_sites" => apply_sites_json(report.counts.apply_sites),
       "exit_code" => report.exit_code,
       "findings" => Enum.map(report.findings, &Finding.to_json/1),
@@ -130,14 +134,15 @@ defmodule Anchor.Domain.GraphReport do
   The summary line: `anchor.graph: <M> modules in <A> apps, <R> rules, <V>
   violations (<P> report-only, 0 baselined)`, where `V` counts every
   `:enforce` finding and every could-not-check entry, and `P` every `:report`
-  finding. Opaque (Erlang) modules are named when there are any.
+  finding. Opaque (Erlang) modules and functions with no Core body are
+  counted when there are any.
   """
   @spec summary(t()) :: String.t()
   def summary(%__MODULE__{counts: counts} = report) do
     {report_only, enforced} = Enum.split_with(report.findings, &(&1.enforcement == :report))
     violations = length(enforced) + length(report.could_not_check)
 
-    "anchor.graph: #{counts.modules} modules#{opaque(counts.opaque)} in #{counts.apps} apps, " <>
+    "anchor.graph: #{counts.modules} modules#{notes(counts)} in #{counts.apps} apps, " <>
       "#{counts.rules} rules, #{violations} violations " <>
       "(#{length(report_only)} report-only, 0 baselined)" <>
       apply_sites_note(counts.apply_sites)
@@ -176,6 +181,15 @@ defmodule Anchor.Domain.GraphReport do
       finding.message
   end
 
-  defp opaque(0), do: ""
-  defp opaque(count), do: " (#{count} opaque)"
+  # Opaque (Erlang) modules and functions with no Core body, when there are
+  # any: both were counted but not read.
+  defp notes(counts) do
+    [{counts.opaque, "opaque"}, {counts.no_core, "functions with no Core body"}]
+    |> Enum.reject(fn {count, _what} -> count == 0 end)
+    |> Enum.map_join(", ", fn {count, what} -> "#{count} #{what}" end)
+    |> case do
+      "" -> ""
+      notes -> " (#{notes})"
+    end
+  end
 end

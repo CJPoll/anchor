@@ -5,6 +5,7 @@ defmodule Mix.Tasks.Anchor.SabotageRunTest do
   # sync: capture_io(:stderr) captures the VM-wide standard_error device, which
   # another async test's output would interleave with.
   # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5473_sabotage_run.md
+  # Sabotage record (DND-5570): ../../sabotage_records/sabotage-20261103-dnd_5570_sabotage_hardening.md
   use ExUnit.Case, async: false
 
   import ExUnit.CaptureIO
@@ -60,5 +61,20 @@ defmodule Mix.Tasks.Anchor.SabotageRunTest do
       end)
 
     assert output =~ ".anchor/sabotage/in-flight.json cannot be read"
+  end
+
+  test "a host with no /proc: the run and the restore print the Fix: and exit 2" do
+    root = File.cwd!()
+    expect(SourceMutationMock, :take_lock, 2, fn ^root -> {:error, :no_proc} end)
+
+    for argv <- [["run", "--max", "all"], ["restore"]] do
+      output =
+        capture_io(fn ->
+          assert catch_exit(Sabotage.run(argv, @opts)) == {:shutdown, 2}
+        end)
+
+      assert output =~ "this host has no /proc"
+      assert output =~ "Fix: run mix anchor.sabotage on Linux (a dev machine or CI)"
+    end
   end
 end

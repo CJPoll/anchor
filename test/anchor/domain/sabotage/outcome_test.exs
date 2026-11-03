@@ -2,6 +2,7 @@ defmodule Anchor.Domain.Sabotage.OutcomeTest do
   # DND-5473: a test run's status, read from the formatter's frames, and the
   # mutant status it gives. A mutant that does not compile is never killed.
   # Sabotage record: ../../../sabotage_records/sabotage-20261103-dnd_5473_sabotage_run.md
+  # Sabotage record (DND-5570): ../../../sabotage_records/sabotage-20261103-dnd_5570_sabotage_hardening.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Sabotage.Outcome
@@ -57,18 +58,58 @@ defmodule Anchor.Domain.Sabotage.OutcomeTest do
                "did not compile: warning: variable \"y\" is unused"
     end
 
-    test "5: a crashed run is invalid" do
-      assert Outcome.classify(run(:crashed, exit_code: 1)) == {:invalid, []}
+    test "5: a crashed run is crashed (unmeasured), not invalid" do
+      assert Outcome.classify(run(:crashed, exit_code: 1)) == {:crashed, []}
       assert Outcome.reason(run(:crashed, exit_code: 1)) == "test run crashed (exit 1)"
     end
 
-    test "6: a run in which no test ran is invalid" do
-      assert Outcome.classify(run(:no_tests, total: 0)) == {:invalid, []}
+    test "6: a run in which no test ran is no_tests (unmeasured), not invalid" do
+      assert Outcome.classify(run(:no_tests, total: 0)) == {:no_tests, []}
       assert Outcome.reason(run(:no_tests, total: 0)) == "no test ran"
     end
 
-    test "only an invalid run has a reason" do
+    test "only an invalid, crashed or no_tests run has a reason" do
       for status <- [:failed, :passed, :timeout], do: assert(Outcome.reason(run(status)) == nil)
+    end
+  end
+
+  describe "TestRun.from_frames/4: exit 137 (DND-5573)" do
+    test "killed by signal 9 well inside the bound is crashed, never a timeout" do
+      run = TestRun.from_frames(137, [], "", elapsed_ms: 1_500, timeout_seconds: 300)
+
+      assert %TestRun{status: :crashed, exit_code: 137} = run
+      assert Outcome.classify(run) == {:crashed, []}
+      assert Outcome.reason(run) == "test run crashed: killed by signal 9 (exit 137)"
+    end
+
+    test "with no clock reading 137 is crashed too: a timeout must be proven" do
+      assert %TestRun{status: :crashed} = TestRun.from_frames(137, [], "")
+    end
+
+    test "positive control: 137 after the bound was reached is the kill that follows the timeout" do
+      for elapsed <- [300_000, 310_000] do
+        run = TestRun.from_frames(137, [], "", elapsed_ms: elapsed, timeout_seconds: 300)
+        assert %TestRun{status: :timeout} = run
+      end
+
+      assert %TestRun{status: :crashed} =
+               TestRun.from_frames(137, [], "", elapsed_ms: 299_999, timeout_seconds: 300)
+    end
+
+    test "positive control: 124 is a timeout whatever the clock says" do
+      assert %TestRun{status: :timeout} =
+               TestRun.from_frames(124, [], "", elapsed_ms: 5, timeout_seconds: 300)
+    end
+
+    test "a crash says how many bytes of its output were dropped" do
+      run = TestRun.from_frames(1, [], "boom", dropped_bytes: 1234)
+
+      assert run.dropped_bytes == 1234
+
+      assert Outcome.reason(run) ==
+               "test run crashed (exit 1); 1234 bytes of its output were dropped"
+
+      assert Outcome.reason(TestRun.from_frames(1, [], "boom")) == "test run crashed (exit 1)"
     end
   end
 
@@ -76,9 +117,11 @@ defmodule Anchor.Domain.Sabotage.OutcomeTest do
     @finished {:suite_finished, 2, 1, 0}
     @failed {:test_failed, "test/x_test.exs", 4, "test adds", "Assertion with == failed"}
 
-    test "exit 124 or 137 is a timeout, whatever the frames say" do
-      for code <- [124, 137],
-          do: assert(%TestRun{status: :timeout} = TestRun.from_frames(code, [], "x"))
+    test "exit 124 is a timeout, whatever the frames say" do
+      assert %TestRun{status: :timeout} = TestRun.from_frames(124, [], "x")
+
+      assert %TestRun{status: :timeout} =
+               TestRun.from_frames(124, [{:suite_finished, 1, 0, 0}], "x")
     end
 
     test "frames with failures are failed, with each failure" do

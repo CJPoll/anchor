@@ -12,9 +12,12 @@ defmodule Anchor.Domain.Sabotage.OrphanCheck do
       (`Anchor.Domain.DataFlow`'s `:free` keys), or binds one nothing reads
       (a variable left unused), counted by name;
     * the module loses the last use of one of its private functions, of a
-      module attribute it reads, of an alias it declares, or (when the module
-      has an `import`) of a function it does not define itself: each is a
-      compiler warning.
+      module attribute it reads, of an alias it declares, of a name in an
+      `import M, only: [...]` list (the compiler reports each listed name),
+      or of the last call an `import` with no `only:` list can serve (the
+      compiler reports that import only when no call reaches it, so removing
+      the last call of one name while another still reaches it is a mutant,
+      DND-5563): each is a compiler warning.
 
   Comparing with the original, not judging the mutant alone, means a warning
   the original already has never refuses a mutant.
@@ -178,7 +181,7 @@ defmodule Anchor.Domain.Sabotage.OrphanCheck do
   defp module_refs(original, original_ast, mutated, mutated_ast, module) do
     with {:ok, before} <- refs_of(original, original_ast, module),
          {:ok, later} <- refs_of(mutated, mutated_ast, module) do
-      case Enum.sort(MapSet.difference(tracked(before), later.uses)) do
+      case Enum.sort(MapSet.difference(tracked(before), tracked(later))) do
         [] -> :ok
         [lost | _rest] -> {:skip, "removes the last use of #{describe(lost)}"}
       end
@@ -188,6 +191,10 @@ defmodule Anchor.Domain.Sabotage.OrphanCheck do
   end
 
   defp describe({:call, name, arity}), do: "function `#{name}/#{arity}`"
+
+  defp describe(:import_calls),
+    do: "an `import` (no call to an imported function is left)"
+
   defp describe({:attr, name}), do: "module attribute `@#{name}`"
   defp describe({:alias, name}), do: "alias `#{name}`"
 
@@ -203,25 +210,59 @@ defmodule Anchor.Domain.Sabotage.OrphanCheck do
     end
   end
 
+  # What the compiler warns about when the last use goes (DND-5563):
+  #
+  #   * a private function, a module attribute, an alias: each its own key;
+  #   * a name in an `import M, only: [...]` list: its own key, because the
+  #     compiler reports `unused import M.name/arity` per listed name;
+  #   * the calls that may reach an `import` with no `only:` list: ONE key
+  #     between them, `:import_calls`, because the compiler reports
+  #     `unused import M` only when no call reaches the import at all. Which
+  #     import such a call reaches is unknown without compiling, so with two
+  #     of these imports the key stands for them together: a mutant that
+  #     empties one while the other is still called is not seen (at worst it
+  #     fails to compile and is `invalid`).
   defp tracked(refs) do
     refs.uses
-    |> Enum.filter(fn
-      {:call, name, arity} -> private?(refs, name, arity) or imported?(refs, name, arity)
-      {:attr, _name} -> true
-      {:alias, name} -> MapSet.member?(refs.aliases, name)
-    end)
+    |> Enum.map(&tracked_key(refs, &1))
+    |> Enum.reject(&is_nil/1)
     |> MapSet.new()
   end
 
-  # A call that may reach an explicit `import`: a name in an `only:` list, or,
-  # for an import with no `only:`, any name the module does not define that is
-  # not a special form, an operator or a `Kernel` function or macro.
-  defp imported?(refs, name, arity) do
+  defp tracked_key(refs, {:call, name, arity} = use),
+    do:
+      call_key(
+        use,
+        private?(refs, name, arity),
+        listed?(refs, name, arity),
+        open?(refs, name, arity)
+      )
+
+  defp tracked_key(_refs, {:attr, _name} = use), do: use
+
+  defp tracked_key(refs, {:alias, name} = use),
+    do: if(MapSet.member?(refs.aliases, name), do: use)
+
+  defp call_key(use, true, _listed, _open), do: use
+  defp call_key(use, _private, true, _open), do: use
+  defp call_key(_use, _private, _listed, true), do: :import_calls
+  defp call_key(_use, _private, _listed, _open), do: nil
+
+  # A call to a name in an `only:` list, which the module does not define.
+  defp listed?(refs, name, arity) do
     not Map.has_key?(refs.defined, name) and
-      Enum.any?(refs.imports, fn
-        {:only, names} -> {name, arity} in names
-        :all -> not builtin?(name, arity)
-      end)
+      Enum.any?(refs.imports, &listed_in?(&1, name, arity))
+  end
+
+  defp listed_in?({:only, names}, name, arity), do: {name, arity} in names
+  defp listed_in?(:all, _name, _arity), do: false
+
+  # A call that may reach an `import` with no `only:` list: any name the module
+  # does not define and is not listed, a special form, an operator or a
+  # `Kernel` function or macro.
+  defp open?(refs, name, arity) do
+    not Map.has_key?(refs.defined, name) and :all in refs.imports and
+      not listed?(refs, name, arity) and not builtin?(name, arity)
   end
 
   defp builtin?(name, arity) do

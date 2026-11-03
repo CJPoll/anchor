@@ -617,7 +617,10 @@ summary says nothing of apply sites and `apply_sites` is `null`.
 An Erlang module in the project is classified by its name only (a `pattern:`
 selector): a classified one is an opaque node with no edges, counted in the
 summary as `(<n> opaque)`; an unclassified one is an issue. No setting
-excludes a module silently.
+excludes a module silently. A function whose Core body the graph lacks (a
+`defmacrop`, a `defp` nothing calls) has no edges read from it, so the summary
+counts those too, as `(<n> functions with no Core body)`, and the JSON as
+`no_core`.
 
 ### Graph rows of the fail-closed table
 
@@ -636,8 +639,10 @@ line.
 | The backend refuses `elixir_v1` (`{:elixir_v1_refused, _}`) | 1 | the beam | `MyApp.X the beam's backend could not produce its Elixir debug info (...). Fix: recompile with the project's own Elixir; ...` |
 | The backend refuses `core_v1` (`{:core_v1_refused, _}`) | 1 | the beam | `MyApp.X the beam's backend could not produce Core Erlang (...). Fix: recompile with the project's own Elixir; ...` |
 | A module compiled with a `parse_transform` or `core_transform` (`{:core_v1_refused, {:transform, _}}`) | 1 | the beam | `MyApp.X was compiled with {:parse_transform, :pt}, which lowering to Core Erlang would run, and Anchor runs no project code. Fix: remove the transform ...` |
+| A module compiled with any other option not on the reader's allowlist of options known to run no code (`{:core_v1_refused, {:option, _}}`, DND-5552) | 1 | the beam | `MyApp.X was compiled with the option {:plugins, [...]}, which is not on Anchor's list of options that run no code when lowered to Core Erlang, so it was not lowered (DND-5552). Fix: remove the option from the module's compile options, or move the module into a dependency; ...` |
 | Decoding a beam crashed (`{:decode_crashed, _}`) | 1 | the beam | `MyApp.X could not be decoded: Anchor crashed reading it (...). Fix: this is an Anchor bug; file it with this line.` |
 | Walking a module's Core crashed (`{:walk_crashed, _}`, DND-5548) | 1 | the beam | `MyApp.X could not be added to the graph: Anchor crashed walking it (...). Fix: this is an Anchor bug; ...` |
+| A public function or macro with no Core body (`{:no_core, _}`, DND-5549) | 1 | the beam | `MyApp.X has no Core Erlang body for run/1, so no call in them was read (DND-5549). Fix: this is an Anchor bug; file it with this line.` Every function with no Core body, private ones included (a `defmacrop`, a `defp` nothing calls), is counted in the summary line as `(N functions with no Core body)`. |
 | One module in two ebins (`{:duplicate_module, _}`) | 1 | the extra beam | `MyApp.X is in two ebins: ... and ... (kept). Fix: run mix clean to remove a stale beam, or rename one of the two modules.` |
 | A beam or ebin that cannot be read (`{:unreadable, _}`) | 1 | that path | `The beam ... could not be read (:eacces). Fix: make ... readable; ...` |
 | An Erlang module no bucket classifies | 1 | the beam | `:my_erl is Erlang source; the graph engine reads Elixir only, and no architecture bucket classifies it. Fix: move it under a dependency, or classify it with a pattern: selector ...` |
@@ -768,8 +773,10 @@ How a run goes:
    two runs never share the journal, the results file or `_build`. A killed
    run's lock is taken over, one run at a time (under
    `_build/anchor-sabotage.lock.takeover`; a run killed in that step leaves it,
-   and the next run refuses, exit 2, naming it to delete). Linux only: with no `/proc` the lock and the
-   journal's owner name no process, and protect nothing.
+   and the next run refuses, exit 2, naming it to delete). Linux only: the lock and the journal's owner are
+   read from `/proc`, so on a host without one (macOS) `run` and `restore`
+   refuse, exit 2, with `Fix: run mix anchor.sabotage on Linux (a dev machine
+   or CI)`, and touch nothing (DND-5571).
 1. A journal left by a killed run (`.anchor/sabotage/in-flight.json`) is dealt
    with first: the file still holding the mutant is restored (and the run says
    so); a file already back loses only the journal; a file that matches
@@ -798,17 +805,28 @@ How a run goes:
 | `killed` | a selected test failed; those tests are the killers |
 | `survived` | the selected tests ran and passed (`Fix: add a test that fails under this mutant`) |
 | `timeout` | the time bound killed the run; counts as killed, killer `(timeout)` |
-| `invalid` | the mutant did not compile (any reason, a type-checker warning under warnings-as-errors included: the compiler's first error line is shown), the test run crashed, or no test ran. Never killed, never survived; counted in the summary |
-| `no_tests` | no test was selected (the line names the mirror path looked for) |
+| `invalid` | the mutant did not compile (any reason, a type-checker warning under warnings-as-errors included: the compiler's first error line is shown). Never killed, never survived; listed and counted, and beside a measured mutant it never changes the exit code |
+| `crashed` | the test run crashed or raised, so the tests could not judge the mutant (the line says why; an exit 137 inside the time bound reads `killed by signal 9`, an out-of-memory kill for one, and is never a timeout). Unmeasured |
+| `no_tests` | no test was selected (the line names the mirror path looked for), or the selected tests ran none under the mutant. Unmeasured |
+
+A test run's output is kept bounded (the first and last 32 KiB; the line of a
+crashed run says how many bytes were dropped), so a mutant that prints without
+end cannot fill the VM's memory.
+
+A mutant is **measured** when it is `killed`, `survived` or `timeout`.
+`crashed` and `no_tests` mutants are **unmeasured**: the tests could have
+killed them and did not get to say.
 
 Skipped mutants are listed with their reason and never applied; a changed
 function with no literal clause is listed as an error, never as killed.
 
 | Condition | Exit |
 |---|---|
-| every mutant run killed, timed out or invalid | 0 |
-| a mutant survived or had no test | 1 |
-| a dirty target file; the journal not git-ignored; the run lock or a journal another live run holds; a leftover journal whose file changed; a restore that did not reproduce the original (the journal is kept); an unknown `--only` id; no `timeout` binary; bad flags | 2, with `Fix:` |
+| every measured mutant killed or timed out (an `invalid` one beside them changes nothing) | 0 |
+| zero changed functions from a good diff read (an empty scope: `sabotage: 0 changed functions in <base>..HEAD`) | 0 |
+| a mutant survived, crashed or had no test, beside a measured one (a survivors list that gives one a reason will exempt it: DND-5483) | 1 |
+| mutants were run and none was measured (all `invalid`, `crashed` or without a test) | 3, `COULD NOT MEASURE` with `Fix:` |
+| a dirty target file; the journal not git-ignored; the run lock or a journal another live run holds; a host with no `/proc`; a leftover journal whose file changed; a restore that did not reproduce the original (the journal is kept); an unknown `--only` id; no `timeout` binary; bad flags | 2, with `Fix:` |
 | no loadable config or no `sabotage:` section; the scope could not be measured; the baseline fails; changed functions whose files cannot be read | 3, `COULD NOT MEASURE` with `Fix:` |
 
 ## Check Types
