@@ -18,8 +18,8 @@ defmodule Anchor.Domain.Sabotage.Outcome do
   `:crashed` and `:no_tests` are the unmeasured mutants (DND-5570): the
   tests could have killed them and did not get to say. `Report` fails a run
   that holds one beside a measured mutant, like a survivor; an `:invalid`
-  mutant is a different thing (a mutation that is not valid code) and never
-  changes the exit code.
+  mutant is a different thing (a mutation that is not valid code) and, beside
+  a measured mutant, never changes the exit code.
   """
 
   alias Anchor.Domain.Sabotage.TestRun

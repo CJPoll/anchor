@@ -43,7 +43,7 @@ defmodule Mix.Tasks.Anchor.Sabotage do
   prints `sabotage: 0 changed functions in REF..HEAD`); 1 a mutant survived,
   crashed or had no test, beside a measured one; 2 a refusal or a usage error
   (a dirty target file, the journal not git-ignored, a journal that cannot be
-  restored safely, bad flags); 3 `COULD NOT MEASURE` (no loadable `sabotage:`
+  restored safely, a host with no `/proc`, bad flags); 3 `COULD NOT MEASURE` (no loadable `sabotage:`
   config, the baseline tests fail, the changed functions' files cannot be
   read, or mutants were run and none was measured: all invalid, crashed or
   without a test).

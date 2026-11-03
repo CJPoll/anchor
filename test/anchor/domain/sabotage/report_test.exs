@@ -213,6 +213,9 @@ defmodule Anchor.Domain.Sabotage.ReportTest do
     test "a refusal and a dry run keep their own codes" do
       assert Report.exit_code(%Run{refusal: {3, "x"}, outcomes: [outcome("a", :killed)]}) == 3
       assert Report.exit_code(%Run{dry_run: true}) == 0
+
+      # A dry run applies nothing, so whatever outcomes it holds are not read.
+      assert Report.exit_code(%Run{dry_run: true, outcomes: [outcome("a", :survived)]}) == 0
     end
   end
 

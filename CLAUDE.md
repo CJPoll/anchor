@@ -192,7 +192,7 @@ owner (OS pid and `/proc` start time) is alive: then the run refuses. One run
 at a time: each run holds `_build/anchor-sabotage.lock` from its first step to
 its last (a dead holder's lock is taken over); a host with no `/proc` refuses
 (exit 2), because the lock could name no owner. A mutant that
-does not compile is `invalid`, never killed, and never changes the exit code. A
+does not compile is `invalid`, never killed, and (beside a measured mutant) never changes the exit code. A
 mutant whose run crashed or had no test is unmeasured: with no measured mutant
 the run is exit 3, beside one it fails like a survivor (exit 1)
 (`Anchor.Domain.Sabotage.Report`). Failed tests come from

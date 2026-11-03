@@ -3,6 +3,11 @@
 - **Domain:** sabotage
 - **Branch:** dnd-5570-sabotage-hardening
 - **Date:** 2026-11-03
+- **Code under test:** per ticket, in each section below (`Report`, `Outcome`,
+  `Run`, `Runner`, `BoundedOutput`, `TestRun`, `TestRunner`, `OrphanCheck`,
+  `SourcePatcher`, and the formatter's encoder through the fixture)
+- **Suite run:** per ticket, in each section below, always with `--timeout
+  2000 --max-cases 2` through `test-slot`
 - **Method:** each mutation was applied alone by a scratch driver outside the
   repo (one exact text replaced, the named test files run through `test-slot`
   with `--timeout 2000 --max-cases 2`, the file restored and touched). Every
@@ -149,3 +154,21 @@ O0 (the same text replaced by itself) was green, as the driver's check.
 
 The fixture also proves the property the formatter's moduledoc claims: it
 compiles and runs in a bare `elixir` VM that loads no other Anchor module.
+
+## Review-floor additions (controls that no earlier row could turn red)
+
+The ADR reviewer found tests above that no row had failed. Each now has one.
+
+| # | Mutation | Tests failed | First failure, verbatim |
+|---|---|---|---|
+| R1 | `:invalid` counts as failing (`@failing` holds it) | 2 | report "positive control: one measured mutant makes invalid mutants not change the exit" `code:  assert exit_of([:killed, :invalid]) == 0` `left:  1`; manager "a compile error is invalid, and with a killed mutant beside it the run is exit 0" |
+| R2 | the zero-scope line prints for any known count | 1 | report "positive control: changed functions that made no mutant do not print the zero line" `Refute with =~ failed` |
+| R3 | `exit_code/1` has no refusal clause | 6 | report "a refusal and a dry run keep their own codes" `code:  assert Report.exit_code(%Run{refusal: {3, "x"}, outcomes: [outcome("a", :killed)]}) == 3` |
+| R3b | `exit_code/1` has no dry-run clause (the test gained a dry run holding a survivor, which the old test could not tell) | 1 | report "a refusal and a dry run keep their own codes" `code:  assert Report.exit_code(%Run{dry_run: true, outcomes: [outcome("a", :survived)]}) == 0` `left:  1` |
+| R4 | exit 124 is a timeout only once the bound was reached | 3 | outcome "exit 124 is a timeout, whatever the frames say"; outcome "positive control: 124 is a timeout whatever the clock says"; adapter "3: none: no test ran" |
+| R5 | the dropped count is off by one | 2 | adapter "9: output within the bound drops nothing"; adapter "6: a run killed by signal 9 ..." `left:  "test run crashed: killed by signal 9 (exit 137); 1 bytes of its output were dropped"` |
+| R6 | an unreadable diff becomes an empty scope | 1 | manager "a diff that could not be read stays exit 3, never the empty scope" `** (Mox.UnexpectedCallError) no expectation defined for Anchor.GitWorktreeMock.dirty_paths/2` |
+| R7 | `text/1` does not repair a cut character | 1 | bounded_output "a character cut at a boundary never makes the text invalid UTF-8" `Expected truthy, got false` `code: assert String.valid?(BoundedOutput.text(out))` |
+
+Correction to M6 above: M6 failed the bounded_output tests (5 in the three
+files run), not the UTF-8 test; R7 is the row for that one.

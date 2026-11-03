@@ -4,8 +4,10 @@ defmodule Anchor.Domain.Sabotage.Report do
 
   One tab-separated line per mutant: id, `Module.name/arity`, operator,
   status, killers, how its tests were selected. A survivor's line ends with a
-  `Fix:`; a `no_tests` mutant names the mirror path it looked for; an
-  `invalid` one says why. Then the skipped mutants (with their reason), the
+  `Fix:`; a `no_tests` mutant names the mirror path it looked for (or, when
+  its tests ran none, says so); a `crashed` one says why, with a `Fix:`; an
+  `invalid` one says why. A run that measured nothing ends with a
+  `COULD NOT MEASURE` line. Then the skipped mutants (with their reason), the
   functions no mutant could be made of, the cap, and a summary that counts
   every status, `invalid` included.
 
@@ -21,7 +23,7 @@ defmodule Anchor.Domain.Sabotage.Report do
       mutant in a measured run fails like a survivor; DND-5483's survivors
       list will be where one gets a reason instead);
     * 0 otherwise. A mutant that did not compile (`invalid`) is listed and
-      counted and never changes the code.
+      counted and, beside a measured mutant, never changes the code.
 
   A mutant is measured when it was killed, survived or timed out.
   """

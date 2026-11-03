@@ -706,7 +706,7 @@ How a run goes:
 | `killed` | a selected test failed; those tests are the killers |
 | `survived` | the selected tests ran and passed (`Fix: add a test that fails under this mutant`) |
 | `timeout` | the time bound killed the run; counts as killed, killer `(timeout)` |
-| `invalid` | the mutant did not compile (any reason, a type-checker warning under warnings-as-errors included: the compiler's first error line is shown). Never killed, never survived; listed and counted, and it never changes the exit code |
+| `invalid` | the mutant did not compile (any reason, a type-checker warning under warnings-as-errors included: the compiler's first error line is shown). Never killed, never survived; listed and counted, and beside a measured mutant it never changes the exit code |
 | `crashed` | the test run crashed or raised, so the tests could not judge the mutant (the line says why; an exit 137 inside the time bound reads `killed by signal 9`, an out-of-memory kill for one, and is never a timeout). Unmeasured |
 | `no_tests` | no test was selected (the line names the mirror path looked for), or the selected tests ran none under the mutant. Unmeasured |
 
