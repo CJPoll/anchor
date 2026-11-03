@@ -77,7 +77,6 @@ interface|Anchor.Managers.Lint.own_rules/2|-> Anchor.Check.StructGetterConventio
 interface|Anchor.Managers.Lint.own_rules/2|-> Anchor.Check.StructOwnedByModule.rule_type/0
 interface|Anchor.Managers.Lint.put_module_analyses/4|-> Anchor.Check.Source.ast/1
 interface|Anchor.Managers.Lint.result_for_file/2|-> Anchor.Check.Source.ast/1
-interface|Anchor.Managers.Sabotage.Coverage.traced_suite/3|-> Mix.Tasks.Anchor.Explain.run/1
 interface|Anchor.Managers.Sabotage.Coverage.traced_suite/3|-> Mix.Tasks.Anchor.Graph.run/1
 interface|Anchor.Managers.Sabotage.Coverage.traced_suite/3|-> Mix.Tasks.Anchor.Sabotage.run/1
 interface|Anchor|no context

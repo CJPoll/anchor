@@ -27,7 +27,8 @@ defmodule Mix.Tasks.Anchor.Explain do
   name it implies; the facts only a beam has (behaviours, `use`s, exported
   functions, its app) are listed as unknown until compiled. If the project
   does not compile, it still answers from the config and the paths. It
-  writes nothing (the graph artifact is `mix anchor.graph`'s) and loads no
+  writes no file of its own: the compile it runs writes `_build` as `mix
+  compile` does, and the graph artifact is `mix anchor.graph`'s. It loads no
   project module.
 
   `--format json` prints `{subject, module, path, exists, notes,

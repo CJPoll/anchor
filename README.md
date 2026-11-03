@@ -948,8 +948,9 @@ and exported functions) are listed under `unknown`. A bucket that only such a
 selector could still match is listed under `possible`, so a definite path
 classification never hides an ambiguity the compiled module would have. If the
 project does not compile, it still answers from the config and the paths and
-says `compile failed; beam facts unknown`. It writes nothing and loads no
-project module.
+says `compile failed; beam facts unknown`. It writes no file of its own (the
+compile it runs writes `_build` as `mix compile` does; the graph artifact is
+`mix anchor.graph`'s) and loads no project module.
 
 ```text
 anchor.explain: lib/my_app/orders/manager.ex
