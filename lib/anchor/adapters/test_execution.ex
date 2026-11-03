@@ -10,11 +10,16 @@ defmodule Anchor.Adapters.TestExecution do
   `{:error, :timeout_not_found}` when the `timeout` binary is missing: a run
   is never unbounded. `{:error, {:results_not_removed, path, posix}}` when a
   stale results file cannot be deleted: its frames are never read.
+  `{:error, {:results_dir_not_created, dir, posix}}` when the results file's
+  directory cannot be made. These three are the only errors.
   """
 
   alias Anchor.Domain.Sabotage.TestRun
 
   @callback run(argv :: [String.t(), ...], test_args :: [String.t()], opts :: keyword()) ::
               {:ok, TestRun.t()}
-              | {:error, :timeout_not_found | {:results_not_removed, String.t(), atom()}}
+              | {:error,
+                 :timeout_not_found
+                 | {:results_not_removed, String.t(), atom()}
+                 | {:results_dir_not_created, String.t(), atom()}}
 end

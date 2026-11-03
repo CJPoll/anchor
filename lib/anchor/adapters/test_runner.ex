@@ -9,7 +9,8 @@ defmodule Anchor.Adapters.TestRunner do
   run with `System.cmd/3` (no shell) in `opts[:cd]`, with `MIX_ENV=test` and
   `ANCHOR_SABOTAGE_RESULTS=<results_path>`; the results file is deleted
   first (one that cannot be removed is
-  `{:error, {:results_not_removed, path, posix}}`, never read). The bound is the `timeout` binary's: a mutant that loops forever is
+  `{:error, {:results_not_removed, path, posix}}`, never read; a directory for
+  it that cannot be made is `{:error, {:results_dir_not_created, dir, posix}}`). The bound is the `timeout` binary's: a mutant that loops forever is
   killed (exit 124, or 137 after the grace period) and recorded `:timeout`.
   The frames are read with `:erlang.binary_to_term(bin, [:safe])`; a frame cut
   short by a kill ends the read.
@@ -54,12 +55,19 @@ defmodule Anchor.Adapters.TestRunner do
   # A results file left by an earlier run must be gone: its frames would be
   # read as this run's.
   defp fresh(results) do
-    with :ok <- File.mkdir_p(Path.dirname(results)) do
-      case File.rm(results) do
-        :ok -> :ok
-        {:error, :enoent} -> :ok
-        {:error, posix} -> {:error, {:results_not_removed, results, posix}}
-      end
+    dir = Path.dirname(results)
+
+    case File.mkdir_p(dir) do
+      :ok -> remove_stale(results)
+      {:error, posix} -> {:error, {:results_dir_not_created, dir, posix}}
+    end
+  end
+
+  defp remove_stale(results) do
+    case File.rm(results) do
+      :ok -> :ok
+      {:error, :enoent} -> :ok
+      {:error, posix} -> {:error, {:results_not_removed, results, posix}}
     end
   end
 

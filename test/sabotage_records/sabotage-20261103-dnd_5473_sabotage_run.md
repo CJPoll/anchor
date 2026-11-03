@@ -152,6 +152,8 @@ strengthened to a warnings-only output and C32 re-run red.
 | C34 | a live owner's journal read as a leftover (critic round 1) | 1: Manager "a journal whose owner is a live run" | `** (Mox.UnexpectedCallError) no expectation defined for Anchor.SourceMutationMock.sha256_file/1 in process #PID<0.283.0> with args ["/repo/lib/calc.ex"]` (recovery went on to the file) |
 | C35 | `owner_alive?/1` ignores the start time (a reused pid read as live) | 1: SourcePatcher "the journal names this run as its owner" | `Expected false or nil, got true` `code: refute SourcePatcher.owner_alive?(%{owner \| started: started <> "0"})` |
 | C36 | the journal never writes its owner | 2: Journal "the owner round-trips"; SourcePatcher owner row | `code:  assert Journal.decode(Journal.encode(entry)) == {:ok, entry}` `left:  {:ok, %Anchor.Domain.Sabotage.Journal{... owner: nil}}` |
+| C37 | a results directory that cannot be made returns a bare posix (critic round 2) | 1 (+1 bound): TestRunner "a results directory that cannot be made" | `code:  assert {:error, {:results_dir_not_created, ^out, posix}} = run("pass", dir)` `right: {:error, :enotdir}` |
+| C38 | `results_dir_not_created` refused with exit 2, not 3 | 1: Manager "a results directory the runner cannot make" | `code:  assert %{refusal: {3, message}} = Sabotage.run(@facts, @opts)` |
 
-On C14 and C15, TestRunner row 5 (`hang`) also hit the 2000 ms bound, as on
+On C14, C15 and C37, TestRunner row 5 (`hang`) also hit the 2000 ms bound, as on
 R8: a bound, not a verdict.

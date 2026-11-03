@@ -526,6 +526,16 @@ defmodule Anchor.Managers.SabotageRunTest do
                "COULD NOT MEASURE: the previous results file /repo/_build/x/results.bin could not be removed"
     end
 
+    test "a results directory the runner cannot make is COULD NOT MEASURE, exit 3" do
+      expect_until_selection()
+      expect_baseline({:error, {:results_dir_not_created, "/repo/_build/x", :enotdir}})
+
+      assert %{refusal: {3, message}} = Sabotage.run(@facts, @opts)
+
+      assert message =~
+               "COULD NOT MEASURE: the results directory /repo/_build/x could not be made (:enotdir)"
+    end
+
     test "10: a mutant with no test selected is no_tests, and nothing is written for it" do
       expect_until_selection(tests?: false)
       expect_save()

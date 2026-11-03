@@ -478,6 +478,7 @@ defmodule Anchor.Managers.Sabotage.Runner do
 
   defp runner_error_code(:timeout_not_found), do: 2
   defp runner_error_code({:results_not_removed, _path, _posix}), do: 3
+  defp runner_error_code({:results_dir_not_created, _dir, _posix}), do: 3
 
   defp runner_error(:timeout_not_found), do: timeout_missing()
 
@@ -485,6 +486,12 @@ defmodule Anchor.Managers.Sabotage.Runner do
     "COULD NOT MEASURE: the previous results file #{path} could not be removed " <>
       "(#{inspect(posix)}), so a test run's failures could be an earlier run's. " <>
       "Fix: remove #{path} by hand"
+  end
+
+  defp runner_error({:results_dir_not_created, dir, posix}) do
+    "COULD NOT MEASURE: the results directory #{dir} could not be made " <>
+      "(#{inspect(posix)}), so no test run's failures can be read. Fix: make #{dir} " <>
+      "(or its parent) a writable directory"
   end
 
   defp journal_not_deleted do

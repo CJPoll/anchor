@@ -62,6 +62,15 @@ defmodule Anchor.Adapters.TestRunnerTest do
     assert posix in [:eperm, :eisdir]
   end
 
+  test "a results directory that cannot be made is an error, never a crash", %{tmp_dir: dir} do
+    File.write!(Path.join(dir, "out"), "a file, not a directory")
+
+    out = Path.join(dir, "out")
+
+    assert {:error, {:results_dir_not_created, ^out, posix}} = run("pass", dir)
+    assert posix in [:enotdir, :eexist]
+  end
+
   test "the test files and both formatters follow the command; a stale results file is deleted first",
        %{tmp_dir: dir} do
     File.mkdir_p!(Path.join(dir, "out"))
