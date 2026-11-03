@@ -162,11 +162,11 @@ defmodule Mix.Tasks.Anchor.GraphTest do
       expect_run([baselined(1)], beam)
 
       expect(Anchor.BaselineStoreMock, :read, fn _root, ".anchor/baselines/a.txt" ->
-        {:ok, "#{@key}\na|Extra|x\n"}
+        {:ok, ["#{@key}", "a|Extra|x"]}
       end)
 
       expect(Anchor.GitBaseMock, :show, fn _root, "origin/main", ".anchor/baselines/a.txt" ->
-        {:ok, "#{@key}\n"}
+        {:ok, ["#{@key}"]}
       end)
 
       output =

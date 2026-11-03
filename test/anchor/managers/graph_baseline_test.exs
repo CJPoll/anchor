@@ -17,6 +17,7 @@ defmodule Anchor.Managers.GraphBaselineTest do
   alias Anchor.Config
   alias Anchor.ConfigLoaderMock
   alias Anchor.Domain.Architecture
+  alias Anchor.Domain.Baseline
   alias Anchor.Domain.Graph.SourceFacts
   alias Anchor.Domain.GraphReport
   alias Anchor.GitBaseMock
@@ -102,7 +103,7 @@ defmodule Anchor.Managers.GraphBaselineTest do
     expect(BaselineStoreMock, :read, fn @root, @path ->
       case bytes_or_error do
         {:error, _reason} = error -> error
-        bytes -> {:ok, bytes}
+        bytes -> Baseline.parse(bytes)
       end
     end)
   end
@@ -197,14 +198,14 @@ defmodule Anchor.Managers.GraphBaselineTest do
 
     test "a rule with no baseline never reads one", %{beam: beam} do
       expect_run([rule(%{baseline: nil})], beam)
-      expect(BaselineStoreMock, :read, 0, fn _root, _path -> {:ok, ""} end)
+      expect(BaselineStoreMock, :read, 0, fn _root, _path -> {:ok, []} end)
 
       assert %{exit_code: 1, held: []} = Graph.run(request(), deps())
     end
 
     test "a rule that crashed is not compared: its baseline is never read", %{beam: beam} do
       expect_run([rule(%{type: :stub_raises})], beam)
-      expect(BaselineStoreMock, :read, 0, fn _root, _path -> {:ok, ""} end)
+      expect(BaselineStoreMock, :read, 0, fn _root, _path -> {:ok, []} end)
 
       report = Graph.run(request(), deps())
       assert report.exit_code == 1
@@ -217,7 +218,7 @@ defmodule Anchor.Managers.GraphBaselineTest do
     test "an entry the branch added since REF fails as GREW (exit 1)", %{beam: beam} do
       expect_run([rule()], beam)
       expect_baseline("#{@key}\nf|Added|found\n")
-      expect(GitBaseMock, :show, fn @root, "main", @path -> {:ok, "#{@key}\n"} end)
+      expect(GitBaseMock, :show, fn @root, "main", @path -> Baseline.parse("#{@key}\n") end)
 
       report = Graph.run(request(%{base: "main"}), deps())
 
@@ -230,7 +231,10 @@ defmodule Anchor.Managers.GraphBaselineTest do
     test "a baseline that only shrank since REF is not growth", %{beam: beam} do
       expect_run([rule()], beam)
       expect_baseline("#{@key}\n")
-      expect(GitBaseMock, :show, fn @root, "main", @path -> {:ok, "#{@key}\nf|Fixed|found\n"} end)
+
+      expect(GitBaseMock, :show, fn @root, "main", @path ->
+        Baseline.parse("#{@key}\nf|Fixed|found\n")
+      end)
 
       assert %{exit_code: 0, findings: []} = Graph.run(request(%{base: "main"}), deps())
     end
@@ -274,7 +278,7 @@ defmodule Anchor.Managers.GraphBaselineTest do
       beam: beam
     } do
       expect_run([rule()], beam)
-      expect(BaselineStoreMock, :read, 0, fn _root, _path -> {:ok, ""} end)
+      expect(BaselineStoreMock, :read, 0, fn _root, _path -> {:ok, []} end)
 
       expect(BaselineStoreMock, :create, fn @root, @path, contents ->
         assert contents == "# anchor baseline for f; shrink only\n#{@key}\n"

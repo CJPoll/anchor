@@ -55,7 +55,25 @@ jobs:
       # Dogfood (DND-5440): the graph engine judges Anchor's own compiled lib/
       # against .anchor.yml's architecture: section. Run in the dev env so the
       # graph is lib/ as it ships (test/support compiles only under test).
+      # On a pull request it also reads each baseline at the base branch
+      # (DND-5441, --base): a line the branch adds to a baseline fails as
+      # GREW, so a baseline only shrinks. The checkout is shallow, so the base
+      # branch is fetched first; its name goes through env, never the script.
+      - name: Fetch the base branch (pull request)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: git fetch --no-tags --depth=1 origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
+
+      - name: Graph (mix anchor.graph --base, pull request)
+        if: github.event_name == 'pull_request'
+        env:
+          MIX_ENV: dev
+          BASE_REF: ${{ github.base_ref }}
+        run: mix anchor.graph --base "origin/${BASE_REF}"
+
       - name: Graph (mix anchor.graph)
+        if: github.event_name != 'pull_request'
         env:
           MIX_ENV: dev
         run: mix anchor.graph

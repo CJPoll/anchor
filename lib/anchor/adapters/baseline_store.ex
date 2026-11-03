@@ -10,9 +10,16 @@ defmodule Anchor.Adapters.BaselineStore do
   `..` segment). `create/3` only creates: on an existing file it returns
   `{:error, :exists}` and leaves the file as it was, so `--write-baseline`
   can never loosen a baseline that is already there.
+
+  `read/2` returns the file's entries, parsed by
+  `Anchor.Domain.Baseline.parse/1` (ADR 001: an adapter returns Domain values,
+  never the raw bytes), or `{:error, {:line, n, :invalid_utf8}}` for a line
+  that is not UTF-8, or the read's own error.
   """
 
-  @callback read(root :: Path.t(), path :: Path.t()) :: {:ok, binary()} | {:error, term()}
+  @callback read(root :: Path.t(), path :: Path.t()) ::
+              {:ok, [String.t()]}
+              | {:error, {:line, pos_integer(), :invalid_utf8} | :outside_root | File.posix()}
 
   @callback create(root :: Path.t(), path :: Path.t(), contents :: binary()) ::
               :ok | {:error, :exists | term()}

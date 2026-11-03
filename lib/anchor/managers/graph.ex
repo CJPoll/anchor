@@ -285,10 +285,8 @@ defmodule Anchor.Managers.Graph do
   end
 
   defp read_entries(store, root, rule, path) do
-    with {:ok, bytes} <- store.read(root, path),
-         {:ok, entries} <- Baseline.parse(bytes) do
-      {:ok, entries}
-    else
+    case store.read(root, path) do
+      {:ok, entries} -> {:ok, entries}
       {:error, reason} -> {:fail, Failures.baseline_unreadable(rule, path, reason)}
     end
   end
@@ -306,15 +304,8 @@ defmodule Anchor.Managers.Graph do
 
   defp base_entries(git, root, ref, path) do
     case git.show(root, ref, path) do
-      {:ok, bytes} -> parse_base(bytes, path, ref)
-      {:error, :absent} -> {:ok, :absent}
-      {:error, reason} -> {:fail, Failures.baseline_base_unreadable(path, ref, reason)}
-    end
-  end
-
-  defp parse_base(bytes, path, ref) do
-    case Baseline.parse(bytes) do
       {:ok, entries} -> {:ok, {:ok, entries}}
+      {:error, :absent} -> {:ok, :absent}
       {:error, reason} -> {:fail, Failures.baseline_base_unreadable(path, ref, reason)}
     end
   end

@@ -41,7 +41,7 @@ defmodule Anchor.Adapters.GitShowTest do
 
   test "a committed file returns its bytes at the ref, not the working copy", %{tmp_dir: root} do
     repo!(root)
-    assert GitShow.show(root, "main", ".anchor/baselines/r.txt") == {:ok, "r|A|x\n"}
+    assert GitShow.show(root, "main", ".anchor/baselines/r.txt") == {:ok, ["r|A|x"]}
   end
 
   test "a file absent at a ref that resolves is :absent", %{tmp_dir: root} do
@@ -77,6 +77,53 @@ defmodule Anchor.Adapters.GitShowTest do
              GitShow.show(root, "nosuch", ".anchor/baselines/r.txt")
 
     assert status != 0
+  end
+
+  # Regression (review floor on d9a61de): once the commit resolved, ANY
+  # failure of the path probe read as :absent, a first landing (a NOTE, exit
+  # 0). A tree object git cannot read is such a failure: it must be an error.
+  test "a path git cannot look up at a resolved ref is a git error, never :absent", %{
+    tmp_dir: root
+  } do
+    repo!(root)
+    tree = root |> git!(["rev-parse", "main:.anchor"]) |> String.trim()
+    {dir, file} = String.split_at(tree, 2)
+    File.rm!(Path.join([root, ".git", "objects", dir, file]))
+
+    assert {:error, {:git, status, _out}} = GitShow.show(root, "main", ".anchor/baselines/r.txt")
+    assert status != 0
+  end
+
+  # Review floor on d9a61de: with no git on the PATH, System.cmd raised and
+  # the run crashed with no Fix: line. It runs in a child VM whose PATH holds
+  # no git, so this VM's environment is never touched.
+  test "no git on the PATH is a git error, never a crash", %{tmp_dir: root} do
+    repo!(root)
+    ebin = Path.dirname(:code.which(GitShow))
+
+    code =
+      ~s|System.put_env("PATH", "/nonexistent"); | <>
+        "IO.inspect(Anchor.Adapters.GitShow.show(#{inspect(root)}, \"main\", \"r.txt\"))"
+
+    assert System.cmd("elixir", ["-pa", ebin, "-e", code], stderr_to_stdout: true) ==
+             {~s|{:error, {:git, :enoent, "git was not found on the PATH"}}\n|, 0}
+  end
+
+  test "an absolute path or a .. segment never reaches git", %{tmp_dir: root} do
+    repo!(root)
+    assert GitShow.show(root, "main", "/etc/passwd") == {:error, :outside_root}
+    assert GitShow.show(root, "main", "../x/r.txt") == {:error, :outside_root}
+    assert {:ok, ["r|A|x"]} = GitShow.show(root, "main", ".anchor/baselines/r.txt")
+  end
+
+  test "a line that is not UTF-8 at the ref is its error, naming the line", %{tmp_dir: root} do
+    repo!(root)
+    File.write!(Path.join(root, ".anchor/baselines/bad.txt"), "r|A|x\n\xff\n")
+    git!(root, ["add", "."])
+    git!(root, ["commit", "-q", "-m", "bad"])
+
+    assert GitShow.show(root, "main", ".anchor/baselines/bad.txt") ==
+             {:error, {:line, 2, :invalid_utf8}}
   end
 
   test "a ref Anchor refuses never reaches git", %{tmp_dir: root} do

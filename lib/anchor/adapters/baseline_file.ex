@@ -13,9 +13,14 @@ defmodule Anchor.Adapters.BaselineFile do
 
   @behaviour Anchor.Adapters.BaselineStore
 
+  alias Anchor.Domain.Baseline
+
   @impl Anchor.Adapters.BaselineStore
   def read(root, path) do
-    with {:ok, full} <- confined(root, path), do: File.read(full)
+    with {:ok, full} <- confined(root, path),
+         {:ok, bytes} <- File.read(full) do
+      Baseline.parse(bytes)
+    end
   end
 
   @impl Anchor.Adapters.BaselineStore

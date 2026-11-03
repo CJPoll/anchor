@@ -1,21 +1,24 @@
 defmodule Anchor.Adapters.GitShow do
   @moduledoc """
-  Reads a file as it is on a git ref, the **Side Effect** adapter (ADR 001)
+  Reads a baseline as it is on a git ref, the **Side Effect** adapter (ADR 001)
   behind `Anchor.Adapters.GitBase` (DND-5441).
 
-  It refuses a ref `Anchor.Domain.Baseline.valid_ref?/1` rejects before git
-  runs. Git runs with `System.cmd/3` (argv only, never a shell), in `root`,
-  with `GIT_OPTIONAL_LOCKS=0`, and only reads:
+  It refuses a ref `Anchor.Domain.Baseline.valid_ref?/1` rejects, and an
+  absolute path or one with a `..` segment, before git runs. Git runs with
+  `System.cmd/3` (argv only, never a shell), in `root`, with
+  `GIT_OPTIONAL_LOCKS=0`, and only reads:
 
     1. `git rev-parse --verify --quiet --end-of-options <ref>^{commit}`: a ref
        that does not resolve is an error, never an absent file;
-    2. `git rev-parse --verify --quiet --end-of-options <sha>:./<path>`: a
-       non-zero exit is an absent file (the commit resolved, so the path is
-       what is missing). `--quiet` keeps git silent: `cat-file -e` printed a
-       `fatal:` line to the terminal on every first landing;
-    3. `git cat-file blob <sha>:./<path>`: the bytes.
+    2. `git ls-tree <sha> -- <path>`: an empty answer is an absent file (the
+       commit resolved, so the path is what is missing), and a failure is an
+       error, never absent. It prints nothing for an absent path, where
+       `cat-file -e` wrote a `fatal:` line to the terminal;
+    3. `git cat-file blob <sha>:./<path>`: the bytes, parsed by
+       `Anchor.Domain.Baseline.parse/1` (the port returns entries).
 
-  Git's stderr is kept out of the output it reads.
+  Git's stderr is kept out of the output it reads. No `git` to run is an
+  error, `{:git, :enoent, _}`, never a crash.
   """
 
   @behaviour Anchor.Adapters.GitBase
@@ -24,35 +27,45 @@ defmodule Anchor.Adapters.GitShow do
 
   @impl Anchor.Adapters.GitBase
   def show(root, ref, path) do
-    if Baseline.valid_ref?(ref), do: show_valid(root, ref, path), else: {:error, :bad_ref}
+    cond do
+      not Baseline.valid_ref?(ref) -> {:error, :bad_ref}
+      Path.type(path) != :relative or ".." in Path.split(path) -> {:error, :outside_root}
+      true -> show_valid(root, ref, path)
+    end
   end
 
   defp show_valid(root, ref, path) do
-    with {:ok, sha} <- resolve(root, ref) do
-      object = sha <> ":./" <> path
-
-      case git(root, ["rev-parse", "--verify", "--quiet", "--end-of-options", object]) do
-        {_out, 0} -> blob(root, object)
-        {_out, _status} -> {:error, :absent}
-      end
+    with {:ok, sha} <- resolve(root, ref),
+         {:ok, listed} <- git(root, ["ls-tree", sha, "--", path]),
+         :ok <- present(listed),
+         {:ok, bytes} <- git(root, ["cat-file", "blob", sha <> ":./" <> path]) do
+      Baseline.parse(bytes)
     end
   end
+
+  defp present(""), do: {:error, :absent}
+  defp present(_listed), do: :ok
 
   defp resolve(root, ref) do
-    case git(root, ["rev-parse", "--verify", "--quiet", "--end-of-options", ref <> "^{commit}"]) do
-      {out, 0} -> {:ok, String.trim(out)}
-      {out, status} -> {:error, {:git, status, out}}
-    end
-  end
-
-  defp blob(root, object) do
-    case git(root, ["cat-file", "blob", object]) do
-      {out, 0} -> {:ok, out}
-      {out, status} -> {:error, {:git, status, out}}
+    with {:ok, out} <-
+           git(root, ["rev-parse", "--verify", "--quiet", "--end-of-options", ref <> "^{commit}"]) do
+      {:ok, String.trim(out)}
     end
   end
 
   defp git(root, args) do
-    System.cmd("git", args, cd: root, stderr_to_stdout: false, env: [{"GIT_OPTIONAL_LOCKS", "0"}])
+    case System.cmd("git", args,
+           cd: root,
+           stderr_to_stdout: false,
+           env: [{"GIT_OPTIONAL_LOCKS", "0"}]
+         ) do
+      {out, 0} -> {:ok, out}
+      {out, status} -> {:error, {:git, status, out}}
+    end
+  rescue
+    error in ErlangError ->
+      if error.original == :enoent,
+        do: {:error, {:git, :enoent, "git was not found on the PATH"}},
+        else: reraise(error, __STACKTRACE__)
   end
 end

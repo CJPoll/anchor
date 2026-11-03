@@ -633,7 +633,8 @@ findings can only shrink along the way:
 
 A baseline file holds one key per line; `#` comments and blank lines are
 ignored and the entries are a multiset (a key listed twice holds two
-findings). A key is `<rule id>|<subject>|<detail>`, such as
+findings). A key is `<rule id>|<subject>|<detail>` (or `<rule id>|<subject>`
+for a finding with no target, such as a `context_acyclic` cycle), such as
 `layering|MyApp.Web.Page.show/2|-> MyApp.Repo.get/2`: no line numbers and no
 message text, so moving code does not churn it. Every entry starts with the
 rule's id; a file holding another rule's entry is refused. `baseline` is read
@@ -803,12 +804,16 @@ line.
 | A baseline entry the branch added since `--base REF` (GREW) | 1 (0 for a `report` rule) | the baseline path | `... was added to .anchor/baselines/web.txt since main. Fix: fix the finding instead; a baseline only shrinks ...` |
 | A baseline that could not be read at `--base REF` (git failed) | 1 | the baseline path | `Anchor could not read .anchor/baselines/web.txt at main (...), so whether the branch added to it (GREW) could not be judged. Fix: ...` |
 | A baseline absent at `--base REF` (first landing) | 0 | the baseline path | `NOTE: first landing of .anchor/baselines/web.txt (absent at main); review is the gate. ...` |
+| `--write-baseline` that could not create the file (not `:exists`: `:eacces`, ...) | 1 | the baseline path | `Anchor could not create .anchor/baselines/web.txt (:eacces). Fix: make its directory writable.` |
+| `--write-baseline` that created the file | 0 | the baseline path | `anchor.graph wrote 3 entries to .anchor/baselines/web.txt. Fix: review it in this change; from here it only shrinks.` (`[report]`) |
 | `--write-baseline` over an existing file, or naming no rule with a `baseline:` | 2 | the baseline path, or the config | `.anchor/baselines/web.txt exists; --write-baseline only creates, and never rewrites a baseline. Fix: ...` |
 | A `--base` ref with a character git must not see (a leading `-`, a space, `;`, `$`, `:`) | 2 | | usage, with a `Fix:` line |
 | Findings of a `report` rule | 0 | the finding | printed `[report]` |
 
 Exit 2 is a usage error (an unknown option, `--format` other than `text` or
-`json`, an argument), with a `Fix:` line.
+`json`, an argument, a `--base` ref Anchor refuses) or a refused
+`--write-baseline` (the file exists, or the id names no rule with a
+`baseline:`), with a `Fix:` line.
 
 ## Generated sabotage: the functions a change touched
 
