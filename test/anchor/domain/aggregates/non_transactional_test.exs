@@ -41,6 +41,12 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
               defp n4b(n), do: (Repo.insert(%T{}); n4a(n))
 
               def n5, do: Ecto.Multi.insert(Ecto.Multi.new(), :a, %S{})
+
+              # A Multi built in a helper, its run callback writing on the
+              # literal repo: inline, and as a capture.
+              def n6, do: Ecto.Multi.run(Ecto.Multi.new(), :a, fn _r, _c -> Repo.insert(%S{}) end)
+              def n7, do: Ecto.Multi.run(Ecto.Multi.new(), :a, &n7_step/2)
+              def n7_step(_repo, _changes), do: Repo.insert(%T{})
             end
             """
 
@@ -74,6 +80,18 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
   test "N4: recursion terminates at the fixpoint", %{analysis: a} do
     assert nontx(a, :n4a, 1).keys == keys([@s, @t])
     assert nontx(a, :n4b, 1).keys == keys([@s, @t])
+  end
+
+  test "N5: a literal-repo write in an inline Multi.run callback is never non-transactional", %{
+    analysis: a
+  } do
+    assert nontx(a, :n6).keys == MapSet.new()
+  end
+
+  test "N5: a captured Multi.run callback's writes are never non-transactional to the builder",
+       %{analysis: a} do
+    assert nontx(a, :n7).keys == MapSet.new()
+    assert MapSet.member?(a.always_in_transaction, {@n, :n7_step, 2})
   end
 
   test "a Multi step is never a non-transactional write", %{analysis: a} do

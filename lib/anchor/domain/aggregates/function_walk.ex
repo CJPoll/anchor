@@ -104,7 +104,8 @@ defmodule Anchor.Domain.Aggregates.FunctionWalk do
 
   @doc """
   Follows `node` through the variables `env` binds to the value that made it:
-  `{:node, node, env}` for a node that is no variable bound to a value, or
+  `{:node, node, env}` for a node that is no variable bound to a value (a
+  function name no letrec binds is such a node), or
   `{:binding, binding}` for a parameter, a repo, a pattern value or an unbound
   variable (`:unbound`).
   """
@@ -113,8 +114,13 @@ defmodule Anchor.Domain.Aggregates.FunctionWalk do
 
   defp deref(node, env, depth) when depth < 64 do
     if :cerl.is_c_var(node) do
-      case Map.get(env, :cerl.var_name(node), :unbound) do
+      name = :cerl.var_name(node)
+
+      case Map.get(env, name, :unbound) do
         {:node, bound, bound_env} -> deref(bound, bound_env, depth + 1)
+        # A function name (`'step'/2`) no letrec binds is the module's own
+        # function: the value is the name itself.
+        :unbound when is_tuple(name) -> {:node, node, env}
         binding -> {:binding, binding}
       end
     else
@@ -342,9 +348,14 @@ defmodule Anchor.Domain.Aggregates.FunctionWalk do
   end
 
   # A variable copies the binding it names; any other node is a value.
+  # A function name (`let <F> = 'step'/2`, how Core holds `&step/2`) no
+  # letrec binds is a value, the module's own function, never "unbound".
   defp binding_of(node, env) do
-    if :cerl.is_c_var(node),
-      do: Map.get(env, :cerl.var_name(node), {:pattern, "an unbound variable"}),
-      else: {:node, node, env}
+    cond do
+      not :cerl.is_c_var(node) -> {:node, node, env}
+      Map.has_key?(env, :cerl.var_name(node)) -> Map.fetch!(env, :cerl.var_name(node))
+      is_tuple(:cerl.var_name(node)) -> {:node, node, env}
+      true -> {:pattern, "an unbound variable"}
+    end
   end
 end

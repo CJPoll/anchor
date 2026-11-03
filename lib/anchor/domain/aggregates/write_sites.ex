@@ -126,6 +126,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
           functions: %{mfa() => function_facts()},
           callers: %{mfa() => [{mfa(), [:cerl.cerl()], FunctionWalk.env()}]},
           captured: MapSet.t(mfa()),
+          run_callbacks: MapSet.t(mfa()),
           repos: MapSet.t(module())
         }
 
@@ -188,7 +189,8 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
       via: raw.via,
       sources: sources,
       unresolved: unresolved,
-      scopes: Enum.filter(raw.tags, &is_integer/1)
+      scopes: Enum.filter(raw.tags, &is_integer/1),
+      run_callback?: :run_callback in raw.tags
     }
   end
 
@@ -223,6 +225,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
       functions: facts,
       callers: callers(facts),
       captured: captured(facts, run_callbacks),
+      run_callbacks: run_callbacks,
       repos: repos
     }
   end
@@ -289,14 +292,20 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
       {:capture, {module, f, a}}
     else
       case FunctionWalk.deref(node, env) do
-        {:node, value, value_env} -> fun_value(value, value_env)
+        {:node, value, value_env} -> fun_value(value, value_env, module)
         {:binding, _binding} -> :error
       end
     end
   end
 
-  defp fun_value(node, env) do
+  # A local capture bound to a variable first (`f = &step/2`, or the let Core
+  # makes of `&step/2` itself) is the module's own function.
+  defp fun_value(node, env, module) do
     cond do
+      fname?(node) ->
+        {f, a} = :cerl.var_name(node)
+        {:capture, {module, f, a}}
+
       :cerl.type(node) == :fun ->
         {:lambda, FunctionWalk.id(node)}
 
@@ -592,7 +601,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
         project_call(acc, ctx, {module, f, a}, :local, :cerl.apply_args(node), env, tags, line)
 
       true ->
-        applied(acc, op, env, tags, line, ctx)
+        applied(acc, op, env, tags, line, {ctx, module})
     end
   end
 
@@ -613,10 +622,10 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
 
   # `fun.(x)`: a fun this function defines is walked where it is defined; a
   # capture is a call; anything else is a call Anchor cannot resolve.
-  defp applied(acc, op, env, tags, line, ctx) do
+  defp applied(acc, op, env, tags, line, {ctx, module}) do
     case FunctionWalk.deref(op, env) do
       {:node, value, value_env} ->
-        case fun_value(value, value_env) do
+        case fun_value(value, value_env, module) do
           {:lambda, _id} -> acc
           {:capture, callee} -> project_call(acc, ctx, callee, :capture, [], %{}, tags, line)
           :error -> dynamic(acc, line, "a call of a fun value Anchor cannot resolve", tags)

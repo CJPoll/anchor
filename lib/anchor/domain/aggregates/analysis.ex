@@ -106,8 +106,9 @@ defmodule Anchor.Domain.Aggregates.Analysis do
     %__MODULE__{
       sites: sites,
       scopes: scopes,
-      nontx: NonTransactional.build(functions, tables),
-      always_in_transaction: NonTransactional.always_in_transaction(functions, roots),
+      nontx: NonTransactional.build(functions, tables, facts.run_callbacks),
+      always_in_transaction:
+        NonTransactional.always_in_transaction(functions, roots, facts.run_callbacks),
       tables: tables,
       repos: repos |> MapSet.to_list() |> Enum.sort(),
       counts: counts(sites, scopes)

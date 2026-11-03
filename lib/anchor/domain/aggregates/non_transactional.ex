@@ -9,11 +9,17 @@ defmodule Anchor.Domain.Aggregates.NonTransactional do
   per strongly connected component, so recursion terminates
   (`Anchor.Domain.Aggregates.Scopes.summarise/3`). An `Ecto.Multi` step and a
   `Multi.run` callback's write are never non-transactional: a Multi only runs
-  inside a transaction. Each entry is complete when no dynamic call and no
-  unresolved write is reached.
+  inside a transaction. That holds when the Multi is built in a helper too:
+  a write inside an inline `Multi.run` callback (`WriteSite.run_callback?`)
+  and a capture passed as one (`run_callbacks`, from
+  `Anchor.Domain.Aggregates.WriteSites.facts/3`) are inside, never outside.
+  A function captured as a run callback is so everywhere it is captured.
+  Each entry is complete when no dynamic call and no unresolved write is
+  reached.
 
   `always_in_transaction/2`: the functions that are not roots and whose every
-  project call site is inside a transaction body, or inside a function that is
+  project call site is inside a transaction body or is a `Multi.run` callback
+  (inline, or a capture in `run_callbacks`), or inside a function that is
   itself always in a transaction (the greatest fixpoint, so mutual recursion
   reached only inside a transaction stays in). A root is a function given in
   `roots` (the public functions of the framework bucket, when the run has an
@@ -32,10 +38,15 @@ defmodule Anchor.Domain.Aggregates.NonTransactional do
           gaps: list()
         }
 
-  @doc "`nontx` of every function of `functions` (the resolved facts), keyed through `tables`."
-  @spec build(map(), %{String.t() => [module()]}) :: %{mfa() => entry()}
-  def build(functions, tables) do
+  @doc """
+  `nontx` of every function of `functions` (the resolved facts), keyed
+  through `tables`; `run_callbacks` are the functions captured as a
+  `Multi.run` callback.
+  """
+  @spec build(map(), %{String.t() => [module()]}, MapSet.t(mfa())) :: %{mfa() => entry()}
+  def build(functions, tables, run_callbacks \\ MapSet.new()) do
     functions
+    |> without_run_captures(run_callbacks)
     |> Scopes.summarise(&outside?/1, &outside_site?/1)
     |> Map.new(fn {mfa, summary} ->
       gaps = Scopes.sort_gaps(summary.gaps)
@@ -51,13 +62,16 @@ defmodule Anchor.Domain.Aggregates.NonTransactional do
   end
 
   @doc "The functions always called inside a transaction; see the moduledoc."
-  @spec always_in_transaction(map(), MapSet.t(mfa()) | nil) :: MapSet.t(mfa())
-  def always_in_transaction(functions, roots) do
+  @spec always_in_transaction(map(), MapSet.t(mfa()) | nil, MapSet.t(mfa())) :: MapSet.t(mfa())
+  def always_in_transaction(functions, roots, run_callbacks \\ MapSet.new()) do
     sites =
       for {from, function} <- functions,
-          %{to: to, tags: tags} <- function.calls,
+          %{to: to, tags: tags} = call <- function.calls,
           Map.has_key?(functions, to),
-          do: {to, from, Enum.any?(tags, &(is_integer(&1) or &1 == :run_callback))}
+          do:
+            {to, from,
+             run_capture?(call, run_callbacks) or
+               Enum.any?(tags, &(is_integer(&1) or &1 == :run_callback))}
 
     by_callee = Enum.group_by(sites, &elem(&1, 0), &Tuple.delete_at(&1, 0))
 
@@ -90,6 +104,21 @@ defmodule Anchor.Domain.Aggregates.NonTransactional do
 
   defp outside?(tags), do: tags == []
 
-  defp outside_site?(%WriteSite{scopes: [], via: via}), do: via in [:repo, :write_function]
+  defp outside_site?(%WriteSite{scopes: [], run_callback?: false, via: via}),
+    do: via in [:repo, :write_function]
+
   defp outside_site?(%WriteSite{}), do: false
+
+  # A capture passed as a `Multi.run` callback is inside the Multi's
+  # transaction, never a call outside one.
+  defp without_run_captures(functions, run_callbacks) do
+    Map.new(functions, fn {mfa, function} ->
+      {mfa, %{function | calls: Enum.reject(function.calls, &run_capture?(&1, run_callbacks))}}
+    end)
+  end
+
+  defp run_capture?(%{kind: :capture, to: to}, run_callbacks),
+    do: MapSet.member?(run_callbacks, to)
+
+  defp run_capture?(_call, _run_callbacks), do: false
 end

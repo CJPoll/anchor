@@ -21,10 +21,21 @@ defmodule Anchor.Domain.Aggregates.WriteSite do
     * `scopes` — the ordinals of the transaction scopes of `mfa` whose body
       holds it (`[]` outside every scope of its own function; a scope of a
       caller reaches it through the call).
+    * `run_callback?` — whether it is written inside an inline `Multi.run`
+      callback, which only runs inside the Multi's transaction.
   """
 
   @enforce_keys [:mfa, :line, :op, :via]
-  defstruct [:mfa, :line, :op, :via, sources: [], unresolved: nil, scopes: []]
+  defstruct [
+    :mfa,
+    :line,
+    :op,
+    :via,
+    sources: [],
+    unresolved: nil,
+    scopes: [],
+    run_callback?: false
+  ]
 
   @type source :: {:schema, module()} | {:table, String.t()}
   @type via :: :repo | :multi | :write_function | :run_callback_repo
@@ -36,7 +47,8 @@ defmodule Anchor.Domain.Aggregates.WriteSite do
           via: via(),
           sources: [source()],
           unresolved: String.t() | nil,
-          scopes: [pos_integer()]
+          scopes: [pos_integer()],
+          run_callback?: boolean()
         }
 
   @doc "Whether every source of `site` resolved."
