@@ -16,7 +16,10 @@ defmodule Anchor.Domain.Graph.SourceFacts do
       body (not in a nested module's, and not inside a `quote`).
 
     * `nonliteral_defmodule?` — whether the file has a `defmodule` whose name
-      is not literal (`defmodule unquote(name)`, `defmodule Module.concat(...)`).
+      is not literal (`defmodule unquote(name)`, `defmodule Module.concat(...)`),
+      or a top-level module with a relative name after a file-level `alias`,
+      `require`, `import` or `use` (Kernel expands a file-level alias in that
+      name, and a `use` can bind one the text does not show).
       Such a module, and every module nested in it, has a name the text does
       not show, so it is not collected and its `use`s are filed nowhere. A
       module of this file missing from `defmodules` may then be hand-written,
@@ -51,7 +54,7 @@ defmodule Anchor.Domain.Graph.SourceFacts do
 
   defp collect(ast) do
     entries = ast |> walk(nil, []) |> Enum.reverse()
-    modules = Enum.reject(entries, &(&1 == :nonliteral))
+    modules = Enum.reject(entries, &(&1 in [:nonliteral, :file_aliased]))
     uses = Map.new(modules, fn {name, uses} -> {name, Enum.reverse(uses)} end)
 
     %{
@@ -67,11 +70,17 @@ defmodule Anchor.Domain.Graph.SourceFacts do
   defp walk({:quote, _meta, args}, _current, acc) when is_list(args), do: acc
 
   defp walk({:defmodule, _meta, [name_ast, body]}, current, acc) do
-    case module_name(name_ast, current) do
+    case module_name(name_ast, current, :file_aliased in acc) do
       {:ok, full} -> walk(body, full, [{full, []} | acc])
       :error -> walk(body, :nonliteral, [:nonliteral | acc])
     end
   end
+
+  # A file-level alias, require, import or use can bind an alias that Kernel
+  # expands in every later top-level module's relative name.
+  defp walk({form, _meta, args}, nil, acc)
+       when form in [:alias, :require, :import, :use] and is_list(args),
+       do: [:file_aliased | acc]
 
   defp walk({:use, _meta, [target | _opts]}, current, acc) when is_binary(current) do
     case literal_name(target) do
@@ -94,7 +103,7 @@ defmodule Anchor.Domain.Graph.SourceFacts do
 
   defp add_use(acc, current, name) do
     Enum.map(acc, fn
-      :nonliteral -> :nonliteral
+      marker when marker in [:nonliteral, :file_aliased] -> marker
       {^current, uses} -> {current, [name | uses]}
       other -> other
     end)
@@ -123,8 +132,20 @@ defmodule Anchor.Domain.Graph.SourceFacts do
 
   # The full name of a `defmodule`: its literal name qualified by the enclosing
   # module, `__MODULE__.Child` resolved against it. Inside a module whose name is
-  # not literal, no name is.
-  defp module_name(_name_ast, :nonliteral), do: :error
+  # not literal, no name is. A relative top-level name after a file-level
+  # alias, require, import or use is not literal either: Kernel expands an alias
+  # in it, and the text does not show which (Kernel does not expand aliases in
+  # a nested module's name, so only the top level is affected).
+  defp module_name(_name_ast, :nonliteral, _file_aliased?), do: :error
+
+  defp module_name(name_ast, nil, true) do
+    case literal_name(name_ast) do
+      {:ok, name, :absolute} -> {:ok, name}
+      _relative_or_error -> :error
+    end
+  end
+
+  defp module_name(name_ast, current, _file_aliased?), do: module_name(name_ast, current)
 
   defp module_name({:__aliases__, meta, [{:__MODULE__, _, context} | rest]}, current)
        when is_binary(current) and is_atom(context) and rest != [] do

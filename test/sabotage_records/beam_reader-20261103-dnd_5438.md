@@ -902,3 +902,8 @@ Run summary: `18 tests, 1 failure`
      stacktrace:
        test/anchor/adapters/beam_reader_test.exs:301: (test)
 ```
+
+
+## Note (after c3c1558): row 7b moved to its own synchronous module
+
+The test "never loads a behaviour the decoded module names, even when it is on the code path" moved from `beam_reader_test.exs` (async) to `beam_reader_code_path_test.exs` (`async: false`). It calls `Code.append_path/1`, which changes the code path for every concurrently running test. The test body is unchanged, so the BR-I and BR-N reds above still hold for it; its module name in those outputs is now `Anchor.Adapters.BeamReaderCodePathTest`.

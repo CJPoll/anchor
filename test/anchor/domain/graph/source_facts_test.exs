@@ -113,6 +113,71 @@ defmodule Anchor.Domain.Graph.SourceFactsTest do
              }
     end
 
+    # Kernel expands a file-level alias in a top-level module's name (checked:
+    # `alias Foo.Accounts` then `defmodule Accounts.User` compiles to
+    # Foo.Accounts.User; `alias Foo.Bar, as: Acc` then `defmodule Acc.User` to
+    # Foo.Bar.User; `use Inj`, whose __using__ aliases Foo.Wee, then
+    # `defmodule Wee.Y` to Foo.Wee.Y). The text alone does not show that name.
+    @file_level_aliasers [
+      "alias Foo.Accounts",
+      "alias Foo.Bar, as: Accounts",
+      "require Foo.Bar, as: Accounts",
+      "import Foo.Bar",
+      "use Foo.Injector"
+    ]
+
+    test "a relative top-level name after a file-level alias, require, import or use is not collected; the file says so" do
+      for aliaser <- @file_level_aliasers do
+        text = """
+        #{aliaser}
+
+        defmodule Accounts.User do
+          use Agent
+
+          defmodule Inner do
+          end
+        end
+
+        defmodule Elixir.Absolute do
+        end
+        """
+
+        assert SourceFacts.from_source("a.ex", text) ==
+                 %{
+                   defmodules: ["Absolute"],
+                   uses: %{"Absolute" => []},
+                   nonliteral_defmodule?: true
+                 },
+               "after #{inspect(aliaser)}"
+      end
+    end
+
+    # Checked: an alias after the module, or inside a module, leaves a module
+    # name as written (`defmodule P1 do alias Foo.Accounts; defmodule
+    # Accounts.User` compiles to P1.Accounts.User).
+    test "an alias after a top-level module, or inside a module, leaves its literal name" do
+      text = """
+      defmodule Accounts.User do
+      end
+
+      defmodule P1 do
+        alias Foo.Accounts
+
+        defmodule Accounts.Inner do
+        end
+      end
+
+      alias Foo.Accounts
+      """
+
+      assert SourceFacts.from_source("a.ex", text) ==
+               %{
+                 defmodules: ["Accounts.User", "P1", "P1.Accounts.Inner"],
+                 uses: %{"Accounts.User" => [], "P1" => [], "P1.Accounts.Inner" => []},
+                 nonliteral_defmodule?: false
+               }
+    end
+
     test "__MODULE__ at the head of a nested name resolves to the enclosing module" do
       text = """
       defmodule A do

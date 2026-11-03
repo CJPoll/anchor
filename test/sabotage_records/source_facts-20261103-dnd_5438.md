@@ -289,3 +289,142 @@ The unfixed code, not a mutation: `literal_name/1` kept a leading `Elixir` part 
 ```
 
 After the fix (`literal_name/1` returns `:absolute` for `Elixir.X` and atoms): `mix test test/anchor/domain/graph` gives `47 tests, 0 failures`.
+
+
+## SF-L — a file-level alias before a top-level `defmodule` was not seen (critic on c3c1558, base 185ecc9)
+
+The unfixed code, not a mutation. Kernel expands a file-level alias in a top-level module's relative name: `alias Foo.Accounts` followed by `defmodule Accounts.User` compiles to `Foo.Accounts.User`. The same happens after `alias ..., as:`, and after a `use` whose `__using__` binds an alias (measured with `Code.compile_string`). `SourceFacts` still recorded `"Accounts.User"` with `nonliteral_defmodule?: false`, so the builder answered `generated?: true` for a hand-written module. Run on c3c1558 with the two new tests: `13 tests, 1 failure`. The table test's own message names the first aliaser it failed on, and ExUnit prints that message in place of left/right:
+
+```
+  1) test from_source/2 a relative top-level name after a file-level alias, require, import or use is not collected; the file says so (Anchor.Domain.Graph.SourceFactsTest)
+     test/anchor/domain/graph/source_facts_test.exs:129
+     after "alias Foo.Accounts"
+     code: for aliaser <- @file_level_aliasers do
+     stacktrace:
+       test/anchor/domain/graph/source_facts_test.exs:145: anonymous fn/2 in Anchor.Domain.Graph.SourceFactsTest."test from_source/2 a relative top-level name after a file-level alias, require, import or use is not collected; the file says so"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/graph/source_facts_test.exs:130: (test)
+
+......
+Finished in 0.07 seconds (0.07s async, 0.00s sync)
+13 tests, 1 failure
+```
+
+After the fix (a top-level relative name after a file-level `alias`/`require`/`import`/`use` is `:nonliteral`): the full suite gives `1118 tests, 0 failures`.
+
+## SF-M — the file-level rule applied inside modules too
+
+Mutation in `lib/anchor/domain/graph/source_facts.ex`: the alias marker is set at any depth (`walk({form, _, args}, _current, acc)`), and any later name is poisoned (`module_name(name_ast, _current, true)`). That is wrong because Kernel nests a nested module's name without alias lookup: `defmodule P1 do alias Foo.Accounts; defmodule Accounts.User` compiles to `P1.Accounts.User`. The control test catches it. So do four older tests, because the marker clause then also swallows every `use` inside a module.
+
+```
+
+
+
+  1) test from_source/2 a literal use is scoped to its own module's body (Anchor.Domain.Graph.SourceFactsTest)
+     test/anchor/domain/graph/source_facts_test.exs:37
+     Assertion with == failed
+     code:  assert uses["A"] == ["GenServer"]
+     left:  []
+     right: ["GenServer"]
+     stacktrace:
+       test/anchor/domain/graph/source_facts_test.exs:49: (test)
+
+.
+
+  2) test from_source/2 __MODULE__ at the head of a nested name resolves to the enclosing module (Anchor.Domain.Graph.SourceFactsTest)
+     test/anchor/domain/graph/source_facts_test.exs:181
+     Assertion with == failed
+     code:  assert SourceFacts.from_source("a.ex", text) == %{
+              defmodules: ["A", "A.Child"],
+              uses: %{"A" => [], "A.Child" => ["Agent"]},
+              nonliteral_defmodule?: false
+            }
+     left:  %{
+              uses: %{"A" => [], "A.Child" => []},
+              defmodules: ["A", "A.Child"],
+              nonliteral_defmodule?: false
+            }
+     right: %{
+              uses: %{"A" => [], "A.Child" => ["Agent"]},
+              defmodules: ["A", "A.Child"],
+              nonliteral_defmodule?: false
+            }
+     stacktrace:
+       test/anchor/domain/graph/source_facts_test.exs:190: (test)
+
+..
+
+  3) test from_source/2 an Elixir.-prefixed or atom name is absolute, never qualified by the enclosing module (Anchor.Domain.Graph.SourceFactsTest)
+     test/anchor/domain/graph/source_facts_test.exs:88
+     Assertion with == failed
+     code:  assert SourceFacts.from_source("a.ex", text) == %{
+              defmodules: ["TopAbs", "InnerAbs", "inner_atom", "TopAbs.Rel"],
+              uses: %{"TopAbs" => ["GenServer"], "InnerAbs" => [], "inner_atom" => [], "TopAbs.Rel" => []},
+              nonliteral_defmodule?: false
+            }
+     left:  %{
+              uses: %{
+                "InnerAbs" => [],
+                "TopAbs" => [],
+                "inner_atom" => []
+              },
+              defmodules: ["TopAbs", "InnerAbs", "inner_atom"],
+              nonliteral_defmodule?: true
+            }
+     right: %{
+              uses: %{
+                "InnerAbs" => [],
+                "TopAbs" => ["GenServer"],
+                "TopAbs.Rel" => [],
+                "inner_atom" => []
+              },
+              defmodules: ["TopAbs", "InnerAbs", "inner_atom",
+               "TopAbs.Rel"],
+              nonliteral_defmodule?: false
+            }
+     stacktrace:
+       test/anchor/domain/graph/source_facts_test.exs:104: (test)
+
+..
+
+  4) test from_source/2 a variable named like a special form is read as a variable (Anchor.Domain.Graph.SourceFactsTest)
+     test/anchor/domain/graph/source_facts_test.exs:216
+     variable __CALLER__
+     code: for name <- @variable_names do
+     stacktrace:
+       test/anchor/domain/graph/source_facts_test.exs:229: anonymous fn/2 in Anchor.Domain.Graph.SourceFactsTest."test from_source/2 a variable named like a special form is read as a variable"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/graph/source_facts_test.exs:217: (test)
+
+..
+
+  5) test from_source/2 an alias after a top-level module, or inside a module, leaves its literal name (Anchor.Domain.Graph.SourceFactsTest)
+     test/anchor/domain/graph/source_facts_test.exs:158
+     Assertion with == failed
+     code:  assert SourceFacts.from_source("a.ex", text) == %{
+              defmodules: ["Accounts.User", "P1", "P1.Accounts.Inner"],
+              uses: %{"Accounts.User" => [], "P1" => [], "P1.Accounts.Inner" => []},
+              nonliteral_defmodule?: false
+            }
+     left:  %{
+              uses: %{"Accounts.User" => [], "P1" => []},
+              defmodules: ["Accounts.User", "P1"],
+              nonliteral_defmodule?: true
+            }
+     right: %{
+              uses: %{
+                "Accounts.User" => [],
+                "P1" => [],
+                "P1.Accounts.Inner" => []
+              },
+              defmodules: ["Accounts.User", "P1",
+               "P1.Accounts.Inner"],
+              nonliteral_defmodule?: false
+            }
+     stacktrace:
+       test/anchor/domain/graph/source_facts_test.exs:173: (test)
+
+.
+Finished in 0.06 seconds (0.06s async, 0.00s sync)
+13 tests, 5 failures
+```
