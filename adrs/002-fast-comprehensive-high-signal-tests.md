@@ -11,6 +11,11 @@ yields "the documented default". Since DND-1265 it yields a documented error.
 Standard unchanged — see "Amendment: a missing config is an error" under
 Per-bucket rules.
 
+Amended 2026-11-03 (DND-5518): the Framework bullet named the `Anchor.Check.*`
+modules only. Mix tasks are Framework too (ADR 001's amendment of the same
+date). Standard unchanged — see "Amendment: Mix tasks are Framework" under
+Per-bucket rules.
+
 ## Context
 
 A test suite has three properties worth paying for, and they are usually
@@ -77,6 +82,19 @@ it return `{:error, {:config_not_found, searched}}`, which the Framework reports
 as a Credo issue. The rule for adapter tests is unchanged: test the conversion
 at the boundary, and that includes the error a missing file converts to. Only
 the example's wording changed, from "default" to "error".
+
+#### Amendment: Mix tasks are Framework (2026-11-03, DND-5518)
+
+The Framework bullet named the `Anchor.Check.*` modules and Credo's test
+harness. ADR 001's amendment of the same date classes the Mix tasks
+(`Mix.Tasks.Anchor.*`) as Framework too. The rule for Framework tests is
+unchanged: test the entry point with the layer below it doubled and assert what
+the entry point itself does. For a Mix task that is argument parsing, rendering
+and the exit code, with the Manager's port doubled (`Hammox`) and the real
+adapter covered by its own adapter tests, as
+`test/mix/tasks/anchor_sabotage_scope_test.exs` does. `Credo.Test.Case` stays
+the harness for the checks. Only the bullet's scope is widened, and the bullet's
+text is left as written.
 
 ### Arrange with fixtures; assert through the real path
 

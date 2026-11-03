@@ -95,13 +95,15 @@ lib/anchor/
   domain/
     config.ex        # Domain — pure YAML-map -> %Config{} parser + struct
     config_paths.ex  # Domain — pure candidate-path computation
-  dependency_analyzer.ex   # Domain — pure AST analysis
+    dependency_analyzer.ex   # Domain — pure AST analysis
   managers/       # Managers — orchestration (Lint, Sabotage)
 lib/mix/tasks/    # Framework — Mix tasks (Mix.Tasks.Anchor.*)
 ```
 
-(The tree shows one file per directory as an illustration; the table under
-"How this maps to Anchor" is the list of modules and their buckets.)
+(The tree shows one file per directory as an illustration, and the table under
+"How this maps to Anchor" gives the worked examples per bucket, not every
+module: a module is classified by what it does, and by its directory when the
+directory says so, as `lib/anchor/domain/` does for Domain.)
 
 A bucket with no code gets no directory. The umbrella/many-context layout from
 the source ADRs (`<context>/domain/`, `<context>/adapters/`,
@@ -224,16 +226,16 @@ and are dropped rather than adapted:
 | `Anchor.Adapters.ConfigFile` | Side Effect | Reads `.anchor.yml` off disk (`File.exists?/1`, `File.read/1`), decodes the YAML, and hands the map to the parser. IO at the edge; returns a struct, never raw YAML. |
 | `Anchor.Config` | Domain | The `%Config{}` struct plus its pure parser (`parse_config/1`, `parse_rule/1`): decoded-YAML-map in, atom-keyed rule maps out. No IO. |
 | `Anchor.Domain.ConfigPaths` | Domain | `candidates/2`: a pure function of a working directory and an `apps?` boolean returning the ordered candidate-path list. No IO — the adapter decides which candidate exists. |
-| `Anchor.DependencyAnalyzer` | Domain | Pure AST analysis: extracts dependencies and `use`s, computes transitive closures over an in-memory map. Same input, same output, no IO. |
+| `Anchor.Domain.DependencyAnalyzer` (earlier prose and the Examples call it `Anchor.DependencyAnalyzer`) | Domain | Pure AST analysis: extracts dependencies and `use`s, computes transitive closures over an in-memory map. Same input, same output, no IO. |
 | `%Anchor.Config{}` struct | Domain (data) | A typed struct is Domain data; the adapter that produced it is the Side Effect. |
-| Orchestration that loads config then runs analysis | Manager | Coordinates the Side Effect (config load) and Domain (analysis). Kept thin today. |
+| Orchestration that loads config then runs analysis | Manager | Coordinates the Side Effect (config load) and Domain (analysis); `Anchor.Managers.Lint` below is that Manager. |
 | `Mix.Tasks.Anchor.Sabotage` (and the Mix tasks that follow it) | Framework | The `mix` runner invokes it: it parses argv, makes one Manager call, renders the result and sets the exit code. It calls no adapter itself. |
 | `Anchor.Managers.Lint` | Manager | The lint use case: loads config through the `Anchor.Adapters.ConfigLoader` port, derives the pure facts, selects the rules that apply and calls the check's Domain detection, returning Domain violations. Checks (Framework) go through it. |
 | `Anchor.Managers.Sabotage` | Manager | The sabotage use case (`scope/2`): reads the diff through the `ChangeSource` port, then calls the Domain (`DiffHunks`, `FunctionSpans`, `Scope`). Reaches git and the file system only through the port. |
 | `Anchor.Adapters.ChangeSource` | Side Effect (port) | The behaviour `Anchor.Managers.Sabotage` depends on: merge-base, diff, untracked files, show, read. Tests double it. |
 | `Anchor.Adapters.GitChangeSource` | Side Effect | The real `ChangeSource`: runs read-only `git` with `System.cmd/3` (argv, never a shell) and returns diff text and paths. |
 | `Anchor.Adapters.ConfigLoader` | Side Effect (port) | The behaviour `Anchor.Managers.Lint` depends on to load configuration; `Anchor.Adapters.ConfigFile` is its real implementation. |
-| `Anchor.Adapters.BeamSource` | Side Effect (port) | The behaviour the graph runner depends on to read a project's compiled beams. |
+| `Anchor.Adapters.BeamSource` | Side Effect (port) | The behaviour the planned graph runner (DND-5440) depends on to read a project's compiled beams. |
 | `Anchor.Adapters.BeamReader` | Side Effect | The real `BeamSource`: reads each `.beam` with `:beam_lib` and returns `Anchor.Domain.Graph.Beam` records or decode errors. It never loads or calls a project module. |
 | `Anchor.Domain.Sabotage.*` (e.g. `Mutator`, `Operators`, `DiffHunks`, `FunctionSpans`, `Scope`) | Domain | Pure: the diff parser, function spans, scope mapping and the mutant generator. `Mutator` reads a source string and returns mutants and skips as data; nothing is compiled, run or read from disk. |
 
@@ -278,7 +280,7 @@ module — the moment it does, it has stopped being Domain.
 The ADR described the Framework bucket as the Credo integration surface and
 the table listed the Credo checks and `ConfigFile` only. Anchor has since grown
 a second entry point, the Mix task (`Mix.Tasks.Anchor.Sabotage` today; the
-graph tasks follow the same rule), and the Managers, ports and adapters behind
+planned graph tasks will follow the same rule), and the Managers, ports and adapters behind
 it. A Mix task is "framework-specific code: the glue that a framework invokes",
 exactly the Decision's definition, with `mix` as the framework: it parses
 argv, makes one Manager call and renders the result. The Framework rules bind
@@ -418,7 +420,7 @@ configuration.
   ported from.
 - `lib/anchor/adapters/config_file.ex` (Side Effect),
   `lib/anchor/domain/config.ex` and `lib/anchor/domain/config_paths.ex`
-  (Domain), `lib/anchor/dependency_analyzer.ex` (Domain),
+  (Domain), `lib/anchor/domain/dependency_analyzer.ex` (Domain),
   `lib/anchor/check/` and `lib/mix/tasks/` (Framework),
   `lib/anchor/managers/` (Managers), `lib/anchor/adapters/` (Side Effects),
   `lib/anchor/domain/sabotage/` (Domain) — the modules that exemplify each

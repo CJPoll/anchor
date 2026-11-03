@@ -22,6 +22,10 @@ that `DiffHunks.parse/1` accepts it.
 
 Without the mutation, the same file runs `9 tests, 0 failures`.
 
+Rows that stayed green: under each mutation the other eight tests in the file (G1, G1b, G2, G3, G3b, G4, G5
+and `read`) still pass. None of them makes a repository with a submodule, so none is about the diff
+format a `diff.submodule` setting changes; G6 is the only one that is.
+
 ## Failure strings (verbatim)
 
 ### A
@@ -72,6 +76,9 @@ in `mix anchor.sabotage scope`):
 
 ## Traps
 
-- Line numbers in the stacktrace (107, 108) are G6's own assertion lines; they move if the test is edited.
-- A suite run under a git hook inherits `GIT_DIR` and its siblings; the test's `git!/2` unsets them, as the
-  rest of the file does, so G6's repositories are never the outer one.
+- Line numbers in the stacktrace are G6's own assertion lines; they move if the test is edited. In B the two
+  text assertions (lines 107 and 108) are removed, so the parse assertion that was at 110 reports at 108.
+- A suite run under a git hook inherits `GIT_DIR` and its siblings; the test's `git!/2` unsets them for the
+  setup commands, as the rest of the file does. The adapter calls under test (`merge_base/2`, `diff/2`) run
+  with only `GIT_OPTIONAL_LOCKS` set, so under such a hook they would see the outer repository (true of
+  G1-G5 too; proposed as a finding in the DND-5519 report).
