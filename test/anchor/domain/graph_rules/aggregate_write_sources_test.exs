@@ -166,6 +166,23 @@ defmodule Anchor.Domain.GraphRules.AggregateWriteSourcesTest do
                  ".anchor.yml. Fix: add aggregates: (repos:, declare:) or remove the rule."
     end
 
+    # Both review-floor reviewers: under `declare: none` there is no repo to
+    # list, so the rule's "no repo" Fix could not be followed; the load
+    # refuses the pair instead.
+    test "a rule beside declare: none is refused, the Fix naming both ways out" do
+      assert {:error, {:invalid_rule, message}} =
+               Config.parse_config(%{
+                 "rules" => [@rule_yaml],
+                 "architecture" => @architecture,
+                 "aggregates" => %{"declare" => "none", "reason" => "no database"}
+               })
+
+      assert message ==
+               ~s|rule 1 (id: "writes"): aggregate_write_sources reads the writes of a | <>
+                 "project with a repo, but .anchor.yml says aggregates: declare: none. Fix: " <>
+                 "remove the rule, or declare the aggregates and the repo instead of none."
+    end
+
     test "positive control: with the section it loads" do
       assert %Config{rules: [%{type: :aggregate_write_sources}]} =
                Config.parse_config(%{

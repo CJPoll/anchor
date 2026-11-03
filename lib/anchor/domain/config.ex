@@ -247,6 +247,20 @@ defmodule Anchor.Config do
     end)
   end
 
+  # DND-5659: under `declare: none` there is no repo to read writes from, so
+  # a rule that needs one would say "no repo" with a Fix the section refuses.
+  defp validate_aggregate_rules(parsed, %{none: reason}) when reason != nil do
+    Enum.find_value(parsed, :ok, fn rule ->
+      if RuleSchema.needs_aggregates?(rule.type) do
+        {:error,
+         {:invalid_rule,
+          "#{parsed_rule_label(rule)}: #{rule.type} reads the writes of a project with a " <>
+            "repo, but .anchor.yml says aggregates: declare: none. Fix: remove the rule, " <>
+            "or declare the aggregates and the repo instead of none."}}
+      end
+    end)
+  end
+
   defp validate_aggregate_rules(_parsed, _aggregates), do: :ok
 
   # DND-5473: the `sabotage:` section is optional too; `mix anchor.sabotage run`

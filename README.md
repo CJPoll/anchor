@@ -976,8 +976,9 @@ without a `reason:` or with a blank one; a `reason:` without `none`; `none`
 beside `repos`, `write_functions` or `transaction_functions`; a `declare`
 string other than `none`; and an explicit `declare: []`, so "nothing" is
 always said on purpose. A missing `aggregates:` section keeps the fail-closed
-checks-nothing violation above. Under `none` no write analysis is built, so
-the `aggregate_write_sources` rule has nothing to read and reports no repo.
+checks-nothing violation above. Under `none` no write analysis is built, and
+a config that also enables `aggregate_write_sources` is refused at load (exit
+3): that rule reads a repo's writes, and `none` says there is no repo.
 
 Anchor's own `.anchor.yml` runs the rule this way: `declare: none`, enforced,
 no baseline.
@@ -1086,6 +1087,7 @@ line.
 | An `aggregates:` section of the wrong shape (DND-5476) | 3 | the config path | `aggregates.declare[1].schemas must be a list of exact module names: "MyApp.*" is not an exact Elixir module name (no glob, no Erlang module). Fix: name each module in full, as its defmodule spells it; aggregates: declare: - name: <Aggregate>, ...` |
 | An `aggregate_declarations` rule with no aggregate declared anywhere (DND-5476) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "aggregate_declarations", aggregate_declarations) checks nothing: no aggregate is declared in .anchor.yml or by an @anchor_aggregate attribute. Fix: declare one or remove the rule: ...` |
 | A schema whose `__schema__(:source)` is not a literal (DND-5476) | 0 | the summary | counted as `; aggregates: <N> declared, <U> tables unknown`, never dropped |
+| An `aggregate_write_sources` rule beside `aggregates: declare: none` (DND-5659) | 3 | the config path | `rule 1 (id: "aggregate_write_sources"): aggregate_write_sources reads the writes of a project with a repo, but .anchor.yml says aggregates: declare: none. Fix: remove the rule, or declare the aggregates and the repo instead of none.` |
 | An `aggregate_write_sources` rule with no `aggregates:` section (DND-5459) | 3 | the config path | `rule 1 (id: "aggregate_write_sources"): aggregate_write_sources needs an aggregates: section in .anchor.yml. Fix: add aggregates: (repos:, declare:) or remove the rule.` |
 | An `aggregate_write_sources` rule in a project with no Ecto repo (DND-5459) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "aggregate_write_sources", aggregate_write_sources): no Ecto repo found: no module declares @behaviour Ecto.Repo and aggregates.repos is empty. Fix: list the repo under aggregates.repos.` |
 | An `aggregate_write_sources` rule whose modules hold no write (DND-5459) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "aggregate_write_sources", aggregate_write_sources) checks nothing: no write found in paths ["lib/**/*.ex"]. Fix: correct the selector or aggregates.repos.` |
