@@ -88,4 +88,16 @@ defmodule Anchor.Adapters.GitStatusTest do
                GitStatus.changed_since(root, String.duplicate("0", 40))
     end
   end
+
+  describe "branch/1 (DND-5484)" do
+    # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5484_records.md
+    test "the branch's short name; nil on a detached HEAD", %{tmp_dir: root} do
+      git!(root, ["checkout", "-q", "-b", "feat/x-1"])
+      assert GitStatus.branch(root) == {:ok, "feat/x-1"}
+
+      {:ok, sha} = GitStatus.head_sha(root)
+      git!(root, ["checkout", "-q", sha])
+      assert GitStatus.branch(root) == {:ok, nil}
+    end
+  end
 end

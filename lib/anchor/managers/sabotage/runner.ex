@@ -43,13 +43,27 @@ defmodule Anchor.Managers.Sabotage.Runner do
        the journal. A restore that does not reproduce the original stops the
        run (exit 2) with the journal kept.
    10. The run is saved to `_build/<env>/anchor/sabotage/last-run.etf`.
+   11. The sabotage records are written (DND-5484; `Anchor.Domain.Sabotage.Record`),
+       unless `--no-record`: one per (app, domain) the run touched, created
+       or appended, never overwritten. A run that exits 1 still writes them.
+       Before step 8 (so a run that could not name its record never applies
+       a mutant) the naming is checked: a detached `HEAD` with no `--slot`,
+       `ticket_nn_what` with no ticket key and no `--ticket`, and `{app}` in
+       the records dir for a file outside `apps/<app>/` are each exit 2. A
+       record that cannot be written sets `record_error` (exit 2).
+
+  Selection also reads the kill maps of the records already there (DND-5484):
+  a record whose `anchor-kills` block does not parse is skipped for selection
+  and named in the notes (`could not read kill map in <path>:<line>`), never
+  read as an empty map.
 
   The `after` block runs on an exception and a throw; a VM kill skips it, and
   the journal covers that on the next run.
 
   ## Adapters (options)
 
-  `:config_loader` (`Anchor.Adapters.ConfigFile`), `:coverage_store`
+  `:config_loader` (`Anchor.Adapters.ConfigFile`), `:record_store`
+  (`Anchor.Adapters.RecordFile`), `:coverage_store`
   (`Anchor.Adapters.CoverageFile`), `:change_source`
   (`Anchor.Adapters.GitChangeSource`), `:source_mutation`
   (`Anchor.Adapters.SourcePatcher`), `:git_worktree`
@@ -61,16 +75,21 @@ defmodule Anchor.Managers.Sabotage.Runner do
   alias Anchor.Adapters.CoverageFile
   alias Anchor.Adapters.GitChangeSource
   alias Anchor.Adapters.GitStatus
+  alias Anchor.Adapters.RecordFile
   alias Anchor.Adapters.SourcePatcher
   alias Anchor.Adapters.TestRunner
   alias Anchor.Domain.Failures
+  alias Anchor.Domain.Sabotage.ChangedTests
   alias Anchor.Domain.Sabotage.CoverageMap
   alias Anchor.Domain.Sabotage.Journal
   alias Anchor.Domain.Sabotage.Mutant
   alias Anchor.Domain.Sabotage.Mutator
   alias Anchor.Domain.Sabotage.Outcome
   alias Anchor.Domain.Sabotage.Patch
+  alias Anchor.Domain.Sabotage.KillMap
   alias Anchor.Domain.Sabotage.Plan
+  alias Anchor.Domain.Sabotage.Record
+  alias Anchor.Domain.Sabotage.RecordNaming
   alias Anchor.Domain.Sabotage.Run
   alias Anchor.Domain.Sabotage.TestRun
   alias Anchor.Domain.Sabotage.TestSelection
@@ -178,13 +197,20 @@ defmodule Anchor.Managers.Sabotage.Runner do
          :ok <- clean_targets(root, scope, ports),
          {:ok, run, sources, mutants} <- generate(run, root, scope, config, ports),
          {:ok, plan} <- plan(mutants, facts, config),
-         {:ok, coverage, notes} <- coverage(facts, config, ports) do
-      run = %{run | not_run: plan.not_run, notes: run.notes ++ notes}
-      planned = Enum.zip(plan.planned, select(plan.planned, root, config, coverage, ports))
+         {:ok, coverage, notes} <- coverage(facts, config, ports),
+         {:ok, records} <- existing_records(root, config, ports),
+         {:ok, recording} <- recording(facts, config, scope, run, plan, records, ports) do
+      run = %{run | not_run: plan.not_run, notes: run.notes ++ notes ++ records.notes}
+      selection = select(plan.planned, root, config, {coverage, records.kill_map}, ports)
+      planned = Enum.zip(plan.planned, selection)
 
       if Map.get(facts, :dry_run, false),
         do: %{run | dry_run: true, planned: planned},
-        else: measure(run, facts, config, sources, planned, ports)
+        else:
+          run
+          |> measure(facts, config, sources, planned, ports)
+          |> write_records(recording, root, ports)
+          |> save(facts, ports)
     else
       {:refuse, run, code, message} -> %{run | refusal: {code, message}}
       {:refuse, code, message} -> %{run | refusal: {code, message}}
@@ -199,6 +225,7 @@ defmodule Anchor.Managers.Sabotage.Runner do
       git: Keyword.get(opts, :git_worktree, GitStatus),
       tests: Keyword.get(opts, :test_execution, TestRunner),
       coverage: Keyword.get(opts, :coverage_store, CoverageFile),
+      records: Keyword.get(opts, :record_store, RecordFile),
       opts: opts
     }
   end
@@ -488,14 +515,15 @@ defmodule Anchor.Managers.Sabotage.Runner do
     end
   end
 
-  defp select(planned, root, config, coverage, %{patcher: patcher}) do
+  defp select(planned, root, config, {coverage, kill_map}, %{patcher: patcher}) do
     index = if coverage, do: coverage.index
 
     candidates =
       planned
       |> Enum.flat_map(fn mutant ->
         [TestSelection.mirror_path(mutant, config.test_mirror)] ++
-          TestSelection.coverage_files(mutant, index)
+          TestSelection.coverage_files(mutant, index) ++
+          TestSelection.kill_map_files(mutant, kill_map)
       end)
       |> Enum.reject(&is_nil/1)
       |> Enum.uniq()
@@ -508,7 +536,7 @@ defmodule Anchor.Managers.Sabotage.Runner do
 
     inputs =
       Map.merge(
-        %{mirror: config.test_mirror, existing_tests: existing},
+        %{mirror: config.test_mirror, existing_tests: existing, kill_map: kill_map},
         coverage_inputs(coverage)
       )
 
@@ -525,7 +553,6 @@ defmodule Anchor.Managers.Sabotage.Runner do
         run
         |> Map.put(:baseline, baseline)
         |> mutants(facts, config, sources, planned, ports)
-        |> save(facts, ports)
 
       {:refuse, code, message} ->
         %{run | refusal: {code, message}}
@@ -637,7 +664,8 @@ defmodule Anchor.Managers.Sabotage.Runner do
     else
       {:ok, %TestRun{} = test_run} ->
         {status, killers} = Outcome.classify(test_run)
-        {:ok, outcome(mutant, status, killers, selection, Outcome.reason(test_run))}
+        outcome = outcome(mutant, status, killers, selection, Outcome.reason(test_run))
+        {:ok, Map.put(outcome, :test_run, test_run)}
 
       {:error, reason} ->
         {:refuse, runner_error_code(reason), runner_error(reason)}
@@ -706,7 +734,200 @@ defmodule Anchor.Managers.Sabotage.Runner do
     )
   end
 
-  # A refused run is not saved: DND-5483 and DND-5484 read only finished runs.
+  # -- DND-5484: records ------------------------------------------------------
+
+  # The records already there: their kill maps (for selection) and their
+  # names (for create vs append, and NN).
+  defp existing_records(root, config, %{records: store}) do
+    paths = store.list(root, Record.dir_glob(config.records))
+
+    {rows, notes} =
+      Enum.reduce(paths, {[], []}, fn path, {rows, notes} ->
+        case kill_rows(store, root, path) do
+          {:ok, more} -> {rows ++ more, notes}
+          {:error, note} -> {rows, notes ++ [note]}
+        end
+      end)
+
+    kill_map =
+      rows
+      |> KillMap.killers_by_function()
+      |> Map.new(fn {mfa, killers} ->
+        {mfa, killers |> Enum.map(&KillMap.killer_file/1) |> Enum.uniq()}
+      end)
+
+    names = Enum.group_by(paths, &Path.dirname/1, &Path.basename/1)
+    {:ok, %{kill_map: kill_map, names: names, notes: notes}}
+  end
+
+  defp kill_rows(store, root, path) do
+    with {:read, {:ok, text}} <- {:read, store.read(root, path)},
+         {:parse, {:ok, rows}} <- {:parse, KillMap.parse(text)} do
+      {:ok, rows}
+    else
+      {:read, {:error, posix}} ->
+        {:error, "could not read kill map in #{path} (#{inspect(posix)}); not used for selection"}
+
+      {:parse, {:error, {line, message}}} ->
+        {:error,
+         "could not read kill map in #{path}:#{line} (#{message}); not used for selection"}
+    end
+  end
+
+  # Everything a record needs, checked before any mutant is applied.
+  defp recording(%{no_record: true}, _config, _scope, _run, _plan, _records, _ports),
+    do: {:ok, nil}
+
+  defp recording(facts, config, scope, run, plan, records, ports) do
+    cfg = config.records
+
+    with {:ok, branch} <- branch(facts.root, ports),
+         {:ok, slot} <- record_slot(branch, facts),
+         :ok <- ticket_for(cfg, slot),
+         :ok <- apps_for(cfg, record_files(run, plan)) do
+      {:ok,
+       %{
+         records: cfg,
+         date: DateTime.to_date(facts.now),
+         time: Calendar.strftime(facts.now, "%H:%M"),
+         branch: branch,
+         slot: slot,
+         base_sha: scope.base_sha,
+         head_sha: head_sha(facts.root, ports),
+         command: Map.get(facts, :command, "mix anchor.sabotage run"),
+         version: Map.get(facts, :version, "unknown"),
+         test_command: config.test_command,
+         domain: Map.get(facts, :domain),
+         changed_tests: changed_tests(facts.root, scope, ports),
+         existing: records.names
+       }}
+    end
+  end
+
+  defp branch(root, %{git: git}) do
+    case git.branch(root) do
+      {:ok, branch} -> {:ok, branch}
+      {:error, reason} -> {:refuse, 3, Failures.scope_could_not_measure(reason)}
+    end
+  end
+
+  defp record_slot(branch, facts) do
+    opts = [ticket: Map.get(facts, :ticket), slot: Map.get(facts, :slot)]
+
+    case RecordNaming.slot(branch, opts) do
+      {:ok, slot} ->
+        {:ok, slot}
+
+      {:error, :no_branch} ->
+        {:refuse, 2,
+         "HEAD is detached, so the sabotage record has no slot to be named by. " <>
+           "Fix: pass --slot S (or --ticket KEY), or --no-record"}
+    end
+  end
+
+  defp ticket_for(%{naming: :ticket_nn_what}, %{ticket: nil}),
+    do:
+      {:refuse, 2,
+       "records are named <TICKET>-<NN>-..., but the branch names no ticket key. " <>
+         "Fix: pass --ticket DND-NNN"}
+
+  defp ticket_for(_cfg, _slot), do: :ok
+
+  defp record_files(run, plan) do
+    Enum.map(plan.planned ++ plan.not_run ++ run.skipped, & &1.file) ++
+      Enum.map(run.errors, fn {function, _reason} -> function.file end)
+  end
+
+  defp apps_for(cfg, files) do
+    case Enum.find(files, &(RecordNaming.dir(cfg, RecordNaming.app_for(&1)) == {:error, :no_app})) do
+      nil ->
+        :ok
+
+      file ->
+        {:refuse, 2,
+         "records.dir #{cfg.dir} holds {app}, but #{file} is not under apps/<app>/. " <>
+           "Fix: set records.dir without {app}"}
+    end
+  end
+
+  defp head_sha(root, %{git: git}) do
+    case git.head_sha(root) do
+      {:ok, sha} -> sha
+      {:error, _reason} -> nil
+    end
+  end
+
+  # The tests the diff touched; a test file that cannot be read or parsed
+  # adds none (its tests are then not listed as lacking a red).
+  defp changed_tests(root, scope, %{change: change}) do
+    scope.test_changes
+    |> Enum.sort()
+    |> Enum.flat_map(fn {path, ranges} ->
+      with {:ok, text} <- change.read(root, path),
+           {:ok, tests} <- ChangedTests.in_ranges(text, path, ranges) do
+        tests
+      else
+        _unreadable -> []
+      end
+    end)
+  end
+
+  defp write_records(run, nil, _root, _ports), do: run
+  defp write_records(%Run{refusal: {_code, _message}} = run, _ctx, _root, _ports), do: run
+
+  defp write_records(run, ctx, root, %{records: store}) do
+    case Record.render(run, ctx) do
+      {:ok, entries} ->
+        Enum.reduce_while(entries, run, fn entry, run ->
+          case write_entry(store, root, entry, ctx) do
+            {:ok, written} -> {:cont, %{run | records: run.records ++ [written]}}
+            {:error, message} -> {:halt, %{run | record_error: message}}
+          end
+        end)
+
+      {:error, {reason, file}} ->
+        %{run | record_error: "could not name the sabotage record of #{file} (#{reason})"}
+    end
+  end
+
+  defp write_entry(store, root, %{mode: :append, path: path, content: content}, _ctx) do
+    case store.append(root, path, content) do
+      :ok -> {:ok, {:append, path}}
+      {:error, posix} -> {:error, not_written(path, posix)}
+    end
+  end
+
+  defp write_entry(store, root, %{mode: :create, path: path, content: content}, ctx) do
+    case store.create(root, path, content) do
+      :ok -> {:ok, {:create, path}}
+      {:error, :eexist} -> renumbered(store, root, path, content, ctx)
+      {:error, posix} -> {:error, not_written(path, posix)}
+    end
+  end
+
+  # A ticket-numbered name another run took meanwhile: the next number,
+  # once. Any other name that exists is never overwritten.
+  defp renumbered(store, root, path, content, %{records: %{naming: :ticket_nn_what}} = ctx) do
+    dir = Path.dirname(path)
+    names = store.list(root, dir) |> Enum.map(&Path.basename/1)
+    naming = %{domain: nil, app: nil, date: ctx.date, slot: ctx.slot, existing_names: names}
+    {:ok, retry} = RecordNaming.path(%{ctx.records | dir: dir}, naming)
+
+    case store.create(root, retry, content) do
+      :ok -> {:ok, {:create, retry}}
+      {:error, posix} -> {:error, not_written(retry, posix)}
+    end
+  end
+
+  defp renumbered(_store, _root, path, _content, _ctx), do: {:error, not_written(path, :eexist)}
+
+  defp not_written(path, posix),
+    do:
+      "could not write the sabotage record #{path} (#{inspect(posix)}); nothing was " <>
+        "overwritten. Fix: check #{Path.dirname(path)} is writable, then rerun"
+
+  # A refused run is not saved: DND-5483 and DND-5484 read only finished runs. A
+  # finished run is saved after its records are written, so it names them.
   defp save(%Run{refusal: {_code, _message}} = run, _facts, _ports), do: run
 
   defp save(run, facts, %{patcher: patcher}) do

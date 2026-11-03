@@ -12,6 +12,15 @@ defmodule Anchor.Domain.Sabotage.Config do
   | `effect_calls` | `[]` | extra effect calls (`Anchor.Domain.FunctionRef` tokens) |
   | `test_mirror` | the two rules below | lib file to test file, first matching `from` wins |
   | `coverage_map` | none | a per-test coverage map file (DND-5474), relative to the project root; `--coverage PATH` overrides |
+  | `records` | below | where the run's sabotage record goes and how it is named (DND-5484) |
+
+  `records` (every key optional): `dir` (default `test/sabotage_records`;
+  may hold `{app}`), `naming` (`domain_date_slot`, the default, or
+  `ticket_nn_what`), `domain_from` (`module`, the default, or `context_dir`),
+  `domain_strip_prefixes` (a list of module-name prefixes, default `[]`),
+  `adr` (the rule a test still lacking a red follows, named in the record;
+  default `the repo's sabotage-record ADR`). See
+  `Anchor.Domain.Sabotage.RecordNaming`.
 
   The default `test_command` runs two test cases at once: a sabotage run must
   never load the machine it runs on (the sabotage load rule).
@@ -29,7 +38,7 @@ defmodule Anchor.Domain.Sabotage.Config do
     %{from: "lib/**/*.ex", to: "test/{rest}_test.exs"}
   ]
   @keys ~w(test_command max_mutants timeout_seconds operators effect_calls test_mirror
-           coverage_map)
+           coverage_map records)
 
   defstruct test_command: ["mix", "test", "--max-cases", "2"],
             max_mutants: 30,
@@ -37,7 +46,14 @@ defmodule Anchor.Domain.Sabotage.Config do
             operators: Operators.all(),
             effect_calls: [],
             test_mirror: @default_mirror,
-            coverage_map: nil
+            coverage_map: nil,
+            records: %{
+              dir: "test/sabotage_records",
+              naming: :domain_date_slot,
+              domain_from: :module,
+              domain_strip_prefixes: [],
+              adr: "the repo's sabotage-record ADR"
+            }
 
   @type t :: %__MODULE__{
           test_command: [String.t(), ...],
@@ -46,7 +62,14 @@ defmodule Anchor.Domain.Sabotage.Config do
           operators: [atom()],
           effect_calls: [String.t()],
           test_mirror: [TestMirror.rule()],
-          coverage_map: String.t() | nil
+          coverage_map: String.t() | nil,
+          records: %{
+            dir: String.t(),
+            naming: :domain_date_slot | :ticket_nn_what,
+            domain_from: :module | :context_dir,
+            domain_strip_prefixes: [String.t()],
+            adr: String.t()
+          }
         }
 
   @doc "Parses the decoded section (`nil` for a bare `sabotage:`)."
@@ -61,7 +84,8 @@ defmodule Anchor.Domain.Sabotage.Config do
          {:ok, operators} <- operators(section),
          {:ok, effects} <- effect_calls(section),
          {:ok, mirror} <- test_mirror(section),
-         {:ok, coverage_map} <- coverage_map(section) do
+         {:ok, coverage_map} <- coverage_map(section),
+         {:ok, records} <- records(section) do
       {:ok,
        %__MODULE__{
          test_command: command,
@@ -70,7 +94,8 @@ defmodule Anchor.Domain.Sabotage.Config do
          operators: operators,
          effect_calls: effects,
          test_mirror: mirror,
-         coverage_map: coverage_map
+         coverage_map: coverage_map,
+         records: records
        }}
     end
   end
@@ -233,6 +258,96 @@ defmodule Anchor.Domain.Sabotage.Config do
   end
 
   defp coverage_map(_section), do: {:ok, nil}
+
+  @record_keys ~w(dir naming domain_from domain_strip_prefixes adr)
+  @namings %{"domain_date_slot" => :domain_date_slot, "ticket_nn_what" => :ticket_nn_what}
+  @domain_froms %{"module" => :module, "context_dir" => :context_dir}
+
+  defp records(%{"records" => section}) when is_map(section) do
+    defaults = %__MODULE__{}.records
+
+    with :ok <- known_record_keys(section),
+         {:ok, dir} <- record_string(section, "dir", defaults.dir),
+         {:ok, naming} <- record_choice(section, "naming", @namings, defaults.naming),
+         {:ok, from} <- record_choice(section, "domain_from", @domain_froms, defaults.domain_from),
+         {:ok, prefixes} <- record_prefixes(section),
+         {:ok, adr} <- record_string(section, "adr", defaults.adr) do
+      {:ok,
+       %{dir: dir, naming: naming, domain_from: from, domain_strip_prefixes: prefixes, adr: adr}}
+    end
+  end
+
+  defp records(%{"records" => section}),
+    do:
+      refuse(
+        "sabotage.records must be a mapping, got: #{inspect(section)}",
+        "write `records:` with keys under it (#{Enum.join(@record_keys, ", ")}), or remove it"
+      )
+
+  defp records(_section), do: {:ok, %__MODULE__{}.records}
+
+  defp known_record_keys(section) do
+    case section |> Map.keys() |> Enum.reject(&(&1 in @record_keys)) |> Enum.sort() do
+      [] ->
+        :ok
+
+      unknown ->
+        refuse(
+          "sabotage.records: unknown key(s) #{Enum.map_join(unknown, ", ", &inspect/1)}",
+          "remove or correct it; the keys are #{Enum.join(@record_keys, ", ")}"
+        )
+    end
+  end
+
+  defp record_string(section, key, default) do
+    case Map.get(section, key, default) do
+      value when is_binary(value) and value != "" ->
+        {:ok, value}
+
+      value ->
+        refuse(
+          "sabotage.records.#{key} must be a non-empty string, got: #{inspect(value)}",
+          "set it to a string, or remove it for the default"
+        )
+    end
+  end
+
+  defp record_choice(section, key, choices, default) do
+    case Map.fetch(section, key) do
+      :error ->
+        {:ok, default}
+
+      {:ok, value} when is_map_key(choices, value) ->
+        {:ok, Map.fetch!(choices, value)}
+
+      {:ok, value} ->
+        refuse(
+          "sabotage.records.#{key} #{inspect(value)} is not one of " <>
+            Enum.join(choices |> Map.keys() |> Enum.sort(), ", "),
+          "use one of #{Enum.join(choices |> Map.keys() |> Enum.sort(), ", ")}"
+        )
+    end
+  end
+
+  defp record_prefixes(section) do
+    case Map.get(section, "domain_strip_prefixes", []) do
+      prefixes when is_list(prefixes) ->
+        if Enum.all?(prefixes, &(is_binary(&1) and &1 != "")),
+          do: {:ok, prefixes},
+          else: bad_prefixes(prefixes)
+
+      prefixes ->
+        bad_prefixes(prefixes)
+    end
+  end
+
+  defp bad_prefixes(prefixes) do
+    refuse(
+      "sabotage.records.domain_strip_prefixes must be a list of non-empty strings, got: " <>
+        inspect(prefixes),
+      "list module-name prefixes such as \"MyApp.Domain.\""
+    )
+  end
 
   defp refuse(message, fix), do: {:error, {:invalid_config, message <> ". Fix: " <> fix}}
 end

@@ -11,7 +11,9 @@ defmodule Anchor.Adapters.GitWorktree do
     * `ancestor?/3` — whether a commit is an ancestor of `HEAD`
       (`git merge-base --is-ancestor`; a commit git does not have is not one);
     * `changed_since/2` — the paths whose working-tree content differs from
-      that commit's, untracked (not ignored) files included.
+      that commit's, untracked (not ignored) files included;
+    * `branch/1` — the checked-out branch's short name, `nil` on a detached
+      `HEAD` (DND-5484).
   """
 
   @type git_error :: {:git_failed, [String.t()], non_neg_integer(), String.t()}
@@ -25,4 +27,5 @@ defmodule Anchor.Adapters.GitWorktree do
               {:ok, boolean()} | {:error, git_error()}
   @callback changed_since(root :: String.t(), sha :: String.t()) ::
               {:ok, [String.t()]} | {:error, git_error()}
+  @callback branch(root :: String.t()) :: {:ok, String.t() | nil} | {:error, git_error()}
 end

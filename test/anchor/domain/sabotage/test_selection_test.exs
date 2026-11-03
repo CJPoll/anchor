@@ -124,6 +124,38 @@ defmodule Anchor.Domain.Sabotage.TestSelectionTest do
     end
   end
 
+  describe "select/2 with a kill map (DND-5484)" do
+    # Sabotage record: ../../../sabotage_records/sabotage-20261103-dnd_5484_records.md
+    defp km_mutant(function), do: %{file: "lib/x.ex", module: M, function: function}
+
+    @kill_map %{"M.f/1" => ["test/t1_test.exs"]}
+
+    test "1: a function earlier records show killed selects its killers' files, over the mirror" do
+      inputs = Map.put(inputs(["test/x_test.exs", "test/t1_test.exs"]), :kill_map, @kill_map)
+
+      assert TestSelection.select(km_mutant({:f, 1}), inputs) == {:kill_map, ["test/t1_test.exs"]}
+    end
+
+    test "2: a function with no kill-map row falls back to the mirror" do
+      inputs = Map.put(inputs(["test/x_test.exs", "test/t1_test.exs"]), :kill_map, @kill_map)
+
+      assert TestSelection.select(km_mutant({:g, 0}), inputs) == {:mirror, ["test/x_test.exs"]}
+    end
+
+    test "coverage comes first; a killer file that no longer exists is dropped" do
+      inputs =
+        inputs(["test/x_test.exs", "test/t1_test.exs", "test/a_test.exs"])
+        |> Map.put(:kill_map, @kill_map)
+        |> Map.put(:coverage, %{"M.f/1" => ["test/a_test.exs:3"]})
+
+      assert TestSelection.select(km_mutant({:f, 1}), inputs) ==
+               {:coverage, ["test/a_test.exs:3"]}
+
+      gone = Map.put(inputs(["test/x_test.exs"]), :kill_map, @kill_map)
+      assert TestSelection.select(km_mutant({:f, 1}), gone) == {:mirror, ["test/x_test.exs"]}
+    end
+  end
+
   describe "mirror_path/2" do
     test "names the path the mirror looked for, or nil" do
       assert TestSelection.mirror_path(mutant("lib/x.ex"), @rules) == "test/x_test.exs"

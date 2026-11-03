@@ -12,7 +12,9 @@ defmodule Anchor.Adapters.GitStatus do
       128 a commit git does not have: not an ancestor);
     * `git diff --name-only --relative -z <sha> --` and
       `git ls-files --others --exclude-standard -z` (both relative to `root`,
-      so a project below the git root gets its own paths).
+      so a project below the git root gets its own paths);
+    * `git symbolic-ref --quiet --short HEAD` (exit 1: a detached `HEAD`;
+      DND-5484).
   """
 
   @behaviour Anchor.Adapters.GitWorktree
@@ -72,6 +74,17 @@ defmodule Anchor.Adapters.GitStatus do
     with {:ok, changed} <- names(root, ["diff", "--name-only", "--relative", "-z", sha, "--"]),
          {:ok, untracked} <- names(root, ["ls-files", "--others", "--exclude-standard", "-z"]) do
       {:ok, Enum.uniq(changed ++ untracked)}
+    end
+  end
+
+  @impl Anchor.Adapters.GitWorktree
+  def branch(root) do
+    args = ["symbolic-ref", "--quiet", "--short", "HEAD"]
+
+    case git(root, args) do
+      {out, 0} -> {:ok, String.trim(out)}
+      {_out, 1} -> {:ok, nil}
+      {out, status} -> {:error, {:git_failed, args, status, out}}
     end
   end
 

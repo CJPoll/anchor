@@ -16,7 +16,11 @@ defmodule Anchor.Domain.Sabotage.Run do
     * `errors` — `{changed_function, reason}` for a function no mutant could
       be made of (`:not_in_source`, `{:parse_error, line, message}`,
       `{:unreadable, posix}`);
-    * `not_run` — the mutants past the cap.
+    * `not_run` — the mutants past the cap;
+    * `records` — the sabotage records written (DND-5484), `{:create |
+      :append, path}`;
+    * `record_error` — `nil`, or why a record could not be written (exit 2;
+      the outcomes still stand).
   """
 
   alias Anchor.Domain.Sabotage.Mutant
@@ -33,7 +37,9 @@ defmodule Anchor.Domain.Sabotage.Run do
             planned: [],
             skipped: [],
             errors: [],
-            not_run: []
+            not_run: [],
+            records: [],
+            record_error: nil
 
   @type selection :: {atom(), [String.t()]}
   @type outcome :: %{
@@ -54,6 +60,8 @@ defmodule Anchor.Domain.Sabotage.Run do
           planned: [{Mutant.t(), selection()}],
           skipped: [Skipped.t()],
           errors: [{map(), term()}],
-          not_run: [Mutant.t()]
+          not_run: [Mutant.t()],
+          records: [{:create | :append, String.t()}],
+          record_error: String.t() | nil
         }
 end

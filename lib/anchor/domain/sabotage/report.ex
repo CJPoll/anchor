@@ -11,7 +11,11 @@ defmodule Anchor.Domain.Sabotage.Report do
   mutants run by the source that chose their tests (`coverage`, `mirror`,
   `none`; DND-5474).
 
-  Exit codes: the refusal's own code; else 1 when a mutant survived or had no
+  The sabotage records written (DND-5484) are named before the summary, as
+  `sabotage record created: <path>` or `appended`.
+
+  Exit codes: the refusal's own code; else 2 when a record could not be
+  written; else 1 when a mutant survived or had no
   test; else 0 (every mutant run was killed, timed out or was invalid).
   """
 
@@ -22,6 +26,7 @@ defmodule Anchor.Domain.Sabotage.Report do
   @spec exit_code(Run.t()) :: 0 | 1 | pos_integer()
   def exit_code(%Run{refusal: {code, _message}}), do: code
   def exit_code(%Run{dry_run: true}), do: 0
+  def exit_code(%Run{record_error: message}) when is_binary(message), do: 2
 
   def exit_code(%Run{outcomes: outcomes}) do
     if Enum.any?(outcomes, &(&1.status in [:survived, :no_tests])), do: 1, else: 0
@@ -52,7 +57,8 @@ defmodule Anchor.Domain.Sabotage.Report do
     lines(
       run.notes ++
         Enum.map(run.outcomes, &outcome/1) ++
-        skipped(run) ++ errors(run) ++ not_run(run) ++ sources(run) ++ [summary(run)]
+        skipped(run) ++
+        errors(run) ++ not_run(run) ++ sources(run) ++ records(run) ++ [summary(run)]
     )
   end
 
@@ -100,6 +106,16 @@ defmodule Anchor.Domain.Sabotage.Report do
 
   defp not_run(%Run{not_run: not_run}),
     do: ["not run (cap): #{length(not_run)} mutants; rerun with --max all (CI)"]
+
+  defp records(run) do
+    written =
+      Enum.map(run.records, fn
+        {:create, path} -> "sabotage record created: #{path}"
+        {:append, path} -> "sabotage record appended: #{path}"
+      end)
+
+    if run.record_error, do: written ++ [run.record_error], else: written
+  end
 
   defp sources(%Run{outcomes: []}), do: []
 

@@ -27,7 +27,8 @@ defmodule Mix.Tasks.Anchor.Sabotage do
   ## run and restore (DND-5473)
 
       mix anchor.sabotage run [--base REF] [--max N|all] [--only ID]... [--dry-run]
-                              [--coverage PATH]
+                              [--coverage PATH] [--no-record] [--domain D]
+                              [--ticket KEY] [--slot S]
       mix anchor.sabotage restore
 
   `run` applies the mutants of the changed functions one at a time, runs only
@@ -40,6 +41,13 @@ defmodule Mix.Tasks.Anchor.Sabotage do
   PATH` (or the config's `coverage_map`) selects each mutant's tests from a
   per-test coverage map (DND-5474) first, then the mirror file; each line says
   which source chose them.
+
+  After the run it writes the sabotage record (DND-5484;
+  `Anchor.Domain.Sabotage.Record`), in the repo's naming (`sabotage.records`),
+  and names each file it created or appended to. `--no-record` writes none;
+  `--domain` overrides the derived domain; `--ticket` and `--slot` override
+  the ticket key and the slot read from the branch. The date is read here,
+  in UTC, and passed on as a fact.
 
   Exit codes: 0 every mutant run was killed (or timed out, or was invalid:
   listed and counted); 1 a mutant survived or had no test; 2 a refusal or a
@@ -76,7 +84,8 @@ defmodule Mix.Tasks.Anchor.Sabotage do
   @usage """
   Usage: mix anchor.sabotage scope [--base REF] [--format text|json]
          mix anchor.sabotage run [--base REF] [--max N|all] [--only ID]... [--dry-run]
-                                 [--coverage PATH]
+                                 [--coverage PATH] [--no-record] [--domain D]
+                                 [--ticket KEY] [--slot S]
          mix anchor.sabotage restore
          MIX_ENV=test mix anchor.sabotage coverage [--out PATH] [--local] [-- TEST_ARGS]
   Fix: use one of these forms; --max takes a positive integer or `all`\
@@ -101,23 +110,9 @@ defmodule Mix.Tasks.Anchor.Sabotage do
   end
 
   def run(["run" | argv], opts) do
-    switches = [base: :string, max: :string, only: :keep, dry_run: :boolean, coverage: :string]
-
-    with {parsed, [], []} <- OptionParser.parse(argv, strict: switches),
-         {:ok, max} <- max(parsed[:max]) do
-      facts = %{
-        root: File.cwd!(),
-        env: Mix.env(),
-        base: Keyword.get(parsed, :base, @default_base),
-        max: max,
-        only: Keyword.get_values(parsed, :only),
-        dry_run: Keyword.get(parsed, :dry_run, false),
-        coverage: parsed[:coverage]
-      }
-
-      report(Sabotage.run(facts, opts))
-    else
-      _invalid -> usage()
+    case run_facts(argv) do
+      {:ok, facts} -> report(Sabotage.run(facts, opts))
+      :usage -> usage()
     end
   end
 
@@ -133,6 +128,54 @@ defmodule Mix.Tasks.Anchor.Sabotage do
   end
 
   def run(_argv, _opts), do: usage()
+
+  @doc false
+  # The facts `run` passes the Manager, from its argv; exposed for its test.
+  @spec run_facts([String.t()]) :: {:ok, map()} | :usage
+  def run_facts(argv) do
+    switches = [
+      base: :string,
+      max: :string,
+      only: :keep,
+      dry_run: :boolean,
+      coverage: :string,
+      record: :boolean,
+      domain: :string,
+      ticket: :string,
+      slot: :string
+    ]
+
+    with {parsed, [], []} <- OptionParser.parse(argv, strict: switches),
+         {:ok, max} <- max(parsed[:max]) do
+      facts = %{
+        root: File.cwd!(),
+        env: Mix.env(),
+        base: Keyword.get(parsed, :base, @default_base),
+        max: max,
+        only: Keyword.get_values(parsed, :only),
+        dry_run: Keyword.get(parsed, :dry_run, false),
+        coverage: parsed[:coverage],
+        no_record: Keyword.get(parsed, :record, true) == false,
+        domain: parsed[:domain],
+        ticket: parsed[:ticket],
+        slot: parsed[:slot],
+        now: DateTime.utc_now(),
+        command: Enum.join(["mix", "anchor.sabotage", "run" | argv], " "),
+        version: anchor_version()
+      }
+
+      {:ok, facts}
+    else
+      _invalid -> :usage
+    end
+  end
+
+  defp anchor_version do
+    case Application.spec(:anchor, :vsn) do
+      nil -> "unknown"
+      vsn -> to_string(vsn)
+    end
+  end
 
   defp split_test_args(argv) do
     case Enum.split_while(argv, &(&1 != "--")) do

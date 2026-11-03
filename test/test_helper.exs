@@ -25,3 +25,6 @@ Hammox.defmock(Anchor.TracingMock, for: Anchor.Adapters.Tracing)
 Hammox.defmock(Anchor.InProcessTestsMock, for: Anchor.Adapters.InProcessTests)
 Hammox.defmock(Anchor.ProjectModuleSourceMock, for: Anchor.Adapters.ProjectModuleSource)
 Hammox.defmock(Anchor.CoverageStoreMock, for: Anchor.Adapters.CoverageStore)
+
+# DND-5484: the sabotage record files (`:record_store`).
+Hammox.defmock(Anchor.RecordStoreMock, for: Anchor.Adapters.RecordStore)

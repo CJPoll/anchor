@@ -7,9 +7,12 @@ defmodule Anchor.Domain.Sabotage.TestSelection do
     1. `:coverage` (DND-5474): the tests whose per-test coverage set holds the
        mutant's `Module.fun/arity`, as `file:line` args (input `coverage`, the
        `Anchor.Domain.Sabotage.CoverageMap.index/1` of a map);
-    2. `:mirror`: the first `test_mirror` rule whose `from` matches the
+    2. `:kill_map` (DND-5484): the test files whose tests killed a mutant of
+       the same `Module.fun/arity` in an earlier sabotage record (input
+       `kill_map`, `\"M.f/a\" => [file]`), each of which must exist;
+    3. `:mirror`: the first `test_mirror` rule whose `from` matches the
        mutant's file names a test file, which must exist;
-    3. `:none`.
+    4. `:none`.
 
   A function absent from the coverage index (or a run with no map) falls to
   the next source. The source is always stated in the report.
@@ -30,9 +33,10 @@ defmodule Anchor.Domain.Sabotage.TestSelection do
           required(:mirror) => [TestMirror.rule()],
           required(:existing_tests) => MapSet.t(String.t()),
           optional(:coverage) => %{String.t() => [String.t()]} | nil,
-          optional(:stale_tests) => MapSet.t(String.t()) | :all
+          optional(:stale_tests) => MapSet.t(String.t()) | :all,
+          optional(:kill_map) => %{String.t() => [String.t()]}
         }
-  @type source :: :coverage | :mirror | :none
+  @type source :: :coverage | :kill_map | :mirror | :none
 
   @spec select(%{file: String.t()}, inputs()) :: {source(), [String.t()]}
   def select(%{file: file} = mutant, %{mirror: rules, existing_tests: existing} = inputs) do
@@ -42,9 +46,16 @@ defmodule Anchor.Domain.Sabotage.TestSelection do
       |> indexed(mfa(mutant))
       |> Enum.filter(&MapSet.member?(existing, ref_file(&1)))
 
-    case refs do
-      [_ | _] -> {:coverage, fresh(refs, rules, file, existing, stale(inputs))}
-      [] -> mirror(rules, file, existing)
+    killers =
+      inputs
+      |> Map.get(:kill_map)
+      |> indexed(mfa(mutant))
+      |> Enum.filter(&MapSet.member?(existing, &1))
+
+    cond do
+      refs != [] -> {:coverage, fresh(refs, rules, file, existing, stale(inputs))}
+      killers != [] -> {:kill_map, killers |> Enum.uniq() |> Enum.sort()}
+      true -> mirror(rules, file, existing)
     end
   end
 
@@ -55,6 +66,10 @@ defmodule Anchor.Domain.Sabotage.TestSelection do
   @spec coverage_files(map(), %{String.t() => [String.t()]} | nil) :: [String.t()]
   def coverage_files(mutant, index),
     do: index |> indexed(mfa(mutant)) |> Enum.map(&ref_file/1) |> Enum.uniq()
+
+  @doc "The test files a kill-map selection of `mutant` could pass."
+  @spec kill_map_files(map(), %{String.t() => [String.t()]} | nil) :: [String.t()]
+  def kill_map_files(mutant, kill_map), do: kill_map |> indexed(mfa(mutant)) |> Enum.uniq()
 
   @doc "The test file the mirror looks for, or `nil` when no rule matches the file."
   @spec mirror_path(%{file: String.t()}, [TestMirror.rule()]) :: String.t() | nil

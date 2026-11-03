@@ -43,8 +43,8 @@ never an adapter.
 |---|---|
 | Framework | `Anchor.Check.*` (Credo checks, `Anchor.Check.Base`, `Anchor.Check.Source`), `Mix.Tasks.Anchor.*` (`lib/mix/tasks/`; `Mix.Tasks.Anchor.Sabotage`), `Anchor.Sabotage.CoverageCollector` (an OTP process) |
 | Managers | `Anchor.Managers.Lint`, `Anchor.Managers.Sabotage` (`.Runner`, `.Coverage`) |
-| Side Effects | ports: `Anchor.Adapters.ConfigLoader`, `ChangeSource`, `BeamSource`, `Tracing`, `InProcessTests`, `ProjectModuleSource`, `CoverageStore`; adapters: `ConfigFile`, `GitChangeSource`, `BeamReader`, `CallTracer`, `SuiteRunner`, `ProjectModules`, `CoverageFile` (`lib/anchor/adapters/`) |
-| Domain | everything under `lib/anchor/domain/`, including `Anchor.Domain.Sabotage.*` (`Mutator`, `Operators`, `DiffHunks`, `FunctionSpans`, `Scope`) and `Anchor.Domain.Graph.*` |
+| Side Effects | ports: `Anchor.Adapters.ConfigLoader`, `ChangeSource`, `BeamSource`, `Tracing`, `InProcessTests`, `ProjectModuleSource`, `CoverageStore`; adapters: `ConfigFile`, `GitChangeSource`, `BeamReader`, `CallTracer`, `SuiteRunner`, `ProjectModules`, `CoverageFile`, `RecordFile` (port `RecordStore`) (`lib/anchor/adapters/`) |
+| Domain | everything under `lib/anchor/domain/`, including `Anchor.Domain.Sabotage.*` (`Mutator`, `Operators`, `DiffHunks`, `FunctionSpans`, `Scope`, `CoverageMap`, `Record`, `RecordNaming`, `KillMap`, `ChangedTests`) and `Anchor.Domain.Graph.*` |
 
 ### Key Architectural Decisions
 
@@ -225,3 +225,15 @@ that turns VM-wide tracing on is tagged `@moduletag :global_tracing`, and the
 coverage build runs with `--exclude global_tracing`. `run --coverage PATH`
 selects a mutant's tests from the map first (source `coverage`), then the
 mirror.
+
+## Sabotage records (DND-5484)
+
+`mix anchor.sabotage run` writes its own sabotage record after the run
+(`Anchor.Domain.Sabotage.Record`, the golden file
+`test/fixtures/sabotage/record_golden.md` is the authority for its text),
+named per `sabotage.records` (`RecordNaming`: anchor and crew
+`domain_date_slot`, gen_saas `ticket_nn_what`). Its `anchor-kills` block
+(`KillMap`, render and parse) is what `run` selects tests from next time
+(source `kill_map`, after `coverage`, before `mirror`) and what DND-5485
+replays. `RecordFile.create/3` never overwrites; a README is never written;
+nothing is staged or committed. The date is a fact the Mix task reads.

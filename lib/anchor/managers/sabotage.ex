@@ -79,7 +79,7 @@ defmodule Anchor.Managers.Sabotage do
          {:ok, spans} <- spans(Scope.source_files(files), &read_spans(source, root, &1)),
          {:ok, old_spans} <-
            spans(Scope.old_source_files(files), &base_spans(source, root, sha, &1)) do
-      {:ok, Scope.build(files, spans, old_spans)}
+      {:ok, %{Scope.build(files, spans, old_spans) | base_sha: sha}}
     end
   end
 

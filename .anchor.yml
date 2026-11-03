@@ -103,3 +103,23 @@ rules:
       - "lib/anchor/check/struct_owned_by_module.ex"
     required_modules:
       - Anchor.Check.Base
+
+# --- Generated sabotage (DND-5473, DND-5484) ---
+#
+# `mix anchor.sabotage run` on Anchor's own tree. Records follow ADR 003:
+# test/sabotage_records/<domain>-YYYYMMDD-<slot>.md, the domain derived from
+# the mutated module's name (Anchor.Domain.Sabotage.Mutator -> sabotage,
+# Anchor.Check.NoDependency -> no_dependency, Anchor.Config -> config).
+sabotage:
+  records:
+    dir: "test/sabotage_records"
+    naming: domain_date_slot
+    domain_from: module
+    domain_strip_prefixes:
+      - "Anchor.Domain.Checks."
+      - "Anchor.Domain."
+      - "Anchor.Check."
+      - "Anchor.Managers."
+      - "Anchor.Adapters."
+      - "Anchor."
+    adr: "ADR 003"

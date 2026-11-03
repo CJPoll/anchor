@@ -4,7 +4,9 @@ defmodule Anchor.Integration.SabotageRunIntegrationTest do
   # bounded `mix test` with Anchor's formatter, and the restore. Two mutants
   # by --only, so the run stays light: a killed `return_input` of add/2 and a
   # survived `delete_statement` of validate/1 (no test reads it).
+  # DND-5484: the same run writes its sabotage record, read back here.
   # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5473_sabotage_run.md
+  # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5484_records.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Sabotage.Mutator
@@ -60,7 +62,7 @@ defmodule Anchor.Integration.SabotageRunIntegrationTest do
   defp project!(root) do
     ebin = Anchor.Sabotage.ExUnitFormatter |> :code.which() |> to_string() |> Path.dirname()
 
-    git!(root, ["init", "-q"])
+    git!(root, ["init", "-q", "-b", "dnd-77-calc"])
     write!(root, ".gitignore", "/_build/\n/deps/\n/.anchor/sabotage/in-flight.json\n")
     git!(root, ["add", "."])
     git!(root, ["commit", "-q", "-m", "base"])
@@ -103,7 +105,10 @@ defmodule Anchor.Integration.SabotageRunIntegrationTest do
         base: base,
         max: :all,
         only: [killed, survived],
-        dry_run: false
+        dry_run: false,
+        now: ~U[2026-11-05 14:07:00Z],
+        command: "mix anchor.sabotage run",
+        version: "0.1.0"
       })
 
     assert run.refusal == nil, Report.render(run)
@@ -117,8 +122,20 @@ defmodule Anchor.Integration.SabotageRunIntegrationTest do
 
     assert File.read!(Path.join(root, "lib/calc.ex")) == @calc
     refute File.exists?(Path.join(root, ".anchor/sabotage/in-flight.json"))
-    assert git!(root, ["status", "--porcelain"]) == ""
+    assert git!(root, ["status", "--porcelain"]) == "?? test/sabotage_records/"
     assert Report.exit_code(run) == 1
+
+    record_path = "test/sabotage_records/calc-20261105-DND_77.md"
+    assert run.records == [{:create, record_path}]
+    record = File.read!(Path.join(root, record_path))
+    assert record =~ "- **Domain:** calc\n- **Branch:** dnd-77-calc\n- **Date:** 2026-11-05\n"
+    assert record =~ "code:  assert Calc.add(1, 2) == 3\n"
+    assert record =~ "## Tests still lacking a red\n\nNone.\n"
+
+    assert {:ok, rows} = Anchor.Domain.Sabotage.KillMap.parse(record)
+
+    assert Enum.sort(Enum.map(rows, &{&1.id, &1.status})) ==
+             Enum.sort([{killed, "killed"}, {survived, "survived"}])
 
     saved = File.read!(Path.join(root, "_build/test/anchor/sabotage/last-run.etf"))
     assert :erlang.binary_to_term(saved) == run
