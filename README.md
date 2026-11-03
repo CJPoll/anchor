@@ -187,6 +187,8 @@ rule's position (and its `id`, when it has one) and ending with `Fix:`:
 - an `allowed_callers` entry that is not exactly one Elixir module name: a glob
   (`"*"` allows every caller, so the rule checks nothing), an Erlang module
   (`":ets"`), or a malformed name (`"MyApp.adapter"`, `"MyApp.Repo.insert/1"`);
+- an `owned_namespaces: []`, which checks no struct, and an `owned_namespaces`
+  entry that is not an exact Elixir module name (a glob, an Erlang module);
 - a `pure_patterns` entry of only wildcards (`*`, `**`), which declares every
   module pure;
 - an `allowed_functions` entry of only wildcards (`*`, `**`), which allows
@@ -319,6 +321,7 @@ semantics and edge cases.
 | `same_context` | `no_direct_dependency` | Boolean, default `false`. When `true`, a `forbidden_patterns` match is a violation **only if** the dependency shares the checked file's own context. Exact `forbidden_modules` matches are never scoped. |
 | `context_depth` | `no_direct_dependency` | Positive integer, default `2`. Number of leading module-namespace segments that define a "context/subdomain". Inert unless `same_context: true`. |
 | `allowed_functions` | `module_pattern_restrictions` | Function-name allow-list (globs). |
+| `owned_namespaces` | `struct_owned_by_module` | Exact module names, default: every struct. Limits the check to structs equal to or nested under an entry, and reports a selected top-level module outside them. `[]`, a glob, an Erlang module or a malformed name fails the load. See [`struct_owned_by_module`](#struct_owned_by_module). |
 | `pure_patterns` | `no_discarded_pure_expression` | Module-name globs, default `[]`: modules whose functions are pure, beside the stdlib pure set. A non-list, a blank entry or a match-all glob (`*`, `**`) fails the load. See [`no_discarded_pure_expression`](#no_discarded_pure_expression). |
 | `mode`, `max_lines` | `alphabetized_functions`, `max_file_length` | Style-check parameters. `mode` is `all`, `public_only` or `separate` (a leading colon is accepted); any other token fails the load. |
 
@@ -349,6 +352,7 @@ another type (`match` on a `no_transitive_dependency` rule) is unknown too.
 | `no_tuple_match_in_head` | none | none |
 | `single_control_flow` | none | none |
 | `struct_getter_convention` | none | none |
+| `struct_owned_by_module` | `owned_namespaces` | none |
 
 Every rule also needs exactly one **selector**: a non-empty `paths` list, a
 `pattern` string or a `uses_module` string. A rule with none selects no file,
@@ -444,7 +448,8 @@ Configure Credo to use the custom checks in `.credo.exs`:
           {Anchor.Check.NoComparisonInIf, []},
           {Anchor.Check.StructGetterConvention, []},
           {Anchor.Check.NoDiscardedPureExpression, []},
-          {Anchor.Check.NoForwardingFunction, []}
+          {Anchor.Check.NoForwardingFunction, []},
+          {Anchor.Check.StructOwnedByModule, []}
         ]
       }
     }
@@ -1124,4 +1129,69 @@ architecture model knows, so those are the graph rule `no_inert_hop`'s.
     - "lib/my_app/**/*.ex"
   recursive: true
 ```
+
+### `struct_owned_by_module`
+
+Only a struct's own module builds or changes it, so each invariant has one
+home (DND-5453, proposal M2). This is the part of crew's
+`StructOnlyChangedByOwnModule` that one file's text decides.
+
+Outside the struct `S`'s own module, in an expression position, it reports:
+
+- `%S{...}` and `%S{s | ...}`;
+- `struct(S)`, `struct(S, kw)`, `struct!(S)`, `struct!(S, kw)` (bare or
+  `Kernel.`) naming another module;
+- on a variable known, in the same function clause, to be another module's
+  struct: `%{s | ...}`, `Map.put`, `put_new`, `put_new_lazy`, `merge`,
+  `replace`, `replace!`, `update`, `update!`, `delete`, `drop` (piped or
+  not), `struct(s, ...)`, and `put_in`/`update_in`/`pop_in`/`get_and_update_in`
+  on a path through it.
+
+A variable is **known** as `S` when every place the clause binds it (the
+head, `=`, a `case`/`with`/`fn`/`receive` clause pattern, a `<-`) matches it
+as `%S{}` (`%S{} = s`), or binds it to a `%S{...}` literal. Any other binding
+of that name in the clause (bare, rebound to a call, matched as a different
+struct, an `fn` argument of the same name) makes it unknown, and nothing is
+reported on it.
+
+**Allowed:** reading fields, `Map.get/2,3`, `Map.from_struct/1`,
+`Map.delete(s, :__struct__)` and a `Map.drop/2` that drops `:__struct__`
+(both convert to a plain map), struct patterns anywhere (heads, `case`,
+`with`, `fn`, `receive`, `for`, `=`, `match?`), and typespec attributes. The
+owner is the innermost `defmodule`, and inside `defimpl P, for: M` it is `M`:
+a protocol implementation for a struct is that struct's own code. Code
+outside every module owns no struct. Names resolve the way Elixir resolves
+them (aliases, `as:`, multi-aliases, a nested module's automatic alias,
+`__MODULE__`). Code inside `quote` is skipped.
+
+**Test code** is exempt by selection, not by a hard-coded path: select `lib`
+paths.
+
+```yaml
+- type: struct_owned_by_module
+  paths:
+    - "lib/**/*.ex"
+  recursive: true
+  owned_namespaces:      # optional: only these namespaces' structs
+    - MyApp
+```
+
+With `owned_namespaces`, only structs equal to or nested under an entry are
+checked, so a stdlib or dependency struct (`URI`, `DateTime`, `MapSet`), which
+your code cannot give a function, is out of scope. A selected top-level
+`defmodule` outside them is itself an issue, so a new namespace is never
+silently unchecked: `Module NewApp.Thing is outside owned_namespaces, so its
+structs would never be checked. Fix: add its namespace to owned_namespaces,
+or stop selecting this file.`
+
+Each build or change issue names the struct and ends with `Fix: call a
+function on S's own module that builds or changes it (e.g. S.new/1,
+S.put_<field>/2); read fields and pattern-match freely.`
+
+Known limits, each a miss: a value bound to a function's return
+(`s = Turn.new()`) or a field typed as a struct (`state.turn`) is not known,
+because that needs another file's typespec: the graph rule DND-5454 judges
+it. A name the source cannot resolve (an `unquote` in a struct literal, an
+alias of a non-literal module) is not reported. A top-level module named by
+an alias in scope inherits DND-1282's literal-`defmodule` naming.
 

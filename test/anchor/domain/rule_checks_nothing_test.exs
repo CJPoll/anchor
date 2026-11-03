@@ -297,6 +297,32 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
       ]
   end
 
+  # DND-5453: `owned_namespaces` narrows which structs are checked, so it is
+  # not a relation. Each entry names one module exactly; `[]` checks nothing.
+  defp table(:struct_owned_by_module) do
+    base = base(:struct_owned_by_module)
+    not_a_module = "is not an exact Elixir module name"
+
+    common_rows(:struct_owned_by_module) ++
+      [
+        {"positive: owned_namespaces", Map.put(base, "owned_namespaces", ["App"]), :accepted},
+        {"positive: nested namespaces", Map.put(base, "owned_namespaces", ["App", "Lib.Core"]),
+         :accepted},
+        {"owned_namespaces: [] checks no struct", Map.put(base, "owned_namespaces", []),
+         {:refused, "`owned_namespaces: []` checks no struct"}},
+        {"an owned_namespaces glob", Map.put(base, "owned_namespaces", ["App.*"]),
+         {:refused, not_a_module}},
+        {"an owned_namespaces Erlang module", Map.put(base, "owned_namespaces", [":app"]),
+         {:refused, not_a_module}},
+        {"an owned_namespaces empty string", Map.put(base, "owned_namespaces", [""]),
+         {:refused, "`owned_namespaces` must be a list of non-empty strings"}},
+        {"owned_namespaces that is a string", Map.put(base, "owned_namespaces", "App"),
+         {:refused, "`owned_namespaces` must be a list of non-empty strings"}},
+        {"a malformed owned_namespaces entry after a valid one",
+         Map.put(base, "owned_namespaces", ["App", "app.core"]), {:refused, ~s("app.core")}}
+      ]
+  end
+
   # The types with no relation and no key of their own: they check every file
   # they select, so only the common rows apply.
   defp table(type), do: common_rows(type)

@@ -27,6 +27,7 @@ defmodule Anchor do
   - `Anchor.Check.StructGetterConvention` - Enforces a consistent convention for struct getter functions
   - `Anchor.Check.NoDiscardedPureExpression` - Reports a discarded expression that has no effect
   - `Anchor.Check.NoForwardingFunction` - Reports a function that only forwards to another in its module
+  - `Anchor.Check.StructOwnedByModule` - Reports a struct built or changed outside its own module
 
   ## Integration with Credo
 
@@ -51,7 +52,8 @@ defmodule Anchor do
                 {Anchor.Check.MaxFileLength, []},
                 {Anchor.Check.StructGetterConvention, []},
                 {Anchor.Check.NoDiscardedPureExpression, []},
-                {Anchor.Check.NoForwardingFunction, []}
+                {Anchor.Check.NoForwardingFunction, []},
+                {Anchor.Check.StructOwnedByModule, []}
               ]
             }
           }
@@ -77,7 +79,8 @@ defmodule Anchor do
       Anchor.Check.MaxFileLength,
       Anchor.Check.StructGetterConvention,
       Anchor.Check.NoDiscardedPureExpression,
-      Anchor.Check.NoForwardingFunction
+      Anchor.Check.NoForwardingFunction,
+      Anchor.Check.StructOwnedByModule
     ]
   end
 end

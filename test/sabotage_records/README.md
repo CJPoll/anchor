@@ -146,3 +146,8 @@ before coining a synonym.
   proposal F4, same module): its pure detector
   (`Anchor.Domain.Checks.NoForwardingFunction`) and the
   `Anchor.Check.NoForwardingFunction` shell that delegates to it.
+- `struct_owned_by_module` — the `struct_owned_by_module` rule (DND-5453, the
+  in-file port of crew's StructOnlyChangedByOwnModule): its pure detector
+  (`Anchor.Domain.Checks.StructOwnedByModule`, owners, pattern positions,
+  known variables, `owned_namespaces`) and the `Anchor.Check.StructOwnedByModule`
+  shell that delegates to it.

@@ -86,5 +86,6 @@ rules:
       - "lib/anchor/check/no_tuple_match_in_head.ex"
       - "lib/anchor/check/single_control_flow.ex"
       - "lib/anchor/check/struct_getter_convention.ex"
+      - "lib/anchor/check/struct_owned_by_module.ex"
     required_modules:
       - Anchor.Check.Base

@@ -76,6 +76,10 @@ defmodule Anchor.Domain.RuleSchema do
       `no_forwarding_function`, `no_tuple_match_in_head`, `single_control_flow`,
       `struct_getter_convention` read no key of their own: they check every
       file they select.
+    * `struct_owned_by_module` (DND-5453) reads one optional key,
+      `owned_namespaces`, that narrows which structs it checks; without it
+      every struct is checked. An empty list, and an entry that is not an
+      exact module name, are refused.
     * `no_discarded_pure_expression` (DND-5451) reads one optional key,
       `pure_patterns`, that widens what it reports; without it the stdlib pure
       set still applies, so it always checks. A match-all entry
@@ -145,7 +149,8 @@ defmodule Anchor.Domain.RuleSchema do
     no_transitive_dependency: ~w(forbidden_modules forbidden_patterns),
     no_tuple_match_in_head: [],
     single_control_flow: [],
-    struct_getter_convention: []
+    struct_getter_convention: [],
+    struct_owned_by_module: ~w(owned_namespaces)
   }
 
   # THE relation each type checks against: a rule of the type must carry at
@@ -165,7 +170,8 @@ defmodule Anchor.Domain.RuleSchema do
     no_transitive_dependency: ~w(forbidden_modules forbidden_patterns),
     no_tuple_match_in_head: [],
     single_control_flow: [],
-    struct_getter_convention: []
+    struct_getter_convention: [],
+    struct_owned_by_module: []
   }
 
   @relation_descriptions %{
@@ -177,7 +183,7 @@ defmodule Anchor.Domain.RuleSchema do
 
   # Keys whose value is a list of strings, each of which must be non-blank.
   @string_list_keys ~w(allowed_callers allowed_functions forbidden_functions forbidden_modules
-                       forbidden_patterns pure_patterns required_modules)
+                       forbidden_patterns owned_namespaces pure_patterns required_modules)
 
   @selector_keys ~w(paths pattern uses_module)
 
@@ -250,10 +256,36 @@ defmodule Anchor.Domain.RuleSchema do
          :ok <- validate_allowed_callers(rule),
          :ok <- require_relation(rule, type),
          :ok <- refuse_unread_match(rule),
-         :ok <- refuse_all_pure(rule) do
+         :ok <- refuse_all_pure(rule),
+         :ok <- validate_owned_namespaces(rule) do
       refuse_allow_all(rule)
     end
   end
+
+  # DND-5453: `owned_namespaces` names the namespaces whose structs are
+  # checked, each one exact Elixir module name (`AllowedCallers`' grammar). A
+  # glob would widen with every later module of a matching name, an Erlang
+  # module is never a struct, and an empty list would check no struct. Runs
+  # after `validate_string_lists/1`, so each entry is a non-blank string here.
+  defp validate_owned_namespaces(%{"owned_namespaces" => []}) do
+    {:error,
+     "`owned_namespaces: []` checks no struct; owned_namespaces lists module names, " <>
+       ~s|e.g. ["MyApp"], or leave it out to check every struct|}
+  end
+
+  defp validate_owned_namespaces(%{"owned_namespaces" => namespaces}) do
+    case Enum.find(namespaces, &match?({:error, _reason}, AllowedCallers.parse(&1))) do
+      nil ->
+        :ok
+
+      entry ->
+        {:error,
+         "`owned_namespaces` entry #{inspect(entry)} is not an exact Elixir module name " <>
+           ~s|(a glob, an Erlang module or a malformed name); owned_namespaces lists module names, e.g. ["MyApp"]|}
+    end
+  end
+
+  defp validate_owned_namespaces(_rule), do: :ok
 
   # DND-5451: a `pure_patterns` entry of only wildcards declares every module
   # pure, so every call to anything would read as an expression with no

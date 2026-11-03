@@ -39,6 +39,7 @@ defmodule Anchor.E2E.ChecksE2ETest do
   alias Anchor.Check.NoDependency
   alias Anchor.Check.NoDiscardedPureExpression
   alias Anchor.Check.NoForwardingFunction
+  alias Anchor.Check.StructOwnedByModule
 
   # DND-1267: a function-level rule, from YAML to Credo issue, with no mocks.
   describe "forbidden_functions through the real pipeline" do
@@ -182,6 +183,52 @@ defmodule Anchor.E2E.ChecksE2ETest do
               to_source_file("defmodule MyApp.Other do\nend\n", "lib/my_app/other.ex")
             ],
             NoForwardingFunction
+          )
+        end)
+
+      assert issues == []
+    end
+  end
+
+  # DND-5453: the rule type, from YAML to Credo issue, with no mocks. F2 is
+  # crew's test-code exemption (crew:651/657) as selection.
+  # Sabotage record: ../../sabotage_records/struct_owned_by_module-20261103-dnd_5451_ast_batch.md
+  describe "struct_owned_by_module through the real pipeline" do
+    @struct_yaml """
+    rules:
+      - type: struct_owned_by_module
+        paths:
+          - "lib/**/*.ex"
+        recursive: true
+        owned_namespaces:
+          - App
+    """
+
+    @struct_source """
+    defmodule App.X do
+      def run, do: %App.Turn{status: :idle}
+      def stamp(%URI{} = uri), do: %{uri | path: "/"}
+    end
+    """
+
+    test "F1: a selected lib file reports the repo struct built outside its module" do
+      issues =
+        with_anchor_config(@struct_yaml, fn ->
+          run_check([to_source_file(@struct_source, "lib/app/x.ex")], StructOwnedByModule)
+        end)
+
+      assert Enum.map(issues, &{&1.line_no, &1.trigger}) == [{2, "%App.Turn{"}]
+    end
+
+    test "F2: the same code in a test file the rule does not select has no issue" do
+      issues =
+        with_anchor_config(@struct_yaml, fn ->
+          all_issues(
+            [
+              to_source_file(@struct_source, "test/app/x_test.exs"),
+              to_source_file("defmodule App.Other do\nend\n", "lib/app/other.ex")
+            ],
+            StructOwnedByModule
           )
         end)
 
