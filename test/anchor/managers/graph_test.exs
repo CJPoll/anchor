@@ -7,7 +7,7 @@ defmodule Anchor.Managers.GraphTest do
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5440_graph_runner.md
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5551_graph_hardening.md
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5581_hardening_batch.md
-  # DND-5584 (per-app): ../../sabotage_records/graph_runner-20261103-dnd_5441_graph_rules_a.md
+  # DND-5584 (per-app, and AE-O with DND-5588): ../../sabotage_records/graph_runner-20261103-dnd_5441_graph_rules_a.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -574,6 +574,24 @@ defmodule Anchor.Managers.GraphTest do
 
       assert %{modules: 2, excluded: 1} = report.counts
       assert GraphReport.summary(report) =~ "2 modules (1 outside the root, excluded) in 1 apps"
+    end
+
+    # The merge of DND-5588 with DND-5584: an app whose only module was left
+    # out as outside the root did read a module. It is named in the outside
+    # note, never reported as an empty ebin.
+    test "an app whose only module is outside the root is not an empty ebin", %{beams: beams} do
+      expect_two_apps(classified(beams) ++ [%{beams[@outside] | app: :other}])
+
+      report = Graph.run(%{request() | apps: @two_apps}, deps())
+
+      assert %GraphReport{exit_code: 0, could_not_check: []} = report
+      assert [%{enforcement: :report, file: @outside_path, message: message}] = report.findings
+
+      assert message =~
+               "AnchorFixtures.GraphManagerTest.Shared was compiled from #{@outside_path}"
+
+      refute Enum.any?(report.findings, &(&1.message =~ "read 0 modules for app :other"))
+      assert %{apps: 2, excluded: 1} = report.counts
     end
 
     test "only modules outside the root read is COULD NOT MEASURE, never an empty pass", %{

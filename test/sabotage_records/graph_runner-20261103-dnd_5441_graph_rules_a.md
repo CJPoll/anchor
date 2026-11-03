@@ -42,6 +42,7 @@ which the critic caught from its verbatim output.
 | AE-C | a decode error counts as the app's module (`lib/anchor/domain/graph/beam.ex`) | `beam_test.exs` | `3 tests, 1 failure` (red) | apps_without_modules/2 an app whose every beam failed to decode read no module |
 | AE-D | every app is listed, read or not (`lib/anchor/domain/graph/beam.ex`) | `beam_test.exs`, `graph_test.exs` | `26 tests, 21 failures` (red) | apps_without_modules/2 an app whose every beam failed to decode read no module; apps_without_modules/2 an app with no beam is listed, in apps order; an app with one is not; apps_without_modules/2 positive control: every app read a module, none listed; run/2 --only narrows to the named rules; a running rule's floor is still judged; run/2 an app that read no module (exit 1) one app of two with an empty ebin is one issue on that ebin, naming the app; run/2 an app that read no module (exit 1) positive control: both apps read a module, the run is clean; run/2 graph artifact a failed write is a report-only note; the verdict stands; run/2 happy path a report-only rule's findings print and exit 0; run/2 happy path every module classifies and the rule holds: exit 0, counts exact, artifact written once; run/2 per-module fail-closed issues (exit 1) a beam with no debug_info is an issue on it; the other modules still classify and their findings print; run/2 per-module fail-closed issues (exit 1) a core_v1 refusal is a per-module issue; run/2 per-module fail-closed issues (exit 1) a rule below its min_modules is an issue on the config; run/2 per-module fail-closed issues (exit 1) a source file that cannot be read is an issue on it; run/2 per-module fail-closed issues (exit 1) an Erlang module a pattern selector classifies is opaque and counted, not an issue; run/2 per-module fail-closed issues (exit 1) an Erlang module no bucket classifies is an issue; run/2 per-module fail-closed issues (exit 1) an interfaces.exports entry naming no module is an issue on the config; one naming a module is not; run/2 per-module fail-closed issues (exit 1) an unclassified module is one issue on its source file; run/2 rule crash isolation (AC4) stub_exits: one issue naming the rule and reason; a second rule's finding still prints; run/2 rule crash isolation (AC4) stub_malformed: one issue naming the rule and reason; a second rule's finding still prints; run/2 rule crash isolation (AC4) stub_raises: one issue naming the rule and reason; a second rule's finding still prints; run/2 rule crash isolation (AC4) stub_throws: one issue naming the rule and reason; a second rule's finding still prints |
 | AE-E | the issue sits on the config, not the app's ebin (`lib/anchor/domain/failures.ex`) | `failures_graph_test.exs`, `graph_test.exs` | `37 tests, 2 failures` (red) | every graph message is fail-closed, on its file, with its subject and a Fix: line; run/2 an app that read no module (exit 1) one app of two with an empty ebin is one issue on that ebin, naming the app |
+| AE-O | the per-app check ignores the modules left out as outside the root (`lib/anchor/managers/graph.ex`, from the merge with DND-5588) | `graph_test.exs` | `29 tests, 1 failure` (red) | run/2 source paths outside the project root (DND-5588) an app whose only module is outside the root is not an empty ebin |
 
 ## AE-A — the Manager never reports an app that read no module (the unfixed code)
 
@@ -717,4 +718,62 @@ Run summary: `37 tests, 2 failures`
             ]
      stacktrace:
        test/anchor/managers/graph_test.exs:248: (test)
+```
+
+## AE-O — the per-app check ignores the modules left out as outside the root
+
+The merge of origin/main 93f72d4 (9fb0289) passes `beams ++ outside` to the
+per-app check, so an app whose only module was left out as outside the root
+(DND-5588) is named in the outside note, never reported as an empty ebin. The
+whole-MR critic on f5406a7 found no test held that. The mutation drops
+`++ outside`; the driver wrote it, waited 1.1 s, ran `mix test --force
+test/anchor/managers/graph_test.exs` and restored the source.
+
+Run summary: `29 tests, 1 failure`
+
+```text
+  1) test run/2 source paths outside the project root (DND-5588) an app whose only module is outside the root is not an empty ebin (Anchor.Managers.GraphTest)
+     test/anchor/managers/graph_test.exs:582
+     match (=) failed
+     code:  assert %GraphReport{exit_code: 0, could_not_check: []} = report
+     left:  %Anchor.Domain.GraphReport{exit_code: 0, could_not_check: []}
+     right: %Anchor.Domain.GraphReport{
+              findings: [
+                %Anchor.Domain.GraphReport.Finding{
+                  rule_id: nil,
+                  type: nil,
+                  label: "anchor.graph",
+                  enforcement: :enforce,
+                  key: nil,
+                  file: "/proj/_build/test/lib/other/ebin",
+                  line: nil,
+                  message: "read 0 modules for app :other from /proj/_build/test/lib/other/ebin, so none of its code was checked. Fix: run mix compile for :other; check that /proj/_build/test/lib/other/ebin is the app's ebin (its build path and app name)."
+                },
+                %Anchor.Domain.GraphReport.Finding{
+                  rule_id: nil,
+                  type: nil,
+                  label: "anchor.graph",
+                  enforcement: :report,
+                  key: nil,
+                  file: "/shared/lib/shared.ex",
+                  line: nil,
+                  message: "AnchorFixtures.GraphManagerTest.Shared was compiled from /shared/lib/shared.ex, outside the project root /proj, so it is left out of the graph and no rule judged it. Fix: move its source under /proj, or run mix anchor.graph from the root that holds it."
+                }
+              ],
+              could_not_check: [],
+              held: [],
+              refused: [],
+              counts: %{
+                modules: 2,
+                opaque: 0,
+                apps: 2,
+                excluded: 1,
+                rules: 1,
+                apply_sites: nil,
+                no_core: 0
+              },
+              exit_code: 1
+            }
+     stacktrace:
+       test/anchor/managers/graph_test.exs:587: (test)
 ```
