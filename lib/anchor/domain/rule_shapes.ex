@@ -22,6 +22,7 @@ defmodule Anchor.Domain.RuleShapes do
   alias Anchor.Domain.Violation
 
   @modules %{
+    aggregate_declarations: GraphRules.AggregateDeclarations,
     alphabetized_functions: Checks.AlphabetizedFunctions,
     case_on_bare_arg: Checks.CaseOnBareArg,
     context_acyclic: GraphRules.ContextAcyclic,

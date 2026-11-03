@@ -264,38 +264,6 @@ defmodule Anchor.Domain.Failures do
   end
 
   @doc """
-  COULD NOT MEASURE for a graph run whose every module has a source outside
-  the project root (DND-5588): each was left out, so no project module was
-  read.
-  """
-  @spec graph_all_outside_root(pos_integer(), String.t(), [String.t()]) :: Violation.t()
-  def graph_all_outside_root(count, root, ebins) do
-    graph_issue(
-      List.first(ebins) || ".",
-      nil,
-      "COULD NOT MEASURE: read #{count} modules from #{Enum.join(ebins, ", ")}, and every one " <>
-        "has a source file outside the project root #{root}, so none was judged. Fix: run " <>
-        "mix anchor.graph from the project root (the directory holding mix.exs)."
-    )
-  end
-
-  @doc """
-  The note for a module whose source file is outside the project root
-  (DND-5588): it is left out of the graph, so no rule judged it. Report-only:
-  the runner never classifies code it cannot place under the root.
-  """
-  @spec graph_module_outside_root(module(), String.t(), String.t()) :: Violation.t()
-  def graph_module_outside_root(module, file, root) do
-    graph_issue(
-      file,
-      nil,
-      "#{inspect(module)} was compiled from #{file}, outside the project root #{root}, so it " <>
-        "is left out of the graph and no rule judged it. Fix: move its source under #{root}, " <>
-        "or run mix anchor.graph from the root that holds it."
-    )
-  end
-
-  @doc """
   The issue for a run that read zero modules from `ebins` (the ebin
   directories it was given): COULD NOT MEASURE, exit 3.
   """
@@ -480,6 +448,22 @@ defmodule Anchor.Domain.Failures do
       config_path || @config_filename,
       nil,
       "#{rule_label(rule)} #{below_floor_text(selected, min)}"
+    )
+  end
+
+  @doc """
+  The issue for an `aggregate_declarations` rule when no aggregate is
+  declared at all (DND-5476), on the config: the rule checks nothing. It is
+  fail-closed, so the runner never holds it in a baseline and never prints
+  it as report-only. `shape` is the declaration shape the rule names.
+  """
+  @spec aggregates_none_declared(map(), String.t(), String.t() | nil) :: Violation.t()
+  def aggregates_none_declared(rule, shape, config_path) do
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "#{rule_label(rule)} checks nothing: no aggregate is declared in .anchor.yml or by an " <>
+        "@anchor_aggregate attribute. Fix: declare one or remove the rule: #{shape}"
     )
   end
 

@@ -102,6 +102,7 @@ defmodule Anchor.Integration.SabotageRunIntegrationTest do
       Sabotage.run(%{
         root: root,
         env: :test,
+        build_path: Path.join(root, "_build/test"),
         base: base,
         max: :all,
         only: [killed, survived],

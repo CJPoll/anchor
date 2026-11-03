@@ -5,7 +5,8 @@ defmodule Anchor.Domain.GraphRules do
 
   `all/0` lists every module implementing `Anchor.Domain.GraphRule`. The rule
   modules ship with their rule tickets, not with the runner (DND-5440): each
-  (`layering`, DND-5442; `context_acyclic`, DND-5445; `interface`, DND-5443; struct flow,
+  (`layering`, DND-5442; `context_acyclic`, DND-5445; `aggregate_declarations`,
+  DND-5476; `interface`, DND-5443; struct flow,
   ...) adds its module here and its type to `Anchor.Domain.RuleSchema` with
   engine `:graph`. A test
   holds the two sets equal, so a graph type with no module (scheduled but
@@ -37,6 +38,7 @@ defmodule Anchor.Domain.GraphRules do
   """
 
   alias Anchor.Domain.GlobPattern
+  alias Anchor.Domain.GraphRules.AggregateDeclarations
   alias Anchor.Domain.GraphRules.ContextAcyclic
   alias Anchor.Domain.GraphRules.Interface
   alias Anchor.Domain.GraphRules.Layering
@@ -49,7 +51,7 @@ defmodule Anchor.Domain.GraphRules do
 
   # Every module implementing `Anchor.Domain.GraphRule`. The rule tickets add
   # theirs here (see the moduledoc).
-  @rules [Layering, ContextAcyclic, Interface]
+  @rules [Layering, ContextAcyclic, AggregateDeclarations, Interface]
 
   @doc "Every graph rule module."
   @spec all() :: [module()]

@@ -249,6 +249,12 @@ defmodule Anchor.Integration.GraphCanaryTest do
                "AnchorFixtures.IfaceRight.Api instead."
   end
 
+  # Graph rule types whose canary is a fixture of its own; each named test
+  # holds that rule's findings to exactly one Fix:.
+  @own_canary %{
+    aggregate_declarations: "test/anchor/integration/aggregate_declarations_integration_test.exs"
+  }
+
   # DND-5446 (R4): the graph half of the Fix-shape invariant
   # (fix_shape_invariant_test.exs holds the AST half). Every graph rule type
   # gives a finding over its violating canary module, and every finding of
@@ -260,8 +266,11 @@ defmodule Anchor.Integration.GraphCanaryTest do
 
     found_types = report.findings |> Enum.map(& &1.type) |> Enum.uniq()
 
-    for module <- GraphRules.all() do
-      assert module.rule_type() in found_types, inspect(module)
+    for module <- GraphRules.all(),
+        not Map.has_key?(@own_canary, module.rule_type()) do
+      assert module.rule_type() in found_types,
+             "#{inspect(module)} has no violating module in this canary. Fix: add one, or " <>
+               "name the integration test of its own canary in @own_canary"
     end
 
     for finding <- report.findings do

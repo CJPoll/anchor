@@ -15,16 +15,18 @@ defmodule Anchor.Domain.GraphReport do
     * `refused` — `%Finding{}`s for a request the run refused (DND-5441:
       `--write-baseline` over an existing file, or naming no rule with a
       baseline), exit 2.
-    * `counts` — `%{modules, apps, rules, opaque, no_core, excluded,
+    * `counts` — `%{modules, apps, rules, opaque, no_core, outside_root,
       apply_sites}` for the summary line; `no_core` is the number of
       functions whose Core body the graph lacks, none of whose calls were
-      read (DND-5549); `excluded` the number of modules whose source is
-      outside the project root, left out of the graph (DND-5588; each is
-      also a report-only finding naming it); `apply_sites` is `nil` when no
+      read (DND-5549); `outside_root` the number of modules compiled from a
+      source outside the project root, judged like every other module and
+      counted so the layout is visible (DND-5588, DND-5630); `apply_sites` is `nil` when no
       rule that ran needed the higher-order flow analysis (DND-5574), else
       `apply_sites/1` of it; `interface_width` is `nil` when no `interface`
       rule ran (DND-5443), else `%{context => public functions on its
-      interface}` (`Anchor.Domain.Interfaces.width/1`).
+      interface}` (`Anchor.Domain.Interfaces.width/1`); `aggregates`
+      (optional, DND-5476) is `%{declared, tables_unknown}` when any aggregate
+      is declared, and the JSON's `aggregates` is `null` otherwise.
     * `exit_code` — `exit_code/1`.
 
   ## Exit code
@@ -62,7 +64,7 @@ defmodule Anchor.Domain.GraphReport do
               rules: 0,
               opaque: 0,
               no_core: 0,
-              excluded: 0,
+              outside_root: 0,
               apply_sites: nil,
               interface_width: nil
             },
@@ -88,9 +90,10 @@ defmodule Anchor.Domain.GraphReport do
           required(:rules) => non_neg_integer(),
           required(:opaque) => non_neg_integer(),
           required(:no_core) => non_neg_integer(),
-          required(:excluded) => non_neg_integer(),
+          required(:outside_root) => non_neg_integer(),
           required(:apply_sites) => apply_sites() | nil,
-          optional(:interface_width) => %{String.t() => non_neg_integer()} | nil
+          optional(:interface_width) => %{String.t() => non_neg_integer()} | nil,
+          optional(:aggregates) => %{declared: pos_integer(), tables_unknown: non_neg_integer()}
         }
 
   @type t :: %__MODULE__{
@@ -175,9 +178,10 @@ defmodule Anchor.Domain.GraphReport do
       "rules" => report.counts.rules,
       "opaque" => report.counts.opaque,
       "no_core" => report.counts.no_core,
-      "excluded" => report.counts.excluded,
+      "outside_root" => report.counts.outside_root,
       "apply_sites" => apply_sites_json(report.counts.apply_sites),
       "interface_width" => Map.get(report.counts, :interface_width),
+      "aggregates" => aggregates_json(Map.get(report.counts, :aggregates)),
       "exit_code" => report.exit_code,
       "findings" => Enum.map(report.findings, &Finding.to_json/1),
       "could_not_check" => Enum.map(report.could_not_check, &Finding.to_json/1),
@@ -191,8 +195,9 @@ defmodule Anchor.Domain.GraphReport do
   violations (<P> report-only, <H> baselined)`, where `V` counts every
   `:enforce` finding, every could-not-check entry and every refusal, `P`
   every `:report` finding and `H` every held one. Opaque (Erlang) modules,
-  functions with no Core body and modules left out as outside the root are
-  counted when there are any.
+  functions with no Core body and modules compiled from outside the root are
+  counted when there are any, and so are declared aggregates (DND-5476:
+  `; aggregates: <N> declared, <U> tables unknown`).
   """
   @spec summary(t()) :: String.t()
   def summary(%__MODULE__{counts: counts} = report) do
@@ -202,8 +207,23 @@ defmodule Anchor.Domain.GraphReport do
     "anchor.graph: #{counts.modules} modules#{notes(counts)} in #{counts.apps} apps, " <>
       "#{counts.rules} rules, #{violations} violations " <>
       "(#{length(report_only)} report-only, #{length(report.held)} baselined)" <>
-      apply_sites_note(counts.apply_sites) <> width_note(Map.get(counts, :interface_width))
+      apply_sites_note(counts.apply_sites) <>
+      width_note(Map.get(counts, :interface_width)) <>
+      aggregates_note(Map.get(counts, :aggregates))
   end
+
+  # DND-5476: when any aggregate is declared, how many, and how many of their
+  # schemas' tables could not be read (a `__schema__(:source)` that is not a
+  # literal): an unknown table is counted, never dropped silently.
+  defp aggregates_note(nil), do: ""
+
+  defp aggregates_note(%{declared: declared, tables_unknown: unknown}),
+    do: "; aggregates: #{declared} declared, #{unknown} tables unknown"
+
+  defp aggregates_json(nil), do: nil
+
+  defp aggregates_json(%{declared: declared, tables_unknown: unknown}),
+    do: %{"declared" => declared, "tables_unknown" => unknown}
 
   defp apply_sites_json(nil), do: nil
 
@@ -252,12 +272,13 @@ defmodule Anchor.Domain.GraphReport do
   end
 
   # Opaque (Erlang) modules, functions with no Core body and modules outside
-  # the root, when there are any: each was counted but not read.
+  # the root, when there are any. The first two were counted but not read;
+  # the last were judged, and are counted so the layout is visible.
   defp notes(counts) do
     [
       {counts.opaque, "opaque"},
       {counts.no_core, "functions with no Core body"},
-      {counts.excluded, "outside the root, excluded"}
+      {counts.outside_root, "outside the root"}
     ]
     |> Enum.reject(fn {count, _what} -> count == 0 end)
     |> Enum.map_join(", ", fn {count, what} -> "#{count} #{what}" end)

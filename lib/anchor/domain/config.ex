@@ -73,6 +73,7 @@ defmodule Anchor.Config do
   dependency such as `:telemetry.execute(...)`.
   """
 
+  alias Anchor.Domain.Aggregates.Config, as: AggregatesConfig
   alias Anchor.Domain.AllowedCallers
   alias Anchor.Domain.Architecture
   alias Anchor.Domain.FunctionRef
@@ -84,8 +85,9 @@ defmodule Anchor.Config do
   # config was built in memory). A run-time report about a rule sits on it.
   # `architecture` is the parsed `architecture:` section (DND-5437), or `nil`
   # when the document has none. `sabotage` is the parsed `sabotage:` section
-  # (DND-5473), or `nil`.
-  defstruct rules: [], path: nil, architecture: nil, sabotage: nil
+  # (DND-5473), or `nil`. `aggregates` is the parsed `aggregates:` section
+  # (DND-5476), or `nil` when the document has none: no declarations.
+  defstruct rules: [], path: nil, architecture: nil, aggregates: nil, sabotage: nil
 
   @matches %{"call" => :call, "reference" => :reference}
 
@@ -96,12 +98,13 @@ defmodule Anchor.Config do
   # `Anchor.checks/0`; the Domain cannot ask the (Framework) checks itself.
   @rule_types Map.new(RuleSchema.rule_types(), &{Atom.to_string(&1), &1})
 
-  @top_level_keys ["architecture", "rules", "sabotage"]
+  @top_level_keys ["aggregates", "architecture", "rules", "sabotage"]
 
   @type t :: %__MODULE__{
           rules: [map()],
           path: String.t() | nil,
           architecture: Architecture.t() | nil,
+          aggregates: AggregatesConfig.t() | nil,
           sabotage: SabotageConfig.t() | nil
         }
 
@@ -119,7 +122,9 @@ defmodule Anchor.Config do
   The document must be a mapping with a `rules` key holding a list of rule
   mappings, and may have an `architecture` key (DND-5437), parsed by
   `Anchor.Domain.Architecture.parse/1` into `:architecture` (`nil` when
-  absent). Anything else fails with `{:error, {:invalid_config, reason}}`
+  absent), an `aggregates` key (DND-5476), parsed by
+  `Anchor.Domain.Aggregates.Config.parse/1` into `:aggregates`, and a
+  `sabotage` key (DND-5473). Anything else fails with `{:error, {:invalid_config, reason}}`
   (DND-1265): an empty document (the `nil` an empty file decodes to), a missing
   or misspelt `rules` key, and a `rules` that is not a list would each
   otherwise load as zero rules and check nothing. An explicit `rules: []` is a
@@ -134,8 +139,14 @@ defmodule Anchor.Config do
          {:ok, parsed} <- parse_rules(rules),
          {:ok, architecture} <- parse_architecture(data),
          :ok <- validate_graph_rules(parsed, architecture),
+         {:ok, aggregates} <- parse_aggregates(data),
          {:ok, sabotage} <- parse_sabotage(data) do
-      %__MODULE__{rules: parsed, architecture: architecture, sabotage: sabotage}
+      %__MODULE__{
+        rules: parsed,
+        architecture: architecture,
+        aggregates: aggregates,
+        sabotage: sabotage
+      }
     end
   end
 
@@ -185,7 +196,7 @@ defmodule Anchor.Config do
         {:error,
          {:invalid_config,
           "unknown top-level key(s) #{Enum.map_join(unknown, ", ", &inspect/1)}; " <>
-            "Fix: remove or correct it; the top-level keys are `architecture`, `rules` and `sabotage`"}}
+            "Fix: remove or correct it; the top-level keys are `aggregates`, `architecture`, `rules` and `sabotage`"}}
     end
   end
 
@@ -215,6 +226,11 @@ defmodule Anchor.Config do
     do: "rule #{index} (id: #{inspect(id)})"
 
   defp parsed_rule_label(%{index: index}), do: "rule #{index}"
+
+  # DND-5476: the `aggregates:` section is optional; absent, `aggregates: nil`
+  # (no declarations).
+  defp parse_aggregates(%{"aggregates" => section}), do: AggregatesConfig.parse(section)
+  defp parse_aggregates(_data), do: {:ok, nil}
 
   # DND-5473: the `sabotage:` section is optional too; `mix anchor.sabotage run`
   # refuses to run without it.

@@ -30,6 +30,11 @@ adapters (`BaselineStore`, `GitBase`, `BaselineFile`, `GitShow`) and the
 baseline Domain modules. Standard unchanged — see "Amendment (2026-11-03,
 DND-5441)" under "How this maps to Anchor".
 
+Amended 2026-11-03 (DND-5476): `Anchor.Aggregate`, a compile-time macro that
+persists one attribute in the module that uses it, is Framework, beside the
+Credo checks and the Mix tasks; the aggregate declaration modules are Domain.
+The mapping table lists them. Standard unchanged.
+
 Amended 2026-11-03 (DND-5620): the mapping table lists the graph engine's
 modules (`mix anchor.graph`, `mix anchor.explain`, and the Managers, ports,
 adapters and Domain modules behind them), and `test/anchor/adr_module_map_test.exs`
@@ -241,6 +246,8 @@ and are dropped rather than adapted:
 | `Anchor.Domain.DependencyAnalyzer` (earlier prose and the Examples call it `Anchor.DependencyAnalyzer`) | Domain | Pure AST analysis: extracts dependencies and `use`s, computes transitive closures over an in-memory map. Same input, same output, no IO. |
 | `%Anchor.Config{}` struct | Domain (data) | A typed struct is Domain data; the adapter that produced it is the Side Effect. |
 | Orchestration that loads config then runs analysis | Manager | Coordinates the Side Effect (config load) and Domain (analysis); `Anchor.Managers.Lint` below is that Manager. |
+| `Anchor.Aggregate` (DND-5476) | Framework | A compile-time macro: `use Anchor.Aggregate` persists one `@anchor_aggregate` attribute in the consumer's module and defines nothing else. It calls no Manager, adapter or Domain module at run time. |
+| `Anchor.Domain.Aggregates.*` (`Config`, `Declaration`, `DeclarationIssue`, `Index`) and `Anchor.Domain.GraphRules.AggregateDeclarations` (DND-5476) | Domain | Parse the `aggregates:` section, merge it with the persisted attributes read from the graph, and report what names nothing. Pure; a schema's table is read from Core, never by calling it. |
 | `Mix.Tasks.Anchor.Sabotage` (and the Mix tasks that follow it) | Framework | The `mix` runner invokes it: it parses argv, makes one Manager call, renders the result and sets the exit code. It calls no adapter itself. |
 | `Anchor.Managers.Lint` | Manager | The lint use case: loads config through the `Anchor.Adapters.ConfigLoader` port, derives the pure facts, selects the rules that apply and calls the check's Domain detection, returning Domain violations. Checks (Framework) go through it. |
 | `Anchor.Managers.Sabotage` | Manager | The sabotage use case (`scope/2`): reads the diff through the `ChangeSource` port, then calls the Domain (`DiffHunks`, `FunctionSpans`, `Scope`). Reaches git and the file system only through the port. |

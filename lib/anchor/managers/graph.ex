@@ -9,17 +9,21 @@ defmodule Anchor.Managers.Graph do
     1. load `.anchor.yml` (`Anchor.Adapters.ConfigLoader`); a missing or
        invalid config is COULD NOT MEASURE (exit 3), and so is a config with no
        `architecture:` section: nothing could be classified;
-    2. read every beam of the project's ebins (`Anchor.Adapters.BeamSource`)
-       and leave out each module whose source is an absolute path outside the
-       root (`Anchor.Domain.Graph.ProjectFile`, DND-5588): counted in the
-       summary and named, with its path, in a report-only note; a run that
-       read no module inside the root is COULD NOT MEASURE (exit 3), and an
-       app whose ebin gave no module while another's did is an issue on that
-       ebin (exit 1, DND-5584);
+    2. read every beam of the project's ebins (`Anchor.Adapters.BeamSource`):
+       a module is project code because its beam came from a project ebin,
+       wherever its source sits (DND-5630). One compiled from a source
+       outside the root (`elixirc_paths: ["../shared"]`) is judged and
+       enforced like any other, keyed by its root-relative `../` path
+       (`Anchor.Domain.Graph.ProjectFile`), and counted in the summary as
+       `(<n> outside the root)`; a run that read no module is COULD NOT
+       MEASURE (exit 3), and an app whose ebin gave no module while
+       another's did is an issue on that ebin (exit 1, DND-5584);
     3. read each module's source file's facts (`Anchor.Adapters.SourceSource`):
        its literal `defmodule`s and `use`s (`Anchor.Domain.Graph.SourceFacts`),
-       by its path relative to the root (an absolute path inside the root is
-       made relative);
+       by its path relative to the root (an absolute path is made relative,
+       through `..` when it is outside the root; a relative one is read
+       against its app's directory in `Request.source_dirs`, an umbrella's
+       `apps/<app>`, DND-5637);
     4. build the graph fresh (`Anchor.Domain.Graph.Builder`): never a cached
        one, and never a cached verdict;
     5. build the model (`Anchor.Domain.Model`): classify every module into
@@ -48,7 +52,9 @@ defmodule Anchor.Managers.Graph do
        (`Anchor.Adapters.GraphStore`) under `<build_path>/anchor`, the build
        path the task gathered from Mix (DND-5585); the verdict never reads it;
     9. return the `%Anchor.Domain.GraphReport{}`, with the apply-site
-       counts (`GraphReport.apply_sites/1`) when the analysis ran.
+       counts (`GraphReport.apply_sites/1`) when the analysis ran, and the
+       declared aggregates' counts (`Anchor.Domain.Aggregates.Index`,
+       DND-5476) when any is declared.
 
   Every per-module problem is an issue on that module (exit 1), never a
   skipped module: a beam it could not decode, a module whose graph walk
@@ -79,6 +85,7 @@ defmodule Anchor.Managers.Graph do
   alias Anchor.Adapters.GraphArtifact
   alias Anchor.Adapters.SourceReader
   alias Anchor.Config
+  alias Anchor.Domain.Aggregates.Index
   alias Anchor.Domain.Baseline
   alias Anchor.Domain.BaselineBase
   alias Anchor.Domain.Cfa
@@ -107,8 +114,8 @@ defmodule Anchor.Managers.Graph do
     with {:ok, config} <- load_config(deps.config_loader),
          {:ok, rules} <- graph_rules(config, request, deps.graph_rules),
          :ok <- write_target(rules, request, config),
-         {:ok, beams, outside} <- read_beams(deps.beam_source, request) do
-      measured(request, config, rules, {beams, outside}, deps)
+         {:ok, beams} <- read_beams(deps.beam_source, request) do
+      measured(request, config, rules, beams, deps)
     else
       {:could_not_check, violation} ->
         GraphReport.new(
@@ -186,47 +193,38 @@ defmodule Anchor.Managers.Graph do
     end
   end
 
-  # A module whose source is outside the root is left out before anything is
-  # built; it is counted and named (`outside_notes/2`), never dropped
-  # silently. A run whose every module was outside the root read no project
-  # module (DND-5588).
-  defp read_beams(source, %Request{apps: apps, root: root}) do
-    {outside, beams} = apps |> source.read_ebins() |> Enum.split_with(&outside_root?(&1, root))
-    ebins = Enum.map(apps, &elem(&1, 1))
+  # Every beam read came from a project ebin, so every one is the project's,
+  # wherever its source sits (DND-5630).
+  defp read_beams(source, %Request{apps: apps}) do
+    beams = source.read_ebins(apps)
 
-    cond do
-      Enum.any?(beams, &match?(%Beam{}, &1)) ->
-        {:ok, beams, outside}
-
-      outside != [] ->
-        {:could_not_check, Failures.graph_all_outside_root(length(outside), root, ebins)}
-
-      true ->
-        {:could_not_check, Failures.graph_no_modules(ebins)}
-    end
+    if Enum.any?(beams, &match?(%Beam{}, &1)),
+      do: {:ok, beams},
+      else: {:could_not_check, Failures.graph_no_modules(Enum.map(apps, &elem(&1, 1)))}
   end
 
-  defp outside_root?(%Beam{elixir: %{relative_file: file}}, root) when is_binary(file),
-    do: ProjectFile.place(file, root) == :outside_root
+  # The modules compiled from a source outside the root: judged like every
+  # other, and counted so the layout is visible.
+  defp outside_root_count(beams, request) do
+    Enum.count(beams, fn
+      %Beam{elixir: %{relative_file: file}} = beam when is_binary(file) ->
+        match?({:outside_root, _relative}, place(beam, request))
 
-  defp outside_root?(_beam, _root), do: false
-
-  # One report-only note per module left out: the verdict stands, and the
-  # module is named with its path.
-  defp outside_notes(outside, root) do
-    for %Beam{module: module, elixir: %{relative_file: file}} <- outside do
-      violation = Failures.graph_module_outside_root(module, file, root)
-      %{Finding.fail_closed(violation, file) | enforcement: :report}
-    end
+      _other ->
+        false
+    end)
   end
 
-  defp measured(request, config, rules, {beams, outside}, deps) do
-    {source_facts, source_issues} = source_facts(deps.source_source, request.root, beams)
-    graph = Builder.build(beams, source_facts, root: request.root)
+  defp measured(request, config, rules, beams, deps) do
+    {source_facts, source_issues} = source_facts(deps.source_source, request, beams)
+
+    graph =
+      Builder.build(beams, source_facts, root: request.root, source_dirs: request.source_dirs)
+
     {model, class_issues} = Model.build(graph, config, source_facts)
 
     unreadable_issues =
-      empty_app_issues(request.apps, beams ++ outside) ++ unreadable_issues(graph)
+      empty_app_issues(request.apps, beams) ++ unreadable_issues(graph)
 
     rules = Enum.map(rules, fn {rule, module} -> {rule, module, guarded_needs(module)} end)
     cfa = cfa(rules, graph, deps.cfa)
@@ -240,24 +238,35 @@ defmodule Anchor.Managers.Graph do
     artifact_notes =
       write_artifact(deps.graph_store, request, {beams, source_facts}, config, graph)
 
-    outside_notes = outside_notes(outside, request.root)
-
     fail_closed =
       (unreadable_issues ++ source_issues ++ class_issues)
       |> Enum.map(&Finding.fail_closed(&1, @config_file))
 
     GraphReport.new(
-      fail_closed ++ Enum.flat_map(ran, & &1.findings) ++ outside_notes ++ artifact_notes,
+      fail_closed ++ Enum.flat_map(ran, & &1.findings) ++ artifact_notes,
       [],
       request
       |> counts(map_size(graph.modules), length(rules), length(Model.opaque(model)))
       |> Map.put(:no_core, no_core_count(graph))
-      |> Map.put(:excluded, length(outside))
+      |> Map.put(:outside_root, outside_root_count(beams, request))
       |> Map.put(:apply_sites, GraphReport.apply_sites(model.cfa))
-      |> Map.put(:interface_width, interface_width(rules, model)),
+      |> Map.put(:interface_width, interface_width(rules, model))
+      |> put_aggregates(model.aggregates),
       held: Enum.flat_map(ran, & &1.held),
       refused: Enum.flat_map(ran, & &1.refused)
     )
+  end
+
+  # DND-5476: the declared aggregates and their unknown tables are counted
+  # in the summary when there are any.
+  defp put_aggregates(counts, index) do
+    case Index.declared(index) do
+      0 ->
+        counts
+
+      declared ->
+        Map.put(counts, :aggregates, %{declared: declared, tables_unknown: index.tables_unknown})
+    end
   end
 
   defp analyze_cfa(graph), do: Cfa.analyze(graph, Cfa.default_seed(graph))
@@ -292,14 +301,18 @@ defmodule Anchor.Managers.Graph do
 
   defp guarded_needs(module), do: guarded(fn -> GraphRules.needs(module) end)
 
-  defp source_facts(source, root, beams) do
+  # A beam's source path, keyed against the root: a relative one is read
+  # against the directory Mix compiled its app from (DND-5637).
+  defp place(%Beam{app: app, elixir: %{relative_file: file}}, %Request{} = request),
+    do: ProjectFile.place(file, request.root, Map.get(request.source_dirs, app, "."))
+
+  defp source_facts(source, %Request{root: root} = request, beams) do
     files =
       beams
       |> Enum.flat_map(fn
-        # `read_beams/2` already left out every module outside the root, so
-        # each path here places as the project's.
-        %Beam{elixir: %{relative_file: file}} when is_binary(file) ->
-          {:project, relative} = ProjectFile.place(file, root)
+        # Inside the root or outside it, by its root-relative path (DND-5630).
+        %Beam{elixir: %{relative_file: file}} = beam when is_binary(file) ->
+          {_side, relative} = place(beam, request)
           [relative]
 
         _other ->
@@ -503,8 +516,7 @@ defmodule Anchor.Managers.Graph do
     |> guarded_check(module, model)
     |> case do
       {:ok, violations} ->
-        {:ok,
-         Enum.map(violations, &Finding.from_rule(&1, rule, label, config_path || @config_file))}
+        {:ok, Enum.map(violations, &finding(&1, rule, label, config_path || @config_file))}
 
       {:crashed, kind, reason, stacktrace} ->
         {:crashed,
@@ -513,6 +525,15 @@ defmodule Anchor.Managers.Graph do
          |> Finding.fail_closed(@config_file)}
     end
   end
+
+  # A rule's fail-closed violation (DND-5476: a rule that checks nothing)
+  # is an issue of the run, like a floor: always enforced, and with no key it
+  # is never held by a baseline. Every other violation takes the rule's
+  # enforcement and is judged against its baseline.
+  defp finding(%Violation{kind: :fail_closed} = violation, _rule, _label, file),
+    do: Finding.fail_closed(%{violation | key: nil}, file)
+
+  defp finding(violation, rule, label, file), do: Finding.from_rule(violation, rule, label, file)
 
   # The rule's return is validated inside the guard: a rule that returns
   # anything but a list of violations is reported like one that raised.
@@ -539,26 +560,25 @@ defmodule Anchor.Managers.Graph do
 
   @doc """
   The inputs the graph artifact of `request`'s build is keyed by (DND-5446,
-  for `mix anchor.explain`): the beams read from its ebins (each module whose
-  source is outside the root left out, as a run leaves it out), each beam's
-  source facts, the artifact's directory and its key, computed exactly as
-  the run that writes it computes it. `:none` when no beam inside the root
-  was read. `deps` takes `:config_loader`, `:beam_source` and
-  `:source_source` as `run/2` does.
+  for `mix anchor.explain`): the beams read from its ebins, each beam's source
+  facts, the artifact's directory and its key, computed exactly as the run
+  that writes it computes them. `:none` when no project beam was read. `deps`
+  takes `:beam_source` and `:source_source` as `run/2` does, and the loaded
+  `:config`.
   """
   @spec artifact_inputs(Request.t(), map()) ::
           {:ok, %{beams: list(), source_facts: map(), dir: Path.t(), key: String.t()}} | :none
   def artifact_inputs(%Request{} = request, %{config: config} = deps) do
     case read_beams(deps.beam_source, request) do
-      {:ok, beams, _outside} ->
-        {source_facts, _issues} = source_facts(deps.source_source, request.root, beams)
+      {:ok, beams} ->
+        {source_facts, _issues} = source_facts(deps.source_source, request, beams)
 
         {:ok,
          %{
            beams: beams,
            source_facts: source_facts,
            dir: artifact_dir(request),
-           key: artifact_key(beams, source_facts, config)
+           key: artifact_key(request, beams, source_facts, config)
          }}
 
       {:could_not_check, _violation} ->
@@ -568,10 +588,12 @@ defmodule Anchor.Managers.Graph do
 
   defp artifact_dir(request), do: Path.join(request.build_path, "anchor")
 
-  # The key covers every input the graph was built from: the beams and each
+  # The key covers every input the graph was built from: the project root
+  # (DND-5638: the facts' paths are relative to it), the beams and each
   # source file's facts (DND-5586), the config and Anchor's version.
-  defp artifact_key(beams, source_facts, config) do
+  defp artifact_key(request, beams, source_facts, config) do
     GraphKey.key(
+      Path.expand(request.root),
       beam_entries(beams),
       Enum.map(source_facts, fn {file, facts} ->
         {file, :erlang.term_to_binary(facts, [:deterministic])}
@@ -583,7 +605,7 @@ defmodule Anchor.Managers.Graph do
 
   defp write_artifact(store, request, {beams, source_facts}, config, graph) do
     dir = artifact_dir(request)
-    key = artifact_key(beams, source_facts, config)
+    key = artifact_key(request, beams, source_facts, config)
 
     case store.write(dir, key, graph) do
       :ok ->
@@ -620,7 +642,7 @@ defmodule Anchor.Managers.Graph do
       rules: rules,
       opaque: opaque,
       no_core: 0,
-      excluded: 0,
+      outside_root: 0,
       apply_sites: nil,
       interface_width: nil
     }

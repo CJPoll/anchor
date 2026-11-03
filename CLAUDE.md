@@ -41,7 +41,7 @@ never an adapter.
 
 | Bucket | Modules |
 |---|---|
-| Framework | `Anchor.Check.*` (Credo checks, `Anchor.Check.Base`, `Anchor.Check.Source`), `Mix.Tasks.Anchor.*` (`lib/mix/tasks/`; `Mix.Tasks.Anchor.Sabotage`, `.Graph`, `.Explain`), the `Anchor` module (by name), `Anchor.Sabotage.CoverageCollector` (an OTP process, in `lib/mix/tasks/anchor/sabotage/` so `mix anchor.graph` buckets it as Framework) |
+| Framework | `Anchor.Check.*` (Credo checks, `Anchor.Check.Base`, `Anchor.Check.Source`), `Anchor.Aggregate` (the compile-time macro, DND-5476), `Mix.Tasks.Anchor.*` (`lib/mix/tasks/`; `Mix.Tasks.Anchor.Sabotage`, `.Graph`, `.Explain`), the `Anchor` module (by name), `Anchor.Sabotage.CoverageCollector` (an OTP process, in `lib/mix/tasks/anchor/sabotage/` so `mix anchor.graph` buckets it as Framework) |
 | Managers | `Anchor.Managers.Lint`, `Anchor.Managers.Sabotage` (`.Runner`, `.Coverage`), `Anchor.Managers.Graph` (`.Request`), `Anchor.Managers.Explain` |
 | Side Effects | ports: `Anchor.Adapters.ConfigLoader`, `ChangeSource`, `BeamSource`, `Tracing`, `InProcessTests`, `ProjectModuleSource`, `CoverageStore`, `BaselineStore`, `GitBase`, `SourceSource`, `GraphStore`, `TestExecution`, `SourceMutation`; adapters: `ConfigFile`, `GitChangeSource`, `BeamReader`, `CallTracer`, `SuiteRunner`, `ProjectModules`, `CoverageFile`, `RecordFile` (port `RecordStore`), `BaselineFile`, `GitShow`, `SourceReader`, `GraphArtifact`, `TestRunner`, `SourcePatcher`, `GitStatus`, `GitWorktree` (`lib/anchor/adapters/`); `GitEnv`, the environment the git adapters run git with (DND-5581); `Anchor.Sabotage.ExUnitFormatter` (`lib/anchor/sabotage/`) |
 | Domain | everything under `lib/anchor/domain/`, including `Anchor.Domain.Sabotage.*` (`Mutator`, `Operators`, `DiffHunks`, `FunctionSpans`, `Scope`, `CoverageMap`, `Record`, `RecordNaming`, `KillMap`, `ChangedTests`, `TestPath`: the one rule for a path handed to `mix test`, DND-5640) and `Anchor.Domain.Graph.*`, the graph rules (`GraphRules.*`), `Model`, `Classification`, `Interfaces`, `Explain`, `Subject`, `RuleShapes` |
@@ -146,11 +146,24 @@ Extension rule:
 
 Every rule type has exactly one engine, `@engine_by_type` in
 `Anchor.Domain.RuleSchema` (DND-5437): `:ast` (a Credo check) or `:graph`
-(`mix anchor.graph`, DND-5440; the graph types are `layering`, DND-5442, and
-`context_acyclic`, DND-5445). A new rule type adds its entry there too (compilation
+(`mix anchor.graph`, DND-5440; the graph types are `layering`, DND-5442,
+`context_acyclic`, DND-5445, and `aggregate_declarations`, DND-5476). A new rule type adds its entry there too (compilation
 fails without it) and to the README table's Engine column (a test compares
 them). Credo never reports a `:graph` rule as unchecked
 (`RuleCoverage.unchecked/3`).
+
+The optional top-level `aggregates:` section (DND-5476) is parsed by
+`Anchor.Domain.Aggregates.Config`; `Anchor.Domain.Aggregates.Index` merges it
+with every module's persisted `@anchor_aggregate` (`use Anchor.Aggregate`,
+Framework, `lib/anchor/aggregate.ex`, or the attribute by hand) into
+`Model.aggregates`, and the `aggregate_declarations` graph rule reports what
+names nothing or is claimed twice. Its canary has its own root,
+`test/fixtures/graph_canary/aggregate_declarations/` (with its own config, so
+the shared canary's counts do not move). A rule's fail-closed violation
+(`kind: :fail_closed`, here "checks nothing") is an issue of the run: the
+runner enforces it under `enforcement: report` and never holds it in a
+baseline. A schema's table is read from its
+`__schema__(:source)` clause in Core, never by calling it.
 
 The optional top-level `architecture:` section (DND-5437) is parsed by
 `Anchor.Domain.Architecture.parse/1` into `%Anchor.Config{architecture: ...}`
@@ -192,17 +205,22 @@ compiles with it off).
 
 ## The graph runner: `mix anchor.graph` (DND-5440)
 
-`Mix.Tasks.Anchor.Graph` (Framework) compiles, gathers `[{app, ebin}]` from
-Mix and makes one `Anchor.Managers.Graph.run/2` call; the Manager reaches
+`Mix.Tasks.Anchor.Graph` (Framework) compiles, gathers `[{app, ebin}]` and,
+in an umbrella, each app's directory (`Request.source_dirs`, from
+`Mix.Project.apps_paths/0`: Mix compiles an app from its own directory, so its
+beams' source paths are app-relative and are keyed from the umbrella root,
+DND-5637) from Mix and makes one `Anchor.Managers.Graph.run/2` call; the Manager reaches
 config, beams, sources and the artifact only through adapters
 (`ConfigLoader`, `BeamSource`, `SourceSource`, `GraphStore`; tests double them
 with Hammox, BeamSource with plain Mox because Hammox cannot match its
 `:cerl` record type (see `test/test_helper.exs`), and pass them as options,
 as `mix anchor.sabotage` does). `SourceSource` returns each file's
-`SourceFacts`, never its text. A module whose source path is absolute and
-outside the root is left out, counted and named in a `[report]` note; one
-inside the root is made relative (`Anchor.Domain.Graph.ProjectFile`,
-DND-5588). It builds
+`SourceFacts`, never its text. A module is project code because its beam
+came from a project ebin, wherever its source sits (DND-5630): one compiled
+from outside the root (`elixirc_paths: ["../shared"]`) is judged and enforced
+like any other, keyed by its root-relative `../shared/foo.ex` path, and
+counted in the summary as `(<n> outside the root)`; an absolute path inside
+the root is made relative (`Anchor.Domain.Graph.ProjectFile`). It builds
 the graph fresh, builds `Anchor.Domain.Model` (classification of every
 module), checks bucket and rule floors (`min_modules`), runs each graph rule
 under a `try`/`rescue`/`catch` guard, and returns

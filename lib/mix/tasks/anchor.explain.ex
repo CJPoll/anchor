@@ -57,8 +57,9 @@ defmodule Mix.Tasks.Anchor.Explain do
   @doc """
   Runs the task. `opts` may hold `:compile` (a zero-arity function returning
   whether the project compiled; by default `run_task.("compile",
-  ["--return-errors"])`, where `:run_task` defaults to `Mix.Task.run/2`) and
-  the Manager's adapter options, which tests inject here.
+  ["--return-errors"])`, where `:run_task` defaults to `Mix.Task.run/2`),
+  `:apps_paths` (default `Mix.Project.apps_paths/0`, as `mix anchor.graph`
+  takes it) and the Manager's adapter options, which tests inject here.
   """
   @spec run([String.t()], keyword()) :: :ok
   def run(argv, opts) do
@@ -72,14 +73,19 @@ defmodule Mix.Tasks.Anchor.Explain do
 
   defp run_parsed(subject, format, opts) do
     {run_task, opts} = Keyword.pop(opts, :run_task, &Mix.Task.run/2)
-    {compile, deps} = Keyword.pop(opts, :compile, fn -> compile(run_task) end)
+    {compile, opts} = Keyword.pop(opts, :compile, fn -> compile(run_task) end)
+    {apps_paths, deps} = Keyword.pop_lazy(opts, :apps_paths, &Mix.Project.apps_paths/0)
     compiled? = compile.()
 
     request = %{
       argument: subject,
       compiled?: compiled?,
       graph: %Request{
-        apps: GraphTask.ebins(),
+        # The same request mix anchor.graph builds, so its artifact's key
+        # matches (DND-5637: an umbrella app's source paths are relative to
+        # its own directory).
+        apps: GraphTask.ebins(apps_paths),
+        source_dirs: apps_paths || %{},
         root: File.cwd!(),
         build_path: Mix.Project.build_path(),
         env: Mix.env()

@@ -10,6 +10,11 @@ RS-E and RS-F stand for every check: each check appends its Fix through the same
 `RuleShapes.with_shape/2` call, and `fix_shape_invariant_test.exs` holds every
 AST type's canonical violation to exactly one `Fix:`, its shape.
 
+Merging origin/main brought DND-5476's `aggregate_declarations` graph rule.
+The invariant's tests failed until it was registered in `RuleShapes` (RS-G);
+its canary is a fixture of its own, so its integration test now holds its
+findings to one `Fix:` (RS-H), and the graph canary names that test.
+
 | # | Mutation | Tests run | Result | Failing tests |
 |---|---|---|---|---|
 | RS-A | append_fix appends a second Fix: to a message that has one (`lib/anchor/domain/rule_shapes.ex`) | `rule_shapes_test.exs`, `fix_shape_invariant_test.exs` | `23 tests, 1 failure` (red) | with_fix/2 a message that already carries a Fix: is not given a second |
@@ -22,6 +27,8 @@ AST type's canonical violation to exactly one `Fix:`, its shape.
 | FA-B | a reason with no Fix gets none (`lib/anchor/domain/failures.ex`) | `failures_test.exs`, `rule_checks_nothing_test.exs`, `architecture_checks_nothing_test.exs` | `84 tests, 21 failures` (red) | one Fix: per rejected config a reason with no Fix gets the generic one, once; config_violation/1 an invalid document carries the validation message; config_violation/1 an invalid rule carries the validation message; module_pattern_restrictions: every rule that checks nothing is refused, and the positive rows load; struct_getter_convention: every rule that checks nothing is refused, and the positive rows load; no_tuple_match_in_head: every rule that checks nothing is refused, and the positive rows load; no_discarding_arrow_in_with: every rule that checks nothing is refused, and the positive rows load; max_file_length: every rule that checks nothing is refused, and the positive rows load; context_acyclic: every rule that checks nothing is refused, and the positive rows load |
 | FA-C | the moved owned_namespaces: [] refusal loses its own Fix (the generic one replaces it) (`lib/anchor/domain/failures.ex`) | `failures_test.exs`, `rule_checks_nothing_test.exs`, `architecture_checks_nothing_test.exs` | `84 tests, 1 failure` (red) | one Fix: per rejected config each moved load refusal keeps its own Fix, and only it |
 | FA-D | the moved pure_patterns refusal loses its own Fix (`lib/anchor/domain/failures.ex`) | `failures_test.exs`, `rule_checks_nothing_test.exs`, `architecture_checks_nothing_test.exs` | `84 tests, 1 failure` (red) | one Fix: per rejected config each moved load refusal keeps its own Fix, and only it |
+| RS-G | aggregate_declarations (main's new graph type) has no shape entry (`lib/anchor/domain/rule_shapes.ex`) | `rule_shapes_test.exs` | `7 tests, 1 failure` (red) | for/1 every rule type in RuleSchema.rule_types/0 has a non-empty shape |
+| RS-H | an aggregate_declarations finding (claimed twice) carries no Fix: (`lib/anchor/domain/graph_rules/aggregate_declarations.ex`) | `aggregate_declarations_integration_test.exs` | `2 tests, 1 failure` (red) | N1: the violating module's table claim is claimed twice, at the config and at it |
 
 ## RS-A — append_fix appends a second Fix: to a message that has one
 
@@ -1291,4 +1298,69 @@ Run summary: `84 tests, 1 failure`
        test/anchor/domain/failures_test.exs:287: (test)
 
 ......................................................................
+```
+
+## RS-G — aggregate_declarations (main's new graph type) has no shape entry
+
+Run summary: `7 tests, 1 failure`
+
+```text
+  1) test for/1 every rule type in RuleSchema.rule_types/0 has a non-empty shape (Anchor.Domain.RuleShapesTest)
+     test/anchor/domain/rule_shapes_test.exs:30
+     ** (FunctionClauseError) no function clause matching in Anchor.Domain.RuleShapes.for/1
+
+     The following arguments were given to Anchor.Domain.RuleShapes.for/1:
+
+         # 1
+         %{id: nil, match: :reference, type: :aggregate_declarations, mode: nil, pattern: "MyApp.*", recursive: false, paths: nil, enforcement: :enforce, context_depth: 2, same_context: false, bucket: nil, min_modules: nil, uses_module: nil, baseline: nil, max_lines: nil, required_modules: [], allowed_functions: [], forbidden_modules: [], forbidden_patterns: [], forbidden_functions: [], allowed_callers: [], pure_patterns: [], owned_namespaces: nil, min_files: 1, max_width: nil}
+
+     Attempted function clauses (showing 1 out of 1):
+
+         def for(%{type: type} = rule) when -is_map_key(
+       %{
+         alphabetized_functions: Anchor.Domain.Checks.AlphabetizedFunctions,
+         case_on_bare_arg: Anchor.Domain.Checks.CaseOnBareArg,
+         context_acyclic: Anchor.Domain.GraphRules.ContextAcyclic,
+         interface: Anchor.Domain.GraphRules.Interface,
+         layering: Anchor.Domain.GraphRules.Layering,
+         max_file_length: Anchor.Domain.Checks.MaxFileLength,
+         module_pattern_restrictions: Anchor.Domain.Checks.ModulePatternRestrictions,
+         must_use_module: Anchor.Domain.Checks.MustUseModule,
+         no_comparison_in_if: Anchor.Domain.Checks.NoComparisonInIf,
+         no_direct_dependency: Anchor.Domain.Checks.NoDependency,
+         no_discarded_pure_expression: Anchor.Domain.Checks.NoDiscardedPureExpression,
+         no_discarding_arrow_in_with: Anchor.Domain.Checks.NoDiscardingArrowInWith,
+         no_forwarding_function: Anchor.Domain.Checks.NoForwardingFunction,
+         no_transitive_dependency: Anchor.Domain.Checks.NoTransitiveDependency,
+         no_tuple_match_in_head: Anchor.Domain.Checks.NoTupleMatchInHead,
+         single_control_flow: Anchor.Domain.Checks.SingleControlFlow,
+         struct_getter_convention: Anchor.Domain.Checks.StructGetterConvention,
+         struct_owned_by_module: Anchor.Domain.Checks.StructOwnedByModule
+       },
+       type
+     )-
+
+     code: for type <- RuleSchema.rule_types() do
+     stacktrace:
+       (anchor 0.1.0) lib/anchor/domain/rule_shapes.ex:53: Anchor.Domain.RuleShapes.for/1
+       test/anchor/domain/rule_shapes_test.exs:32: anonymous fn/2 in Anchor.Domain.RuleShapesTest."test for/1 every rule type in RuleSchema.rule_types/0 has a non-empty shape"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/rule_shapes_test.exs:31: (test)
+
+...
+```
+
+## RS-H — an aggregate_declarations finding (claimed twice) carries no Fix:
+
+Run summary: `2 tests, 1 failure`
+
+```text
+  1) test N1: the violating module's table claim is claimed twice, at the config and at it (Anchor.Integration.AggregateDeclarationsIntegrationTest)
+     test/anchor/integration/aggregate_declarations_integration_test.exs:79
+     table "audit_rows" is claimed by Agg.Audit and AnchorFixtures.Agg.Threads.Space. List it in exactly one aggregate; the other reaches it through an outbox row consumed by the owner: aggregates: declare: - name: <Aggregate>, schemas: [<Schema>...], tables: ["<table>"...], owners: [<Module>...], or use Anchor.Aggregate, name: <Aggregate>, schemas: [<Schema>...]
+     code: for finding <- [config_site, rogue_site] do
+     stacktrace:
+       test/anchor/integration/aggregate_declarations_integration_test.exs:95: anonymous fn/2 in Anchor.Integration.AggregateDeclarationsIntegrationTest."test N1: the violating module's table claim is claimed twice, at the config and at it"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/integration/aggregate_declarations_integration_test.exs:91: (test)
 ```
