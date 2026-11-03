@@ -62,6 +62,9 @@ defmodule Anchor.Domain.Aggregates.WriteSourceTest do
 
               def r13, do: Repo.insert(build())
               def r14, do: Repo.insert(Map.new())
+              def r15, do: Repo.insert(#{inspect(@c)}.make())
+              def r16(r), do: Repo.insert(r)
+              def r16_use(xs), do: Enum.each(xs, &r16/1)
 
               defp opaque, do: Map.new()
               defp build, do: %S{}
@@ -70,6 +73,8 @@ defmodule Anchor.Domain.Aggregates.WriteSourceTest do
             defmodule #{inspect(@c)} do
               def c1, do: #{inspect(@x)}.r10(%#{inspect(@s)}{})
               def c2, do: #{inspect(@x)}.r10(%#{inspect(@t)}{})
+              def make, do: %#{inspect(@t)}{}
+              def c3, do: #{inspect(@x)}.r16(%#{inspect(@s)}{})
             end
             """
 
@@ -143,6 +148,22 @@ defmodule Anchor.Domain.Aggregates.WriteSourceTest do
 
     test "R13: a call into a project function is what it returns (rule 8)", %{sites: sites} do
       assert %{sources: [{:schema, @s}], unresolved: nil} = site(sites, :r13)
+    end
+
+    test "R13: a remote call into a project function is what it returns (rule 8)", %{
+      sites: sites
+    } do
+      assert %{sources: [{:schema, @t}], unresolved: nil} = site(sites, :r15)
+    end
+
+    test "R10: a parameter of a captured function has callers Anchor cannot see", %{
+      sites: sites
+    } do
+      assert %{sources: [], unresolved: seen} = site(sites, :r16)
+
+      assert seen ==
+               "parameter 1 of #{inspect(@x)}.r16/1 is passed as a function value, so its " <>
+                 "callers are not known"
     end
 
     test "R14: anything else is unresolved, naming what was seen and no line", %{sites: sites} do

@@ -84,4 +84,46 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
     analysis = Analysis.build(graph!(@source), %Config{repos: [@repo]}, roots: root)
     refute MapSet.member?(analysis.always_in_transaction, {@n, :n2g, 0})
   end
+
+  test "roots: through Model.build, a framework bucket's public function is a root" do
+    fw = Module.concat(@ns, Web)
+
+    source =
+      @source <>
+        """
+        defmodule #{inspect(fw)} do
+          def entry, do: #{inspect(@repo)}.insert(%#{inspect(@s)}{})
+        end
+
+        defmodule #{inspect(Module.concat(@ns, Caller))} do
+          def run, do: #{inspect(@repo)}.transaction(fn -> #{inspect(fw)}.entry() end)
+        end
+        """
+
+    graph = graph!(source, "lib/fixture.ex")
+
+    config =
+      Anchor.Config.parse_config(%{
+        "rules" => [],
+        "aggregates" => %{"repos" => [inspect(@repo)]},
+        "architecture" => %{
+          "contexts" => %{"depth" => 2},
+          "buckets" => [
+            %{"name" => "web", "role" => "framework", "select" => [%{"pattern" => inspect(fw)}]},
+            %{
+              "name" => "rest",
+              "role" => "domain",
+              "select" => [%{"pattern" => "#{inspect(@ns)}.N"}]
+            }
+          ],
+          "calls" => %{"web" => ["web", "rest"], "rest" => ["rest", "web"]}
+        }
+      })
+
+    assert {%Anchor.Domain.Model{aggregate_analysis: analysis}, _issues} =
+             Anchor.Domain.Model.build(graph, config, %{})
+
+    refute MapSet.member?(analysis.always_in_transaction, {fw, :entry, 0})
+    assert MapSet.member?(analysis.always_in_transaction, {@n, :n2g, 0})
+  end
 end
