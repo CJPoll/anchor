@@ -1,6 +1,7 @@
 defmodule Anchor.Adapters.SourcePatcherTest do
   # DND-5473: the journal and file writes on a real tmp directory.
   # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5473_sabotage_run.md
+  # Sabotage record (DND-5570): ../../sabotage_records/sabotage-20261103-dnd_5570_sabotage_hardening.md
   use ExUnit.Case, async: true
 
   alias Anchor.Adapters.SourcePatcher
@@ -64,6 +65,17 @@ defmodule Anchor.Adapters.SourcePatcherTest do
     refute File.exists?(lock)
     assert SourcePatcher.release_lock(root) == :ok
     assert File.ls!(Path.join(root, "_build")) == []
+  end
+
+  test "with no /proc the lock is refused, :no_proc, and nothing is written", %{tmp_dir: root} do
+    no_proc = Path.join(root, "no-proc-here")
+
+    assert SourcePatcher.take_lock(root, no_proc) == {:error, :no_proc}
+    refute File.exists?(Path.join(root, "_build"))
+
+    # Positive control: the same call with this host's /proc takes it.
+    assert SourcePatcher.take_lock(root, "/proc") == :ok
+    assert SourcePatcher.release_lock(root) == :ok
   end
 
   test "a lock another run holds is never released by this one", %{tmp_dir: root} do

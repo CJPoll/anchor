@@ -5,6 +5,8 @@ defmodule Anchor.Domain.Graph.CoreWalkerTest do
   # (each line is found in the fixture source by its snippet).
   #
   # Sabotage record: ../../../sabotage_records/core_walker-20261103-dnd_5438.md
+  # Sabotage record: ../../../sabotage_records/inlines-20261103-dnd_5551_graph_hardening.md
+  # Sabotage record: ../../../sabotage_records/core_walker-20261103-dnd_5551_graph_hardening.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -35,6 +37,10 @@ defmodule Anchor.Domain.Graph.CoreWalkerTest do
     def funapp(fun, x), do: fun.(x) # funapp
     def app3(mod, x), do: apply(mod, :f, [x]) # app3
     def app2(fun, x), do: apply(fun, [x]) # app2
+    def app3lit(x), do: apply(Other, :f, [x]) # app3lit
+    def app3erl(x), do: apply(:lists, :reverse, [x]) # app3erl
+    def app3args(args), do: apply(Other, :f, args) # app3args
+    def app3fun(f, x), do: apply(Other, f, [x]) # app3fun
     def varmod(mod, x), do: mod.f(x) # varmod
     def computed(x), do: Module.concat([A, B]).f(x) # computed
     def dyncap(mod), do: &mod.f/1 # dyncap
@@ -89,6 +95,12 @@ defmodule Anchor.Domain.Graph.CoreWalkerTest do
     def match(%S{} = s), do: s # match
 
     def plain(m), do: [%{a: :x}, %{m | a: :y}, Other.f(m)] # plain
+
+    def put(m, k), do: Map.put(m, k, 1) # put
+    def puts(m), do: m |> Map.put(:a, 1) |> Map.put(:b, 2) # puts
+    def erlput(m), do: :maps.put(:k, 1, m) # erlput
+    def merge(a, b), do: Map.merge(a, b) # merge
+    def built(x, k), do: %{:a => 1, k => x} # built
 
     defp helper(x), do: x
   end
@@ -155,6 +167,49 @@ defmodule Anchor.Domain.Graph.CoreWalkerTest do
                [call({M, :app3, 2}, {:dynamic, :f, 1, :call}, :apply, "# app3")]
     end
 
+    # DND-5547: the callee is as static as a direct call.
+    test "apply/3 with a literal module, function and argument list is a static :apply edge", %{
+      binary: binary
+    } do
+      assert calls(binary, {:app3lit, 1}) ==
+               [call({M, :app3lit, 1}, {Other, :f, 1}, :apply, "# app3lit")]
+
+      assert calls(binary, {:app3erl, 1}) ==
+               [call({M, :app3erl, 1}, {:lists, :reverse, 1}, :apply, "# app3erl")]
+    end
+
+    test "apply/3 stays dynamic when the argument count or the function is not literal", %{
+      binary: binary
+    } do
+      assert calls(binary, {:app3args, 1}) ==
+               [call({M, :app3args, 1}, {:dynamic, :f, nil, :call}, :apply, "# app3args")]
+
+      assert calls(binary, {:app3fun, 2}) ==
+               [call({M, :app3fun, 2}, {:dynamic, nil, 1, :call}, :apply, "# app3fun")]
+    end
+
+    test "apply/3 on a variable let-bound to literals is a static :apply edge" do
+      mod = :cerl.c_var(:mod)
+      fun = :cerl.c_var(:fun)
+
+      apply =
+        :cerl.c_call(:cerl.c_atom(:erlang), :cerl.c_atom(:apply), [
+          mod,
+          fun,
+          :cerl.abstract([1, 2])
+        ])
+
+      body =
+        :cerl.c_let(
+          [mod],
+          :cerl.c_atom(Other),
+          :cerl.c_let([fun], :cerl.c_atom(:g), apply)
+        )
+
+      assert {[%Call{to: {Other, :g, 2}, kind: :apply}], []} =
+               CoreWalker.walk(M, {:h, 0}, :cerl.c_fun([], body), 1)
+    end
+
     test "apply/2 is :apply with no name", %{binary: binary} do
       assert calls(binary, {:app2, 2}) ==
                [call({M, :app2, 2}, {:dynamic, nil, 1, :call}, :apply, "# app2")]
@@ -207,7 +262,9 @@ defmodule Anchor.Domain.Graph.CoreWalkerTest do
 
     test "a struct map built on a variable (not on %{}) is an :update" do
       s = :cerl.c_var(:s)
-      pair = :cerl.c_map_pair(:cerl.c_atom(:__struct__), :cerl.c_atom(S))
+      # `:=`, as Elixir writes a struct update (`=>` on a variable is an
+      # inlined Map.put, DND-5551).
+      pair = :cerl.c_map_pair_exact(:cerl.c_atom(:__struct__), :cerl.c_atom(S))
       body = :cerl.ann_c_map([{3, 1}], s, [pair])
 
       assert {[], [%StructUse{struct: S, op: :update, line: 3, line_source: :call}]} =
@@ -335,6 +392,44 @@ defmodule Anchor.Domain.Graph.CoreWalkerTest do
     test "a plain map and a plain map update are no struct use", %{binary: binary} do
       assert uses(binary, {:plain, 1}) == []
       assert Enum.any?(calls(binary, {:plain, 1}), &(&1.to == {Other, :f, 1}))
+    end
+  end
+
+  describe "walk/3 stdlib calls Elixir inlines (DND-5551)" do
+    test "Map.put/3 lowered to a map update is a :remote call to :maps.put/3", %{binary: binary} do
+      assert [call({M, :put, 2}, {:maps, :put, 3}, :remote, "# put")] ==
+               Enum.filter(calls(binary, {:put, 2}), &(&1.to == {:maps, :put, 3}))
+    end
+
+    test "puts in a row that Core folds into one update are one edge each", %{binary: binary} do
+      assert [%Call{line: line, line_source: :call}, %Call{line: line, line_source: :call}] =
+               Enum.filter(calls(binary, {:puts, 1}), &(&1.to == {:maps, :put, 3}))
+
+      assert line == line("# puts")
+    end
+
+    test ":maps.put/3 written in source lowers the same way", %{binary: binary} do
+      assert [call({M, :erlput, 1}, {:maps, :put, 3}, :remote, "# erlput")] ==
+               Enum.filter(calls(binary, {:erlput, 1}), &(&1.to == {:maps, :put, 3}))
+    end
+
+    test "Map.merge/2 stays a call, named :maps.merge/2", %{binary: binary} do
+      assert calls(binary, {:merge, 2}) ==
+               [call({M, :merge, 2}, {:maps, :merge, 2}, :remote, "# merge")]
+    end
+
+    test "a map built from values on %{} is no put", %{binary: binary} do
+      calls = calls(binary, {:built, 2})
+      refute Enum.any?(calls, &(&1.to == {:maps, :put, 3}))
+      # Positive control: the same node shape on a variable is one.
+      assert Enum.any?(calls(binary, {:put, 2}), &(&1.to == {:maps, :put, 3}))
+    end
+
+    test "a map literal and a := map update are no put", %{binary: binary} do
+      calls = calls(binary, {:plain, 1})
+      refute Enum.any?(calls, &(&1.to == {:maps, :put, 3}))
+      # Positive control: the same walk finds the plain call beside them.
+      assert Enum.any?(calls, &(&1.to == {Other, :f, 1}))
     end
   end
 

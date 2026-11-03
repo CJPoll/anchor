@@ -3,9 +3,15 @@ defmodule Anchor.Domain.Graph.ModuleNode do
   A module of the causal graph — **Domain** data (DND-5438).
 
     * `:module`, `:app`, `:source_file` (the `elixir_v1` `relative_file`).
+    * `:line` — the line of the module's `defmodule` (the `elixir_v1`
+      `:anno`), or `nil` when the metadata has none (DND-5440: an
+      unclassified module is reported there).
     * `:behaviours` — every `@behaviour`, from the persisted attributes.
     * `:attributes` — the persisted attributes, a keyword list.
-    * `:specs` — `%{{name, arity} => [quoted spec]}`.
+    * `:specs` — `%{{name, arity} => [quoted spec]}`. A macro's spec is keyed
+      under the macro's own name and arity (the key of its `FunctionNode`, kind
+      `:defmacro` or `:defmacrop`), not the compiled `MACRO-name/arity+1`, and
+      reads as written, without the caller argument (DND-5550).
     * `:types` — `%{{name, arity} => {kind, quoted type}}`, kind `:type`,
       `:typep` or `:opaque`.
     * `:struct_fields` — the struct's field names, or `nil` for no struct.
@@ -24,6 +30,7 @@ defmodule Anchor.Domain.Graph.ModuleNode do
     :module,
     :app,
     :source_file,
+    :line,
     :struct_fields,
     behaviours: [],
     attributes: [],
@@ -37,6 +44,7 @@ defmodule Anchor.Domain.Graph.ModuleNode do
           module: module(),
           app: atom(),
           source_file: String.t() | nil,
+          line: pos_integer() | nil,
           behaviours: [module()],
           attributes: keyword(),
           specs: %{{atom(), arity()} => [Macro.t()]},

@@ -21,9 +21,12 @@ defmodule Anchor.Domain.Graph.Builder do
   A decode error is carried into `graph.unreadable` (in path order), never
   dropped; the good beams beside it are all built. Two beams of one module (a
   stale copy in a second ebin) build the first by path, and the other is in
-  `unreadable` as `{:duplicate_module, kept_path}`.
+  `unreadable` as `{:duplicate_module, kept_path}`. A module with a public
+  function or macro its Core does not define is built, and is in `unreadable`
+  too, as `{:no_core, [{name, arity}]}` (DND-5549).
   """
 
+  alias Anchor.Domain.Failures
   alias Anchor.Domain.Graph
   alias Anchor.Domain.Graph.Beam
   alias Anchor.Domain.Graph.CoreWalker
@@ -41,21 +44,46 @@ defmodule Anchor.Domain.Graph.Builder do
   def build(beams, source_facts) do
     {decoded, errors} = Enum.split_with(beams, &match?(%Beam{}, &1))
     {kept, duplicates} = first_per_module(decoded)
-    nodes = Enum.map(kept, &module_node(&1, source_facts))
-    # Core's `{:file, _}` annotations hold the cwd-relative path, which the
-    # node keeps as `source_file` (`elixir_v1` `:relative_file`).
-    edges = Enum.map(nodes, &module_edges(&1, &1.source_file))
+    {built, crashed} = kept |> Enum.map(&guarded_module(&1, source_facts)) |> split_built()
+    paths = Map.new(kept, &{&1.module, &1.path})
+    no_core = Enum.flat_map(built, fn {node, _edges} -> public_without_core(node, paths) end)
 
     %Graph{
-      modules: Map.new(nodes, &{&1.module, &1}),
-      calls: Enum.flat_map(edges, &elem(&1, 0)),
-      struct_uses: Enum.flat_map(edges, &elem(&1, 1)),
+      modules: Map.new(built, fn {node, _edges} -> {node.module, node} end),
+      calls: Enum.flat_map(built, fn {_node, {calls, _uses}} -> calls end),
+      struct_uses: Enum.flat_map(built, fn {_node, {_calls, uses}} -> uses end),
       unreadable:
         errors
         |> Enum.map(fn {:error, error} -> error end)
         |> Enum.concat(duplicates)
+        |> Enum.concat(crashed)
+        |> Enum.concat(no_core)
         |> Enum.sort_by(& &1.path)
     }
+  end
+
+  # One module's node and edges, built together, so a crash leaves no partial
+  # module behind (DND-5548). A raise, throw or exit while building it is that
+  # module's `{:walk_crashed, summary}` entry in `unreadable`, never the whole
+  # build's: every other module is still built.
+  defp guarded_module(%Beam{} = beam, source_facts) do
+    node = module_node(beam, source_facts)
+    # Core's `{:file, _}` annotations hold the cwd-relative path, which the
+    # node keeps as `source_file` (`elixir_v1` `:relative_file`).
+    {:built, {node, module_edges(node, node.source_file)}}
+  catch
+    kind, reason ->
+      {:crashed,
+       %{
+         path: beam.path,
+         module: beam.module,
+         reason: {:walk_crashed, Failures.crash_summary(kind, reason, __STACKTRACE__)}
+       }}
+  end
+
+  defp split_built(results) do
+    {built, crashed} = Enum.split_with(results, &match?({:built, _}, &1))
+    {Enum.map(built, &elem(&1, 1)), Enum.map(crashed, &elem(&1, 1))}
   end
 
   # One beam per module: the first by path. Every other beam of that module (a
@@ -75,6 +103,23 @@ defmodule Anchor.Domain.Graph.Builder do
     end)
   end
 
+  # A public function or macro the Core module does not define cannot be
+  # walked, so it is reported, never read as a function with no calls. A
+  # private one with no Core is expected: the compiler emits no code for a
+  # `defmacrop` (expanded where it is used) or for a `defp` nothing calls.
+  # `Graph.functions_without_core/1` counts both kinds (DND-5549).
+  defp public_without_core(%ModuleNode{module: module, functions: functions}, paths) do
+    missing =
+      for {name_arity, %FunctionNode{core: nil, kind: kind}} <- functions,
+          kind in [:def, :defmacro],
+          do: name_arity
+
+    case Enum.sort(missing) do
+      [] -> []
+      missing -> [%{path: Map.fetch!(paths, module), module: module, reason: {:no_core, missing}}]
+    end
+  end
+
   defp module_node(%Beam{module: module, elixir: elixir} = beam, source_facts) do
     source_file = Map.get(elixir, :relative_file)
     attributes = Map.get(elixir, :attributes, [])
@@ -84,9 +129,10 @@ defmodule Anchor.Domain.Graph.Builder do
       module: module,
       app: beam.app,
       source_file: source_file,
+      line: anno_line(Map.get(elixir, :anno)),
       behaviours: attributes |> Keyword.get_values(:behaviour) |> List.flatten(),
       attributes: attributes,
-      specs: specs(beam.specs),
+      specs: specs(beam.specs, macros(Map.get(elixir, :definitions, []))),
       types: types(beam.types),
       struct_fields: struct_fields(Map.get(elixir, :struct)),
       functions:
@@ -135,6 +181,11 @@ defmodule Anchor.Domain.Graph.Builder do
     Map.new(:cerl.module_defs(core), fn {fname, fun} -> {:cerl.var_name(fname), fun} end)
   end
 
+  # The `defmodule` line: `elixir_v1`'s `:anno` is `{line, column}` or a line.
+  defp anno_line({line, _column}) when is_integer(line), do: line
+  defp anno_line(line) when is_integer(line), do: line
+  defp anno_line(_anno), do: nil
+
   defp generated(_module, nil), do: :unknown
   defp generated(_module, {:error, :unparseable}), do: :unknown
 
@@ -151,10 +202,53 @@ defmodule Anchor.Domain.Graph.Builder do
   defp struct_fields(nil), do: nil
   defp struct_fields(fields), do: Enum.map(fields, & &1.field)
 
-  defp specs(specs) do
+  defp specs(specs, macros) do
     Map.new(specs, fn {{name, arity}, forms} ->
-      {{name, arity}, Enum.map(forms, &Code.Typespec.spec_to_quoted(name, &1))}
+      case macro_spec(name, arity, macros) do
+        nil ->
+          {{name, arity}, Enum.map(forms, &Code.Typespec.spec_to_quoted(name, &1))}
+
+        macro ->
+          forms = Enum.map(forms, &without_caller/1)
+          {macro, Enum.map(forms, &Code.Typespec.spec_to_quoted(elem(macro, 0), &1))}
+      end
     end)
+  end
+
+  defp macros(definitions) do
+    for {name_arity, kind, _meta, _clauses} <- definitions,
+        kind in [:defmacro, :defmacrop],
+        do: name_arity
+  end
+
+  # A macro's spec is compiled under `MACRO-name/arity+1`, its first argument
+  # the caller's env. It is keyed under the macro's own name and arity, the
+  # key its FunctionNode has (kind `:defmacro`), checked against the module's
+  # macros: a name that only looks like one keeps its key (DND-5550).
+  defp macro_spec(name, arity, macros) do
+    case Atom.to_string(name) do
+      "MACRO-" <> macro ->
+        Enum.find(macros, fn {macro_name, macro_arity} ->
+          macro_arity == arity - 1 and Atom.to_string(macro_name) == macro
+        end)
+
+      _function ->
+        nil
+    end
+  end
+
+  defp without_caller({:type, line, :bounded_fun, [fun, constraints]}),
+    do: {:type, line, :bounded_fun, [without_caller(fun), constraints]}
+
+  defp without_caller(
+         {:type, line, :fun, [{:type, product_line, :product, [_caller | args]}, result]}
+       ),
+       do: {:type, line, :fun, [{:type, product_line, :product, args}, result]}
+
+  defp without_caller(form) do
+    raise ArgumentError,
+          "a macro spec of an unknown shape: #{inspect(form)}. Fix: Anchor's graph builder " <>
+            "must learn this spec shape (DND-5550)."
   end
 
   defp types(types) do

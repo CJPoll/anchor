@@ -1,11 +1,14 @@
 defmodule Anchor.Adapters.TestRunnerTest do
-  # DND-5473: the bounded test run, against a fake test command that writes
-  # the formatter's frames by mode. The time bound is the `timeout` binary's,
-  # never a sleep in the test.
+  # DND-5473: the bounded test run, against a fake test command that has the
+  # real Anchor.Sabotage.ExUnitFormatter write its frames by mode (DND-5572).
+  # The time bound is the `timeout` binary's, never a sleep in the test.
   # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5473_sabotage_run.md
+  # Sabotage record (DND-5570): ../../sabotage_records/sabotage-20261103-dnd_5570_sabotage_hardening.md
+  # Sabotage record (DND-5618): ../../sabotage_records/sabotage-20261103-dnd_5617_sabotage_cfa_batch.md
   use ExUnit.Case, async: true
 
   alias Anchor.Adapters.TestRunner
+  alias Anchor.Domain.Sabotage.Outcome
   alias Anchor.Domain.Sabotage.TestRun
 
   @moduletag :tmp_dir
@@ -18,7 +21,9 @@ defmodule Anchor.Adapters.TestRunnerTest do
       Keyword.get(opts, :tests, ["test/calc_test.exs"]),
       cd: dir,
       results_path: Path.join(dir, "out/results.bin"),
-      timeout_seconds: Keyword.get(opts, :timeout, 30)
+      timeout_seconds: Keyword.get(opts, :timeout, 30),
+      kill_after_seconds: Keyword.get(opts, :kill_after, 10),
+      output_limits: Keyword.get(opts, :output_limits, {32_768, 32_768})
     )
   end
 
@@ -30,12 +35,9 @@ defmodule Anchor.Adapters.TestRunnerTest do
   test "2: fail: each failure carries file, line, name and text", %{tmp_dir: dir} do
     assert {:ok, %TestRun{status: :failed, exit_code: 2, failures: [failure]}} = run("fail", dir)
 
-    assert failure == %{
-             file: "test/calc_test.exs",
-             line: 4,
-             name: "test adds",
-             text: "Assertion with == failed"
-           }
+    assert %{file: "test/calc_test.exs", line: 4, name: "test adds", text: text} = failure
+    assert text =~ "** (ExUnit.AssertionError)"
+    assert text =~ "Assertion with == failed"
   end
 
   test "3: none: no test ran", %{tmp_dir: dir} do
@@ -49,8 +51,40 @@ defmodule Anchor.Adapters.TestRunnerTest do
     assert head =~ "== Compilation error in file lib/calc.ex =="
   end
 
+  # The hang rows wait for the real `timeout` binary (1 s, plus the grace
+  # period for the stubborn one) beside the VM's start-up: ExUnit's bound
+  # must not be the shorter of the two.
+  @tag timeout: 20_000
   test "5: a run that hangs is killed by the bound and is a timeout", %{tmp_dir: dir} do
     assert {:ok, %TestRun{status: :timeout, exit_code: 124}} = run("hang", dir, timeout: 1)
+  end
+
+  test "6: a run killed by signal 9 inside the bound is crashed: killed by signal 9, not a timeout",
+       %{tmp_dir: dir} do
+    assert {:ok, %TestRun{status: :crashed, exit_code: 137} = run} = run("killed", dir)
+    assert Outcome.reason(run) == "test run crashed: killed by signal 9 (exit 137)"
+  end
+
+  # 8 s: the real run is about 2.5 s; with the default 10 s grace period
+  # (the option not passed on) it would be 11 s and fail here.
+  @tag timeout: 8_000
+  test "7: positive control: a run that ignores the stop signal and needs the KILL is a timeout",
+       %{tmp_dir: dir} do
+    assert {:ok, %TestRun{status: :timeout, exit_code: 137}} =
+             run("stubborn", dir, timeout: 1, kill_after: 1)
+  end
+
+  test "8: the output is bounded: head and tail kept, the dropped bytes counted", %{tmp_dir: dir} do
+    assert {:ok, %TestRun{status: :passed, dropped_bytes: dropped, output_head: head}} =
+             run("flood", dir, output_limits: {500, 500})
+
+    assert dropped > 150_000
+    assert String.starts_with?(head, "line 1 ")
+    assert dropped < 4000 * 52
+  end
+
+  test "9: output within the bound drops nothing", %{tmp_dir: dir} do
+    assert {:ok, %TestRun{dropped_bytes: 0}} = run("pass", dir)
   end
 
   test "a stale results file that cannot be removed is an error, never read", %{tmp_dir: dir} do
@@ -85,9 +119,99 @@ defmodule Anchor.Adapters.TestRunnerTest do
                "--formatter ExUnit.CLIFormatter"
   end
 
-  test "the project root reaches the formatter as ANCHOR_SABOTAGE_ROOT", %{tmp_dir: dir} do
-    # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5484_records.md
-    assert {:ok, %TestRun{output_head: head}} = run("args", dir)
-    assert head =~ "root=#{dir}\n"
+  describe "the time bound with an injected clock and command runner (DND-5618)" do
+    # No real timeout, no sleep: the command runner is a fake that reports
+    # its call and returns a canned exit; the clock returns the readings the
+    # test queued, in order. The command named is never run.
+    @argv ["anchor-fake-never-run", "test"]
+
+    defp tick(readings), do: Enum.each(readings, &send(self(), {:clock, &1}))
+
+    defp clock do
+      receive do
+        {:clock, ms} -> ms
+      after
+        0 -> flunk("the clock was read more often than the test queued readings")
+      end
+    end
+
+    defp fake_runner(code) do
+      test = self()
+
+      fn executable, args, cmd_opts ->
+        send(test, {:cmd, executable, args, cmd_opts})
+        {Enum.into(["canned output\n"], Keyword.fetch!(cmd_opts, :into)), code}
+      end
+    end
+
+    defp run_fake(code, dir, opts) do
+      TestRunner.run(
+        @argv,
+        ["test/calc_test.exs"],
+        [
+          cd: dir,
+          results_path: Path.join(dir, "out/results.bin"),
+          timeout_seconds: 30,
+          clock: &clock/0,
+          command_runner: fake_runner(code)
+        ] ++ opts
+      )
+    end
+
+    test "K1: --kill-after and the bound lead the argv given to `timeout`", %{tmp_dir: dir} do
+      tick([1_000, 1_500])
+
+      assert {:ok, %TestRun{}} = run_fake(0, dir, kill_after_seconds: 7)
+
+      assert_received {:cmd, timeout, args, cmd_opts}
+      assert Path.basename(timeout) == "timeout"
+
+      assert args ==
+               ["--kill-after=7", "30", "anchor-fake-never-run", "test", "test/calc_test.exs"] ++
+                 ~w(--formatter Anchor.Sabotage.ExUnitFormatter --formatter ExUnit.CLIFormatter)
+
+      assert cmd_opts[:cd] == dir
+      assert {"MIX_ENV", "test"} in cmd_opts[:env]
+    end
+
+    test "DND-5484: the project root reaches the formatter as ANCHOR_SABOTAGE_ROOT",
+         %{tmp_dir: dir} do
+      # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5484_records.md
+      tick([0, 10])
+
+      assert {:ok, %TestRun{}} = run_fake(0, dir, [])
+      assert_received {:cmd, _timeout, _args, cmd_opts}
+      assert {"ANCHOR_SABOTAGE_ROOT", dir} in cmd_opts[:env]
+    end
+
+    test "K2: with no grace period given, --kill-after is 10", %{tmp_dir: dir} do
+      tick([0, 10])
+
+      assert {:ok, %TestRun{}} = run_fake(0, dir, [])
+      assert_received {:cmd, _timeout, ["--kill-after=10", "30" | _rest], _cmd_opts}
+    end
+
+    test "K3: exit 124 is a timeout, whatever the clock says", %{tmp_dir: dir} do
+      tick([0, 5])
+
+      assert {:ok, %TestRun{status: :timeout, exit_code: 124} = run} = run_fake(124, dir, [])
+      assert Outcome.classify(run) == {:timeout, ["(timeout)"]}
+    end
+
+    test "K4: exit 137 with the measured time at the bound is a timeout (the KILL after the grace)",
+         %{tmp_dir: dir} do
+      tick([2_000, 32_000])
+
+      assert {:ok, %TestRun{status: :timeout, exit_code: 137} = run} = run_fake(137, dir, [])
+      assert Outcome.classify(run) == {:timeout, ["(timeout)"]}
+    end
+
+    test "K5: exit 137 one millisecond below the bound is a crash, killed by signal 9",
+         %{tmp_dir: dir} do
+      tick([2_000, 31_999])
+
+      assert {:ok, %TestRun{status: :crashed, exit_code: 137} = run} = run_fake(137, dir, [])
+      assert Outcome.reason(run) == "test run crashed: killed by signal 9 (exit 137)"
+    end
   end
 end

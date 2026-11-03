@@ -5,12 +5,19 @@ defmodule Mix.Tasks.Anchor.SabotageRunTest do
   # sync: capture_io(:stderr) captures the VM-wide standard_error device, which
   # another async test's output would interleave with.
   # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5473_sabotage_run.md
+  # Sabotage record (DND-5570): ../../sabotage_records/sabotage-20261103-dnd_5570_sabotage_hardening.md
+  # Sabotage record (DND-5617): ../../sabotage_records/sabotage-20261103-dnd_5617_sabotage_cfa_batch.md
   use ExUnit.Case, async: false
 
   import ExUnit.CaptureIO
   import Hammox
 
+  alias Anchor.ChangeSourceMock
+  alias Anchor.ConfigLoaderMock
+  alias Anchor.Domain.Sabotage.Config, as: SabotageConfig
+  alias Anchor.GitWorktreeMock
   alias Anchor.SourceMutationMock
+  alias Anchor.TestExecutionMock
   alias Mix.Tasks.Anchor.Sabotage
 
   setup :verify_on_exit!
@@ -84,5 +91,61 @@ defmodule Mix.Tasks.Anchor.SabotageRunTest do
       end)
 
     assert output =~ ".anchor/sabotage/in-flight.json cannot be read"
+  end
+
+  test "a host with no /proc: the run and the restore print the Fix: and exit 2" do
+    root = File.cwd!()
+    expect(SourceMutationMock, :take_lock, 2, fn ^root -> {:error, :no_proc} end)
+
+    for argv <- [["run", "--max", "all"], ["restore"]] do
+      output =
+        capture_io(fn ->
+          assert catch_exit(Sabotage.run(argv, @opts)) == {:shutdown, 2}
+        end)
+
+      assert output =~ "this host has no /proc"
+      assert output =~ "Fix: run mix anchor.sabotage on Linux (a dev machine or CI)"
+    end
+  end
+
+  test "DND-5617: changed functions that yield no mutant print a line each and the count, exit 0" do
+    root = File.cwd!()
+    source = "defmodule Calc do\n  def add(_a, _b) do\n    x = :ok\n    x\n  end\nend\n"
+
+    diff =
+      "diff --git a/lib/calc.ex b/lib/calc.ex\n--- a/lib/calc.ex\n+++ b/lib/calc.ex\n@@ -3 +3 @@\n-old\n+new\n"
+
+    expect(SourceMutationMock, :read_journal, fn ^root -> :none end)
+
+    expect(ConfigLoaderMock, :load_in, fn ^root ->
+      {:ok, %Anchor.Config{rules: [], sabotage: %SabotageConfig{}}}
+    end)
+
+    expect(GitWorktreeMock, :ignored?, fn ^root, _journal -> {:ok, true} end)
+    expect(ChangeSourceMock, :merge_base, fn ^root, "origin/main" -> {:ok, "abc"} end)
+    expect(ChangeSourceMock, :diff, fn ^root, "abc" -> {:ok, diff} end)
+    expect(ChangeSourceMock, :untracked, fn ^root -> {:ok, []} end)
+    expect(ChangeSourceMock, :read, 2, fn ^root, "lib/calc.ex" -> {:ok, source} end)
+    expect(ChangeSourceMock, :show, fn ^root, "abc", "lib/calc.ex" -> {:ok, source} end)
+    expect(GitWorktreeMock, :dirty_paths, fn ^root, ["lib/calc.ex"] -> {:ok, []} end)
+    expect(SourceMutationMock, :existing, fn [] -> [] end)
+    expect(SourceMutationMock, :save_run, fn _path, _bytes -> :ok end)
+
+    opts = [
+      config_loader: ConfigLoaderMock,
+      change_source: ChangeSourceMock,
+      source_mutation: SourceMutationMock,
+      git_worktree: GitWorktreeMock,
+      test_execution: TestExecutionMock
+    ]
+
+    output = capture_io(fn -> assert Sabotage.run(["run"], opts) == :ok end)
+
+    assert output =~
+             "sabotage: no mutant from Calc.add/2 (lib/calc.ex): skipped: delete_statement: " <>
+               "orphans variable `x` bound at line 3 and used at line 4\n"
+
+    assert output =~
+             "sabotage: no mutants generated from 1 changed functions: nothing was measured"
   end
 end

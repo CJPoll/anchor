@@ -8,7 +8,11 @@ defmodule Anchor.Domain.Graph.FunctionNode do
       `MACRO-name/arity+1`.
     * `:clauses` — the expanded `elixir_v1` clauses, `{meta, args, guards, body}`.
     * `:core` — the function's Core Erlang `c_fun`, or `nil` when the Core
-      module holds no definition for it.
+      module holds no definition for it: a `defmacrop` (expanded where it is
+      used) or a `defp` nothing calls, which the compiler emits no code for,
+      or (never expected) a public one, which the builder reports in
+      `unreadable`. `Anchor.Domain.Graph.functions_without_core/1` counts
+      them (DND-5549).
   """
 
   @enforce_keys [:module, :name, :arity, :kind, :line]
