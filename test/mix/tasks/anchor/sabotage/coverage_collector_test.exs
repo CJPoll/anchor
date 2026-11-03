@@ -1,7 +1,7 @@
 defmodule Anchor.Sabotage.CoverageCollectorTest do
   # DND-5474: the collector turns trace messages into CoverageMap events; the
   # messages are sent to it directly (no tracing), with explicit stamps.
-  # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5474_coverage_map.md
+  # Sabotage record: ../../../../sabotage_records/sabotage-20261103-dnd_5474_coverage_map.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Sabotage.CoverageMap
