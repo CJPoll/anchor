@@ -232,6 +232,38 @@ defmodule Anchor.Domain.Failures do
   end
 
   @doc """
+  COULD NOT MEASURE for a graph run whose every module has a source outside
+  the project root (DND-5588): each was left out, so no project module was
+  read.
+  """
+  @spec graph_all_outside_root(pos_integer(), String.t(), [String.t()]) :: Violation.t()
+  def graph_all_outside_root(count, root, ebins) do
+    graph_issue(
+      List.first(ebins) || ".",
+      nil,
+      "COULD NOT MEASURE: read #{count} modules from #{Enum.join(ebins, ", ")}, and every one " <>
+        "has a source file outside the project root #{root}, so none was judged. Fix: run " <>
+        "mix anchor.graph from the project root (the directory holding mix.exs)."
+    )
+  end
+
+  @doc """
+  The note for a module whose source file is outside the project root
+  (DND-5588): it is left out of the graph, so no rule judged it. Report-only:
+  the runner never classifies code it cannot place under the root.
+  """
+  @spec graph_module_outside_root(module(), String.t(), String.t()) :: Violation.t()
+  def graph_module_outside_root(module, file, root) do
+    graph_issue(
+      file,
+      nil,
+      "#{inspect(module)} was compiled from #{file}, outside the project root #{root}, so it " <>
+        "is left out of the graph and no rule judged it. Fix: move its source under #{root}, " <>
+        "or run mix anchor.graph from the root that holds it."
+    )
+  end
+
+  @doc """
   The issue for a run that read zero modules from `ebins` (the ebin
   directories it was given): COULD NOT MEASURE, exit 3.
   """
@@ -459,7 +491,8 @@ defmodule Anchor.Domain.Failures do
       dir,
       nil,
       "Anchor could not write the graph artifact under #{dir} (#{capped(inspect(reason))}); " <>
-        "the verdict does not read it. Fix: make #{dir} writable, under _build/<env>/anchor."
+        "the verdict does not read it. Fix: make #{dir} writable (#{dir} is Mix's build path " <>
+        "joined with anchor)."
     )
   end
 

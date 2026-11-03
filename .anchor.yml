@@ -49,6 +49,7 @@ rules:
       - Anchor.Adapters.ConfigFile
       - Anchor.Adapters.BeamReader
       - Anchor.Adapters.GitChangeSource
+      - Anchor.Adapters.GitEnv
       - Anchor.Adapters.GraphArtifact
       - Anchor.Adapters.SourceReader
       - Anchor.Managers.Graph

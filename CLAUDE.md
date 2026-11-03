@@ -43,7 +43,7 @@ never an adapter.
 |---|---|
 | Framework | `Anchor.Check.*` (Credo checks, `Anchor.Check.Base`, `Anchor.Check.Source`), `Mix.Tasks.Anchor.*` (`lib/mix/tasks/`; `Mix.Tasks.Anchor.Sabotage`) |
 | Managers | `Anchor.Managers.Lint`, `Anchor.Managers.Sabotage` |
-| Side Effects | ports: `Anchor.Adapters.ConfigLoader`, `ChangeSource`, `BeamSource`; adapters: `ConfigFile`, `GitChangeSource`, `BeamReader` (`lib/anchor/adapters/`) |
+| Side Effects | ports: `Anchor.Adapters.ConfigLoader`, `ChangeSource`, `BeamSource`; adapters: `ConfigFile`, `GitChangeSource`, `BeamReader` (`lib/anchor/adapters/`); `GitEnv`, the environment the git adapters run git with (DND-5581) |
 | Domain | everything under `lib/anchor/domain/`, including `Anchor.Domain.Sabotage.*` (`Mutator`, `Operators`, `DiffHunks`, `FunctionSpans`, `Scope`) and `Anchor.Domain.Graph.*` |
 
 ### Key Architectural Decisions
@@ -193,12 +193,16 @@ config, beams, sources and the artifact only through adapters
 with Hammox, BeamSource with plain Mox because Hammox cannot match its
 `:cerl` record type (see `test/test_helper.exs`), and pass them as options,
 as `mix anchor.sabotage` does). `SourceSource` returns each file's
-`SourceFacts`, never its text. It builds
+`SourceFacts`, never its text. A module whose source path is absolute and
+outside the root is left out, counted and named in a `[report]` note; one
+inside the root is made relative (`Anchor.Domain.Graph.ProjectFile`,
+DND-5588). It builds
 the graph fresh, builds `Anchor.Domain.Model` (classification of every
 module), checks bucket and rule floors (`min_modules`), runs each graph rule
 under a `try`/`rescue`/`catch` guard, and returns
 `Anchor.Domain.GraphReport` (exit 0/1/3). It never reads the artifact
-(`_build/<env>/anchor/graph.etf`) for a verdict.
+(`<build_path>/anchor/graph.etf`, Mix's build path as the task gathers it,
+DND-5585) for a verdict.
 
 A graph rule implements `Anchor.Domain.GraphRule` (`rule_type/0`,
 `check/2` over the model) and is listed in `Anchor.Domain.GraphRules.all/0`;
