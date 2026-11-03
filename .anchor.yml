@@ -147,8 +147,11 @@ rules:
   # (`architecture: interfaces` below: here every bucket but framework), or a
   # module listed in interfaces.exports. Anchor's replacement for Boundary's
   # exports. The baseline holds what it found when it landed: Lint's calls
-  # into the Anchor.Check modules (DND-1288), the top-level Anchor module
-  # (no context at depth 2) and Mutator's apply/3. It only shrinks.
+  # into the Anchor.Check modules (DND-1288), GraphRules.by_type/1's calls of
+  # each check's rule_type/0 (also held in layering.txt), the top-level Anchor
+  # module (no context at depth 2), Mutator.generate/4's dynamic call,
+  # Sabotage.Coverage's suite.run/1 reaching the Mix tasks (DND-5633), and
+  # the sabotage task starting CoverageCollector. It only shrinks.
   - type: interface
     id: interface
     paths: ["lib/**/*.ex"]

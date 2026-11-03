@@ -30,8 +30,8 @@ defmodule Mix.Tasks.Anchor.Explain do
   functions, its app) are listed as unknown until compiled. If the project
   does not compile, it still answers from the config and the paths. It
   writes no file of its own: the compile it runs writes `_build` as `mix
-  compile` does, and the graph artifact is `mix anchor.graph`'s. It loads no
-  project module.
+  compile` does, and the graph artifact is `mix anchor.graph`'s. It calls no
+  project module (the compile it runs loads them, as `mix compile` does).
 
   `--format json` prints `{subject, module, path, exists, notes,
   classification, may_call, must_not_call, rules, findings, unknown}` for

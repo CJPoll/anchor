@@ -11,6 +11,11 @@ first pass found MM-H (the bucket comparison dropped) green, because the real
 map has no mismatch for it to find; a direct test of `problem/4` with a wrong
 bucket and a missing row was added, and this table is the re-run.
 
+The review floor found the test green on an empty module list (a `_build`
+compiled at another path gives no `lib/` source). MM-I, run before the fix,
+survived (`4 tests, 0 failures`); the test now requires the modules' sources to
+be exactly the `.ex` files under `lib/`, and the MM-I row is from the run after.
+
 | # | Mutation | Tests run | Result | Failing tests |
 |---|---|---|---|---|
 | MM-A | a module's row is dropped from the map (Managers.Explain) (`adrs/001-five-bucket-architecture.md`) | `adr_module_map_test.exs` | `4 tests, 1 failure` (red) | every lib module has a row in ADR 001's module map, under the bucket .anchor.yml gives it |
@@ -21,6 +26,7 @@ bucket and a missing row was added, and this table is the re-run.
 | MM-F | map_rows/1: the e.g. aside is read as rows (`test/anchor/adr_module_map_test.exs`) | `adr_module_map_test.exs` | `4 tests, 1 failure` (red) | map_rows/1 (the reader this test relies on) reads the module column's code spans and the bucket, from every table in the section |
 | MM-G | map_rows/1: tables after the section are read too (`test/anchor/adr_module_map_test.exs`) | `adr_module_map_test.exs` | `4 tests, 1 failure` (red) | map_rows/1 (the reader this test relies on) reads the module column's code spans and the bucket, from every table in the section |
 | MM-H | the test ignores a bucket mismatch (`test/anchor/adr_module_map_test.exs`) | `adr_module_map_test.exs` | `4 tests, 1 failure` (red) | problem/4 a row whose bucket disagrees with .anchor.yml, and a module with no row, are each named |
+| MM-I | lib_modules/1 finds no module (a _build compiled at another path) (`test/anchor/adr_module_map_test.exs`) | `adr_module_map_test.exs` | `4 tests, 1 failure` (red) | every lib module has a row in ADR 001's module map, under the bucket .anchor.yml gives it |
 
 ## MM-A — a module's row is dropped from the map (Managers.Explain)
 
@@ -178,4 +184,19 @@ Run summary: `4 tests, 1 failure`
        test/anchor/adr_module_map_test.exs:90: (test)
 
 ...
+```
+
+## MM-I — lib_modules/1 finds no module (a _build compiled at another path)
+
+Run summary: `4 tests, 1 failure`
+
+```text
+  1) test every lib module has a row in ADR 001's module map, under the bucket .anchor.yml gives it (Anchor.AdrModuleMapTest)
+     test/anchor/adr_module_map_test.exs:104
+     the compiled :anchor modules' sources are not exactly the .ex files under lib/ (read 0 sources, 174 files; missing: ["lib/anchor/check/no_discarding_arrow_in_with.ex", "lib/anchor/domain/effect_primitives.ex", "lib/anchor/domain/checks/no_discarding_arrow_in_with.ex", "lib/anchor/managers/graph/request.ex", "lib/anchor/adapters/git_change_source.ex"]). Fix: run the suite from the project root on a _build compiled there (mix clean, then mix test).
+     code: assert read == files,
+     stacktrace:
+       test/anchor/adr_module_map_test.exs:115: (test)
+
+.
 ```

@@ -798,9 +798,10 @@ A call from one context into another lands only on that context's interface:
 a module of an `interfaces.buckets` bucket, or one listed in
 `interfaces.exports`. This is Anchor's replacement for Boundary's exports and
 deps: Anchor neither reads nor requires Boundary, and a repo may run both.
-Every module is classified, so no module is left outside a boundary, and
-widening an interface (`exports`, `interfaces.buckets`) is a config change a
-baseline's GREW check sees.
+Every module is classified, so no module is left outside a boundary.
+Widening an interface (`exports`, `interfaces.buckets`) removes findings
+rather than adding baseline entries, so GREW does not see it: it is an
+ordinary config change, and review is its gate.
 
 Calls are resolved as `layering` resolves them, apps are not a bypass (a call
 from another app of an umbrella is judged the same), and a call within one
@@ -953,7 +954,8 @@ classification never hides an ambiguity the compiled module would have. If the
 project does not compile, it still answers from the config and the paths and
 says `compile failed; beam facts unknown`. It writes no file of its own (the
 compile it runs writes `_build` as `mix compile` does; the graph artifact is
-`mix anchor.graph`'s) and loads no project module.
+`mix anchor.graph`'s) and calls no project module (the compile it runs
+loads them, as `mix compile` does).
 
 ```text
 anchor.explain: lib/my_app/orders/manager.ex

@@ -105,9 +105,21 @@ defmodule Anchor.AdrModuleMapTest do
     rows = map_rows(File.read!(@adr))
     {:ok, config} = ConfigFile.load()
     root = File.cwd!()
+    modules = lib_modules(root)
+
+    # A miss must be loud: a _build compiled at another path would give no
+    # lib/ source at all, and an empty list has no problems.
+    read = modules |> Enum.map(&elem(&1, 1)) |> MapSet.new()
+    files = "lib/**/*.ex" |> Path.wildcard() |> MapSet.new()
+
+    assert read == files,
+           "the compiled :anchor modules' sources are not exactly the .ex files under lib/ " <>
+             "(read #{MapSet.size(read)} sources, #{MapSet.size(files)} files; missing: " <>
+             "#{inspect(MapSet.difference(files, read) |> Enum.take(5))}). Fix: run the suite " <>
+             "from the project root on a _build compiled there (mix clean, then mix test)."
 
     problems =
-      for {module, source} <- lib_modules(root),
+      for {module, source} <- modules,
           problem = problem(module, source, rows, config.architecture),
           do: problem
 

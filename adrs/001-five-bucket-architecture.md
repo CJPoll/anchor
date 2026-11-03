@@ -30,6 +30,13 @@ adapters (`BaselineStore`, `GitBase`, `BaselineFile`, `GitShow`) and the
 baseline Domain modules. Standard unchanged — see "Amendment (2026-11-03,
 DND-5441)" under "How this maps to Anchor".
 
+Amended 2026-11-03 (DND-5620): the mapping table lists the graph engine's
+modules (`mix anchor.graph`, `mix anchor.explain`, and the Managers, ports,
+adapters and Domain modules behind them), and `test/anchor/adr_module_map_test.exs`
+keeps the map complete: a `lib/` module with no row, or a row whose bucket is
+not the one `.anchor.yml` gives it, fails the suite. Standard unchanged — see
+"Amendment (2026-11-03, DND-5620)" under "How this maps to Anchor".
+
 ## Context
 
 Anchor is a small library, but the class of problems the five-bucket
@@ -240,7 +247,7 @@ and are dropped rather than adapted:
 | `Anchor.Adapters.ChangeSource` | Side Effect (port) | The behaviour `Anchor.Managers.Sabotage` depends on: merge-base, diff, untracked files, show, read. Tests double it. |
 | `Anchor.Adapters.GitChangeSource` | Side Effect | The real `ChangeSource`: runs read-only `git` with `System.cmd/3` (argv, never a shell) and returns diff text and paths. |
 | `Anchor.Adapters.ConfigLoader` | Side Effect (port) | The behaviour `Anchor.Managers.Lint` depends on to load configuration; `Anchor.Adapters.ConfigFile` is its real implementation. |
-| `Anchor.Adapters.BeamSource` | Side Effect (port) | The behaviour the planned graph runner (DND-5440) depends on to read a project's compiled beams. |
+| `Anchor.Adapters.BeamSource` | Side Effect (port) | The behaviour the graph runner (`Anchor.Managers.Graph`, DND-5440) depends on to read a project's compiled beams. |
 | `Anchor.Adapters.BeamReader` | Side Effect | The real `BeamSource`: reads each `.beam` with `:beam_lib` and returns `Anchor.Domain.Graph.Beam` records or decode errors. It never loads or calls a project module. |
 | `Anchor.Adapters.BaselineStore`, `Anchor.Adapters.GitBase` | Side Effect (port) | The behaviours `Anchor.Managers.Graph` depends on to read and create a rule's baseline file and to read it at a `--base` ref (DND-5441). Tests double them. |
 | `Anchor.Adapters.BaselineFile`, `Anchor.Adapters.GitShow` | Side Effect | The real ports: the file read and the `:exclusive` create under the project root; read-only `git` with `System.cmd/3` (argv, never a shell, the ref checked by Domain first). Both return the baseline's entries, parsed by `Anchor.Domain.Baseline.parse/1`, never its bytes. |
