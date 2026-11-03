@@ -23,9 +23,20 @@ defmodule Anchor.Adapters.BaselineFile do
   :exists}`, so the file appears whole or not at all. A rename would replace
   an existing file, which `--write-baseline` must never do.
 
-  Not covered: a directory on the path swapped for a symlink between the
-  check and the write. Erlang's file API has no `openat`, so the check and the
-  write are separate path lookups; the window is the length of one call.
+  A directory on the path swapped for a symlink between the check and the
+  write (DND-5647) cannot be prevented: Erlang's file API has no `openat`, so
+  the check and the write are separate path lookups. It is detected: after
+  the link, the real path of the written file (every symlink on it resolved)
+  must be under the real path of `root`. One that is not is removed, at its
+  real path, and is `{:error, {:escaped_root, real_path}}`, which the run
+  reports with a `Fix:` line. Winning that race needs a process that already
+  writes the repository's directories, so it gains nothing that access did
+  not give; the committed symlink of DND-5628 needs no such process, and the
+  lstat walk refuses it before any write.
+
+  `create/4` takes `before_write:`, a zero-arity function run between the
+  checks and the write: the seam a test swaps a directory in, at a fixed
+  point (no timing). `create/3` runs none.
   """
 
   @behaviour Anchor.Adapters.BaselineStore
@@ -41,11 +52,59 @@ defmodule Anchor.Adapters.BaselineFile do
   end
 
   @impl Anchor.Adapters.BaselineStore
-  def create(root, path, contents) do
+  def create(root, path, contents), do: create(root, path, contents, [])
+
+  @doc "`create/3`, with `before_write:` run between the checks and the write (DND-5647)."
+  @spec create(String.t(), String.t(), iodata(), keyword()) :: :ok | {:error, term()}
+  def create(root, path, contents, opts) do
+    before_write = Keyword.get(opts, :before_write, fn -> :ok end)
+
     with {:ok, full} <- confined(root, path),
          :ok <- File.mkdir_p(Path.dirname(full)),
-         {:ok, full} <- confined(root, path) do
-      write_new(full, contents)
+         {:ok, full} <- confined(root, path),
+         _ran = before_write.(),
+         :ok <- write_new(full, contents) do
+      within_root(root, full)
+    end
+  end
+
+  # DND-5647: the file just linked must really be under the root. One that
+  # is not is removed where it really is.
+  defp within_root(root, full) do
+    with {:ok, real_root} <- real_path(root),
+         {:ok, real} <- real_path(full) do
+      if String.starts_with?(real, real_root <> "/"),
+        do: :ok,
+        else: escaped(real)
+    end
+  end
+
+  defp escaped(real) do
+    _ = File.rm(real)
+    {:error, {:escaped_root, real}}
+  end
+
+  # The absolute path with every symlink on it resolved, `{:error, :eloop}`
+  # past 40 links (the kernel's own bound).
+  defp real_path(path), do: resolve(Path.split(Path.expand(path)), [], 40)
+
+  defp resolve([], acc, _hops), do: {:ok, acc |> Enum.reverse() |> Path.join()}
+  defp resolve(_parts, _acc, 0), do: {:error, :eloop}
+  defp resolve(["/" | rest], [], hops), do: resolve(rest, ["/"], hops)
+  defp resolve(["." | rest], acc, hops), do: resolve(rest, acc, hops)
+  defp resolve([".." | rest], ["/"], hops), do: resolve(rest, ["/"], hops)
+  defp resolve([".." | rest], [_last | acc], hops), do: resolve(rest, acc, hops)
+
+  defp resolve([part | rest], acc, hops) do
+    current = [part | acc] |> Enum.reverse() |> Path.join()
+
+    case File.read_link(current) do
+      {:ok, target} ->
+        base = if Path.type(target) == :absolute, do: [], else: acc
+        resolve(Path.split(target) ++ rest, base, hops - 1)
+
+      {:error, _not_a_link} ->
+        resolve(rest, [part | acc], hops)
     end
   end
 

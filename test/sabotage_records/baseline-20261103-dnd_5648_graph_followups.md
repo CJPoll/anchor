@@ -196,3 +196,370 @@ Run summary: `41 tests, 1 failure`
 ..........
 ```
 
+## DND-5647: a write that escaped the root after the check is caught and removed
+
+**Code under test:** `Anchor.Adapters.BaselineFile.create/4` (the `before_write:` seam, the post-write real-path check, the removal) and `Anchor.Domain.Failures.baseline_not_written/2` for `{:escaped_root, real}`.
+
+**Suite run:** one `test-slot` ran `sab.py` per mutation (wait 1.1 s, write, `mix test --timeout 2000 --max-cases 2 <tests>`, restore, wait 1.1 s). The swap is a function the test passes as `before_write:`, run at a fixed point between the checks and the write: no timing, no race. With every source restored: `31 tests, 0 failures`.
+
+| ID | Mutation | Tests | Result | Failing tests |
+|---|---|---|---|---|
+| SW-R | regression: the unfixed adapter, with the new tests (`lib/anchor/adapters/baseline_file.ex`) | `baseline_file_test.exs` | `14 tests, 3 failures` (red) | the three swap tests and the hook's positive control: create/4 did not exist, so the red is on the missing seam, not the escape itself; SW-A puts the escape back inside the fixed code and the tests catch the file written outside |
+| SW-A | the post-write check passes everything (`lib/anchor/adapters/baseline_file.ex`) | `baseline_file_test.exs`, `failures_graph_test.exs` | `31 tests, 3 failures` (red) | a directory swapped for a symlink after the check (DND-5647) a swap of a directory higher on the path is caught too; a directory swapped for a symlink after the check (DND-5647) a sibling whose name starts with the root's is outside it; a directory swapped for a symlink after the check (DND-5647) the write is refused, naming where it went, and nothing remains outside |
+| SW-B | what was written outside is left there (`lib/anchor/adapters/baseline_file.ex`) | `baseline_file_test.exs`, `failures_graph_test.exs` | `31 tests, 3 failures` (red) | a directory swapped for a symlink after the check (DND-5647) a swap of a directory higher on the path is caught too; a directory swapped for a symlink after the check (DND-5647) the write is refused, naming where it went, and nothing remains outside; a directory swapped for a symlink after the check (DND-5647) a sibling whose name starts with the root's is outside it |
+| SW-C | the real path follows no symlink (`lib/anchor/adapters/baseline_file.ex`) | `baseline_file_test.exs`, `failures_graph_test.exs` | `31 tests, 3 failures` (red) | a directory swapped for a symlink after the check (DND-5647) a swap of a directory higher on the path is caught too; a directory swapped for a symlink after the check (DND-5647) a sibling whose name starts with the root's is outside it; a directory swapped for a symlink after the check (DND-5647) the write is refused, naming where it went, and nothing remains outside |
+| SW-D | the root is not resolved to its real path (`lib/anchor/adapters/baseline_file.ex`) | `baseline_file_test.exs`, `failures_graph_test.exs` | `31 tests, 1 failure` (red) | a directory swapped for a symlink after the check (DND-5647) a root reached through a symlink is its real path, not an escape |
+| SW-E | the before_write seam is never run (`lib/anchor/adapters/baseline_file.ex`) | `baseline_file_test.exs`, `failures_graph_test.exs` | `31 tests, 4 failures` (red) | a directory swapped for a symlink after the check (DND-5647) a swap of a directory higher on the path is caught too; a directory swapped for a symlink after the check (DND-5647) a sibling whose name starts with the root's is outside it; a directory swapped for a symlink after the check (DND-5647) the write is refused, naming where it went, and nothing remains outside; a directory swapped for a symlink after the check (DND-5647) positive control: with no swap the hook runs and the file is written |
+| SW-F | a sibling sharing the root's prefix reads as inside it (`lib/anchor/adapters/baseline_file.ex`) | `baseline_file_test.exs`, `failures_graph_test.exs` | `31 tests, 1 failure` (red) | a directory swapped for a symlink after the check (DND-5647) a sibling whose name starts with the root's is outside it |
+| SW-G | the escape message drops where the file landed (`lib/anchor/domain/failures.ex`) | `baseline_file_test.exs`, `failures_graph_test.exs` | `31 tests, 1 failure` (red) | every graph message is fail-closed, on its file, with its subject and a Fix: line |
+
+### SW-R: regression: the unfixed adapter, with the new tests
+
+Run summary: `14 tests, 3 failures`
+
+```text
+
+
+
+
+
+
+  1) test a directory swapped for a symlink after the check (DND-5647) the write is refused, naming where it went, and nothing remains outside (Anchor.Adapters.BaselineFileTest)
+     test/anchor/adapters/baseline_file_test.exs:150
+     ** (UndefinedFunctionError) function Anchor.Adapters.BaselineFile.create/4 is undefined or private. Did you mean:
+
+         * create/3
+
+     code: BaselineFile.create(root, ".anchor/baselines/r.txt", "r|A|x\n",
+     stacktrace:
+       (anchor 0.1.0) Anchor.Adapters.BaselineFile.create("/home/cjpoll/.local/worktrees/anchor/dnd-5648-graph-followups/tmp/Anchor.Adapters.BaselineFileTest/test-a-directory-swapped-for-a-symlink-after-the-check-(DND-5647)-the-write-is-refused,-naming-where-it-went,-and-nothing-remains-outside-a9270d58/root", ".anchor/baselines/r.txt", "r|A|x\n", [before_write: #Function<0.99144207/0 in Anchor.Adapters.BaselineFileTest.swap/2>])
+       test/anchor/adapters/baseline_file_test.exs:155: (test)
+
+
+
+
+
+
+
+  2) test a directory swapped for a symlink after the check (DND-5647) a swap of a directory higher on the path is caught too (Anchor.Adapters.BaselineFileTest)
+     test/anchor/adapters/baseline_file_test.exs:163
+     ** (UndefinedFunctionError) function Anchor.Adapters.BaselineFile.create/4 is undefined or private. Did you mean:
+
+         * create/3
+
+     code: BaselineFile.create(root, ".anchor/baselines/r.txt", "r|A|x\n",
+     stacktrace:
+       (anchor 0.1.0) Anchor.Adapters.BaselineFile.create("/home/cjpoll/.local/worktrees/anchor/dnd-5648-graph-followups/tmp/Anchor.Adapters.BaselineFileTest/test-a-directory-swapped-for-a-symlink-after-the-check-(DND-5647)-a-swap-of-a-directory-higher-on-the-path-is-caught-too-bbeb7b04/root", ".anchor/baselines/r.txt", "r|A|x\n", [before_write: #Function<1.99144207/0 in Anchor.Adapters.BaselineFileTest."test a directory swapped for a symlink after the check (DND-5647) a swap of a directory higher on the path is caught too"/1>])
+       test/anchor/adapters/baseline_file_test.exs:175: (test)
+
+
+
+
+
+
+
+  3) test a directory swapped for a symlink after the check (DND-5647) positive control: with no swap the hook runs and the file is written (Anchor.Adapters.BaselineFileTest)
+     test/anchor/adapters/baseline_file_test.exs:182
+     ** (UndefinedFunctionError) function Anchor.Adapters.BaselineFile.create/4 is undefined or private. Did you mean:
+
+         * create/3
+
+     code: BaselineFile.create(root, ".anchor/baselines/r.txt", "r|A|x\n",
+     stacktrace:
+       (anchor 0.1.0) Anchor.Adapters.BaselineFile.create("/home/cjpoll/.local/worktrees/anchor/dnd-5648-graph-followups/tmp/Anchor.Adapters.BaselineFileTest/test-a-directory-swapped-for-a-symlink-after-the-check-(DND-5647)-positive-control--with-no-swap-the-hook-runs-and-the-file-is-written-66fe5c6b/root", ".anchor/baselines/r.txt", "r|A|x\n", [before_write: #Function<2.99144207/0 in Anchor.Adapters.BaselineFileTest."test a directory swapped for a symlink after the check (DND-5647) positive control: with no swap the hook runs and the file is written"/1>])
+       test/anchor/adapters/baseline_file_test.exs:189: (test)
+
+.........
+```
+
+### SW-A: the post-write check passes everything
+
+Run summary: `31 tests, 3 failures`
+
+```text
+
+
+
+
+
+
+  1) test a directory swapped for a symlink after the check (DND-5647) a swap of a directory higher on the path is caught too (Anchor.Adapters.BaselineFileTest)
+     test/anchor/adapters/baseline_file_test.exs:164
+     match (=) failed
+     code:  assert {:error, {:escaped_root, _real}} =
+              BaselineFile.create(root, ".anchor/baselines/r.txt", "r|A|x\n", before_write: swap_anchor)
+     left:  {:error, {:escaped_root, _real}}
+     right: :ok
+     stacktrace:
+       test/anchor/adapters/baseline_file_test.exs:175: (test)
+
+..
+
+
+
+  2) test a directory swapped for a symlink after the check (DND-5647) a sibling whose name starts with the root's is outside it (Anchor.Adapters.BaselineFileTest)
+     test/anchor/adapters/baseline_file_test.exs:183
+     match (=) failed
+     code:  assert {:error, {:escaped_root, _real}} =
+              BaselineFile.create(root, ".anchor/baselines/r.txt", "r|A|x\n",
+                before_write: swap(root, sibling)
+              )
+     left:  {:error, {:escaped_root, _real}}
+     right: :ok
+     stacktrace:
+       test/anchor/adapters/baseline_file_test.exs:190: (test)
+
+.........
+
+
+
+  3) test a directory swapped for a symlink after the check (DND-5647) the write is refused, naming where it went, and nothing remains outside (Anchor.Adapters.BaselineFileTest)
+     test/anchor/adapters/baseline_file_test.exs:151
+     match (=) failed
+     code:  assert {:error, {:escaped_root, real}} =
+              BaselineFile.create(root, ".anchor/baselines/r.txt", "r|A|x\n",
+                before_write: swap(root, outside)
+              )
+     left:  {:error, {:escaped_root, real}}
+     right: :ok
+     stacktrace:
+       test/anchor/adapters/baseline_file_test.exs:155: (test)
+
+.................
+```
+
+### SW-B: what was written outside is left there
+
+Run summary: `31 tests, 3 failures`
+
+```text
+
+
+
+
+
+
+  1) test a directory swapped for a symlink after the check (DND-5647) a swap of a directory higher on the path is caught too (Anchor.Adapters.BaselineFileTest)
+     test/anchor/adapters/baseline_file_test.exs:164
+     Assertion with == failed
+     code:  assert File.ls!(Path.join(outside, "baselines")) == []
+     left:  ["r.txt"]
+     right: []
+     stacktrace:
+       test/anchor/adapters/baseline_file_test.exs:180: (test)
+
+..........
+
+
+
+  2) test a directory swapped for a symlink after the check (DND-5647) the write is refused, naming where it went, and nothing remains outside (Anchor.Adapters.BaselineFileTest)
+     test/anchor/adapters/baseline_file_test.exs:151
+     Assertion with == failed
+     code:  assert File.ls!(outside) == []
+     left:  ["r.txt"]
+     right: []
+     stacktrace:
+       test/anchor/adapters/baseline_file_test.exs:161: (test)
+
+.
+
+
+
+  3) test a directory swapped for a symlink after the check (DND-5647) a sibling whose name starts with the root's is outside it (Anchor.Adapters.BaselineFileTest)
+     test/anchor/adapters/baseline_file_test.exs:183
+     Assertion with == failed
+     code:  assert File.ls!(sibling) == []
+     left:  ["r.txt"]
+     right: []
+     stacktrace:
+       test/anchor/adapters/baseline_file_test.exs:195: (test)
+
+.................
+```
+
+### SW-C: the real path follows no symlink
+
+Run summary: `31 tests, 3 failures`
+
+```text
+
+
+  1) test a directory swapped for a symlink after the check (DND-5647) a swap of a directory higher on the path is caught too (Anchor.Adapters.BaselineFileTest)
+     test/anchor/adapters/baseline_file_test.exs:164
+     match (=) failed
+     code:  assert {:error, {:escaped_root, _real}} =
+              BaselineFile.create(root, ".anchor/baselines/r.txt", "r|A|x\n", before_write: swap_anchor)
+     left:  {:error, {:escaped_root, _real}}
+     right: :ok
+     stacktrace:
+       test/anchor/adapters/baseline_file_test.exs:175: (test)
+
+..
+
+
+
+  2) test a directory swapped for a symlink after the check (DND-5647) a sibling whose name starts with the root's is outside it (Anchor.Adapters.BaselineFileTest)
+     test/anchor/adapters/baseline_file_test.exs:183
+     match (=) failed
+     code:  assert {:error, {:escaped_root, _real}} =
+              BaselineFile.create(root, ".anchor/baselines/r.txt", "r|A|x\n",
+                before_write: swap(root, sibling)
+              )
+     left:  {:error, {:escaped_root, _real}}
+     right: :ok
+     stacktrace:
+       test/anchor/adapters/baseline_file_test.exs:190: (test)
+
+...
+
+
+
+  3) test a directory swapped for a symlink after the check (DND-5647) the write is refused, naming where it went, and nothing remains outside (Anchor.Adapters.BaselineFileTest)
+     test/anchor/adapters/baseline_file_test.exs:151
+     match (=) failed
+     code:  assert {:error, {:escaped_root, real}} =
+              BaselineFile.create(root, ".anchor/baselines/r.txt", "r|A|x\n",
+                before_write: swap(root, outside)
+              )
+     left:  {:error, {:escaped_root, real}}
+     right: :ok
+     stacktrace:
+       test/anchor/adapters/baseline_file_test.exs:155: (test)
+
+.....................
+```
+
+### SW-D: the root is not resolved to its real path
+
+Run summary: `31 tests, 1 failure`
+
+```text
+
+
+  1) test a directory swapped for a symlink after the check (DND-5647) a root reached through a symlink is its real path, not an escape (Anchor.Adapters.BaselineFileTest)
+     test/anchor/adapters/baseline_file_test.exs:214
+     match (=) failed
+     code:  assert :ok = BaselineFile.create(alias_root, ".anchor/baselines/r.txt", "r|A|x\n")
+     left:  :ok
+     right: {:error,
+             {:escaped_root,
+              "/home/cjpoll/.local/worktrees/anchor/dnd-5648-graph-followups/tmp/Anchor.Adapters.BaselineFileTest/test-a-directory-swapped-for-a-symlink-after-the-check-(DND-5647)-a-root-reached-through-a-symlink-is-its-real-path,-not-an-escape-64c266c4/root/.anchor/baselines/r.txt"}}
+     stacktrace:
+       test/anchor/adapters/baseline_file_test.exs:221: (test)
+
+............................
+```
+
+### SW-E: the before_write seam is never run
+
+Run summary: `31 tests, 4 failures`
+
+```text
+
+
+  1) test a directory swapped for a symlink after the check (DND-5647) a swap of a directory higher on the path is caught too (Anchor.Adapters.BaselineFileTest)
+     test/anchor/adapters/baseline_file_test.exs:164
+     match (=) failed
+     code:  assert {:error, {:escaped_root, _real}} =
+              BaselineFile.create(root, ".anchor/baselines/r.txt", "r|A|x\n", before_write: swap_anchor)
+     left:  {:error, {:escaped_root, _real}}
+     right: :ok
+     stacktrace:
+       test/anchor/adapters/baseline_file_test.exs:175: (test)
+
+
+
+
+
+
+
+  2) test a directory swapped for a symlink after the check (DND-5647) a sibling whose name starts with the root's is outside it (Anchor.Adapters.BaselineFileTest)
+     test/anchor/adapters/baseline_file_test.exs:183
+     match (=) failed
+     code:  assert {:error, {:escaped_root, _real}} =
+              BaselineFile.create(root, ".anchor/baselines/r.txt", "r|A|x\n",
+                before_write: swap(root, sibling)
+              )
+     left:  {:error, {:escaped_root, _real}}
+     right: :ok
+     stacktrace:
+       test/anchor/adapters/baseline_file_test.exs:190: (test)
+
+.......
+
+
+
+  3) test a directory swapped for a symlink after the check (DND-5647) the write is refused, naming where it went, and nothing remains outside (Anchor.Adapters.BaselineFileTest)
+     test/anchor/adapters/baseline_file_test.exs:151
+     match (=) failed
+     code:  assert {:error, {:escaped_root, real}} =
+              BaselineFile.create(root, ".anchor/baselines/r.txt", "r|A|x\n",
+                before_write: swap(root, outside)
+              )
+     left:  {:error, {:escaped_root, real}}
+     right: :ok
+     stacktrace:
+       test/anchor/adapters/baseline_file_test.exs:155: (test)
+
+.
+
+
+
+  4) test a directory swapped for a symlink after the check (DND-5647) positive control: with no swap the hook runs and the file is written (Anchor.Adapters.BaselineFileTest)
+     test/anchor/adapters/baseline_file_test.exs:198
+     Assertion failed, no matching message after 0ms
+     The process mailbox is empty.
+     code: assert_received :hook_ran
+     stacktrace:
+       test/anchor/adapters/baseline_file_test.exs:209: (test)
+
+................
+```
+
+### SW-F: a sibling sharing the root's prefix reads as inside it
+
+Run summary: `31 tests, 1 failure`
+
+```text
+
+
+
+
+
+
+  1) test a directory swapped for a symlink after the check (DND-5647) a sibling whose name starts with the root's is outside it (Anchor.Adapters.BaselineFileTest)
+     test/anchor/adapters/baseline_file_test.exs:183
+     match (=) failed
+     code:  assert {:error, {:escaped_root, _real}} =
+              BaselineFile.create(root, ".anchor/baselines/r.txt", "r|A|x\n",
+                before_write: swap(root, sibling)
+              )
+     left:  {:error, {:escaped_root, _real}}
+     right: :ok
+     stacktrace:
+       test/anchor/adapters/baseline_file_test.exs:190: (test)
+
+..............................
+```
+
+### SW-G: the escape message drops where the file landed
+
+Run summary: `31 tests, 1 failure`
+
+```text
+
+
+  1) test every graph message is fail-closed, on its file, with its subject and a Fix: line (Anchor.Domain.FailuresGraphTest)
+     test/anchor/domain/failures_graph_test.exs:266
+     baseline_not_written escaped: "landed at /elsewhere/x.txt, outside the project root, and was removed there" in Anchor did not create b/x.txt: a directory on its path became a symlink while it was written, so the file landed outside the project root, and was removed there. Fix: find what is replacing directories in this checkout during the run, stop it, and run --write-baseline again.
+     code: for {name, violation, file, texts} <- rows() do
+     stacktrace:
+       (elixir 1.19.4) lib/enum.ex:1688: Enum."-map/2-lists^map/1-1-"/2
+       (elixir 1.19.4) lib/enum.ex:1688: Enum."-map/2-lists^map/1-1-"/2
+       test/anchor/domain/failures_graph_test.exs:271: anonymous fn/2 in Anchor.Domain.FailuresGraphTest."test every graph message is fail-closed, on its file, with its subject and a Fix: line"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/failures_graph_test.exs:267: (test)
+
+...............
+```
+

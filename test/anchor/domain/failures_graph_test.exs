@@ -175,6 +175,14 @@ defmodule Anchor.Domain.FailuresGraphTest do
          "(GREW) could not be judged",
          "Fix: replace the symlink b with a real directory or file inside the project"
        ]},
+      # DND-5647: the write escaped the root after the check, and was removed.
+      {"baseline_not_written escaped",
+       Failures.baseline_not_written("b/x.txt", {:escaped_root, "/elsewhere/x.txt"}), "b/x.txt",
+       [
+         "Anchor did not create b/x.txt: a directory on its path became a symlink",
+         "landed at /elsewhere/x.txt, outside the project root, and was removed there",
+         "Fix: find what is replacing directories"
+       ]},
       {"write_baseline_unknown", Failures.write_baseline_unknown("web", nil), ".anchor.yml",
        [~s|--write-baseline "web" names no graph rule of .anchor.yml|, "Fix: give that rule"]},
       {"graph_unknown_only", Failures.graph_unknown_only(["nope"], "proj/.anchor.yml"),

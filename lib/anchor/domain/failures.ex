@@ -712,6 +712,19 @@ defmodule Anchor.Domain.Failures do
     )
   end
 
+  # DND-5647: a directory on the path became a symlink after the check, so
+  # the write landed outside the root; it was removed there.
+  def baseline_not_written(path, {:escaped_root, real}) do
+    graph_issue(
+      path,
+      nil,
+      "Anchor did not create #{path}: a directory on its path became a symlink while it was " <>
+        "written, so the file landed at #{real}, outside the project root, and was removed " <>
+        "there. Fix: find what is replacing directories in this checkout during the run, " <>
+        "stop it, and run --write-baseline again."
+    )
+  end
+
   def baseline_not_written(path, reason) do
     graph_issue(
       path,

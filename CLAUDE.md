@@ -237,7 +237,9 @@ priority. A violation both passes found (a check's once-per-file report, such
 as an unresolvable `alias`) is kept once, enforced, naming both modes
 (`Anchor.Domain.EnforcementPasses.merge/2`, DND-5631). Graph rules also take `baseline:`: `Anchor.Managers.Graph` reads it
 through `Anchor.Adapters.BaselineStore` (`BaselineFile`; `create/3` opens
-`:exclusive`, never overwriting), and under `--base REF` its copy at `REF`
+`:exclusive`, never overwriting; after the write the file's real path must be
+under the root's, or it is removed and an issue, DND-5647, with `create/4`'s
+`before_write:` as the test seam), and under `--base REF` its copy at `REF`
 through `Anchor.Adapters.GitBase` (`GitShow`: argv only, the ref checked by
 `Anchor.Domain.Baseline.valid_ref?/1` first). `Anchor.Domain.Baseline` parses
 and compares (multisets: NEW, STALE, held; GREW against base), and
