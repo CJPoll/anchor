@@ -6,7 +6,9 @@ defmodule Anchor.Domain.Graph.Call do
     * `:to` — the callee `{module, name, arity}`, or
       `{:dynamic, name | nil, arity | nil, receiver}` when Core does not name
       it: `receiver` is `:variable` (a module or fun held in a variable) or
-      `:call` (a module computed by an expression, or `apply/2,3`). A call
+      `:call` (a module computed by an expression, or `apply/2,3`). An
+      `apply/3` whose module, function and argument count Core holds as
+      literals names its callee `{m, f, a}`, kind `:apply` (DND-5547). A call
       through a module attribute is a plain remote call: in Core the attribute
       is already a literal.
     * `:kind` — `:remote` (a call with a literal module), `:local` (a call to a

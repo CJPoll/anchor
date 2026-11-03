@@ -5,6 +5,8 @@ defmodule Anchor.Managers.SabotageRunTest do
   # proven by not expecting one. Each double reports its call to the test
   # process, so the order of calls is asserted, not assumed.
   # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5473_sabotage_run.md
+  # Sabotage record (DND-5570): ../../sabotage_records/sabotage-20261103-dnd_5570_sabotage_hardening.md
+  # Sabotage record (DND-5617): ../../sabotage_records/sabotage-20261103-dnd_5617_sabotage_cfa_batch.md
   use ExUnit.Case, async: true
 
   import Hammox
@@ -436,7 +438,7 @@ defmodule Anchor.Managers.SabotageRunTest do
                Enum.drop(calls(), 4)
 
       assert [
-               %{status: :invalid, reason: "the test run raised: runner exploded"},
+               %{status: :crashed, reason: "the test run raised: runner exploded"},
                %{status: :killed}
              ] =
                run.outcomes
@@ -554,7 +556,84 @@ defmodule Anchor.Managers.SabotageRunTest do
                List.duplicate({:no_tests, "test/calc_test.exs", {:none, []}}, 2)
 
       assert run.baseline == :none
-      assert Report.exit_code(run) == 1
+      # Mutants were made and none could be measured: COULD NOT MEASURE.
+      assert Report.exit_code(run) == 3
+    end
+
+    test "a crashed test run is crashed, and with nothing else measured the run is exit 3" do
+      expect_until_selection()
+      expect_baseline(test_run(:passed))
+      expect_patcher(2)
+      expect_delete_journal(2)
+      expect_save()
+
+      expect(TestExecutionMock, :run, 2, fn _argv, _tests, _opts ->
+        {:ok, %TestRun{status: :crashed, exit_code: 1, output_head: "boom"}}
+      end)
+
+      run = Sabotage.run(@facts, @opts)
+
+      assert Enum.map(run.outcomes, & &1.status) == [:crashed, :crashed]
+      assert Report.exit_code(run) == 3
+    end
+
+    test "a compile error is invalid, and with a killed mutant beside it the run is exit 0" do
+      [first, second] = mutants()
+      expect_until_selection()
+      expect_baseline(test_run(:passed))
+      expect_patcher(2)
+      expect_delete_journal(2)
+      expect_save()
+
+      expect(TestExecutionMock, :run, 2, fn _argv, _tests, _opts ->
+        if calls_seen({:write_journal, second.id}),
+          do: test_run(:failed, [@killer]),
+          else: {:ok, %TestRun{status: :compile_error, exit_code: 1, output_head: "error: x"}}
+      end)
+
+      run = Sabotage.run(@facts, @opts)
+
+      assert Enum.map(run.outcomes, &{&1.mutant.id, &1.status}) ==
+               [{first.id, :invalid}, {second.id, :killed}]
+
+      assert Report.exit_code(run) == 0
+    end
+
+    test "zero changed functions from a good diff read: exit 0, loud, no baseline, no write" do
+      expect_journal(:none)
+      expect_config()
+      expect_ignored()
+
+      expect(ChangeSourceMock, :merge_base, fn @root, "origin/main" -> {:ok, "abc"} end)
+      expect(ChangeSourceMock, :diff, fn @root, "abc" -> {:ok, ""} end)
+      expect(ChangeSourceMock, :untracked, fn @root -> {:ok, []} end)
+      expect(GitWorktreeMock, :dirty_paths, fn @root, [] -> {:ok, []} end)
+      expect(SourceMutationMock, :existing, fn [] -> [] end)
+      expect_save()
+
+      run = Sabotage.run(@facts, @opts)
+
+      assert run.refusal == nil
+      assert run.changed_functions == 0
+      assert run.outcomes == []
+      assert Report.exit_code(run) == 0
+      assert Report.render(run) =~ "sabotage: 0 changed functions in origin/main..HEAD"
+    end
+
+    test "a diff that could not be read stays exit 3, never the empty scope" do
+      expect_journal(:none)
+      expect_config()
+      expect_ignored()
+
+      expect(ChangeSourceMock, :merge_base, fn @root, "origin/main" ->
+        {:error, {:no_merge_base, "origin/main"}}
+      end)
+
+      run = Sabotage.run(@facts, @opts)
+
+      assert {3, "COULD NOT MEASURE" <> _rest} = run.refusal
+      assert Report.exit_code(run) == 3
+      refute Report.render(run) =~ "0 changed functions"
     end
 
     test "11: --dry-run writes nothing and runs no test; the plan is returned" do
@@ -639,6 +718,22 @@ defmodule Anchor.Managers.SabotageRunTest do
                  "touched. Fix: make _build/ writable"
     end
 
+    test "a host with no /proc refuses the run and the restore, exit 2, with a Fix:: nothing touched" do
+      expect(SourceMutationMock, :take_lock, 2, fn @root -> {:error, :no_proc} end)
+      expect(SourceMutationMock, :release_lock, 0, fn @root -> :ok end)
+
+      for run <- [Sabotage.run(@facts, @opts), Sabotage.restore(%{root: @root}, @opts)] do
+        assert %{refusal: {2, message}, notes: []} = run
+
+        assert message ==
+                 "this host has no /proc, so the run lock cannot tell a live sabotage run from " <>
+                   "a dead one and would protect nothing; nothing was touched. " <>
+                   "Fix: run mix anchor.sabotage on Linux (a dev machine or CI)"
+
+        assert Report.exit_code(run) == 2
+      end
+    end
+
     test "a lock that cannot be released is said in the notes" do
       expect_journal(:none)
       expect(SourceMutationMock, :release_lock, fn @root -> {:error, :eacces} end)
@@ -703,5 +798,73 @@ defmodule Anchor.Managers.SabotageRunTest do
   defp calls_seen(name) do
     {:messages, messages} = Process.info(self(), :messages)
     {:call, name} in messages
+  end
+
+  describe "run/2: changed functions that yield no mutant (DND-5617)" do
+    # The scope reads `source` (line 3 changed) and the generator yields no
+    # mutant: no baseline, no test run, no write; exit 0, said loudly.
+    defp expect_barren_run(source) do
+      expect_journal(:none)
+      expect_config()
+      expect_ignored()
+      expect(ChangeSourceMock, :merge_base, fn @root, "origin/main" -> {:ok, "abc"} end)
+      expect(ChangeSourceMock, :diff, fn @root, "abc" -> {:ok, @diff} end)
+      expect(ChangeSourceMock, :untracked, fn @root -> {:ok, []} end)
+      expect(ChangeSourceMock, :read, 2, fn @root, "lib/calc.ex" -> {:ok, source} end)
+      expect(ChangeSourceMock, :show, fn @root, "abc", "lib/calc.ex" -> {:ok, source} end)
+      expect_clean()
+      expect(SourceMutationMock, :existing, fn [] -> [] end)
+      expect_save()
+    end
+
+    test "M1: only a function no literal clause covers (a defimpl): exit 0, its line and the count" do
+      source =
+        "defimpl String.Chars, for: Calc do\n  def to_string(c) do\n    c.a\n  end\nend\n"
+
+      expect_barren_run(source)
+
+      run = Sabotage.run(@facts, @opts)
+
+      assert run.refusal == nil
+      assert {run.changed_functions, run.generated, run.outcomes} == {1, 0, []}
+      assert Report.exit_code(run) == 0
+      text = Report.render(run)
+
+      assert text =~
+               "sabotage: no mutant from String.Chars.Calc.to_string/1 (lib/calc.ex): macro: " <>
+                 "no literal def/defp clause in the source (a macro made it)"
+
+      assert text =~
+               "sabotage: no mutants generated from 1 changed functions: nothing was measured"
+    end
+
+    test "M2: only skipped edits: exit 0, the line names the skip rule, then the count" do
+      source = "defmodule Calc do\n  def add(_a, _b) do\n    x = :ok\n    x\n  end\nend\n"
+      expect_barren_run(source)
+
+      run = Sabotage.run(@facts, @opts)
+
+      assert {run.changed_functions, run.generated, run.outcomes} == {1, 0, []}
+      assert Report.exit_code(run) == 0
+      text = Report.render(run)
+
+      assert text =~
+               "sabotage: no mutant from Calc.add/2 (lib/calc.ex): skipped: delete_statement: " <>
+                 "orphans variable `x` bound at line 3 and used at line 4"
+
+      assert text =~
+               "sabotage: no mutants generated from 1 changed functions: nothing was measured"
+    end
+
+    test "M3: positive control: a function with mutants prints no such line" do
+      expect_until_selection()
+
+      run = Sabotage.run(%{@facts | dry_run: true}, @opts)
+
+      assert {run.changed_functions, run.generated, run.no_mutant} == {1, 2, []}
+      text = Report.render(run)
+      refute text =~ "no mutants generated"
+      refute text =~ "sabotage: no mutant from"
+    end
   end
 end

@@ -4,6 +4,8 @@ defmodule Anchor.Domain.FailuresGraphTest do
   # names its subject and ends with a Fix: line. Table-driven.
   #
   # Sabotage record: ../../sabotage_records/failures-20261103-dnd_5440_graph_runner.md
+  # Sabotage record: ../../sabotage_records/failures-20261103-dnd_5551_graph_hardening.md
+  # (rule_cfa_crashed, DND-5574: ../../sabotage_records/failures-20261103-dnd_5574_cfa_wiring.md)
   # DND-5441 (the baseline_* messages):
   #   ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
   # DND-5584 (graph_app_no_modules): ../../sabotage_records/graph_runner-20261103-dnd_5441_graph_rules_a.md
@@ -34,6 +36,17 @@ defmodule Anchor.Domain.FailuresGraphTest do
      [
        "was compiled with {:parse_transform, :my_pt}",
        "Fix: remove the transform from the module's compile options"
+     ]},
+    {{:core_v1_refused, {:option, {:plugins, [MyPlugin]}}},
+     [
+       "was compiled with the option {:plugins, [MyPlugin]}",
+       "not on Anchor's list of options that run no code",
+       "Fix: remove the option from the module's compile options"
+     ]},
+    {{:no_core, [{:run, 1}, {:m, 2}]},
+     [
+       "has no Core Erlang body for run/1, m/2",
+       "Fix: this is an Anchor bug"
      ]},
     {{:decode_crashed, "RuntimeError: x"},
      ["Anchor crashed reading it (RuntimeError: x)", "Fix: this is an Anchor bug"]},
@@ -73,6 +86,13 @@ defmodule Anchor.Domain.FailuresGraphTest do
         raise "rule blew up"
       rescue
         e -> Failures.rule_crashed(rule, :error, e, __STACKTRACE__, "proj/.anchor.yml")
+      end
+
+    cfa_crashed =
+      try do
+        raise "cfa blew up"
+      rescue
+        e -> Failures.rule_cfa_crashed(rule, :error, e, __STACKTRACE__, nil)
       end
 
     [
@@ -180,6 +200,12 @@ defmodule Anchor.Domain.FailuresGraphTest do
        [
          ~s|rule 2 (id: "web", layering) could not run: RuntimeError: rule blew up|,
          "Fix: this is an Anchor bug; file it with this line."
+       ]},
+      {"rule_cfa_crashed", cfa_crashed, ".anchor.yml",
+       [
+         ~s|rule 2 (id: "web", layering) could not run: the higher-order flow analysis it | <>
+           "needs (Anchor.Domain.Cfa) crashed: RuntimeError: cfa blew up",
+         "so it checked nothing. Fix: this is an Anchor bug; file it with this line."
        ]},
       {"interface_export_missing",
        Failures.interface_export_missing(MyApp.Gone, "proj/.anchor.yml"), "proj/.anchor.yml",

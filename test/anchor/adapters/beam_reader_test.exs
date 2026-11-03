@@ -4,6 +4,7 @@ defmodule Anchor.Adapters.BeamReaderTest do
   # read_ebins/1 rows write binaries into an ExUnit tmp_dir.
   #
   # Sabotage record: ../../sabotage_records/beam_reader-20261103-dnd_5438.md
+  # Sabotage record (compile option allowlist): ../../sabotage_records/beam_reader-20261103-dnd_5551_graph_hardening.md
   # Sabotage record (Failures.crash_summary/3): ../../sabotage_records/failures-20261103-dnd_5438.md
   use ExUnit.Case, async: true
 
@@ -115,6 +116,75 @@ defmodule Anchor.Adapters.BeamReaderTest do
         assert {:error, %{reason: {:core_v1_refused, {:transform, ^transform}}, module: Plain}} =
                  BeamReader.decode(rebuilt, app: :demo, path: "x.beam")
       end
+    end
+
+    # DND-5552: compile options are allowlisted, deny by default. An option
+    # Anchor does not know might make lowering run code, so it is refused,
+    # never passed to the compiler.
+    test "every known-safe compile option decodes", %{binary: binary} do
+      {:ok, {Plain, [debug_info: {:debug_info_v1, :elixir_erl, {:elixir_v1, map, specs}}]}} =
+        :beam_lib.chunks(binary, [:debug_info])
+
+      options = [
+        :debug_info,
+        {:debug_info, true},
+        :inline,
+        {:inline, [run: 1]},
+        {:inline_size, 30},
+        {:no_warn_undefined, Foo},
+        {:no_warn_undefined, [{Foo, :bar, 1}]},
+        {:autoload, false},
+        :nowarn_unused_vars,
+        {:nowarn_unused_function, [run: 1]},
+        :warn_missing_spec,
+        :deterministic
+      ]
+
+      for option <- options do
+        map = Map.put(map, :compile_opts, [option])
+        rebuilt = with_debug_info(binary, {:debug_info_v1, :elixir_erl, {:elixir_v1, map, specs}})
+
+        decoded = BeamReader.decode(rebuilt, app: :demo, path: "x.beam")
+        assert match?(%Beam{module: Plain}, decoded), "#{inspect(option)}: #{inspect(decoded)}"
+      end
+    end
+
+    test "any other compile option is refused, naming it", %{binary: binary} do
+      {:ok, {Plain, [debug_info: {:debug_info_v1, :elixir_erl, {:elixir_v1, map, specs}}]}} =
+        :beam_lib.chunks(binary, [:debug_info])
+
+      options = [
+        :from_core,
+        :something_new,
+        :warnings_as_errors,
+        {:d, :X},
+        {:i, ~c"include"},
+        {:plugins, [AnchorFixtures.NoSuchPlugin]},
+        {:debug_info, {AnchorFixtures.NoSuchBackend, :data}},
+        {:autoload, :maybe},
+        {:inline_size, :big},
+        {:nowarn_unused_vars, :extra, :arity}
+      ]
+
+      for option <- options do
+        map = Map.put(map, :compile_opts, [:debug_info, option])
+        rebuilt = with_debug_info(binary, {:debug_info_v1, :elixir_erl, {:elixir_v1, map, specs}})
+
+        assert {:error, %{reason: {:core_v1_refused, {:option, ^option}}, module: Plain}} =
+                 BeamReader.decode(rebuilt, app: :demo, path: "x.beam")
+      end
+    end
+
+    test "a transform is named as one even after an unknown option", %{binary: binary} do
+      {:ok, {Plain, [debug_info: {:debug_info_v1, :elixir_erl, {:elixir_v1, map, specs}}]}} =
+        :beam_lib.chunks(binary, [:debug_info])
+
+      transform = {:parse_transform, :anchor_fixtures_no_such_transform}
+      map = Map.put(map, :compile_opts, [:something_new, transform])
+      rebuilt = with_debug_info(binary, {:debug_info_v1, :elixir_erl, {:elixir_v1, map, specs}})
+
+      assert {:error, %{reason: {:core_v1_refused, {:transform, ^transform}}}} =
+               BeamReader.decode(rebuilt, app: :demo, path: "x.beam")
     end
 
     # Row 8

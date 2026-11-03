@@ -19,10 +19,17 @@ defmodule Anchor.Managers.Graph do
        one, and never a cached verdict;
     5. build the model (`Anchor.Domain.Model`): classify every module into
        exactly one bucket, and check the bucket floors;
-    6. for each enabled graph rule (narrowed by `--only`): its floor
+    6. read each enabled graph rule's needs (`GraphRules.needs/1`, narrowed
+       by `--only`, under the guard below) and, when any of them needs
+       `:cfa`, run the higher-order flow analysis once
+       (`Anchor.Domain.Cfa.analyze/3` with `Cfa.default_seed/1`, under the
+       guard) and store it on `Model.cfa` (DND-5574). When none does, it is
+       not run: rules that do not need it pay nothing;
+    7. for each enabled graph rule (narrowed by `--only`): its floor
        (`min_modules`), then its `check/2` under a guard (`try` with `rescue`, `catch :throw` and
        `catch :exit`, DND-1312's lesson): a rule that crashes is one issue,
-       and the other rules still run;
+       and the other rules still run. A rule whose `needs/0` is refused, or
+       whose needed analysis crashed, is one issue too and is not run;
     7. for each rule with a `baseline:` (DND-5441): read it
        (`Anchor.Adapters.BaselineStore`), and under `--base REF` its copy at
        `REF` (`Anchor.Adapters.GitBase`), and judge the rule's findings
@@ -35,7 +42,8 @@ defmodule Anchor.Managers.Graph do
     8. write the graph artifact for `explain`/`place`
        (`Anchor.Adapters.GraphStore`) under `_build/<env>/anchor`; the
        verdict never reads it;
-    9. return the `%Anchor.Domain.GraphReport{}`.
+    9. return the `%Anchor.Domain.GraphReport{}`, with the apply-site
+       counts (`GraphReport.apply_sites/1`) when the analysis ran.
 
   Every per-module problem is an issue on that module (exit 1), never a
   skipped module: a beam it could not decode, a module whose graph walk
@@ -53,7 +61,10 @@ defmodule Anchor.Managers.Graph do
   (`Anchor.Adapters.SourceReader`), `:graph_store`
   (`Anchor.Adapters.GraphArtifact`), `:baseline_store`
   (`Anchor.Adapters.BaselineFile`), `:git_base` (`Anchor.Adapters.GitShow`),
-  `:graph_rules` (the rule modules, `Anchor.Domain.GraphRules.all/0`).
+  `:graph_rules` (the rule modules, `Anchor.Domain.GraphRules.all/0`), `:cfa`
+  (a one-argument function from the graph to its `%Anchor.Domain.Cfa{}`,
+  default `Cfa.analyze(graph, Cfa.default_seed(graph))`; tests pass one that
+  crashes).
   """
 
   alias Anchor.Adapters.BaselineFile
@@ -64,6 +75,7 @@ defmodule Anchor.Managers.Graph do
   alias Anchor.Adapters.SourceReader
   alias Anchor.Config
   alias Anchor.Domain.Baseline
+  alias Anchor.Domain.Cfa
   alias Anchor.Domain.Enforcement
   alias Anchor.Domain.Failures
   alias Anchor.Domain.Graph
@@ -126,7 +138,8 @@ defmodule Anchor.Managers.Graph do
       graph_store: Keyword.get(deps, :graph_store, GraphArtifact),
       baseline_store: Keyword.get(deps, :baseline_store, BaselineFile),
       git_base: Keyword.get(deps, :git_base, GitShow),
-      graph_rules: Keyword.get(deps, :graph_rules, GraphRules.all())
+      graph_rules: Keyword.get(deps, :graph_rules, GraphRules.all()),
+      cfa: Keyword.get(deps, :cfa, &analyze_cfa/1)
     }
   end
 
@@ -178,7 +191,10 @@ defmodule Anchor.Managers.Graph do
     graph = Builder.build(beams, source_facts)
     {model, class_issues} = Model.build(graph, config, source_facts)
     unreadable_issues = empty_app_issues(request.apps, beams) ++ unreadable_issues(graph)
-    ran = Enum.map(rules, &run_rule(&1, model, config.path, request, deps))
+    rules = Enum.map(rules, fn {rule, module} -> {rule, module, guarded_needs(module)} end)
+    cfa = cfa(rules, graph, deps.cfa)
+    model = %{model | cfa: analysis(cfa)}
+    ran = Enum.map(rules, &run_rule(&1, model, cfa, config.path, request, deps))
     artifact_notes = write_artifact(deps.graph_store, request, beams, config, graph)
 
     fail_closed =
@@ -188,11 +204,39 @@ defmodule Anchor.Managers.Graph do
     GraphReport.new(
       fail_closed ++ Enum.flat_map(ran, & &1.findings) ++ artifact_notes,
       [],
-      counts(request, map_size(graph.modules), length(rules), length(Model.opaque(model))),
+      request
+      |> counts(map_size(graph.modules), length(rules), length(Model.opaque(model)))
+      |> Map.put(:no_core, no_core_count(graph))
+      |> Map.put(:apply_sites, GraphReport.apply_sites(model.cfa)),
       held: Enum.flat_map(ran, & &1.held),
       refused: Enum.flat_map(ran, & &1.refused)
     )
   end
+
+  defp analyze_cfa(graph), do: Cfa.analyze(graph, Cfa.default_seed(graph))
+
+  # The analysis runs once, and only when a rule that runs needs it: `nil`
+  # when none does, else the guarded result.
+  defp cfa(rules, graph, analyze) do
+    if Enum.any?(rules, fn {_rule, _module, needs} -> needs?(needs, :cfa) end),
+      do: guarded(fn -> analysis!(analyze.(graph)) end),
+      else: nil
+  end
+
+  # An analysis that returns anything but a `%Cfa{}` is reported like one
+  # that raised: read as `nil`, its rules would run without it.
+  defp analysis!(%Cfa{} = cfa), do: cfa
+
+  defp analysis!(other),
+    do: raise(ArgumentError, "the analysis returned #{inspect(other, limit: 5)}, not a %Cfa{}")
+
+  defp needs?({:ok, needs}, need), do: need in needs
+  defp needs?(_crashed, _need), do: false
+
+  defp analysis({:ok, %Cfa{} = cfa}), do: cfa
+  defp analysis(_none_or_crashed), do: nil
+
+  defp guarded_needs(module), do: guarded(fn -> GraphRules.needs(module) end)
 
   defp source_facts(source, root, beams) do
     files =
@@ -245,10 +289,10 @@ defmodule Anchor.Managers.Graph do
   # A rule's floor is judged whenever it runs, `--only` or not: `--only`
   # narrows the rules, never the modules, so a rule selecting nothing must not
   # read as a pass.
-  defp run_rule({rule, module}, model, config_path, request, deps) do
+  defp run_rule({rule, module, needs}, model, cfa, config_path, request, deps) do
     floor = floor_findings(rule, model, config_path)
 
-    case check(rule, module, model, config_path) do
+    case run_check(needs, cfa, rule, module, model, config_path) do
       {:ok, findings} ->
         ran = ratchet(rule, findings, request, deps)
         %{ran | findings: floor ++ ran.findings}
@@ -331,6 +375,24 @@ defmodule Anchor.Managers.Graph do
     end
   end
 
+  # A rule whose needs could not be read, or whose analysis crashed, is not
+  # run: run without what it reads, it would check nothing and read clean.
+  defp run_check({:crashed, kind, reason, stacktrace}, _cfa, rule, _module, _model, path),
+    do: {:crashed, rule |> Failures.rule_crashed(kind, reason, stacktrace, path) |> fail_closed()}
+
+  defp run_check({:ok, needs}, {:crashed, kind, reason, stacktrace}, rule, module, model, path) do
+    if :cfa in needs,
+      do:
+        {:crashed,
+         rule |> Failures.rule_cfa_crashed(kind, reason, stacktrace, path) |> fail_closed()},
+      else: check(rule, module, model, path)
+  end
+
+  defp run_check({:ok, _needs}, _cfa, rule, module, model, path),
+    do: check(rule, module, model, path)
+
+  defp fail_closed(violation), do: Finding.fail_closed(violation, @config_file)
+
   defp floor_findings(rule, model, config_path) do
     for {^rule, selected} <- GraphRules.below_floor(model, [rule]) do
       rule
@@ -359,8 +421,11 @@ defmodule Anchor.Managers.Graph do
 
   # The rule's return is validated inside the guard: a rule that returns
   # anything but a list of violations is reported like one that raised.
-  defp guarded_check(rule, module, model) do
-    {:ok, violations!(module.check(model, rule))}
+  defp guarded_check(rule, module, model),
+    do: guarded(fn -> violations!(module.check(model, rule)) end)
+
+  defp guarded(fun) do
+    {:ok, fun.()}
   rescue
     exception -> {:crashed, :error, exception, __STACKTRACE__}
   catch
@@ -416,5 +481,18 @@ defmodule Anchor.Managers.Graph do
   end
 
   defp counts(%Request{apps: apps}, modules, rules, opaque),
-    do: %{modules: modules, apps: length(apps), rules: rules, opaque: opaque}
+    do: %{
+      modules: modules,
+      apps: length(apps),
+      rules: rules,
+      opaque: opaque,
+      no_core: 0,
+      apply_sites: nil
+    }
+
+  # Every function the graph has no Core body for: no call in it was read, so
+  # the summary counts them (DND-5549).
+  defp no_core_count(graph) do
+    graph |> Graph.functions_without_core() |> Map.values() |> Enum.map(&length/1) |> Enum.sum()
+  end
 end

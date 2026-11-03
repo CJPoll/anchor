@@ -170,7 +170,17 @@ whose node or Core walk raises, throws or exits is an `unreadable` entry
 from those records and `Anchor.Domain.Graph.SourceFacts` (literal `defmodule`s,
 for `generated?`); `Anchor.Domain.Graph.CoreWalker` reads call and struct-use
 edges from Core. A new Core shape goes into the walker with a row in
-`test/anchor/domain/graph/core_walker_test.exs`. Graph test fixtures are
+`test/anchor/domain/graph/core_walker_test.exs`. Elixir rewrites some stdlib
+calls before Core (`Map.merge/2` is `:maps.merge/2`; `Map.put/3` becomes a map
+update, read back as `:maps.put/3`), so an edge names the Erlang function.
+`Anchor.Domain.Graph.Inlines` carries the table, derived from Elixir's own
+rewrite rules when Anchor compiles, never copied by hand (DND-5551). A rule
+that names a stdlib function matches every spelling, through
+`Inlines.spellings/1` (`Graph.calls_to/2` already does). A function with no Core
+body (`core: nil`: a `defmacrop`, a `defp` nothing calls) has no edges read
+from it; `Graph.functions_without_core/1` counts them per module for the
+runner's summary, and a public one is also an `unreadable` entry
+`{:no_core, [{name, arity}]}` (DND-5549). Graph test fixtures are
 compiled in the test with `Anchor.Test.BeamFixtures.compile_unloaded/2`, which
 unloads every fixture module and turns `debug_info` on per module (`mix test`
 compiles with it off).
@@ -276,7 +286,22 @@ Lambdas, sites and container allocation sites are numbered by
 the open world: every exported function's parameters are `any`). The worklist
 is bounded by `:max_steps`; a run that hits it reports every site `:any`. A
 library function that calls an argument gets a row in `HigherOrder`'s table;
-a missing row costs precision (its arguments escape), never soundness.
+a missing row costs precision (its arguments escape), never soundness. A
+`letrec` name is keyed per scope, the letrec node (DND-5575): an apply of it
+reaches the innermost enclosing letrec that binds it (`Cfa` keeps each
+lambda's lexical scope; `Eval` adds a letrec's names at the node), never a
+same-named letrec elsewhere in the function.
+
+The runner wires it lazily (DND-5574): a graph rule that reads it declares
+`needs: [:cfa]` (`GraphRule`'s optional `needs/0`, read and checked by
+`GraphRules.needs/1`), and `Anchor.Managers.Graph` runs
+`Cfa.analyze(graph, Cfa.default_seed(graph))` once per run, under the rule
+guard, only when a rule that runs needs it, and puts it on `Model.cfa` (`nil`
+otherwise). The summary then ends `; apply sites: <r> resolved, <a> any`, and
+the JSON carries `apply_sites` (`GraphReport.apply_sites/1`). A refused need
+(`rule_crashed`) or a crashed analysis (`Failures.rule_cfa_crashed/5`) is one
+issue per rule, and that rule is not run. A new analysis a rule can need goes
+into `GraphRules`' `@provided_needs` and the Manager's needs wiring.
 
 ## Important Notes
 
@@ -296,8 +321,14 @@ journal (`.anchor/sabotage/in-flight.json`, which must be git-ignored) covers a
 VM kill; a leftover journal is dealt with before anything else, unless its
 owner (OS pid and `/proc` start time) is alive: then the run refuses. One run
 at a time: each run holds `_build/anchor-sabotage.lock` from its first step to
-its last (a dead holder's lock is taken over). A mutant that
-does not compile is `invalid`, never killed. Failed tests come from
+its last (a dead holder's lock is taken over); a host with no `/proc` refuses
+(exit 2), because the lock could name no owner. A mutant that
+does not compile is `invalid`, never killed, and (beside a measured mutant) never changes the exit code. A
+mutant whose run crashed or had no test is unmeasured: with no measured mutant
+the run is exit 3, beside one it fails like a survivor (exit 1)
+(`Anchor.Domain.Sabotage.Report`). Changed functions that yield no mutant
+at all exit 0 but are never silent: a line per function with its reason
+(`Anchor.Domain.Sabotage.NoMutant`) and a count (DND-5617). Failed tests come from
 `Anchor.Sabotage.ExUnitFormatter`'s frames, never from parsed output; the
 formatter calls no other Anchor module, so it loads alone in a project's test
 VM. The flow is in `Anchor.Managers.Sabotage.Runner`'s moduledoc.

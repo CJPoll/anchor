@@ -8,7 +8,10 @@ defmodule Anchor.Domain.Graph.ModuleNode do
       unclassified module is reported there).
     * `:behaviours` — every `@behaviour`, from the persisted attributes.
     * `:attributes` — the persisted attributes, a keyword list.
-    * `:specs` — `%{{name, arity} => [quoted spec]}`.
+    * `:specs` — `%{{name, arity} => [quoted spec]}`. A macro's spec is keyed
+      under the macro's own name and arity (the key of its `FunctionNode`, kind
+      `:defmacro` or `:defmacrop`), not the compiled `MACRO-name/arity+1`, and
+      reads as written, without the caller argument (DND-5550).
     * `:types` — `%{{name, arity} => {kind, quoted type}}`, kind `:type`,
       `:typep` or `:opaque`.
     * `:struct_fields` — the struct's field names, or `nil` for no struct.

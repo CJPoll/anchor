@@ -1,6 +1,8 @@
 defmodule Anchor.Domain.Sabotage.ReportTest do
   # DND-5473: the run's text and exit code.
   # Sabotage record: ../../../sabotage_records/sabotage-20261103-dnd_5473_sabotage_run.md
+  # Sabotage record (DND-5570): ../../../sabotage_records/sabotage-20261103-dnd_5570_sabotage_hardening.md
+  # Sabotage record (DND-5617): ../../../sabotage_records/sabotage-20261103-dnd_5617_sabotage_cfa_batch.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Sabotage.ChangedFunction
@@ -53,7 +55,7 @@ defmodule Anchor.Domain.Sabotage.ReportTest do
 
     assert text =~
              "anchor.sabotage run: 2 mutants run: 1 killed, 0 survived, 1 timeout, 0 invalid, " <>
-               "0 no_tests; 0 skipped; 0 not run (cap); 0 errors"
+               "0 crashed, 0 no_tests; 0 skipped; 0 not run (cap); 0 errors"
   end
 
   test "2: one survivor: exit 1, its line ends with a Fix:" do
@@ -65,8 +67,13 @@ defmodule Anchor.Domain.Sabotage.ReportTest do
              ~r/^bbb\tCalc\.add\/2\treturn_input\tsurvived\t\t.*\tFix: add a test that fails under this mutant$/m
   end
 
-  test "3: a no_tests mutant: exit 1, it names the mirror path it looked for" do
-    run = %Run{outcomes: [outcome("ccc", :no_tests, [], "test/calc_test.exs", {:none, []})]}
+  test "3: a no_tests mutant in a measured run: exit 1, it names the mirror path it looked for" do
+    run = %Run{
+      outcomes: [
+        outcome("aaa", :killed, [@killer]),
+        outcome("ccc", :no_tests, [], "test/calc_test.exs", {:none, []})
+      ]
+    }
 
     assert Report.exit_code(run) == 1
 
@@ -113,8 +120,104 @@ defmodule Anchor.Domain.Sabotage.ReportTest do
     text = Report.render(run)
     assert text =~ "ddd\tCalc.add/2\treturn_input\tinvalid\t\t"
     assert text =~ "\tdid not compile: error: undefined variable \"y\""
-    assert text =~ "0 timeout, 1 invalid, 0 no_tests"
-    assert Report.exit_code(run) == 0
+    assert text =~ "0 timeout, 1 invalid, 0 crashed, 0 no_tests"
+  end
+
+  describe "exit-code policy (DND-5570)" do
+    defp exit_of(statuses) do
+      outcomes =
+        statuses
+        |> Enum.with_index()
+        |> Enum.map(fn {status, i} ->
+          killers = if status == :killed, do: [@killer], else: []
+          outcome("m#{i}", status, killers, "why")
+        end)
+
+      Report.exit_code(%Run{outcomes: outcomes})
+    end
+
+    test "zero changed functions from a good diff read: exit 0, said loudly with the range" do
+      run = %Run{base: "origin/main", changed_functions: 0}
+
+      assert Report.exit_code(run) == 0
+      assert Report.render(run) =~ "sabotage: 0 changed functions in origin/main..HEAD\n"
+    end
+
+    test "zero changed functions is also said loudly in a dry run" do
+      run = %Run{base: "main", changed_functions: 0, dry_run: true}
+
+      assert Report.exit_code(run) == 0
+      assert Report.render(run) =~ "sabotage: 0 changed functions in main..HEAD\n"
+    end
+
+    test "positive control: changed functions that made no mutant do not print the zero line" do
+      run = %Run{base: "origin/main", changed_functions: 2}
+
+      refute Report.render(run) =~ "0 changed functions"
+    end
+
+    test "mutants run and none measured is exit 3, COULD NOT MEASURE with a Fix:" do
+      for statuses <- [
+            [:invalid],
+            [:invalid, :invalid],
+            [:crashed],
+            [:no_tests, :no_tests],
+            [:invalid, :crashed, :no_tests]
+          ] do
+        assert exit_of(statuses) == 3, inspect(statuses)
+      end
+
+      text = Report.render(%Run{outcomes: [outcome("aaa", :invalid, [], "did not compile: x")]})
+      assert text =~ "COULD NOT MEASURE: 1 mutants were run and none was measured"
+      assert text =~ "Fix: "
+    end
+
+    test "positive control: one measured mutant makes invalid mutants not change the exit" do
+      assert exit_of([:killed, :invalid]) == 0
+      assert exit_of([:invalid, :killed, :invalid]) == 0
+      assert exit_of([:timeout, :invalid]) == 0
+      assert exit_of([:survived, :invalid]) == 1
+    end
+
+    test "an unmeasured mutant (crashed, or no test) in a measured run fails like a survivor" do
+      assert exit_of([:killed, :crashed]) == 1
+      assert exit_of([:killed, :no_tests]) == 1
+      assert exit_of([:timeout, :crashed]) == 1
+      assert exit_of([:killed, :survived]) == 1
+    end
+
+    test "a crashed mutant's line says why and ends with a Fix:" do
+      run = %Run{
+        outcomes: [
+          outcome("aaa", :killed, [@killer]),
+          outcome("bbb", :crashed, [], "test run crashed (exit 1)")
+        ]
+      }
+
+      assert Report.render(run) =~
+               ~r/^bbb\tCalc\.add\/2\treturn_input\tcrashed\t\t.*\ttest run crashed \(exit 1\)\tFix: .+$/m
+    end
+
+    test "a no_tests mutant whose tests ran none says why, not a mirror path" do
+      run = %Run{
+        outcomes: [
+          outcome("aaa", :killed, [@killer]),
+          outcome("ddd", :no_tests, [], "no test ran")
+        ]
+      }
+
+      text = Report.render(run)
+      assert text =~ "\tno test ran\tFix: "
+      refute text =~ "Fix: add no test ran"
+    end
+
+    test "a refusal and a dry run keep their own codes" do
+      assert Report.exit_code(%Run{refusal: {3, "x"}, outcomes: [outcome("a", :killed)]}) == 3
+      assert Report.exit_code(%Run{dry_run: true}) == 0
+
+      # A dry run applies nothing, so whatever outcomes it holds are not read.
+      assert Report.exit_code(%Run{dry_run: true, outcomes: [outcome("a", :survived)]}) == 0
+    end
   end
 
   test "a skipped mutant is listed with its reason" do
@@ -150,5 +253,101 @@ defmodule Anchor.Domain.Sabotage.ReportTest do
                "anchor.sabotage run --dry-run: 1 mutants planned; nothing applied"
 
     assert Report.exit_code(run) == 0
+  end
+
+  describe "changed functions that yield no mutant (DND-5617)" do
+    defp changed(name, file \\ "lib/gen.ex"),
+      do: %ChangedFunction{
+        file: file,
+        module: Gen,
+        name: name,
+        arity: 1,
+        kind: :def,
+        changed_lines: [3]
+      }
+
+    @summary "sabotage: no mutants generated from 2 changed functions: nothing was measured"
+
+    test "Z1: only macros: exit 0, one loud line per function naming it and why, then the count" do
+      run = %Run{
+        base: "origin/main",
+        changed_functions: 2,
+        generated: 0,
+        errors: [{changed(:init), :not_in_source}, {changed(:stop), :not_in_source}],
+        no_mutant: [
+          {changed(:init), "macro: no literal def/defp clause in the source (a macro made it)"},
+          {changed(:stop), "macro: no literal def/defp clause in the source (a macro made it)"}
+        ]
+      }
+
+      assert Report.exit_code(run) == 0
+      text = Report.render(run)
+
+      assert text =~
+               "sabotage: no mutant from Gen.init/1 (lib/gen.ex): macro: no literal def/defp " <>
+                 "clause in the source (a macro made it)\n"
+
+      assert text =~ "sabotage: no mutant from Gen.stop/1 (lib/gen.ex): macro:"
+      assert text =~ @summary
+    end
+
+    test "Z2: only skipped functions: exit 0, each line names the skip rule, then the count" do
+      run = %Run{
+        changed_functions: 2,
+        generated: 0,
+        no_mutant: [
+          {changed(:init), "skipped: delete_statement: orphans variable `x`"},
+          {changed(:stop, "lib/stop.ex"), "no mutable site"}
+        ]
+      }
+
+      assert Report.exit_code(run) == 0
+      text = Report.render(run)
+
+      assert text =~
+               "sabotage: no mutant from Gen.init/1 (lib/gen.ex): skipped: delete_statement: " <>
+                 "orphans variable `x`"
+
+      assert text =~ "sabotage: no mutant from Gen.stop/1 (lib/stop.ex): no mutable site"
+      assert text =~ @summary
+    end
+
+    test "Z3: the dry run says it too" do
+      run = %Run{
+        dry_run: true,
+        changed_functions: 1,
+        generated: 0,
+        no_mutant: [{changed(:init), "no mutable site"}]
+      }
+
+      assert Report.exit_code(run) == 0
+
+      assert Report.render(run) =~
+               "sabotage: no mutant from Gen.init/1 (lib/gen.ex): no mutable site"
+
+      assert Report.render(run) =~ "no mutants generated from 1 changed functions"
+    end
+
+    test "Z4: positive control: one mutant generated prints no such line" do
+      run = %Run{
+        changed_functions: 2,
+        generated: 1,
+        no_mutant: [{changed(:stop), "no mutable site"}],
+        outcomes: [outcome("aaa", :killed, [@killer])]
+      }
+
+      assert Report.exit_code(run) == 0
+      text = Report.render(run)
+      refute text =~ "no mutants generated"
+      refute text =~ "sabotage: no mutant from"
+    end
+
+    test "Z5: zero changed functions keeps its own line and never this one" do
+      run = %Run{base: "origin/main", changed_functions: 0, generated: 0}
+
+      text = Report.render(run)
+      assert text =~ "sabotage: 0 changed functions in origin/main..HEAD"
+      refute text =~ "no mutants generated"
+    end
   end
 end

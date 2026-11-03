@@ -43,7 +43,9 @@ defmodule Anchor.Domain.Graph.Beam do
     * `{:elixir_v1_refused, reason}` / `{:core_v1_refused, reason}` — the
       backend returned an error for that format; `{:core_v1_refused,
       {:transform, {kind, module}}}` when the module was compiled with a
-      `parse_transform` or `core_transform`, which lowering would run.
+      `parse_transform` or `core_transform`, which lowering would run, and
+      `{:core_v1_refused, {:option, option}}` for any other compile option not
+      on the reader's allowlist of options known to run no code (DND-5552).
     * `{:unreadable, reason}` — the file (or ebin directory) could not be read,
       or the bytes are not a beam.
     * `{:decode_crashed, message}` — decoding raised, threw or exited.

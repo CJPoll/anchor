@@ -265,8 +265,10 @@ defmodule Anchor.Domain.Failures do
 
   @doc """
   The per-module issue for an entry of `graph.unreadable`
-  (`Anchor.Domain.Graph`): a beam Anchor could not decode, a second beam of
-  one module, or a module whose graph walk crashed. It sits on the beam's
+  (`Anchor.Domain.Graph`): a beam Anchor could not decode (or would not lower,
+  for a compile option off its allowlist), a second beam of one module, a
+  module whose graph walk crashed, or one with a public function that has no
+  Core body. It sits on the beam's
   path and names the module when it is known. Each reason has its own `Fix:`;
   a reason of any other shape is still reported.
 
@@ -436,6 +438,30 @@ defmodule Anchor.Domain.Failures do
       config_path || @config_filename,
       nil,
       "#{rule_label(rule)} could not run: #{crash_summary(kind, reason, stacktrace)}, so it " <>
+        "checked nothing. Fix: this is an Anchor bug; file it with this line."
+    )
+  end
+
+  @doc """
+  The issue for a graph rule that needs the higher-order flow analysis
+  (`needs: [:cfa]`, DND-5574) when that analysis raised, threw or exited: the
+  rule was not run, so it checked nothing. One per rule that needed it; the
+  rules that do not need it still run.
+  """
+  @spec rule_cfa_crashed(
+          map(),
+          :error | :exit | :throw,
+          term(),
+          Exception.stacktrace(),
+          String.t() | nil
+        ) ::
+          Violation.t()
+  def rule_cfa_crashed(rule, kind, reason, stacktrace, config_path) do
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "#{rule_label(rule)} could not run: the higher-order flow analysis it needs " <>
+        "(Anchor.Domain.Cfa) crashed: #{crash_summary(kind, reason, stacktrace)}, so it " <>
         "checked nothing. Fix: this is an Anchor bug; file it with this line."
     )
   end
@@ -634,6 +660,13 @@ defmodule Anchor.Domain.Failures do
       "compile options, or move the module into a dependency."
   end
 
+  defp unreadable_text({:core_v1_refused, {:option, option}}, _path) do
+    "was compiled with the option #{capped(inspect(option))}, which is not on Anchor's list of " <>
+      "options that run no code when lowered to Core Erlang, so it was not lowered " <>
+      "(DND-5552). Fix: remove the option from the module's compile options, or move the " <>
+      "module into a dependency; if the option is safe, Anchor's allowlist must learn it."
+  end
+
   defp unreadable_text({:core_v1_refused, reason}, _path) do
     "the beam's backend could not produce Core Erlang (#{capped(inspect(reason))}). Fix: " <>
       "recompile with the project's own Elixir; report the reason if it persists."
@@ -647,6 +680,13 @@ defmodule Anchor.Domain.Failures do
   defp unreadable_text({:decode_crashed, summary}, _path) do
     "could not be decoded: Anchor crashed reading it (#{summary}). Fix: this is an Anchor " <>
       "bug; file it with this line."
+  end
+
+  defp unreadable_text({:no_core, functions}, _path) do
+    names = Enum.map_join(functions, ", ", fn {name, arity} -> "#{name}/#{arity}" end)
+
+    "has no Core Erlang body for #{capped(names)}, so no call in them was read " <>
+      "(DND-5549). Fix: this is an Anchor bug; file it with this line."
   end
 
   defp unreadable_text({:walk_crashed, summary}, _path) do
