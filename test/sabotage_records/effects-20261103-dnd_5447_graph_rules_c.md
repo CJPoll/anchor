@@ -427,3 +427,46 @@ After the fix: `15 tests, 0 failures` (`effects_canary_test.exs`,
 `effects_test.exs`). `Pricing.skus/1` (`into: MapSet.new()`) stays pure, so
 EF-I still holds its row; Anchor's own `mix anchor.graph` is unchanged
 (0 violations, 128 baselined).
+
+## Regression: a comprehension into a struct literal read as pure (whole-MR critic round 2, 2026-11-03)
+
+Round 2 noted that the first fix still read every Core literal target as
+pure, and `into: %IO.Stream{...}` compiles to a literal. Regression test:
+canary `Notifier.echo/1`, expected as
+`effects|AnchorFixtures.EffectsCanary.Notifier.echo/1|managers`. Before the
+fix, through `test-slot`:
+
+```
+  1) test the violating modules give one finding per bad function, the compliant none (Anchor.Integration.EffectsCanaryTest)
+     test/anchor/integration/effects_canary_test.exs:71
+     Assertion with == failed
+     code:  assert report.findings |> Enum.map(& &1.key) |> Enum.sort() == [
+              "effects|AnchorFixtures.EffectsCanary.Direct.load/1|adapters",
+              "effects|AnchorFixtures.EffectsCanary.Notifier.dump/2|managers",
+              "effects|AnchorFixtures.EffectsCanary.Notifier.echo/1|managers",
+              "effects|AnchorFixtures.EffectsCanary.Notifier.log/1|adapters",
+              "effects|AnchorFixtures.EffectsCanary.Notifier.notify/2|adapters",
+              "effects|AnchorFixtures.EffectsCanary.Reader.read/1|adapters"
+            ]
+     left:  ["effects|AnchorFixtures.EffectsCanary.Direct.load/1|adapters",
+             "effects|AnchorFixtures.EffectsCanary.Notifier.dump/2|managers",
+             "effects|AnchorFixtures.EffectsCanary.Notifier.log/1|adapters",
+             "effects|AnchorFixtures.EffectsCanary.Notifier.notify/2|adapters",
+             "effects|AnchorFixtures.EffectsCanary.Reader.read/1|adapters"]
+     right: ["effects|AnchorFixtures.EffectsCanary.Direct.load/1|adapters",
+             "effects|AnchorFixtures.EffectsCanary.Notifier.dump/2|managers",
+             "effects|AnchorFixtures.EffectsCanary.Notifier.echo/1|managers",
+             "effects|AnchorFixtures.EffectsCanary.Notifier.log/1|adapters",
+             "effects|AnchorFixtures.EffectsCanary.Notifier.notify/2|adapters",
+             "effects|AnchorFixtures.EffectsCanary.Reader.read/1|adapters"]
+     stacktrace:
+       test/anchor/integration/effects_canary_test.exs:79: (test)
+
+..
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+3 tests, 1 failure
+```
+
+The fix: a literal target is pure only when it is no struct, or a `MapSet`
+(`MapSet.new()` compiles to the literal `%MapSet{}`, which is how
+`Pricing.skus/1` stays pure). After: `15 tests, 0 failures`.

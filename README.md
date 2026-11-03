@@ -826,7 +826,8 @@ is unresolved. A closure application (`fun.(x)`, and the call inside
 `Enum.map(list, fun)`) reaches the closures the higher-order flow analysis
 finds there, and is unresolved where it finds a value from outside the
 project. A comprehension's collector (`for ..., into: target`) applies
-nothing to resolve when the target is a literal or a `Map.new`/`MapSet.new`
+nothing to resolve when the target is a literal (no struct but a `MapSet`)
+or a `Map.new`/`MapSet.new`
 the function builds itself; into any other target (a parameter, which may be
 an `IO.stream/0`), it is unresolved. **An unresolved call counts as an effect**: it never makes a
 function look pure, and the run prints how many there were.
@@ -1384,7 +1385,7 @@ matches `:maps.put(k, v, m)`. Two Elixir names the compiled call tells apart by
 a literal tag stay apart: `"Process.monitor/1"` never matches
 `Port.monitor(p)`. Two it cannot tell apart (`Bitwise.band/2` and
 `Bitwise.&&&/2`) match each other; `Inlines.describe/1` names every candidate
-of such a call, for a graph rule that renders one (no rule on main does yet).
+of such a call (`effects_match_bucket` names an effect primitive that way).
 Residuals: a `Map.put` onto a literal map folds into the literal when compiled,
 so the graph sees no call (the AST rule still does); and a source call written
 in Erlang spelling with a tag (`:erlang.monitor(:port, p)`) matches every Elixir

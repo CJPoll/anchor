@@ -35,7 +35,7 @@ defmodule Anchor.Domain.Effects do
       unresolved. A higher-order call given a literal where it could take a
       function (`Enum.with_index(list, 1)`) applies nothing there, and neither
       does the collector a comprehension with `into:` applies when its target
-      is a literal (`into: %{}`) or a `Map.new`/`MapSet.new` the function
+      is a literal (`into: %{}`; no struct but a `MapSet`) or a `Map.new`/`MapSet.new` the function
       calls itself. A target from anywhere else (a parameter, which may be an
       `IO.stream/0`) leaves the collector to the analysis, and unresolved.
       Without the analysis, every `fun.(x)` is unresolved.
@@ -246,8 +246,9 @@ defmodule Anchor.Domain.Effects do
   # the target's Collectable implementation. When the target is a literal or a
   # pure stdlib collection the function builds itself, that collector is
   # stdlib code with no effect, so its applications are not unresolved calls.
-  # Any other target (a parameter, a call's result, a project struct with its
-  # own Collectable) may write to the world, and stays the analysis's. Read
+  # Any other target (a parameter, a call's result, a struct literal such as
+  # `%IO.Stream{}`, a project struct with its own Collectable) may write to
+  # the world, and stays the analysis's. Read
   # from Core: the variables a case on such a `Collectable.into/1` call binds
   # as the second element of its tuple pattern.
   defp collectors(core) do
@@ -286,9 +287,14 @@ defmodule Anchor.Domain.Effects do
       pure_collection?(hd(:cerl.call_args(node)), built)
   end
 
+  # A literal target: no struct, or a MapSet (`MapSet.new()` compiles to one).
+  defp pure_literal?(%MapSet{}), do: true
+  defp pure_literal?(%{__struct__: _struct}), do: false
+  defp pure_literal?(_value), do: true
+
   defp pure_collection?(node, built) do
     case :cerl.type(node) do
-      :literal -> true
+      :literal -> pure_literal?(:cerl.concrete(node))
       :var -> MapSet.member?(built, :cerl.var_name(node))
       :call -> Core.call_mfa(node) in @pure_collections
       _other -> false
