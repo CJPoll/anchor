@@ -26,6 +26,10 @@ defmodule Anchor.Domain.Demand.LatticeTest do
                  {Enum.at(@samples, rem(i, 8)), Enum.at(@samples, rem(i * 3 + 1, 8)),
                   Enum.at(@samples, rem(i * 5 + 2, 8))}
 
+  # `demand` three levels of fields down, raw (unbounded), so `bound/1` meets
+  # it at the cut.
+  defp nest(demand), do: {:used, %{a: {:used, %{b: {:used, %{c: demand}}}}}}
+
   describe "join/2" do
     test "absent is the identity, all absorbs" do
       for x <- @samples do
@@ -86,9 +90,9 @@ defmodule Anchor.Domain.Demand.LatticeTest do
       assert Lattice.bound(three) == three
     end
 
-    test "bound is monotone over 20 triples" do
+    test "bound is monotone over 20 triples, nested to the cut" do
       for {a, b, _c} <- @triples, Lattice.leq?(a, b) do
-        assert Lattice.leq?(Lattice.bound(a), Lattice.bound(b))
+        assert Lattice.leq?(Lattice.bound(nest(a)), Lattice.bound(nest(b)))
       end
     end
   end
