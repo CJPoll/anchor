@@ -827,8 +827,13 @@ anchor.graph: 40 modules in 1 apps, 1 rules, 1 violations (0 report-only, 0 base
 Anchor's own `.anchor.yml` runs it over `lib/` with a baseline. Its depth-2
 contexts are its buckets, so `interfaces.buckets` names every bucket but
 framework there, and the baseline holds what it found when it landed: the
-calls of `Anchor.Managers.Lint` into the check modules (DND-1288), the
-top-level `Anchor` module (no context at depth 2) and `Mutator`'s `apply/3`.
+calls of `Anchor.Managers.Lint` into the check modules (DND-1288),
+`GraphRules.by_type/1`'s calls of each check's `rule_type/0`, the top-level
+`Anchor` module (no context at depth 2), `Mutator.generate/4`'s dynamic call,
+`Sabotage.Coverage.traced_suite/3`'s `suite.run/1` reaching the Mix tasks
+(the dynamic-call over-approximation, DND-5633), and the sabotage task
+starting `CoverageCollector`. The `.anchor.yml` comment on the rule names the
+same groups.
 
 The only file it writes is `<build_path>/anchor/graph.etf` (Mix's build path:
 `_build/<env>`, or the directory `MIX_BUILD_PATH` names), the graph keyed by
