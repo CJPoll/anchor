@@ -1,0 +1,240 @@
+defmodule Anchor.Managers.LintBaselineTest do
+  # DND-5632: an ast rule's baseline, applied by the Lint Manager. The config
+  # and the baseline file are Hammox doubles (`expect/3`, so each read
+  # self-proves); the analyzer, selection and comparison are real.
+  #
+  # Sabotage record: ../../sabotage_records/baseline-20261103-dnd_5648_graph_followups.md
+  use ExUnit.Case, async: true
+
+  import Hammox
+
+  alias Anchor.BaselineStoreMock
+  alias Anchor.Check.NoDependency
+  alias Anchor.Config
+  alias Anchor.ConfigLoaderMock
+  alias Anchor.Domain.Violation
+  alias Anchor.Managers.Lint
+  alias Credo.SourceFile
+
+  setup :verify_on_exit!
+
+  @root "/proj"
+  @path ".anchor/baselines/pure.txt"
+
+  @a """
+  defmodule MyApp.A do
+    def f, do: File.read("x")
+    def g, do: IO.puts("x")
+  end
+  """
+
+  @b """
+  defmodule MyApp.B do
+    def f, do: File.read("y")
+  end
+  """
+
+  defp rule(extra \\ %{}) do
+    Map.merge(
+      %{
+        type: :no_direct_dependency,
+        id: "pure",
+        pattern: "MyApp.*",
+        forbidden_modules: [File, IO],
+        baseline: @path
+      },
+      extra
+    )
+  end
+
+  defp files(sources \\ [{@a, "lib/a.ex"}, {@b, "lib/b.ex"}]),
+    do: Enum.map(sources, fn {source, name} -> SourceFile.parse(source, name) end)
+
+  defp run(rules, source_files, opts \\ []) do
+    expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: rules, path: ".anchor.yml"}} end)
+
+    {:ok, results} =
+      Lint.run(
+        NoDependency,
+        source_files,
+        [],
+        [config_loader: ConfigLoaderMock, baseline_store: BaselineStoreMock, root: @root] ++
+          opts
+      )
+
+    results
+  end
+
+  defp expect_entries(entries) do
+    expect(BaselineStoreMock, :read, fn @root, @path -> {:ok, entries} end)
+  end
+
+  defp findings(results) do
+    for {%SourceFile{filename: file}, violations} <- results,
+        %Violation{} = v <- violations,
+        do: {file, v.trigger, v.key}
+  end
+
+  defp config(results) do
+    case List.keyfind(results, :config, 0) do
+      {:config, violations} -> violations
+      nil -> []
+    end
+  end
+
+  describe "a baselined rule's findings" do
+    test "positive control: every finding held, nothing printed" do
+      expect_entries(~w(pure|lib/a.ex|File pure|lib/a.ex|IO pure|lib/b.ex|File))
+      results = run([rule()], files())
+
+      assert findings(results) == []
+      assert config(results) == []
+    end
+
+    test "each finding carries the rule's id and its key" do
+      expect_entries([])
+      results = run([rule()], files())
+
+      assert Enum.sort(findings(results)) == [
+               {"lib/a.ex", "File", "pure|lib/a.ex|File"},
+               {"lib/a.ex", "IO", "pure|lib/a.ex|IO"},
+               {"lib/b.ex", "File", "pure|lib/b.ex|File"}
+             ]
+
+      assert [%Violation{rule_id: "pure"} | _rest] =
+               results |> Enum.flat_map(fn {_file, vs} -> vs end)
+    end
+
+    test "NEW: a finding no entry covers stands" do
+      expect_entries(~w(pure|lib/a.ex|File pure|lib/b.ex|File))
+      results = run([rule()], files())
+
+      assert findings(results) == [{"lib/a.ex", "IO", "pure|lib/a.ex|IO"}]
+      assert config(results) == []
+    end
+
+    test "STALE: an entry no finding consumes is a finding on the baseline path" do
+      expect_entries(~w(pure|lib/a.ex|File pure|lib/a.ex|IO pure|lib/b.ex|File pure|lib/b.ex|IO))
+      results = run([rule()], files())
+
+      assert findings(results) == []
+
+      assert [%Violation{filename: @path, key: "pure|lib/b.ex|IO", enforcement: :enforce} = stale] =
+               config(results)
+
+      assert stale.message =~ "matches no finding (it was fixed)"
+    end
+
+    test "STALE takes the rule's enforcement: report" do
+      expect_entries(~w(pure|lib/gone.ex|File))
+      results = run([rule(%{enforcement: :report})], files([{@b, "lib/b.ex"}]))
+
+      assert [%Violation{key: "pure|lib/gone.ex|File", enforcement: :report}] = config(results)
+      assert [{"lib/b.ex", "File", "pure|lib/b.ex|File"}] = findings(results)
+    end
+
+    test "an absolute filename is keyed relative to the root" do
+      expect_entries(~w(pure|lib/b.ex|File))
+
+      assert run([rule()], files([{@b, "/proj/lib/b.ex"}])) |> findings() == []
+    end
+  end
+
+  describe "a narrowed run (DND-5632)" do
+    test "no false STALE for an entry on a file it did not read, and a note says so" do
+      expect_entries(~w(pure|lib/a.ex|File pure|lib/a.ex|IO pure|lib/b.ex|File))
+
+      results =
+        run([rule()], files([{@a, "lib/a.ex"}]), enforce_selection_floors: false)
+
+      assert findings(results) == []
+
+      assert [%Violation{filename: @path, enforcement: :report, message: message}] =
+               config(results)
+
+      assert message =~ "NOTE: 1 entry of #{@path} names a file this run did not read"
+    end
+
+    test "a narrowed run still fails STALE on a file it read" do
+      expect_entries(~w(pure|lib/a.ex|File pure|lib/a.ex|IO pure|lib/a.ex|IO))
+
+      results = run([rule()], files([{@a, "lib/a.ex"}]), enforce_selection_floors: false)
+
+      assert [%Violation{key: "pure|lib/a.ex|IO", enforcement: :enforce}] = config(results)
+    end
+
+    test "the same entry in a whole run is STALE" do
+      expect_entries(~w(pure|lib/a.ex|File pure|lib/a.ex|IO pure|lib/b.ex|File))
+
+      results = run([rule()], files([{@a, "lib/a.ex"}]))
+
+      assert [%Violation{key: "pure|lib/b.ex|File", enforcement: :enforce}] = config(results)
+    end
+
+    test "an entry on a file that does not parse is unjudged, never STALE" do
+      expect_entries(~w(pure|lib/a.ex|File pure|lib/a.ex|IO pure|lib/bad.ex|File))
+
+      results = run([rule()], files([{@a, "lib/a.ex"}, {"defmodule X do", "lib/bad.ex"}]))
+
+      assert [%Violation{enforcement: :report, message: "NOTE: 1 entry" <> _rest}] =
+               config(results)
+    end
+  end
+
+  describe "a baseline the run cannot use" do
+    test "unreadable: one fail-closed issue naming the writer, and every finding stands" do
+      expect(BaselineStoreMock, :read, fn @root, @path -> {:error, :enoent} end)
+      results = run([rule()], files([{@b, "lib/b.ex"}]))
+
+      assert findings(results) == [{"lib/b.ex", "File", "pure|lib/b.ex|File"}]
+
+      assert [%Violation{kind: :fail_closed, filename: @path, rule_id: "pure", message: message}] =
+               config(results)
+
+      assert message =~ "Fix: create it with mix anchor.baseline --write pure"
+    end
+
+    test "another rule's entry: one fail-closed issue, and every finding stands" do
+      expect_entries(~w(pure|lib/b.ex|File other|lib/b.ex|File))
+      results = run([rule()], files([{@b, "lib/b.ex"}]))
+
+      assert findings(results) == [{"lib/b.ex", "File", "pure|lib/b.ex|File"}]
+      assert [%Violation{kind: :fail_closed, message: message}] = config(results)
+      assert message =~ ~s(holds "other|lib/b.ex|File", an entry of another rule)
+    end
+  end
+
+  describe "beside rules with no baseline" do
+    test "a rule with no baseline is not read, and its findings carry no key" do
+      results = run([Map.delete(rule(), :baseline)], files([{@b, "lib/b.ex"}]))
+
+      assert findings(results) == [{"lib/b.ex", "File", nil}]
+    end
+
+    test "a violation every pass makes once per file is printed once" do
+      source = """
+      defmodule MyApp.C do
+        alias @target, as: T
+        def g, do: T.go()
+        def f, do: File.read("z")
+      end
+      """
+
+      expect_entries(~w(pure|lib/c.ex|File))
+
+      plain = %{
+        type: :no_direct_dependency,
+        id: "plain",
+        pattern: "MyApp.*",
+        forbidden_modules: [System]
+      }
+
+      results = run([plain, rule()], files([{source, "lib/c.ex"}]))
+      [{_file, violations}] = Enum.reject(results, &match?({:config, _}, &1))
+
+      unresolved = Enum.filter(violations, &(&1.message =~ "cannot statically resolve"))
+      assert length(unresolved) == 1, inspect(violations)
+      assert Enum.all?(violations, &is_nil(&1.key))
+    end
+  end
+end

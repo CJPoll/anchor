@@ -408,7 +408,7 @@ semantics and edge cases.
 | `min_files` | any rule | Positive integer, default `1`. The fewest files the rule must select in a whole-project run; fewer is an issue. See [A rule that checks nothing](#a-rule-that-checks-nothing). |
 | `id` | any rule | A name for the rule, unique in the file. It appears beside the rule's position in its load errors and floor reports (`rule 2 (id: "web-no-repo", ...)`). A rule with a `baseline` needs one. |
 | `enforcement` | any rule | `enforce` (default) or `report` (a leading colon is accepted). A `report` rule's findings print and never fail the run; fail-closed issues still fail. See [Adopting a rule](#adopting-a-rule-report-baseline-enforce-dnd-5441). |
-| `baseline` | graph rules | A path relative to the project root, no `..` (convention `.anchor/baselines/<id>.txt`): the rule's shrink-only baseline. Needs `id`. Refused on an `ast` rule. |
+| `baseline` | any rule | A path relative to the project root, no `..` (convention `.anchor/baselines/<id>.txt`): the rule's shrink-only baseline. Needs `id`. A graph rule's is judged by `mix anchor.graph`, an ast rule's by its Credo check and `mix anchor.baseline` (DND-5632). |
 | `bucket` | graph rules | Selector: the modules of that `architecture:` bucket. Must name one of its buckets. |
 | `min_modules` | graph rules | Positive integer, default `1`: the fewest modules the rule must select; fewer is an issue. A graph rule's floor (`min_files` is refused there). |
 | `forbidden_modules` / `required_modules` | `no_direct_dependency`, `no_transitive_dependency` / `must_use_module` | Exact module tokens (see the token syntax below). |
@@ -625,8 +625,9 @@ findings can only shrink along the way:
    --strict` lists them and still passes.
 2. **Baseline.** Give the rule an `id` and `baseline:
    .anchor/baselines/<id>.txt`, then run `mix anchor.graph --write-baseline
-   <id>`: it writes the rule's current finding keys, sorted, and refuses
-   (exit 2) when the file exists. Review the file in the change that adds it.
+   <id>` (a graph rule) or `mix anchor.baseline --write <id>` (an ast rule):
+   it writes the rule's current finding keys, sorted, and refuses (exit 2)
+   when the file exists. Review the file in the change that adds it.
 3. **Enforce.** Drop `enforcement: report`. A finding the baseline holds is
    counted (`<H> baselined`; `--verbose` prints each as `[held]`). A finding
    it does not hold (NEW) fails. A baseline line no finding matches (STALE)
@@ -642,9 +643,41 @@ findings). A key is `<rule id>|<subject>|<detail>` (or `<rule id>|<subject>`
 for a finding with no target, such as a `context_acyclic` cycle), such as
 `layering|MyApp.Web.Page.show/2|-> MyApp.Repo.get/2`: no line numbers and no
 message text, so moving code does not churn it. Every entry starts with the
-rule's id; a file holding another rule's entry is refused. `baseline` is read
-by graph rules only: on an `ast` rule it is refused at load, because Credo
-compares no baseline yet.
+rule's id; a file holding another rule's entry is refused.
+
+### Baselines for ast rules (DND-5632)
+
+An `ast` rule (a Credo check) takes the same `baseline:` and the same
+ratchet. Its key is `<rule id>|<file>|<trigger>`, the file relative to the
+project root and the trigger the check highlights (the forbidden module, the
+function), such as `pure|lib/my_app/domain/order.ex|File`: no line and no
+message, so moving code within a file does not churn it.
+
+* **Every `mix credo` run** compares the rule's findings with its baseline,
+  inside the rule's own check: a held finding is dropped, a NEW one stands,
+  and a line no finding matches is a STALE issue on the baseline path (exit
+  status 0 for a `report` rule). A baseline that cannot be read, or holds
+  another rule's entry, is one issue there, and every finding stands.
+* **A narrowed run** (`mix credo lib/a.ex`, `--files-included`, a watch
+  rerun) judges only the lines on files it read: a line on a file it did not
+  read, or could not parse, is not STALE, and one report-only NOTE counts
+  them (`NOTE: 2 entries of .anchor/baselines/pure.txt name a file this run
+  did not read or could not parse, so they were not judged STALE. Fix: run
+  mix credo over the whole project ...`). A whole run judges every line, so
+  a line on a deleted file is STALE.
+* **`mix anchor.baseline --write <id>`** compiles the project, runs Credo
+  over the whole file set (its report is not printed) and creates the rule's
+  baseline from its finding keys, sorted. It only creates (exit 2 when the
+  file exists). A rule whose check `.credo.exs` does not enable has no
+  findings, so it writes nothing: COULD NOT MEASURE (exit 3).
+* **`mix anchor.baseline --base REF`** fails every line the branch added to
+  an ast rule's baseline since `REF` (GREW), found by the rule's id in the
+  config at `REF`, exactly as `mix anchor.graph --base` judges a graph
+  rule's (the first-landing NOTEs and the read failures are the same). CI
+  runs it on a pull request. It prints one line per finding and
+  `anchor.baseline: <B> ast baselines, <V> violations (<P> report-only)`.
+  Exit codes: 0 pass or written, 1 GREW or an unreadable/unwritable
+  baseline, 2 usage or a refused write, 3 COULD NOT MEASURE.
 
 ### The `layering` rule (DND-5442)
 

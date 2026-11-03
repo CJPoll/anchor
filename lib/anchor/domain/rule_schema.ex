@@ -53,8 +53,8 @@ defmodule Anchor.Domain.RuleSchema do
   `common_keys/1`):
 
     * `ast`: `type`, the three selectors (`paths`, `pattern`, `uses_module`),
-      `recursive`, the floor keys `min_files` and `id`, and `enforcement`
-      (DND-5441);
+      `recursive`, the floor keys `min_files` and `id`, `enforcement`
+      (DND-5441) and `baseline` (DND-5632);
     * `graph` (shared contract section 3.2, DND-5441): `type`, `id`, the three
       selectors (`bucket`, `paths`, `pattern`), the floor `min_modules`,
       `enforcement` and `baseline`.
@@ -65,8 +65,9 @@ defmodule Anchor.Domain.RuleSchema do
 
   `enforcement` is `report` or `enforce` (default). `baseline` is a path
   relative to the project root with no `..` segment, and needs `id` (every
-  baseline entry starts with it). It is refused on an `ast` rule: Credo
-  compares no baseline yet, so it would ratchet nothing. A graph rule needs
+  baseline entry starts with it). An `ast` rule's is read by its Credo check
+  (`Anchor.Managers.Lint`, DND-5632), a graph rule's by `mix anchor.graph`.
+  A graph rule needs
   the config's `architecture:` section, and its `bucket` must name one of its
   buckets: `validate_architecture/3`, which `Anchor.Config` calls once the
   whole document is parsed.
@@ -164,10 +165,10 @@ defmodule Anchor.Domain.RuleSchema do
   @type engine :: :ast | :graph
 
   # The keys every rule of an engine accepts (DND-5441: `enforcement` on both
-  # engines, `baseline` on graph rules only; the graph common keys are shared
-  # contract section 3.2). See the moduledoc, "Common keys per engine".
+  # engines; `baseline` on both since DND-5632; the graph common keys are
+  # shared contract section 3.2). See the moduledoc, "Common keys per engine".
   @common_keys_by_engine %{
-    ast: ~w(enforcement id min_files paths pattern recursive type uses_module),
+    ast: ~w(baseline enforcement id min_files paths pattern recursive type uses_module),
     graph: ~w(baseline bucket enforcement id min_modules paths pattern type)
   }
 
@@ -406,8 +407,7 @@ defmodule Anchor.Domain.RuleSchema do
   @spec validate_common(map(), engine(), [String.t()], atom() | String.t()) ::
           :ok | {:error, String.t()}
   def validate_common(rule, engine, type_keys, label) when engine in @engines do
-    with :ok <- refuse_ast_baseline(rule, engine),
-         :ok <- validate_keys(rule, engine, type_keys, label),
+    with :ok <- validate_keys(rule, engine, type_keys, label),
          :ok <- validate_selector_types(rule, engine),
          :ok <- require_selector(rule, engine),
          :ok <- require_single_selector(rule, engine),
@@ -449,18 +449,6 @@ defmodule Anchor.Domain.RuleSchema do
   end
 
   def validate_architecture(_rule, :graph, _names), do: :ok
-
-  # DND-5441: a baseline is read by the graph runner only. Credo (the `ast`
-  # engine) has no baseline comparison yet, so `baseline` on an `ast` rule
-  # would load and ratchet nothing.
-  defp refuse_ast_baseline(%{"baseline" => _baseline}, :ast) do
-    {:error,
-     "`baseline` is read by graph rules only (mix anchor.graph); an ast rule's findings are " <>
-       "not compared with a baseline yet, so it would ratchet nothing; remove `baseline`, and " <>
-       "use `enforcement: report` while the rule's findings are being fixed"}
-  end
-
-  defp refuse_ast_baseline(_rule, _engine), do: :ok
 
   defp validate_enforcement(%{"enforcement" => token}) do
     case token do

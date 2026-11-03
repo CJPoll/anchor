@@ -42,8 +42,8 @@ never an adapter.
 | Bucket | Modules |
 |---|---|
 | Framework | `Anchor.Check.*` (Credo checks, `Anchor.Check.Base`, `Anchor.Check.Source`), `Mix.Tasks.Anchor.*` (`lib/mix/tasks/`; `Mix.Tasks.Anchor.Sabotage`), `Anchor.Sabotage.CoverageCollector` (an OTP process, in `lib/mix/tasks/anchor/sabotage/` so `mix anchor.graph` buckets it as Framework) |
-| Managers | `Anchor.Managers.Lint`, `Anchor.Managers.Sabotage` (`.Runner`, `.Coverage`) |
-| Side Effects | ports: `Anchor.Adapters.ConfigLoader`, `ChangeSource`, `BeamSource`, `Tracing`, `InProcessTests`, `ProjectModuleSource`, `CoverageStore`, `BaselineStore`, `GitBase`; adapters: `ConfigFile`, `GitChangeSource`, `BeamReader`, `CallTracer`, `SuiteRunner`, `ProjectModules`, `CoverageFile`, `RecordFile` (port `RecordStore`), `BaselineFile`, `GitShow` (`lib/anchor/adapters/`); `GitEnv`, the environment the git adapters run git with (DND-5581) |
+| Managers | `Anchor.Managers.Lint`, `Anchor.Managers.AstBaseline`, `Anchor.Managers.Sabotage` (`.Runner`, `.Coverage`) |
+| Side Effects | ports: `Anchor.Adapters.ConfigLoader`, `ChangeSource`, `BeamSource`, `Tracing`, `InProcessTests`, `ProjectModuleSource`, `CoverageStore`, `BaselineStore`, `GitBase`, `LintKeys`; adapters: `ConfigFile`, `CredoKeys`, `GitChangeSource`, `BeamReader`, `CallTracer`, `SuiteRunner`, `ProjectModules`, `CoverageFile`, `RecordFile` (port `RecordStore`), `BaselineFile`, `GitShow` (`lib/anchor/adapters/`); `GitEnv`, the environment the git adapters run git with (DND-5581) |
 | Domain | everything under `lib/anchor/domain/`, including `Anchor.Domain.Sabotage.*` (`Mutator`, `Operators`, `DiffHunks`, `FunctionSpans`, `Scope`, `CoverageMap`, `Record`, `RecordNaming`, `KillMap`, `ChangedTests`, `TestPath`: the one rule for a path handed to `mix test`, DND-5640) and `Anchor.Domain.Graph.*` |
 
 ### Key Architectural Decisions
@@ -245,8 +245,18 @@ through `Anchor.Adapters.GitBase` (`GitShow`: argv only, the ref checked by
 and compares (multisets: NEW, STALE, held; GREW against base), and
 `Anchor.Domain.Enforcement.judge/4` turns the result into findings. A key is
 `Anchor.Domain.ViolationKey.graph_key/3`: `<id or type>|<subject>|<detail>`,
-no line, no message. `baseline` on an `ast` rule is refused at load until
-Credo compares baselines.
+no line, no message.
+
+An `ast` rule takes `baseline:` too (DND-5632). `Anchor.Managers.Lint`
+detects each baselined rule on its own pass (so each finding carries
+`rule_id` and `ViolationKey.ast_key/3`, `<id>|<file>|<trigger>`), then
+`Anchor.Domain.AstBaseline.judge/4` compares it with the file over the files
+the run read (a narrowed run, `Check.Base.whole_file_set?/2` false, never
+reads an unread file's entry as STALE, and notes them). `Check.Base` puts
+`anchor_key`/`anchor_rule_id` on the Credo issue's `meta`. `mix
+anchor.baseline` (`Anchor.Managers.AstBaseline`) writes a baseline (`--write
+ID`, through the `Anchor.Adapters.LintKeys` port, `CredoKeys`: a muted
+`Credo.run/1`) and judges GREW (`--base REF`).
 
 ## The layering rule (DND-5442)
 

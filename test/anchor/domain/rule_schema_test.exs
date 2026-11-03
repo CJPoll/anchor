@@ -7,6 +7,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
   # path anchored on this file (not the cwd, which sync modules change).
   #
   # Sabotage record: ../../sabotage_records/rule_schema-20260929-dnd_1286_rule_key_allowlist.md
+  # Sabotage record: ../../sabotage_records/baseline-20261103-dnd_5648_graph_followups.md (DND-5632)
   # DND-5441 (engine common keys, enforcement, baseline, validate_architecture/3):
   #   ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
   use ExUnit.Case, async: true
@@ -87,7 +88,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
                Config.parse_rule(rule(:no_direct_dependency, %{"forbiden_patterns" => ["*.X.*"]}))
 
       assert reason =~
-               "known keys for no_direct_dependency: allowed_callers, context_depth, enforcement, " <>
+               "known keys for no_direct_dependency: allowed_callers, baseline, context_depth, enforcement, " <>
                  "forbidden_functions, " <>
                  "forbidden_modules, " <>
                  "forbidden_patterns, id, match, min_files, paths, pattern, recursive, " <>
@@ -189,7 +190,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
       end
 
       assert RuleSchema.common_keys(:ast) ==
-               ~w(enforcement id min_files paths pattern recursive type uses_module)
+               ~w(baseline enforcement id min_files paths pattern recursive type uses_module)
 
       assert RuleSchema.common_keys(:graph) ==
                ~w(baseline bucket enforcement id min_modules paths pattern type)

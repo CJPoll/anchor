@@ -609,3 +609,518 @@ Run summary: `14 tests, 1 failure`
 ...
 ```
 
+
+## DND-5632: baselines for ast (Credo-engine) rules
+
+**Code under test:** `Anchor.Domain.AstBaseline` (`judge/4`, `entry_file/2`, `exit_code/1`, `render/2`), `Anchor.Domain.ViolationKey.ast_key/3`, the ratchet in `Anchor.Managers.Lint` (per-rule detection, keys, held/STALE/unjudged), `Anchor.Managers.AstBaseline` (`write/2`, `grew/2`), `Anchor.Check.Base`'s issue meta, `Mix.Tasks.Anchor.Baseline`, and `baseline` as an ast common key in `Anchor.Domain.RuleSchema`.
+
+**Suite run:** one `test-slot` ran `sab.py` per mutation (wait 1.1 s, write, `mix test --timeout 2000 --max-cases 2 <tests>`, restore, wait 1.1 s) over the seven test files below. AB-Q's first form (`if meta == [] or true`) did not compile (the type checker reads it as always true), so it was rerun as the form recorded. With every source restored: `mix test` 2236 tests, 0 failures; `mix credo --strict` no issues; `MIX_ENV=dev mix anchor.graph` 0 violations.
+
+| ID | Mutation | Tests | Result | Failing tests |
+|---|---|---|---|---|
+| AB-A | a narrowed run judges every entry (scope ignored) (`lib/anchor/domain/ast_baseline.ex`) | `ast_baseline_test.exs`, `lint_baseline_test.exs`, `ast_baseline_test.exs`, `anchor_baseline_test.exs`, `ast_baseline_integration_test.exs`, `rule_checks_nothing_test.exs`, `failures_graph_test.exs` | `99 tests, 6 failures` (red) | judge/4 an entry on a file the run could not parse is unjudged, never STALE; judge/4 a narrowed run still finds STALE on a file it read; judge/4 a narrowed run judges no entry on a file it did not read: no false STALE; a narrowed run (DND-5632) an entry on a file that does not parse is unjudged, never STALE; a narrowed run (DND-5632) no false STALE for an entry on a file it did not read, and a note says so; write, then held, STALE, and a narrowed run with no false STALE |
+| AB-B | an unparsed file's entries are judged (`lib/anchor/domain/ast_baseline.ex`) | `ast_baseline_test.exs`, `lint_baseline_test.exs`, `ast_baseline_test.exs`, `anchor_baseline_test.exs`, `ast_baseline_integration_test.exs`, `rule_checks_nothing_test.exs`, `failures_graph_test.exs` | `99 tests, 2 failures` (red) | judge/4 an entry on a file the run could not parse is unjudged, never STALE; a narrowed run (DND-5632) an entry on a file that does not parse is unjudged, never STALE |
+| AB-C | a whole run judges only the files it read (a deleted file's entry never STALE) (`lib/anchor/domain/ast_baseline.ex`) | `ast_baseline_test.exs`, `lint_baseline_test.exs`, `ast_baseline_test.exs`, `anchor_baseline_test.exs`, `ast_baseline_integration_test.exs`, `rule_checks_nothing_test.exs`, `failures_graph_test.exs` | `99 tests, 4 failures` (red) | judge/4 STALE in a whole run: an entry on a file that no longer exists; a baselined rule's findings STALE takes the rule's enforcement: report; a narrowed run (DND-5632) the same entry in a whole run is STALE; write, then held, STALE, and a narrowed run with no false STALE |
+| AB-D | held findings are not dropped (`lib/anchor/managers/lint.ex`) | `ast_baseline_test.exs`, `lint_baseline_test.exs`, `ast_baseline_test.exs`, `anchor_baseline_test.exs`, `ast_baseline_integration_test.exs`, `rule_checks_nothing_test.exs`, `failures_graph_test.exs` | `99 tests, 7 failures` (red) | beside rules with no baseline a violation every pass makes once per file is printed once; a baselined rule's findings an absolute filename is keyed relative to the root; a baselined rule's findings NEW: a finding no entry covers stands; a narrowed run (DND-5632) no false STALE for an entry on a file it did not read, and a note says so; a baselined rule's findings STALE: an entry no finding consumes is a finding on the baseline path; a baselined rule's findings positive control: every finding held, nothing printed; write, then held, STALE, and a narrowed run with no false STALE |
+| AB-E | STALE entries are not reported (`lib/anchor/managers/lint.ex`) | `ast_baseline_test.exs`, `lint_baseline_test.exs`, `ast_baseline_test.exs`, `anchor_baseline_test.exs`, `ast_baseline_integration_test.exs`, `rule_checks_nothing_test.exs`, `failures_graph_test.exs` | `99 tests, 5 failures` (red) | a baselined rule's findings STALE takes the rule's enforcement: report; a baselined rule's findings STALE: an entry no finding consumes is a finding on the baseline path; a narrowed run (DND-5632) a narrowed run still fails STALE on a file it read; a narrowed run (DND-5632) the same entry in a whole run is STALE; write, then held, STALE, and a narrowed run with no false STALE |
+| AB-F | the unjudged note is not printed (`lib/anchor/managers/lint.ex`) | `ast_baseline_test.exs`, `lint_baseline_test.exs`, `ast_baseline_test.exs`, `anchor_baseline_test.exs`, `ast_baseline_integration_test.exs`, `rule_checks_nothing_test.exs`, `failures_graph_test.exs` | `99 tests, 3 failures` (red) | a narrowed run (DND-5632) an entry on a file that does not parse is unjudged, never STALE; a narrowed run (DND-5632) no false STALE for an entry on a file it did not read, and a note says so; write, then held, STALE, and a narrowed run with no false STALE |
+| AB-G | a once-per-file violation is printed by every pass (`lib/anchor/managers/lint.ex`) | `ast_baseline_test.exs`, `lint_baseline_test.exs`, `ast_baseline_test.exs`, `anchor_baseline_test.exs`, `ast_baseline_integration_test.exs`, `rule_checks_nothing_test.exs`, `failures_graph_test.exs` | `99 tests, 1 failure` (red) | beside rules with no baseline a violation every pass makes once per file is printed once |
+| AB-H | a finding is keyed on the wrong file (`lib/anchor/managers/lint.ex`) | `ast_baseline_test.exs`, `lint_baseline_test.exs`, `ast_baseline_test.exs`, `anchor_baseline_test.exs`, `ast_baseline_integration_test.exs`, `rule_checks_nothing_test.exs`, `failures_graph_test.exs` | `99 tests, 14 failures` (red) | a baselined rule's findings NEW: a finding no entry covers stands; a baselined rule's findings STALE takes the rule's enforcement: report; beside rules with no baseline a violation every pass makes once per file is printed once; a baselined rule's findings an absolute filename is keyed relative to the root; a baseline the run cannot use unreadable: one fail-closed issue naming the writer, and every finding stands; a narrowed run (DND-5632) a narrowed run still fails STALE on a file it read; a narrowed run (DND-5632) no false STALE for an entry on a file it did not read, and a note says so; a baselined rule's findings STALE: an entry no finding consumes is a finding on the baseline path; a narrowed run (DND-5632) an entry on a file that does not parse is unjudged, never STALE; a baselined rule's findings each finding carries the rule's id and its key; a baseline the run cannot use another rule's entry: one fail-closed issue, and every finding stands; a baselined rule's findings positive control: every finding held, nothing printed; a narrowed run (DND-5632) the same entry in a whole run is STALE; write, then held, STALE, and a narrowed run with no false STALE |
+| AB-I | the key's file is not made relative to the root (`lib/anchor/managers/lint.ex`) | `ast_baseline_test.exs`, `lint_baseline_test.exs`, `ast_baseline_test.exs`, `anchor_baseline_test.exs`, `ast_baseline_integration_test.exs`, `rule_checks_nothing_test.exs`, `failures_graph_test.exs` | `99 tests, 14 failures` (red) | a baseline the run cannot use unreadable: one fail-closed issue naming the writer, and every finding stands; a narrowed run (DND-5632) an entry on a file that does not parse is unjudged, never STALE; a baselined rule's findings NEW: a finding no entry covers stands; a baseline the run cannot use another rule's entry: one fail-closed issue, and every finding stands; beside rules with no baseline a violation every pass makes once per file is printed once; a narrowed run (DND-5632) no false STALE for an entry on a file it did not read, and a note says so; a baselined rule's findings STALE takes the rule's enforcement: report; a narrowed run (DND-5632) a narrowed run still fails STALE on a file it read; a narrowed run (DND-5632) the same entry in a whole run is STALE; a baselined rule's findings an absolute filename is keyed relative to the root; a baselined rule's findings STALE: an entry no finding consumes is a finding on the baseline path; a baselined rule's findings positive control: every finding held, nothing printed; a baselined rule's findings each finding carries the rule's id and its key; write, then held, STALE, and a narrowed run with no false STALE |
+| AB-J | a baseline issue does not name its rule (`lib/anchor/managers/lint.ex`) | `ast_baseline_test.exs`, `lint_baseline_test.exs`, `ast_baseline_test.exs`, `anchor_baseline_test.exs`, `ast_baseline_integration_test.exs`, `rule_checks_nothing_test.exs`, `failures_graph_test.exs` | `99 tests, 1 failure` (red) | a baseline the run cannot use unreadable: one fail-closed issue naming the writer, and every finding stands |
+| AB-K | write keeps every rule's keys (`lib/anchor/managers/ast_baseline.ex`) | `ast_baseline_test.exs`, `lint_baseline_test.exs`, `ast_baseline_test.exs`, `anchor_baseline_test.exs`, `ast_baseline_integration_test.exs`, `rule_checks_nothing_test.exs`, `failures_graph_test.exs` | `99 tests, 1 failure` (red) | write/2 creates the rule's baseline from its keys alone, sorted, and notes it (exit 0) |
+| AB-L | write runs for a rule no check judged (`lib/anchor/managers/ast_baseline.ex`) | `ast_baseline_test.exs`, `lint_baseline_test.exs`, `ast_baseline_test.exs`, `anchor_baseline_test.exs`, `ast_baseline_integration_test.exs`, `rule_checks_nothing_test.exs`, `failures_graph_test.exs` | `99 tests, 1 failure` (red) | write/2 a rule whose check Credo does not run writes nothing (exit 3) |
+| AB-M | write over an existing file is not refused before Credo (`lib/anchor/managers/ast_baseline.ex`) | `ast_baseline_test.exs`, `lint_baseline_test.exs`, `ast_baseline_test.exs`, `anchor_baseline_test.exs`, `ast_baseline_integration_test.exs`, `rule_checks_nothing_test.exs`, `failures_graph_test.exs` | `99 tests, 3 failures` (red) | write/2 an existing file is refused before Credo runs (exit 2); write, then held, STALE, and a narrowed run with no false STALE; --write over an existing file exits 2 |
+| AB-N | GREW compares the branch with itself (`lib/anchor/managers/ast_baseline.ex`) | `ast_baseline_test.exs`, `lint_baseline_test.exs`, `ast_baseline_test.exs`, `anchor_baseline_test.exs`, `ast_baseline_integration_test.exs`, `rule_checks_nothing_test.exs`, `failures_graph_test.exs` | `99 tests, 4 failures` (red) | grew/2 GREW: an entry the branch added since the ref (exit 1); grew/2 GREW takes the rule's enforcement: report (exit 0); grew/2 a rule that had no baseline at the ref: every entry is GREW; --base REF prints a GREW entry and exits 1, without compiling |
+| AB-O | GREW ignores the rule's enforcement (`lib/anchor/managers/ast_baseline.ex`) | `ast_baseline_test.exs`, `lint_baseline_test.exs`, `ast_baseline_test.exs`, `anchor_baseline_test.exs`, `ast_baseline_integration_test.exs`, `rule_checks_nothing_test.exs`, `failures_graph_test.exs` | `99 tests, 1 failure` (red) | grew/2 GREW takes the rule's enforcement: report (exit 0) |
+| AB-P | a base config that does not load is silent (`lib/anchor/managers/ast_baseline.ex`) | `ast_baseline_test.exs`, `lint_baseline_test.exs`, `ast_baseline_test.exs`, `anchor_baseline_test.exs`, `ast_baseline_integration_test.exs`, `rule_checks_nothing_test.exs`, `failures_graph_test.exs` | `99 tests, 1 failure` (red) | grew/2 a base config that does not load is one issue naming every rule (exit 1) |
+| AB-Q | Credo issues carry no key (`lib/anchor/check/base.ex`) | `ast_baseline_test.exs`, `lint_baseline_test.exs`, `ast_baseline_test.exs`, `anchor_baseline_test.exs`, `ast_baseline_integration_test.exs`, `rule_checks_nothing_test.exs`, `failures_graph_test.exs` | `99 tests, 1 failure` (red) | write, then held, STALE, and a narrowed run with no false STALE |
+| AB-R | --base passes any ref to git (`lib/mix/tasks/anchor.baseline.ex`) | `ast_baseline_test.exs`, `lint_baseline_test.exs`, `ast_baseline_test.exs`, `anchor_baseline_test.exs`, `ast_baseline_integration_test.exs`, `rule_checks_nothing_test.exs`, `failures_graph_test.exs` | `99 tests, 1 failure` (red) | no mode, both modes, an unknown flag, an argument or a bad ref is usage: exit 2 with Fix: |
+| AB-S | baseline is refused on an ast rule again (`lib/anchor/domain/rule_schema.ex`) | `ast_baseline_test.exs`, `lint_baseline_test.exs`, `ast_baseline_test.exs`, `anchor_baseline_test.exs`, `ast_baseline_integration_test.exs`, `rule_checks_nothing_test.exs`, `failures_graph_test.exs`, `rule_schema_test.exs` | `132 tests, 18 failures` (red) | the positive case every rule type accepts its engine's common keys; no_transitive_dependency: every rule that checks nothing is refused, and the positive rows load; no_direct_dependency: every rule that checks nothing is refused, and the positive rows load; no_forwarding_function: every rule that checks nothing is refused, and the positive rows load; no_comparison_in_if: every rule that checks nothing is refused, and the positive rows load; no_tuple_match_in_head: every rule that checks nothing is refused, and the positive rows load; module_pattern_restrictions: every rule that checks nothing is refused, and the positive rows load; single_control_flow: every rule that checks nothing is refused, and the positive rows load; struct_owned_by_module: every rule that checks nothing is refused, and the positive rows load; max_file_length: every rule that checks nothing is refused, and the positive rows load; must_use_module: every rule that checks nothing is refused, and the positive rows load; no_discarding_arrow_in_with: every rule that checks nothing is refused, and the positive rows load; no_discarded_pure_expression: every rule that checks nothing is refused, and the positive rows load; alphabetized_functions: every rule that checks nothing is refused, and the positive rows load; struct_getter_convention: every rule that checks nothing is refused, and the positive rows load; case_on_bare_arg: every rule that checks nothing is refused, and the positive rows load; an unknown key inside a rule the reason names every known key for the rule's type; write, then held, STALE, and a narrowed run with no false STALE |
+
+### AB-A: a narrowed run judges every entry (scope ignored)
+
+Run summary: `99 tests, 6 failures`
+
+```text
+
+
+  1) test judge/4 an entry on a file the run could not parse is unjudged, never STALE (Anchor.Domain.AstBaselineTest)
+     test/anchor/domain/ast_baseline_test.exs:114
+     match (=) failed
+     code:  assert %{stale: [], unjudged: ["pure|lib/broken.ex|File"]} =
+              AstBaseline.judge(
+                "pure",
+                [],
+                ~w(pure|lib/broken.ex|File),
+                whole(~w(lib/a.ex lib/broken.ex), ~w(lib/broken.ex))
+              )
+     left:  %{stale: [], unjudged: ["pure|lib/broken.ex|File"]}
+     right: %{
+              new: [],
+              stale: ["pure|lib/broken.ex|File"],
+              held: [],
+              unjudged: []
+            }
+     stacktrace:
+       test/anchor/domain/ast_baseline_test.exs:115: (test)
+
+
+```
+
+(11 more failures in this run, not quoted; every failing test is named in the table.)
+
+### AB-B: an unparsed file's entries are judged
+
+Run summary: `99 tests, 2 failures`
+
+```text
+
+
+  1) test judge/4 an entry on a file the run could not parse is unjudged, never STALE (Anchor.Domain.AstBaselineTest)
+     test/anchor/domain/ast_baseline_test.exs:114
+     match (=) failed
+     code:  assert %{stale: [], unjudged: ["pure|lib/broken.ex|File"]} =
+              AstBaseline.judge(
+                "pure",
+                [],
+                ~w(pure|lib/broken.ex|File),
+                whole(~w(lib/a.ex lib/broken.ex), ~w(lib/broken.ex))
+              )
+     left:  %{stale: [], unjudged: ["pure|lib/broken.ex|File"]}
+     right: %{
+              new: [],
+              stale: ["pure|lib/broken.ex|File"],
+              held: [],
+              unjudged: []
+            }
+     stacktrace:
+       test/anchor/domain/ast_baseline_test.exs:115: (test)
+
+..............................
+
+
+```
+
+(1 more failures in this run, not quoted; every failing test is named in the table.)
+
+### AB-C: a whole run judges only the files it read (a deleted file's entry never STALE)
+
+Run summary: `99 tests, 4 failures`
+
+```text
+
+
+  1) test judge/4 STALE in a whole run: an entry on a file that no longer exists (Anchor.Domain.AstBaselineTest)
+     test/anchor/domain/ast_baseline_test.exs:87
+     match (=) failed
+     code:  assert %{stale: ["pure|lib/gone.ex|File"], unjudged: []} =
+              AstBaseline.judge("pure", [], ~w(pure|lib/gone.ex|File), whole(~w(lib/a.ex)))
+     left:  %{stale: ["pure|lib/gone.ex|File"], unjudged: []}
+     right: %{new: [], stale: [], held: [], unjudged: ["pure|lib/gone.ex|File"]}
+     stacktrace:
+       test/anchor/domain/ast_baseline_test.exs:88: (test)
+
+..................
+
+
+```
+
+(7 more failures in this run, not quoted; every failing test is named in the table.)
+
+### AB-D: held findings are not dropped
+
+Run summary: `99 tests, 7 failures`
+
+```text
+
+
+  1) test beside rules with no baseline a violation every pass makes once per file is printed once (Anchor.Managers.LintBaselineTest)
+     test/anchor/managers/lint_baseline_test.exs:214
+     Expected truthy, got false
+     code: assert Enum.all?(violations, &is_nil(&1.key))
+     arguments:
+
+         # 1
+         [
+           %Anchor.Domain.Violation{
+             line: 2,
+             trigger: "alias",
+             message: "Anchor cannot statically resolve the target of this `alias`, so references made through it cannot be checked for forbidden dependencies. Fix: name the module literally (e.g. `alias MyApp.Foo`).",
+             filename: nil,
+             kind: :rule,
+             key: nil,
+             rule_id: nil,
+             enforcement: :enforce
+           },
+           %Anchor.Domain.Violation{
+             line: 4,
+             trigger: "File",
+             message: "Module has forbidden direct dependency on File",
+             filename: nil,
+             kind: :rule,
+             key: "pure|lib/c.ex|File",
+
+
+```
+
+(11 more failures in this run, not quoted; every failing test is named in the table.)
+
+### AB-E: STALE entries are not reported
+
+Run summary: `99 tests, 5 failures`
+
+```text
+
+
+  1) test a baselined rule's findings STALE takes the rule's enforcement: report (Anchor.Managers.LintBaselineTest)
+     test/anchor/managers/lint_baseline_test.exs:128
+     match (=) failed
+     code:  assert [%Violation{key: "pure|lib/gone.ex|File", enforcement: :report}] = config(results)
+     left:  [%Anchor.Domain.Violation{key: "pure|lib/gone.ex|File", enforcement: :report}]
+     right: []
+     stacktrace:
+       test/anchor/managers/lint_baseline_test.exs:132: (test)
+
+................
+
+
+```
+
+(9 more failures in this run, not quoted; every failing test is named in the table.)
+
+### AB-F: the unjudged note is not printed
+
+Run summary: `99 tests, 3 failures`
+
+```text
+
+
+  1) test a narrowed run (DND-5632) an entry on a file that does not parse is unjudged, never STALE (Anchor.Managers.LintBaselineTest)
+     test/anchor/managers/lint_baseline_test.exs:174
+     match (=) failed
+     code:  assert [%Violation{enforcement: :report, message: "NOTE: 1 entry" <> _rest}] = config(results)
+     left:  [%Anchor.Domain.Violation{enforcement: :report, message: "NOTE: 1 entry" <> _rest}]
+     right: []
+     stacktrace:
+       test/anchor/managers/lint_baseline_test.exs:179: (test)
+
+......
+
+
+```
+
+(3 more failures in this run, not quoted; every failing test is named in the table.)
+
+### AB-G: a once-per-file violation is printed by every pass
+
+Run summary: `99 tests, 1 failure`
+
+```text
+
+
+  1) test beside rules with no baseline a violation every pass makes once per file is printed once (Anchor.Managers.LintBaselineTest)
+     test/anchor/managers/lint_baseline_test.exs:214
+     [%Anchor.Domain.Violation{line: 2, trigger: "alias", message: "Anchor cannot statically resolve the target of this `alias`, so references made through it cannot be checked for forbidden dependencies. Fix: name the module literally (e.g. `alias MyApp.Foo`).", filename: nil, kind: :rule, key: nil, rule_id: nil, enforcement: :enforce}, %Anchor.Domain.Violation{line: 2, trigger: "alias", message: "Anchor cannot statically resolve the target of this `alias`, so references made through it cannot be checked for forbidden dependencies. Fix: name the module literally (e.g. `alias MyApp.Foo`).", filename: nil, kind: :rule, key: "pure|lib/c.ex|alias", rule_id: "pure", enforcement: :enforce}]
+     stacktrace:
+       test/anchor/managers/lint_baseline_test.exs:236: (test)
+
+.......................................
+```
+
+### AB-H: a finding is keyed on the wrong file
+
+Run summary: `99 tests, 14 failures`
+
+```text
+
+
+  1) test a baselined rule's findings NEW: a finding no entry covers stands (Anchor.Managers.LintBaselineTest)
+     test/anchor/managers/lint_baseline_test.exs:108
+     Assertion with == failed
+     code:  assert findings(results) == [{"lib/a.ex", "IO", "pure|lib/a.ex|IO"}]
+     left:  [
+              {"lib/a.ex", "File", "pure|lib/a.ex.x|File"},
+              {"lib/a.ex", "IO", "pure|lib/a.ex.x|IO"},
+              {"lib/b.ex", "File", "pure|lib/b.ex.x|File"}
+            ]
+     right: [{"lib/a.ex", "IO", "pure|lib/a.ex|IO"}]
+     stacktrace:
+       test/anchor/managers/lint_baseline_test.exs:112: (test)
+
+...................
+
+
+```
+
+(47 more failures in this run, not quoted; every failing test is named in the table.)
+
+### AB-I: the key's file is not made relative to the root
+
+Run summary: `99 tests, 14 failures`
+
+```text
+
+
+  1) test a baseline the run cannot use unreadable: one fail-closed issue naming the writer, and every finding stands (Anchor.Managers.LintBaselineTest)
+     test/anchor/managers/lint_baseline_test.exs:185
+     Assertion with == failed
+     code:  assert findings(results) == [{"lib/b.ex", "File", "pure|lib/b.ex|File"}]
+     left:  [{"lib/b.ex", "File", "pure|/proj/lib/b.ex|File"}]
+     right: [{"lib/b.ex", "File", "pure|lib/b.ex|File"}]
+     stacktrace:
+       test/anchor/managers/lint_baseline_test.exs:189: (test)
+
+
+```
+
+(39 more failures in this run, not quoted; every failing test is named in the table.)
+
+### AB-J: a baseline issue does not name its rule
+
+Run summary: `99 tests, 1 failure`
+
+```text
+
+
+  1) test a baseline the run cannot use unreadable: one fail-closed issue naming the writer, and every finding stands (Anchor.Managers.LintBaselineTest)
+     test/anchor/managers/lint_baseline_test.exs:185
+     match (=) failed
+     code:  assert [%Violation{kind: :fail_closed, filename: @path, rule_id: "pure", message: message}] =
+              config(results)
+     left:  [
+              %Anchor.Domain.Violation{
+                kind: :fail_closed,
+                filename: ".anchor/baselines/pure.txt",
+                rule_id: "pure",
+                message: message
+              }
+            ]
+     right: [
+              %Anchor.Domain.Violation{
+                line: nil,
+                trigger: nil,
+                message: "rule (id: \"pure\", no_direct_dependency)'s baseline .anchor/baselines/pure.txt could not be read (:enoent), so none of its findings is held. Fix: create it with mix anchor.baseline --write pure and review it, or remove baseline: from the rule.",
+                filename: ".anchor/baselines/pure.txt",
+                kind: :fail_closed,
+                key: nil,
+                rule_id: nil,
+                enforcement: :enforce
+              }
+            ]
+```
+
+### AB-K: write keeps every rule's keys
+
+Run summary: `99 tests, 1 failure`
+
+```text
+
+
+  1) test write/2 creates the rule's baseline from its keys alone, sorted, and notes it (exit 0) (Anchor.Managers.AstBaselineTest)
+     test/anchor/managers/ast_baseline_test.exs:49
+     Assertion with == failed
+     code:  assert contents == "# anchor baseline for pure; shrink only\npure|lib/a.ex|File\npure|lib/b.ex|File\n"
+     left:  "# anchor baseline for pure; shrink only\nother|lib/a.ex|IO\npure|lib/a.ex|File\npure|lib/b.ex|File\n"
+     right: "# anchor baseline for pure; shrink only\npure|lib/a.ex|File\npure|lib/b.ex|File\n"
+     stacktrace:
+       test/anchor/managers/ast_baseline_test.exs:62: anonymous fn/3 in Anchor.Managers.AstBaselineTest."test write/2 creates the rule's baseline from its keys alone, sorted, and notes it (exit 0)"/1
+       (hammox 0.7.0) lib/hammox.ex:402: anonymous fn/2 in Hammox.protected_code/3
+       (hammox 0.7.0) lib/hammox/telemetry.ex:12: Hammox.Telemetry.NoOp.span/3
+       (hammox 0.7.0) lib/hammox.ex:398: Hammox.protected_code/3
+       (anchor 0.1.0) lib/anchor/managers/ast_baseline.ex:127: Anchor.Managers.AstBaseline.create/4
+       test/anchor/managers/ast_baseline_test.exs:68: (test)
+
+...........................................
+```
+
+### AB-L: write runs for a rule no check judged
+
+Run summary: `99 tests, 1 failure`
+
+```text
+
+
+  1) test write/2 a rule whose check Credo does not run writes nothing (exit 3) (Anchor.Managers.AstBaselineTest)
+     test/anchor/managers/ast_baseline_test.exs:125
+     ** (Mox.UnexpectedCallError) no expectation defined for Anchor.BaselineStoreMock.create/3 in process #PID<0.386.0> with args ["/proj", ".anchor/baselines/pure.txt", "# anchor baseline for pure; shrink only\n"]
+     code: report = AstBaseline.write(%{root: @root, id: "pure"}, @deps)
+     stacktrace:
+       (mox 1.2.0) lib/mox.ex:903: Mox.__dispatch__/4
+       (anchor 0.1.0) lib/anchor/managers/ast_baseline.ex:127: Anchor.Managers.AstBaseline.create/4
+       test/anchor/managers/ast_baseline_test.exs:130: (test)
+
+.....................................................
+```
+
+### AB-M: write over an existing file is not refused before Credo
+
+Run summary: `99 tests, 3 failures`
+
+```text
+
+
+  1) test write/2 an existing file is refused before Credo runs (exit 2) (Anchor.Managers.AstBaselineTest)
+     test/anchor/managers/ast_baseline_test.exs:74
+     ** (Mox.UnexpectedCallError) no expectation defined for Anchor.LintKeysMock.keys/0 in process #PID<0.358.0> with args []
+     code: report = AstBaseline.write(%{root: @root, id: "pure"}, @deps)
+     stacktrace:
+       (mox 1.2.0) lib/mox.ex:903: Mox.__dispatch__/4
+       (anchor 0.1.0) lib/anchor/managers/ast_baseline.ex:115: Anchor.Managers.AstBaseline.rule_keys/3
+       (anchor 0.1.0) lib/anchor/managers/ast_baseline.ex:59: Anchor.Managers.AstBaseline.write/2
+       test/anchor/managers/ast_baseline_test.exs:78: (test)
+
+............................................................
+
+
+```
+
+(3 more failures in this run, not quoted; every failing test is named in the table.)
+
+### AB-N: GREW compares the branch with itself
+
+Run summary: `99 tests, 4 failures`
+
+```text
+
+
+  1) test grew/2 GREW: an entry the branch added since the ref (exit 1) (Anchor.Managers.AstBaselineTest)
+     test/anchor/managers/ast_baseline_test.exs:173
+     Assertion with == failed
+     code:  assert report.exit_code == 1
+     left:  0
+     right: 1
+     stacktrace:
+       test/anchor/managers/ast_baseline_test.exs:185: (test)
+
+...
+
+
+```
+
+(5 more failures in this run, not quoted; every failing test is named in the table.)
+
+### AB-O: GREW ignores the rule's enforcement
+
+Run summary: `99 tests, 1 failure`
+
+```text
+
+
+  1) test grew/2 GREW takes the rule's enforcement: report (exit 0) (Anchor.Managers.AstBaselineTest)
+     test/anchor/managers/ast_baseline_test.exs:191
+     Assertion with == failed
+     code:  assert report.exit_code == 0
+     left:  1
+     right: 0
+     stacktrace:
+       test/anchor/managers/ast_baseline_test.exs:200: (test)
+
+........................................
+```
+
+### AB-P: a base config that does not load is silent
+
+Run summary: `99 tests, 1 failure`
+
+```text
+
+
+  1) test grew/2 a base config that does not load is one issue naming every rule (exit 1) (Anchor.Managers.AstBaselineTest)
+     test/anchor/managers/ast_baseline_test.exs:264
+     Assertion with == failed
+     code:  assert report.exit_code == 1
+     left:  0
+     right: 1
+     stacktrace:
+       test/anchor/managers/ast_baseline_test.exs:272: (test)
+
+.......................
+```
+
+### AB-Q: Credo issues carry no key
+
+Run summary: `99 tests, 1 failure`
+
+```text
+
+
+  1) test write, then held, STALE, and a narrowed run with no false STALE (Anchor.Integration.AstBaselineIntegrationTest)
+     test/anchor/integration/ast_baseline_integration_test.exs:67
+     match (=) failed
+     code:  assert %{exit_code: 0} = AstBaseline.write(%{root: root, id: "pure"}, [])
+     left:  %{exit_code: 0}
+     right: %{
+              exit_code: 3,
+              violations: [
+                %Anchor.Domain.Violation{
+                  line: nil,
+                  trigger: nil,
+                  message: "COULD NOT MEASURE: no enabled Credo check reads no_direct_dependency, so rule 1 (id: \"pure\", no_direct_dependency) has no findings and its baseline was not written. Fix: enable the Anchor check for no_direct_dependency in .credo.exs, then run mix anchor.baseline --write pure again.",
+                  filename: ".anchor.yml",
+                  kind: :fail_closed,
+                  key: nil,
+                  rule_id: nil,
+                  enforcement: :enforce
+                }
+              ],
+              baselines: 1
+            }
+     stacktrace:
+       test/anchor/integration/ast_baseline_integration_test.exs:71: (test)
+
+.....
+```
+
+### AB-R: --base passes any ref to git
+
+Run summary: `99 tests, 1 failure`
+
+```text
+
+
+  1) test no mode, both modes, an unknown flag, an argument or a bad ref is usage: exit 2 with Fix: (Mix.Tasks.Anchor.BaselineTest)
+     test/mix/tasks/anchor_baseline_test.exs:112
+     ** (Mox.UnexpectedCallError) no expectation defined for Anchor.ConfigLoaderMock.load/0 in process #PID<0.618.0> with args []
+     code: for argv <- [
+     stacktrace:
+       (mox 1.2.0) lib/mox.ex:903: Mox.__dispatch__/4
+       (anchor 0.1.0) lib/anchor/managers/ast_baseline.ex:85: Anchor.Managers.AstBaseline.load_config/1
+       (anchor 0.1.0) lib/anchor/managers/ast_baseline.ex:69: Anchor.Managers.AstBaseline.grew/2
+       (anchor 0.1.0) lib/mix/tasks/anchor.baseline.ex:75: Mix.Tasks.Anchor.Baseline.base/2
+       test/mix/tasks/anchor_baseline_test.exs:124: anonymous fn/1 in Mix.Tasks.Anchor.BaselineTest."test no mode, both modes, an unknown flag, an argument or a bad ref is usage: exit 2 with Fix:"/1
+       (ex_unit 1.19.4) lib/ex_unit/capture_io.ex:296: ExUnit.CaptureIO.do_with_io/3
+       (ex_unit 1.19.4) lib/ex_unit/capture_io.ex:166: ExUnit.CaptureIO.capture_io/2
+       test/mix/tasks/anchor_baseline_test.exs:123: anonymous fn/2 in Mix.Tasks.Anchor.BaselineTest."test no mode, both modes, an unknown flag, an argument or a bad ref is usage: exit 2 with Fix:"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/mix/tasks/anchor_baseline_test.exs:113: (test)
+
+..
+```
+
+### AB-S: baseline is refused on an ast rule again
+
+Run summary: `132 tests, 18 failures`
+
+```text
+
+
+  1) test the positive case every rule type accepts its engine's common keys (Anchor.Domain.RuleSchemaTest)
+     test/anchor/domain/rule_schema_test.exs:185
+     Assertion with == failed
+     code:  assert RuleSchema.common_keys(:ast) ==
+              ~w(baseline enforcement id min_files paths pattern recursive type uses_module)
+     left:  ["enforcement", "id", "min_files", "paths", "pattern", "recursive",
+             "type", "uses_module"]
+     right: ["baseline", "enforcement", "id", "min_files", "paths", "pattern",
+             "recursive", "type", "uses_module"]
+     stacktrace:
+       test/anchor/domain/rule_schema_test.exs:191: (test)
+
+........
+
+
+```
+
+(45 more failures in this run, not quoted; every failing test is named in the table.)
+

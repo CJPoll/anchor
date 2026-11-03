@@ -757,6 +757,110 @@ defmodule Anchor.Domain.Failures do
   end
 
   @doc """
+  The issue for an ast rule's `baseline:` file that could not be read
+  (DND-5632): as `baseline_unreadable/3`, its `Fix:` naming `mix
+  anchor.baseline --write`, the ast engine's writer.
+  """
+  @spec ast_baseline_unreadable(map(), String.t(), term()) :: Violation.t()
+  def ast_baseline_unreadable(rule, path, {:line, _line, :invalid_utf8} = reason),
+    do: baseline_unreadable(rule, path, reason)
+
+  def ast_baseline_unreadable(rule, path, {:symlink, _link} = reason),
+    do: baseline_unreadable(rule, path, reason)
+
+  def ast_baseline_unreadable(rule, path, reason) do
+    graph_issue(
+      path,
+      nil,
+      "#{rule_label(rule)}'s baseline #{path} could not be read (#{capped(inspect(reason))}), " <>
+        "so none of its findings is held. Fix: create it with mix anchor.baseline --write " <>
+        "#{rule.id} and review it, or remove baseline: from the rule."
+    )
+  end
+
+  @doc """
+  The note for an ast rule's baseline entries a run did not judge (DND-5632):
+  each names a file the run did not read (Credo was given only some files)
+  or could not parse, so whether its finding was fixed is unknown, and it is
+  not STALE. Report-only.
+  """
+  @spec ast_baseline_unjudged(String.t(), [String.t(), ...]) :: Violation.t()
+  def ast_baseline_unjudged(path, [_ | _] = entries) do
+    %Violation{
+      filename: path,
+      enforcement: :report,
+      message:
+        "NOTE: #{length(entries)} #{entry_noun(entries)} of #{path} #{name_verb(entries)} a " <>
+          "file this run did not read or could not parse, so #{was_were(entries)} not judged " <>
+          "STALE. Fix: run mix credo over the whole project (no paths) to judge every entry."
+    }
+  end
+
+  @doc """
+  The refusal of `mix anchor.baseline --write` over an existing file
+  (DND-5632, exit 2): it only creates, so a baseline can never be loosened by
+  rewriting it.
+  """
+  @spec ast_baseline_exists(String.t()) :: Violation.t()
+  def ast_baseline_exists(path) do
+    graph_issue(
+      path,
+      nil,
+      "#{path} exists; mix anchor.baseline --write only creates, and never rewrites a " <>
+        "baseline. Fix: delete the lines of fixed findings instead (a baseline only shrinks)."
+    )
+  end
+
+  @doc """
+  The refusal of `mix anchor.baseline --write ID` naming no ast rule with a
+  `baseline:` key (DND-5632, exit 2), on the config.
+  """
+  @spec ast_write_unknown(String.t(), String.t() | nil) :: Violation.t()
+  def ast_write_unknown(id, config_path) do
+    config = config_path || @config_filename
+
+    graph_issue(
+      config,
+      nil,
+      "mix anchor.baseline --write #{inspect(id)} names no ast rule of #{config} that has a " <>
+        "baseline: key, so there is nothing to write. Fix: give that rule an id: and a " <>
+        "baseline: path (convention .anchor/baselines/<id>.txt), or pass another rule's id; " <>
+        "a graph rule's baseline is written by mix anchor.graph --write-baseline."
+    )
+  end
+
+  @doc """
+  `mix anchor.baseline --write`'s COULD NOT MEASURE for a rule whose check
+  Credo does not run (DND-5632): it has no findings, so writing would make an
+  empty baseline that holds nothing it should.
+  """
+  @spec ast_check_not_enabled(map(), String.t()) :: Violation.t()
+  def ast_check_not_enabled(rule, config) do
+    graph_issue(
+      config,
+      nil,
+      "COULD NOT MEASURE: no enabled Credo check reads #{rule.type}, so #{rule_label(rule)} " <>
+        "has no findings and its baseline was not written. Fix: enable the Anchor check for " <>
+        "#{rule.type} in .credo.exs, then run mix anchor.baseline --write #{rule.id} again."
+    )
+  end
+
+  @doc """
+  `mix anchor.baseline --write`'s COULD NOT MEASURE when Credo halted
+  (DND-5632): its findings are unknown, so no baseline was written.
+  """
+  @spec ast_credo_halted(term(), String.t()) :: Violation.t()
+  def ast_credo_halted(reason, config) do
+    graph_issue(
+      config,
+      nil,
+      "COULD NOT MEASURE: Credo did not finish (#{capped(inspect(reason))}), so no finding " <>
+        "was collected and no baseline was written. Fix: run mix credo --strict, fix what " <>
+        "stops it, and run mix anchor.baseline --write again."
+    )
+  end
+
+  @doc """
   The refusal of `--write-baseline ID` naming no graph rule with a
   `baseline:` key (DND-5441, exit 2), on the config.
   """
@@ -772,6 +876,15 @@ defmodule Anchor.Domain.Failures do
         "(convention .anchor/baselines/<id>.txt), or pass another rule's id."
     )
   end
+
+  defp entry_noun([_one]), do: "entry"
+  defp entry_noun(_many), do: "entries"
+
+  defp name_verb([_one]), do: "names"
+  defp name_verb(_many), do: "name"
+
+  defp was_were([_one]), do: "it was"
+  defp was_were(_many), do: "they were"
 
   defp below_floor_text(selected, min) do
     "selects #{selected} modules, below min_modules #{min}. Fix: correct the selector; " <>
