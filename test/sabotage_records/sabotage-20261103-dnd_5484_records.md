@@ -86,6 +86,17 @@ fix is broken here:
 | D22 | a dry run still checks what a record needs | 1 of 59: run "a dry run needs nothing a record needs: a detached HEAD is not refused" | `** (Mox.UnexpectedCallError) no expectation defined for Anchor.GitWorktreeMock.branch/1` |
 | D23 | the slot is the ticket key again (the pre-ADR-003 behaviour) | 4 of 14: record_naming "1: the slot is the branch sanitized, case kept (ADR 003) ...", "3: domain_date_slot" and two more | `code:  assert RecordNaming.path(@anchor, ctx(%{})) == {:ok, "test/sabotage_records/sabotage-20261105-dnd_5473_runner.md"}` `left:  {:ok, "test/sabotage_records/sabotage-20261105-DND_5473.md"}` |
 
+## Critic round 2 (one finding)
+
+The critic found that the killers in a kill-map row were joined by ` ; `
+without escaping it, so a test named `test a ; b` read back as two killers.
+The fix: a `;` is escaped `\;` in every field, each killer is escaped on its
+own before the join, and the field is split before it is unescaped.
+
+| # | Mutation | Tests failed | First failure, verbatim |
+|---|---|---|---|
+| D24 | the `;` escape removed (the unfixed encoding) | 1 of 8: kill_map "a test name holding the separator ` ; ` reads back as one killer" | `code:  assert row.killers == ["t:1 test a ; b", "t:2 test c;d"]` `left:  ["t:1 test a", "b", "t:2 test c;d"]` |
+
 ## The integration run
 
 `test/anchor/integration/sabotage_run_integration_test.exs` runs the whole

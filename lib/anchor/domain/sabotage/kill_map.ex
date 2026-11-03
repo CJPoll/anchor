@@ -9,8 +9,10 @@ defmodule Anchor.Domain.Sabotage.KillMap do
       id  file  Module.fun/arity  operator  status  killers
 
   `status` is `killed`, `timeout`, `survived`, `no_tests` or `invalid`;
-  `killers` are `file:line name`, joined by ` ; ` (empty when none). In every
-  field a backslash, a tab and a newline are written `\\\\`, `\\t` and `\\n`.
+  `killers` are `file:line name`, each escaped, then joined by ` ; ` (empty
+  when none). In every field a backslash, a tab, a newline and a `;` are
+  written `\\\\`, `\\t`, `\\n` and `\\;`, so an escaped killer never holds the
+  separator and a test named `a ; b` reads back as one killer.
 
   `parse/1` reads every `anchor-kills` block of a record (an appended record
   holds several) and refuses a row with the wrong number of fields or an
@@ -53,8 +55,8 @@ defmodule Anchor.Domain.Sabotage.KillMap do
   def render_block(outcomes) do
     lines =
       Enum.map(rows(outcomes), fn row ->
-        [row.id, row.file, row.mfa, row.operator, row.status, Enum.join(row.killers, @separator)]
-        |> Enum.map_join("\t", &escape/1)
+        fields = Enum.map([row.id, row.file, row.mfa, row.operator, row.status], &escape/1)
+        Enum.join(fields ++ [Enum.map_join(row.killers, @separator, &escape/1)], "\t")
       end)
 
     Enum.join([@fence <> @info, @header | lines] ++ [@fence], "\n") <> "\n"
@@ -119,7 +121,7 @@ defmodule Anchor.Domain.Sabotage.KillMap do
                mfa: unescape(mfa),
                operator: unescape(operator),
                status: status,
-               killers: killers(unescape(killers))
+               killers: killers(killers)
              }},
           else: {:error, "unknown status #{inspect(status)}"}
 
@@ -129,7 +131,7 @@ defmodule Anchor.Domain.Sabotage.KillMap do
   end
 
   defp killers(""), do: []
-  defp killers(text), do: String.split(text, @separator)
+  defp killers(text), do: text |> String.split(@separator) |> Enum.map(&unescape/1)
 
   defp mfa(%{module: module, function: {name, arity}}), do: "#{inspect(module)}.#{name}/#{arity}"
 
@@ -139,12 +141,14 @@ defmodule Anchor.Domain.Sabotage.KillMap do
       |> String.replace("\\", "\\\\")
       |> String.replace("\t", "\\t")
       |> String.replace("\n", "\\n")
+      |> String.replace(";", "\\;")
 
   defp unescape(text), do: unescape(text, "")
 
   defp unescape("\\\\" <> rest, acc), do: unescape(rest, acc <> "\\")
   defp unescape("\\t" <> rest, acc), do: unescape(rest, acc <> "\t")
   defp unescape("\\n" <> rest, acc), do: unescape(rest, acc <> "\n")
+  defp unescape("\\;" <> rest, acc), do: unescape(rest, acc <> ";")
   defp unescape(<<c, rest::binary>>, acc), do: unescape(rest, acc <> <<c>>)
   defp unescape("", acc), do: acc
 end

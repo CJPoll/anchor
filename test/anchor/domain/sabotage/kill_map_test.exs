@@ -68,6 +68,14 @@ defmodule Anchor.Domain.Sabotage.KillMapTest do
                "test/other_test.exs:9 test tab\there and\nnewline \\ slash"
     end
 
+    test "a test name holding the separator ` ; ` reads back as one killer" do
+      outcomes = [outcome("fff", :killed, ["t:1 test a ; b", "t:2 test c;d"])]
+
+      assert {:ok, [row]} = KillMap.parse(KillMap.render_block(outcomes))
+      assert row.killers == ["t:1 test a ; b", "t:2 test c;d"]
+      assert KillMap.render_block(outcomes) =~ "t:1 test a \\; b ; t:2 test c\\;d\n"
+    end
+
     test "3: every block of an appended record is read" do
       text =
         KillMap.render_block(outcomes()) <>
