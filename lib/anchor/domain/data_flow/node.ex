@@ -27,9 +27,12 @@ defmodule Anchor.Domain.DataFlow.Node do
     * `:unsliceable` — `nil`, or the reason the node's flow cannot be followed
       inside the clause: `:receive`, `:process_dictionary`, `:var_bang` or
       `:binding`.
-    * `:refutable` — whether the node holds a `=` whose pattern can fail
-      (`true = ok?(x)`, `{:ok, _} = f()`, `{a, b} = pair`): such a node asserts
-      a shape, so `DataFlow.sinks/2` always includes it.
+    * `:refutable` — whether the node can raise on a value: it holds a `=`
+      whose pattern can fail (`true = ok?(x)`, `{:ok, _} = f()`,
+      `{a, b} = pair`), a `case` with no catch-all clause, or a `with` step
+      written with a refutable `=` (DND-5471; see `DataFlow.Forms`). Such a
+      node asserts a shape, so `DataFlow.sinks/2` always includes it, with
+      the reason `:refutable`.
   """
 
   @enforce_keys [:id, :ast, :block]

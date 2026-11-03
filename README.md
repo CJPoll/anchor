@@ -679,6 +679,31 @@ outside any function (attributes, docs, a deleted function), and macros
 | an unknown option, format or subcommand | 2 |
 | not a git work tree; `REF` unresolvable or no merge-base; git failing; a diff Anchor cannot read; a changed `.ex` file that does not parse or cannot be read | 3, `COULD NOT MEASURE` with `Fix:` |
 
+### The mutants of one function
+
+`Anchor.Domain.Sabotage.Mutator.generate(source, path, {module, name, arity},
+opts)` (DND-5471) returns every mutant of one function's literal `def`/`defp`
+clauses. It only parses the source (with Sourceror, so each edit replaces
+exactly its range and nothing else is reformatted); it compiles nothing and
+writes nothing. The runner (`mix anchor.sabotage run`, later) applies them.
+
+| Operator | The mutant |
+|---|---|
+| `delete_statement` | a non-final statement that is not an effect call is deleted (its whole lines) |
+| `drop_effect_call` | a non-final statement that is an effect call (a Repo write, `send`, `GenServer.call/cast`, a `Logger` call, a `File`/`System`/`IO` write, ...; extra calls by `effect_calls:`) is deleted |
+| `narrow_clause` | one clause of a function or `case` with two or more clauses never matches (`when node() == :__anchor_sabotage_never__`) |
+| `with_passthrough` | one `pat <- expr` step of a `with` stops checking (its literals become `_`, `%Mod{}` becomes `%{}`, its guard goes) |
+| `force_condition` | an `if`/`unless`/`cond` condition is forced true, and separately false |
+| `return_input` | a clause returns one of its parameters unchanged |
+
+Each mutant carries a stable id (sha256 of the module, function, operator,
+variant, normalized target node and its occurrence index; never a line), the
+range it replaces, the original and replacement text, and a unified diff. An
+edit that would not compile under `--warnings-as-errors` (a variable left
+unbound or unused; the last use of a private function, module attribute, alias
+or import removed) is returned as skipped, with the reason, never as a mutant.
+A function no literal `def`/`defp` defines is `{:error, :not_in_source}`.
+
 ## Check Types
 
 ### `no_direct_dependency`

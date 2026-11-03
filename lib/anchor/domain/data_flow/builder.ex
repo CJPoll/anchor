@@ -228,7 +228,9 @@ defmodule Anchor.Domain.DataFlow.Builder do
       node
       | kind: desc.kind,
         unsliceable: form_unsliceable(desc, patterns),
-        refutable: Enum.any?(patterns, &Forms.refutable?/1) or Forms.refutable_match?(desc.head)
+        refutable:
+          desc.refutable or Enum.any?(patterns, &Forms.refutable?/1) or
+            Forms.refutable_match?(desc.head)
     })
   end
 
