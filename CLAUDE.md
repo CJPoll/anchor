@@ -176,7 +176,12 @@ update, read back as `:maps.put/3`), so an edge names the Erlang function.
 `Anchor.Domain.Graph.Inlines` carries the table, derived from Elixir's own
 rewrite rules when Anchor compiles, never copied by hand (DND-5551). A rule
 that names a stdlib function matches every spelling, through
-`Inlines.spellings/1` (`Graph.calls_to/2` already does). A function with no Core
+`Inlines.spellings/1` (`Graph.calls_to/2` already does), and the AST engine
+matches the same set through `Anchor.Domain.FunctionRef.names/1` (DND-5613). A
+rewrite that adds a literal tag (`Process.monitor/1` is `:erlang.monitor(:process,
+_)`) is read back into its Elixir name by the walker, and a tagged name's
+spellings leave out a sibling with another tag; an inline no tag tells apart
+stays ambiguous, and a finding names every candidate (`Inlines.describe/1`). A function with no Core
 body (`core: nil`: a `defmacrop`, a `defp` nothing calls) has no edges read
 from it; `Graph.functions_without_core/1` counts them per module for the
 runner's summary, and a public one is also an `unreadable` entry

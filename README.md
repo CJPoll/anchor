@@ -1221,6 +1221,21 @@ reported, whatever `match` says. (`match` still governs the rule's
 | A module attribute bound to a literal module in the same module | `@slack Athena.Slack` then `@slack.user_info(id)` or `apply(@slack, :user_info, [id])` |
 | A bare `Kernel` call (for a `Kernel.*` token) | `send(pid, msg)`, `pid \|> send(msg)`, `&send/2` match `"Kernel.send/2"` while `Kernel` owns `send/2` |
 
+**One function, every spelling (DND-5613).** Elixir compiles some stdlib calls
+into Erlang ones before the graph engine sees them (`Map.put/3` is
+`:maps.put/3`, `Process.monitor/1` is `:erlang.monitor(:process, pid)`). An
+entry may name either spelling, and both engines match a call written in
+either: `":maps.put/3"` matches a source `Map.put(m, k, v)`, and `"Map.put/3"`
+matches `:maps.put(k, v, m)`. Two Elixir names the compiled call tells apart by
+a literal tag stay apart: `"Process.monitor/1"` never matches
+`Port.monitor(p)`. Two it cannot tell apart (`Bitwise.band/2` and
+`Bitwise.&&&/2`) match each other, and a graph finding on such a call names
+every candidate. Residuals: a `Map.put` onto a literal map folds into the
+literal when compiled, so the graph sees no call (the AST rule still does); and
+a source call written in Erlang spelling with a tag (`:erlang.monitor(:port,
+p)`) matches every Elixir name of that Erlang function in the AST rule, which
+does not read arguments.
+
 Each function reached is reported once per rule, at its first line. Where the
 source does not show an arity (`apply(M, :f, args)`), the call matches every
 arity. An arity token matches that arity only, as Elixir counts it:
