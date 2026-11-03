@@ -8,6 +8,7 @@ defmodule Anchor.Adapters.GitEnvIsolationTest do
   # modules after the async ones, one at a time; each test restores the
   # variables it set.
   # Sabotage record: ../../sabotage_records/sabotage_scope-20261103-dnd_5581_hardening_batch.md
+  # (E2's GitStatus mutation: ../../sabotage_records/sabotage-20261103-dnd_5581_hardening_batch.md)
   use ExUnit.Case, async: false
 
   alias Anchor.Adapters.GitChangeSource
@@ -35,12 +36,15 @@ defmodule Anchor.Adapters.GitEnvIsolationTest do
 
   # Points the hook variables at `decoy` for the rest of the test.
   defp export_decoy!(decoy) do
-    vars = %{
+    export!(%{
       "GIT_DIR" => Path.join(decoy, ".git"),
       "GIT_WORK_TREE" => decoy,
       "GIT_INDEX_FILE" => Path.join(decoy, ".git/index")
-    }
+    })
+  end
 
+  # Sets `vars` in the VM's environment for the rest of the test.
+  defp export!(vars) do
     previous = Map.new(vars, fn {name, _} -> {name, System.get_env(name)} end)
 
     on_exit(fn ->
@@ -115,7 +119,19 @@ defmodule Anchor.Adapters.GitEnvIsolationTest do
     assert from_git -- GitEnv.local_env_vars() == []
 
     unset = for {name, nil} <- GitEnv.env(), do: name
-    assert Enum.sort(unset) == Enum.sort(GitEnv.local_env_vars())
+    assert Enum.sort(unset) == Enum.sort(GitEnv.local_env_vars() ++ GitEnv.output_env_vars())
     assert {"GIT_OPTIONAL_LOCKS", "0"} in GitEnv.env()
+  end
+
+  # An inherited GIT_DIFF_OPTS overrides the diff's --unified=0, so DiffHunks
+  # would read hunks padded with context: a wider scope, with no error.
+  test "E4: an inherited GIT_DIFF_OPTS cannot change the diff's context lines", %{
+    real: real,
+    real_head: real_head
+  } do
+    export!(%{"GIT_DIFF_OPTS" => "-u3"})
+
+    assert {:ok, diff} = GitChangeSource.diff(real, real_head)
+    assert diff =~ "\n@@ -2 +2 @@"
   end
 end

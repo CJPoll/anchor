@@ -1,10 +1,11 @@
 # Sabotage record — the git adapters ignore an inherited GIT_DIR (DND-5581)
 
-- **Domain:** sabotage_scope (the `GitStatus` rows are the runner's adapter, labelled below)
+- **Domain:** sabotage_scope (the `GitStatus` mutation is the `sabotage` domain's:
+  `sabotage-20261103-dnd_5581_hardening_batch.md`)
 - **Branch:** dnd-5581-hardening-batch
 - **Date:** 2026-11-03
 - **Code under test:** `Anchor.Adapters.GitEnv.env/0`, and its use in `Anchor.Adapters.GitChangeSource`
-  (`git/2`) and `Anchor.Adapters.GitStatus` (`git/2`, a `sabotage` domain module)
+  (`git/2`)
 - **Suite run:** per mutation, `mix test --timeout 2000 --max-cases 2
   test/anchor/adapters/git_env_isolation_test.exs test/anchor/adapters/git_change_source_test.exs
   test/anchor/adapters/git_status_test.exs`, each mutation applied alone and restored byte-for-byte (`cmp`)
@@ -45,7 +46,7 @@ With the fix, the same three files run `14 tests, 0 failures`.
 | # | Mutation | Tests that failed | Run |
 |---|---|---|---|
 | A | `GitChangeSource.git/2` passes `Enum.take(GitEnv.env(), 1)` (only `GIT_OPTIONAL_LOCKS`, the old env) | E1 | `14 tests, 1 failure` |
-| B | (`sabotage` domain) `GitStatus.git/2` passes `Enum.take(GitEnv.env(), 1)` | E2 | `14 tests, 1 failure` |
+| B | (`GitStatus.git/2`: recorded in `sabotage-20261103-dnd_5581_hardening_batch.md`) | | |
 | C | `GitEnv` drops `GIT_DIR` from its list | E1, E3 | `14 tests, 2 failures` |
 | D | `GitEnv` drops `GIT_INDEX_FILE` from its list | E1 (through the decoy's index, the real repository's tracked `lib/b.ex` reads as untracked), E3 | `14 tests, 2 failures` |
 | E | `GitEnv` drops `GIT_WORK_TREE` from its list | E1, E2, E3 | `14 tests, 3 failures` |
@@ -64,18 +65,6 @@ repository-locating variable (their own `git!` helpers clear them).
      code:  assert GitChangeSource.merge_base(real, "main") == {:ok, real_head}
      left:  {:error, :not_a_work_tree}
      right: {:ok, "e7abacbfead2bbab2267ce5236fbdced7f733a70"}
-```
-
-### B
-
-```
-  1) test E2: GitStatus reads the repository at its root, not the one GIT_DIR names (Anchor.Adapters.GitEnvIsolationTest)
-     test/anchor/adapters/git_env_isolation_test.exs:97
-     Assertion with == failed
-     code:  assert GitStatus.dirty_paths(real, ["lib/a.ex", "lib/real_new.ex", "lib/decoy_new.ex"]) ==
-              {:ok, ["lib/a.ex", "lib/real_new.ex"]}
-     left:  {:ok, ["lib/a.ex", "lib/decoy_new.ex"]}
-     right: {:ok, ["lib/a.ex", "lib/real_new.ex"]}
 ```
 
 ### C
@@ -100,10 +89,32 @@ repository-locating variable (their own `git!` helpers clear them).
      right: {:ok, ["lib/real_new.ex"]}
 ```
 
+## Review round: `GIT_DIFF_OPTS` (the review floor's finding, same class)
+
+An inherited `GIT_DIFF_OPTS` overrides the diff's `--unified=0` (git reads `-u3` from it), so `DiffHunks`
+would read hunks padded with context and widen the scope with no error. `GitEnv` now also unsets
+`GIT_DIFF_OPTS` and `GIT_EXTERNAL_DIFF` (`output_env_vars/0`); E4 sets `GIT_DIFF_OPTS=-u3` and asserts the
+diff still has `@@ -2 +2 @@`. Before the fix E4 failed with the left side below (`4 tests, 2 failures` in
+`git_env_isolation_test.exs`, the other being E3 calling the not-yet-defined `output_env_vars/0`). After:
+the three files run `17 tests, 0 failures`.
+
+| # | Mutation | Tests that failed | Run |
+|---|---|---|---|
+| F | `GitEnv` drops `GIT_DIFF_OPTS` from `@output_env_vars` | E4 | `17 tests, 1 failure` |
+
+```
+  1) test E4: an inherited GIT_DIFF_OPTS cannot change the diff's context lines (Anchor.Adapters.GitEnvIsolationTest)
+     test/anchor/adapters/git_env_isolation_test.exs:127
+     Assertion with =~ failed
+     code:  assert diff =~ "\n@@ -2 +2 @@"
+     left:  "diff --git a/lib/a.ex b/lib/a.ex\nindex 2576990..ca674d3 100644\n--- a/lib/a.ex\n+++ b/lib/a.ex\n@@ -1,3 +1,3 @@\n defmodule A do\n-  def f, do: 1\n+  def f, do: 2\n end\n"
+     right: "\n@@ -2 +2 @@"
+```
+
 ## Traps
 
 - A mutation that leaves `alias Anchor.Adapters.GitEnv` unused does not compile (warnings are errors), so
-  A and B keep the alias and take the first element of `GitEnv.env/0`, which is the old env.
+  A keeps the alias and takes the first element of `GitEnv.env/0`, which is the old env.
 - The commit ids differ per run: the repositories are made fresh in each test's `tmp_dir`.
 
 ---

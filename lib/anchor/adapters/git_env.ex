@@ -11,8 +11,10 @@ defmodule Anchor.Adapters.GitEnv do
   from the wrong diff without any error. `env/0` unsets every variable git
   itself treats as repository-local (`git rev-parse --local-env-vars`: the set
   git clears when it enters a submodule), so the repository is always the one
-  at the command's `cd:` root. It also sets `GIT_OPTIONAL_LOCKS=0`, so a read
-  never refreshes the index.
+  at the command's `cd:` root. It also unsets the variables that change what
+  `git diff` prints whatever its flags say (`GIT_DIFF_OPTS` overrides
+  `--unified=0`; `GIT_EXTERNAL_DIFF`), and sets `GIT_OPTIONAL_LOCKS=0`, so a
+  read never refreshes the index.
 
   The list is held here, not read from git at run time; a test fails when the
   installed git names a variable it lacks.
@@ -36,11 +38,23 @@ defmodule Anchor.Adapters.GitEnv do
     GIT_WORK_TREE
   )
 
-  @doc "The `env:` option for `System.cmd/3`: repository-locating variables unset, optional locks off."
-  @spec env() :: [{String.t(), String.t() | nil}]
-  def env, do: [{"GIT_OPTIONAL_LOCKS", "0"} | Enum.map(@local_env_vars, &{&1, nil})]
+  @output_env_vars ~w(GIT_DIFF_OPTS GIT_EXTERNAL_DIFF)
 
-  @doc "The variables `env/0` unsets."
+  @doc """
+  The `env:` option for `System.cmd/3`: the repository-locating and
+  diff-output variables unset, optional locks off.
+  """
+  @spec env() :: [{String.t(), String.t() | nil}]
+  def env,
+    do: [
+      {"GIT_OPTIONAL_LOCKS", "0"} | Enum.map(@local_env_vars ++ @output_env_vars, &{&1, nil})
+    ]
+
+  @doc "The repository-locating variables `env/0` unsets (git's own list)."
   @spec local_env_vars() :: [String.t()]
   def local_env_vars, do: @local_env_vars
+
+  @doc "The variables that change `git diff`'s output, which `env/0` unsets too."
+  @spec output_env_vars() :: [String.t()]
+  def output_env_vars, do: @output_env_vars
 end
