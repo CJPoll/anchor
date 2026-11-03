@@ -45,6 +45,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
   # A typo of a key the type really reads, per type. For a type that reads no
   # key of its own, the typo is of the `paths` selector.
   @typos %{
+    aggregate_declarations: "min_module",
     alphabetized_functions: "mdoe",
     case_on_bare_arg: "pahts",
     context_acyclic: "min_module",

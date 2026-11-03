@@ -41,7 +41,7 @@ never an adapter.
 
 | Bucket | Modules |
 |---|---|
-| Framework | `Anchor.Check.*` (Credo checks, `Anchor.Check.Base`, `Anchor.Check.Source`), `Mix.Tasks.Anchor.*` (`lib/mix/tasks/`; `Mix.Tasks.Anchor.Sabotage`), `Anchor.Sabotage.CoverageCollector` (an OTP process, in `lib/mix/tasks/anchor/sabotage/` so `mix anchor.graph` buckets it as Framework) |
+| Framework | `Anchor.Check.*` (Credo checks, `Anchor.Check.Base`, `Anchor.Check.Source`), `Anchor.Aggregate` (the compile-time macro, DND-5476), `Mix.Tasks.Anchor.*` (`lib/mix/tasks/`; `Mix.Tasks.Anchor.Sabotage`), `Anchor.Sabotage.CoverageCollector` (an OTP process, in `lib/mix/tasks/anchor/sabotage/` so `mix anchor.graph` buckets it as Framework) |
 | Managers | `Anchor.Managers.Lint`, `Anchor.Managers.Sabotage` (`.Runner`, `.Coverage`) |
 | Side Effects | ports: `Anchor.Adapters.ConfigLoader`, `ChangeSource`, `BeamSource`, `Tracing`, `InProcessTests`, `ProjectModuleSource`, `CoverageStore`, `BaselineStore`, `GitBase`; adapters: `ConfigFile`, `GitChangeSource`, `BeamReader`, `CallTracer`, `SuiteRunner`, `ProjectModules`, `CoverageFile`, `RecordFile` (port `RecordStore`), `BaselineFile`, `GitShow` (`lib/anchor/adapters/`); `GitEnv`, the environment the git adapters run git with (DND-5581) |
 | Domain | everything under `lib/anchor/domain/`, including `Anchor.Domain.Sabotage.*` (`Mutator`, `Operators`, `DiffHunks`, `FunctionSpans`, `Scope`, `CoverageMap`, `Record`, `RecordNaming`, `KillMap`, `ChangedTests`, `TestPath`: the one rule for a path handed to `mix test`, DND-5640) and `Anchor.Domain.Graph.*` |
@@ -146,6 +146,14 @@ Every rule type has exactly one engine, `@engine_by_type` in
 fails without it) and to the README table's Engine column (a test compares
 them). Credo never reports a `:graph` rule as unchecked
 (`RuleCoverage.unchecked/3`).
+
+The optional top-level `aggregates:` section (DND-5476) is parsed by
+`Anchor.Domain.Aggregates.Config`; `Anchor.Domain.Aggregates.Index` merges it
+with every module's persisted `@anchor_aggregate` (`use Anchor.Aggregate`,
+Framework, `lib/anchor/aggregate.ex`, or the attribute by hand) into
+`Model.aggregates`, and the `aggregate_declarations` graph rule reports what
+names nothing or is claimed twice. A schema's table is read from its
+`__schema__(:source)` clause in Core, never by calling it.
 
 The optional top-level `architecture:` section (DND-5437) is parsed by
 `Anchor.Domain.Architecture.parse/1` into `%Anchor.Config{architecture: ...}`

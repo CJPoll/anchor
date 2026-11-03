@@ -48,7 +48,9 @@ defmodule Anchor.Managers.Graph do
        (`Anchor.Adapters.GraphStore`) under `<build_path>/anchor`, the build
        path the task gathered from Mix (DND-5585); the verdict never reads it;
     9. return the `%Anchor.Domain.GraphReport{}`, with the apply-site
-       counts (`GraphReport.apply_sites/1`) when the analysis ran.
+       counts (`GraphReport.apply_sites/1`) when the analysis ran, and the
+       declared aggregates' counts (`Anchor.Domain.Aggregates.Index`,
+       DND-5476) when any is declared.
 
   Every per-module problem is an issue on that module (exit 1), never a
   skipped module: a beam it could not decode, a module whose graph walk
@@ -79,6 +81,7 @@ defmodule Anchor.Managers.Graph do
   alias Anchor.Adapters.GraphArtifact
   alias Anchor.Adapters.SourceReader
   alias Anchor.Config
+  alias Anchor.Domain.Aggregates.Index
   alias Anchor.Domain.Baseline
   alias Anchor.Domain.BaselineBase
   alias Anchor.Domain.Cfa
@@ -252,10 +255,23 @@ defmodule Anchor.Managers.Graph do
       |> counts(map_size(graph.modules), length(rules), length(Model.opaque(model)))
       |> Map.put(:no_core, no_core_count(graph))
       |> Map.put(:excluded, length(outside))
-      |> Map.put(:apply_sites, GraphReport.apply_sites(model.cfa)),
+      |> Map.put(:apply_sites, GraphReport.apply_sites(model.cfa))
+      |> put_aggregates(model.aggregates),
       held: Enum.flat_map(ran, & &1.held),
       refused: Enum.flat_map(ran, & &1.refused)
     )
+  end
+
+  # DND-5476: the declared aggregates and their unknown tables are counted
+  # in the summary when there are any.
+  defp put_aggregates(counts, index) do
+    case Index.declared(index) do
+      0 ->
+        counts
+
+      declared ->
+        Map.put(counts, :aggregates, %{declared: declared, tables_unknown: index.tables_unknown})
+    end
   end
 
   defp analyze_cfa(graph), do: Cfa.analyze(graph, Cfa.default_seed(graph))

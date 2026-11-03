@@ -111,6 +111,20 @@ rules:
     required_modules:
       - Anchor.Check.Base
 
+  # --- Rule: aggregate declarations name something (DND-5476) ---
+  #
+  # `mix anchor.graph` reads every aggregate declared in an `aggregates:`
+  # section or by a module's persisted `@anchor_aggregate` (`use
+  # Anchor.Aggregate`), and reports a declaration that names nothing or a
+  # schema or table two aggregates claim. Anchor has no database, so it
+  # declares no aggregate, and the rule says it checks nothing: it runs in
+  # report mode, so that line is printed on every run and never fails it.
+  # A repo with aggregates runs it in enforce mode.
+  - type: aggregate_declarations
+    id: aggregate_declarations
+    paths: ["lib/**/*.ex"]
+    enforcement: report
+
   # --- Rule: the calls matrix over compiled code (DND-5442) ---
   #
   # `mix anchor.graph` judges every call between two of Anchor's own modules
@@ -175,6 +189,7 @@ architecture:
       select:
         - paths: ["lib/anchor/check/**/*.ex", "lib/mix/tasks/**/*.ex"]
         - pattern: "Anchor"
+        - pattern: "Anchor.Aggregate"
       min_modules: 20
     - name: adapters
       role: adapters

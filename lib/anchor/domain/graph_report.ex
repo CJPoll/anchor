@@ -84,7 +84,8 @@ defmodule Anchor.Domain.GraphReport do
           required(:opaque) => non_neg_integer(),
           required(:no_core) => non_neg_integer(),
           required(:excluded) => non_neg_integer(),
-          required(:apply_sites) => apply_sites() | nil
+          required(:apply_sites) => apply_sites() | nil,
+          optional(:aggregates) => %{declared: pos_integer(), tables_unknown: non_neg_integer()}
         }
 
   @type t :: %__MODULE__{
@@ -171,6 +172,7 @@ defmodule Anchor.Domain.GraphReport do
       "no_core" => report.counts.no_core,
       "excluded" => report.counts.excluded,
       "apply_sites" => apply_sites_json(report.counts.apply_sites),
+      "aggregates" => aggregates_json(Map.get(report.counts, :aggregates)),
       "exit_code" => report.exit_code,
       "findings" => Enum.map(report.findings, &Finding.to_json/1),
       "could_not_check" => Enum.map(report.could_not_check, &Finding.to_json/1),
@@ -185,7 +187,8 @@ defmodule Anchor.Domain.GraphReport do
   `:enforce` finding, every could-not-check entry and every refusal, `P`
   every `:report` finding and `H` every held one. Opaque (Erlang) modules,
   functions with no Core body and modules left out as outside the root are
-  counted when there are any.
+  counted when there are any, and so are declared aggregates (DND-5476:
+  `; aggregates: <N> declared, <U> tables unknown`).
   """
   @spec summary(t()) :: String.t()
   def summary(%__MODULE__{counts: counts} = report) do
@@ -195,8 +198,21 @@ defmodule Anchor.Domain.GraphReport do
     "anchor.graph: #{counts.modules} modules#{notes(counts)} in #{counts.apps} apps, " <>
       "#{counts.rules} rules, #{violations} violations " <>
       "(#{length(report_only)} report-only, #{length(report.held)} baselined)" <>
-      apply_sites_note(counts.apply_sites)
+      apply_sites_note(counts.apply_sites) <> aggregates_note(Map.get(counts, :aggregates))
   end
+
+  # DND-5476: when any aggregate is declared, how many, and how many of their
+  # schemas' tables could not be read (a `__schema__(:source)` that is not a
+  # literal): an unknown table is counted, never dropped silently.
+  defp aggregates_note(nil), do: ""
+
+  defp aggregates_note(%{declared: declared, tables_unknown: unknown}),
+    do: "; aggregates: #{declared} declared, #{unknown} tables unknown"
+
+  defp aggregates_json(nil), do: nil
+
+  defp aggregates_json(%{declared: declared, tables_unknown: unknown}),
+    do: %{"declared" => declared, "tables_unknown" => unknown}
 
   defp apply_sites_json(nil), do: nil
 

@@ -131,8 +131,9 @@ failed, and ends with a `Fix:` line.
 The load rejects, rather than silently ignoring:
 
 - a document that is empty, has no `rules:` list, has a top-level key other than
-  `rules`, `architecture` and `sabotage` (for example `anchors:`; `sabotage:` is
-  described in [Sabotage: running the mutants](#sabotage-running-the-mutants)),
+  `rules`, `architecture`, `aggregates` and `sabotage` (for example `anchors:`;
+  `aggregates:` is described in [Aggregates](#aggregates-the-aggregates-section-and-the-aggregate_declarations-rule-dnd-5476),
+  `sabotage:` in [Sabotage: running the mutants](#sabotage-running-the-mutants)),
   or whose `rules` is not a list. An explicit `rules: []` is a deliberate empty config and loads;
 - an `architecture:` section that could check nothing, or less than it says
   (see [The `architecture:` section](#the-architecture-section));
@@ -438,11 +439,13 @@ another type (`match` on a `no_transitive_dependency` rule) is unknown too.
 
 The Engine column is the one engine that runs the type: `ast` rules run as
 Credo checks over source, `graph` rules run under `mix anchor.graph` over the
-compiled code (DND-5440; `layering`, DND-5442, and `context_acyclic`, DND-5445). Credo never reports a
+compiled code (DND-5440; `layering`, DND-5442, `context_acyclic`, DND-5445, and
+`aggregate_declarations`, DND-5476). Credo never reports a
 `graph` rule as unchecked.
 
 | Rule type | Keys beyond the common ones | Relation (needs one, non-empty) | Engine |
 |---|---|---|---|
+| `aggregate_declarations` | none | none | `graph` |
 | `alphabetized_functions` | `mode` | none | `ast` |
 | `case_on_bare_arg` | none | none | `ast` |
 | `context_acyclic` | none | none | `graph` |
@@ -795,6 +798,112 @@ JSON, and named with its path in a `[report]` note (DND-5588). An absolute path
 inside the root is made relative to it, so `paths:` selectors match it as they
 match every other file.
 
+### Aggregates: the `aggregates:` section and the `aggregate_declarations` rule (DND-5476)
+
+An aggregate is the set of tables one transaction may write. Rules about
+transactions (one aggregate per transaction, owner-only writes) need to know
+which aggregate each schema and table belongs to, and which modules own it.
+Three sources declare that, and all three mean the same thing; `mix
+anchor.graph` merges them by aggregate name into one index
+(`Anchor.Domain.Aggregates.Index`) every graph rule reads.
+
+**1. The `aggregates:` section of `.anchor.yml`.**
+
+```yaml
+aggregates:
+  declare:
+    - name: MyApp.Threads.ThreadSpace       # a module-name token; need not be a module
+      schemas: [MyApp.Threads.Thread, MyApp.Threads.Message]   # exact module names
+      tables: ["thread_reads"]              # tables written by name, with no schema module
+      owners: [MyApp.Threads.ThreadStore]   # exact module names allowed to write them
+  repos: [MyApp.Repo]
+  write_functions: ["MyApp.Repo.soft_delete/2"]
+  transaction_functions: ["GenSaas.UnitOfWork.transaction/3"]
+```
+
+Only `declare` has a meaning yet; `repos`, `write_functions` and
+`transaction_functions` are checked for shape (exact module names, and
+`"Module.function/arity"` tokens) and kept for the rules that read them. The
+load refuses, each with a `Fix:` giving this shape: a section that is not a
+mapping; an unknown key at any level; a `declare` that is not a list; an entry
+that is not a mapping, has no `name`, or a `name` that is not a module-name
+token; `schemas`, `owners` or `repos` that are not lists of exact module names
+(no glob, no Erlang module); `tables` that is not a list of non-empty strings;
+two entries with one `name` (merge them); a malformed function token.
+
+**2. `use Anchor.Aggregate`** in a module, which then owns the aggregate:
+
+```elixir
+defmodule MyApp.Threads.ThreadStore do
+  use Anchor.Aggregate,
+    name: MyApp.Threads.ThreadSpace,
+    schemas: [MyApp.Threads.Thread, MyApp.Threads.Message],
+    tables: ["thread_reads"]
+end
+```
+
+Options: `name` (required), `schemas` (default `[]`), `tables` (default
+`[]`), `owner` (default `true`). Aliases in scope resolve. A non-literal
+option, an unknown key, a missing `name` or a value of the wrong type is an
+`ArgumentError` at compile time. The macro defines no function and adds no
+runtime call; it expands to exactly the two lines of form 3.
+
+**3. The persisted attribute, written by hand** (the cross-tool contract; a
+library such as gen_saas's DSL emits it):
+
+```elixir
+Module.register_attribute(__MODULE__, :anchor_aggregate, persist: true)
+@anchor_aggregate [name: MyApp.Threads.ThreadSpace, schemas: [MyApp.Threads.Thread], tables: [], owner: true]
+```
+
+Keys: `name` (an alias atom, required), `schemas` (alias atoms, default `[]`),
+`tables` (non-empty strings, default `[]`), `owner` (boolean, default
+`false`), nothing else, and one value per module. A schema module that only
+states its membership writes `schemas: [__MODULE__]` and leaves `owner` out.
+
+The trade-off between forms 2 and 3: `use Anchor.Aggregate` needs Anchor at
+compile time in every environment the module compiles in, so a repo that
+keeps Anchor `only: [:dev, :test]` writes the two attribute lines by hand
+instead, and needs no Anchor dependency in prod. Both are read identically.
+
+Each schema's table is read from its `__schema__(:source)` clause in the
+compiled code (Core Erlang), without loading the module. A source that is not
+a literal string leaves that table unknown: it is counted, never dropped, in
+the summary line, which ends `; aggregates: <N> declared, <U> tables unknown`
+whenever an aggregate is declared (the JSON's `aggregates`).
+
+```yaml
+rules:
+  - type: aggregate_declarations
+    id: aggregate_declarations
+    paths: ["lib/**/*.ex"]
+```
+
+The `aggregate_declarations` rule reports every declaration that names
+nothing or claims too much, each at its site (the config, or the declaring
+module's `defmodule` line), each message ending with `Fix:` and the
+declaration shape:
+
+| Issue | Example message |
+|---|---|
+| A schema or table two aggregates claim (one issue per claiming site; a schema's derived table counts) | `schema MyApp.Thread is claimed by MyApp.A and MyApp.B. Fix: list it in exactly one aggregate; the other reaches it through an outbox row consumed by the owner: ...` |
+| A schema or owner naming no module of the project | `MyApp.Nope in aggregate MyApp.A names no module in this project. Fix: correct the module name or remove it: ...` |
+| A schema module that is not an Ecto schema | `MyApp.Plain in aggregate MyApp.A is not an Ecto schema (no __schema__/1). Fix: list the schema module, or list its table under tables:: ...` |
+| An aggregate with no schemas and no tables | `aggregate MyApp.A declares no schemas and no tables. Fix: add schemas: or tables:, or delete the declaration: ...` |
+| An `@anchor_aggregate` of the wrong shape (the module contributes nothing) | `@anchor_aggregate on MyApp.X is not [name: atom, schemas: [atom], tables: [binary], owner: boolean]: it has no name. Fix: write it in this shape: ...` |
+| No aggregate declared at all | `aggregate_declarations checks nothing: no aggregate is declared in .anchor.yml or by an @anchor_aggregate attribute. Fix: declare one or remove the rule: ...` |
+
+An issue of the config section is always reported; one of a module's
+attribute is reported when the rule's selector selects that module. The key
+is `<id>|<.anchor.yml or the declaring module>|<kind> <aggregates> <subject>`,
+with no line number. Which schemas a transaction may write together, and who
+may write them, are the later transaction rules' (DND-5477, DND-5478); this
+rule only makes the declarations trustworthy.
+
+Anchor's own `.anchor.yml` runs the rule in report mode: Anchor has no
+database and declares no aggregate, so its one finding is the
+"checks nothing" line, printed on every run.
+
 ### Graph rows of the fail-closed table
 
 Like the Credo checks, the graph engine fails closed: a run that could not
@@ -828,6 +937,8 @@ line.
 | An ambiguous module | 1 | its source file, at its `defmodule` line | `MyApp.X is in buckets domain (by paths [...]) and framework (by uses_module GenServer). Fix: narrow one selector; buckets never take precedence.` |
 | A bucket below its `min_modules` | 1 | the config | `architecture bucket domain selects 3 modules, below min_modules 10. Fix: correct the selector; lowering min_modules is the owner's call.` |
 | An `interfaces.exports` entry that names no module | 1 | the config | `architecture interfaces.exports names MyApp.Gone, which is no module of the project ... Fix: ...` |
+| An `aggregates:` section of the wrong shape (DND-5476) | 3 | the config path | `aggregates.declare[1].schemas must be a list of exact module names: "MyApp.*" is a glob, .... Fix: name each module in full, as its defmodule spells it; aggregates: declare: - name: <Aggregate>, ...` |
+| A schema whose `__schema__(:source)` is not a literal (DND-5476) | 0 | the summary | counted as `; aggregates: <N> declared, <U> tables unknown`, never dropped |
 | A graph rule below its `min_modules` | 1 | the config | `rule 2 (id: "web", layering) selects 0 modules, below min_modules 1. Fix: correct the selector; ...` |
 | A graph rule that raises, throws or exits | 1 | the config | `rule 2 (id: "web", layering) could not run: RuntimeError: ... Fix: this is an Anchor bug; file it with this line.` The other rules still run. |
 | A `baseline:` file that is missing, unreadable, not UTF-8, or holds another rule's entry | 1 | the baseline path | `rule 2 (id: "web", layering)'s baseline .anchor/baselines/web.txt could not be read (:enoent), so none of its findings is held. Fix: create it with mix anchor.graph --write-baseline web ...` |
