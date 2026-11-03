@@ -208,7 +208,15 @@ defmodule Anchor.Domain.Sabotage.CoverageMapTest do
 
       assert {:ok, _map} = CoverageMap.check(with_test(map, "test/a_test.exs"))
 
-      for file <- ["-x", "--include=slow", "/etc/x_test.exs", "test/../../x.exs", ""] do
+      # DND-5640: the shared TestPath rule, so a non-test file is refused too.
+      for file <- [
+            "-x",
+            "--include=slow",
+            "/etc/x_test.exs",
+            "test/../../x.exs",
+            "",
+            "test/x.exs"
+          ] do
         assert CoverageMap.check(with_test(map, file)) == {:error, {:test_file, file}},
                inspect(file)
       end

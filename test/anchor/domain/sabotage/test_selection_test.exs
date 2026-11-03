@@ -161,6 +161,48 @@ defmodule Anchor.Domain.Sabotage.TestSelectionTest do
     end
   end
 
+  describe "select/2 checks every path it emits (DND-5640)" do
+    # Sabotage record: ../../../sabotage_records/sabotage-20261103-dnd_5640_test_path.md
+    # The inputs here skip the parse-time checks, as an index built some
+    # other way would: the emit-time check alone must hold the argv.
+    @bad ["--include_test.exs", "../outside_test.exs", "/abs/x_test.exs", "a/../b_test.exs"]
+
+    test "a kill-map killer that is an option or outside the project is never selected" do
+      inputs =
+        inputs(["test/x_test.exs" | @bad])
+        |> Map.put(:kill_map, %{"M.f/1" => @bad})
+
+      assert TestSelection.select(%{file: "lib/x.ex", module: M, function: {:f, 1}}, inputs) ==
+               {:mirror, ["test/x_test.exs"]}
+    end
+
+    test "a coverage ref that is an option or outside the project is never selected" do
+      inputs =
+        inputs(["test/x_test.exs" | @bad])
+        |> Map.put(:coverage, %{"M.f/1" => Enum.map(@bad, &(&1 <> ":3"))})
+
+      assert TestSelection.select(%{file: "lib/x.ex", module: M, function: {:f, 1}}, inputs) ==
+               {:mirror, ["test/x_test.exs"]}
+    end
+
+    test "a mirror target outside the project is never selected" do
+      rules = [%{from: "lib/**/*.ex", to: "../{rest}_test.exs"}]
+      assert TestSelection.mirror_path(%{file: "lib/x.ex"}, rules) == "../x_test.exs"
+      inputs = %{mirror: rules, existing_tests: MapSet.new(["../x_test.exs"])}
+
+      assert TestSelection.select(%{file: "lib/x.ex"}, inputs) == {:none, []}
+    end
+
+    test "positive control: safe paths of each source are selected" do
+      inputs =
+        inputs(["test/x_test.exs", "test/k_test.exs"])
+        |> Map.put(:kill_map, %{"M.f/1" => ["test/k_test.exs"]})
+
+      assert TestSelection.select(%{file: "lib/x.ex", module: M, function: {:f, 1}}, inputs) ==
+               {:kill_map, ["test/k_test.exs", "test/x_test.exs"]}
+    end
+  end
+
   describe "mirror_path/2" do
     test "names the path the mirror looked for, or nil" do
       assert TestSelection.mirror_path(mutant("lib/x.ex"), @rules) == "test/x_test.exs"

@@ -814,7 +814,10 @@ How a run goes:
    `none`. Between coverage and the mirror comes `kill_map`: the test files
    whose tests killed a mutant of the same function in the records already
    there, with the mirror file when it exists, so a branch's new tests run
-   too (a record whose kill map does not parse is skipped, and said:
+   too. Every path handed to `mix test`, from any source, must be a project
+   `_test.exs` path: never starting with `-` or `/`, with no `..` or empty
+   segment (DND-5640). A record holding a killer that fails this is skipped
+   and named, as is one whose kill map does not parse (said:
    `could not read kill map in <path>:<line>`). A map that cannot be read,
    or is not a version-1 map, is exit 2
    (`Fix: download the anchor-coverage artifact again`); one built from a

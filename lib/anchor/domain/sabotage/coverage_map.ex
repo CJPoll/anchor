@@ -38,6 +38,8 @@ defmodule Anchor.Domain.Sabotage.CoverageMap do
   measured nothing (`COULD NOT MEASURE`, exit 3), and is never written.
   """
 
+  alias Anchor.Domain.Sabotage.TestPath
+
   @version 1
   @default_slack 10_000
 
@@ -147,9 +149,9 @@ defmodule Anchor.Domain.Sabotage.CoverageMap do
   every field this module reads, else `{:error, reason}`. The map comes from
   an artifact, so each field that reaches a command line is checked: `commit`
   (passed to git) is `nil` or a 40-character lowercase hex sha, else
-  `{:error, {:commit, value}}`; each test `file` (passed to `mix test`) is a
-  relative path inside the project that does not start with `-`, else
-  `{:error, {:test_file, file}}`.
+  `{:error, {:commit, value}}`; each test `file` (passed to `mix test`)
+  passes `Anchor.Domain.Sabotage.TestPath.check/1` (a project `_test.exs`
+  path, never an option), else `{:error, {:test_file, file}}`.
   """
   @spec check(term()) ::
           {:ok, t()}
@@ -214,12 +216,8 @@ defmodule Anchor.Domain.Sabotage.CoverageMap do
 
   defp sha?(_commit), do: false
 
-  defp safe_file?(file) do
-    segments = String.split(file, "/")
-
-    file != "" and not String.starts_with?(file, ["-", "/"]) and ".." not in segments and
-      "" not in segments
-  end
+  # DND-5640: the one path rule, shared with the kill map and the selection.
+  defp safe_file?(file), do: TestPath.check(file) == :ok
 
   defp arrive(event, state) do
     stamp = elem(event, 1)

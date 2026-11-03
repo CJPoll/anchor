@@ -27,9 +27,17 @@ defmodule Anchor.Domain.Sabotage.TestSelection do
   that may now hold another test, and the mutant's mirror file, when it is
   stale and exists, is added whole, so a test the branch added for the
   function runs too.
+
+  Every path this module returns goes into `mix test`'s argv, so each one, of
+  every source, must pass `Anchor.Domain.Sabotage.TestPath.check_arg/1`
+  (DND-5640) here, at the point it is emitted, whatever its source checked
+  when it was read: a coverage ref, a killer or a mirror file that is an
+  option, absolute, outside the project or not a `_test.exs` file is never
+  selected.
   """
 
   alias Anchor.Domain.Sabotage.TestMirror
+  alias Anchor.Domain.Sabotage.TestPath
 
   @type inputs :: %{
           required(:mirror) => [TestMirror.rule()],
@@ -46,13 +54,13 @@ defmodule Anchor.Domain.Sabotage.TestSelection do
       inputs
       |> Map.get(:coverage)
       |> indexed(mfa(mutant))
-      |> Enum.filter(&MapSet.member?(existing, ref_file(&1)))
+      |> Enum.filter(&(TestPath.safe_arg?(&1) and MapSet.member?(existing, ref_file(&1))))
 
     killers =
       inputs
       |> Map.get(:kill_map)
       |> indexed(mfa(mutant))
-      |> Enum.filter(&MapSet.member?(existing, &1))
+      |> Enum.filter(&(TestPath.safe_arg?(&1) and MapSet.member?(existing, &1)))
 
     cond do
       refs != [] -> {:coverage, fresh(refs, rules, file, existing, stale(inputs))}
@@ -115,10 +123,12 @@ defmodule Anchor.Domain.Sabotage.TestSelection do
   defp indexed(_index, nil), do: []
   defp indexed(index, mfa), do: Map.get(index, mfa, [])
 
+  defp emit?(path, existing), do: TestPath.safe_arg?(path) and MapSet.member?(existing, path)
+
   defp mirror(rules, file, existing) do
     case TestMirror.first_target(rules, file) do
       nil -> {:none, []}
-      path -> if MapSet.member?(existing, path), do: {:mirror, [path]}, else: {:none, []}
+      path -> if emit?(path, existing), do: {:mirror, [path]}, else: {:none, []}
     end
   end
 end

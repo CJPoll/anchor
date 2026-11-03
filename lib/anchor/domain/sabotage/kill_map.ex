@@ -16,10 +16,16 @@ defmodule Anchor.Domain.Sabotage.KillMap do
   separator and a test named `a ; b` reads back as one killer.
 
   `parse/1` reads every `anchor-kills` block of a record (an appended record
-  holds several) and refuses a row with the wrong number of fields or an
-  unknown status, naming the line (`{:error, {line, message}}`): a record it
-  cannot read is never read as an empty map.
+  holds several) and refuses a row with the wrong number of fields, an
+  unknown status, or a `killed` row's killer whose file fails
+  `Anchor.Domain.Sabotage.TestPath.check/1` (DND-5640: a killer's file reaches
+  `mix test`'s argv, so `--opt`, `/abs`, `../x` and a non-test file are
+  refused), naming the line (`{:error, {line, message}}`): a record it cannot
+  read is never read as an empty map. Only `killed` rows are selected from;
+  a `timeout` row's killer is `(timeout)`, not a file.
   """
+
+  alias Anchor.Domain.Sabotage.TestPath
 
   @fence "```"
   @info "anchor-kills"
@@ -112,9 +118,16 @@ defmodule Anchor.Domain.Sabotage.KillMap do
     case String.split(text, "\t") do
       [id, file, mfa, operator, status, killers] ->
         status = unescape(status)
+        killers = killers(killers)
 
-        if status in @statuses,
-          do:
+        cond do
+          status not in @statuses ->
+            {:error, "unknown status #{inspect(status)}"}
+
+          refused = status == "killed" && refused_killer(killers) ->
+            refused
+
+          true ->
             {:ok,
              %{
                id: unescape(id),
@@ -122,13 +135,25 @@ defmodule Anchor.Domain.Sabotage.KillMap do
                mfa: unescape(mfa),
                operator: unescape(operator),
                status: status,
-               killers: killers(killers)
-             }},
-          else: {:error, "unknown status #{inspect(status)}"}
+               killers: killers
+             }}
+        end
 
       fields ->
         {:error, "a row has #{length(fields)} fields, not 6"}
     end
+  end
+
+  defp refused_killer(killers) do
+    Enum.find_value(killers, fn killer ->
+      case TestPath.check(killer_file(killer)) do
+        :ok ->
+          nil
+
+        {:error, reason} ->
+          {:error, "killer #{inspect(killer)} refused: #{TestPath.describe(reason)}"}
+      end
+    end)
   end
 
   defp killers(""), do: []

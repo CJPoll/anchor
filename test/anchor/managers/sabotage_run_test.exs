@@ -1182,6 +1182,29 @@ defmodule Anchor.Managers.SabotageRunTest do
       assert Enum.all?(run.planned, fn {_m, sel} -> sel == {:mirror, ["test/calc_test.exs"]} end)
     end
 
+    test "DND-5640: a record whose killer is an option is refused loudly, never put in the argv" do
+      # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5640_test_path.md
+      bad = "test/sabotage_records/old-20261101-x.md"
+      stub(Anchor.RecordStoreMock, :list, fn @root, "test/sabotage_records" -> [bad] end)
+
+      expect(Anchor.RecordStoreMock, :read, fn @root, ^bad ->
+        {:ok,
+         "```anchor-kills\nid1\tlib/calc.ex\tCalc.add/2\top\tkilled\t--include x_test.exs:3 t\n```\n"}
+      end)
+
+      expect_until_selection()
+
+      run = Sabotage.run(%{@facts | dry_run: true}, @opts)
+
+      assert run.notes == [
+               "could not read kill map in #{bad}:2 (killer \"--include x_test.exs:3 t\" " <>
+                 "refused: starts with -, so mix test would read it as an option); " <>
+                 "not used for selection"
+             ]
+
+      assert Enum.all?(run.planned, fn {_m, sel} -> sel == {:mirror, ["test/calc_test.exs"]} end)
+    end
+
     test "an earlier record's kill map selects the killers' files for the same function" do
       old = "test/sabotage_records/old-20261101-x.md"
       stub(Anchor.RecordStoreMock, :list, fn @root, "test/sabotage_records" -> [old] end)
