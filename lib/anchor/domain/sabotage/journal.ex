@@ -10,8 +10,14 @@ defmodule Anchor.Domain.Sabotage.Journal do
   first on the next run: `recovery/2` says what to do with it. A journal whose
   `owner` (the run that wrote it) is still alive is not a leftover: that run
   is mid-mutant, and the next run refuses rather than touch it.
+
+  The run lock (`lock_path/0`, under `_build/`) is held by one run from its
+  first step to its last, so two runs in one project never overlap: the
+  journal, the results file and `_build` are each one run's at a time. Its
+  bytes are the holder's owner (`encode_lock/1`, `decode_lock/1`).
   """
 
+  @lock_path "_build/anchor-sabotage.lock"
   @path ".anchor/sabotage/in-flight.json"
 
   @enforce_keys [:file, :mutant_id, :original, :original_sha, :mutated_sha]
@@ -36,6 +42,25 @@ defmodule Anchor.Domain.Sabotage.Journal do
   @doc "The journal's path, relative to the project root."
   @spec path() :: String.t()
   def path, do: @path
+
+  @doc "The run lock's path, relative to the project root."
+  @spec lock_path() :: String.t()
+  def lock_path, do: @lock_path
+
+  @doc "The run lock's bytes: the holding run's owner (`nil` when it cannot tell)."
+  @spec encode_lock(owner() | nil) :: binary()
+  def encode_lock(owner), do: JSON.encode!(%{"version" => 1, "owner" => owner_json(owner)})
+
+  @doc "The lock's holder; `nil` for bytes that name none (a dead or unknown holder)."
+  @spec decode_lock(binary()) :: owner() | nil
+  def decode_lock(bytes) do
+    with {:ok, %{"version" => 1, "owner" => json}} <- JSON.decode(bytes),
+         {:ok, owner} <- owner_from_json(json) do
+      owner
+    else
+      _unreadable -> nil
+    end
+  end
 
   @doc "The entry for applying `mutated` over `original` in `file`."
   @spec entry(String.t(), String.t(), binary(), binary()) :: t()

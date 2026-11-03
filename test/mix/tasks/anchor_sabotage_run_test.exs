@@ -15,6 +15,12 @@ defmodule Mix.Tasks.Anchor.SabotageRunTest do
 
   setup :verify_on_exit!
 
+  setup do
+    stub(SourceMutationMock, :take_lock, fn _root -> :ok end)
+    stub(SourceMutationMock, :release_lock, fn _root -> :ok end)
+    :ok
+  end
+
   @opts [source_mutation: SourceMutationMock]
 
   test "1: a bad --max, an unknown flag or a stray argument is a usage error, exit 2, with Fix:" do

@@ -49,6 +49,40 @@ defmodule Anchor.Adapters.SourcePatcherTest do
     refute SourcePatcher.owner_alive?(nil)
   end
 
+  test "the run lock: taken with this run as holder, refused while held, released",
+       %{tmp_dir: root} do
+    lock = Path.join(root, "_build/anchor-sabotage.lock")
+
+    assert SourcePatcher.take_lock(root) == :ok
+    assert %{os_pid: pid} = me = Journal.decode_lock(File.read!(lock))
+    assert Integer.to_string(pid) == System.pid()
+
+    assert SourcePatcher.take_lock(root) == {:error, {:held, me}}
+    assert Journal.decode_lock(File.read!(lock)) == me
+
+    assert SourcePatcher.release_lock(root) == :ok
+    refute File.exists?(lock)
+    assert SourcePatcher.release_lock(root) == :ok
+    assert Path.wildcard(Path.join(root, "_build/*anchor-tmp")) == []
+  end
+
+  test "a dead or unnamed holder's lock is taken over", %{tmp_dir: root} do
+    lock = Path.join(root, "_build/anchor-sabotage.lock")
+    File.mkdir_p!(Path.dirname(lock))
+
+    for stale <- [
+          Journal.encode_lock(%{os_pid: 2_147_483_646, started: "1"}),
+          Journal.encode_lock(nil),
+          "not a lock"
+        ] do
+      File.write!(lock, stale)
+      assert SourcePatcher.take_lock(root) == :ok
+      assert %{os_pid: pid} = Journal.decode_lock(File.read!(lock))
+      assert Integer.to_string(pid) == System.pid()
+      assert SourcePatcher.release_lock(root) == :ok
+    end
+  end
+
   test "2: write_file replaces the content and leaves no .anchor-tmp", %{tmp_dir: root} do
     path = Path.join(root, "m.ex")
     File.write!(path, "old")

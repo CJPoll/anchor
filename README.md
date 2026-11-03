@@ -668,6 +668,12 @@ An unknown key or a bad value fails the load, naming the key, with a `Fix:`.
 
 How a run goes:
 
+0. The run takes the run lock (`_build/anchor-sabotage.lock`, the holder's OS
+   pid and `/proc` start time) for its whole length, `restore` included: while
+   a live run holds it a second run refuses, exit 2, and touches nothing, so
+   two runs never share the journal, the results file or `_build`. A killed
+   run's lock is taken over. Linux only: with no `/proc` the lock and the
+   journal's owner name no process, and protect nothing.
 1. A journal left by a killed run (`.anchor/sabotage/in-flight.json`) is dealt
    with first: the file still holding the mutant is restored (and the run says
    so); a file already back loses only the journal; a file that matches
@@ -706,7 +712,7 @@ function with no literal clause is listed as an error, never as killed.
 |---|---|
 | every mutant run killed, timed out or invalid | 0 |
 | a mutant survived or had no test | 1 |
-| a dirty target file; the journal not git-ignored; a journal another live run owns; a leftover journal whose file changed; a restore that did not reproduce the original (the journal is kept); an unknown `--only` id; no `timeout` binary; bad flags | 2, with `Fix:` |
+| a dirty target file; the journal not git-ignored; the run lock or a journal another live run holds; a leftover journal whose file changed; a restore that did not reproduce the original (the journal is kept); an unknown `--only` id; no `timeout` binary; bad flags | 2, with `Fix:` |
 | no loadable config or no `sabotage:` section; the scope could not be measured; the baseline fails; changed functions whose files cannot be read | 3, `COULD NOT MEASURE` with `Fix:` |
 
 ## Check Types

@@ -39,6 +39,16 @@ defmodule Anchor.Domain.Sabotage.JournalTest do
     assert Journal.decode(bad) == {:error, :corrupt_journal}
   end
 
+  test "the run lock round-trips its owner; bytes naming none are nil" do
+    owner = %{os_pid: 77, started: "12345"}
+
+    assert Journal.lock_path() == "_build/anchor-sabotage.lock"
+    assert Journal.decode_lock(Journal.encode_lock(owner)) == owner
+    assert Journal.decode_lock(Journal.encode_lock(nil)) == nil
+    assert Journal.decode_lock("") == nil
+    assert Journal.decode_lock(~s({"version":1,"owner":{"os_pid":"77","started":"1"}})) == nil
+  end
+
   test "a journal naming a file outside the project root is corrupt" do
     for file <- ["/etc/passwd", "../outside.ex", "lib/../../outside.ex", ""] do
       entry = Journal.entry(file, "abc123abc123", @original, @mutated)

@@ -154,6 +154,17 @@ strengthened to a warnings-only output and C32 re-run red.
 | C36 | the journal never writes its owner | 2: Journal "the owner round-trips"; SourcePatcher owner row | `code:  assert Journal.decode(Journal.encode(entry)) == {:ok, entry}` `left:  {:ok, %Anchor.Domain.Sabotage.Journal{... owner: nil}}` |
 | C37 | a results directory that cannot be made returns a bare posix (critic round 2) | 1 (+1 bound): TestRunner "a results directory that cannot be made" | `code:  assert {:error, {:results_dir_not_created, ^out, posix}} = run("pass", dir)` `right: {:error, :enotdir}` |
 | C38 | `results_dir_not_created` refused with exit 2, not 3 | 1: Manager "a results directory the runner cannot make" | `code:  assert %{refusal: {3, message}} = Sabotage.run(@facts, @opts)` |
+| C39 | the run never takes the run lock (critic round 3) | 4: Manager run-lock rows 1-3 and the restore row | `code:  assert calls() == [:take_lock, :read_journal, :config, :release_lock]` `left:  [:read_journal, :config, :release_lock]` |
+| C40 | `take_lock/1` takes over a live holder's lock | 1: SourcePatcher "the run lock: taken ..., refused while held" | `code:  assert SourcePatcher.take_lock(root) == {:error, {:held, me}}` `left:  :ok` |
+| C41 | the lock is never released after a run | 3: Manager run-lock rows 1, 4 (release failure) and 5 | `code:  assert calls() == [:take_lock, :read_journal, :config, :release_lock]` `left:  [:take_lock, :read_journal, :config]` |
+| C42 | a raise inside the run leaves the lock held | 1: Manager "a raise inside the run still releases it" | `code:  assert calls() == [:release_lock]` `left:  []` |
+| C43 | a dead holder's lock is never taken over | 1: SourcePatcher "a dead or unnamed holder's lock is taken over" | `code:  assert SourcePatcher.take_lock(root) == :ok` `left:  {:error, {:held, %{os_pid: 2147483646, started: "1"}}}` |
+| C44 | the lock never records its holder | 3: Journal lock round-trip; SourcePatcher lock rows | `code:  assert Journal.decode_lock(Journal.encode_lock(owner)) == owner` `left:  nil` |
+
+From C39 on, `mutate.sh` touches each file it puts back, so the next row
+recompiles it (a restored file's mtime is older than its mutant's, and Mix
+kept the mutant's beam: seen once on C38's re-run, cleared by `mix compile
+--force`; every row's red was re-checked against the source).
 
 On C14, C15 and C37, TestRunner row 5 (`hang`) also hit the 2000 ms bound, as on
 R8: a bound, not a verdict.

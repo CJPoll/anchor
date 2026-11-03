@@ -24,6 +24,14 @@ defmodule Anchor.Managers.SabotageRunTest do
 
   setup :verify_on_exit!
 
+  # The run lock is taken and released on every run: stubbed here, and
+  # asserted (with expect/3, which a stub never satisfies) in its own describe.
+  setup do
+    stub(SourceMutationMock, :take_lock, fn "/repo" -> :ok end)
+    stub(SourceMutationMock, :release_lock, fn "/repo" -> :ok end)
+    :ok
+  end
+
   @root "/repo"
   @file_path "/repo/lib/calc.ex"
   @facts %{root: @root, env: :test, base: "origin/main", max: nil, only: [], dry_run: false}
@@ -573,6 +581,80 @@ defmodule Anchor.Managers.SabotageRunTest do
       assert [%{status: :killed}] = run.outcomes
       assert [_one] = run.not_run
       assert Report.render(run) =~ "not run (cap): 1 mutants; rerun with --max all (CI)"
+    end
+  end
+
+  describe "the run lock" do
+    test "is taken before anything else and released after the run" do
+      expect(SourceMutationMock, :take_lock, fn @root -> call(:take_lock, :ok) end)
+      expect_journal(:none)
+
+      expect(ConfigLoaderMock, :load_in, fn @root ->
+        call(:config, {:ok, %Anchor.Config{rules: [], sabotage: nil}})
+      end)
+
+      expect(SourceMutationMock, :release_lock, fn @root -> call(:release_lock, :ok) end)
+
+      assert %{refusal: {3, _message}} = Sabotage.run(@facts, @opts)
+      assert calls() == [:take_lock, :read_journal, :config, :release_lock]
+    end
+
+    test "held by a live run: exit 2, nothing touched, the lock left alone" do
+      expect(SourceMutationMock, :take_lock, 2, fn @root ->
+        {:error, {:held, %{os_pid: 4242, started: "777"}}}
+      end)
+
+      expect(SourceMutationMock, :release_lock, 0, fn @root -> :ok end)
+
+      for run <- [Sabotage.run(@facts, @opts), Sabotage.restore(%{root: @root}, @opts)] do
+        assert %{refusal: {2, message}, notes: []} = run
+
+        assert message ==
+                 "another sabotage run (OS pid 4242) is running in this project; nothing was " <>
+                   "touched. Fix: let that run finish, then rerun"
+      end
+    end
+
+    test "held by a run that names no pid, or not takeable: exit 2, nothing touched" do
+      expect(SourceMutationMock, :take_lock, fn @root -> {:error, {:held, nil}} end)
+      assert %{refusal: {2, held}} = Sabotage.run(@facts, @opts)
+      assert held =~ "another sabotage run holds _build/anchor-sabotage.lock; nothing was touched"
+
+      expect(SourceMutationMock, :take_lock, fn @root -> {:error, :eacces} end)
+      assert %{refusal: {2, eacces}} = Sabotage.run(@facts, @opts)
+
+      assert eacces ==
+               "could not take the run lock _build/anchor-sabotage.lock (:eacces); nothing was " <>
+                 "touched. Fix: make _build/ writable"
+    end
+
+    test "a lock that cannot be released is said in the notes" do
+      expect_journal(:none)
+      expect(SourceMutationMock, :release_lock, fn @root -> {:error, :eacces} end)
+
+      run = Sabotage.restore(%{root: @root}, @opts)
+
+      assert run.notes == [
+               "nothing to restore",
+               "could not remove the run lock _build/anchor-sabotage.lock (:eacces); the next " <>
+                 "run takes it over once this one has exited"
+             ]
+    end
+
+    test "restore takes it too; a raise inside the run still releases it" do
+      expect(SourceMutationMock, :take_lock, fn @root -> call(:take_lock, :ok) end)
+      expect_journal(:none)
+      expect(SourceMutationMock, :release_lock, fn @root -> call(:release_lock, :ok) end)
+
+      Sabotage.restore(%{root: @root}, @opts)
+      assert calls() == [:take_lock, :read_journal, :release_lock]
+
+      expect(SourceMutationMock, :take_lock, fn @root -> :ok end)
+      expect(SourceMutationMock, :read_journal, fn @root -> raise "boom" end)
+      expect(SourceMutationMock, :release_lock, fn @root -> call(:release_lock, :ok) end)
+
+      assert_raise RuntimeError, "boom", fn -> Sabotage.run(@facts, @opts) end
+      assert calls() == [:release_lock]
     end
   end
 

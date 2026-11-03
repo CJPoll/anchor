@@ -7,6 +7,12 @@ defmodule Anchor.Managers.Sabotage.Runner do
 
   ## run
 
+    0. The run lock (`Anchor.Domain.Sabotage.Journal.lock_path/0`) is taken
+       for the whole run, `restore` included, and released at its end: while
+       a live run holds it another run refuses (exit 2) and touches nothing,
+       so no two runs share the journal, the results file or `_build`. A lock
+       that cannot be released is said in the notes (the next run takes a
+       dead holder's lock over).
     1. A leftover journal is dealt with before anything else
        (`Anchor.Domain.Sabotage.Journal.recovery/2`). A journal whose owner
        is a live process belongs to a run still going: exit 2, nothing
@@ -69,21 +75,87 @@ defmodule Anchor.Managers.Sabotage.Runner do
   @spec run(map(), keyword()) :: Run.t()
   def run(%{root: root} = facts, opts) do
     ports = ports(opts)
+    run = %Run{base: Map.get(facts, :base)}
 
-    case recover(%Run{base: Map.get(facts, :base)}, root, ports) do
-      {:ok, run} -> checked_run(run, facts, ports)
-      {:refuse, run, code, message} -> %{run | refusal: {code, message}}
-    end
+    locked(run, root, ports, fn ->
+      case recover(run, root, ports) do
+        {:ok, run} -> checked_run(run, facts, ports)
+        {:refuse, run, code, message} -> %{run | refusal: {code, message}}
+      end
+    end)
   end
 
   @spec restore(%{root: String.t()}, keyword()) :: Run.t()
   def restore(%{root: root}, opts) do
-    case recover(%Run{restore: true}, root, ports(opts)) do
-      {:ok, %Run{notes: []} = run} -> %{run | notes: ["nothing to restore"]}
-      {:ok, run} -> run
-      {:refuse, run, code, message} -> %{run | refusal: {code, message}}
+    ports = ports(opts)
+    run = %Run{restore: true}
+
+    locked(run, root, ports, fn ->
+      case recover(run, root, ports) do
+        {:ok, %Run{notes: []} = run} -> %{run | notes: ["nothing to restore"]}
+        {:ok, run} -> run
+        {:refuse, run, code, message} -> %{run | refusal: {code, message}}
+      end
+    end)
+  end
+
+  # -- 0. the run lock --------------------------------------------------------
+
+  # A raise or a throw releases the lock and goes on up; a VM kill leaves it,
+  # and the next run takes a dead holder's lock over.
+  defp locked(run, root, %{patcher: patcher}, body) do
+    case patcher.take_lock(root) do
+      :ok ->
+        try do
+          body.()
+        rescue
+          error ->
+            _released = patcher.release_lock(root)
+            reraise error, __STACKTRACE__
+        catch
+          kind, reason ->
+            _released = patcher.release_lock(root)
+            :erlang.raise(kind, reason, __STACKTRACE__)
+        else
+          result -> released(result, root, patcher)
+        end
+
+      {:error, {:held, owner}} ->
+        %{run | refusal: {2, lock_held(owner)}}
+
+      {:error, posix} ->
+        %{run | refusal: {2, lock_not_taken(posix)}}
     end
   end
+
+  defp released(result, root, patcher) do
+    case patcher.release_lock(root) do
+      :ok ->
+        result
+
+      {:error, posix} ->
+        note(
+          result,
+          "could not remove the run lock #{Journal.lock_path()} (#{inspect(posix)}); " <>
+            "the next run takes it over once this one has exited"
+        )
+    end
+  end
+
+  defp lock_held(nil),
+    do:
+      "another sabotage run holds #{Journal.lock_path()}; nothing was touched. " <>
+        "Fix: let that run finish, then rerun"
+
+  defp lock_held(%{os_pid: pid}),
+    do:
+      "another sabotage run (OS pid #{pid}) is running in this project; nothing was " <>
+        "touched. Fix: let that run finish, then rerun"
+
+  defp lock_not_taken(posix),
+    do:
+      "could not take the run lock #{Journal.lock_path()} (#{inspect(posix)}); nothing was " <>
+        "touched. Fix: make _build/ writable"
 
   defp checked_run(run, %{root: root} = facts, ports) do
     with {:ok, config} <- config(root, ports),
