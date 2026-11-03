@@ -186,8 +186,11 @@ compiles with it off).
 
 ## The graph runner: `mix anchor.graph` (DND-5440)
 
-`Mix.Tasks.Anchor.Graph` (Framework) compiles, gathers `[{app, ebin}]` from
-Mix and makes one `Anchor.Managers.Graph.run/2` call; the Manager reaches
+`Mix.Tasks.Anchor.Graph` (Framework) compiles, gathers `[{app, ebin}]` and,
+in an umbrella, each app's directory (`Request.source_dirs`, from
+`Mix.Project.apps_paths/0`: Mix compiles an app from its own directory, so its
+beams' source paths are app-relative and are keyed from the umbrella root,
+DND-5637) from Mix and makes one `Anchor.Managers.Graph.run/2` call; the Manager reaches
 config, beams, sources and the artifact only through adapters
 (`ConfigLoader`, `BeamSource`, `SourceSource`, `GraphStore`; tests double them
 with Hammox, BeamSource with plain Mox because Hammox cannot match its

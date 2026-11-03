@@ -6,6 +6,7 @@ defmodule Anchor.Domain.Graph.ProjectFileTest do
   #
   # Sabotage record: ../../../sabotage_records/builder-20261103-dnd_5581_hardening_batch.md
   # Sabotage record: ../../../sabotage_records/graph_runner-20261103-dnd_5630_graph_hardening.md
+  # Sabotage record: ../../../sabotage_records/graph_runner-20261103-dnd_5637_umbrella_paths.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Graph.ProjectFile
@@ -55,5 +56,39 @@ defmodule Anchor.Domain.Graph.ProjectFileTest do
 
     assert ProjectFile.place("/work/shared/x.ex", "/work/my_app/") ==
              {:outside_root, "../shared/x.ex"}
+  end
+
+  # DND-5637: in an umbrella, Mix compiles each app from its own directory, so
+  # a beam's relative_file is relative to the app (recorded on a real
+  # two-app umbrella: apps/alpha/lib/alpha.ex has relative_file
+  # "lib/alpha.ex"). `place/3` reads a relative path against the app's
+  # directory and keys it against the umbrella root.
+  describe "place/3 with the directory the compiler ran in" do
+    test "an app-relative path is keyed umbrella-root-relative" do
+      assert ProjectFile.place("lib/alpha.ex", @root, "apps/alpha") ==
+               {:inside_root, "apps/alpha/lib/alpha.ex"}
+
+      assert ProjectFile.place("lib/beta/b.ex", @root, "apps/beta") ==
+               {:inside_root, "apps/beta/lib/beta/b.ex"}
+
+      # An app's elixirc_paths entry outside the umbrella root
+      assert ProjectFile.place("../../../shared/x.ex", @root, "apps/alpha") ==
+               {:outside_root, "../shared/x.ex"}
+    end
+
+    test "an absolute path does not depend on the directory" do
+      assert ProjectFile.place("/work/my_app/apps/alpha/lib/alpha.ex", @root, "apps/beta") ==
+               {:inside_root, "apps/alpha/lib/alpha.ex"}
+    end
+
+    test "place/2 is place/3 with the root itself" do
+      assert ProjectFile.place("lib/x.ex", @root) == ProjectFile.place("lib/x.ex", @root, ".")
+    end
+
+    test "an absolute directory is refused: it is relative to the root" do
+      assert_raise ArgumentError, ~r/must be relative to the root, got: "\/apps\/alpha"/, fn ->
+        ProjectFile.place("lib/x.ex", @root, "/apps/alpha")
+      end
+    end
   end
 end

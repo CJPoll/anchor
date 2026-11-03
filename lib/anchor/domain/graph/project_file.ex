@@ -26,8 +26,17 @@ defmodule Anchor.Domain.Graph.ProjectFile do
     * `{:inside_root, nil}` — no path (an Erlang module, or a beam with no
       source): the model decides what that module is.
 
+  A relative path is relative to the directory the compiler ran in, which
+  `place/3` takes relative to `root` (default `"."`, the root itself). In an
+  umbrella Mix compiles each app from its own directory, so an app's beams
+  carry app-relative paths (`lib/alpha.ex` for `apps/alpha/lib/alpha.ex`,
+  recorded on a real two-app umbrella, DND-5637): read against
+  `apps/alpha`, they are keyed `apps/alpha/lib/alpha.ex`, relative to the
+  umbrella root like every other path. An absolute path does not depend on
+  the directory.
+
   `..` segments are resolved first, so `<root>/../x.ex` is outside the root.
-  A relative path is read against `root`, never the working directory, and a
+  A relative path is read against that directory, never the working directory, and a
   `~` in it is a directory name, not the home directory. The answer is a fact
   about the paths' text only: no file is read, no symlink is followed, and
   `root` must be absolute (a relative one would be read against the working
@@ -36,21 +45,29 @@ defmodule Anchor.Domain.Graph.ProjectFile do
 
   @type side :: :inside_root | :outside_root
 
-  @doc "Keys one source path against the absolute project root; see the moduledoc."
-  @spec place(String.t() | nil, Path.t()) :: {side(), String.t() | nil}
-  def place(file, root) when is_binary(root) do
+  @doc """
+  Keys one source path against the absolute project root, a relative path
+  read against `dir` (relative to `root`, the directory the compiler ran in);
+  see the moduledoc.
+  """
+  @spec place(String.t() | nil, Path.t(), Path.t()) :: {side(), String.t() | nil}
+  def place(file, root, dir \\ ".") when is_binary(root) and is_binary(dir) do
     if Path.type(root) != :absolute,
       do: raise(ArgumentError, "the project root must be an absolute path, got: #{inspect(root)}")
 
-    placed(file, Path.expand(root))
+    if Path.type(dir) != :relative,
+      do: raise(ArgumentError, "the directory must be relative to the root, got: #{inspect(dir)}")
+
+    root = Path.expand(root)
+    placed(file, root, Path.join(root, dir))
   end
 
-  defp placed(nil, _root), do: {:inside_root, nil}
+  defp placed(nil, _root, _base), do: {:inside_root, nil}
 
-  defp placed(file, root) when is_binary(file) do
+  defp placed(file, root, base) when is_binary(file) do
     relative =
       file
-      |> absolute(root)
+      |> absolute(base)
       |> Path.expand()
       |> Path.relative_to(root, force: true)
 
@@ -59,8 +76,8 @@ defmodule Anchor.Domain.Graph.ProjectFile do
 
   # `Path.join/2`, never `Path.expand/2` with a base: expand would read a
   # leading `~` as the home directory.
-  defp absolute(file, root) do
-    if Path.type(file) == :absolute, do: file, else: Path.join(root, file)
+  defp absolute(file, base) do
+    if Path.type(file) == :absolute, do: file, else: Path.join(base, file)
   end
 
   defp side(relative) do

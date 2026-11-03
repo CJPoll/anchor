@@ -9,6 +9,7 @@ defmodule Mix.Tasks.Anchor.GraphTest do
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5440_graph_runner.md
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5581_hardening_batch.md
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5630_graph_hardening.md
+  # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5637_umbrella_paths.md
   use ExUnit.Case, async: false
 
   import Anchor.Test.BeamFixtures
@@ -203,6 +204,52 @@ defmodule Mix.Tasks.Anchor.GraphTest do
              ~s|#{shared_file}:2: [enforce] rule 1 (id: "a", stub_finds) AnchorFixtures.AnchorGraphTaskTest.Shared was found.|
 
     assert output =~ "anchor.graph: 1 modules (1 outside the root) in 1 apps"
+  end
+
+  # DND-5637: in an umbrella the task gathers each app's ebin under the build
+  # path and each app's directory from Mix.Project.apps_paths/0 (injected
+  # here: this test runs inside Anchor, which is no umbrella), and the
+  # app-relative relative_file Mix writes is keyed umbrella-root-relative.
+  test "an umbrella's app-relative source paths are keyed from the umbrella root" do
+    alpha_source = """
+    defmodule AnchorFixtures.AnchorGraphTaskTest.Alpha do
+      def z, do: :z
+    end
+    """
+
+    [{_module, binary}] = compile_unloaded(alpha_source, "lib/alpha.ex")
+    beam = BeamReader.decode(binary, app: :alpha, path: "ebin/alpha.beam")
+
+    {:ok, arch} =
+      Architecture.parse(%{
+        "contexts" => %{"depth" => 2},
+        "buckets" => [
+          %{"name" => "alpha", "role" => "domain", "select" => [%{"paths" => ["apps/alpha/**"]}]}
+        ],
+        "calls" => %{"alpha" => []}
+      })
+
+    rules = [%{type: :stub_finds, id: "a", bucket: "alpha", index: 1}]
+
+    expect(ConfigLoaderMock, :load, fn ->
+      {:ok, %Config{rules: rules, architecture: arch, path: ".anchor.yml"}}
+    end)
+
+    Mox.expect(BeamSourceMock, :read_ebins, fn [{:alpha, ebin}] ->
+      assert String.ends_with?(ebin, "_build/test/lib/alpha/ebin")
+      [beam]
+    end)
+
+    expect(SourceSourceMock, :read, fn _root, ["apps/alpha/lib/alpha.ex"] ->
+      %{"apps/alpha/lib/alpha.ex" => SourceFacts.from_source("x.ex", alpha_source)}
+    end)
+
+    expect(GraphStoreMock, :write, fn _dir, _key, _graph -> :ok end)
+
+    opts = Keyword.put(opts(), :apps_paths, %{alpha: "apps/alpha"})
+    output = capture_io(fn -> assert catch_exit(Graph.run([], opts)) == {:shutdown, 1} end)
+
+    assert output =~ ~s|apps/alpha/lib/alpha.ex:2: [enforce] rule 1 (id: "a", stub_finds)|
   end
 
   test "a violation exits {:shutdown, 1} after printing it", %{beam: beam} do

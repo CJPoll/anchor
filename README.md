@@ -575,7 +575,11 @@ builds the causal graph fresh every run: it never loads or runs a project
 module and never reads a cached verdict. Then it classifies every module into
 exactly one bucket, checks every floor, and runs each graph rule under its own
 guard. It is the command a CI step or a pre-commit gate runs after `mix
-compile`; Anchor's own CI runs it.
+compile`; Anchor's own CI runs it. Run it from the umbrella root: Mix compiles
+each app from its own directory, so a beam's source path is app-relative
+(`lib/alpha.ex`), and the runner keys it from the umbrella root
+(`apps/alpha/lib/alpha.ex`) for `paths:` selectors, issues and baselines
+(DND-5637).
 
 Text output is one line per finding, then a summary:
 

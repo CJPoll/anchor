@@ -8,6 +8,7 @@ defmodule Anchor.Managers.GraphTest do
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5551_graph_hardening.md
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5581_hardening_batch.md
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5630_graph_hardening.md
+  # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5637_umbrella_paths.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -605,6 +606,104 @@ defmodule Anchor.Managers.GraphTest do
 
       assert %GraphReport{exit_code: 0, findings: [], could_not_check: []} = report
       assert %{modules: 1, outside_root: 1} = report.counts
+    end
+  end
+
+  # DND-5637: a two-app umbrella. Mix compiles each app from its own
+  # directory, so each beam's relative_file is app-relative (recorded on a
+  # real two-app umbrella built with mix compile: apps/alpha/lib/alpha.ex has
+  # relative_file "lib/alpha.ex", apps/beta/lib/beta/b.ex "lib/beta/b.ex").
+  # The task passes each app's directory; every path is keyed relative to the
+  # umbrella root, for selectors, source facts and findings.
+  describe "run/2 a two-app umbrella (DND-5637)" do
+    @alpha_source """
+    defmodule AnchorFixtures.GraphManagerTest.Alpha do
+      def a(x), do: x
+    end
+    """
+    @beta_source """
+    defmodule AnchorFixtures.GraphManagerTest.Beta.B do
+      def b(x), do: AnchorFixtures.GraphManagerTest.Alpha.a(x)
+    end
+    """
+    @alpha_ebin "/proj/_build/test/lib/alpha/ebin"
+    @beta_ebin "/proj/_build/test/lib/beta/ebin"
+
+    setup do
+      [{alpha, alpha_bin}] = compile_unloaded(@alpha_source, "lib/alpha.ex")
+      [{beta, beta_bin}] = compile_unloaded(@beta_source, "lib/beta/b.ex")
+
+      %{
+        umbrella: [
+          BeamReader.decode(alpha_bin, app: :alpha, path: "#{@alpha_ebin}/#{alpha}.beam"),
+          BeamReader.decode(beta_bin, app: :beta, path: "#{@beta_ebin}/#{beta}.beam")
+        ]
+      }
+    end
+
+    defp umbrella_request,
+      do: %Request{
+        apps: [{:alpha, @alpha_ebin}, {:beta, @beta_ebin}],
+        source_dirs: %{alpha: "apps/alpha", beta: "apps/beta"},
+        root: @root,
+        build_path: @build_path,
+        env: :test,
+        opts: %{format: :text, only: []}
+      }
+
+    defp umbrella_architecture do
+      {:ok, arch} =
+        Architecture.parse(%{
+          "contexts" => %{"depth" => 2},
+          "buckets" => [
+            %{
+              "name" => "alpha",
+              "role" => "domain",
+              "select" => [%{"paths" => ["apps/alpha/**"]}]
+            },
+            %{"name" => "beta", "role" => "domain", "select" => [%{"paths" => ["apps/beta/**"]}]}
+          ],
+          "calls" => %{"alpha" => [], "beta" => []}
+        })
+
+      arch
+    end
+
+    test "each app's paths are keyed umbrella-root-relative", %{umbrella: umbrella} do
+      assert Enum.map(umbrella, & &1.elixir.relative_file) == ["lib/alpha.ex", "lib/beta/b.ex"]
+
+      rules = [
+        rule(:stub_finds, "alpha", %{bucket: "alpha"}),
+        rule(:stub_finds, "beta", %{bucket: "beta", index: 2})
+      ]
+
+      expect(ConfigLoaderMock, :load, fn -> {:ok, config(rules, umbrella_architecture())} end)
+
+      Mox.expect(BeamSourceMock, :read_ebins, fn [{:alpha, @alpha_ebin}, {:beta, @beta_ebin}] ->
+        umbrella
+      end)
+
+      expect(SourceSourceMock, :read, fn @root,
+                                         ["apps/alpha/lib/alpha.ex", "apps/beta/lib/beta/b.ex"] =
+                                           files ->
+        sources = %{
+          "apps/alpha/lib/alpha.ex" => @alpha_source,
+          "apps/beta/lib/beta/b.ex" => @beta_source
+        }
+
+        Map.new(files, &{&1, SourceFacts.from_source(&1, sources[&1])})
+      end)
+
+      expect(GraphStoreMock, :write, fn @artifact_dir, _key, _graph -> :ok end)
+
+      report = Graph.run(umbrella_request(), deps())
+
+      assert Enum.map(report.findings, &{&1.rule_id, &1.file}) == [
+               {"alpha", "apps/alpha/lib/alpha.ex"},
+               {"beta", "apps/beta/lib/beta/b.ex"}
+             ]
+
+      assert %{modules: 2, apps: 2, outside_root: 0} = report.counts
     end
   end
 

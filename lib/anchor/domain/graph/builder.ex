@@ -21,7 +21,10 @@ defmodule Anchor.Domain.Graph.Builder do
   With `root:` (the project root, `build/3`), a module's `source_file` is its
   path as `Anchor.Domain.Graph.ProjectFile.place/2` keys it: an absolute path
   inside the root is made relative to it (DND-5588), and one outside it is
-  relative through `..` (`../shared/foo.ex`, DND-5630), so it matches the
+  relative through `..` (`../shared/foo.ex`, DND-5630). A relative path is
+  read against its app's directory in `source_dirs:` (`%{app => dir}`, dir
+  relative to the root; an umbrella's `apps/<app>`, DND-5637), the root when
+  the app has none. So the path matches the
   `source_facts` keys and the selectors' `paths`. Its edges are still read
   against the path the beam names, which is the one Core's annotations hold.
 
@@ -50,10 +53,11 @@ defmodule Anchor.Domain.Graph.Builder do
   @spec build(
           [Beam.t() | Beam.decode_error()],
           %{String.t() => SourceFacts.t() | {:error, :unparseable}},
-          root: Path.t()
+          root: Path.t(),
+          source_dirs: %{atom() => Path.t()}
         ) :: Graph.t()
   def build(beams, source_facts, opts \\ []) do
-    root = Keyword.get(opts, :root)
+    root = {Keyword.get(opts, :root), Keyword.get(opts, :source_dirs, %{})}
     {decoded, errors} = Enum.split_with(beams, &match?(%Beam{}, &1))
     {kept, duplicates} = first_per_module(decoded)
 
@@ -136,7 +140,7 @@ defmodule Anchor.Domain.Graph.Builder do
   end
 
   defp module_node(%Beam{module: module, elixir: elixir} = beam, source_facts, root) do
-    source_file = project_file(Map.get(elixir, :relative_file), root)
+    source_file = project_file(Map.get(elixir, :relative_file), beam.app, root)
     attributes = Map.get(elixir, :attributes, [])
     core_defs = core_defs(beam.core)
 
@@ -159,11 +163,12 @@ defmodule Anchor.Domain.Graph.Builder do
   end
 
   # The node's path: relative to the root when one is given, through `..`
-  # for a source outside it (DND-5630).
-  defp project_file(file, nil), do: file
+  # for a source outside it (DND-5630), a relative one read against its app's
+  # directory (DND-5637).
+  defp project_file(file, _app, {nil, _dirs}), do: file
 
-  defp project_file(file, root) do
-    {_side, relative} = ProjectFile.place(file, root)
+  defp project_file(file, app, {root, dirs}) do
+    {_side, relative} = ProjectFile.place(file, root, Map.get(dirs, app, "."))
     relative
   end
 

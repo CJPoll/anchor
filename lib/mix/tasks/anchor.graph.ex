@@ -48,8 +48,10 @@ defmodule Mix.Tasks.Anchor.Graph do
 
   @doc """
   Runs the task. `opts` may hold `:compile` (a zero-arity function, default
-  `Mix.Task.run("compile", [])`) and the Manager's adapter options, which
-  tests inject here.
+  `Mix.Task.run("compile", [])`), `:apps_paths` (default
+  `Mix.Project.apps_paths/0`: an umbrella's `%{app => dir}`, `nil` for a
+  single project) and the Manager's adapter options, which tests inject
+  here.
   """
   @spec run([String.t()], keyword()) :: :ok
   def run(argv, opts) do
@@ -66,10 +68,14 @@ defmodule Mix.Tasks.Anchor.Graph do
 
   defp run_parsed(format, only, opts) do
     {compile, deps} = Keyword.pop(opts, :compile, &compile/0)
+    {apps_paths, deps} = Keyword.pop_lazy(deps, :apps_paths, &Mix.Project.apps_paths/0)
     compile.()
 
     request = %Request{
-      apps: ebins(),
+      apps: ebins(apps_paths),
+      # An umbrella app's beams carry paths relative to its own directory,
+      # where Mix compiled it (DND-5637).
+      source_dirs: apps_paths || %{},
       root: File.cwd!(),
       build_path: Mix.Project.build_path(),
       env: Mix.env(),
@@ -83,8 +89,8 @@ defmodule Mix.Tasks.Anchor.Graph do
 
   defp compile, do: Mix.Task.run("compile", [])
 
-  defp ebins do
-    case Mix.Project.apps_paths() do
+  defp ebins(apps_paths) do
+    case apps_paths do
       nil ->
         [{Mix.Project.config()[:app], Mix.Project.compile_path()}]
 

@@ -20,7 +20,9 @@ defmodule Anchor.Managers.Graph do
     3. read each module's source file's facts (`Anchor.Adapters.SourceSource`):
        its literal `defmodule`s and `use`s (`Anchor.Domain.Graph.SourceFacts`),
        by its path relative to the root (an absolute path is made relative,
-       through `..` when it is outside the root);
+       through `..` when it is outside the root; a relative one is read
+       against its app's directory in `Request.source_dirs`, an umbrella's
+       `apps/<app>`, DND-5637);
     4. build the graph fresh (`Anchor.Domain.Graph.Builder`): never a cached
        one, and never a cached verdict;
     5. build the model (`Anchor.Domain.Model`): classify every module into
@@ -158,10 +160,10 @@ defmodule Anchor.Managers.Graph do
 
   # The modules compiled from a source outside the root: judged like every
   # other, and counted so the layout is visible.
-  defp outside_root_count(beams, root) do
+  defp outside_root_count(beams, request) do
     Enum.count(beams, fn
-      %Beam{elixir: %{relative_file: file}} when is_binary(file) ->
-        match?({:outside_root, _relative}, ProjectFile.place(file, root))
+      %Beam{elixir: %{relative_file: file}} = beam when is_binary(file) ->
+        match?({:outside_root, _relative}, place(beam, request))
 
       _other ->
         false
@@ -169,8 +171,11 @@ defmodule Anchor.Managers.Graph do
   end
 
   defp measured(request, config, rules, beams, deps) do
-    {source_facts, source_issues} = source_facts(deps.source_source, request.root, beams)
-    graph = Builder.build(beams, source_facts, root: request.root)
+    {source_facts, source_issues} = source_facts(deps.source_source, request, beams)
+
+    graph =
+      Builder.build(beams, source_facts, root: request.root, source_dirs: request.source_dirs)
+
     {model, class_issues} = Model.build(graph, config, source_facts)
     unreadable_issues = unreadable_issues(graph)
     rules = Enum.map(rules, fn {rule, module} -> {rule, module, guarded_needs(module)} end)
@@ -191,7 +196,7 @@ defmodule Anchor.Managers.Graph do
       request
       |> counts(map_size(graph.modules), length(rules), length(Model.opaque(model)))
       |> Map.put(:no_core, no_core_count(graph))
-      |> Map.put(:outside_root, outside_root_count(beams, request.root))
+      |> Map.put(:outside_root, outside_root_count(beams, request))
       |> Map.put(:apply_sites, GraphReport.apply_sites(model.cfa))
     )
   end
@@ -221,13 +226,18 @@ defmodule Anchor.Managers.Graph do
 
   defp guarded_needs(module), do: guarded(fn -> GraphRules.needs(module) end)
 
-  defp source_facts(source, root, beams) do
+  # A beam's source path, keyed against the root: a relative one is read
+  # against the directory Mix compiled its app from (DND-5637).
+  defp place(%Beam{app: app, elixir: %{relative_file: file}}, %Request{} = request),
+    do: ProjectFile.place(file, request.root, Map.get(request.source_dirs, app, "."))
+
+  defp source_facts(source, %Request{root: root} = request, beams) do
     files =
       beams
       |> Enum.flat_map(fn
         # Inside the root or outside it, by its root-relative path (DND-5630).
-        %Beam{elixir: %{relative_file: file}} when is_binary(file) ->
-          {_side, relative} = ProjectFile.place(file, root)
+        %Beam{elixir: %{relative_file: file}} = beam when is_binary(file) ->
+          {_side, relative} = place(beam, request)
           [relative]
 
         _other ->
