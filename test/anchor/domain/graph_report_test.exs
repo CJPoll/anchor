@@ -3,12 +3,13 @@ defmodule Anchor.Domain.GraphReportTest do
   # JSON rendering from hand-built findings.
   #
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5440_graph_runner.md
+  # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5551_graph_hardening.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.GraphReport
   alias Anchor.Domain.GraphReport.Finding
 
-  @counts %{modules: 12, apps: 2, rules: 3, opaque: 0}
+  @counts %{modules: 12, apps: 2, rules: 3, opaque: 0, no_core: 0}
 
   defp finding(enforcement, overrides \\ %{}) do
     struct!(
@@ -85,6 +86,24 @@ defmodule Anchor.Domain.GraphReportTest do
 
       assert GraphReport.render(report, :text) ==
                "anchor.graph: 12 modules (2 opaque) in 2 apps, 3 rules, 0 violations (0 report-only, 0 baselined)"
+    end
+  end
+
+  describe "render/2 functions with no Core body (DND-5549)" do
+    test "are counted in the summary and the JSON when there are any" do
+      report = GraphReport.new([], [], %{@counts | opaque: 2, no_core: 5})
+
+      assert GraphReport.render(report, :text) ==
+               "anchor.graph: 12 modules (2 opaque, 5 functions with no Core body) in 2 apps, " <>
+                 "3 rules, 0 violations (0 report-only, 0 baselined)"
+
+      assert %{"no_core" => 5} = JSON.decode!(GraphReport.render(report, :json))
+
+      # Positive control: none, and the summary says nothing of them.
+      refute GraphReport.render(GraphReport.new([], [], @counts), :text) =~ "Core"
+
+      assert %{"no_core" => 0} =
+               JSON.decode!(GraphReport.render(GraphReport.new([], [], @counts), :json))
     end
   end
 
