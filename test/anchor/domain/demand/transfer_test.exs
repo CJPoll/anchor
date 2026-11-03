@@ -47,6 +47,8 @@ defmodule Anchor.Domain.Demand.TransferTest do
     def captured_closure(a), do: (f = fn -> (_ = hd(a); :ok) end; try(do: (_ = f.(); :ok), rescue: (_e -> :error)))
     def captured_receive(a), do: try(do: (receive do _m -> (_ = hd(a); :ok) end), rescue: (_e -> :error))
     def captured_letrec(a), do: try(do: (_ = for(<<c <- "ab">>, do: (_ = hd(a); c)); :ok), rescue: (_e -> :error))
+    # An apply no closure reaches (it raises badfun) still uses its arguments.
+    def unreached_apply(a), do: (f = fn -> nil end; try(do: (_ = f.().(a); :ok), rescue: (_e -> :error)))
     defp helper(x), do: (_ = hd(x); :ok)
   end
 
@@ -411,6 +413,7 @@ defmodule Anchor.Domain.Demand.TransferTest do
     {:captured_closure, :all},
     {:captured_receive, :all},
     {:captured_letrec, :all},
+    {:unreached_apply, :all},
     {:tuple_build, :absent},
     {:cons_build, :absent}
   ]

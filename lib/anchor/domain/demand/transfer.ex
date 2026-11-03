@@ -700,7 +700,9 @@ defmodule Anchor.Domain.Demand.Transfer do
   defp protected(_demand, %{protected?: true}), do: :all
   defp protected(demand, _ctx), do: demand
 
-  defp protected_call(_demand, [_closure | _rest], %{protected?: true}), do: :all
+  # Inside a try an apply uses every argument, even at a site no closure
+  # reaches (the call raises there).
+  defp protected_call(_demand, _closures, %{protected?: true}), do: :all
   defp protected_call(demand, _closures, _ctx), do: demand
 
   # `apply(f, list)`: an apply site whose arguments are the list's elements.

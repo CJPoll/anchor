@@ -1125,3 +1125,91 @@ The table row (`inside try (one row per construct)`, e17c788) run against 3cb2b9
      stacktrace:
        test/anchor/domain/demand/transfer_test.exs:435: (test)
 ```
+
+## DEM-AR (on 94e3bb1) — a fn body is walked unprotected
+
+Run summary: `91 tests, 1 failure`
+
+```
+  1) test inside try (one row per construct) a construct that can raise uses its value; a tuple or list cell does not (Anchor.Domain.Demand.TransferTest)
+     test/anchor/domain/demand/transfer_test.exs:419
+     Assertion with == failed
+     code:  assert actual == @protected_rows
+     left:  [
+              bif: :all,
+              module_call: :all,
+              field_read: :all,
+              element: :all,
+```
+
+## DEM-AS (on 94e3bb1) — a letrec definition is walked unprotected
+
+Run summary: `91 tests, 1 failure`
+
+```
+  1) test inside try (one row per construct) a construct that can raise uses its value; a tuple or list cell does not (Anchor.Domain.Demand.TransferTest)
+     test/anchor/domain/demand/transfer_test.exs:419
+     Assertion with == failed
+     code:  assert actual == @protected_rows
+     left:  [
+              bif: :all,
+              module_call: :all,
+              field_read: :all,
+              element: :all,
+```
+
+## DEM-AT (on 94e3bb1) — a case with no clauses walks nothing
+
+Run summary: `91 tests, 1 failure`
+
+```
+  1) test fail closed a case with no clauses uses its argument in full (Anchor.Domain.Demand.TransferTest)
+     test/anchor/domain/demand/transfer_test.exs:467
+     Assertion with == failed
+     code:  assert Transfer.function(fun, env).params == [:all]
+     left:  [:absent]
+     right: [:all]
+     stacktrace:
+       test/anchor/domain/demand/transfer_test.exs:471: (test)
+```
+
+## DEM-AU (on 94e3bb1) — an unlabelled apply site uses nothing
+
+Run summary: `91 tests, 1 failure`
+
+```
+  1) test fail closed an apply site in unlabelled Core resolves to nothing: every argument used, reason named (Anchor.Domain.Demand.TransferTest)
+     test/anchor/domain/demand/transfer_test.exs:449
+     Assertion with == failed
+     code:  assert result.params == [:all]
+     left:  [:absent]
+     right: [:all]
+     stacktrace:
+       test/anchor/domain/demand/transfer_test.exs:463: (test)
+```
+
+## DEM-AV (on 94e3bb1) — param/3 accepts a negative index
+
+Run summary: `91 tests, 1 failure`
+
+```
+  1) test analyze/4 param/3 raises for a negative or out-of-range index, never reading from the end (Anchor.Domain.DemandTest)
+     test/anchor/domain/demand_test.exs:342
+     Expected exception ArgumentError but nothing was raised
+     code: assert_raise ArgumentError, ~r/was not analysed/, fn ->
+     stacktrace:
+       test/anchor/domain/demand_test.exs:344: (test)
+```
+
+## The unreached-apply table row, red on 94e3bb1's `protected_call/3`
+
+The row `unreached_apply` (an apply inside try at a site no closure reaches) run against 94e3bb1's `transfer.ex`, where a protected apply used its arguments only when some closure reached the site; restored afterwards: `41 tests, 1 failure` (left is actual, right is expected).
+
+```
+  1) test inside try (one row per construct) a construct that can raise uses its value; a tuple or list cell does not (Anchor.Domain.Demand.TransferTest)
+     test/anchor/domain/demand/transfer_test.exs:422
+     Assertion with == failed
+     code:  assert actual == @protected_rows
+              unreached_apply: :absent,
+              unreached_apply: :all,
+```
