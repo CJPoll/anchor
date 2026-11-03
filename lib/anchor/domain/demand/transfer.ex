@@ -238,25 +238,63 @@ defmodule Anchor.Domain.Demand.Transfer do
 
   defp walk(node, demand, st, ctx) do
     case :cerl.type(node) do
-      :literal -> st
-      :var -> variable(node, demand, st)
-      :fun -> lambda(node, demand, st, ctx)
-      :let -> let(node, demand, st, ctx)
-      :letrec -> letrec(node, demand, st, ctx)
-      :seq -> seq(node, demand, st, ctx)
-      :case -> case_of(node, demand, st, ctx)
-      :receive -> receive_of(node, demand, st, ctx)
-      :try -> try_of(node, demand, st, ctx)
-      :catch -> walk(:cerl.catch_body(node), demand, st, %{ctx | protected?: true})
-      :apply -> apply_of(node, st, ctx)
-      :call -> call(node, demand, st, ctx)
-      :primop -> primop(node, st, ctx)
-      :tuple -> tuple(node, demand, st, ctx)
-      :map -> map(node, demand, st, ctx)
-      :values -> walk_all(:cerl.values_es(node), demand, st, ctx)
+      :literal ->
+        st
+
+      :var ->
+        variable(node, demand, st)
+
+      :fun ->
+        lambda(node, demand, st, ctx)
+
+      :let ->
+        let(node, demand, st, ctx)
+
+      :letrec ->
+        letrec(node, demand, st, ctx)
+
+      :seq ->
+        seq(node, demand, st, ctx)
+
+      :case ->
+        case_of(node, demand, st, ctx)
+
+      :receive ->
+        receive_of(node, demand, st, ctx)
+
+      :try ->
+        try_of(node, demand, st, ctx)
+
+      :catch ->
+        walk(:cerl.catch_body(node), demand, st, %{ctx | protected?: true})
+
+      :apply ->
+        apply_of(node, st, ctx)
+
+      :call ->
+        call(node, demand, st, ctx)
+
+      :primop ->
+        primop(node, st, ctx)
+
+      :tuple ->
+        tuple(node, demand, st, ctx)
+
+      :map ->
+        map(node, demand, st, ctx)
+
+      :values ->
+        walk_all(:cerl.values_es(node), demand, st, ctx)
+
       # A cons, a binary, and any node this walk has no rule for: its parts
-      # are used in full when it is used.
-      _other -> walk_all(node |> :cerl.subtrees() |> List.flatten(), spread(demand), st, ctx)
+      # are used in full when it is used, or inside a try (a binary can raise).
+      _other ->
+        walk_all(
+          node |> :cerl.subtrees() |> List.flatten(),
+          spread(protected(demand, ctx)),
+          st,
+          ctx
+        )
     end
   end
 

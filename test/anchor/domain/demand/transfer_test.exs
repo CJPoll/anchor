@@ -114,6 +114,15 @@ defmodule Anchor.Domain.Demand.TransferTest do
       end
     end
 
+    def guarded_bin(a) do
+      try do
+        _ = <<a::binary>>
+        :ok
+      rescue
+        _error -> :error
+      end
+    end
+
     def unguarded_case(a, b) do
       case {a, b} do
         {:x, _} -> 1
@@ -299,6 +308,10 @@ defmodule Anchor.Domain.Demand.TransferTest do
       assert params(context, :guarded_case, 2) == [:all, :all]
       # Positive control: outside a try the compiler's case_clause payload is no use.
       assert params(context, :unguarded_case, 2) == [:all, :absent]
+    end
+
+    test "inside try, a binary built from a can raise (badarg): a used", context do
+      assert params(context, :guarded_bin, 1) == [:all]
     end
 
     test "a pure module's call with its result unused still uses a fn argument", context do
