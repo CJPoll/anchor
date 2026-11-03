@@ -32,11 +32,16 @@ defmodule Anchor.Domain.DataFlow do
   ## Unsliceable forms
 
   `receive`, the process dictionary (`Process.get/put/delete/get_keys`,
-  `:erlang.get/put/erase/get_keys`) and `var!/1,2` move values in ways one
-  clause's def-use cannot follow. A node holding one is flagged
+  `:erlang.get/put/erase/get_keys`), `var!/1,2` and `binding/0,1` move values
+  in ways one clause's def-use cannot follow. A node holding one is flagged
   (`Node.unsliceable`) with its reason, and `sinks/2` always includes it, so it
-  is never reported dead. A call through an alias of `Process`
-  (`alias Process, as: P`) or an imported `get/1` is not recognised.
+  is never reported dead. `binding/0,1` also counts as reading every variable
+  in scope.
+
+  Not recognised, and so able to make a live expression look dead: a process
+  dictionary call through an alias of `Process` (`alias Process, as: P`) or an
+  imported `get/1`/`put/2`. A caller whose code may hold those passes an effect
+  predicate that matches them.
   """
 
   alias Anchor.Domain.DataFlow.Builder
@@ -131,7 +136,10 @@ defmodule Anchor.Domain.DataFlow do
   @doc """
   The sinks of the clause: its final expression; the final expression of each
   value block of a branch whose value is the clause's (recursively); every
-  node `effect?` holds for (given the node's AST); and every unsliceable node.
+  node `effect?` holds for (given the node's whole AST, nested expressions
+  included); every unsliceable node; and every node holding a refutable match
+  (`Node.refutable`), which asserts a shape even when nothing reads what it
+  binds.
   `effect?` is required: this module never decides what an effect is.
   """
   @spec sinks(t(), (Macro.t() -> boolean())) :: [Node.id()]
@@ -139,7 +147,9 @@ defmodule Anchor.Domain.DataFlow do
     effects =
       flow.nodes
       |> Map.values()
-      |> Enum.filter(fn node -> node.unsliceable != nil or effect?.(node.ast) == true end)
+      |> Enum.filter(fn node ->
+        node.unsliceable != nil or node.refutable or effect?.(node.ast) == true
+      end)
       |> Enum.map(& &1.id)
 
     (result_chain(flow, flow.result) ++ effects) |> Enum.uniq() |> Enum.sort()
@@ -192,8 +202,13 @@ defmodule Anchor.Domain.DataFlow do
     do: length(id) > length(outer) and Enum.take(id, length(outer)) == outer
 
   defp region(flow, block, run, ends_block?) do
-    members = Enum.filter(Map.keys(flow.nodes), fn id -> Enum.any?(run, &within?(id, &1)) end)
-    member? = &(&1 in members)
+    members =
+      flow.nodes
+      |> Map.keys()
+      |> Enum.filter(fn id -> Enum.any?(run, &within?(id, &1)) end)
+      |> MapSet.new()
+
+    member? = &MapSet.member?(members, &1)
 
     escaping =
       flow.defs
@@ -218,7 +233,7 @@ defmodule Anchor.Domain.DataFlow do
   defp region_inputs(flow, members) do
     members
     |> Enum.flat_map(&flow.nodes[&1].uses)
-    |> Enum.reject(&(Map.get(flow.defs, &1) in members))
+    |> Enum.reject(&MapSet.member?(members, Map.get(flow.defs, &1)))
     |> Enum.uniq()
     |> Enum.sort()
   end

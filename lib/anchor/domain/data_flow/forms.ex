@@ -94,6 +94,42 @@ defmodule Anchor.Domain.DataFlow.Forms do
     %{vars: Enum.reverse(acc.vars), pins: Enum.reverse(acc.pins), sizes: Enum.reverse(acc.sizes)}
   end
 
+  @doc """
+  The expressions a `quote` reads in the clause: its options other than `:do`
+  (`bind_quoted:` values among them) and the arguments of every `unquote` and
+  `unquote_splicing` in its body.
+  """
+  @spec quote_reads([Macro.t()]) :: [Macro.t()]
+  def quote_reads(args) do
+    {opts, body} =
+      Enum.flat_map(args, &List.wrap/1) |> Enum.split_with(&(not match?({:do, _body}, &1)))
+
+    option_values = Enum.flat_map(opts, &option_value/1)
+    {_ast, unquoted} = Macro.prewalk(body, [], &unquote_step/2)
+    option_values ++ Enum.reverse(unquoted)
+  end
+
+  @doc """
+  Whether a pattern can fail to match (raise `MatchError` in a `=`): anything
+  but a variable, `_`, `var!/1` or a `=` of those.
+  """
+  @spec refutable?(Macro.t()) :: boolean()
+  def refutable?({:=, _meta, [left, right]}), do: refutable?(left) or refutable?(right)
+  def refutable?({:var!, _meta, [_var | _rest]}), do: false
+  def refutable?({name, _meta, context}) when is_atom(name) and is_atom(context), do: false
+  def refutable?(_pattern), do: true
+
+  @doc """
+  Whether any `=` in `asts` (outermost first, nested forms included) has a
+  refutable pattern: the expression asserts a shape, so removing it changes
+  behaviour even when nothing reads what it binds.
+  """
+  @spec refutable_match?([Macro.t()]) :: boolean()
+  def refutable_match?(asts) do
+    {_asts, found?} = Macro.prewalk(asts, false, &refutable_step/2)
+    found?
+  end
+
   @doc "The expressions a binary segment's type spec reads (`size(n)`, `unit(n)`)."
   @spec spec_exprs(Macro.t()) :: [Macro.t()]
   def spec_exprs({spec, _meta, [expr]}) when spec in [:size, :unit], do: [expr]
@@ -114,7 +150,8 @@ defmodule Anchor.Domain.DataFlow.Forms do
   The reason the first unsliceable form in `asts` (outermost first) cannot be
   followed: `:receive`, `:process_dictionary` (`Process.get/put/delete/
   get_keys`, `:erlang.get/put/erase/get_keys`, at any arity) or `:var_bang`
-  (`var!/1,2`). `nil` when there is none.
+  (`var!/1,2`) or `:binding` (`binding/0,1`, which reads every variable in
+  scope by name). `nil` when there is none.
   """
   @spec unsliceable([Macro.t()]) :: Anchor.Domain.DataFlow.Node.unsliceable()
   def unsliceable(asts) do
@@ -174,6 +211,9 @@ defmodule Anchor.Domain.DataFlow.Forms do
     do: {node, Keyword.get(meta, :line)}
 
   defp line_step(node, line), do: {node, line}
+
+  defp option_value({_key, value}), do: [value]
+  defp option_value(_other), do: []
 
   defp optional_arrows(opts, key) do
     case Keyword.fetch(opts, key) do
@@ -258,8 +298,11 @@ defmodule Anchor.Domain.DataFlow.Forms do
     head = opts |> Keyword.delete(:do) |> Keyword.values()
 
     case arrows(Keyword.fetch!(opts, :do)) do
-      {:ok, reducers} -> {:ok, desc(:for, :for, head, Enum.map(reducers, &%{&1 | pre: pre}))}
-      :error -> {:ok, desc(:for, :for, head, [clause([], [], pre, Keyword.fetch!(opts, :do))])}
+      {:ok, [_ | _] = reducers} ->
+        {:ok, desc(:for, :for, head, Enum.map(reducers, &%{&1 | pre: pre}))}
+
+      _not_reducers ->
+        {:ok, desc(:for, :for, head, [clause([], [], pre, Keyword.fetch!(opts, :do))])}
     end
   end
 
@@ -281,6 +324,14 @@ defmodule Anchor.Domain.DataFlow.Forms do
   defp try_after({:ok, body}), do: [%{block_clause(body) | value: false}]
   defp try_after(:error), do: []
 
+  defp refutable_step({:=, _meta, [pattern, _rhs]} = node, false), do: {node, refutable?(pattern)}
+  defp refutable_step(node, found?), do: {node, found?}
+
+  defp unquote_step({form, _meta, [expr]} = node, acc) when form in [:unquote, :unquote_splicing],
+    do: {node, [expr | acc]}
+
+  defp unquote_step(node, acc), do: {node, acc}
+
   defp unpipe({:|>, _meta, [_left, _right]} = ast) do
     [{first, _pos} | rest] = Macro.unpipe(ast)
     Enum.reduce(rest, first, fn {call, pos}, acc -> Macro.pipe(acc, call, pos) end)
@@ -295,6 +346,7 @@ defmodule Anchor.Domain.DataFlow.Forms do
 
   defp unsliceable_reason({:receive, _meta, args}) when is_list(args), do: :receive
   defp unsliceable_reason({:var!, _meta, args}) when is_list(args), do: :var_bang
+  defp unsliceable_reason({:binding, _meta, args}) when is_list(args), do: :binding
 
   defp unsliceable_reason({{:., _dmeta, [module, fun]}, _meta, args})
        when is_atom(fun) and is_list(args),

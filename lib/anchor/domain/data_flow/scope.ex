@@ -39,6 +39,16 @@ defmodule Anchor.Domain.DataFlow.Scope do
     Enum.find_value(frames, {name, context, :free}, &Map.get(&1, {name, context}))
   end
 
+  @doc "Every key a lookup can reach from the innermost frame, sorted."
+  @spec visible(t()) :: [var_key()]
+  def visible(%__MODULE__{frames: frames}) do
+    frames
+    |> Enum.reverse()
+    |> Enum.reduce(%{}, &Map.merge(&2, &1))
+    |> Map.values()
+    |> Enum.sort()
+  end
+
   @spec new() :: t()
   def new, do: %__MODULE__{}
 

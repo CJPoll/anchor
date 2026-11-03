@@ -75,6 +75,20 @@ defmodule Anchor.Domain.DataFlow.Builder do
     do: if(Forms.variable?(var), do: use_var(state, name, context), else: state)
 
   defp expr(state, {:^, _meta, [inner]}), do: expr(state, inner)
+
+  # `quote` builds code; nothing in it binds or reads in this clause except the
+  # arguments of `unquote`/`unquote_splicing` and the quote's own options.
+  defp expr(state, {:quote, _meta, args}) when is_list(args),
+    do: Enum.reduce(Forms.quote_reads(args), state, &expr(&2, &1))
+
+  # `binding/0,1` reads every variable in scope by name.
+  defp expr(state, {:binding, _meta, args}) when is_list(args) do
+    state =
+      Enum.reduce(Scope.visible(state.scope), state, fn key, state -> use_key(state, key) end)
+
+    Enum.reduce(args, state, &expr(&2, &1))
+  end
+
   defp expr(state, {:=, _meta, [pattern, rhs]}), do: state |> expr(rhs) |> bind_pattern(pattern)
   defp expr(state, {:@, _meta, _args}), do: state
 
@@ -145,8 +159,9 @@ defmodule Anchor.Domain.DataFlow.Builder do
     end
   end
 
-  defp use_var(%{cur: cur} = state, name, context),
-    do: %{state | cur: %{cur | uses: [Scope.lookup(state.scope, name, context) | cur.uses]}}
+  defp use_key(%{cur: cur} = state, key), do: %{state | cur: %{cur | uses: [key | cur.uses]}}
+
+  defp use_var(state, name, context), do: use_key(state, Scope.lookup(state.scope, name, context))
 
   defp walk_block(state, block, statements, parent) do
     {state, ids} =
@@ -160,10 +175,13 @@ defmodule Anchor.Domain.DataFlow.Builder do
     %{state | blocks: Map.put(state.blocks, block, Enum.reverse(ids))}
   end
 
+  # A clause's `pre` steps (`with`/`for` steps, a `cond` condition) run before
+  # its patterns bind: a `for ... reduce:` reducer pattern sees the generators,
+  # never the other way round.
   defp walk_clause(state, clause, index, mode) do
-    state = Enum.reduce(clause.patterns, push(state), &bind_pattern(&2, &1))
+    state = Enum.reduce(clause.pre, push(state), &pre_item(&2, &1))
+    state = Enum.reduce(clause.patterns, state, &bind_pattern(&2, &1))
     state = Enum.reduce(clause.guards, state, &expr(&2, &1))
-    state = Enum.reduce(clause.pre, state, &pre_item(&2, &1))
     state |> clause_body(clause, index, mode) |> pop()
   end
 
@@ -193,13 +211,25 @@ defmodule Anchor.Domain.DataFlow.Builder do
   defp walk_statement_body(state, node, :plain) do
     kind = if match?({:=, _meta, [_pattern, _rhs]}, node.ast), do: :bind, else: :expr
     state = expr(state, node.ast)
-    finish(state, %{node | kind: kind, unsliceable: Forms.unsliceable([node.ast])})
+
+    finish(state, %{
+      node
+      | kind: kind,
+        unsliceable: Forms.unsliceable([node.ast]),
+        refutable: Forms.refutable_match?([node.ast])
+    })
   end
 
   defp walk_statement_body(state, node, {:form, patterns, desc}) do
     state = walk_form(state, desc, {:block, node.id})
     state = patterns |> Enum.reverse() |> Enum.reduce(state, &bind_pattern(&2, &1))
-    finish(state, %{node | kind: desc.kind, unsliceable: form_unsliceable(desc, patterns)})
+
+    finish(state, %{
+      node
+      | kind: desc.kind,
+        unsliceable: form_unsliceable(desc, patterns),
+        refutable: Enum.any?(patterns, &Forms.refutable?/1) or Forms.refutable_match?(desc.head)
+    })
   end
 
   defp form_unsliceable(%{form: :receive}, _patterns), do: :receive

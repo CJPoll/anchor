@@ -289,7 +289,7 @@ defmodule Anchor.Domain.DataFlowTest do
       assert node_at(flow, 4).uses == [k(:x, 0)]
     end
 
-    test "guards are uses; a guard-only parameter is not dead" do
+    test "guards are uses: a guard-only parameter is read by the guard" do
       flow = flow!("def f(a, b) when b > 0 do\n  a\nend")
 
       assert flow.guard_uses == [k(:b, 0)]
@@ -520,7 +520,10 @@ defmodule Anchor.Domain.DataFlowTest do
       {"foo(Process.get(:k))", :process_dictionary},
       {":k |> Process.get()", :process_dictionary},
       {"case Process.get(:k) do\n  _ -> :ok\nend", :process_dictionary},
-      {"var!(x)", :var_bang}
+      {"Process.get_keys()", :process_dictionary},
+      {":erlang.get_keys()", :process_dictionary},
+      {"var!(x)", :var_bang},
+      {"Code.eval_string(s, binding())", :binding}
     ]
 
     for {source, reason} <- @forms do
@@ -539,6 +542,72 @@ defmodule Anchor.Domain.DataFlowTest do
 
       assert node_at(flow, 2).unsliceable == nil
       assert node_at(flow, 2).id in DataFlow.dead(flow, @no_effects)
+    end
+  end
+
+  describe "review-floor regressions (no expression wrongly dead)" do
+    test "a = inside quote binds nothing in the clause" do
+      flow = flow!("x = compute()\nast = quote do\n  x = 1\nend\n{ast, x}")
+
+      assert DataFlow.dead(flow, @no_effects) == []
+      assert node_at(flow, 2).binds == [k(:ast, 0)]
+    end
+
+    test "quote positive control: unquote reads the outer variable" do
+      flow = flow!("x = compute()\nquote do\n  unquote(x) + 1\nend")
+
+      assert node_at(flow, 2).uses == [k(:x, 0)]
+      assert DataFlow.dead(flow, @no_effects) == []
+    end
+
+    test "for reduce: generators read the enclosing scope before the reducer pattern binds" do
+      flow = flow!("list = f()\nfor x <- list, reduce: [] do\n  list -> [x | list]\nend")
+
+      assert DataFlow.dead(flow, @no_effects) == []
+      assert k(:list, 0) in node_at(flow, 2).uses
+    end
+
+    test "for with a literal [] body still reads its generators" do
+      flow = flow!("y = f()\nfor x <- g(y), do: []")
+
+      assert DataFlow.dead(flow, @no_effects) == []
+      assert k(:y, 0) in node_at(flow, 2).uses
+    end
+
+    test "binding() reads every variable in scope" do
+      flow = flow!("x = f()\nCode.eval_string(s, binding())")
+
+      assert k(:x, 0) in node_at(flow, 2).uses
+      assert DataFlow.dead(flow, @no_effects) == []
+    end
+
+    test "a refutable match is an assertion: a sink, never dead" do
+      for source <- [
+            "true = valid?(x)\n:ok",
+            "{:ok, _} = parse(s)\n:ok",
+            "[_] = list\n:ok",
+            "{a, b} = pair\n:ok"
+          ] do
+        flow = flow!(source)
+
+        assert node_at(flow, 1).refutable, source
+        assert DataFlow.dead(flow, @no_effects) == [], source
+      end
+    end
+
+    test "refutable positive control: a bare variable bind that nothing reads is dead" do
+      flow = flow!("x = f()\n:ok")
+
+      refute node_at(flow, 1).refutable
+      assert DataFlow.dead(flow, @no_effects) == [id_at(flow, 1)]
+    end
+
+    test "try else clauses read the do value's scope of their own" do
+      flow = flow!("try do\n  f()\nelse\n  v -> v\nend")
+      try_node = node_at(flow, 1)
+
+      assert flow.defs[k(:v, 0)] == try_node.id
+      assert node_at(flow, 4).uses == [k(:v, 0)]
     end
   end
 

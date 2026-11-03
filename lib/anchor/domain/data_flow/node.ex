@@ -24,7 +24,11 @@ defmodule Anchor.Domain.DataFlow.Node do
     * `:kind` — `:expr`, `:bind` (a top-level `=`), `:branch` (`case`, `cond`,
       `if`, `unless`, `with`, `receive`, `try`), `:fn` or `:for`.
     * `:unsliceable` — `nil`, or the reason the node's flow cannot be followed
-      inside the clause: `:receive`, `:process_dictionary` or `:var_bang`.
+      inside the clause: `:receive`, `:process_dictionary`, `:var_bang` or
+      `:binding`.
+    * `:refutable` — whether the node holds a `=` whose pattern can fail
+      (`true = ok?(x)`, `{:ok, _} = f()`, `{a, b} = pair`): such a node asserts
+      a shape, so `DataFlow.sinks/2` always includes it.
   """
 
   @enforce_keys [:id, :ast, :block]
@@ -37,12 +41,13 @@ defmodule Anchor.Domain.DataFlow.Node do
     binds: [],
     uses: [],
     kind: :expr,
-    unsliceable: nil
+    unsliceable: nil,
+    refutable: false
   ]
 
   @type id :: [non_neg_integer() | atom()]
   @type kind :: :expr | :bind | :branch | :fn | :for
-  @type unsliceable :: nil | :receive | :process_dictionary | :var_bang
+  @type unsliceable :: nil | :receive | :process_dictionary | :var_bang | :binding
 
   @type t :: %__MODULE__{
           id: id(),
@@ -53,6 +58,7 @@ defmodule Anchor.Domain.DataFlow.Node do
           binds: [Anchor.Domain.DataFlow.Scope.var_key()],
           uses: [Anchor.Domain.DataFlow.Scope.var_key()],
           kind: kind(),
-          unsliceable: unsliceable()
+          unsliceable: unsliceable(),
+          refutable: boolean()
         }
 end
