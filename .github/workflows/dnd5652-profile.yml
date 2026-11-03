@@ -3,7 +3,7 @@ name: DND-5652 profile
 # Temporary (DND-5652): measures where the traced demand self-analysis spends
 # its time. Removed before the PR is ready.
 on:
-  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read

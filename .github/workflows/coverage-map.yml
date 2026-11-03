@@ -3,10 +3,14 @@ name: Coverage map
 # DND-5474: builds the per-test coverage map (test -> project functions it
 # executed) that `mix anchor.sabotage run --coverage PATH` selects tests from.
 # The whole suite runs one test at a time with call tracing, so it runs here,
-# never on a desktop: on push to main, weekly, and by hand. A new job; no
-# step of ci.yml changes.
+# never on a desktop: on every pull request (in parallel with ci.yml's Test,
+# so a change that breaks the map is red before it merges; no paths filter:
+# the break that made this rule came from a test file, DND-5652), on push to
+# main (the run that publishes the map), weekly, and by hand. No step of
+# ci.yml changes.
 
 on:
+  pull_request:
   push:
     branches:
       - main
@@ -75,7 +79,10 @@ jobs:
             end
           '
 
+      # Only a main, scheduled or manual run publishes: a pull request's map
+      # is built from unmerged code.
       - name: Upload the map
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: anchor-coverage
