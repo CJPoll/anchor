@@ -5,7 +5,7 @@ defmodule Anchor.Domain.GraphKey do
   built from, so an artifact built from other inputs is never mistaken for
   this build's. `:crypto.hash/2` is a pure function.
 
-  The key covers every beam's `{path, bytes}` entry and every source file's
+  The key covers the project root, every beam's `{path, bytes}` entry and every source file's
   `{path, bytes}` entry, each list sorted by path (so the order the ebins
   were read in does not matter), the config's bytes and Anchor's version. A
   source entry's bytes are the file's `SourceFacts` (DND-5586): the graph
@@ -14,20 +14,27 @@ defmodule Anchor.Domain.GraphKey do
   list is preceded by its length, so no two different inputs hash the same
   concatenation.
 
+  The root is in the key (DND-5638) because the graph's facts name source
+  paths relative to it: two checkouts with the same build output would
+  otherwise share a key while their paths mean different files. It is the
+  root's real path as the caller gives it: `mix anchor.graph` passes
+  `File.cwd!/0`, which is `getcwd(3)`'s physical path, symlinks resolved by
+  the kernel; this module does no IO to resolve one.
+
   The verdict never reads an artifact: `mix anchor.explain` and `place` do,
   and a key mismatch means rebuild, never use.
   """
 
   @doc """
-  The lower-case hex sha256 of the beam entries and the source entries (each
-  sorted by path), the config and the version.
+  The lower-case hex sha256 of the project root, the beam entries and the
+  source entries (each sorted by path), the config and the version.
   """
-  @spec key([{String.t(), binary()}], [{String.t(), binary()}], binary(), String.t()) ::
+  @spec key(Path.t(), [{String.t(), binary()}], [{String.t(), binary()}], binary(), String.t()) ::
           String.t()
-  def key(beam_entries, source_entries, config_bytes, version)
-      when is_list(beam_entries) and is_list(source_entries) and is_binary(config_bytes) and
-             is_binary(version) do
-    ([framed(version), framed(config_bytes)] ++
+  def key(root, beam_entries, source_entries, config_bytes, version)
+      when is_binary(root) and is_list(beam_entries) and is_list(source_entries) and
+             is_binary(config_bytes) and is_binary(version) do
+    ([framed(version), framed(root), framed(config_bytes)] ++
        section(beam_entries) ++ section(source_entries))
     |> then(&:crypto.hash(:sha256, &1))
     |> Base.encode16(case: :lower)

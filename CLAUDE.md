@@ -200,17 +200,22 @@ compiles with it off).
 
 ## The graph runner: `mix anchor.graph` (DND-5440)
 
-`Mix.Tasks.Anchor.Graph` (Framework) compiles, gathers `[{app, ebin}]` from
-Mix and makes one `Anchor.Managers.Graph.run/2` call; the Manager reaches
+`Mix.Tasks.Anchor.Graph` (Framework) compiles, gathers `[{app, ebin}]` and,
+in an umbrella, each app's directory (`Request.source_dirs`, from
+`Mix.Project.apps_paths/0`: Mix compiles an app from its own directory, so its
+beams' source paths are app-relative and are keyed from the umbrella root,
+DND-5637) from Mix and makes one `Anchor.Managers.Graph.run/2` call; the Manager reaches
 config, beams, sources and the artifact only through adapters
 (`ConfigLoader`, `BeamSource`, `SourceSource`, `GraphStore`; tests double them
 with Hammox, BeamSource with plain Mox because Hammox cannot match its
 `:cerl` record type (see `test/test_helper.exs`), and pass them as options,
 as `mix anchor.sabotage` does). `SourceSource` returns each file's
-`SourceFacts`, never its text. A module whose source path is absolute and
-outside the root is left out, counted and named in a `[report]` note; one
-inside the root is made relative (`Anchor.Domain.Graph.ProjectFile`,
-DND-5588). It builds
+`SourceFacts`, never its text. A module is project code because its beam
+came from a project ebin, wherever its source sits (DND-5630): one compiled
+from outside the root (`elixirc_paths: ["../shared"]`) is judged and enforced
+like any other, keyed by its root-relative `../shared/foo.ex` path, and
+counted in the summary as `(<n> outside the root)`; an absolute path inside
+the root is made relative (`Anchor.Domain.Graph.ProjectFile`). It builds
 the graph fresh, builds `Anchor.Domain.Model` (classification of every
 module), checks bucket and rule floors (`min_modules`), runs each graph rule
 under a `try`/`rescue`/`catch` guard, and returns

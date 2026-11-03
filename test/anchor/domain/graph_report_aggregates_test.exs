@@ -13,7 +13,7 @@ defmodule Anchor.Domain.GraphReportAggregatesTest do
     rules: 3,
     opaque: 0,
     no_core: 0,
-    excluded: 0,
+    outside_root: 0,
     apply_sites: nil
   }
 

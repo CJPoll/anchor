@@ -587,7 +587,11 @@ builds the causal graph fresh every run: it never loads or runs a project
 module and never reads a cached verdict. Then it classifies every module into
 exactly one bucket, checks every floor, and runs each graph rule under its own
 guard. It is the command a CI step or a pre-commit gate runs after `mix
-compile`; Anchor's own CI runs it.
+compile`; Anchor's own CI runs it. Run it from the umbrella root: Mix compiles
+each app from its own directory, so a beam's source path is app-relative
+(`lib/alpha.ex`), and the runner keys it from the umbrella root
+(`apps/alpha/lib/alpha.ex`) for `paths:` selectors, issues and baselines
+(DND-5637).
 
 Text output is one line per finding, then a summary:
 
@@ -605,7 +609,8 @@ and a `bucket` must name one of its buckets; both are refused at load
 otherwise. `uses_module`, `recursive` and `min_files` are `ast` keys and are
 refused on a graph rule. A finding of a rule with `enforcement: report` prints
 `[report]` and does not fail the run. `--format json` prints `{"modules",
-"apps", "rules", "opaque", "no_core", "apply_sites", "exit_code", "findings":
+"apps", "rules", "opaque", "no_core", "outside_root", "apply_sites", "exit_code",
+"findings":
 [{rule_id, type, enforcement, key, file, line, message, fix}],
 "could_not_check": [...], "refused": [...], "held": [...]}`. `--only RULE_ID` (repeatable) runs only the
 rules with those ids; each rule that runs is still judged against its floor and
@@ -767,7 +772,8 @@ it found when it landed: one cycle through the dynamic calls of
 
 The only file it writes is `<build_path>/anchor/graph.etf` (Mix's build path:
 `_build/<env>`, or the directory `MIX_BUILD_PATH` names), the graph keyed by
-a sha256 of the beams, each source file's facts (its literal `defmodule`s and
+a sha256 of the project root's real path (two checkouts with the same build
+output get two keys), the beams, each source file's facts (its literal `defmodule`s and
 `use`s, which a source edit can change without changing a beam), the config and
 Anchor's version, for `mix
 anchor.explain` and `place`. The verdict never reads it; a write that fails is
@@ -791,12 +797,16 @@ summary as `(<n> opaque)`; an unclassified one is an issue. No setting
 excludes a module silently. A function whose Core body the graph lacks (a
 `defmacrop`, a `defp` nothing calls) has no edges read from it, so the summary
 counts those too, as `(<n> functions with no Core body)`, and the JSON as
-`no_core`. A module compiled from an absolute source path outside the project
-root (an `elixirc_paths` entry such as `../shared`, a generated file) is left out
-of the graph: counted as `(<n> outside the root, excluded)`, `excluded` in the
-JSON, and named with its path in a `[report]` note (DND-5588). An absolute path
-inside the root is made relative to it, so `paths:` selectors match it as they
-match every other file.
+`no_core`. A module is project code because its beam is in one of the
+project's ebins, wherever its source sits (DND-5630). A module compiled from a
+source outside the project root (an `elixirc_paths` entry such as `../shared`,
+a generated file) is classified, judged and enforced like any other, under its
+path relative to the root as `..` reaches it (`../shared/foo.ex`): the path its
+issues name, a `paths:` selector matches (`../shared/**/*.ex`) and baselines
+key on. The summary counts such modules as `(<n> outside the root)`, and the
+JSON as `outside_root`, so the layout is visible. An absolute path inside the
+root is made relative to it, so `paths:` selectors match it as they match
+every other file.
 
 ### Aggregates: the `aggregates:` section and the `aggregate_declarations` rule (DND-5476)
 
@@ -938,8 +948,6 @@ line.
 | `mix compile` fails | mix's own | | |
 | Zero project modules read | 3 | the first ebin | `COULD NOT MEASURE: read 0 modules from _build/dev/lib/my_app/ebin. Fix: run mix compile in this project; ...` |
 | One app of the project read no module while another did (an umbrella app not compiled, under another build path, or renamed; DND-5584) | 1 | that app's ebin | `read 0 modules for app :other from _build/dev/lib/other/ebin, so none of its code was checked. Fix: run mix compile for :other; ...` |
-| Every module read has its source outside the project root (DND-5588) | 3 | the first ebin | `COULD NOT MEASURE: read 3 modules from _build/dev/lib/my_app/ebin, and every one has a source file outside the project root /proj, so none was judged. Fix: run mix anchor.graph from the project root (the directory holding mix.exs).` |
-| A module compiled from a source outside the project root (DND-5588) | 0 (`[report]`) | its source path | `MyApp.Shared was compiled from /shared/lib/shared.ex, outside the project root /proj, so it is left out of the graph and no rule judged it. Fix: move its source under /proj, or run mix anchor.graph from the root that holds it.` |
 | A beam with no `debug_info` (or stripped) | 1 | the beam | `MyApp.X was compiled without debug_info, so Anchor cannot read it. Fix: remove debug_info: false from the project's elixirc_options ...` |
 | The backend refuses `elixir_v1` (`{:elixir_v1_refused, _}`) | 1 | the beam | `MyApp.X the beam's backend could not produce its Elixir debug info (...). Fix: recompile with the project's own Elixir; ...` |
 | The backend refuses `core_v1` (`{:core_v1_refused, _}`) | 1 | the beam | `MyApp.X the beam's backend could not produce Core Erlang (...). Fix: recompile with the project's own Elixir; ...` |
@@ -1157,7 +1165,8 @@ How a run goes:
    results file; output is never parsed); then, in an `after` block, the
    original is written back, touched, its sha256 checked, and only then the
    journal deleted.
-7. The run is saved to `_build/<env>/anchor/sabotage/last-run.etf`.
+7. The run is saved to `<build_path>/anchor/sabotage/last-run.etf`: Mix's build
+   path, `_build/<env>` or the directory `MIX_BUILD_PATH` names.
 8. The sabotage record is written (DND-5484), unless `--no-record`: one
    file per (app, domain) the run touched (per app under `ticket_nn_what`),
    in the repo's naming. A second run the same day, in the same domain and
