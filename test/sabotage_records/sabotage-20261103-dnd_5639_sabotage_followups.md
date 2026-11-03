@@ -48,7 +48,7 @@ each see `/builds/repo-test/...` (a build path that is not
 
 | # | Mutation | Tests failed | First failure, verbatim |
 |---|---|---|---|
-| U7 | the unfixed code (the tests written first; T4 not yet added) | 6 of 139 | T1, T2, R1, K1, K2, TO2. K2 `code:  assert entry.content =~ "## Kills by timeout\n\nNone.\n"`; TO2 the mutant's status `:killed`, not `:timeout` |
+| U7 | the unfixed code (the tests written first; T4 not yet added) | 6 of 139 | T1 `code:  assert Outcome.classify(run(:failed, total: 3, failures: [@t1, @t2])) ==`; T2 `code:  assert Outcome.classify(run(:failed, total: 3, failures: [@t1, @f1])) ==` `left:  {:killed,`; R1 `code:  assert text =~`; K1 `code:  assert entry.content =~`; K2 `code:  assert entry.content =~ "## Kills by timeout\n\nNone.\n"`; TO2 `match (=) failed` `code:  assert [` `%{status: :timeout, killers: ["(test timeout) test/calc_test.exs:9 test slow"]},` (right: `status: :killed`) |
 | S1 | no failure is read as a timeout (`test_timeout?/1` always false) | 3 | T2 `code:  assert Outcome.classify(run(:failed, total: 3, failures: [@t1, @f1])) ==` `left:  {:killed,` (also T1 and TO2) |
 | S2 | a timeout beside an assertion failure is still a timeout kill | 1 | T2 `left:  {:timeout, ["(test timeout) test/x_test.exs:12 test slow"]}` `right: {:killed, [{"test/x_test.exs", 4, "test adds"}]}` |
 | S3 | a failure whose text merely contains the timeout text counts as one (`String.contains?`) | 1 | T3 `left:  {:timeout, ["(test timeout) test/x_test.exs:4 test adds"]}` `right: {:killed, [{"test/x_test.exs", 4, "test adds"}]}` |
@@ -105,7 +105,7 @@ a `:failed` run with no failure frame stays `{:killed, []}`, as before.
 
 | # | Mutation | Tests failed | First failure, verbatim |
 |---|---|---|---|
-| U9 | the unfixed code (`coverage_map.ex`, `coverage_collector.ex`, `coverage.ex` at their pre-DND-5642 text; the tests written) | 13 | L1-L7, LM1, LM2, LT1, LT2 and collector tests 1 and 3: the map has no `window_leaks` and a 4-element call event matches no clause |
+| U9 | the unfixed code (`coverage_map.ex`, `coverage_collector.ex`, `coverage.ex` at their pre-DND-5642 text; the tests written) | 13 | L1-L6, LM1, LM2 and collector test 1 `** (FunctionClauseError) no function clause matching in Anchor.Domain.Sabotage.CoverageMap.apply_event/2`; L7, LT1, LT2 and collector test 3 `** (KeyError) key :window_leaks not found in:` |
 | M1 | each call's pid made unique (no process is seen twice) | 6 | collector 3 `code:  assert CoverageMap.finalize(state, @meta).window_leaks == [` `left:  []` (also LM1, LM2, L1, L6, LT1) |
 | M2 | a leak whenever the process was first seen in a window (the disjoint check dropped) | 1 | L4 `code:  assert build(events).window_leaks == []` `left:  [` |
 | M3 | a process first seen outside every window can leak | 1 | L3 `code:  assert map.window_leaks == []` `left:  [` |
@@ -132,7 +132,8 @@ the earlier test started it. The ticket asks for exactly the first-seen rule,
 so the claim was narrowed to it: the line reads "a process first seen during
 an earlier test", and the README and moduledoc say a line names a process to
 look at, not proof. Collector test 1 now makes each test's call from its own
-process, so it holds no leak and asserts so.
+process, so it holds no leak and asserts so. With L8 the suite run above is
+50 tests (49 before this round), green.
 
 | # | Mutation | Tests failed | First failure, verbatim |
 |---|---|---|---|
@@ -148,7 +149,7 @@ process, so it holds no leak and asserts so.
 
 | # | Mutation | Tests failed | First failure, verbatim |
 |---|---|---|---|
-| U11 | the unfixed renderer (S1-S4 written first) | 4 | S1 `code:  assert head =~ "## Summary\n\n\| id \| function \| mutation \| status \| killers \|\n\|---\|---\|---\|---\|---\|\n"`; S2 and S3 (no `Summary` heading to split on); S4 `code:  assert entry.content =~ "## Summary\n\nNone.\n\n## Mutants\n"` |
+| U11 | the unfixed renderer (S1-S4 written first) | 4 | S1 `code:  assert head =~ "## Summary\n\n\| id \| function \| mutation \| status \| killers \|\n\|---\|---\|---\|---\|---\|\n"`; S2 `** (MatchError) no match of right hand side value:` `code: rows = table_rows(entry.content, "### Summary")`; S3 `** (MatchError) no match of right hand side value:` `code: assert table_rows(entry.content, "## Summary") == [`; S4 `code:  assert entry.content =~ "## Summary\n\nNone.\n\n## Mutants\n"` |
 | Q1 | the table placed after the `Mutants` heading | 3 | S4 `code:  assert entry.content =~ "## Summary\n\nNone.\n\n## Mutants\n"` (also S1 and the golden record) |
 | Q2 | the last mutant's row dropped | 4 | S1 `code:  assert rows == [` (also S2, S3 and the golden record) |
 | Q3 | every row's status written `killed` | 3 | S1 `code:  assert rows == [` (also S2 and the golden record) |
@@ -160,3 +161,7 @@ process, so it holds no leak and asserts so.
 
 Pipes inside this table's own cells are written `\|`, so the quoted failure
 strings above show `\|` where the output had `|`.
+
+The P1-P4 `code: refute` and `left: {...}` lines have one space after the
+colon because ExUnit prints a `refute` failure that way; they are copied
+from the runs, as are the two-space `assert` lines elsewhere.

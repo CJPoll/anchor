@@ -1034,7 +1034,9 @@ How a run goes:
    (`Anchor.Sabotage.ExUnitFormatter`, which writes each failed test to a
    results file; output is never parsed); then, in an `after` block, the
    original is written back, touched, its sha256 checked, and only then the
-   journal deleted.
+   journal deleted. A mutant whose run another target of the same
+   `defimpl ..., for: [...]` edit already made (the same tests) is not applied
+   again: it takes that run's verdict (DND-5639).
 7. The run is saved to `<build_path>/anchor/sabotage/last-run.etf`: Mix's build
    path, `_build/<env>` or the directory `MIX_BUILD_PATH` names.
 8. The sabotage record is written (DND-5484), unless `--no-record`: one
