@@ -1,0 +1,216 @@
+defmodule Anchor.Domain.Graph.BuilderTest do
+  # Domain (ADR 002). QA plan rows 32-37 (DND-5438, AC3, AC4). Fixtures are
+  # compiled in the test and unloaded; their binaries are decoded into %Beam{}
+  # records by Anchor.Adapters.BeamReader.decode/2 as setup (the reader's own
+  # conversions are pinned in beam_reader_test.exs), and the builder under test
+  # gets plain data.
+  #
+  # Sabotage record: ../../../sabotage_records/builder-20261103-dnd_5438.md
+  use ExUnit.Case, async: true
+
+  import Anchor.Test.BeamFixtures
+
+  alias Anchor.Adapters.BeamReader
+  alias Anchor.Domain.Graph
+  alias Anchor.Domain.Graph.Builder
+  alias Anchor.Domain.Graph.Call
+  alias Anchor.Domain.Graph.FunctionNode
+  alias Anchor.Domain.Graph.ModuleNode
+  alias Anchor.Domain.Graph.SourceFacts
+  alias AnchorFixtures.BuilderTest.A
+  alias AnchorFixtures.BuilderTest.B
+  alias AnchorFixtures.BuilderTest.Plain
+  alias AnchorFixtures.BuilderTest.User
+  alias AnchorFixtures.BuilderTest.User.Generated
+
+  @plain_file "lib/plain.ex"
+  @plain_source """
+  defmodule AnchorFixtures.BuilderTest.Plain do
+    @behaviour AnchorFixtures.BuilderTest.Contract
+    Module.register_attribute(__MODULE__, :tag, persist: true)
+    @tag :hello
+    defstruct [:a, b: 2]
+
+    @type t :: %__MODULE__{}
+
+    @spec run(integer()) :: integer()
+    def run(x), do: helper(x)
+
+    defp helper(x), do: x + 1
+
+    defmacro m(x), do: x
+  end
+  """
+
+  @mac_file "lib/mac.ex"
+  @mac_source """
+  defmodule AnchorFixtures.BuilderTest.Mac do
+    defmacro __using__(_opts) do
+      quote do
+        defmodule Generated do
+          def g(x), do: AnchorFixtures.BuilderTest.Other.h(x)
+        end
+      end
+    end
+  end
+  """
+
+  @user_file "lib/user.ex"
+  @user_source """
+  defmodule AnchorFixtures.BuilderTest.User do
+    use AnchorFixtures.BuilderTest.Mac
+
+    def run(x), do: x
+  end
+  """
+
+  @pair_source """
+  defmodule AnchorFixtures.BuilderTest.A do
+    def f(x), do: AnchorFixtures.BuilderTest.B.g(x)
+  end
+
+  defmodule AnchorFixtures.BuilderTest.B do
+    def g(x), do: AnchorFixtures.BuilderTest.A.f(x)
+  end
+  """
+
+  setup_all do
+    plain = decode!(compile_unloaded(@plain_source, @plain_file))
+
+    macro_and_user =
+      decode!(compile_all_unloaded([{@mac_source, @mac_file}, {@user_source, @user_file}]))
+
+    pair = decode!(compile_unloaded(@pair_source, "lib/pair.ex"))
+    %{plain: plain, macro_and_user: macro_and_user, pair: pair}
+  end
+
+  defp decode!(modules) do
+    Enum.map(modules, fn {module, binary} ->
+      BeamReader.decode(binary, app: :demo, path: "ebin/#{module}.beam")
+    end)
+  end
+
+  defp facts(file, source), do: %{file => SourceFacts.from_source(file, source)}
+
+  describe "build/2 module facts" do
+    # Row 32
+    test "a module node carries the elixir_v1 facts and every function with its Core", %{
+      plain: plain
+    } do
+      graph = Builder.build(plain, facts(@plain_file, @plain_source))
+
+      assert %ModuleNode{
+               module: Plain,
+               app: :demo,
+               source_file: @plain_file,
+               behaviours: [AnchorFixtures.BuilderTest.Contract],
+               struct_fields: [:a, :b],
+               generated?: false
+             } = node = Graph.module(graph, Plain)
+
+      assert Keyword.get(node.attributes, :tag) == :hello
+      assert [{:"::", _, [{:run, _, _}, _]}] = node.specs[{:run, 1}]
+      assert {:type, _quoted} = node.types[{:t, 0}]
+
+      assert %FunctionNode{kind: :def, line: 10, core: run_core} = node.functions[{:run, 1}]
+
+      assert %FunctionNode{kind: :defp, line: 12, core: helper_core} =
+               node.functions[{:helper, 1}]
+
+      assert :cerl.is_c_fun(run_core) and :cerl.is_c_fun(helper_core)
+
+      assert %Call{
+               from: {Plain, :run, 1},
+               to: {Plain, :helper, 1},
+               kind: :local,
+               line: 10,
+               line_source: :call
+             } in graph.calls
+    end
+
+    # Row 36
+    test "a macro is mapped back from Core's MACRO-name/arity+1", %{plain: plain} do
+      graph = Builder.build(plain, facts(@plain_file, @plain_source))
+
+      assert %FunctionNode{kind: :defmacro, name: :m, arity: 1, line: 14, core: core} =
+               Graph.function(graph, {Plain, :m, 1})
+
+      assert :cerl.is_c_fun(core)
+      refute Map.has_key?(Graph.module(graph, Plain).functions, {:"MACRO-m", 2})
+    end
+  end
+
+  describe "build/2 generated? (AC3)" do
+    # Row 33
+    test "a module a macro emits is a module node, generated?: true, with its calls", %{
+      macro_and_user: beams
+    } do
+      graph =
+        Builder.build(
+          beams,
+          Map.merge(facts(@mac_file, @mac_source), facts(@user_file, @user_source))
+        )
+
+      assert %ModuleNode{generated?: true, source_file: @user_file} =
+               Graph.module(graph, Generated)
+
+      assert %ModuleNode{generated?: false} = Graph.module(graph, User)
+
+      assert [%Call{to: {AnchorFixtures.BuilderTest.Other, :h, 1}, kind: :remote}] =
+               Graph.calls_from(graph, {Generated, :g, 1})
+    end
+
+    # Row 34
+    test "with no source facts, or unparseable ones, generated? is :unknown, never false", %{
+      macro_and_user: beams
+    } do
+      graph = Builder.build(beams, %{})
+      assert %ModuleNode{generated?: :unknown} = Graph.module(graph, Generated)
+      assert %ModuleNode{generated?: :unknown} = Graph.module(graph, User)
+
+      graph = Builder.build(beams, %{@user_file => {:error, :unparseable}})
+      assert %ModuleNode{generated?: :unknown} = Graph.module(graph, User)
+    end
+  end
+
+  describe "build/2 unreadable beams (AC4)" do
+    # Row 35
+    test "decode errors are carried in path order, and every good module is kept", %{plain: plain} do
+      error_b = {:error, %{path: "ebin/b.beam", module: nil, reason: {:unreadable, :eacces}}}
+      error_a = {:error, %{path: "ebin/a.beam", module: Foo, reason: :no_debug_info}}
+
+      graph = Builder.build([error_b | plain] ++ [error_a], %{})
+
+      assert graph.unreadable == [
+               %{path: "ebin/a.beam", module: Foo, reason: :no_debug_info},
+               %{path: "ebin/b.beam", module: nil, reason: {:unreadable, :eacces}}
+             ]
+
+      assert %ModuleNode{} = Graph.module(graph, Plain)
+    end
+  end
+
+  describe "build/2 edges and Graph queries" do
+    # Row 37
+    test "calls between modules are aggregated and answered both ways", %{pair: pair} do
+      graph = Builder.build(pair, %{})
+
+      a_to_b = %Call{from: {A, :f, 1}, to: {B, :g, 1}, kind: :remote, line: 2, line_source: :call}
+      b_to_a = %Call{from: {B, :g, 1}, to: {A, :f, 1}, kind: :remote, line: 6, line_source: :call}
+
+      assert Enum.sort(graph.calls) == Enum.sort([a_to_b, b_to_a])
+      assert Graph.calls_from(graph, {A, :f, 1}) == [a_to_b]
+      assert Graph.calls_from(graph, B) == [b_to_a]
+      assert Graph.calls_to(graph, {A, :f, 1}) == [b_to_a]
+      assert Graph.calls_to(graph, B) == [a_to_b]
+      assert Graph.calls_to(graph, {A, :nope, 0}) == []
+    end
+
+    test "Graph.module/2 and function/2 answer nil for what is not there", %{pair: pair} do
+      graph = Builder.build(pair, %{})
+      assert Graph.module(graph, Nope) == nil
+      assert Graph.function(graph, {Nope, :f, 1}) == nil
+      assert Graph.function(graph, {A, :nope, 1}) == nil
+    end
+  end
+end

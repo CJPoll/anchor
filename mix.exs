@@ -8,6 +8,7 @@ defmodule Anchor.MixProject do
       elixir: "~> 1.15",
       start_permanent: Mix.env() == :prod,
       elixirc_options: [warnings_as_errors: true],
+      elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
       description: "Architectural constraint checks for Elixir projects via Credo",
       package: package(),
@@ -21,6 +22,11 @@ defmodule Anchor.MixProject do
       extra_applications: [:logger]
     ]
   end
+
+  # test/support holds shared test helpers (DND-5438: in-test compiled beam
+  # fixtures), compiled only in the test env.
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_env), do: ["lib"]
 
   # Run "mix help deps" to learn about dependencies.
   defp deps do

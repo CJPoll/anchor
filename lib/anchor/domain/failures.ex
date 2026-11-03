@@ -121,6 +121,16 @@ defmodule Anchor.Domain.Failures do
   end
 
   @doc """
+  The reason text of a crash, as `analysis_crash_violation/4` words it: the
+  exception (or kind and term), capped at #{@crash_reason_limit} characters, and
+  the frame that raised. `Anchor.Adapters.BeamReader` uses it for a beam whose
+  decoding crashed (DND-5438).
+  """
+  @spec crash_summary(:error | :exit | :throw, term(), Exception.stacktrace()) :: String.t()
+  def crash_summary(kind, reason, stacktrace),
+    do: "#{crash_reason(kind, reason, stacktrace)}#{raised_at(stacktrace)}"
+
+  @doc """
   Builds the violation for a rule that selected fewer files than its floor
   (`min_files`, default 1) among the `file_count` files its check ran on
   (DND-1290). It sits on the config the rule came from, `config_path` (or
