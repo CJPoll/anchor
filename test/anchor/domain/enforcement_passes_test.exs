@@ -3,6 +3,7 @@ defmodule Anchor.Domain.EnforcementPassesTest do
   # violation both found is printed once.
   #
   # Sabotage record: ../../sabotage_records/lint-20261103-dnd_5648_graph_followups.md
+  # unique/1 (DND-5632): ../../sabotage_records/baseline-20261103-dnd_5648_graph_followups.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.EnforcementPasses
@@ -46,6 +47,35 @@ defmodule Anchor.Domain.EnforcementPassesTest do
 
     test "empty passes give nothing" do
       assert EnforcementPasses.merge([], []) == []
+    end
+  end
+
+  describe "unique/1 (DND-5632)" do
+    test "one copy per finding, in first-seen order" do
+      assert [%Violation{trigger: "A"}, %Violation{trigger: "B"}] =
+               EnforcementPasses.unique([
+                 v("a", %{trigger: "A"}),
+                 v("b", %{trigger: "B"}),
+                 v("a", %{trigger: "A"})
+               ])
+    end
+
+    test "the enforced copy wins over a report copy seen first" do
+      reported = v("a", %{enforcement: :report})
+      enforced = v("a", %{key: "pure|lib/a.ex|alias", rule_id: "pure"})
+
+      assert [%Violation{enforcement: :enforce, key: "pure|lib/a.ex|alias"}] =
+               EnforcementPasses.unique([reported, enforced])
+    end
+
+    test "two report copies stay one report copy" do
+      reported = v("a", %{enforcement: :report})
+      assert [%Violation{enforcement: :report}] = EnforcementPasses.unique([reported, reported])
+    end
+
+    test "positive control: different findings are all kept" do
+      vs = [v("a"), v("a", %{line: 4}), v("a", %{trigger: "x"}), v("a", %{kind: :fail_closed})]
+      assert EnforcementPasses.unique(vs) == vs
     end
   end
 end

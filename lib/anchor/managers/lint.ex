@@ -146,6 +146,15 @@ defmodule Anchor.Managers.Lint do
         {file_results, ratchet_violations} =
           ratchet(file_results, own_baselined(check_module, rules), facts, run_context, opts)
 
+        # A finding two passes made (two rules forbidding one module, a
+        # check's once-per-file `alias` report) is printed once, enforced when
+        # either copy is; each baselined rule's keyed copy was judged first,
+        # so no copy is lost to its comparison (DND-5632).
+        file_results =
+          Enum.map(file_results, fn {file, violations} ->
+            {file, EnforcementPasses.unique(violations)}
+          end)
+
         {:ok,
          file_results ++ config_results(check_module, config, facts, opts, ratchet_violations)}
 
@@ -278,7 +287,7 @@ defmodule Anchor.Managers.Lint do
         |> keyed(check_module, rule, relative(source_file.filename, run_context.root))
       end)
 
-    {source_file, unique(violations ++ keyed), facts}
+    {source_file, violations ++ keyed, facts}
   end
 
   # DND-5632: a rule with a `baseline:` is detected on its own, so each of its
@@ -296,13 +305,6 @@ defmodule Anchor.Managers.Lint do
     do: %{violation | rule_id: rule.id, key: ViolationKey.ast_key(rule, file, violation.trigger)}
 
   defp key(violation, _rule, _file), do: violation
-
-  # A violation a check makes once per file whatever its rules (an
-  # unresolvable `alias`) comes from each detection pass; the first copy is
-  # kept, so a baselined rule's own pass never prints it twice.
-  defp unique(violations) do
-    Enum.uniq_by(violations, &{&1.filename, &1.line, &1.trigger, &1.kind, &1.message})
-  end
 
   defp baselined?(rule), do: is_binary(Map.get(rule, :baseline))
 

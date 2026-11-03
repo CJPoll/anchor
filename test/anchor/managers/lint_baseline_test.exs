@@ -237,4 +237,54 @@ defmodule Anchor.Managers.LintBaselineTest do
       assert Enum.all?(violations, &is_nil(&1.key))
     end
   end
+
+  # DND-5632 critic round 1: a finding two rules make is one finding, and the
+  # baselined rule's keyed copy is still judged against its own baseline.
+  describe "a finding two rules make" do
+    @plain %{
+      type: :no_direct_dependency,
+      id: "plain",
+      pattern: "MyApp.*",
+      forbidden_modules: [File]
+    }
+
+    test "a report rule's copy never downgrades an enforced baselined rule's NEW finding" do
+      expect_entries([])
+
+      results =
+        run([Map.put(@plain, :enforcement, :report), rule()], files([{@b, "lib/b.ex"}]))
+
+      [{_file, violations}] = Enum.reject(results, &match?({:config, _}, &1))
+
+      assert [%Violation{enforcement: :enforce, key: "pure|lib/b.ex|File"}] = violations
+    end
+
+    test "held by the baseline: the report rule's copy still prints, report-only; no STALE" do
+      expect_entries(~w(pure|lib/b.ex|File))
+
+      results =
+        run([Map.put(@plain, :enforcement, :report), rule()], files([{@b, "lib/b.ex"}]))
+
+      assert [{_file, [%Violation{enforcement: :report, key: nil}]}] = results
+    end
+
+    test "two baselined rules each judge their own copy: both held, no false STALE" do
+      other = %{rule() | id: "other", baseline: ".anchor/baselines/other.txt"}
+
+      expect(BaselineStoreMock, :read, fn @root, @path -> {:ok, ~w(pure|lib/b.ex|File)} end)
+
+      expect(BaselineStoreMock, :read, fn @root, ".anchor/baselines/other.txt" ->
+        {:ok, ~w(other|lib/b.ex|File)}
+      end)
+
+      assert [{_file, []}] = run([rule(), other], files([{@b, "lib/b.ex"}]))
+    end
+
+    test "an enforced plain rule's copy stands when the baselined rule holds its own" do
+      expect_entries(~w(pure|lib/b.ex|File))
+
+      assert [{_file, [%Violation{enforcement: :enforce, key: nil}]}] =
+               run([@plain, rule()], files([{@b, "lib/b.ex"}]))
+    end
+  end
 end

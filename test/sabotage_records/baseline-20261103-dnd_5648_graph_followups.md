@@ -1124,3 +1124,103 @@ Run summary: `132 tests, 18 failures`
 
 (45 more failures in this run, not quoted; every failing test is named in the table.)
 
+
+## DND-5632 critic round 1: a finding two rules make is judged by each, printed once, enforced first
+
+**Finding (critic, fb9004e):** `Lint` joined a file's passes with a first-wins `unique/1` before the ratchet, so a `report` rule's copy could replace an enforced baselined rule's NEW finding (the run passed), and a baselined rule could lose the keyed copy of a finding it had (a false STALE). **Fix:** every pass's copies reach the ratchet; afterwards `Anchor.Domain.EnforcementPasses.unique/1` keeps one copy per finding, the enforced one when any is.
+
+**Regression (R1):** the four new `lint_baseline_test.exs` tests ("a finding two rules make") against the unfixed `lint.ex` of fb9004e: `18 tests, 4 failures`. After: `60 tests, 0 failures` over lint_baseline, enforcement_passes and lint tests. Mutations ran through `sab.py` as above; AB-T's first form (`... and false`) did not compile (the type checker reads the clause as never matching), so it was rerun as the form recorded.
+
+| ID | Mutation | Tests | Result | Failing tests |
+|---|---|---|---|---|
+| AB-R1 | regression: the unfixed lint.ex (first-wins unique before the ratchet), with the new tests (`lib/anchor/managers/lint.ex`) | `lint_baseline_test.exs` | `18 tests, 4 failures` (red) | a finding two rules make an enforced plain rule's copy stands when the baselined rule holds its own; a finding two rules make a report rule's copy never downgrades an enforced baselined rule's NEW finding; a finding two rules make held by the baseline: the report rule's copy still prints, report-only; no STALE; a finding two rules make two baselined rules each judge their own copy: both held, no false STALE |
+| AB-T | the enforced copy does not win over a report copy seen first (`lib/anchor/domain/enforcement_passes.ex`) | `lint_baseline_test.exs`, `enforcement_passes_test.exs`, `lint_test.exs` | `60 tests, 2 failures` (red) | unique/1 (DND-5632) the enforced copy wins over a report copy seen first; a finding two rules make a report rule's copy never downgrades an enforced baselined rule's NEW finding |
+| AB-U | the passes are not joined: a finding two rules make prints twice (`lib/anchor/managers/lint.ex`) | `lint_baseline_test.exs`, `enforcement_passes_test.exs`, `lint_test.exs` | `60 tests, 2 failures` (red) | a finding two rules make a report rule's copy never downgrades an enforced baselined rule's NEW finding; beside rules with no baseline a violation every pass makes once per file is printed once |
+
+### AB-R1: regression: the unfixed lint.ex (first-wins unique before the ratchet), with the new tests
+
+Run summary: `18 tests, 4 failures`
+
+```text
+
+
+
+
+
+```
+
+(7 more failures in this run, not quoted; every failing test is named in the table.)
+
+### AB-T: the enforced copy does not win over a report copy seen first
+
+Run summary: `60 tests, 2 failures`
+
+```text
+
+
+  1) test unique/1 (DND-5632) the enforced copy wins over a report copy seen first (Anchor.Domain.EnforcementPassesTest)
+     test/anchor/domain/enforcement_passes_test.exs:62
+     match (=) failed
+     code:  assert [%Violation{enforcement: :enforce, key: "pure|lib/a.ex|alias"}] =
+              EnforcementPasses.unique([reported, enforced])
+     left:  [%Anchor.Domain.Violation{enforcement: :enforce, key: "pure|lib/a.ex|alias"}]
+     right: [
+              %Anchor.Domain.Violation{
+                line: 3,
+                trigger: "alias",
+                message: "a",
+                filename: nil,
+                kind: :rule,
+                key: nil,
+                rule_id: nil,
+                enforcement: :report
+              }
+            ]
+     stacktrace:
+       test/anchor/domain/enforcement_passes_test.exs:66: (test)
+
+.................
+
+
+```
+
+(1 more failures in this run, not quoted; every failing test is named in the table.)
+
+### AB-U: the passes are not joined: a finding two rules make prints twice
+
+Run summary: `60 tests, 2 failures`
+
+```text
+
+
+  1) test a finding two rules make a report rule's copy never downgrades an enforced baselined rule's NEW finding (Anchor.Managers.LintBaselineTest)
+     test/anchor/managers/lint_baseline_test.exs:251
+     match (=) failed
+     code:  assert [%Violation{enforcement: :enforce, key: "pure|lib/b.ex|File"}] = violations
+     left:  [%Anchor.Domain.Violation{enforcement: :enforce, key: "pure|lib/b.ex|File"}]
+     right: [
+              %Anchor.Domain.Violation{
+                line: 2,
+                trigger: "File",
+                message: "Module has forbidden direct dependency on File",
+                filename: nil,
+                kind: :rule,
+                key: nil,
+                rule_id: nil,
+                enforcement: :report
+              },
+              %Anchor.Domain.Violation{
+                line: 2,
+                trigger: "File",
+                message: "Module has forbidden direct dependency on File",
+                filename: nil,
+                kind: :rule,
+                key: "pure|lib/b.ex|File",
+                rule_id: "pure",
+                enforcement: :enforce
+
+
+```
+
+(3 more failures in this run, not quoted; every failing test is named in the table.)
+
