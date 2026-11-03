@@ -231,6 +231,31 @@ defmodule Anchor.Domain.RuleSchemaTest do
     end
   end
 
+  # DND-5491: the engine split. Layering is a behaviour property, so the graph
+  # engine is its authority; the AST dependency rules are its write-time early
+  # warnings, held equal to it by test/anchor/integration/layering_parity_test.exs.
+  # A target that is not a graph type is a CompileError, proven by sabotage.
+  # Sabotage record: ../../sabotage_records/parity-20261103-dnd_5648_graph_followups.md
+  describe "early_warning_of/1" do
+    test "the AST dependency rules are layering's early warnings" do
+      assert RuleSchema.early_warning_of(:no_direct_dependency) == :layering
+      assert RuleSchema.early_warning_of(:no_transitive_dependency) == :layering
+    end
+
+    test "layering, and an AST type with no entry, warn of nothing" do
+      assert RuleSchema.early_warning_of(:layering) == nil
+      assert RuleSchema.early_warning_of(:context_acyclic) == nil
+      assert RuleSchema.early_warning_of(:single_control_flow) == nil
+    end
+
+    test "every early warning is an ast type warning of a graph type" do
+      for type <- RuleSchema.rule_types(), target = RuleSchema.early_warning_of(type) do
+        assert RuleSchema.engine(type) == :ast, inspect(type)
+        assert RuleSchema.engine(target) == :graph, inspect(target)
+      end
+    end
+  end
+
   # DND-5437: every rule type has exactly one authoritative engine. Completeness
   # (a type with no engine) is a CompileError, proven by sabotage, not here.
   # Sabotage record: ../../sabotage_records/rule_schema-20261103-dnd_5437.md

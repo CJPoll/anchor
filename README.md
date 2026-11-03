@@ -764,6 +764,43 @@ lib/my_app/web/page.ex:12: [enforce] rule 1 (id: "layering", layering) MyApp.Web
 Anchor's own `.anchor.yml` runs it over `lib/` with a baseline,
 `.anchor/baselines/layering.txt`, holding what it found when it landed.
 
+### The engine split: `layering` is the authority (DND-5491)
+
+Layering is a property of what the program does, so the graph engine is its
+authority: `layering` judges every call the compiler produced, including
+calls a macro injects. The AST dependency rules, `no_direct_dependency` and
+`no_transitive_dependency`, stay as its **write-time early warnings**: they
+run before compile (in a pre-write hook, on one file), with the exact line
+of the reference. `Anchor.Domain.RuleSchema.early_warning_of/1` declares the
+pairing, and compilation fails if an early warning names anything but an
+ast type warning of a graph type.
+
+| Rule type | Engine | Role |
+|---|---|---|
+| `layering` | graph | the authority on which bucket may call which |
+| `no_direct_dependency` | ast | early warning of `layering` |
+| `no_transitive_dependency` | ast | early warning of `layering` |
+
+The two are held equal by a test, not by trust.
+`test/anchor/integration/layering_parity_test.exs` runs both engines over the
+macro-free tree `test/fixtures/parity/` (five buckets, two contexts: allowed
+calls, forbidden direct calls through an alias, a capture and `apply/3` with
+a literal module, a forbidden transitive chain, `other_context` allowed and
+refused). The AST rules come from the tree's own `architecture:` section
+(`Anchor.Domain.Parity.ast_rules_for/1`: each row forbids the buckets it
+omits, directly and transitively, and an `other_context` entry forbids its
+bucket within the caller's context). Any `(caller, callee)` pair one engine
+flags and the other does not fails the test, naming the pair and the engine
+that flagged it; a transitive AST finding must pass through a call the graph
+flags. The derivation needs `pattern:` bucket selectors and a matrix with no
+`same_context` entry (no AST rule can say "only outside the caller's
+context"); anything else raises.
+
+Known divergences are listed in the test with a reason each, and the list
+only shrinks (a listed pair that no longer diverges fails the test). At
+landing it holds one: a dynamic call (`mod.save(x)`), which the graph
+resolves to every module exporting `save/1` and the AST cannot see.
+
 ### The `context_acyclic` rule (DND-5445)
 
 ```yaml

@@ -288,6 +288,13 @@ pair, at its first line. The canary has a framework bucket with
 `Anchor.Check`, DND-1288, most of them dynamic calls fanned out to every
 check module exporting the function).
 
+
+The engine split (DND-5491): `layering` is the authority, and
+`RuleSchema.early_warning_of/1` names `no_direct_dependency` and
+`no_transitive_dependency` its write-time early warnings (a compile-time
+check: ast type to graph type). `Anchor.Domain.Parity` and
+`test/anchor/integration/layering_parity_test.exs` hold them equal over the
+macro-free `test/fixtures/parity/`; its divergence list only shrinks.
 ## The context_acyclic rule (DND-5445)
 
 `Anchor.Domain.ContextGraph.build/2` collapses the calls of the selected
