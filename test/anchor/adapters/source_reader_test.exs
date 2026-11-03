@@ -3,7 +3,7 @@ defmodule Anchor.Adapters.SourceReaderTest do
   # becomes its SourceFacts, never raw text.
   #
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5440_graph_runner.md
-  # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5636_empty_uses.md
+  # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5630_graph_hardening.md
   use ExUnit.Case, async: true
 
   alias Anchor.Adapters.SourceReader

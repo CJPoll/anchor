@@ -7,7 +7,7 @@ defmodule Mix.Tasks.Anchor.SabotageRunTest do
   # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5473_sabotage_run.md
   # Sabotage record (DND-5570): ../../sabotage_records/sabotage-20261103-dnd_5570_sabotage_hardening.md
   # Sabotage record (DND-5617): ../../sabotage_records/sabotage-20261103-dnd_5617_sabotage_cfa_batch.md
-  # Sabotage record (DND-5635): ../../sabotage_records/sabotage-20261103-dnd_5635_last_run_build_path.md
+  # Sabotage record (DND-5635): ../../sabotage_records/sabotage-20261103-dnd_5630_graph_hardening.md
   use ExUnit.Case, async: false
 
   import ExUnit.CaptureIO

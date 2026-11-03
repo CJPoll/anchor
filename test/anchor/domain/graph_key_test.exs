@@ -4,7 +4,7 @@ defmodule Anchor.Domain.GraphKeyTest do
   #
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5440_graph_runner.md
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5581_hardening_batch.md
-  # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5638_root_in_key.md
+  # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5630_graph_hardening.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.GraphKey

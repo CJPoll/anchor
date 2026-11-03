@@ -593,7 +593,7 @@ context_acyclic, ...) add them, with the graph rule keys `bucket`,
 `min_modules` and `enforcement`. Until the first lands, a run classifies every
 module and judges every bucket floor. A finding of a rule with
 `enforcement: report` prints `[report]` and does not fail the run. `--format json` prints `{"modules", "apps", "rules", "opaque",
-"apply_sites", "exit_code", "findings": [{rule_id, type, enforcement, key, file, line,
+"no_core", "outside_root", "apply_sites", "exit_code", "findings": [{rule_id, type, enforcement, key, file, line,
 message, fix}], "could_not_check": [...]}`. `--only RULE_ID` (repeatable) runs
 only the rules with those ids; each rule that runs is still judged against its
 floor (`--only` narrows the rules, never the modules), and an id that names no

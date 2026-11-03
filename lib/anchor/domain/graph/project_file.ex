@@ -20,8 +20,8 @@ defmodule Anchor.Domain.Graph.ProjectFile do
       see it as they see every other file);
     * `{:outside_root, path}` — a path outside `root`, relative to it through
       `..` (`/work/shared/foo.ex` against `/work/my_app` is
-      `../shared/foo.ex`): stable across machines, and what an issue and a
-      baseline key name. The runner counts these in its summary, so the
+      `../shared/foo.ex`): stable across checkouts with the same relative
+      layout, and what an issue and a baseline key name. The runner counts these in its summary, so the
       layout stays visible;
     * `{:inside_root, nil}` — no path (an Erlang module, or a beam with no
       source): the model decides what that module is.

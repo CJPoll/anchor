@@ -6,7 +6,6 @@ defmodule Anchor.Domain.Graph.ProjectFileTest do
   #
   # Sabotage record: ../../../sabotage_records/builder-20261103-dnd_5581_hardening_batch.md
   # Sabotage record: ../../../sabotage_records/graph_runner-20261103-dnd_5630_graph_hardening.md
-  # Sabotage record: ../../../sabotage_records/graph_runner-20261103-dnd_5637_umbrella_paths.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Graph.ProjectFile

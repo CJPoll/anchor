@@ -8,7 +8,7 @@ defmodule Anchor.Managers.SabotageRunTest do
   # Sabotage record (DND-5570): ../../sabotage_records/sabotage-20261103-dnd_5570_sabotage_hardening.md
   # Sabotage record (DND-5617): ../../sabotage_records/sabotage-20261103-dnd_5617_sabotage_cfa_batch.md
   # Sabotage record (DND-5624): ../../sabotage_records/sabotage-20261103-dnd_5624_sabotage_defimpl.md
-  # Sabotage record (DND-5635): ../../sabotage_records/sabotage-20261103-dnd_5635_last_run_build_path.md
+  # Sabotage record (DND-5635): ../../sabotage_records/sabotage-20261103-dnd_5630_graph_hardening.md
   use ExUnit.Case, async: true
 
   import Hammox

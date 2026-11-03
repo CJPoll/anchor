@@ -8,9 +8,6 @@ defmodule Anchor.Managers.GraphTest do
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5551_graph_hardening.md
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5581_hardening_batch.md
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5630_graph_hardening.md
-  # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5637_umbrella_paths.md
-  # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5638_root_in_key.md
-  # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5636_empty_uses.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures

@@ -19,7 +19,7 @@ defmodule Anchor.Domain.Graph.Builder do
   and never a guessed `true`.
 
   With `root:` (the project root, `build/3`), a module's `source_file` is its
-  path as `Anchor.Domain.Graph.ProjectFile.place/2` keys it: an absolute path
+  path as `Anchor.Domain.Graph.ProjectFile.place/3` keys it: an absolute path
   inside the root is made relative to it (DND-5588), and one outside it is
   relative through `..` (`../shared/foo.ex`, DND-5630). A relative path is
   read against its app's directory in `source_dirs:` (`%{app => dir}`, dir
