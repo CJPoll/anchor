@@ -258,4 +258,3 @@ defmodule Anchor.Adapters.TestRunnerTest do
     assert {code, out} == {0, "status=passed\n"}
   end
 end
-

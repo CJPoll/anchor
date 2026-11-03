@@ -60,8 +60,10 @@ integration test (a real tmp project, no doubles).
 | P7 | `judge/2` reads a survived run as still killed | 3 of 31: judge "3: passed"; manager row 3; the integration test | `code:  assert Replay.judge(item(), %{status: :survived, reason: nil}) ==` `left:  :still_killed` |
 | P8 | the dirty-file check given no files | 5 of 7: "a replayable row's file with uncommitted changes refuses, exit 2 ..." and rows 1-4 | `** (Mox.UnexpectedCallError) no expectation defined for Anchor.TestExecutionMock.run/3` |
 
+| P9 | (critic round 1 note) a baseline that ran no test read as a red main | 1 of 8: "every named killer gone (the baseline ran no test): exit 3, said as drift, not a red main" | `code:  assert message =~ "every test the rows name is gone (renamed or deleted)"` `left:  "COULD NOT MEASURE: the recorded killers did not pass with no mutant applied (no_tests): nothing can be judged. ..."` |
+
 After every row was restored: `replay_test.exs` and `killer_ref_test.exs`
-30 tests, 0 failures; `sabotage_replay_test.exs` 7 tests, 0 failures;
+30 tests, 0 failures; `sabotage_replay_test.exs` 8 tests, 0 failures;
 `sabotage_replay_integration_test.exs` 1 test, 0 failures.
 
 ### The frame atoms (a defect replay found)

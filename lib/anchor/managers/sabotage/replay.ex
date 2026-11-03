@@ -241,6 +241,15 @@ defmodule Anchor.Managers.Sabotage.Replay do
       "be judged. Fix: make them pass first"
   end
 
+  # Every killer named by its rows is gone (renamed or deleted), though its
+  # file is there: drift, not a red main, but nothing can be judged.
+  defp red_main(%TestRun{status: :no_tests}) do
+    "COULD NOT MEASURE: no recorded killer test ran with no mutant applied: every test the " <>
+      "rows name is gone (renamed or deleted), so every row is drifted (killer test not " <>
+      "found). Fix: land a sabotage record for the current tests, written by " <>
+      "mix anchor.sabotage run"
+  end
+
   defp red_main(%TestRun{status: status}) do
     "COULD NOT MEASURE: the recorded killers did not pass with no mutant applied (#{status}): " <>
       "nothing can be judged. Fix: run them and make them pass first"

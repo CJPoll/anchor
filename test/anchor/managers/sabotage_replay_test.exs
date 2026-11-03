@@ -146,6 +146,17 @@ defmodule Anchor.Managers.SabotageReplayTest do
     assert calls() == [:read_journal, :config, :baseline]
   end
 
+  test "every named killer gone (the baseline ran no test): exit 3, said as drift, not a red main" do
+    [first | _rest] = mutants()
+    expect_until_plan(%{"test/sabotage_records/a.md" => record([first])})
+    expect_clean()
+    expect(TestExecutionMock, :run, fn _argv, @args, _opts -> test_run(:no_tests) end)
+
+    assert %{refusal: {3, message}} = Sabotage.replay(@facts, @opts)
+    assert message =~ "every test the rows name is gone (renamed or deleted)"
+    refute message =~ "main is red"
+  end
+
   test "2: one row whose killers fail under the mutant: journal, write, run, restore, as run; still killed" do
     [first | _rest] = mutants()
     expect_until_plan(%{"test/sabotage_records/a.md" => record([first])})
