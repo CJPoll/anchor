@@ -423,6 +423,30 @@ defmodule Anchor.Domain.Failures do
   end
 
   @doc """
+  The issue for a graph rule that needs the higher-order flow analysis
+  (`needs: [:cfa]`, DND-5574) when that analysis raised, threw or exited: the
+  rule was not run, so it checked nothing. One per rule that needed it; the
+  rules that do not need it still run.
+  """
+  @spec rule_cfa_crashed(
+          map(),
+          :error | :exit | :throw,
+          term(),
+          Exception.stacktrace(),
+          String.t() | nil
+        ) ::
+          Violation.t()
+  def rule_cfa_crashed(rule, kind, reason, stacktrace, config_path) do
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "#{rule_label(rule)} could not run: the higher-order flow analysis it needs " <>
+        "(Anchor.Domain.Cfa) crashed: #{crash_summary(kind, reason, stacktrace)}, so it " <>
+        "checked nothing. Fix: this is an Anchor bug; file it with this line."
+    )
+  end
+
+  @doc """
   The note for a graph artifact that could not be written (DND-5440). The
   verdict never reads the artifact, so this does not fail the run; `mix
   anchor.explain` and `place` rebuild the graph instead.

@@ -3,6 +3,7 @@ defmodule Anchor.Domain.GraphRulesTest do
   # Pure Domain over a hand-built model.
   #
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5440_graph_runner.md
+  # (needs/1, DND-5574: ../../sabotage_records/graph_runner-20261103-dnd_5574_cfa_wiring.md)
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Classification
@@ -27,6 +28,34 @@ defmodule Anchor.Domain.GraphRulesTest do
       )
 
     %Model{graph: %Graph{}, architecture: nil, classification: classification, config: nil}
+  end
+
+  describe "needs/1 (DND-5574)" do
+    alias Anchor.Test.GraphRuleStubs, as: Stubs
+
+    test "a rule with no needs/0 needs nothing" do
+      assert GraphRules.needs(Stubs.Ok) == []
+    end
+
+    test "a declared [:cfa] is read, without duplicates" do
+      assert GraphRules.needs(Stubs.NeedsCfa) == [:cfa]
+    end
+
+    test "a need the runner does not compute raises, naming it, with a Fix:" do
+      error = assert_raise ArgumentError, fn -> GraphRules.needs(Stubs.NeedsUnknown) end
+
+      assert error.message ==
+               "Anchor.Test.GraphRuleStubs.NeedsUnknown.needs/0 names [:nope], which the " <>
+                 "graph runner does not compute. Fix: declare only [:cfa]."
+    end
+
+    test "a needs/0 that is not a list raises, with a Fix:" do
+      error = assert_raise ArgumentError, fn -> GraphRules.needs(Stubs.NeedsNonList) end
+
+      assert error.message ==
+               "Anchor.Test.GraphRuleStubs.NeedsNonList.needs/0 returned :cfa, not a list. " <>
+                 "Fix: return a list of [:cfa]."
+    end
   end
 
   describe "all/0" do

@@ -217,6 +217,17 @@ is bounded by `:max_steps`; a run that hits it reports every site `:any`. A
 library function that calls an argument gets a row in `HigherOrder`'s table;
 a missing row costs precision (its arguments escape), never soundness.
 
+The runner wires it lazily (DND-5574): a graph rule that reads it declares
+`needs: [:cfa]` (`GraphRule`'s optional `needs/0`, read and checked by
+`GraphRules.needs/1`), and `Anchor.Managers.Graph` runs
+`Cfa.analyze(graph, Cfa.default_seed(graph))` once per run, under the rule
+guard, only when a rule that runs needs it, and puts it on `Model.cfa` (`nil`
+otherwise). The summary then ends `; apply sites: <r> resolved, <a> any`, and
+the JSON carries `apply_sites` (`GraphReport.apply_sites/1`). A refused need
+(`rule_crashed`) or a crashed analysis (`Failures.rule_cfa_crashed/5`) is one
+issue per rule, and that rule is not run. A new analysis a rule can need goes
+into `GraphRules`' `@provided_needs` and the Manager's needs wiring.
+
 ## Important Notes
 
 - When running Elixir code, use: `mix run -e "<elixir code>"`

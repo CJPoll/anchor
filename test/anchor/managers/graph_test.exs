@@ -152,7 +152,7 @@ defmodule Anchor.Managers.GraphTest do
       report = Graph.run(request(), deps())
 
       assert %GraphReport{exit_code: 0, findings: [], could_not_check: []} = report
-      assert report.counts == %{modules: 2, apps: 1, rules: 1, opaque: 0}
+      assert report.counts == %{modules: 2, apps: 1, rules: 1, opaque: 0, apply_sites: nil}
     end
 
     test "a report-only rule's findings print and exit 0", %{beams: beams} do

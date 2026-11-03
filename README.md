@@ -589,7 +589,7 @@ context_acyclic, ...) add them, with the graph rule keys `bucket`,
 `min_modules` and `enforcement`. Until the first lands, a run classifies every
 module and judges every bucket floor. A finding of a rule with
 `enforcement: report` prints `[report]` and does not fail the run. `--format json` prints `{"modules", "apps", "rules", "opaque",
-"exit_code", "findings": [{rule_id, type, enforcement, key, file, line,
+"apply_sites", "exit_code", "findings": [{rule_id, type, enforcement, key, file, line,
 message, fix}], "could_not_check": [...]}`. `--only RULE_ID` (repeatable) runs
 only the rules with those ids; each rule that runs is still judged against its
 floor (`--only` narrows the rules, never the modules), and an id that names no
@@ -601,6 +601,18 @@ The only file it writes is `_build/<env>/anchor/graph.etf`, the graph keyed by
 a sha256 of the beams, the config and Anchor's version, for `mix
 anchor.explain` and `place`. The verdict never reads it; a write that fails is
 a `[report]` note.
+
+A graph rule that reads the higher-order flow analysis (`Anchor.Domain.Cfa`,
+which closures reach each `fun.(x)`, `apply/2` and `Enum.map/2`-style call)
+declares `needs: [:cfa]` in its module (`Anchor.Domain.GraphRule`'s optional
+`needs/0`, DND-5574). When a rule that runs needs it, the run computes it once
+and the summary ends with the apply-site precision counts, `; apply sites:
+<r> resolved, <a> any` (a site is `any` when a value from outside the analysed
+code can reach it), with `(step bound hit: every site reads any)` after them
+if the analysis hit its bound. The JSON's `apply_sites` holds `total`,
+`resolved`, `any`, `bound_hit` and the same counts `by_function`
+(`"MyApp.X.run/1"`). When no rule that runs needs it, it is not computed: the
+summary says nothing of apply sites and `apply_sites` is `null`.
 
 An Erlang module in the project is classified by its name only (a `pattern:`
 selector): a classified one is an opaque node with no edges, counted in the
@@ -637,6 +649,8 @@ line.
 | An `interfaces.exports` entry that names no module | 1 | the config | `architecture interfaces.exports names MyApp.Gone, which is no module of the project ... Fix: ...` |
 | A graph rule below its `min_modules` | 1 | the config | `rule 2 (id: "web", layering) selects 0 modules, below min_modules 1. Fix: correct the selector; ...` |
 | A graph rule that raises, throws or exits | 1 | the config | `rule 2 (id: "web", layering) could not run: RuntimeError: ... Fix: this is an Anchor bug; file it with this line.` The other rules still run. |
+| A graph rule whose `needs/0` names an analysis the runner does not compute, or is not a list (DND-5574) | 1 | the config | `rule 2 (id: "web", layering) could not run: ArgumentError: MyApp.Rule.needs/0 names [:nope], which the graph runner does not compute. Fix: declare only [:cfa]. ...` The rule is not run; the other rules still run. |
+| The higher-order flow analysis a rule needs raises, throws or exits (DND-5574) | 1 | the config | `rule 2 (id: "web", layering) could not run: the higher-order flow analysis it needs (Anchor.Domain.Cfa) crashed: RuntimeError: ..., so it checked nothing. Fix: this is an Anchor bug; file it with this line.` One per rule that needs it; the rules that do not still run. |
 | Findings of a `report` rule | 0 | the finding | printed `[report]` |
 
 Exit 2 is a usage error (an unknown option, `--format` other than `text` or

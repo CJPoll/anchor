@@ -22,12 +22,23 @@ defmodule Anchor.Domain.GraphRules do
   Globs go through `Anchor.Domain.GlobPattern` only. `below_floor/2` reports
   each rule that selects fewer modules than its `min_modules` (default 1): a
   rule selecting nothing checks nothing, and must not read as a pass.
+
+  ## Needs
+
+  `needs/1` reads a rule module's optional `needs/0`
+  (`Anchor.Domain.GraphRule`): what the runner must compute before the rule's
+  `check/2`. A need the runner does not compute, or a return that is not a
+  list, raises, so a rule asking for something it would never get is reported
+  (the runner reads it under the rule's guard), never run without it.
   """
 
   alias Anchor.Domain.GlobPattern
   alias Anchor.Domain.Model
 
   @default_min_modules 1
+
+  # What the runner computes on demand (`Anchor.Managers.Graph`).
+  @provided_needs [:cfa]
 
   # Every module implementing `Anchor.Domain.GraphRule`. The rule tickets add
   # theirs here (see the moduledoc).
@@ -44,6 +55,18 @@ defmodule Anchor.Domain.GraphRules do
   @doc "The fewest modules `rule` must select: its `min_modules`, or #{@default_min_modules}."
   @spec min_modules(map()) :: pos_integer()
   def min_modules(rule), do: Map.get(rule, :min_modules) || @default_min_modules
+
+  @doc """
+  The analyses `module` needs (its `needs/0`, or `[]` when it has none),
+  without duplicates. Raises `ArgumentError` with a `Fix:` when it names one
+  the runner does not compute (#{inspect(@provided_needs)}) or is not a list.
+  """
+  @spec needs(module()) :: [:cfa]
+  def needs(module) do
+    module
+    |> declared_needs()
+    |> provided_needs!(module)
+  end
 
   @doc """
   The modules `rule` selects among the model's classified modules, sorted. A
@@ -65,6 +88,30 @@ defmodule Anchor.Domain.GraphRules do
     rules
     |> Enum.map(&{&1, length(select(model, &1))})
     |> Enum.filter(fn {rule, selected} -> selected < min_modules(rule) end)
+  end
+
+  defp declared_needs(module) do
+    if Code.ensure_loaded?(module) and function_exported?(module, :needs, 0),
+      do: module.needs(),
+      else: []
+  end
+
+  defp provided_needs!(needs, module) when is_list(needs) do
+    case Enum.reject(needs, &(&1 in @provided_needs)) do
+      [] ->
+        Enum.uniq(needs)
+
+      unknown ->
+        raise ArgumentError,
+              "#{inspect(module)}.needs/0 names #{inspect(unknown)}, which the graph runner " <>
+                "does not compute. Fix: declare only #{inspect(@provided_needs)}."
+    end
+  end
+
+  defp provided_needs!(other, module) do
+    raise ArgumentError,
+          "#{inspect(module)}.needs/0 returned #{inspect(other, limit: 5)}, not a list. " <>
+            "Fix: return a list of #{inspect(@provided_needs)}."
   end
 
   defp selects?(%{bucket: bucket}, classified) when is_binary(bucket),
