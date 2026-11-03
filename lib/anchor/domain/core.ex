@@ -89,6 +89,21 @@ defmodule Anchor.Domain.Core do
   def lambda_ordinal(node), do: label_value(node, :anchor_lambda, nil)
 
   @doc """
+  What the labelled `letrec` node binds, for the function `mfa`: each
+  definition's name `{name, arity}` to its lambda `{mfa, ordinal}` (DND-5575).
+  The names are visible in the letrec's body and in its definitions' bodies;
+  an enclosing scope's binding of the same name is shadowed there.
+  """
+  @spec letrec_bindings(mfa(), :cerl.cerl()) :: %{
+          {atom(), arity()} => [{mfa(), non_neg_integer()}]
+        }
+  def letrec_bindings(mfa, letrec) do
+    Map.new(:cerl.letrec_defs(letrec), fn {fname, fun} ->
+      {:cerl.var_name(fname), [{mfa, lambda_ordinal(fun)}]}
+    end)
+  end
+
+  @doc """
   The lambdas inside `core_fun`, as `[{ordinal, c_fun}]` in ordinal order (the
   function's own `fun` is not one).
   """

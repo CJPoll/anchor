@@ -84,7 +84,8 @@ defmodule Anchor.Domain.Cfa.Eval do
   @doc """
   Runs a function or lambda unit: evaluates `fun`'s body for the function
   `mfa` and flows its value into `ret`. `program` holds `closures` and
-  `letrecs` (see `Anchor.Domain.Cfa`).
+  `letrec_scopes`, the letrec names in scope where each lambda is defined
+  (see `Anchor.Domain.Cfa`); a `letrec` node adds its own names for its body.
   """
   @spec run_function(mfa(), :cerl.cerl(), term(), map(), map()) :: acc()
   def run_function(mfa, fun, ret, program, values) do
@@ -92,13 +93,18 @@ defmodule Anchor.Domain.Cfa.Eval do
       program: program,
       values: values,
       mfa: mfa,
-      letrecs: Map.fetch!(program.letrecs, mfa),
+      letrecs: unit_scope(ret, program),
       payload?: false
     }
 
     {value, acc} = eval(:cerl.fun_body(fun), ctx, new_acc())
     write(ret, value, acc)
   end
+
+  # A lambda's body starts with the letrec names in scope where it is
+  # defined; a function's body with none (DND-5575).
+  defp unit_scope({:lret, lambda}, program), do: Map.fetch!(program.letrec_scopes, lambda)
+  defp unit_scope({:ret, _mfa}, _program), do: %{}
 
   @doc """
   Runs the escape unit: every root's return escapes, and every escaped
@@ -257,7 +263,8 @@ defmodule Anchor.Domain.Cfa.Eval do
         let(node, ctx, acc)
 
       :letrec ->
-        eval(:cerl.letrec_body(node), ctx, acc)
+        scope = Map.merge(ctx.letrecs, Core.letrec_bindings(ctx.mfa, node))
+        eval(:cerl.letrec_body(node), %{ctx | letrecs: scope}, acc)
 
       :seq ->
         seq(node, ctx, acc)

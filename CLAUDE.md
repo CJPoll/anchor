@@ -225,7 +225,11 @@ Lambdas, sites and container allocation sites are numbered by
 the open world: every exported function's parameters are `any`). The worklist
 is bounded by `:max_steps`; a run that hits it reports every site `:any`. A
 library function that calls an argument gets a row in `HigherOrder`'s table;
-a missing row costs precision (its arguments escape), never soundness.
+a missing row costs precision (its arguments escape), never soundness. A
+`letrec` name is keyed per scope, the letrec node (DND-5575): an apply of it
+reaches the innermost enclosing letrec that binds it (`Cfa` keeps each
+lambda's lexical scope; `Eval` adds a letrec's names at the node), never a
+same-named letrec elsewhere in the function.
 
 ## Important Notes
 
