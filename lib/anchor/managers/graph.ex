@@ -175,9 +175,16 @@ defmodule Anchor.Managers.Graph do
   # when none does, else the guarded result.
   defp cfa(rules, graph, analyze) do
     if Enum.any?(rules, fn {_rule, _module, needs} -> needs?(needs, :cfa) end),
-      do: guarded(fn -> analyze.(graph) end),
+      do: guarded(fn -> analysis!(analyze.(graph)) end),
       else: nil
   end
+
+  # An analysis that returns anything but a `%Cfa{}` is reported like one
+  # that raised: read as `nil`, its rules would run without it.
+  defp analysis!(%Cfa{} = cfa), do: cfa
+
+  defp analysis!(other),
+    do: raise(ArgumentError, "the analysis returned #{inspect(other, limit: 5)}, not a %Cfa{}")
 
   defp needs?({:ok, needs}, need), do: need in needs
   defp needs?(_crashed, _need), do: false

@@ -183,7 +183,9 @@ defmodule Anchor.Managers.GraphCfaTest do
   describe "fail closed" do
     for {kind, crash, text} <- [
           {"raises", quote(do: raise("cfa blew up")), "RuntimeError: cfa blew up"},
-          {"exits", quote(do: exit(:gone)), "exit: :gone"}
+          {"exits", quote(do: exit(:gone)), "exit: :gone"},
+          {"returns no %Cfa{}", quote(do: :oops),
+           "ArgumentError: the analysis returned :oops, not a %Cfa{}"}
         ] do
       test "an analysis that #{kind}: each rule that needs it is one issue and is not run; " <>
              "the others run",
