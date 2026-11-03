@@ -166,7 +166,8 @@ defmodule Anchor.Managers.Explain do
   defp facts_or_nil(_none), do: nil
 
   # The graph rules' findings on `path`, or `nil` with no model. A rule that
-  # crashes is a finding naming it, never a silent omission.
+  # raises, throws or exits is a finding naming it, never a silent omission
+  # (the guard Managers.Graph puts round a rule: rescue, then throw and exit).
   defp findings(nil, _config, _path, _modules), do: nil
 
   defp findings(%Model{} = model, config, path, modules) do
@@ -188,6 +189,7 @@ defmodule Anchor.Managers.Explain do
     exception ->
       [Failures.rule_crashed(rule, :error, exception, __STACKTRACE__, config_path)]
   catch
-    kind, reason -> [Failures.rule_crashed(rule, kind, reason, __STACKTRACE__, config_path)]
+    kind, reason when kind in [:throw, :exit] ->
+      [Failures.rule_crashed(rule, kind, reason, __STACKTRACE__, config_path)]
   end
 end

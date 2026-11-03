@@ -25,6 +25,40 @@ defmodule Anchor.Managers.ExplainTest do
 
   setup :verify_on_exit!
 
+  # Graph rule doubles under the real types the config names (the Domain's
+  # Explain reads each rule's type through RuleSchema, so a stub type would
+  # not get that far): one finds on every module it selects, one crashes.
+  defmodule FindsEveryModule do
+    @moduledoc false
+    @behaviour Anchor.Domain.GraphRule
+    def rule_type, do: :layering
+
+    def check(model, rule) do
+      for module <- Anchor.Domain.GraphRules.select(model, rule) do
+        %Anchor.Domain.Violation{
+          filename: model.classification[module].source_file,
+          line: 2,
+          message: "#{inspect(module)} was found. Fix: do not be found.",
+          key: "layering|#{inspect(module)}|found"
+        }
+      end
+    end
+  end
+
+  defmodule Crashes do
+    @moduledoc false
+    @behaviour Anchor.Domain.GraphRule
+    def rule_type, do: :context_acyclic
+    def check(_model, _rule), do: raise("rule blew up")
+  end
+
+  defmodule Throws do
+    @moduledoc false
+    @behaviour Anchor.Domain.GraphRule
+    def rule_type, do: :context_acyclic
+    def check(_model, _rule), do: throw(:thrown)
+  end
+
   @root "/proj"
   @ebin "_build/test/lib/my_app/ebin"
   @build_path "/proj/_build/test"
@@ -118,7 +152,7 @@ defmodule Anchor.Managers.ExplainTest do
     {dir, key, graph}
   end
 
-  defp explain(argument, beams, read, compiled? \\ true) do
+  defp explain(argument, beams, read, compiled? \\ true, extra_deps \\ []) do
     expect(ConfigLoaderMock, :load, fn -> {:ok, config()} end)
     if compiled?, do: Mox.expect(BeamSourceMock, :read_ebins, fn _apps -> beams end)
     expect(GraphStoreMock, :read, if(compiled?, do: 1, else: 0), read)
@@ -127,8 +161,34 @@ defmodule Anchor.Managers.ExplainTest do
 
     ExplainManager.explain(
       %{argument: argument, graph: graph_request(), compiled?: compiled?},
-      deps()
+      deps() ++ extra_deps
     )
+  end
+
+  # The findings of an explain whose config adds a context_acyclic rule run by
+  # `crashing`, beside the layering double that finds on every module.
+  defp crashed_findings(beams, crashing) do
+    stub_sources()
+    # The store double answers this graph whatever key it is asked under (the
+    # key check is the store's); this is about the rules.
+    {dir, _key, graph} = written_artifact(beams)
+
+    acyclic = %{type: :context_acyclic, id: "acyclic", paths: ["lib/**/*.ex"], index: 2}
+
+    expect(ConfigLoaderMock, :load, fn ->
+      {:ok, %{config() | rules: config().rules ++ [acyclic]}}
+    end)
+
+    Mox.expect(BeamSourceMock, :read_ebins, fn _apps -> beams end)
+    expect(GraphStoreMock, :read, fn ^dir, _key -> {:ok, graph} end)
+
+    {:ok, explain} =
+      ExplainManager.explain(
+        %{argument: @manager_file, graph: graph_request(), compiled?: true},
+        deps() ++ [graph_rules: [FindsEveryModule, crashing]]
+      )
+
+    explain.findings
   end
 
   describe "explain/2" do
@@ -162,6 +222,39 @@ defmodule Anchor.Managers.ExplainTest do
 
       assert explain.path == @domain_file
       assert explain.classification["bucket"] == "domain"
+    end
+
+    test "findings are the subject file's only: another file's finding is not shown", %{
+      beams: beams
+    } do
+      stub_sources()
+      {dir, key, graph} = written_artifact(beams)
+
+      assert {:ok, explain} =
+               explain(
+                 @manager_file,
+                 beams,
+                 fn ^dir, ^key -> {:ok, graph} end,
+                 true,
+                 graph_rules: [FindsEveryModule]
+               )
+
+      # The rule found both fixture modules; only the subject's file is kept.
+      assert [%{filename: @manager_file, message: message}] = explain.findings
+      assert message =~ "AnchorFixtures.ExplainManagerTest.Orders was found"
+    end
+
+    test "a rule that raises or throws is named among the findings, never dropped", %{
+      beams: beams
+    } do
+      for {crashing, text} <- [
+            {Crashes, "could not run: RuntimeError: rule blew up"},
+            {Throws, "could not run: throw: :thrown"}
+          ] do
+        assert [%{filename: @manager_file}, crashed] = crashed_findings(beams, crashing)
+        assert crashed.kind == :fail_closed
+        assert crashed.message =~ text
+      end
     end
 
     test "a stale artifact (another key) is never used: findings not computed", %{beams: beams} do

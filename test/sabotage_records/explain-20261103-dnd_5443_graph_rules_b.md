@@ -15,6 +15,13 @@ for it was added. This table is the final run: the CL rows from a re-run of
 the four Classification mutations on the final code, the others from the
 first run (their code did not change).
 
+Critic round 2 found no test of the Manager's findings filter or of its
+guard round a crashing rule. MX-F to MX-I were added with those tests. A first
+run of MX-H (the rescue narrowed) was green: the guard's `catch kind, reason`
+also caught a raise. The guard now catches only `:throw` and `:exit` after the
+rescue, as `Managers.Graph`'s does, and a test for a throwing rule was added
+(MX-I). The MX-F to MX-I rows are from the re-run on that code.
+
 | # | Mutation | Tests run | Result | Failing tests |
 |---|---|---|---|---|
 | SU-A | an absolute path outside the root is accepted (`lib/anchor/domain/subject.ex`) | `subject_test.exs` | `8 tests, 1 failure` (red) | parse/2 a path that leaves the root is refused |
@@ -39,6 +46,10 @@ first run (their code did not change).
 | TK-A | --format json prints text (`lib/mix/tasks/anchor.explain.ex`) | `anchor_explain_test.exs` | `6 tests, 1 failure` (red) | --format json prints the JSON answer |
 | TK-B | two subjects accepted (the first used) (`lib/mix/tasks/anchor.explain.ex`) | `anchor_explain_test.exs` | `6 tests, 1 failure` (red) | no subject, two subjects, an unknown flag or a bad format is usage: exit 2 with Fix: |
 | TK-C | could-not-check exits 1, not 3 (`lib/mix/tasks/anchor.explain.ex`) | `anchor_explain_test.exs` | `6 tests, 1 failure` (red) | no config is could-not-check: exit 3 |
+| MX-F | findings on other files are kept (the subject filter dropped) (`lib/anchor/managers/explain.ex`) | `explain_test.exs` | `9 tests, 2 failures` (red) | explain/2 findings are the subject file's only: another file's finding is not shown; explain/2 a rule that raises or throws is named among the findings, never dropped |
+| MX-G | a fail-closed finding (a crashed rule) is filtered out (`lib/anchor/managers/explain.ex`) | `explain_test.exs` | `9 tests, 1 failure` (red) | explain/2 a rule that raises or throws is named among the findings, never dropped |
+| MX-H | a rule that raises is not rescued (`lib/anchor/managers/explain.ex`) | `explain_test.exs` | `9 tests, 1 failure` (red) | explain/2 a rule that raises or throws is named among the findings, never dropped |
+| MX-I | a rule that throws is not caught (`lib/anchor/managers/explain.ex`) | `explain_test.exs` | `9 tests, 1 failure` (red) | explain/2 a rule that raises or throws is named among the findings, never dropped |
 
 ## SU-A — an absolute path outside the root is accepted
 
@@ -810,4 +821,164 @@ Run summary: `6 tests, 1 failure`
        test/mix/tasks/anchor_explain_test.exs:159: (test)
 
 ...
+```
+
+## MX-F — findings on other files are kept (the subject filter dropped)
+
+Run summary: `9 tests, 2 failures`
+
+```text
+  1) test explain/2 findings are the subject file's only: another file's finding is not shown (Anchor.Managers.ExplainTest)
+     test/anchor/managers/explain_test.exs:227
+     match (=) failed
+     code:  assert [%{filename: @manager_file, message: message}] = explain.findings
+     left:  [%{filename: "lib/my_app/managers/orders.ex", message: message}]
+     right: [
+              %Anchor.Domain.Violation{
+                line: 2,
+                trigger: nil,
+                message: "AnchorFixtures.ExplainManagerTest.Order was found. Fix: do not be found.",
+                filename: "lib/my_app/domain/order.ex",
+                kind: :rule,
+                key: "layering|AnchorFixtures.ExplainManagerTest.Order|found",
+                rule_id: nil,
+                enforcement: :enforce
+              },
+              %Anchor.Domain.Violation{
+                line: 2,
+                trigger: nil,
+                message: "AnchorFixtures.ExplainManagerTest.Orders was found. Fix: do not be found.",
+                filename: "lib/my_app/managers/orders.ex",
+                kind: :rule,
+                key: "layering|AnchorFixtures.ExplainManagerTest.Orders|found",
+                rule_id: nil,
+                enforcement: :enforce
+              }
+            ]
+     stacktrace:
+       test/anchor/managers/explain_test.exs:243: (test)
+
+.....
+
+  2) test explain/2 a rule that raises or throws is named among the findings, never dropped (Anchor.Managers.ExplainTest)
+     test/anchor/managers/explain_test.exs:247
+     match (=) failed
+     code:  assert [%{filename: @manager_file}, crashed] = crashed_findings(beams, crashing)
+     left:  [%{filename: "lib/my_app/managers/orders.ex"}, crashed]
+     right: [
+              %Anchor.Domain.Violation{
+                line: 2,
+                trigger: nil,
+                message: "AnchorFixtures.ExplainManagerTest.Order was found. Fix: do not be found.",
+                filename: "lib/my_app/domain/order.ex",
+                kind: :rule,
+                key: "layering|AnchorFixtures.ExplainManagerTest.Order|found",
+                rule_id: nil,
+                enforcement: :enforce
+              },
+              %Anchor.Domain.Violation{
+                line: 2,
+                trigger: nil,
+                message: "AnchorFixtures.ExplainManagerTest.Orders was found. Fix: do not be found.",
+                filename: "lib/my_app/managers/orders.ex",
+                kind: :rule,
+                key: "layering|AnchorFixtures.ExplainManagerTest.Orders|found",
+                rule_id: nil,
+                enforcement: :enforce
+              },
+              %Anchor.Domain.Violation{
+                line: nil,
+                trigger: nil,
+                message: "rule 2 (id: \"acyclic\", context_acyclic) could not run: RuntimeError: rule blew up (raised at test/anchor/managers/explain_test.exs:52: Anchor.Managers.ExplainTest.Crashes.check/2), so it checked nothing. Fix: this is an Anchor bug; file it with this line.",
+                filename: ".anchor.yml",
+                kind: :fail_closed,
+                key: nil,
+                rule_id: nil,
+                enforcement: :enforce
+              }
+            ]
+     stacktrace:
+       test/anchor/managers/explain_test.exs:254: anonymous fn/3 in Anchor.Managers.ExplainTest."test explain/2 a rule that raises or throws is named among the findings, never dropped"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/managers/explain_test.exs:250: (test)
+
+.
+```
+
+## MX-G — a fail-closed finding (a crashed rule) is filtered out
+
+Run summary: `9 tests, 1 failure`
+
+```text
+  1) test explain/2 a rule that raises or throws is named among the findings, never dropped (Anchor.Managers.ExplainTest)
+     test/anchor/managers/explain_test.exs:247
+     match (=) failed
+     code:  assert [%{filename: @manager_file}, crashed] = crashed_findings(beams, crashing)
+     left:  [%{filename: "lib/my_app/managers/orders.ex"}, crashed]
+     right: [
+              %Anchor.Domain.Violation{
+                line: 2,
+                trigger: nil,
+                message: "AnchorFixtures.ExplainManagerTest.Orders was found. Fix: do not be found.",
+                filename: "lib/my_app/managers/orders.ex",
+                kind: :rule,
+                key: "layering|AnchorFixtures.ExplainManagerTest.Orders|found",
+                rule_id: nil,
+                enforcement: :enforce
+              }
+            ]
+     stacktrace:
+       test/anchor/managers/explain_test.exs:254: anonymous fn/3 in Anchor.Managers.ExplainTest."test explain/2 a rule that raises or throws is named among the findings, never dropped"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/managers/explain_test.exs:250: (test)
+
+.....
+```
+
+## MX-H — a rule that raises is not rescued
+
+Run summary: `9 tests, 1 failure`
+
+```text
+  1) test explain/2 a rule that raises or throws is named among the findings, never dropped (Anchor.Managers.ExplainTest)
+     test/anchor/managers/explain_test.exs:247
+     ** (RuntimeError) rule blew up
+     code: for {crashing, text} <- [
+     stacktrace:
+       test/anchor/managers/explain_test.exs:52: Anchor.Managers.ExplainTest.Crashes.check/2
+       (anchor 0.1.0) lib/anchor/managers/explain.ex:187: Anchor.Managers.Explain.guarded_check/4
+       (elixir 1.19.4) lib/enum.ex:4497: Enum.flat_map_list/2
+       (elixir 1.19.4) lib/enum.ex:4501: Enum.flat_map_list/2
+       (anchor 0.1.0) lib/anchor/managers/explain.ex:177: Anchor.Managers.Explain.findings/4
+       (anchor 0.1.0) lib/anchor/managers/explain.ex:81: Anchor.Managers.Explain.explain/2
+       test/anchor/managers/explain_test.exs:186: Anchor.Managers.ExplainTest.crashed_findings/2
+       test/anchor/managers/explain_test.exs:254: anonymous fn/3 in Anchor.Managers.ExplainTest."test explain/2 a rule that raises or throws is named among the findings, never dropped"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/managers/explain_test.exs:250: (test)
+
+......
+```
+
+## MX-I — a rule that throws is not caught
+
+Run summary: `9 tests, 1 failure`
+
+```text
+  1) test explain/2 a rule that raises or throws is named among the findings, never dropped (Anchor.Managers.ExplainTest)
+     test/anchor/managers/explain_test.exs:247
+     ** (throw) :thrown
+     code: for {crashing, text} <- [
+     stacktrace:
+       test/anchor/managers/explain_test.exs:59: Anchor.Managers.ExplainTest.Throws.check/2
+       (anchor 0.1.0) lib/anchor/managers/explain.ex:187: Anchor.Managers.Explain.guarded_check/4
+       (elixir 1.19.4) lib/enum.ex:4497: Enum.flat_map_list/2
+       (elixir 1.19.4) lib/enum.ex:4501: Enum.flat_map_list/2
+       (anchor 0.1.0) lib/anchor/managers/explain.ex:177: Anchor.Managers.Explain.findings/4
+       (anchor 0.1.0) lib/anchor/managers/explain.ex:81: Anchor.Managers.Explain.explain/2
+       test/anchor/managers/explain_test.exs:186: Anchor.Managers.ExplainTest.crashed_findings/2
+       test/anchor/managers/explain_test.exs:254: anonymous fn/3 in Anchor.Managers.ExplainTest."test explain/2 a rule that raises or throws is named among the findings, never dropped"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/managers/explain_test.exs:250: (test)
+
+.....
 ```
