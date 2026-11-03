@@ -17,8 +17,9 @@ defmodule Anchor.Adapters.SourceMutation do
     * `take_lock/1` — takes the run lock (`Journal.lock_path/0`) for this run:
       `{:error, {:held, owner}}` while a live run holds it; a dead holder's
       lock is taken over, under `<lock>.takeover`; `{:error, {:stuck, path}}`
-      when a run was killed mid-takeover; `release_lock/1` removes it while
-      it is this run's;
+      when a run was killed mid-takeover; `{:error, :no_proc}` on a host with
+      no `/proc` (the lock could name no owner, DND-5571); `release_lock/1`
+      removes it while it is this run's;
     * `write_file/2` — writes `<path>.anchor-tmp`, then renames it over `path`;
     * `touch_ahead/1` — moves the mtime forward, so Mix recompiles the file;
     * `sha256_file/1` — the file's lowercase hex sha256;
@@ -42,6 +43,7 @@ defmodule Anchor.Adapters.SourceMutation do
   @callback owner_alive?(Journal.owner() | nil) :: boolean()
   @callback take_lock(root :: String.t()) ::
               :ok
-              | {:error, {:held, Journal.owner() | nil} | {:stuck, String.t()} | posix()}
+              | {:error,
+                 :no_proc | {:held, Journal.owner() | nil} | {:stuck, String.t()} | posix()}
   @callback release_lock(root :: String.t()) :: :ok | {:error, posix()}
 end

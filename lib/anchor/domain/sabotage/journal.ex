@@ -34,8 +34,9 @@ defmodule Anchor.Domain.Sabotage.Journal do
 
   @typedoc """
   The run that wrote the journal: its OS pid and that process's start time
-  (so a reused pid is never taken for it). `nil` when the writer could not
-  tell (no `/proc`).
+  (so a reused pid is never taken for it). `nil` for a journal an older
+  version wrote where there was no `/proc`: since DND-5571 a run refuses
+  before it writes one without an owner.
   """
   @type owner :: %{os_pid: pos_integer(), started: String.t()}
 

@@ -245,8 +245,12 @@ journal (`.anchor/sabotage/in-flight.json`, which must be git-ignored) covers a
 VM kill; a leftover journal is dealt with before anything else, unless its
 owner (OS pid and `/proc` start time) is alive: then the run refuses. One run
 at a time: each run holds `_build/anchor-sabotage.lock` from its first step to
-its last (a dead holder's lock is taken over). A mutant that
-does not compile is `invalid`, never killed. Failed tests come from
+its last (a dead holder's lock is taken over); a host with no `/proc` refuses
+(exit 2), because the lock could name no owner. A mutant that
+does not compile is `invalid`, never killed, and (beside a measured mutant) never changes the exit code. A
+mutant whose run crashed or had no test is unmeasured: with no measured mutant
+the run is exit 3, beside one it fails like a survivor (exit 1)
+(`Anchor.Domain.Sabotage.Report`). Failed tests come from
 `Anchor.Sabotage.ExUnitFormatter`'s frames, never from parsed output; the
 formatter calls no other Anchor module, so it loads alone in a project's test
 VM. The flow is in `Anchor.Managers.Sabotage.Runner`'s moduledoc.

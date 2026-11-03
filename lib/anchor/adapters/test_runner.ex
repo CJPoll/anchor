@@ -10,14 +10,25 @@ defmodule Anchor.Adapters.TestRunner do
   `ANCHOR_SABOTAGE_RESULTS=<results_path>`; the results file is deleted
   first (one that cannot be removed is
   `{:error, {:results_not_removed, path, posix}}`, never read; a directory for
-  it that cannot be made is `{:error, {:results_dir_not_created, dir, posix}}`). The bound is the `timeout` binary's: a mutant that loops forever is
-  killed (exit 124, or 137 after the grace period) and recorded `:timeout`.
+  it that cannot be made is `{:error, {:results_dir_not_created, dir, posix}}`).
+  The bound is the `timeout` binary's: a mutant that loops forever is stopped
+  (exit 124) or, if it ignores that, killed after the grace period (exit 137
+  once the bound has passed) and recorded `:timeout`. An exit 137 inside the
+  bound is a kill by something else (the kernel's out-of-memory killer, for
+  one): `:crashed`, killed by signal 9 (DND-5573).
+
+  The output is collected into an `Anchor.Domain.Sabotage.BoundedOutput`
+  (opts `:output_limits`, `{head_bytes, tail_bytes}`, default 32 KiB each):
+  a mutant that prints without end cannot grow the VM, and the bytes dropped
+  are on the `TestRun`. `opts[:kill_after_seconds]` (default 10) is the
+  grace period.
   The frames are read with `:erlang.binary_to_term(bin, [:safe])`; a frame cut
   short by a kill ends the read.
   """
 
   @behaviour Anchor.Adapters.TestExecution
 
+  alias Anchor.Domain.Sabotage.BoundedOutput
   alias Anchor.Domain.Sabotage.TestRun
 
   @formatters [
@@ -27,29 +38,46 @@ defmodule Anchor.Adapters.TestRunner do
     "ExUnit.CLIFormatter"
   ]
 
+  @kill_after_seconds 10
+  @output_limit 32_768
+
   @impl Anchor.Adapters.TestExecution
   def run([command | args], test_args, opts) do
     results = Keyword.fetch!(opts, :results_path)
-    seconds = Keyword.fetch!(opts, :timeout_seconds)
 
     case System.find_executable("timeout") do
       nil ->
         {:error, :timeout_not_found}
 
       timeout ->
-        with :ok <- fresh(results) do
-          argv = ["--kill-after=10", Integer.to_string(seconds), command] ++ args ++ test_args
-
-          {output, code} =
-            System.cmd(timeout, argv ++ @formatters,
-              cd: Keyword.fetch!(opts, :cd),
-              env: [{"MIX_ENV", "test"}, {"ANCHOR_SABOTAGE_RESULTS", results}],
-              stderr_to_stdout: true
-            )
-
-          {:ok, TestRun.from_frames(code, frames(results), output)}
-        end
+        with :ok <- fresh(results), do: {:ok, execute(timeout, [command | args], test_args, opts)}
     end
+  end
+
+  defp execute(timeout, argv, test_args, opts) do
+    results = Keyword.fetch!(opts, :results_path)
+    seconds = Keyword.fetch!(opts, :timeout_seconds)
+    grace = Keyword.get(opts, :kill_after_seconds, @kill_after_seconds)
+    {head, tail} = Keyword.get(opts, :output_limits, {@output_limit, @output_limit})
+
+    full =
+      ["--kill-after=#{grace}", Integer.to_string(seconds)] ++ argv ++ test_args ++ @formatters
+
+    started = System.monotonic_time(:millisecond)
+
+    {output, code} =
+      System.cmd(timeout, full,
+        cd: Keyword.fetch!(opts, :cd),
+        env: [{"MIX_ENV", "test"}, {"ANCHOR_SABOTAGE_RESULTS", results}],
+        stderr_to_stdout: true,
+        into: BoundedOutput.new(head, tail)
+      )
+
+    TestRun.from_frames(code, frames(results), BoundedOutput.text(output),
+      elapsed_ms: System.monotonic_time(:millisecond) - started,
+      timeout_seconds: seconds,
+      dropped_bytes: BoundedOutput.dropped(output)
+    )
   end
 
   # A results file left by an earlier run must be gone: its frames would be

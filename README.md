@@ -759,8 +759,10 @@ How a run goes:
    two runs never share the journal, the results file or `_build`. A killed
    run's lock is taken over, one run at a time (under
    `_build/anchor-sabotage.lock.takeover`; a run killed in that step leaves it,
-   and the next run refuses, exit 2, naming it to delete). Linux only: with no `/proc` the lock and the
-   journal's owner name no process, and protect nothing.
+   and the next run refuses, exit 2, naming it to delete). Linux only: the lock and the journal's owner are
+   read from `/proc`, so on a host without one (macOS) `run` and `restore`
+   refuse, exit 2, with `Fix: run mix anchor.sabotage on Linux (a dev machine
+   or CI)`, and touch nothing (DND-5571).
 1. A journal left by a killed run (`.anchor/sabotage/in-flight.json`) is dealt
    with first: the file still holding the mutant is restored (and the run says
    so); a file already back loses only the journal; a file that matches
@@ -789,17 +791,28 @@ How a run goes:
 | `killed` | a selected test failed; those tests are the killers |
 | `survived` | the selected tests ran and passed (`Fix: add a test that fails under this mutant`) |
 | `timeout` | the time bound killed the run; counts as killed, killer `(timeout)` |
-| `invalid` | the mutant did not compile (any reason, a type-checker warning under warnings-as-errors included: the compiler's first error line is shown), the test run crashed, or no test ran. Never killed, never survived; counted in the summary |
-| `no_tests` | no test was selected (the line names the mirror path looked for) |
+| `invalid` | the mutant did not compile (any reason, a type-checker warning under warnings-as-errors included: the compiler's first error line is shown). Never killed, never survived; listed and counted, and beside a measured mutant it never changes the exit code |
+| `crashed` | the test run crashed or raised, so the tests could not judge the mutant (the line says why; an exit 137 inside the time bound reads `killed by signal 9`, an out-of-memory kill for one, and is never a timeout). Unmeasured |
+| `no_tests` | no test was selected (the line names the mirror path looked for), or the selected tests ran none under the mutant. Unmeasured |
+
+A test run's output is kept bounded (the first and last 32 KiB; the line of a
+crashed run says how many bytes were dropped), so a mutant that prints without
+end cannot fill the VM's memory.
+
+A mutant is **measured** when it is `killed`, `survived` or `timeout`.
+`crashed` and `no_tests` mutants are **unmeasured**: the tests could have
+killed them and did not get to say.
 
 Skipped mutants are listed with their reason and never applied; a changed
 function with no literal clause is listed as an error, never as killed.
 
 | Condition | Exit |
 |---|---|
-| every mutant run killed, timed out or invalid | 0 |
-| a mutant survived or had no test | 1 |
-| a dirty target file; the journal not git-ignored; the run lock or a journal another live run holds; a leftover journal whose file changed; a restore that did not reproduce the original (the journal is kept); an unknown `--only` id; no `timeout` binary; bad flags | 2, with `Fix:` |
+| every measured mutant killed or timed out (an `invalid` one beside them changes nothing) | 0 |
+| zero changed functions from a good diff read (an empty scope: `sabotage: 0 changed functions in <base>..HEAD`) | 0 |
+| a mutant survived, crashed or had no test, beside a measured one (a survivors list that gives one a reason will exempt it: DND-5483) | 1 |
+| mutants were run and none was measured (all `invalid`, `crashed` or without a test) | 3, `COULD NOT MEASURE` with `Fix:` |
+| a dirty target file; the journal not git-ignored; the run lock or a journal another live run holds; a host with no `/proc`; a leftover journal whose file changed; a restore that did not reproduce the original (the journal is kept); an unknown `--only` id; no `timeout` binary; bad flags | 2, with `Fix:` |
 | no loadable config or no `sabotage:` section; the scope could not be measured; the baseline fails; changed functions whose files cannot be read | 3, `COULD NOT MEASURE` with `Fix:` |
 
 ## Check Types

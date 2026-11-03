@@ -10,7 +10,9 @@ defmodule Anchor.Managers.Sabotage.Runner do
     0. The run lock (`Anchor.Domain.Sabotage.Journal.lock_path/0`) is taken
        for the whole run, `restore` included, and released at its end: while
        a live run holds it another run refuses (exit 2) and touches nothing,
-       so no two runs share the journal, the results file or `_build`. A lock
+       so no two runs share the journal, the results file or `_build`. A host
+       with no `/proc` refuses here too (exit 2, `Fix:` run on Linux): the
+       lock could name no owner and would protect nothing (DND-5571). A lock
        that cannot be released is said in the notes (the next run takes a
        dead holder's lock over).
     1. A leftover journal is dealt with before anything else
@@ -41,6 +43,10 @@ defmodule Anchor.Managers.Sabotage.Runner do
        run (exit 2) with the journal kept.
    10. The run is saved to `_build/<env>/anchor/sabotage/last-run.etf`.
 
+  The exit code is `Anchor.Domain.Sabotage.Report`'s (DND-5570): the Runner
+  only sets `Run.changed_functions` (the scope's count, `0` for a good diff
+  read that found none) and classifies a raised test run as `:crashed`.
+
   The `after` block runs on an exception and a throw; a VM kill skips it, and
   the journal covers that on the next run.
 
@@ -70,12 +76,13 @@ defmodule Anchor.Managers.Sabotage.Runner do
   alias Anchor.Domain.Sabotage.TestSelection
   alias Anchor.Managers.Sabotage
 
+  @default_base "origin/main"
   @restore_failed :anchor_sabotage_restore_failed
 
   @spec run(map(), keyword()) :: Run.t()
   def run(%{root: root} = facts, opts) do
     ports = ports(opts)
-    run = %Run{base: Map.get(facts, :base)}
+    run = %Run{base: Map.get(facts, :base, @default_base)}
 
     locked(run, root, ports, fn ->
       case recover(run, root, ports) do
@@ -126,6 +133,9 @@ defmodule Anchor.Managers.Sabotage.Runner do
       {:error, {:stuck, path}} ->
         %{run | refusal: {2, lock_stuck(path)}}
 
+      {:error, :no_proc} ->
+        %{run | refusal: {2, no_proc()}}
+
       {:error, posix} ->
         %{run | refusal: {2, lock_not_taken(posix)}}
     end
@@ -154,6 +164,12 @@ defmodule Anchor.Managers.Sabotage.Runner do
     do:
       "another sabotage run (OS pid #{pid}) is running in this project; nothing was " <>
         "touched. Fix: let that run finish, then rerun"
+
+  defp no_proc,
+    do:
+      "this host has no /proc, so the run lock cannot tell a live sabotage run from a dead " <>
+        "one and would protect nothing; nothing was touched. " <>
+        "Fix: run mix anchor.sabotage on Linux (a dev machine or CI)"
 
   defp lock_stuck(path),
     do:
@@ -311,7 +327,7 @@ defmodule Anchor.Managers.Sabotage.Runner do
   end
 
   defp scope(facts, %{change: change, opts: opts}) do
-    args = %{root: facts.root, base: Map.get(facts, :base, "origin/main")}
+    args = %{root: facts.root, base: Map.get(facts, :base, @default_base)}
 
     case Sabotage.scope(args, Keyword.put(opts, :change_source, change)) do
       {:ok, scope} -> {:ok, scope}
@@ -350,7 +366,12 @@ defmodule Anchor.Managers.Sabotage.Runner do
     errors = for {function, {:error, reason}} <- results, do: {function, reason}
     oks = for {_function, {:ok, result}} <- results, do: result
 
-    run = %{run | errors: errors, skipped: Enum.flat_map(oks, & &1.skipped)}
+    run = %{
+      run
+      | changed_functions: length(scope.functions),
+        errors: errors,
+        skipped: Enum.flat_map(oks, & &1.skipped)
+    }
 
     if results != [] and oks == [] and Enum.all?(errors, &unmeasured?/1),
       do: {:refuse, run, 3, could_not_read(errors)},
@@ -533,7 +554,7 @@ defmodule Anchor.Managers.Sabotage.Runner do
         {:ok,
          outcome(
            mutant,
-           :invalid,
+           :crashed,
            [],
            selection,
            "the test run raised: " <> Exception.message(error)

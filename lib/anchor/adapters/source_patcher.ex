@@ -12,8 +12,9 @@ defmodule Anchor.Adapters.SourcePatcher do
   owner, so it is never seen empty. A lock whose holder is dead, or names
   none, is taken over under a second lock (`<lock>.takeover`), so two runs
   can never both remove it (see `take_over/2`); `release_lock/1` removes only
-  this run's own lock. Where there is no `/proc` the owner is `nil` and the
-  lock does not protect. `touch_ahead/1` sets the mtime to one
+  this run's own lock. Where there is no `/proc` the lock is refused
+  (`{:error, :no_proc}`), because it could name no owner and would protect
+  nothing (DND-5571). `touch_ahead/1` sets the mtime to one
   second past the later of now and the file's current mtime: always forward,
   so a restore in the same second as its mutant still recompiles (Mix compares
   the mtime and the size before it reads the content).
@@ -22,6 +23,8 @@ defmodule Anchor.Adapters.SourcePatcher do
   @behaviour Anchor.Adapters.SourceMutation
 
   alias Anchor.Domain.Sabotage.Journal
+
+  @proc "/proc"
 
   @impl Anchor.Adapters.SourceMutation
   def read_journal(root) do
@@ -46,11 +49,21 @@ defmodule Anchor.Adapters.SourcePatcher do
   end
 
   @impl Anchor.Adapters.SourceMutation
-  def take_lock(root) do
-    path = Path.join(root, Journal.lock_path())
-    me = owner(System.pid())
+  def take_lock(root), do: take_lock(root, @proc)
 
-    with :ok <- File.mkdir_p(Path.dirname(path)) do
+  @doc """
+  `take_lock/1` reading this process's identity from `proc_dir` (`/proc`):
+  the seam the adapter test uses for a host without one. With none the lock
+  could name no owner, so no run could tell a live holder from a dead one:
+  `{:error, :no_proc}`, and nothing is written (DND-5571).
+  """
+  @spec take_lock(String.t(), String.t()) ::
+          :ok | {:error, :no_proc | {:held, map() | nil} | {:stuck, String.t()} | atom()}
+  def take_lock(root, proc_dir) do
+    path = Path.join(root, Journal.lock_path())
+
+    with {:ok, me} <- own_owner(proc_dir),
+         :ok <- File.mkdir_p(Path.dirname(path)) do
       case link_owned(path, me) do
         {:error, :eexist} -> take_over(path, me)
         result -> result
@@ -169,13 +182,20 @@ defmodule Anchor.Adapters.SourcePatcher do
   # This OS process and its start time, field 22 of /proc/<pid>/stat (read
   # after the `)` that ends the command name, which may hold spaces). `nil`
   # where there is no /proc: a journal with no owner is never taken as live.
-  defp owner(os_pid) do
-    with {:ok, stat} <- File.read("/proc/#{os_pid}/stat"),
+  defp owner(os_pid, proc_dir \\ @proc) do
+    with {:ok, stat} <- File.read(Path.join([proc_dir, os_pid, "stat"])),
          [_head, tail] <- String.split(stat, ") ", parts: 2),
          started when is_binary(started) <- tail |> String.split(" ") |> Enum.at(19) do
       %{os_pid: String.to_integer(os_pid), started: started}
     else
       _none -> nil
+    end
+  end
+
+  defp own_owner(proc_dir) do
+    case owner(System.pid(), proc_dir) do
+      nil -> {:error, :no_proc}
+      me -> {:ok, me}
     end
   end
 
