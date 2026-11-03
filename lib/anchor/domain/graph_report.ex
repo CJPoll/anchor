@@ -22,7 +22,9 @@ defmodule Anchor.Domain.GraphReport do
       source outside the project root, judged like every other module and
       counted so the layout is visible (DND-5588, DND-5630); `apply_sites` is `nil` when no
       rule that ran needed the higher-order flow analysis (DND-5574), else
-      `apply_sites/1` of it.
+      `apply_sites/1` of it; `aggregates` (optional, DND-5476) is
+      `%{declared, tables_unknown}` when any aggregate is declared, and the
+      JSON's `aggregates` is `null` otherwise.
     * `exit_code` — `exit_code/1`.
 
   ## Exit code
