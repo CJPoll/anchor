@@ -9,10 +9,12 @@ defmodule Anchor.Adapters.GitEnvIsolationTest do
   # variables it set.
   # Sabotage record: ../../sabotage_records/sabotage_scope-20261103-dnd_5581_hardening_batch.md
   # (E2's GitStatus mutation: ../../sabotage_records/sabotage-20261103-dnd_5581_hardening_batch.md)
+  # (E5, GitShow, DND-5441: ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md, GS-E)
   use ExUnit.Case, async: false
 
   alias Anchor.Adapters.GitChangeSource
   alias Anchor.Adapters.GitEnv
+  alias Anchor.Adapters.GitShow
   alias Anchor.Adapters.GitStatus
 
   @moduletag :tmp_dir
@@ -133,5 +135,21 @@ defmodule Anchor.Adapters.GitEnvIsolationTest do
 
     assert {:ok, diff} = GitChangeSource.diff(real, real_head)
     assert diff =~ "\n@@ -2 +2 @@"
+  end
+
+  # The base copy of a baseline (`mix anchor.graph --base`) must be read from
+  # the repository at root: read through the decoy, GREW would be judged
+  # against another repository's file.
+  test "E5: GitShow reads a baseline from the repository at its root, not GIT_DIR's", %{
+    real: real,
+    decoy: decoy
+  } do
+    File.mkdir_p!(Path.join(real, ".anchor/baselines"))
+    File.write!(Path.join(real, ".anchor/baselines/r.txt"), "r|A|x\n")
+    git!(real, ["add", ".anchor"])
+    git!(real, ["commit", "-q", "-m", "baseline"])
+    export_decoy!(decoy)
+
+    assert GitShow.show(real, "main", ".anchor/baselines/r.txt") == {:ok, ["r|A|x"]}
   end
 end

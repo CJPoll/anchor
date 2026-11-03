@@ -110,6 +110,21 @@ defmodule Anchor.Domain.Sabotage.ScopeTest do
       assert Scope.source_files(files) == []
     end
 
+    test "DND-5484: test_changes holds each changed _test.exs file's hunks, not a deleted one" do
+      files = %{
+        "test/x_test.exs" => %{status: :modified, hunks: [{4, 2}, {9, 0}]},
+        "apps/a/test/y_test.exs" => %{status: :added, hunks: [{1, 3}]},
+        "test/support/fixture.ex" => %{status: :modified, hunks: [{1, 1}]},
+        "test/gone_test.exs" => %{status: :deleted, hunks: []},
+        "lib/m.ex" => %{status: :modified, hunks: [{1, 1}]}
+      }
+
+      assert Scope.build(files, %{"lib/m.ex" => spans!(@source)}).test_changes == %{
+               "test/x_test.exs" => [{4, 2}, {9, 0}],
+               "apps/a/test/y_test.exs" => [{1, 3}]
+             }
+    end
+
     test "S7: config, docs and deps files are non-source" do
       files = %{
         "config/config.exs" => %{status: :modified, hunks: [{1, 1}]},

@@ -41,10 +41,10 @@ never an adapter.
 
 | Bucket | Modules |
 |---|---|
-| Framework | `Anchor.Check.*` (Credo checks, `Anchor.Check.Base`, `Anchor.Check.Source`), `Mix.Tasks.Anchor.*` (`lib/mix/tasks/`; `Mix.Tasks.Anchor.Sabotage`) |
-| Managers | `Anchor.Managers.Lint`, `Anchor.Managers.Sabotage` |
-| Side Effects | ports: `Anchor.Adapters.ConfigLoader`, `ChangeSource`, `BeamSource`; adapters: `ConfigFile`, `GitChangeSource`, `BeamReader` (`lib/anchor/adapters/`); `GitEnv`, the environment the git adapters run git with (DND-5581) |
-| Domain | everything under `lib/anchor/domain/`, including `Anchor.Domain.Sabotage.*` (`Mutator`, `Operators`, `DiffHunks`, `FunctionSpans`, `Scope`) and `Anchor.Domain.Graph.*` |
+| Framework | `Anchor.Check.*` (Credo checks, `Anchor.Check.Base`, `Anchor.Check.Source`), `Mix.Tasks.Anchor.*` (`lib/mix/tasks/`; `Mix.Tasks.Anchor.Sabotage`), `Anchor.Sabotage.CoverageCollector` (an OTP process, in `lib/mix/tasks/anchor/sabotage/` so `mix anchor.graph` buckets it as Framework) |
+| Managers | `Anchor.Managers.Lint`, `Anchor.Managers.Sabotage` (`.Runner`, `.Coverage`) |
+| Side Effects | ports: `Anchor.Adapters.ConfigLoader`, `ChangeSource`, `BeamSource`, `Tracing`, `InProcessTests`, `ProjectModuleSource`, `CoverageStore`, `BaselineStore`, `GitBase`; adapters: `ConfigFile`, `GitChangeSource`, `BeamReader`, `CallTracer`, `SuiteRunner`, `ProjectModules`, `CoverageFile`, `RecordFile` (port `RecordStore`), `BaselineFile`, `GitShow` (`lib/anchor/adapters/`); `GitEnv`, the environment the git adapters run git with (DND-5581) |
+| Domain | everything under `lib/anchor/domain/`, including `Anchor.Domain.Sabotage.*` (`Mutator`, `Operators`, `DiffHunks`, `FunctionSpans`, `Scope`, `CoverageMap`, `Record`, `RecordNaming`, `KillMap`, `ChangedTests`, `TestPath`: the one rule for a path handed to `mix test`, DND-5640) and `Anchor.Domain.Graph.*` |
 
 ### Key Architectural Decisions
 
@@ -141,7 +141,8 @@ Extension rule:
 
 Every rule type has exactly one engine, `@engine_by_type` in
 `Anchor.Domain.RuleSchema` (DND-5437): `:ast` (a Credo check) or `:graph`
-(`mix anchor.graph`, DND-5440; no graph type ships yet). A new rule type adds its entry there too (compilation
+(`mix anchor.graph`, DND-5440; the graph types are `layering`, DND-5442, and
+`context_acyclic`, DND-5445). A new rule type adds its entry there too (compilation
 fails without it) and to the README table's Engine column (a test compares
 them). Credo never reports a `:graph` rule as unchecked
 (`RuleCoverage.unchecked/3`).
@@ -212,16 +213,76 @@ DND-5585) for a verdict.
 A graph rule implements `Anchor.Domain.GraphRule` (`rule_type/0`,
 `check/2` over the model) and is listed in `Anchor.Domain.GraphRules.all/0`;
 `graph_rules_test.exs` holds that list's types equal to RuleSchema's `:graph`
-types. No graph type ships with the runner: the first rule ticket also adds
-the graph common keys (`bucket`, `min_modules`, `enforcement`) to RuleSchema,
-their rows to `rule_checks_nothing_test.exs` and the README keys table, and
-decides what `uses_module` means for a graph rule (`GraphRules.select/2` reads
-`bucket`, `paths` and `pattern` only). Each new fail-closed case gets a `Failures` function, a row in
+types. The graph common keys (`type`, `id`, one selector of `bucket`, `paths`
+or `pattern`, `min_modules`, `enforcement`, `baseline`; DND-5441) are
+`RuleSchema`'s `@common_keys_by_engine[:graph]`; `uses_module`, `recursive`
+and `min_files` are refused on a graph rule. Their rows are
+`graph_common_rows/0` in `rule_checks_nothing_test.exs`, run through
+`RuleSchema.validate_common/4`; a graph type's own table starts with them. A
+graph rule needs `architecture:` and its `bucket` must name a bucket
+(`RuleSchema.validate_architecture/3`, called by `Anchor.Config`). Each new fail-closed case gets a `Failures` function, a row in
 `failures_graph_test.exs` and a row in the README's graph fail-closed table.
 The canary tree `test/fixtures/graph_canary/` gets a compliant and a violating
 module per graph rule. Anchor's own `.anchor.yml` has an `architecture:`
 section with floors at today's counts, and CI runs `MIX_ENV=dev mix
 anchor.graph` after credo.
+
+## Report, baseline, enforce (DND-5441)
+
+Every rule takes `enforcement: report | enforce`. A report finding is
+`Violation.enforcement: :report`: `Anchor.Managers.Lint.detect_file/5`
+detects report rules apart from enforced ones (one call as before when there
+are none), and `Anchor.Check.Base` gives their issues exit status 0 and low
+priority. Graph rules also take `baseline:`: `Anchor.Managers.Graph` reads it
+through `Anchor.Adapters.BaselineStore` (`BaselineFile`; `create/3` opens
+`:exclusive`, never overwriting), and under `--base REF` its copy at `REF`
+through `Anchor.Adapters.GitBase` (`GitShow`: argv only, the ref checked by
+`Anchor.Domain.Baseline.valid_ref?/1` first). `Anchor.Domain.Baseline` parses
+and compares (multisets: NEW, STALE, held; GREW against base), and
+`Anchor.Domain.Enforcement.judge/4` turns the result into findings. A key is
+`Anchor.Domain.ViolationKey.graph_key/3`: `<id or type>|<subject>|<detail>`,
+no line, no message. `baseline` on an `ast` rule is refused at load until
+Credo compares baselines.
+
+## The layering rule (DND-5442)
+
+`Anchor.Domain.GraphRules.Layering` judges every call in the graph whose
+caller the rule selects against `Anchor.Domain.CallMatrix.allowed?/3` (deny
+by default: a bucket and scope the caller's `calls` row lists).
+`CallMatrix.route/3` is the shortest allowed bucket path, for the `Fix:`, and
+`row/2` prints the caller's row. A dynamic call resolves through
+`Anchor.Domain.DynamicCalls.candidates/2`: every project module with a `def`
+of that name and arity (any arity for `nil`), behaviour or not, each judged
+as a static call; none means the call reaches no project module, and nothing
+is judged. A call with a computed function name (`{:dynamic, nil, ...}`) is
+one unresolved violation (`DynamicCalls.computed_name_message/2`), except a
+variable application
+(`kind: :apply`, receiver `:variable`: `fun.(x)`), the one closure form,
+left to the higher-order analysis. The walker gives `apply/2` and `apply/3`
+with a computed name the same shape, so `apply(fun, args)` is reported. One violation per (caller, callee)
+pair, at its first line. The canary has a framework bucket with
+`layering/compliant.ex` and `layering/violating.ex`. Anchor's own
+`.anchor.yml` runs the rule with a baseline (Lint's calls into
+`Anchor.Check`, DND-1288, most of them dynamic calls fanned out to every
+check module exporting the function).
+
+## The context_acyclic rule (DND-5445)
+
+`Anchor.Domain.ContextGraph.build/2` collapses the calls of the selected
+modules to context edges `{a, b} => [witness]` (witness `{caller_mfa,
+callee_mfa, file, line}`, sorted), skipping a call within one context, to an
+unclassified or non-project module, with a nil context, a dynamic call no
+project module exports, and a closure application. A call with a computed
+function name goes into `unresolved`, and the rule reports each (caller,
+arity) itself, keyed `<id>|<Caller.f/a>|-> dynamic ?/n`.
+`Anchor.Domain.GraphRules.ContextAcyclic` runs `GraphAlgorithms.sccs/1` over
+it and reports each SCC of two or more contexts once, keyed
+`ViolationKey.graph_key/2` (`<id>|A,B,C`), at the first witness of the edge to
+invert (fewest witnesses, ties lexical). The canary's cycle pair is
+`lib/canary/domain/cycle/` (`AnchorFixtures.CycleA`/`CycleB`, their own
+contexts). Anchor's own `.anchor.yml` runs it with a baseline holding one
+five-context cycle through Lint's dynamic calls on the checks (DND-1288),
+and `Mutator`'s `apply/3`.
 
 ## Higher-order flow (DND-5497)
 
@@ -299,3 +360,31 @@ at all exit 0 but are never silent: a line per function with its reason
 `Anchor.Sabotage.ExUnitFormatter`'s frames, never from parsed output; the
 formatter calls no other Anchor module, so it loads alone in a project's test
 VM. The flow is in `Anchor.Managers.Sabotage.Runner`'s moduledoc.
+
+## Per-test coverage (DND-5474)
+
+`mix anchor.sabotage coverage` builds the map test -> project functions it
+executed, CI only unless `--local` (`.github/workflows/coverage-map.yml`,
+artifact `anchor-coverage`). Windows come from traced
+`ExUnit.EventManager.test_started/2`/`test_finished/2` calls with strict
+monotonic stamps, never from a formatter (formatter events are async). The
+windowing is pure (`Anchor.Domain.Sabotage.CoverageMap`); the collector
+process (`Anchor.Sabotage.CoverageCollector`, Framework) is started by the
+Mix task and reached by the Manager only through the `Tracing` port. The
+`:arity` trace flag keeps every traced argument out of the collector. A test
+that turns VM-wide tracing on is tagged `@moduletag :global_tracing`, and the
+coverage build runs with `--exclude global_tracing`. `run --coverage PATH`
+selects a mutant's tests from the map first (source `coverage`), then the
+mirror.
+
+## Sabotage records (DND-5484)
+
+`mix anchor.sabotage run` writes its own sabotage record after the run
+(`Anchor.Domain.Sabotage.Record`, the golden file
+`test/fixtures/sabotage/record_golden.md` is the authority for its text),
+named per `sabotage.records` (`RecordNaming`: anchor and crew
+`domain_date_slot`, gen_saas `ticket_nn_what`). Its `anchor-kills` block
+(`KillMap`, render and parse) is what `run` selects tests from next time
+(source `kill_map`, after `coverage`, before `mirror`) and what DND-5485
+replays. `RecordFile.create/3` never overwrites; a README is never written;
+nothing is staged or committed. The date is a fact the Mix task reads.

@@ -214,6 +214,17 @@ before coining a synonym.
   `Anchor.Domain.PureCalls`), in one record.
 - `digraph` — `Anchor.Domain.Digraph` (DND-5444), the plain immutable graph
   value the graph algorithms run over.
+- `baseline` — report, baseline, enforce (DND-5441): `Anchor.Domain.Baseline`,
+  `Enforcement` and `ViolationKey`, the engine common keys in `RuleSchema`,
+  report-mode detection in `Managers.Lint` and `Check.Base`, the ratchet in
+  `Managers.Graph`, `BaselineFile`, `GitShow` and the task's baseline flags.
+- `layering` — the `layering` graph rule (DND-5442):
+  `Anchor.Domain.GraphRules.Layering`, `CallMatrix`, `DynamicCalls`,
+  `ViolationKey.mfa/1`, its registration and Config's architecture check of
+  graph rules and known types.
+- `context_acyclic` — the `context_acyclic` graph rule (DND-5445):
+  `Anchor.Domain.ContextGraph`, `GraphRules.ContextAcyclic`,
+  `ViolationKey.graph_key/2` and its registration.
 - `dialyzer_boundary` — the DND-5499 spike runner
   `test/fixtures/dialyzer_boundary/run.exs` (not a check: it measures what
   Dialyzer reports for clause reachability on the fixtures beside it, so F8

@@ -165,6 +165,7 @@ defmodule Anchor.Check.Base do
       alias Anchor.Managers.Lint
 
       @fail_closed_priority Credo.Priority.to_integer(:higher)
+      @report_priority Credo.Priority.to_integer(:low)
 
       @doc false
       def __anchor_check__, do: true
@@ -236,6 +237,12 @@ defmodule Anchor.Check.Base do
 
       defp issue_opts(%Violation{kind: :fail_closed} = violation) do
         [priority: @fail_closed_priority] ++ rule_issue_opts(violation)
+      end
+
+      # DND-5441: a finding of an `enforcement: report` rule is listed (low
+      # priority, so `--strict` shows it) and never fails the run.
+      defp issue_opts(%Violation{enforcement: :report} = violation) do
+        [priority: @report_priority, exit_status: 0] ++ rule_issue_opts(violation)
       end
 
       defp issue_opts(violation), do: rule_issue_opts(violation)

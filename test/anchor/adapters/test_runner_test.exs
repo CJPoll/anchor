@@ -183,6 +183,16 @@ defmodule Anchor.Adapters.TestRunnerTest do
       assert {"MIX_ENV", "test"} in cmd_opts[:env]
     end
 
+    test "DND-5484: the project root reaches the formatter as ANCHOR_SABOTAGE_ROOT",
+         %{tmp_dir: dir} do
+      # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5484_records.md
+      tick([0, 10])
+
+      assert {:ok, %TestRun{}} = run_fake(0, dir, [])
+      assert_received {:cmd, _timeout, _args, cmd_opts}
+      assert {"ANCHOR_SABOTAGE_ROOT", dir} in cmd_opts[:env]
+    end
+
     test "K2: with no grace period given, --kill-after is 10", %{tmp_dir: dir} do
       tick([0, 10])
 

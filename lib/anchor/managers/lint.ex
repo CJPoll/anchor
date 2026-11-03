@@ -78,6 +78,8 @@ defmodule Anchor.Managers.Lint do
   alias Anchor.Domain.Failures
   alias Anchor.Domain.RuleCoverage
   alias Anchor.Domain.RuleMatching
+  alias Anchor.Domain.RuleSchema
+  alias Anchor.Domain.Violation
 
   @default_analyzer DependencyAnalyzer
   @default_config_loader ConfigFile
@@ -270,7 +272,8 @@ defmodule Anchor.Managers.Lint do
 
   @doc """
   Runs `check_module`'s detection on one parsed file with the rules already
-  selected for it, and returns the violations.
+  selected for it, and returns the violations. The findings of rules in
+  `enforcement: report` are marked `:report` (DND-5441).
 
   A raise, throw or exit in the detection becomes one `:fail_closed` violation
   on that file, naming the check and the reason (DND-1310,
@@ -281,6 +284,28 @@ defmodule Anchor.Managers.Lint do
   @spec detect_file(module(), Credo.SourceFile.t(), Macro.t(), [map()], map()) ::
           [Anchor.Domain.Violation.t()]
   def detect_file(check_module, source_file, ast, rules, context) do
+    case Enum.split_with(rules, &(RuleSchema.enforcement(&1) == :report)) do
+      {[], _enforce} ->
+        detect_group(check_module, source_file, ast, rules, context)
+
+      {report, enforce} ->
+        detect_some(check_module, source_file, ast, enforce, context) ++
+          (check_module
+           |> detect_group(source_file, ast, report, context)
+           |> Enum.map(&report_only/1))
+    end
+  end
+
+  # DND-5441: the rules in `enforcement: report` are detected apart from the
+  # enforced ones, and their findings marked `:report` (printed, never
+  # failing). With no report rule (the default) this is one detection call
+  # over every rule, as before. A crash stays a fail-closed violation.
+  defp detect_some(_check_module, _source_file, _ast, [], _context), do: []
+
+  defp detect_some(check_module, source_file, ast, rules, context),
+    do: detect_group(check_module, source_file, ast, rules, context)
+
+  defp detect_group(check_module, source_file, ast, rules, context) do
     case guarded(check_module, fn ->
            check_module.detect_violations(source_file, ast, rules, context)
          end) do
@@ -288,6 +313,9 @@ defmodule Anchor.Managers.Lint do
       {:crashed, violation} -> [violation]
     end
   end
+
+  defp report_only(%Violation{kind: :rule} = violation), do: %{violation | enforcement: :report}
+  defp report_only(violation), do: violation
 
   # `{:ok, result}`, or `{:crashed, violation}` when `fun` raised, threw or
   # exited. `subject` is the check, or `:file_analysis`.

@@ -27,6 +27,8 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
   # The DND-5451 `pure_patterns`, DND-5452 `no_forwarding_function` and
   # DND-5453 `owned_namespaces` rows:
   #   ../../sabotage_records/rule_schema-20261103-dnd_5451_ast_batch.md
+  # The DND-5441 rows (enforcement, ast baseline, the graph common keys):
+  #   ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config
@@ -157,7 +159,103 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
        {:refused, "`min_files` must be a positive integer"}},
       {"an empty id", Map.put(base, "id", ""), {:refused, "`id` must be a non-empty string"}},
       {"an id that is not a string", Map.put(base, "id", 7),
-       {:refused, "`id` must be a non-empty string"}}
+       {:refused, "`id` must be a non-empty string"}},
+      # DND-5441: report or enforce, on both engines.
+      {"positive: enforcement: report", Map.put(base, "enforcement", "report"), :accepted},
+      {"positive: enforcement: :enforce", Map.put(base, "enforcement", ":enforce"), :accepted},
+      {"enforcement: warn (neither)", Map.put(base, "enforcement", "warn"),
+       {:refused, "`enforcement` must be report or enforce"}},
+      # An ast rule's findings are not compared with a baseline (Credo has no
+      # ratchet yet), so `baseline` there would ratchet nothing.
+      {"baseline on an ast rule (nothing reads it)",
+       Map.put(base, "baseline", ".anchor/baselines/r.txt"),
+       {:refused, "`baseline` is read by graph rules only"}},
+      {"bucket on an ast rule (a graph selector)", Map.put(base, "bucket", "domain"),
+       {:refused, "`bucket` applies to graph rules only"}}
+    ]
+  end
+
+  # DND-5441: the graph common keys (shared contract section 3.2), checked by
+  # `RuleSchema.validate_common/4` with a graph rule type of no keys of its
+  # own. Every graph rule type's table starts with these rows (through
+  # `Config.parse_config/1`), once one ships.
+  test "graph common keys: every rule that checks nothing is refused, the positive rows load" do
+    failures =
+      graph_common_rows()
+      |> Enum.map(fn {label, rule, expected} ->
+        result = RuleSchema.validate_common(rule, :graph, [], :a_graph_type)
+
+        case {result, expected} do
+          {:ok, :accepted} ->
+            nil
+
+          {{:error, reason}, {:refused, fragment}} ->
+            unless reason =~ fragment, do: "#{label}: #{reason}"
+
+          {other, _expected} ->
+            "#{label}: #{inspect(other)}"
+        end
+      end)
+      |> Enum.reject(&is_nil/1)
+
+    assert failures == [], Enum.join(failures, "\n")
+  end
+
+  test "every graph common key has a row in graph_common_rows" do
+    covered =
+      Enum.flat_map(graph_common_rows(), fn {_label, rule, _expected} -> Map.keys(rule) end)
+
+    for key <- RuleSchema.common_keys(:graph), do: assert(key in covered, key)
+  end
+
+  defp graph_common_rows do
+    base = %{"type" => "a_graph_type", "bucket" => "domain"}
+    no_selector = Map.delete(base, "bucket")
+
+    [
+      {"positive: a bucket selector", base, :accepted},
+      {"positive: a paths selector (always recursive)",
+       Map.put(no_selector, "paths", ["lib/**/*.ex"]), :accepted},
+      {"positive: a pattern selector", Map.put(no_selector, "pattern", "MyApp.*"), :accepted},
+      {"positive: min_modules, id, enforcement and baseline",
+       Map.merge(base, %{
+         "min_modules" => 3,
+         "id" => "r",
+         "enforcement" => "report",
+         "baseline" => ".anchor/baselines/r.txt"
+       }), :accepted},
+      {"no selector", no_selector, {:refused, "no selector, so it would select no module"}},
+      {"bucket and pattern (only bucket was read)", Map.put(base, "pattern", "MyApp.*"),
+       {:refused, "more than one selector (bucket, pattern)"}},
+      {"bucket that is not a string", Map.put(no_selector, "bucket", ["domain"]),
+       {:refused, "`bucket` must be a non-empty string"}},
+      {"an empty bucket", Map.put(no_selector, "bucket", ""),
+       {:refused, "`bucket` must be a non-empty string"}},
+      {"uses_module (an ast selector)", Map.put(base, "uses_module", "MyApp.Base"),
+       {:refused, "`uses_module` applies to ast rules only"}},
+      {"recursive (graph paths are always recursive)", Map.put(base, "recursive", true),
+       {:refused, "unknown key \"recursive\""}},
+      {"min_files (the graph floor is min_modules)", Map.put(base, "min_files", 2),
+       {:refused, "did you mean \"min_modules\"?"}},
+      {"min_modules: 0 (no floor)", Map.put(base, "min_modules", 0),
+       {:refused, "`min_modules` must be a positive integer"}},
+      {"min_modules that is not an integer", Map.put(base, "min_modules", "2"),
+       {:refused, "`min_modules` must be a positive integer"}},
+      {"an empty id", Map.put(base, "id", ""), {:refused, "`id` must be a non-empty string"}},
+      {"enforcement: warn", Map.put(base, "enforcement", "warn"),
+       {:refused, "`enforcement` must be report or enforce"}},
+      {"baseline without id (entries start with it)",
+       Map.put(base, "baseline", ".anchor/baselines/r.txt"),
+       {:refused, "`baseline` needs the rule's `id`"}},
+      {"an absolute baseline path", Map.merge(base, %{"id" => "r", "baseline" => "/tmp/r.txt"}),
+       {:refused, "must be a path relative to the project root with no `..`"}},
+      {"a baseline path climbing out", Map.merge(base, %{"id" => "r", "baseline" => "../x.txt"}),
+       {:refused, "must be a path relative to the project root with no `..`"}},
+      {"a baseline path with an inner ..",
+       Map.merge(base, %{"id" => "r", "baseline" => ".anchor/../../x.txt"}),
+       {:refused, "with no `..` segment"}},
+      {"an empty baseline", Map.merge(base, %{"id" => "r", "baseline" => " "}),
+       {:refused, "`baseline` must be a non-empty path"}}
     ]
   end
 
@@ -326,6 +424,26 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
 
   # The types with no relation and no key of their own: they check every file
   # they select, so only the common rows apply.
+  # DND-5442, DND-5445: the graph types, neither reading a key of its own.
+  # Their rows are the graph common rows, loaded through
+  # `Config.parse_config/1` with an `architecture:` section (`parse_one/1`),
+  # plus what only a whole document decides.
+  defp table(type) when type in [:layering, :context_acyclic] do
+    name = Atom.to_string(type)
+    base = %{"type" => name, "bucket" => "domain"}
+
+    graph_common_rows()
+    |> Enum.map(fn {label, rule, expected} ->
+      {label, Map.put(rule, "type", name), expected}
+    end)
+    |> Enum.concat([
+      {"a bucket naming no architecture bucket", Map.put(base, "bucket", "web"),
+       {:refused, "`bucket: web` names no architecture: bucket"}},
+      {"positive: a pattern rule with the architecture section",
+       %{"type" => name, "pattern" => "MyApp.*"}, :accepted}
+    ])
+  end
+
   defp table(type), do: common_rows(type)
 
   defp extra_rows(:no_direct_dependency) do
@@ -477,10 +595,27 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
   end
 
   # A parser that raises is a row failure too, reported beside the others.
-  defp parse_one(rule) do
-    Config.parse_config(%{"rules" => [rule]})
+  defp parse_one(%{"type" => type} = rule) do
+    Config.parse_config(document(rule, RuleSchema.engine(String.to_existing_atom(type))))
   rescue
     error -> {:raised, Exception.message(error) |> String.split("\n") |> hd()}
+  end
+
+  # A graph rule needs the `architecture:` section (DND-5441), so its rows
+  # load beside one that has a `domain` bucket.
+  defp document(rule, :ast), do: %{"rules" => [rule]}
+
+  defp document(rule, :graph) do
+    %{
+      "rules" => [rule],
+      "architecture" => %{
+        "contexts" => %{"depth" => 2},
+        "buckets" => [
+          %{"name" => "domain", "role" => "domain", "select" => [%{"paths" => ["lib/**"]}]}
+        ],
+        "calls" => %{"domain" => ["domain"]}
+      }
+    }
   end
 
   defp row_result({:raised, message}, _expected), do: "RAISED: #{message}"
@@ -489,7 +624,7 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
   defp row_result(result, :accepted), do: "refused: #{inspect(result)}"
 
   defp row_result({:error, {:invalid_rule, reason}}, {:refused, fragment}) do
-    if reason =~ "rule 1: " and reason =~ fragment,
+    if reason =~ ~r/\Arule 1( \(id: "[^"]*"\))?: / and reason =~ fragment,
       do: nil,
       else: "wrong reason (want #{inspect(fragment)}): #{reason}"
   end

@@ -13,7 +13,10 @@ defmodule Anchor.Sabotage.ExUnitFormatter do
 
     * `{:suite_started}`;
     * `{:test_failed, file, line, name, first_failure_text}` — `file`
-      relative to the working directory, `name` the test's name
+      relative to the project root named by `ANCHOR_SABOTAGE_ROOT` (or the
+      `:root` option), else to the working directory. An umbrella's
+      `mix test` runs each app's tests from inside `apps/<app>`, so the root
+      keeps the `apps/<app>/` prefix (DND-5484). `name` the test's name
       (`"test adds"`); a test whose `setup_all` failed counts as failed;
     * `{:suite_finished, total, failures, excluded}` — `total` counts the
       tests that ran (skipped and excluded ones are `excluded`).
@@ -30,7 +33,8 @@ defmodule Anchor.Sabotage.ExUnitFormatter do
   @impl GenServer
   def init(opts) do
     path = Keyword.get(opts, :results_path) || System.get_env("ANCHOR_SABOTAGE_RESULTS")
-    {:ok, %{path: path, total: 0, failures: 0, excluded: 0}}
+    root = Keyword.get(opts, :root) || System.get_env("ANCHOR_SABOTAGE_ROOT")
+    {:ok, %{path: path, root: root, total: 0, failures: 0, excluded: 0}}
   end
 
   @impl GenServer
@@ -61,10 +65,13 @@ defmodule Anchor.Sabotage.ExUnitFormatter do
 
   defp failed(test, text, state) do
     tags = Map.get(test, :tags, %{})
-    file = tags |> Map.get(:file, "") |> Path.relative_to_cwd()
+    file = tags |> Map.get(:file, "") |> relative(state.root)
     frame(state, {:test_failed, file, Map.get(tags, :line, 0), to_string(test.name), text})
     %{state | total: state.total + 1, failures: state.failures + 1}
   end
+
+  defp relative(file, nil), do: Path.relative_to_cwd(file)
+  defp relative(file, root), do: Path.relative_to(file, root)
 
   defp module_failures(%{state: {:failed, failures}}), do: failures
   defp module_failures(_module), do: []

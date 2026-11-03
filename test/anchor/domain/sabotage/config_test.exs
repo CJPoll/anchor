@@ -15,6 +15,15 @@ defmodule Anchor.Domain.Sabotage.ConfigTest do
       assert config.timeout_seconds == 300
       assert config.operators == Operators.all()
       assert config.effect_calls == []
+      assert config.coverage_map == nil
+
+      assert config.records == %{
+               dir: "test/sabotage_records",
+               naming: :domain_date_slot,
+               domain_from: :module,
+               domain_strip_prefixes: [],
+               adr: "the repo's sabotage-record ADR"
+             }
 
       assert config.test_mirror == [
                %{from: "apps/*/lib/**/*.ex", to: "apps/{app}/test/{rest}_test.exs"},
@@ -34,7 +43,15 @@ defmodule Anchor.Domain.Sabotage.ConfigTest do
                  "timeout_seconds" => 60,
                  "operators" => ["return_input", "delete_statement"],
                  "effect_calls" => ["Notifier.push/1"],
-                 "test_mirror" => [%{"from" => "src/**/*.ex", "to" => "spec/{rest}_test.exs"}]
+                 "test_mirror" => [%{"from" => "src/**/*.ex", "to" => "spec/{rest}_test.exs"}],
+                 "coverage_map" => "anchor-coverage.etf",
+                 "records" => %{
+                   "dir" => "apps/{app}/test/sabotage_records",
+                   "naming" => "ticket_nn_what",
+                   "domain_from" => "context_dir",
+                   "domain_strip_prefixes" => ["App."],
+                   "adr" => "ADR 26"
+                 }
                })
 
       assert config.test_command == ["bin/test"]
@@ -42,10 +59,39 @@ defmodule Anchor.Domain.Sabotage.ConfigTest do
       assert config.operators == [:delete_statement, :return_input]
       assert config.effect_calls == ["Notifier.push/1"]
       assert config.test_mirror == [%{from: "src/**/*.ex", to: "spec/{rest}_test.exs"}]
+      assert config.coverage_map == "anchor-coverage.etf"
+
+      assert config.records == %{
+               dir: "apps/{app}/test/sabotage_records",
+               naming: :ticket_nn_what,
+               domain_from: :context_dir,
+               domain_strip_prefixes: ["App."],
+               adr: "ADR 26"
+             }
     end
 
     @refusals [
       {"an unknown key", %{"max_mutant" => 3}, "sabotage: unknown key(s) \"max_mutant\""},
+      {"an empty coverage_map (DND-5474)", %{"coverage_map" => ""}, "sabotage.coverage_map"},
+      {"a coverage_map list (DND-5474)", %{"coverage_map" => ["x"]}, "sabotage.coverage_map"},
+      {"an unknown records key (DND-5484)", %{"records" => %{"dirr" => "x"}},
+       "sabotage.records: unknown key(s) \"dirr\""},
+      {"an unknown naming (DND-5484)", %{"records" => %{"naming" => "by_date"}},
+       "sabotage.records.naming \"by_date\" is not one of domain_date_slot, ticket_nn_what"},
+      {"an unknown domain_from (DND-5484)", %{"records" => %{"domain_from" => "file"}},
+       "sabotage.records.domain_from \"file\" is not one of context_dir, module"},
+      {"records not a mapping (DND-5484)", %{"records" => "x"},
+       "sabotage.records must be a mapping"},
+      {"a prefix list with a number (DND-5484)",
+       %{"records" => %{"domain_strip_prefixes" => [1]}},
+       "sabotage.records.domain_strip_prefixes"},
+      {"an empty records dir (DND-5484)", %{"records" => %{"dir" => ""}}, "sabotage.records.dir"},
+      {"an absolute records dir (DND-5484)", %{"records" => %{"dir" => "/tmp/r"}},
+       "sabotage.records.dir must be a directory inside the project"},
+      {"a records dir with a .. segment (DND-5484)", %{"records" => %{"dir" => "test/../../r"}},
+       "sabotage.records.dir must be a directory inside the project"},
+      {"a records dir of only ./ (DND-5484)", %{"records" => %{"dir" => "./"}},
+       "sabotage.records.dir must be a directory inside the project"},
       {"an empty test_command", %{"test_command" => []}, "sabotage.test_command"},
       {"a non-string test_command element", %{"test_command" => [1]}, "sabotage.test_command"},
       {"max_mutants 0", %{"max_mutants" => 0}, "sabotage.max_mutants"},
@@ -64,6 +110,16 @@ defmodule Anchor.Domain.Sabotage.ConfigTest do
        "sabotage.test_mirror[1].from"},
       {"a section that is not a mapping", ["mix"], "sabotage must be a mapping"}
     ]
+
+    test "DND-5484: records.dir is read without a leading ./ or a trailing /" do
+      # Sabotage record: ../../../sabotage_records/sabotage-20261103-dnd_5484_records.md
+      # Existing records are keyed by Path.dirname/1, which never ends in /.
+      for dir <- ["test/sabotage_records/", "./test/sabotage_records", "test//sabotage_records"] do
+        assert {:ok, %Config{records: %{dir: "test/sabotage_records"}}} =
+                 Config.parse(%{"records" => %{"dir" => dir}}),
+               dir
+      end
+    end
 
     test "2: each refusal names its key and ends with a Fix: line" do
       for {label, section, prefix} <- @refusals do

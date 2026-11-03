@@ -28,10 +28,22 @@ defmodule Anchor.Domain.Violation do
     * `:key` — a graph rule's stable baseline key (DND-5440, DND-5441): no
       line numbers and no message text that moves; `nil` otherwise.
     * `:rule_id` — the `id` of the rule a graph violation belongs to, or `nil`.
+    * `:enforcement` — `:enforce` (the default: the finding fails the run) or
+      `:report` (DND-5441: a finding of an `enforcement: report` rule, printed
+      and never failing). A fail-closed violation is always `:enforce`.
   """
 
   @enforce_keys [:message]
-  defstruct [:line, :trigger, :message, filename: nil, kind: :rule, key: nil, rule_id: nil]
+  defstruct [
+    :line,
+    :trigger,
+    :message,
+    filename: nil,
+    kind: :rule,
+    key: nil,
+    rule_id: nil,
+    enforcement: :enforce
+  ]
 
   @type kind :: :rule | :fail_closed
 
@@ -42,6 +54,7 @@ defmodule Anchor.Domain.Violation do
           filename: String.t() | nil,
           kind: kind(),
           key: String.t() | nil,
-          rule_id: String.t() | nil
+          rule_id: String.t() | nil,
+          enforcement: :enforce | :report
         }
 end

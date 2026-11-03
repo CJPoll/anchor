@@ -15,7 +15,10 @@ defmodule Anchor.Managers.Graph.Request do
       env (`_build/<env>`, or what `MIX_BUILD_PATH` / `MIX_BUILD_ROOT` say);
       the graph artifact is written under `<build_path>/anchor` (DND-5585);
     * `env` — the Mix env (`:dev`, `:test`, ...);
-    * `opts` — `%{format: :text | :json, only: [rule_id]}`.
+    * `opts` — `%{format: :text | :json, only: [rule_id]}`, and optionally
+      (DND-5441) `base: ref` (judge GREW against that ref's baselines),
+      `write_baseline: rule_id` (create that rule's baseline) and
+      `verbose: true` (print held findings).
   """
 
   @enforce_keys [:apps, :root, :build_path, :env]
@@ -27,6 +30,12 @@ defmodule Anchor.Managers.Graph.Request do
           source_dirs: %{optional(atom()) => Path.t()},
           build_path: Path.t(),
           env: atom(),
-          opts: %{format: :text | :json, only: [String.t()]}
+          opts: %{
+            optional(:base) => String.t() | nil,
+            optional(:write_baseline) => String.t() | nil,
+            optional(:verbose) => boolean(),
+            format: :text | :json,
+            only: [String.t()]
+          }
         }
 end

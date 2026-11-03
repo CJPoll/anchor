@@ -8,6 +8,8 @@ defmodule Anchor.Domain.ConfigFailClosedTest do
   # ../../sabotage_records/config-20260929-dnd_1286_rule_key_allowlist.md
   # Sabotage record (DND-1290 relation fixtures):
   # ../../sabotage_records/config-20260929-dnd_1290_empty_relation_list.md
+  # Sabotage record (DND-5442/5445 graph types in the known types, CF-B):
+  # ../../sabotage_records/layering-20261103-dnd_5441_graph_rules_a.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config
@@ -62,10 +64,11 @@ defmodule Anchor.Domain.ConfigFailClosedTest do
     # the shipped checks consume. A check added without its type here would have
     # every one of its rules rejected; a type here with no check would accept a
     # rule nothing reads.
-    test "the known types are exactly the rule types of Anchor.checks/0" do
-      check_types = Anchor.checks() |> Enum.map(& &1.rule_type()) |> Enum.sort()
+    test "the known types are the rule types of Anchor.checks/0 and of the graph rules" do
+      check_types = Anchor.checks() |> Enum.map(& &1.rule_type())
+      graph_types = Anchor.Domain.GraphRules.all() |> Enum.map(& &1.rule_type())
 
-      assert Enum.sort(Config.rule_types()) == check_types
+      assert Enum.sort(Config.rule_types()) == Enum.sort(check_types ++ graph_types)
     end
   end
 

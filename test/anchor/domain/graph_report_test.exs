@@ -7,6 +7,8 @@ defmodule Anchor.Domain.GraphReportTest do
   # (apply sites, DND-5574: ../../sabotage_records/graph_runner-20261103-dnd_5574_cfa_wiring.md)
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5581_hardening_batch.md
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5630_graph_hardening.md
+  # DND-5441 (held, refused, verbose):
+  #   ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.GraphReport
@@ -63,6 +65,46 @@ defmodule Anchor.Domain.GraphReportTest do
       could_not = finding(:enforce, %{label: "anchor.graph"})
       assert GraphReport.new([], [could_not], @counts).exit_code == 3
       assert GraphReport.new([finding(:enforce)], [could_not], @counts).exit_code == 3
+    end
+  end
+
+  # DND-5441: held findings and refusals.
+  describe "held and refused" do
+    test "a refusal is exit 2; 3 still wins over it; held findings never fail" do
+      refusal = finding(:enforce, %{label: "anchor.graph"})
+      assert GraphReport.new([], [], @counts, refused: [refusal]).exit_code == 2
+      assert GraphReport.new([], [refusal], @counts, refused: [refusal]).exit_code == 3
+      assert GraphReport.new([], [], @counts, held: [finding(:enforce)]).exit_code == 0
+    end
+
+    test "the summary counts held findings; refusals count as violations" do
+      report =
+        GraphReport.new([], [], @counts,
+          held: [finding(:enforce), finding(:enforce)],
+          refused: [finding(:enforce, %{label: "anchor.graph"})]
+        )
+
+      assert GraphReport.summary(report) =~ "1 violations (0 report-only, 2 baselined)"
+    end
+
+    test "held findings print only with verbose: true" do
+      report = GraphReport.new([], [], @counts, held: [finding(:enforce)])
+
+      refute GraphReport.render(report, :text) =~ "[held]"
+
+      assert GraphReport.render(report, :text, verbose: true) =~
+               ~s|lib/my_app/web.ex:7: [held] rule 1 (id: "web", layering) MyApp.Web calls|
+    end
+
+    test "JSON carries the refused and held findings" do
+      report =
+        GraphReport.new([], [], @counts,
+          held: [finding(:enforce)],
+          refused: [finding(:enforce, %{label: "anchor.graph"})]
+        )
+
+      assert %{"held" => [%{"key" => _}], "refused" => [_], "exit_code" => 2} =
+               JSON.decode!(GraphReport.render(report, :json))
     end
   end
 

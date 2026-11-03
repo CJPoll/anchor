@@ -33,6 +33,8 @@ defmodule Anchor.Managers.SabotageRunTest do
   setup do
     stub(SourceMutationMock, :take_lock, fn "/repo" -> :ok end)
     stub(SourceMutationMock, :release_lock, fn "/repo" -> :ok end)
+    # DND-5484: no record is there yet; the record tests expect their own.
+    stub(Anchor.RecordStoreMock, :list, fn "/repo", "test/sabotage_records" -> [] end)
     :ok
   end
 
@@ -40,6 +42,8 @@ defmodule Anchor.Managers.SabotageRunTest do
   @file_path "/repo/lib/calc.ex"
   # DND-5635: a build path that is not <root>/_build/<env> (MIX_BUILD_PATH):
   # the last run is saved under it, never under the root.
+  # `no_record: true`: these tests are about the run; the record tests
+  # (DND-5484) set it false.
   @build_path "/builds/repo-test"
   @facts %{
     root: @root,
@@ -48,14 +52,16 @@ defmodule Anchor.Managers.SabotageRunTest do
     base: "origin/main",
     max: nil,
     only: [],
-    dry_run: false
+    dry_run: false,
+    no_record: true
   }
   @opts [
     config_loader: ConfigLoaderMock,
     change_source: ChangeSourceMock,
     source_mutation: SourceMutationMock,
     git_worktree: GitWorktreeMock,
-    test_execution: TestExecutionMock
+    test_execution: TestExecutionMock,
+    record_store: Anchor.RecordStoreMock
   ]
   @source "defmodule Calc do\n  def add(a, b) do\n    a + b\n  end\nend\n"
   @diff "diff --git a/lib/calc.ex b/lib/calc.ex\nindex 1..2 100644\n--- a/lib/calc.ex\n+++ b/lib/calc.ex\n@@ -3 +3 @@\n-old\n+new\n"
@@ -804,6 +810,523 @@ defmodule Anchor.Managers.SabotageRunTest do
 
       assert Report.exit_code(run) == 0
       assert Report.render(run) == "nothing to restore"
+    end
+  end
+
+  describe "run/2 with a coverage map (DND-5474)" do
+    # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5474_coverage_map.md
+    @cov_opts @opts ++ [coverage_store: Anchor.CoverageStoreMock]
+
+    defp coverage_map(commit \\ "c0ffee0000000000000000000000000000000000") do
+      %{
+        version: 1,
+        commit: commit,
+        elixir: "1.19.4",
+        otp: "28",
+        tests: [
+          %{
+            file: "test/other_test.exs",
+            line: 12,
+            name: "test uses add",
+            module: "OtherTest",
+            functions: ["Calc.add/2"]
+          }
+        ],
+        modules_traced: 3,
+        outside_windows: 0,
+        late_events: 0,
+        suite_exit: 0
+      }
+    end
+
+    # The mirror and the map's test file are both looked for; `exist` says
+    # which are there.
+    defp expect_cov_tests(exist \\ ["/repo/test/calc_test.exs", "/repo/test/other_test.exs"]) do
+      expect(SourceMutationMock, :existing, fn paths ->
+        assert Enum.sort(paths) == ["/repo/test/calc_test.exs", "/repo/test/other_test.exs"]
+        Enum.filter(paths, &(&1 in exist))
+      end)
+    end
+
+    test "a selected test file deleted since the map was built is dropped: the mirror runs" do
+      expect_until_plan()
+      expect_cov_tests(["/repo/test/calc_test.exs"])
+      expect_map({:ok, coverage_map()})
+      expect_ancestor(true, {:ok, ["test/other_test.exs"]})
+
+      run = Sabotage.run(%{@facts | dry_run: true} |> Map.put(:coverage, "cov.etf"), @cov_opts)
+
+      assert Enum.all?(run.planned, fn {_m, sel} -> sel == {:mirror, ["test/calc_test.exs"]} end)
+    end
+
+    defp expect_map(result) do
+      expect(Anchor.CoverageStoreMock, :read, fn "/repo/cov.etf" -> call(:read_map, result) end)
+    end
+
+    defp expect_ancestor(answer, changed \\ {:ok, ["lib/calc.ex"]}) do
+      expect(GitWorktreeMock, :head_sha, fn @root -> {:ok, "headsha"} end)
+
+      expect(GitWorktreeMock, :ancestor?, fn @root, "c0ffee0000000000000000000000000000000000" ->
+        {:ok, answer}
+      end)
+
+      expect(GitWorktreeMock, :changed_since, fn @root,
+                                                 "c0ffee0000000000000000000000000000000000" ->
+        changed
+      end)
+    end
+
+    test "a selected test file changed since the map's commit runs whole, the mirror too" do
+      expect_until_plan()
+      expect_cov_tests()
+      expect_map({:ok, coverage_map()})
+      expect_ancestor(true, {:ok, ["test/other_test.exs", "test/calc_test.exs"]})
+
+      run = Sabotage.run(%{@facts | dry_run: true} |> Map.put(:coverage, "cov.etf"), @cov_opts)
+
+      assert Enum.all?(run.planned, fn {_m, selection} ->
+               selection == {:coverage, ["test/calc_test.exs", "test/other_test.exs"]}
+             end)
+    end
+
+    test "when git cannot say what changed, every selected file runs whole, with a note" do
+      expect_until_plan()
+      expect_cov_tests()
+      expect_map({:ok, coverage_map()})
+      expect_ancestor(true, {:error, {:git_failed, ["diff"], 128, "bad object"}})
+
+      run = Sabotage.run(%{@facts | dry_run: true} |> Map.put(:coverage, "cov.etf"), @cov_opts)
+
+      assert [note] = run.notes
+
+      assert note =~
+               "could not tell which files changed since the coverage map's commit c0ffee0000000000000000000000000000000000"
+
+      assert Enum.all?(run.planned, fn {_m, selection} ->
+               selection == {:coverage, ["test/calc_test.exs", "test/other_test.exs"]}
+             end)
+    end
+
+    test "a map that names no commit is used, with a warning, every file whole" do
+      expect_until_plan()
+      expect_cov_tests()
+      expect_map({:ok, coverage_map(nil)})
+
+      run = Sabotage.run(%{@facts | dry_run: true} |> Map.put(:coverage, "cov.etf"), @cov_opts)
+
+      assert run.notes == [
+               "the coverage map names no commit; selections from it may miss new tests"
+             ]
+
+      assert Enum.all?(run.planned, fn {_m, selection} ->
+               selection == {:coverage, ["test/calc_test.exs", "test/other_test.exs"]}
+             end)
+    end
+
+    test "a mutant of a function a test in another file runs selects that test, by coverage" do
+      expect_until_plan()
+      expect_cov_tests()
+      expect_map({:ok, coverage_map()})
+      expect_ancestor(true)
+
+      expect(TestExecutionMock, :run, 3, fn _argv, ["test/other_test.exs:12"], _opts ->
+        if calls_seen(:baseline),
+          do: test_run(:failed, [@killer]),
+          else: call(:baseline, test_run(:passed))
+      end)
+
+      expect_patcher(2)
+      expect_delete_journal(2)
+      expect_save()
+
+      run = Sabotage.run(%{@facts | max: :all} |> Map.put(:coverage, "cov.etf"), @cov_opts)
+
+      assert [_, _] = run.outcomes
+      assert Enum.all?(run.outcomes, &(&1.selection == {:coverage, ["test/other_test.exs:12"]}))
+      assert run.notes == []
+
+      text = Report.render(run)
+      assert text =~ "selected by coverage: test/other_test.exs:12"
+      assert text =~ "tests selected by: 2 coverage\n"
+    end
+
+    test "the config's coverage_map is read when no --coverage is given" do
+      expect_until_plan(%SabotageConfig{coverage_map: "cov.etf"})
+      expect_cov_tests()
+      expect_map({:ok, coverage_map()})
+      expect_ancestor(true)
+
+      run = Sabotage.run(%{@facts | dry_run: true}, @cov_opts)
+
+      assert Enum.all?(run.planned, fn {_m, selection} -> elem(selection, 0) == :coverage end)
+    end
+
+    test "a function the map does not list falls back to the mirror" do
+      expect_until_plan()
+      expect_tests_exist(true)
+      map = %{coverage_map() | tests: [%{hd(coverage_map().tests) | functions: ["Other.f/0"]}]}
+      expect_map({:ok, map})
+      expect_ancestor(true)
+
+      run = Sabotage.run(%{@facts | dry_run: true} |> Map.put(:coverage, "cov.etf"), @cov_opts)
+
+      assert Enum.all?(run.planned, fn {_m, sel} -> sel == {:mirror, ["test/calc_test.exs"]} end)
+    end
+
+    test "a map from a commit that is not an ancestor of HEAD is used, with a warning" do
+      expect_until_plan()
+      expect_cov_tests()
+      expect_map({:ok, coverage_map()})
+      expect_ancestor(false)
+
+      run = Sabotage.run(%{@facts | dry_run: true} |> Map.put(:coverage, "cov.etf"), @cov_opts)
+
+      assert run.notes == [
+               "coverage map built at c0ffee0000000000000000000000000000000000 is not an ancestor of HEAD headsha; " <>
+                 "selections from it may miss new tests"
+             ]
+
+      assert Enum.all?(run.planned, fn {_m, selection} -> elem(selection, 0) == :coverage end)
+      assert Report.render(run) =~ "is not an ancestor of HEAD headsha"
+    end
+
+    # Every step before selection: a refused map is refused before any test
+    # file is looked for.
+    defp expect_until_plan(config \\ %SabotageConfig{}) do
+      expect_journal(:none)
+      expect_config(config)
+      expect_ignored()
+      expect_scope()
+      expect_clean()
+    end
+
+    test "an unreadable map is exit 2 with a Fix:, and no test runs" do
+      expect_until_plan()
+      expect_map({:error, :enoent})
+
+      run = Sabotage.run(%{@facts | dry_run: true} |> Map.put(:coverage, "cov.etf"), @cov_opts)
+
+      assert {2, message} = run.refusal
+      assert message =~ "cov.etf cannot be read (:enoent)"
+      assert message =~ "Fix: download the anchor-coverage artifact again"
+    end
+
+    test "a map whose commit is not a sha is exit 2: it never reaches git" do
+      expect_until_plan()
+      expect_map({:ok, %{coverage_map() | commit: "--output=/tmp/x"}})
+
+      run = Sabotage.run(%{@facts | dry_run: true} |> Map.put(:coverage, "cov.etf"), @cov_opts)
+
+      assert {2, message} = run.refusal
+      assert message =~ ~s|({:commit, "--output=/tmp/x"})|
+      assert message =~ "Fix: download the anchor-coverage artifact again"
+    end
+
+    test "a map of another version is exit 2 with a Fix:" do
+      expect_until_plan()
+      expect_map({:ok, %{coverage_map() | version: 2}})
+
+      run = Sabotage.run(%{@facts | dry_run: true} |> Map.put(:coverage, "cov.etf"), @cov_opts)
+
+      assert {2, message} = run.refusal
+      assert message =~ "is not a usable version-1 coverage map ({:version, 2})"
+      assert message =~ "Fix: download the anchor-coverage artifact again"
+    end
+  end
+
+  describe "run/2: sabotage records (DND-5484)" do
+    # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5484_records.md
+    @now ~U[2026-11-05 14:07:00Z]
+    @rec_facts %{@facts | no_record: false}
+               |> Map.merge(%{now: @now, command: "mix anchor.sabotage run", version: "0.1.0"})
+    @record_path "test/sabotage_records/calc-20261105-dnd_5484_records.md"
+
+    defp expect_git_for_record(branch \\ {:ok, "dnd-5484-records"}) do
+      expect(GitWorktreeMock, :branch, fn @root -> branch end)
+      stub(GitWorktreeMock, :head_sha, fn @root -> {:ok, String.duplicate("2", 40)} end)
+    end
+
+    # Two mutants: the first killed, the second survives (exit 1).
+    defp expect_full_run(config \\ %SabotageConfig{}) do
+      [_first, second] = mutants()
+      expect_until_selection(config: config)
+      expect_baseline(test_run(:passed))
+      expect_patcher(2)
+      expect_delete_journal(2)
+      expect_save()
+
+      expect(TestExecutionMock, :run, 2, fn _argv, ["test/calc_test.exs"], _opts ->
+        if calls_seen({:write_journal, second.id}),
+          do: test_run(:passed),
+          else: test_run(:failed, [@killer])
+      end)
+    end
+
+    test "1: a run's record is created at Record.render's path with its content" do
+      expect_full_run()
+      expect_git_for_record()
+
+      expect(Anchor.RecordStoreMock, :create, fn @root, @record_path, content ->
+        send(self(), {:record, content})
+        :ok
+      end)
+
+      run = Sabotage.run(@rec_facts, @opts)
+
+      assert run.records == [{:create, @record_path}]
+      assert_received {:record, content}
+      assert content =~ "- **Branch:** dnd-5484-records\n- **Date:** 2026-11-05\n"
+
+      assert content =~
+               "- **Generated by:** `mix anchor.sabotage run` (Anchor 0.1.0), base abc, head"
+
+      assert {:ok, rows} = Anchor.Domain.Sabotage.KillMap.parse(content)
+      assert Enum.map(rows, & &1.status) == ["killed", "survived"]
+      assert Report.render(run) =~ "sabotage record created: #{@record_path}\n"
+    end
+
+    test "4: a run that exits 1 (a survivor) still writes its record" do
+      expect_full_run()
+      expect_git_for_record()
+      expect(Anchor.RecordStoreMock, :create, fn @root, @record_path, _content -> :ok end)
+
+      run = Sabotage.run(@rec_facts, @opts)
+
+      assert Report.exit_code(run) == 1
+      assert run.records == [{:create, @record_path}]
+    end
+
+    test "a record already there the same day is appended to" do
+      expect_full_run()
+      expect_git_for_record()
+      stub(Anchor.RecordStoreMock, :list, fn @root, "test/sabotage_records" -> [@record_path] end)
+      expect(Anchor.RecordStoreMock, :read, fn @root, @record_path -> {:ok, "# old record\n"} end)
+
+      expect(Anchor.RecordStoreMock, :append, fn @root, @record_path, "## Run 14:07 UTC\n" <> _ ->
+        :ok
+      end)
+
+      assert Sabotage.run(@rec_facts, @opts).records == [{:append, @record_path}]
+    end
+
+    test "ticket_nn_what: a number another run took meanwhile is retried once, at the next" do
+      config = %SabotageConfig{records: %{%SabotageConfig{}.records | naming: :ticket_nn_what}}
+      first = "test/sabotage_records/DND-77-01-anchor-sabotage-run.md"
+      second = "test/sabotage_records/DND-77-02-anchor-sabotage-run.md"
+      expect_full_run(config)
+      expect_git_for_record({:ok, "dnd-77-calc"})
+
+      # The other run's file appears between this run's listing and its create.
+      stub(Anchor.RecordStoreMock, :list, fn @root, "test/sabotage_records" ->
+        if calls_seen(:create_taken), do: [first], else: []
+      end)
+
+      expect(Anchor.RecordStoreMock, :create, 2, fn
+        @root, ^first, _content -> call(:create_taken, {:error, :eexist})
+        @root, ^second, _content -> :ok
+      end)
+
+      assert Sabotage.run(@rec_facts, @opts).records == [{:create, second}]
+    end
+
+    test "domain_date_slot: a record that appeared meanwhile is never overwritten, said loudly" do
+      expect_full_run()
+      expect_git_for_record()
+
+      expect(Anchor.RecordStoreMock, :create, fn @root, @record_path, _content ->
+        {:error, :eexist}
+      end)
+
+      run = Sabotage.run(@rec_facts, @opts)
+
+      # Two mutants, one survives: the measured verdict (1) wins (DND-5641).
+      assert Report.exit_code(run) == 1
+
+      assert Report.render(run) =~
+               "sabotage: record not written: could not write the sabotage record"
+
+      assert run.records == []
+
+      assert run.record_error =~
+               "could not write the sabotage record #{@record_path} (:eexist); nothing was overwritten"
+    end
+
+    test "2: --no-record writes nothing" do
+      expect_full_run()
+
+      run = Sabotage.run(%{@rec_facts | no_record: true}, @opts)
+
+      assert run.records == []
+    end
+
+    test "a record that cannot be written is said loudly; the survivor keeps exit 1 (DND-5641)" do
+      expect_full_run()
+      expect_git_for_record()
+
+      expect(Anchor.RecordStoreMock, :create, fn @root, @record_path, _content ->
+        {:error, :eacces}
+      end)
+
+      run = Sabotage.run(@rec_facts, @opts)
+
+      # Two mutants, one survives: the measured verdict (1) wins (DND-5641).
+      assert Report.exit_code(run) == 1
+
+      assert Report.render(run) =~
+               "sabotage: record not written: could not write the sabotage record"
+
+      assert [_, _] = run.outcomes
+      assert run.record_error =~ "could not write the sabotage record #{@record_path} (:eacces)"
+    end
+
+    test "3: a malformed kill map in an existing record: selection falls back, the line is said" do
+      bad = "test/sabotage_records/old-20261101-x.md"
+      stub(Anchor.RecordStoreMock, :list, fn @root, "test/sabotage_records" -> [bad] end)
+
+      expect(Anchor.RecordStoreMock, :read, fn @root, ^bad ->
+        {:ok, "x\n```anchor-kills\nonly\tfour\tfields\there\n```\n"}
+      end)
+
+      expect_until_selection()
+
+      run = Sabotage.run(%{@facts | dry_run: true}, @opts)
+
+      assert run.notes == [
+               "could not read kill map in #{bad}:3 (a row has 4 fields, not 6); not used for selection"
+             ]
+
+      assert Enum.all?(run.planned, fn {_m, sel} -> sel == {:mirror, ["test/calc_test.exs"]} end)
+    end
+
+    test "DND-5640: a record whose killer is an option is refused loudly, never put in the argv" do
+      # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5640_test_path.md
+      bad = "test/sabotage_records/old-20261101-x.md"
+      stub(Anchor.RecordStoreMock, :list, fn @root, "test/sabotage_records" -> [bad] end)
+
+      expect(Anchor.RecordStoreMock, :read, fn @root, ^bad ->
+        {:ok,
+         "```anchor-kills\nid1\tlib/calc.ex\tCalc.add/2\top\tkilled\t--include x_test.exs:3 t\n```\n"}
+      end)
+
+      expect_until_selection()
+
+      run = Sabotage.run(%{@facts | dry_run: true}, @opts)
+
+      assert run.notes == [
+               "could not read kill map in #{bad}:2 (killer \"--include x_test.exs:3 t\" " <>
+                 "refused: starts with -, so mix test would read it as an option); " <>
+                 "not used for selection"
+             ]
+
+      assert Enum.all?(run.planned, fn {_m, sel} -> sel == {:mirror, ["test/calc_test.exs"]} end)
+    end
+
+    test "an earlier record's kill map selects the killers' files for the same function" do
+      old = "test/sabotage_records/old-20261101-x.md"
+      stub(Anchor.RecordStoreMock, :list, fn @root, "test/sabotage_records" -> [old] end)
+
+      expect(Anchor.RecordStoreMock, :read, fn @root, ^old ->
+        {:ok,
+         "```anchor-kills\nid1\tlib/calc.ex\tCalc.add/2\top\tkilled\ttest/k_test.exs:3 test k\n```\n"}
+      end)
+
+      expect_journal(:none)
+      expect_config()
+      expect_ignored()
+      expect_scope()
+      expect_clean()
+
+      expect(SourceMutationMock, :existing, fn paths ->
+        assert Enum.sort(paths) == ["/repo/test/calc_test.exs", "/repo/test/k_test.exs"]
+        paths
+      end)
+
+      run = Sabotage.run(%{@facts | dry_run: true}, @opts)
+
+      # The killer's file, and the mirror's: a branch's new tests live there.
+      assert Enum.all?(run.planned, fn {_m, sel} ->
+               sel == {:kill_map, ["test/calc_test.exs", "test/k_test.exs"]}
+             end)
+    end
+
+    test "a detached HEAD with no --slot is exit 2 before any mutant is applied" do
+      expect_until_selection_but_existing()
+      expect_git_for_record({:ok, nil})
+
+      assert %{refusal: {2, message}, outcomes: []} = Sabotage.run(@rec_facts, @opts)
+      assert message =~ "HEAD is detached"
+      assert message =~ "Fix: pass --slot S"
+    end
+
+    test "a run with no mutant to run writes no record and needs no branch" do
+      # An empty diff: zero changed functions, so no mutant. No branch is read
+      # (GitWorktreeMock.branch has no expectation) and nothing is created.
+      expect_journal(:none)
+      expect_config()
+      expect_ignored()
+      expect(ChangeSourceMock, :merge_base, fn @root, "origin/main" -> {:ok, "abc"} end)
+      expect(ChangeSourceMock, :diff, fn @root, "abc" -> {:ok, ""} end)
+      expect(ChangeSourceMock, :untracked, fn @root -> {:ok, []} end)
+      stub(GitWorktreeMock, :dirty_paths, fn @root, [] -> {:ok, []} end)
+      stub(SourceMutationMock, :existing, fn [] -> [] end)
+      stub(SourceMutationMock, :save_run, fn _path, _bytes -> :ok end)
+
+      run = Sabotage.run(@rec_facts, @opts)
+
+      assert run.refusal == nil
+      assert run.outcomes == []
+      assert run.records == []
+    end
+
+    test "a dry run needs nothing a record needs: a detached HEAD is not refused" do
+      expect_until_selection()
+
+      run = Sabotage.run(%{@rec_facts | dry_run: true}, @opts)
+
+      assert run.refusal == nil
+      assert run.dry_run
+    end
+
+    test "--domain and --ticket must be names, never paths: exit 2 before anything is read" do
+      for {facts, text} <- [
+            {%{domain: "../x"}, "--domain \"../x\" must be letters, digits and _ only"},
+            {%{domain: "call-tracer"}, "--domain \"call-tracer\" must be letters"},
+            {%{ticket: "a/b"}, "--ticket \"a/b\" is not a ticket key"},
+            {%{ticket: "dnd-1"}, "--ticket \"dnd-1\" is not a ticket key"}
+          ] do
+        expect_until_selection_but_existing()
+
+        assert %{refusal: {2, message}} = Sabotage.run(Map.merge(@rec_facts, facts), @opts)
+        assert message =~ text
+      end
+    end
+
+    test "ticket naming with no ticket key is exit 2: Fix: pass --ticket" do
+      config = %SabotageConfig{records: %{%SabotageConfig{}.records | naming: :ticket_nn_what}}
+      expect_until_selection_but_existing(config)
+      expect_git_for_record({:ok, "feat/no-key"})
+
+      assert %{refusal: {2, message}} = Sabotage.run(@rec_facts, @opts)
+      assert message =~ "Fix: pass --ticket DND-NNN"
+    end
+
+    test "{app} in the records dir for a file outside apps/ is exit 2 naming it" do
+      records = %{%SabotageConfig{}.records | dir: "apps/{app}/test/sabotage_records"}
+      expect_until_selection_but_existing(%SabotageConfig{records: records})
+      stub(Anchor.RecordStoreMock, :list, fn @root, "apps/*/test/sabotage_records" -> [] end)
+      expect_git_for_record()
+
+      assert %{refusal: {2, message}} = Sabotage.run(@rec_facts, @opts)
+      assert message =~ "but lib/calc.ex is not under apps/<app>/"
+      assert message =~ "Fix: set records.dir without {app}"
+    end
+
+    defp expect_until_selection_but_existing(config \\ %SabotageConfig{}) do
+      expect_journal(:none)
+      expect_config(config)
+      expect_ignored()
+      expect_scope()
+      expect_clean()
     end
   end
 

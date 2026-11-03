@@ -8,6 +8,11 @@ defmodule Anchor.Managers.Sabotage do
 
   Delegated to `Anchor.Managers.Sabotage.Runner`, the same Manager bucket.
 
+  ## coverage/2 (DND-5474)
+
+  Delegated to `Anchor.Managers.Sabotage.Coverage`: the per-test coverage
+  map, built by running the suite in this VM with call tracing.
+
   ## scope/2 (DND-5472)
 
   The functions the working tree changed relative to the merge-base of `base`
@@ -36,6 +41,7 @@ defmodule Anchor.Managers.Sabotage do
   alias Anchor.Domain.Sabotage.FunctionSpans
   alias Anchor.Domain.Sabotage.Run
   alias Anchor.Domain.Sabotage.Scope
+  alias Anchor.Managers.Sabotage.Coverage
   alias Anchor.Managers.Sabotage.Runner
 
   @doc """
@@ -45,6 +51,13 @@ defmodule Anchor.Managers.Sabotage do
   """
   @spec run(map(), keyword()) :: Run.t()
   def run(facts, opts \\ []), do: Runner.run(facts, opts)
+
+  @doc """
+  Builds the per-test coverage map (DND-5474) and returns `{exit_code, lines}`.
+  See `Anchor.Managers.Sabotage.Coverage`.
+  """
+  @spec coverage(Coverage.facts(), keyword()) :: {non_neg_integer(), [String.t()]}
+  def coverage(facts, opts \\ []), do: Coverage.run(facts, opts)
 
   @doc "Restores a leftover journal's file, if any (`mix anchor.sabotage restore`)."
   @spec restore(%{root: String.t()}, keyword()) :: Run.t()
@@ -66,7 +79,7 @@ defmodule Anchor.Managers.Sabotage do
          {:ok, spans} <- spans(Scope.source_files(files), &read_spans(source, root, &1)),
          {:ok, old_spans} <-
            spans(Scope.old_source_files(files), &base_spans(source, root, sha, &1)) do
-      {:ok, Scope.build(files, spans, old_spans)}
+      {:ok, %{Scope.build(files, spans, old_spans) | base_sha: sha}}
     end
   end
 
