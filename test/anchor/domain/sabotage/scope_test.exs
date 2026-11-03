@@ -45,6 +45,14 @@ defmodule Anchor.Domain.Sabotage.ScopeTest do
     Scope.build(%{"lib/m.ex" => %{status: status, hunks: hunks}}, %{"lib/m.ex" => spans!(source)})
   end
 
+  defp build_with_base(hunks, old_hunks, source, base) do
+    Scope.build(
+      %{"lib/m.ex" => %{status: :modified, hunks: hunks, old_hunks: old_hunks}},
+      %{"lib/m.ex" => spans!(source)},
+      %{"lib/m.ex" => spans!(base)}
+    )
+  end
+
   defp identities(scope),
     do: Enum.map(scope.functions, &{&1.module, &1.name, &1.arity, &1.changed_lines})
 
@@ -126,6 +134,17 @@ defmodule Anchor.Domain.Sabotage.ScopeTest do
       assert Scope.source_files(files) == ["lib/m.ex"]
     end
 
+    test "S15: old_source_files names the modified source files with removed lines" do
+      files = %{
+        "lib/a.ex" => %{status: :modified, hunks: [{3, 1}], old_hunks: [{3, 1}]},
+        "lib/b.ex" => %{status: :modified, hunks: [{3, 2}], old_hunks: [{2, 0}]},
+        "lib/c.ex" => %{status: :added, hunks: [{1, 9}], old_hunks: [{0, 0}]},
+        "test/d_test.exs" => %{status: :modified, hunks: [{1, 1}], old_hunks: [{1, 1}]}
+      }
+
+      assert Scope.old_source_files(files) == ["lib/a.ex"]
+    end
+
     test "S9: an added file puts every function in scope, whatever its hunks say" do
       scope = build([], @source, :added)
 
@@ -154,25 +173,46 @@ defmodule Anchor.Domain.Sabotage.ScopeTest do
       assert %{was | changed_lines: []} == %{now | changed_lines: []}
     end
 
-    test "S13: a whole clause deleted from the middle of f/1 puts f/1 in scope" do
-      source = """
+    test "S13: a whole clause deleted first, in the middle or last keeps f/1 in scope" do
+      base = """
       defmodule M do
+        def e, do: :e
         def f(1), do: 1
+        def f(2), do: 2
         def f(3), do: 3
-
         def g, do: :g
-        def h, do: :h
       end
       """
 
-      # `def f(2), do: 2` was line 3: deletion point between new lines 2 and 3.
-      scope = build([{2, 0}], source)
-      assert identities(scope) == [{M, :f, 1, [3]}]
-      assert scope.counts == @zero
+      # Each row: the source without one line of `base`, the hunk git prints
+      # for it (new side, then base side), and the line now where it was.
+      for {deleted, new_hunk, old_hunk, at} <- [
+            {3, {2, 0}, {3, 1}, 3},
+            {4, {3, 0}, {4, 1}, 4},
+            {5, {4, 0}, {5, 1}, 5}
+          ] do
+        source = base |> String.split("\n") |> List.delete_at(deleted - 1) |> Enum.join("\n")
+        scope = build_with_base([new_hunk], [old_hunk], source, base)
 
-      # Positive control: a deletion point between two different functions is outside.
-      assert build([{5, 0}], source).counts == %{@zero | outside_hunks: 1}
-      assert build([{5, 0}], source).functions == []
+        assert identities(scope) == [{M, :f, 1, [at]}], "deleted line #{deleted}"
+        assert scope.counts == @zero, "deleted line #{deleted}"
+      end
+    end
+
+    test "S14: a function deleted whole is not scoped, and its hunk is outside a function" do
+      base = """
+      defmodule M do
+        def e, do: :e
+        def gone, do: :gone
+        def g, do: :g
+      end
+      """
+
+      source = base |> String.split("\n") |> List.delete_at(2) |> Enum.join("\n")
+      scope = build_with_base([{2, 0}], [{3, 1}], source, base)
+
+      assert scope.functions == []
+      assert scope.counts == %{@zero | outside_hunks: 1}
     end
 
     test "S12: one hunk over two functions scopes both, in file then line order" do

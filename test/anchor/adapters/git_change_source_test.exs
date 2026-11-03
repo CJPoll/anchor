@@ -62,6 +62,24 @@ defmodule Anchor.Adapters.GitChangeSourceTest do
     assert diff =~ "diff --git a/lib/a.ex b/lib/a.ex"
   end
 
+  test "G5: show returns a file as it was at a commit, by a path relative to root", %{
+    tmp_dir: root
+  } do
+    repo!(root)
+    {:ok, sha} = GitChangeSource.merge_base(root, "HEAD")
+    File.write!(Path.join(root, "lib/a.ex"), "changed\n")
+
+    assert GitChangeSource.show(root, sha, "lib/a.ex") ==
+             {:ok, "defmodule A do\n  def f, do: 1\nend\n"}
+
+    # A root below the repository's top: paths are relative to root, as the diff's are.
+    assert GitChangeSource.show(Path.join(root, "lib"), sha, "a.ex") ==
+             {:ok, "defmodule A do\n  def f, do: 1\nend\n"}
+
+    assert {:error, {:git_failed, ["show", _spec], _status, _out}} =
+             GitChangeSource.show(root, sha, "lib/none.ex")
+  end
+
   test "G2: untracked returns only untracked .ex files", %{tmp_dir: root} do
     repo!(root)
     File.write!(Path.join(root, "lib/new.ex"), "defmodule New do\nend\n")

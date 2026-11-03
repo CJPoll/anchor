@@ -4,7 +4,8 @@ defmodule Anchor.Domain.Sabotage.DiffHunks do
   --dst-prefix=b/` into the changed regions of each file, a **Domain** module
   (ADR 001). Pure: text in, data out.
 
-  `parse/1` returns `{:ok, %{path => %{status: status, hunks: hunks}}}`:
+  `parse/1` returns
+  `{:ok, %{path => %{status: status, hunks: hunks, old_hunks: old_hunks}}}`:
 
     * `status` is `:added` (`--- /dev/null` or `new file mode`), `:deleted`
       (`+++ /dev/null` or `deleted file mode`) or `:modified`;
@@ -12,6 +13,8 @@ defmodule Anchor.Domain.Sabotage.DiffHunks do
       `@@ -a,b +c,d @@` header (a missing count is 1). A `new_count` of 0 is a
       pure deletion between new-side lines `new_start` and `new_start + 1`.
       A deleted file has no hunks.
+    * `old_hunks` is `[{old_start, old_count}]`, the base side of each hunk,
+      in the same order as `hunks` (one per hunk).
 
   Paths are the diff header's (with `--no-renames` both sides name the same
   file), unquoted when git C-quotes them.
@@ -25,7 +28,8 @@ defmodule Anchor.Domain.Sabotage.DiffHunks do
   """
 
   @type status :: :added | :deleted | :modified
-  @type file_change :: %{status: status(), hunks: [{non_neg_integer(), non_neg_integer()}]}
+  @type range :: {non_neg_integer(), non_neg_integer()}
+  @type file_change :: %{status: status(), hunks: [range()], old_hunks: [range()]}
   @type t :: %{String.t() => file_change()}
 
   @ignored_header_prefixes ["index ", "old mode ", "new mode ", "Binary files ", "\\ "]
@@ -64,7 +68,8 @@ defmodule Anchor.Domain.Sabotage.DiffHunks do
   defp step({"diff --git " <> rest, number}, state) do
     case header_path(rest) do
       {:ok, path} ->
-        {:cont, %{flush(state) | current: %{path: path, status: :modified, hunks: []}}}
+        {:cont,
+         %{flush(state) | current: %{path: path, status: :modified, hunks: [], old_hunks: []}}}
 
       :error ->
         {:halt, {:error, {:unrecognised_diff_line, number, "diff --git " <> rest}}}
@@ -112,21 +117,24 @@ defmodule Anchor.Domain.Sabotage.DiffHunks do
 
   defp dev_null?(side), do: String.trim_trailing(side, "\t") == "/dev/null"
 
-  defp deleted(current), do: %{current | status: :deleted, hunks: []}
+  defp deleted(current), do: %{current | status: :deleted, hunks: [], old_hunks: []}
 
   defp hunk(header, current) do
     with [old_range, new_range, "@@" | _context] <- String.split(header, " ", parts: 4),
-         {:ok, {_old_start, old_count}} <- range(old_range, "-"),
+         {:ok, {old_start, old_count}} <- range(old_range, "-"),
          {:ok, {new_start, new_count}} <- range(new_range, "+") do
-      {:hunk, record_hunk(current, {new_start, new_count}), body_counts(old_count, new_count)}
+      {:hunk, record_hunk(current, {new_start, new_count}, {old_start, old_count}),
+       body_counts(old_count, new_count)}
     else
       _malformed -> :error
     end
   end
 
   # A deleted file's hunks are dropped: nothing of it is left to scope.
-  defp record_hunk(%{status: :deleted} = current, _hunk), do: current
-  defp record_hunk(current, hunk), do: %{current | hunks: current.hunks ++ [hunk]}
+  defp record_hunk(%{status: :deleted} = current, _hunk, _old), do: current
+
+  defp record_hunk(current, hunk, old),
+    do: %{current | hunks: current.hunks ++ [hunk], old_hunks: current.old_hunks ++ [old]}
 
   defp body_counts(old_count, new_count),
     do: if(old_count + new_count == 0, do: nil, else: {old_count, new_count})
@@ -153,7 +161,7 @@ defmodule Anchor.Domain.Sabotage.DiffHunks do
   defp flush(%{current: nil} = state), do: state
 
   defp flush(%{current: current} = state) do
-    change = %{status: current.status, hunks: current.hunks}
+    change = %{status: current.status, hunks: current.hunks, old_hunks: current.old_hunks}
     %{state | files: Map.put(state.files, current.path, change), current: nil}
   end
 

@@ -40,6 +40,7 @@ defmodule Anchor.Managers.SabotageScopeTest do
     test "M1: a modified file's changed function is in scope" do
       expect_git(modified("lib/m.ex", "@@ -3 +3 @@"), [])
       expect(ChangeSourceMock, :read, fn @root, "lib/m.ex" -> {:ok, @source} end)
+      expect(ChangeSourceMock, :show, fn @root, @sha, "lib/m.ex" -> {:ok, @source} end)
 
       assert {:ok, scope} = Sabotage.scope(@args, @opts)
 
@@ -123,6 +124,59 @@ defmodule Anchor.Managers.SabotageScopeTest do
       assert {:ok, scope} = Sabotage.scope(@args, @opts)
       assert scope.functions == []
       assert scope.counts.test_files == 3
+    end
+
+    test "M8: a clause deleted last maps through the base side to its function" do
+      base = "defmodule M do\n  def f(1), do: 1\n  def f(2), do: 2\n  def g, do: :g\nend\n"
+      now = "defmodule M do\n  def f(1), do: 1\n  def g, do: :g\nend\n"
+
+      diff =
+        "diff --git a/lib/m.ex b/lib/m.ex\nindex 1..2 100644\n--- a/lib/m.ex\n+++ b/lib/m.ex\n@@ -3 +2,0 @@\n-  def f(2), do: 2\n"
+
+      expect_git(diff, [])
+      expect(ChangeSourceMock, :read, fn @root, "lib/m.ex" -> {:ok, now} end)
+      expect(ChangeSourceMock, :show, fn @root, @sha, "lib/m.ex" -> {:ok, base} end)
+
+      assert {:ok, scope} = Sabotage.scope(@args, @opts)
+      assert [%{module: M, name: :f, arity: 1, changed_lines: [3]}] = scope.functions
+      assert scope.counts.outside_hunks == 0
+    end
+
+    test "M9: the base copy cannot be read: the git error is returned" do
+      failure = {:git_failed, ["show", "abc123:./lib/m.ex"], 128, ""}
+      expect_git(modified("lib/m.ex", "@@ -3 +3 @@"), [])
+      expect(ChangeSourceMock, :read, fn @root, "lib/m.ex" -> {:ok, @source} end)
+      expect(ChangeSourceMock, :show, fn @root, @sha, "lib/m.ex" -> {:error, failure} end)
+
+      assert Sabotage.scope(@args, @opts) == {:error, failure}
+    end
+
+    test "M10: the base copy does not parse: named with the merge-base" do
+      expect_git(modified("lib/m.ex", "@@ -3 +3 @@"), [])
+      expect(ChangeSourceMock, :read, fn @root, "lib/m.ex" -> {:ok, @source} end)
+
+      expect(ChangeSourceMock, :show, fn @root, @sha, "lib/m.ex" ->
+        {:ok, "defmodule M do\n  def f(\nend\n"}
+      end)
+
+      assert {:error, {:unparseable_base, "lib/m.ex", @sha, 2, reason}} =
+               Sabotage.scope(@args, @opts)
+
+      assert is_binary(reason)
+    end
+
+    test "M11: a pure addition reads no base copy" do
+      diff = "diff --git a/lib/m.ex b/lib/m.ex
+index 1..2 100644
+--- a/lib/m.ex
++++ b/lib/m.ex
+@@ -2,0 +3 @@
++    x
+"
+      expect_git(diff, [])
+      expect(ChangeSourceMock, :read, fn @root, "lib/m.ex" -> {:ok, @source} end)
+
+      assert {:ok, %{functions: [%{name: :f, changed_lines: [3]}]}} = Sabotage.scope(@args, @opts)
     end
 
     test "a clean diff is ok with zero functions" do

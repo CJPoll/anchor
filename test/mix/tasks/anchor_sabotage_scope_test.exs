@@ -25,6 +25,7 @@ defmodule Mix.Tasks.Anchor.SabotageScopeTest do
     expect(ChangeSourceMock, :diff, fn ^root, "abc" -> {:ok, @diff} end)
     expect(ChangeSourceMock, :untracked, fn ^root -> {:ok, []} end)
     expect(ChangeSourceMock, :read, fn ^root, "lib/m.ex" -> {:ok, @source} end)
+    expect(ChangeSourceMock, :show, fn ^root, "abc", "lib/m.ex" -> {:ok, @source} end)
   end
 
   test "F1: text prints the TSV line and the summary" do

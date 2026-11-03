@@ -190,6 +190,8 @@ defmodule Anchor.Domain.Failures do
     * `{:git_failed, argv, status, output}`: a git command exited non-zero;
     * `{:unparseable_diff, reason}`: git printed a diff Anchor cannot read;
     * `{:unparseable, file, line, reason}`: a changed source file does not parse;
+    * `{:unparseable_base, file, sha, line, reason}`: its copy at the merge-base
+      does not parse, so its removed lines cannot be mapped;
     * `{:unreadable, file, posix}`: a changed source file could not be read.
 
   A reason of any other shape is still reported, never dropped.
@@ -217,6 +219,12 @@ defmodule Anchor.Domain.Failures do
   def scope_could_not_measure({:unparseable, file, line, reason}) do
     "COULD NOT MEASURE: #{file}:#{line} does not parse (#{reason}). " <>
       "Fix: make it compile; a file that does not parse cannot be scoped."
+  end
+
+  def scope_could_not_measure({:unparseable_base, file, sha, line, reason}) do
+    "COULD NOT MEASURE: #{file}:#{line} at the merge-base #{sha} does not parse (#{reason}). " <>
+      "Fix: pass a --base whose copy of #{file} parses; its removed lines cannot be mapped to " <>
+      "functions otherwise."
   end
 
   def scope_could_not_measure({:unreadable, file, posix}) do

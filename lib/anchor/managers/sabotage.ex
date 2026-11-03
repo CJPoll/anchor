@@ -17,7 +17,10 @@ defmodule Anchor.Managers.Sabotage do
     3. each changed source file that still exists (`Scope.source_files/1`) is
        read and its function spans found (`FunctionSpans.spans/2`); test,
        non-source and deleted files are never read;
-    4. `Scope.build/2`.
+    4. each of those files with removed lines (`Scope.old_source_files/1`) is
+       read as it was at the merge-base (`show`), and its spans found, so a
+       removed line maps to the function it was in;
+    5. `Scope.build/3`.
 
   It fails closed: every failure is `{:error, reason}` with a reason
   `Anchor.Domain.Failures.scope_could_not_measure/1` words, never an empty
@@ -41,11 +44,15 @@ defmodule Anchor.Managers.Sabotage do
          {:ok, text} <- source.diff(root, sha),
          {:ok, files} <- parse_diff(text),
          {:ok, untracked} <- source.untracked(root),
-         files = Enum.reduce(untracked, files, &Map.put(&2, &1, %{status: :added, hunks: []})),
-         {:ok, spans} <- spans(source, root, Scope.source_files(files)) do
-      {:ok, Scope.build(files, spans)}
+         files = Enum.reduce(untracked, files, &Map.put(&2, &1, untracked_change())),
+         {:ok, spans} <- spans(Scope.source_files(files), &read_spans(source, root, &1)),
+         {:ok, old_spans} <-
+           spans(Scope.old_source_files(files), &base_spans(source, root, sha, &1)) do
+      {:ok, Scope.build(files, spans, old_spans)}
     end
   end
+
+  defp untracked_change, do: %{status: :added, hunks: [], old_hunks: []}
 
   defp merge_base(source, root, base) do
     case source.merge_base(root, base) do
@@ -61,22 +68,32 @@ defmodule Anchor.Managers.Sabotage do
     end
   end
 
-  defp spans(source, root, paths) do
+  defp spans(paths, file_spans) do
     Enum.reduce_while(paths, {:ok, %{}}, fn path, {:ok, acc} ->
-      case file_spans(source, root, path) do
+      case file_spans.(path) do
         {:ok, spans} -> {:cont, {:ok, Map.put(acc, path, spans)}}
         error -> {:halt, error}
       end
     end)
   end
 
-  defp file_spans(source, root, path) do
+  defp read_spans(source, root, path) do
     with {:read, {:ok, text}} <- {:read, source.read(root, path)},
          {:spans, {:ok, spans}} <- {:spans, FunctionSpans.spans(text, path)} do
       {:ok, spans}
     else
       {:read, {:error, posix}} -> {:error, {:unreadable, path, posix}}
       {:spans, {:error, {line, reason}}} -> {:error, {:unparseable, path, line, reason}}
+    end
+  end
+
+  defp base_spans(source, root, sha, path) do
+    with {:show, {:ok, text}} <- {:show, source.show(root, sha, path)},
+         {:spans, {:ok, spans}} <- {:spans, FunctionSpans.spans(text, path)} do
+      {:ok, spans}
+    else
+      {:show, {:error, reason}} -> {:error, reason}
+      {:spans, {:error, {line, reason}}} -> {:error, {:unparseable_base, path, sha, line, reason}}
     end
   end
 end

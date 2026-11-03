@@ -24,7 +24,7 @@ defmodule Anchor.Domain.Sabotage.DiffHunksTest do
       """
 
       assert DiffHunks.parse(diff) ==
-               {:ok, %{"lib/a.ex" => %{status: :modified, hunks: [{3, 4}]}}}
+               {:ok, %{"lib/a.ex" => %{status: :modified, hunks: [{3, 4}], old_hunks: [{3, 2}]}}}
     end
 
     test "H2: a zero-count hunk (a pure deletion) is kept with count 0" do
@@ -39,7 +39,7 @@ defmodule Anchor.Domain.Sabotage.DiffHunksTest do
       """
 
       assert DiffHunks.parse(diff) ==
-               {:ok, %{"lib/a.ex" => %{status: :modified, hunks: [{4, 0}]}}}
+               {:ok, %{"lib/a.ex" => %{status: :modified, hunks: [{4, 0}], old_hunks: [{5, 2}]}}}
     end
 
     test "H3: a hunk header without counts defaults each count to 1" do
@@ -54,7 +54,7 @@ defmodule Anchor.Domain.Sabotage.DiffHunksTest do
       """
 
       assert DiffHunks.parse(diff) ==
-               {:ok, %{"lib/a.ex" => %{status: :modified, hunks: [{7, 1}]}}}
+               {:ok, %{"lib/a.ex" => %{status: :modified, hunks: [{7, 1}], old_hunks: [{7, 1}]}}}
     end
 
     test "H4: a file added (--- /dev/null) is :added" do
@@ -69,7 +69,8 @@ defmodule Anchor.Domain.Sabotage.DiffHunksTest do
       +end
       """
 
-      assert DiffHunks.parse(diff) == {:ok, %{"lib/new.ex" => %{status: :added, hunks: [{1, 2}]}}}
+      assert DiffHunks.parse(diff) ==
+               {:ok, %{"lib/new.ex" => %{status: :added, hunks: [{1, 2}], old_hunks: [{0, 0}]}}}
     end
 
     test "H5: a file deleted (+++ /dev/null) is :deleted with no hunks, keyed by its old path" do
@@ -84,7 +85,8 @@ defmodule Anchor.Domain.Sabotage.DiffHunksTest do
       -end
       """
 
-      assert DiffHunks.parse(diff) == {:ok, %{"lib/old.ex" => %{status: :deleted, hunks: []}}}
+      assert DiffHunks.parse(diff) ==
+               {:ok, %{"lib/old.ex" => %{status: :deleted, hunks: [], old_hunks: []}}}
     end
 
     test "H6: three files, paths with spaces and quoted paths, all keyed by the b/ path" do
@@ -116,9 +118,9 @@ defmodule Anchor.Domain.Sabotage.DiffHunksTest do
       assert DiffHunks.parse(diff) ==
                {:ok,
                 %{
-                  "lib/my file.ex" => %{status: :modified, hunks: [{2, 1}]},
-                  "lib/q\"é.ex" => %{status: :modified, hunks: [{1, 1}]},
-                  "README.md" => %{status: :modified, hunks: [{2, 3}]}
+                  "lib/my file.ex" => %{status: :modified, hunks: [{2, 1}], old_hunks: [{2, 1}]},
+                  "lib/q\"é.ex" => %{status: :modified, hunks: [{1, 1}], old_hunks: [{1, 1}]},
+                  "README.md" => %{status: :modified, hunks: [{2, 3}], old_hunks: [{1, 0}]}
                 }}
     end
 
@@ -145,7 +147,14 @@ defmodule Anchor.Domain.Sabotage.DiffHunksTest do
       """
 
       assert DiffHunks.parse(diff) ==
-               {:ok, %{"lib/a.ex" => %{status: :modified, hunks: [{3, 1}, {8, 2}]}}}
+               {:ok,
+                %{
+                  "lib/a.ex" => %{
+                    status: :modified,
+                    hunks: [{3, 1}, {8, 2}],
+                    old_hunks: [{3, 2}, {9, 1}]
+                  }
+                }}
     end
 
     test "H9: a binary or mode-only change has no hunks and is keyed by the header path" do
@@ -162,8 +171,8 @@ defmodule Anchor.Domain.Sabotage.DiffHunksTest do
       assert DiffHunks.parse(diff) ==
                {:ok,
                 %{
-                  "lib/mode.ex" => %{status: :modified, hunks: []},
-                  "priv/logo.png" => %{status: :added, hunks: []}
+                  "lib/mode.ex" => %{status: :modified, hunks: [], old_hunks: []},
+                  "priv/logo.png" => %{status: :added, hunks: [], old_hunks: []}
                 }}
     end
 
@@ -196,7 +205,7 @@ defmodule Anchor.Domain.Sabotage.DiffHunksTest do
       """
 
       assert DiffHunks.parse(diff) ==
-               {:ok, %{"lib/a.ex" => %{status: :modified, hunks: [{4, 1}]}}}
+               {:ok, %{"lib/a.ex" => %{status: :modified, hunks: [{4, 1}], old_hunks: [{4, 1}]}}}
     end
   end
 end

@@ -13,6 +13,7 @@ defmodule Anchor.Adapters.ChangeSource do
     * `diff/2` returns the raw `--unified=0` diff text between that commit and
       the working tree (committed, staged and unstaged changes).
     * `untracked/1` returns the untracked, not ignored `.ex` files.
+    * `show/3` returns a file's contents as they were at that commit.
     * `read/2` returns a file's contents, or its posix error.
   """
 
@@ -26,6 +27,9 @@ defmodule Anchor.Adapters.ChangeSource do
               {:ok, String.t()} | {:error, git_error()}
 
   @callback untracked(root :: String.t()) :: {:ok, [String.t()]} | {:error, git_error()}
+
+  @callback show(root :: String.t(), sha :: String.t(), path :: String.t()) ::
+              {:ok, String.t()} | {:error, git_error()}
 
   @callback read(root :: String.t(), path :: String.t()) :: {:ok, String.t()} | {:error, atom()}
 end

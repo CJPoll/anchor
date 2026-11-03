@@ -18,7 +18,9 @@ defmodule Anchor.Adapters.GitChangeSource do
       (`--relative`: paths relative to `root`, the same base `ls-files` uses;
       the submodule format and the prefixes are set so a user's
       `diff.submodule` or `diff.noprefix` cannot change the text);
-    * `git ls-files -z --others --exclude-standard -- *.ex`.
+    * `git ls-files -z --others --exclude-standard -- *.ex`;
+    * `git show <sha>:./<path>` (`./`: the path is relative to `root`, as the
+      diff's are).
 
   `diff` and `ls-files` keep git's stderr out of their output, so a warning
   can never read as diff text; on a failure git's own message is on stderr and
@@ -58,6 +60,16 @@ defmodule Anchor.Adapters.GitChangeSource do
 
     case git(root, args, false) do
       {out, 0} -> {:ok, String.split(out, <<0>>, trim: true)}
+      {out, status} -> {:error, {:git_failed, args, status, out}}
+    end
+  end
+
+  @impl Anchor.Adapters.ChangeSource
+  def show(root, sha, path) do
+    args = ["show", sha <> ":./" <> path]
+
+    case git(root, args, false) do
+      {out, 0} -> {:ok, out}
       {out, status} -> {:error, {:git_failed, args, status, out}}
     end
   end

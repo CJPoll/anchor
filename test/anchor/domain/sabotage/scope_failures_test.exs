@@ -8,6 +8,10 @@ defmodule Anchor.Domain.Sabotage.ScopeFailuresTest do
   alias Anchor.Domain.Failures
 
   @rows [
+    {{:unparseable_base, "lib/a.ex", "abc", 4, "syntax error"},
+     "COULD NOT MEASURE: lib/a.ex:4 at the merge-base abc does not parse (syntax error). " <>
+       "Fix: pass a --base whose copy of lib/a.ex parses; its removed lines cannot be mapped to " <>
+       "functions otherwise."},
     {{:unparseable_diff, {:truncated_hunk, "lib/a.ex"}},
      "COULD NOT MEASURE: git printed a diff Anchor cannot read ({:truncated_hunk, \"lib/a.ex\"}). " <>
        "Fix: check git's diff config (an external diff driver or textconv), or report it to Anchor."},

@@ -16,13 +16,18 @@ defmodule Anchor.Domain.Sabotage.Scope do
 
   For `{start, count}` with `count > 0` the changed lines are
   `start..start + count - 1`. With `count == 0` it is a deletion point between
-  lines `start` and `start + 1`, which belongs to a span holding both, or, when
-  none does, to the function whose clauses sit on both sides of it (a whole
-  clause deleted from the middle of a multi-clause function). An added
-  file (or an untracked one) changes every line of every function in it.
+  lines `start` and `start + 1`, which belongs to a span holding both. An
+  added file (or an untracked one) changes every line of every function in it.
 
   Each changed line goes to every function span holding it that is not
   `excluded_macro`.
+
+  A hunk's removed lines (its `old_hunks` range) map onto the base side's
+  spans: a function a removed line was in that still exists in the file is in
+  scope, recorded at the new-side line where the removed text was. This is
+  what keeps a multi-clause function in scope when a whole clause of it is
+  deleted (first, middle or last), and such a hunk is not counted as outside
+  a function. A function deleted whole no longer exists, so it is not scoped.
 
   ## What is counted, never dropped
 
@@ -61,15 +66,17 @@ defmodule Anchor.Domain.Sabotage.Scope do
   @excluded_segments ["test", "deps", "_build"]
 
   @doc """
-  Builds the scope from the changed files and the spans of each source file
-  `source_files/1` names.
+  Builds the scope from the changed files, the spans of each source file
+  `source_files/1` names, and the base-side spans of each of those files with
+  removed lines (`old_source_files/1`): a removed line maps to the function it
+  was in at the base, when that function still exists.
   """
-  @spec build(DiffHunks.t(), %{String.t() => [Span.t()]}) :: t()
-  def build(files, spans_by_file) do
+  @spec build(DiffHunks.t(), %{String.t() => [Span.t()]}, %{String.t() => [Span.t()]}) :: t()
+  def build(files, spans_by_file, old_spans_by_file \\ %{}) do
     files
     |> Enum.sort_by(fn {path, _change} -> path end)
     |> Enum.reduce({%{}, %__MODULE__{}.counts}, fn {path, change}, acc ->
-      classify_file(path, change, spans_by_file, acc)
+      classify_file(path, change, {spans_by_file, old_spans_by_file}, acc)
     end)
     |> then(fn {functions, counts} ->
       %__MODULE__{functions: ordered(functions), counts: counts}
@@ -83,6 +90,18 @@ defmodule Anchor.Domain.Sabotage.Scope do
   @spec source_files(DiffHunks.t()) :: [String.t()]
   def source_files(files) do
     for {path, %{status: status}} <- files, status != :deleted, kind(path) == :source, do: path
+  end
+
+  @doc """
+  The changed source files with removed lines, whose base-side source must be
+  read and its spans given to `build/3`, sorted.
+  """
+  @spec old_source_files(DiffHunks.t()) :: [String.t()]
+  def old_source_files(files) do
+    for {path, %{status: :modified} = change} <- files,
+        kind(path) == :source,
+        Enum.any?(Map.get(change, :old_hunks, []), fn {_start, count} -> count > 0 end),
+        do: path
   end
 
   @doc """
@@ -140,7 +159,7 @@ defmodule Anchor.Domain.Sabotage.Scope do
 
   defp file_count(scope), do: scope.functions |> Enum.uniq_by(& &1.file) |> length()
 
-  defp classify_file(path, change, spans_by_file, {functions, counts}) do
+  defp classify_file(path, change, {spans_by_file, old_spans_by_file}, {functions, counts}) do
     case {kind(path), change.status} do
       {:test, _status} ->
         {functions, bump(counts, :test_files)}
@@ -151,14 +170,18 @@ defmodule Anchor.Domain.Sabotage.Scope do
       {:source, :deleted} ->
         {functions, bump(counts, :deleted_files)}
 
-      {:source, status} ->
-        scope_file(
-          path,
-          status,
-          change.hunks,
-          Map.fetch!(spans_by_file, path),
-          {functions, counts}
-        )
+      {:source, :added} ->
+        scope_added(path, Map.fetch!(spans_by_file, path), {functions, counts})
+
+      {:source, _modified} ->
+        file = %{
+          path: path,
+          spans: Map.fetch!(spans_by_file, path),
+          old_spans: Map.get(old_spans_by_file, path, [])
+        }
+
+        old_hunks = Map.get(change, :old_hunks, Enum.map(change.hunks, fn _hunk -> {0, 0} end))
+        scope_hunks(file, Enum.zip(change.hunks, old_hunks), {functions, counts})
     end
   end
 
@@ -180,40 +203,35 @@ defmodule Anchor.Domain.Sabotage.Scope do
   # An added file changed every line its functions hold: one hunk over them
   # all. Its lines outside a function (the defmodule line, attributes) are not
   # a hunk the diff made outside a function, so they are not counted.
-  defp scope_file(path, :added, _hunks, spans, acc) do
+  defp scope_added(path, spans, {functions, counts}) do
     last = spans |> Enum.map(& &1.last) |> Enum.max(fn -> 1 end)
+    file = %{path: path, spans: spans, old_spans: []}
 
-    {functions, counts} =
-      scope_file(
-        path,
-        :modified,
-        [{1, last}],
-        spans,
-        {elem(acc, 0), %{elem(acc, 1) | outside_hunks: 0}}
-      )
+    {functions, added_counts} =
+      scope_hunks(file, [{{1, last}, {0, 0}}], {functions, %{counts | outside_hunks: 0}})
 
-    {functions, %{counts | outside_hunks: elem(acc, 1).outside_hunks}}
+    {functions, %{added_counts | outside_hunks: counts.outside_hunks}}
   end
 
-  defp scope_file(path, _status, hunks, spans, acc) do
-    Enum.reduce(hunks, acc, fn hunk, {functions, counts} ->
-      {functions, flags} = map_hunk(hunk, path, spans, functions)
+  # Each hunk maps its new-side lines (or deletion point) onto the file's
+  # spans, and its removed lines onto the base side's spans. A function a
+  # removed line was in, and that still exists, is in scope: a clause deleted
+  # anywhere in a multi-clause function changes it although no clause left
+  # holds the point. Such a hunk is about that function, not outside one.
+  defp scope_hunks(file, hunks, acc) do
+    Enum.reduce(hunks, acc, fn {hunk, old_hunk}, {functions, counts} ->
+      {functions, flags} = map_hunk(hunk, file.path, file.spans, functions)
+      {functions, survivors} = map_removed(old_hunk, hunk, file, functions)
+      flags = if survivors == [], do: flags, else: Enum.reject(flags, &(&1 == :outside))
 
       {functions,
        counts |> bump_if(:outside_hunks, :outside in flags) |> bump_if(:macros, :macro in flags)}
     end)
   end
 
-  # A deletion point inside one clause belongs to it. One between two clauses
-  # of the same function (a whole clause deleted from the middle) belongs to
-  # that function: its behaviour changed even though no clause holds the point.
+  # A deletion point inside one clause belongs to it.
   defp map_hunk({start, 0}, path, spans, functions) do
-    holders =
-      case Enum.filter(spans, &(&1.first <= start and start + 1 <= &1.last)) do
-        [] -> between_clauses(spans, start)
-        holders -> holders
-      end
-
+    holders = Enum.filter(spans, &(&1.first <= start and start + 1 <= &1.last))
     map_line(start + 1, holders, path, {functions, []})
   end
 
@@ -224,13 +242,27 @@ defmodule Anchor.Domain.Sabotage.Scope do
     end)
   end
 
-  defp between_clauses(spans, start) do
-    before = spans |> Enum.filter(&(&1.last <= start)) |> Enum.max_by(& &1.last, fn -> nil end)
+  # The removed lines' base-side functions that still exist in the file. Each
+  # is recorded at the new-side line where the removed text was.
+  defp map_removed({_old_start, 0}, _hunk, _file, functions), do: {functions, []}
 
-    later =
-      spans |> Enum.filter(&(&1.first >= start + 1)) |> Enum.min_by(& &1.first, fn -> nil end)
+  defp map_removed({old_start, old_count}, {new_start, new_count}, file, functions) do
+    old_last = old_start + old_count - 1
 
-    if before && later && identity(before) == identity(later), do: [before], else: []
+    removed_from =
+      file.old_spans
+      |> Enum.reject(& &1.excluded_macro)
+      |> Enum.filter(&(&1.first <= old_last and old_start <= &1.last))
+      |> MapSet.new(&identity/1)
+
+    survivors =
+      file.spans
+      |> Enum.reject(& &1.excluded_macro)
+      |> Enum.filter(&MapSet.member?(removed_from, identity(&1)))
+      |> Enum.uniq_by(&identity/1)
+
+    line = if new_count == 0, do: new_start + 1, else: new_start
+    {Enum.reduce(survivors, functions, &add_line(&2, &1, file.path, line)), survivors}
   end
 
   defp identity(span), do: {span.module, span.name, span.arity}

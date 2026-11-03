@@ -461,8 +461,11 @@ Prints the functions the working tree changed relative to the merge-base of
 `REF` (default `origin/main`) and `HEAD`: committed, staged and unstaged
 changes from `git diff --unified=0`, plus every untracked `.ex` file as wholly
 added. Each changed line inside a `def` or `defp` clause puts that function,
-`{module, name, arity}`, in scope; a multi-clause function appears once, and a
-deletion inside a function counts. It reads git and source files only: nothing
+`{module, name, arity}`, in scope; a multi-clause function appears once. A
+removed line maps to the function it was in at the merge-base (read with
+`git show`), so deleting lines or a whole clause of a function that still
+exists keeps it in scope; a function deleted whole is gone, and counted as a
+hunk outside a function. It reads git and source files only: nothing
 is compiled and no project code runs. Generated sabotage (the runner, later)
 mutates only these functions.
 
