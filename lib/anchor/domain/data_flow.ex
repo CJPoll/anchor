@@ -138,9 +138,10 @@ defmodule Anchor.Domain.DataFlow do
   The sinks of the clause: its final expression; the final expression of each
   value block of a branch whose value is the clause's (recursively); every
   node `effect?` holds for (given the node's whole AST, nested expressions
-  included); every unsliceable node; and every node holding a refutable match
-  (`Node.refutable`), which asserts a shape even when nothing reads what it
-  binds.
+  included); every unsliceable node; and every refutable node
+  (`Node.refutable`: a refutable `=`, a `case` with no catch-all clause, a
+  `with` step written with a refutable `=`), which asserts a shape even when
+  nothing reads what it binds.
   `effect?` is required: this module never decides what an effect is.
   """
   @spec sinks(t(), (Macro.t() -> boolean())) :: [Node.id()]
