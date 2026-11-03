@@ -473,6 +473,55 @@ defmodule Anchor.Domain.Checks.NoDiscardedPureExpressionTest do
     Macro.to_string(return) in [":ok", "no_return()", "none()"]
   end
 
+  # Whole-MR critic on d123d84: a bare Kernel name is Kernel's only while the
+  # module neither defines that name nor re-imports Kernel.
+  test "a bare Kernel name the module shadows or re-imports is not reported" do
+    for {setup, extra} <- [
+          {"import Kernel, except: [inspect: 1]", "def inspect(x), do: IO.inspect(x)"},
+          {"import Kernel, except: [inspect: 1]\n  import App.Logging", ""},
+          {"import Kernel, except: [max: 2]", "defp max(a, b), do: send(self(), {a, b})"}
+        ] do
+      source = """
+      defmodule App.X do
+        #{setup}
+
+        def f(x, a, b) do
+          inspect(x)
+          max(a, b)
+          :ok
+        end
+
+        #{extra}
+      end
+      """
+
+      assert detect(source) == [], "#{setup} #{extra}"
+    end
+
+    # A pure_patterns module's own shadowing function is judged as its own.
+    shadowing = """
+    defmodule App.X do
+      import Kernel, except: [inspect: 1]
+
+      def f(x) do
+        inspect(x)
+        :ok
+      end
+
+      defp inspect(x), do: x
+    end
+    """
+
+    assert [%{trigger: "inspect(x)"}] = detect(shadowing, [%{pure_patterns: ["App.*"]}])
+    assert detect(shadowing) == []
+
+    # Positive control: unshadowed, both are Kernel's and reported.
+    assert [%{trigger: "inspect(x)"}, %{trigger: "max(a, b)"}] =
+             detect(
+               "defmodule App.X do\n  def f(x, a, b) do\n    inspect(x)\n    max(a, b)\n    :ok\n  end\nend\n"
+             )
+  end
+
   describe "shape/1" do
     test "S1: the exact conforming shape" do
       assert Check.shape(%{}) == @shape

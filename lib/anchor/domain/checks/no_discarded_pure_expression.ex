@@ -44,7 +44,9 @@ defmodule Anchor.Domain.Checks.NoDiscardedPureExpression do
        `!`, every argument pure (an imported or `use`-injected name is
        unknown);
     7. a `Kernel` pure function (the guard-safe set, `to_string`, `inspect`)
-       over pure arguments, bare or as `Kernel.f`;
+       over pure arguments, as `Kernel.f`, or bare in a module that neither
+       defines that name itself nor re-imports Kernel (`import Kernel,
+       except: ...`);
     8. an `fn` whose every clause body is pure, a capture `&(...)` of a pure
        expression, and a capture `&M.f/n` or `&f/n` whose target is pure by 5,
        6 or 7 (a stdlib target also calling none of its arguments:
@@ -197,14 +199,6 @@ defmodule Anchor.Domain.Checks.NoDiscardedPureExpression do
                      do: name
                    )
                )
-
-  # Bare names that are never a module-local function: every Kernel function
-  # and macro, and every special form.
-  @kernel_names MapSet.new(
-                  Keyword.keys(Kernel.__info__(:functions)) ++
-                    Keyword.keys(Kernel.__info__(:macros)) ++
-                    Keyword.keys(Kernel.SpecialForms.__info__(:macros))
-                )
 
   @trigger_length 60
 
@@ -500,16 +494,20 @@ defmodule Anchor.Domain.Checks.NoDiscardedPureExpression do
       (module in @stdlib_pure or pure_module?(module, ctx))
   end
 
-  # A local call is pure only when it is a Kernel pure function, or a
-  # non-bang function this `pure_patterns` module defines itself. A name an
-  # `import` or a `use` brings in (`field/2` in `embedded_schema`) is unknown.
+  # A local call is pure only when it is a non-bang function this
+  # `pure_patterns` module defines itself, or (when the module neither defines
+  # the name nor re-imports Kernel) a Kernel pure function. A name an `import`
+  # or a `use` brings in (`field/2` in `embedded_schema`) is unknown.
   defp local_pure?(name, arity, ctx) do
     cond do
-      MapSet.member?(@kernel_pure, name) -> true
-      MapSet.member?(@kernel_names, name) -> false
-      bang?(name) -> false
-      not MapSet.member?(ctx.defs, {name, arity}) -> false
-      true -> ctx.module != nil and pure_module?(ctx.module, ctx)
+      MapSet.member?(ctx.defs, {name, arity}) ->
+        not bang?(name) and ctx.module != nil and pure_module?(ctx.module, ctx)
+
+      MapSet.member?(ctx.defs, :kernel_reimported) ->
+        false
+
+      true ->
+        MapSet.member?(@kernel_pure, name)
     end
   end
 
@@ -529,6 +527,11 @@ defmodule Anchor.Domain.Checks.NoDiscardedPureExpression do
       :error -> []
     end
   end
+
+  # A module that re-imports Kernel (`import Kernel, except: [...]`) may take
+  # any bare Kernel name from elsewhere, so none of them is trusted there.
+  defp definition({:import, _meta, [{:__aliases__, _ameta, [:Kernel]} | _opts]}),
+    do: [:kernel_reimported]
 
   defp definition(_statement), do: []
 

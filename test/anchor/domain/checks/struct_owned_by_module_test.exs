@@ -678,4 +678,24 @@ defmodule Anchor.Domain.Checks.StructOwnedByModuleTest do
       assert Check.shape(%{}) == @shape
     end
   end
+
+  # Whole-MR critic on d123d84: a bare `struct`/`put_in` the module defines
+  # itself (Kernel's excluded) is not Kernel's; `Kernel.struct` still is.
+  test "a bare struct or path function the module defines itself is not Kernel's" do
+    source = """
+    defmodule App.Builder do
+      import Kernel, except: [struct: 2, put_in: 3]
+
+      def build(attrs, t), do: {struct(App.Turn, attrs), put_in(t.items, [])}
+
+      defp struct(module, attrs), do: module.new(attrs)
+      defp put_in(_target, _path, value), do: value
+    end
+    """
+
+    assert triggers(source) == []
+
+    kernel = String.replace(source, "{struct(App.Turn, attrs)", "{Kernel.struct(App.Turn, attrs)")
+    assert triggers(kernel) == ["struct"], "positive control: Kernel.struct is Kernel's"
+  end
 end

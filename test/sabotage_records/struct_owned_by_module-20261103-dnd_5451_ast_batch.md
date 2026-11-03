@@ -57,3 +57,22 @@ restored. Failure text is verbatim.
   here, so taking the first element still read as unknown. The mutation that
   lets any agreeing struct win (`MapSet.delete(set, :unknown)`) fails K1-K3
   and R5, so the "every binding agrees" rule is protected.
+
+## Whole-MR critic (on d123d84), the same class: a bare `struct`/`put_in` the module defines
+
+Swept from the `no_discarded_pure_expression` finding: a bare `struct/2` or
+path function was always read as Kernel's. A module that defines its own
+(Kernel's excluded) now has the bare call judged as its own function;
+`Kernel.struct` is still Kernel's. Run against d123d84's detector first
+(`mix test test/anchor/domain/checks/struct_owned_by_module_test.exs`):
+
+```
+1) test a bare struct or path function the module defines itself is not Kernel's
+   code:  assert triggers(source) == []
+   left:  ["struct"]
+```
+
+| # | Mutation | Failed | Failure |
+|---|---|---|---|
+| Q3 | Local definitions never shadow (`length(args) + 9`) | the shadowing row | `code:  assert triggers(source) == []` `left:  ["struct"]` `right: []` |
+| Q4 | `Kernel.struct` treated as possibly shadowed (`:kernel_call_never`) | the shadowing row (positive control) | `code: assert triggers(kernel) == ["struct"], "positive control: Kernel.struct is Kernel's"` |

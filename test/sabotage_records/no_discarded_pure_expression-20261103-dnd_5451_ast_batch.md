@@ -141,3 +141,28 @@ first (`mix test test/anchor/domain/checks/no_discarded_pure_expression_test.exs
 | # | Mutation | Failed | Failure |
 |---|---|---|---|
 | P3 | `calls_no_argument?/3` always true (`!= :never`) | D9 (value) | `expression Enum.zip_with(xs, callbacks, &Enum.each/2)` `code: for expr <- [` |
+
+## Whole-MR critic (on d123d84): a bare Kernel name the module shadows
+
+`local_pure?/3` trusted a bare `@kernel_pure` name (`inspect`, `max`, ...)
+before asking whether the module defines it. Shadowing a Kernel function
+needs `import Kernel, except: [...]`, so a module that re-imports Kernel no
+longer has its bare Kernel names trusted, and a name the module defines is
+judged as its own function. Run against d123d84's detector first
+(`mix test test/anchor/domain/checks/no_discarded_pure_expression_test.exs`):
+
+```
+1) test a bare Kernel name the module shadows or re-imports is not reported
+   import Kernel, except: [inspect: 1] def inspect(x), do: IO.inspect(x)
+   code: for {setup, extra} <- [
+```
+
+| # | Mutation | Failed | Failure |
+|---|---|---|---|
+| Q1 | The module's own definition is not consulted first (`and name != :inspect`) | the shadowing row | `code:  assert [%{trigger: "inspect(x)"}] = detect(shadowing, [%{pure_patterns: ["App.*"]}])` `left:  [%{trigger: "inspect(x)"}]` `right: []` |
+| Q2 | A Kernel re-import is not recorded (`[:kernel_reimported_never]`) | the shadowing row | `import Kernel, except: [inspect: 1] def inspect(x), do: IO.inspect(x)` `code: for {setup, extra} <- [` |
+
+Q1 first passed: every shadow needs a Kernel re-import, so the re-import rule
+alone hid it. The row now also asserts that a `pure_patterns` module's own
+shadowing function is judged as its own (reported), which only the
+definition-first branch gives.

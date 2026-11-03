@@ -93,7 +93,8 @@ defmodule Anchor.Domain.Checks.StructOwnedByModule do
       owned: owned_namespaces(rule),
       owner: nil,
       top_level?: true,
-      bindings: %{}
+      bindings: %{},
+      local_defs: MapSet.new()
     }
 
     ast |> walk(ctx, []) |> Enum.reverse()
@@ -113,14 +114,17 @@ defmodule Anchor.Domain.Checks.StructOwnedByModule do
   defp walk({:defmodule, meta, [name, [{:do, body} | _rest]]}, ctx, acc) do
     module = resolve(name, ctx)
     acc = report_unowned(acc, ctx, module, meta)
-    walk(body, %{ctx | owner: module, top_level?: false, bindings: %{}}, acc)
+    ctx = %{ctx | owner: module, top_level?: false, bindings: %{}, local_defs: local_defs(body)}
+    walk(body, ctx, acc)
   end
 
   # A protocol implementation for a struct is that struct's own code.
   defp walk({:defimpl, _meta, [protocol | rest]}, ctx, acc) do
     opts = rest |> Enum.filter(&Keyword.keyword?/1) |> Enum.concat()
     owner = impl_owner(Keyword.get(opts, :for), protocol, ctx)
-    walk(Keyword.get(opts, :do), %{ctx | owner: owner, top_level?: false, bindings: %{}}, acc)
+    body = Keyword.get(opts, :do)
+    ctx = %{ctx | owner: owner, top_level?: false, bindings: %{}, local_defs: local_defs(body)}
+    walk(body, ctx, acc)
   end
 
   defp walk({kind, _meta, [head, body]}, ctx, acc) when kind in @def_kinds and is_list(body) do
@@ -170,7 +174,7 @@ defmodule Anchor.Domain.Checks.StructOwnedByModule do
         walk(args, ctx, acc)
 
       {Kernel, fun, _args} when fun in @struct_funs or fun in @path_funs or fun == :match? ->
-        walk({fun, meta, args}, ctx, acc)
+        walk({fun, [{:kernel_call, true} | meta], args}, ctx, acc)
 
       _other ->
         walk_children(call, ctx, acc)
@@ -178,20 +182,16 @@ defmodule Anchor.Domain.Checks.StructOwnedByModule do
   end
 
   # B3 and C1: `struct/1,2` and `struct!/1,2`, building `S` or changing `v`.
+  # A bare name the module defines itself (Kernel's excluded) is not Kernel's.
   defp walk({fun, meta, [first | fields] = args}, ctx, acc)
        when fun in @struct_funs and length(fields) <= 1 do
-    target = module_literal(first, ctx) || value_struct(first, ctx)
+    target = unless shadowed?(fun, meta, args, ctx), do: struct_target(first, ctx)
     acc = report_other(acc, ctx, target, meta, Atom.to_string(fun))
     walk(args, ctx, acc)
   end
 
   defp walk({fun, meta, [first | _rest] = args}, ctx, acc) when fun in @path_funs do
-    target =
-      first
-      |> path_containers()
-      |> Enum.map(&value_struct(&1, ctx))
-      |> Enum.find(&other?(&1, ctx))
-
+    target = unless shadowed?(fun, meta, args, ctx), do: path_target(first, ctx)
     acc = report_other(acc, ctx, target, meta, Atom.to_string(fun))
     walk(args, ctx, acc)
   end
@@ -221,6 +221,53 @@ defmodule Anchor.Domain.Checks.StructOwnedByModule do
   defp walk_head(_head, _ctx, acc), do: acc
 
   # ---- owners, scope and names ----
+
+  defp struct_target(first, ctx), do: module_literal(first, ctx) || value_struct(first, ctx)
+
+  defp path_target(first, ctx) do
+    first
+    |> path_containers()
+    |> Enum.map(&value_struct(&1, ctx))
+    |> Enum.find(&other?(&1, ctx))
+  end
+
+  # A bare call to a name the module defines itself; `Kernel.f` never is.
+  defp shadowed?(fun, meta, args, ctx) do
+    not Keyword.get(meta, :kernel_call, false) and
+      MapSet.member?(ctx.local_defs, {fun, length(args)})
+  end
+
+  # Every `{name, arity}` a module body's def/defp makes callable.
+  defp local_defs(body) do
+    body
+    |> List.wrap()
+    |> Enum.flat_map(fn
+      {:__block__, _meta, statements} -> statements
+      statement -> [statement]
+    end)
+    |> Enum.flat_map(&local_def/1)
+    |> MapSet.new()
+  end
+
+  defp local_def({kind, _meta, [head | _body]}) when kind in [:def, :defp] do
+    case head do
+      {:when, _wmeta, [{name, _hmeta, args} | _guards]} when is_atom(name) and is_list(args) ->
+        def_arities(name, args)
+
+      {name, _hmeta, args} when is_atom(name) and is_list(args) ->
+        def_arities(name, args)
+
+      _other ->
+        []
+    end
+  end
+
+  defp local_def(_statement), do: []
+
+  defp def_arities(name, args) do
+    defaults = Enum.count(args, &match?({:\\, _meta, _default}, &1))
+    for arity <- (length(args) - defaults)..length(args), do: {name, arity}
+  end
 
   defp impl_owner(nil, _protocol, ctx), do: ctx.owner
   defp impl_owner(targets, protocol, ctx) when is_list(targets), do: resolve(protocol, ctx)
