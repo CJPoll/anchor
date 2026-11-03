@@ -21,7 +21,8 @@ defmodule Anchor.Managers.Sabotage.Runner do
        mutant can be made of is an error, listed. Every function an error of
        `:parse_error` or `:unreadable` is exit 3.
     7. `Plan.build/2` (order, `--only`, cap), then `TestSelection.select/2`
-       per mutant. `--dry-run` stops here, having written nothing.
+       per mutant. `--dry-run` stops here: it writes no mutant (step 1 may
+       still have restored a leftover one).
     8. The baseline: the union of the selected tests, run once with no
        mutant. Anything but a pass is exit 3 (COULD NOT MEASURE).
     9. Each planned mutant, one at a time: with no selected test it is
@@ -356,8 +357,8 @@ defmodule Anchor.Managers.Sabotage.Runner do
          "COULD NOT MEASURE: the selected tests fail with no mutant applied " <>
            "(#{baseline_detail(test_run)}). Fix: make them pass first"}
 
-      {:error, :timeout_not_found} ->
-        {:refuse, 2, timeout_missing()}
+      {:error, reason} ->
+        {:refuse, runner_error_code(reason), runner_error(reason)}
     end
   end
 
@@ -404,9 +405,16 @@ defmodule Anchor.Managers.Sabotage.Runner do
       :ok ->
         applied(mutant, selection, entry, mutated, tests, facts, config, ports)
 
+      {:error, :eexist} ->
+        {:refuse, 2,
+         "#{Journal.path()} already exists: another sabotage run is applying a mutant, so " <>
+           "this one stops before writing anything. Fix: let that run finish, or, if none is " <>
+           "running, run mix anchor.sabotage restore"}
+
       {:error, posix} ->
         {:refuse, 2,
-         "could not write #{Journal.path()} (#{inspect(posix)}). Fix: make .anchor/sabotage/ writable"}
+         "could not write #{Journal.path()} (#{inspect(posix)}); no mutant was written. " <>
+           "Fix: make .anchor/sabotage/ writable"}
     end
   end
 
@@ -417,9 +425,12 @@ defmodule Anchor.Managers.Sabotage.Runner do
 
     try do
       try do
-        :ok = ports.patcher.write_file(path, mutated)
-        :ok = ports.patcher.touch_ahead(path)
-        test_run(tests, facts, config, ports)
+        with :ok <- ports.patcher.write_file(path, mutated),
+             :ok <- ports.patcher.touch_ahead(path) do
+          test_run(tests, facts, config, ports)
+        else
+          {:error, posix} -> {:mutant_not_written, posix}
+        end
       after
         restore!(path, entry, facts.root, ports.patcher)
       end
@@ -434,25 +445,59 @@ defmodule Anchor.Managers.Sabotage.Runner do
            "the test run raised: " <> Exception.message(error)
          )}
     catch
-      :throw, {@restore_failed, file} -> {:refuse, 2, restore_failed_message(file)}
+      :throw, {@restore_failed, file, :restore} -> {:refuse, 2, restore_failed_message(file)}
+      :throw, {@restore_failed, _file, :journal} -> {:refuse, 2, journal_not_deleted()}
     else
       {:ok, %TestRun{} = test_run} ->
         {status, killers} = Outcome.classify(test_run)
         {:ok, outcome(mutant, status, killers, selection, Outcome.reason(test_run))}
 
-      {:error, :timeout_not_found} ->
-        {:refuse, 2, timeout_missing()}
+      {:error, reason} ->
+        {:refuse, runner_error_code(reason), runner_error(reason)}
+
+      {:mutant_not_written, posix} ->
+        {:refuse, 2,
+         "could not write the mutant into #{mutant.file} (#{inspect(posix)}); the original " <>
+           "was written back. Fix: make #{mutant.file} writable"}
     end
   end
 
+  defp runner_error_code(:timeout_not_found), do: 2
+  defp runner_error_code({:results_not_removed, _path, _posix}), do: 3
+
+  defp runner_error(:timeout_not_found), do: timeout_missing()
+
+  defp runner_error({:results_not_removed, path, posix}) do
+    "COULD NOT MEASURE: the previous results file #{path} could not be removed " <>
+      "(#{inspect(posix)}), so a test run's failures could be an earlier run's. " <>
+      "Fix: remove #{path} by hand"
+  end
+
+  defp journal_not_deleted do
+    "the original is back, but #{Journal.path()} could not be deleted, so the run stops. " <>
+      "Fix: delete #{Journal.path()}"
+  end
+
+  # Any failure here, a raise included, is a throw: the outer `rescue` must
+  # never read a failed restore as the mutant's own outcome.
   defp restore!(path, entry, root, patcher) do
+    verdict =
+      try do
+        restored(path, entry, root, patcher)
+      rescue
+        _error -> :restore
+      end
+
+    if verdict != :ok, do: throw({@restore_failed, entry.file, verdict})
+  end
+
+  defp restored(path, entry, root, patcher) do
     with :ok <- patcher.write_file(path, entry.original),
          :ok <- patcher.touch_ahead(path),
-         {:ok, sha} when sha == entry.original_sha <- patcher.sha256_file(path),
-         :ok <- patcher.delete_journal(root) do
-      :ok
+         {:ok, sha} when sha == entry.original_sha <- patcher.sha256_file(path) do
+      if patcher.delete_journal(root) == :ok, do: :ok, else: :journal
     else
-      _failed -> throw({@restore_failed, entry.file})
+      _failed -> :restore
     end
   end
 

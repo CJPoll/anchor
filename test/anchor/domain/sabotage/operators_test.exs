@@ -94,6 +94,15 @@ defmodule Anchor.Domain.Sabotage.OperatorsTest do
       assert applied(source, List.last(edits)) =~ "Logger.info(meta: 1)\n    x\n"
     end
 
+    test "2: a call with a do block keeps nothing: its whole lines are deleted" do
+      body = "def f(x) do\n  Logger.info do\n    x\n  end\n  x\nend"
+
+      {source, [edit]} = edits(body, :drop_effect_call, {:f, 1})
+
+      assert edit.replacement == ""
+      assert applied(source, edit) =~ "  def f(x) do\n    x\n  end\n"
+    end
+
     test "2: positive control: a drop that orphans something else is still refused" do
       bound = "def f(x) do\n  old = Process.put(:k, x)\n  {x, old}\nend"
 

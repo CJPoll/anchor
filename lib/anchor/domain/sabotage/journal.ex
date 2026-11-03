@@ -55,13 +55,17 @@ defmodule Anchor.Domain.Sabotage.Journal do
     })
   end
 
-  @doc "The entry, or `{:error, :corrupt_journal}` for bytes this module did not write."
+  @doc """
+  The entry, or `{:error, :corrupt_journal}` for bytes this module did not
+  write, or that name a file outside the project root.
+  """
   @spec decode(binary()) :: {:ok, t()} | {:error, :corrupt_journal}
   def decode(bytes) do
     with {:ok, %{"version" => 1} = map} <- JSON.decode(bytes),
          %{"file" => file, "mutant_id" => id, "original_base64" => b64} <- map,
          %{"original_sha256" => original_sha, "mutated_sha256" => mutated_sha} <- map,
          true <- Enum.all?([file, id, b64, original_sha, mutated_sha], &is_binary/1),
+         true <- inside_root?(file),
          {:ok, original} <- Base.decode64(b64),
          true <- sha256(original) == original_sha do
       {:ok,
@@ -76,6 +80,10 @@ defmodule Anchor.Domain.Sabotage.Journal do
       _corrupt -> {:error, :corrupt_journal}
     end
   end
+
+  # A journal names a file under the project root: relative, no `..`.
+  defp inside_root?(file),
+    do: Path.type(file) == :relative and ".." not in Path.split(file) and file != ""
 
   @doc """
   What a leftover journal means, given the sha256 of its file now:

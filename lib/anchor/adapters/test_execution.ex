@@ -8,11 +8,13 @@ defmodule Anchor.Adapters.TestExecution do
   formatter in `opts[:cd]`, killed after `opts[:timeout_seconds]`, and returns
   the `Anchor.Domain.Sabotage.TestRun` read from `opts[:results_path]`.
   `{:error, :timeout_not_found}` when the `timeout` binary is missing: a run
-  is never unbounded.
+  is never unbounded. `{:error, {:results_not_removed, path, posix}}` when a
+  stale results file cannot be deleted: its frames are never read.
   """
 
   alias Anchor.Domain.Sabotage.TestRun
 
   @callback run(argv :: [String.t(), ...], test_args :: [String.t()], opts :: keyword()) ::
-              {:ok, TestRun.t()} | {:error, :timeout_not_found}
+              {:ok, TestRun.t()}
+              | {:error, :timeout_not_found | {:results_not_removed, String.t(), atom()}}
 end

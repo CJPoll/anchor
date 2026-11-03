@@ -392,7 +392,8 @@ defmodule Anchor.Domain.Sabotage.MutatorTest do
 
     test "the sabotage generator's modules call no IO, file, process or system module" do
       files =
-        ~w(mutator operators orphan_check source_tree patch mutant_id effect_calls mutant skipped)
+        ~w(mutator operators orphan_check source_tree patch mutant_id effect_calls mutant skipped
+           config journal outcome plan report run test_mirror test_run test_selection)
         |> Enum.map(&"lib/anchor/domain/sabotage/#{&1}.ex")
 
       for file <- files, do: assert(impurities(File.read!(file)) == {[], false}, file)

@@ -1,8 +1,11 @@
 defmodule Anchor.Sabotage.ExUnitFormatter do
   @moduledoc """
   The ExUnit formatter a sabotage run adds to the project's test command
-  (DND-5473), the **Framework** end of `Anchor.Adapters.TestRunner`: failed
-  tests are read from its frames, never parsed from ExUnit's output.
+  (DND-5473): failed tests are read from its frames, never parsed from
+  ExUnit's output. It is a **Side Effect** adapter (ADR 001) that ExUnit, an
+  outside framework, calls in the project's test VM: it writes a file and
+  calls no Anchor module, so it loads there alone. `Anchor.Adapters.TestRunner`
+  reads what it writes.
 
   It appends one frame per event to the file named by
   `ANCHOR_SABOTAGE_RESULTS` (or the `:results_path` option): a 32-bit length,

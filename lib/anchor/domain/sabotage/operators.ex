@@ -404,8 +404,8 @@ defmodule Anchor.Domain.Sabotage.Operators do
   # DND-5564: a dropped effect call keeps its arguments evaluated, as
   # `_ = {arg1, ..., argN}` (a piped value is the first argument), so a
   # variable the call alone read stays used and the mutant compiles; the
-  # effect itself is gone. `nil` for a call with no argument: its whole line
-  # is deleted. The statement's own `pat =` goes too, so a variable it binds
+  # effect itself is gone. `nil` for a call with no argument, or with a
+  # `do` block: its whole lines are deleted. The statement's own `pat =` goes too, so a variable it binds
   # and a later line reads is still an orphan (OrphanCheck refuses it).
   defp kept_arguments(source, statement) do
     case statement |> sourceror_rhs() |> call_arguments() do
@@ -421,8 +421,16 @@ defmodule Anchor.Domain.Sabotage.Operators do
   defp sourceror_rhs(node), do: node
 
   defp call_arguments({:|>, _meta, [left, call]}), do: [left | call_arguments(call)]
-  defp call_arguments({_callee, _meta, args}) when is_list(args), do: args
+
+  defp call_arguments({_callee, _meta, args}) when is_list(args),
+    do: if(do_block?(List.last(args)), do: [], else: args)
+
   defp call_arguments(_node), do: []
+
+  # `call do ... end`: the pair's range does not hold the `end`, so its text
+  # cannot be kept; the call is deleted whole instead.
+  defp do_block?([{key, _body} | _rest]), do: SourceTree.key(key) == :do
+  defp do_block?(_arg), do: false
 
   # A trailing keyword list (no brackets) is a list of pairs Sourceror gives
   # no range of its own: from its first key to its last value.

@@ -4,7 +4,8 @@ defmodule Anchor.Adapters.SourcePatcher do
   (ADR 001) behind `Anchor.Adapters.SourceMutation` (DND-5473).
 
   A file is written to `<path>.anchor-tmp` and renamed over `path`, so a kill
-  mid-write never leaves half a file. `touch_ahead/1` sets the mtime to one
+  mid-write never leaves half a file. The journal is created exclusively:
+  `write_journal/2` is `{:error, :eexist}` while another run's journal exists. `touch_ahead/1` sets the mtime to one
   second past the later of now and the file's current mtime: always forward,
   so a restore in the same second as its mutant still recompiles (Mix compares
   the mtime and the size before it reads the content).
@@ -27,7 +28,11 @@ defmodule Anchor.Adapters.SourcePatcher do
   def write_journal(root, %Journal{} = entry) do
     path = journal(root)
 
-    with :ok <- File.mkdir_p(Path.dirname(path)) do
+    # Created exclusively: a journal already there belongs to another run
+    # (`{:error, :eexist}`), and is never overwritten.
+    with :ok <- File.mkdir_p(Path.dirname(path)),
+         {:ok, io} <- File.open(path, [:write, :exclusive]),
+         :ok <- File.close(io) do
       write_file(path, Journal.encode(entry))
     end
   end

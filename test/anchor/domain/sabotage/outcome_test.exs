@@ -47,6 +47,16 @@ defmodule Anchor.Domain.Sabotage.OutcomeTest do
                "did not compile: warning: variable \"y\" is unused"
     end
 
+    test "4: Mix's mtime-reset warning is never quoted as the reason" do
+      output =
+        "warning: mtime (modified time) for \"lib/x.ex\" was set to the future, resetting to now\n" <>
+          "     warning: variable \"y\" is unused\n" <>
+          "Compilation failed due to warnings while using the --warnings-as-errors option\n"
+
+      assert Outcome.reason(run(:compile_error, exit_code: 1, output_head: output)) ==
+               "did not compile: warning: variable \"y\" is unused"
+    end
+
     test "5: a crashed run is invalid" do
       assert Outcome.classify(run(:crashed, exit_code: 1)) == {:invalid, []}
       assert Outcome.reason(run(:crashed, exit_code: 1)) == "test run crashed (exit 1)"

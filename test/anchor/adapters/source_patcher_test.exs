@@ -23,6 +23,16 @@ defmodule Anchor.Adapters.SourcePatcherTest do
     assert SourcePatcher.delete_journal(root) == :ok
   end
 
+  test "a second write_journal while one exists is {:error, :eexist}; the first is kept",
+       %{tmp_dir: root} do
+    first = Journal.entry("lib/m.ex", "aaaaaaaaaaaa", @original, "one")
+    second = Journal.entry("lib/m.ex", "bbbbbbbbbbbb", @original, "two")
+
+    assert SourcePatcher.write_journal(root, first) == :ok
+    assert SourcePatcher.write_journal(root, second) == {:error, :eexist}
+    assert SourcePatcher.read_journal(root) == {:ok, first}
+  end
+
   test "2: write_file replaces the content and leaves no .anchor-tmp", %{tmp_dir: root} do
     path = Path.join(root, "m.ex")
     File.write!(path, "old")

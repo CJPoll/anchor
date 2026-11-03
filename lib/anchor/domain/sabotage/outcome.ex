@@ -37,7 +37,13 @@ defmodule Anchor.Domain.Sabotage.Outcome do
   def reason(%TestRun{}), do: nil
 
   defp first_error_line(output) do
-    lines = output |> String.split("\n") |> Enum.map(&String.trim/1)
+    # Mix's "mtime ... was set to the future" warning follows every touch
+    # ahead; it is never why a mutant did not compile.
+    lines =
+      output
+      |> String.split("\n")
+      |> Enum.map(&String.trim/1)
+      |> Enum.reject(&String.starts_with?(&1, "warning: mtime"))
 
     Enum.find(lines, &String.starts_with?(&1, ["error:", "** ("])) ||
       Enum.find(lines, &String.starts_with?(&1, ["warning:", "== Compilation error"])) ||

@@ -27,6 +27,13 @@ defmodule Anchor.Domain.Sabotage.JournalTest do
         do: assert(Journal.decode(bytes) == {:error, :corrupt_journal}, inspect(bytes))
   end
 
+  test "a journal naming a file outside the project root is corrupt" do
+    for file <- ["/etc/passwd", "../outside.ex", "lib/../../outside.ex", ""] do
+      entry = Journal.entry(file, "abc123abc123", @original, @mutated)
+      assert Journal.decode(Journal.encode(entry)) == {:error, :corrupt_journal}, file
+    end
+  end
+
   test "recovery: the mutated hash restores, the original hash discards, anything else is changed" do
     entry = Journal.entry("lib/m.ex", "abc123abc123", @original, @mutated)
 

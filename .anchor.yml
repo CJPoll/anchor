@@ -49,8 +49,12 @@ rules:
       - Anchor.Adapters.ConfigFile
       - Anchor.Adapters.BeamReader
       - Anchor.Adapters.GitChangeSource
+      - Anchor.Adapters.SourcePatcher
+      - Anchor.Adapters.GitStatus
+      - Anchor.Adapters.TestRunner
       - Anchor.Managers.Lint
       - Anchor.Managers.Sabotage
+      - Anchor.Managers.Sabotage.Runner
       - System
 
   # --- Rule 2: the config parser specifically must not read files ---

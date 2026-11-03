@@ -131,8 +131,9 @@ failed, and ends with a `Fix:` line.
 The load rejects, rather than silently ignoring:
 
 - a document that is empty, has no `rules:` list, has a top-level key other than
-  `rules` and `architecture` (for example `anchors:`), or whose `rules` is not a
-  list. An explicit `rules: []` is a deliberate empty config and loads;
+  `rules`, `architecture` and `sabotage` (for example `anchors:`; `sabotage:` is
+  described in [Sabotage: running the mutants](#sabotage-running-the-mutants)),
+  or whose `rules` is not a list. An explicit `rules: []` is a deliberate empty config and loads;
 - an `architecture:` section that could check nothing, or less than it says
   (see [The `architecture:` section](#the-architecture-section));
 - a rule that is not a mapping, or has no `type`, or a `type` that no Anchor
@@ -657,7 +658,11 @@ sabotage:
 
 ```gitignore
 /.anchor/sabotage/in-flight.json
+*.anchor-tmp
 ```
+
+(`*.anchor-tmp` is a file mid-write, left only if the VM is killed during
+the write.)
 
 An unknown key or a bad value fails the load, naming the key, with a `Fix:`.
 

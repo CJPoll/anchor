@@ -53,6 +53,15 @@ defmodule Anchor.Adapters.TestRunnerTest do
     assert {:ok, %TestRun{status: :timeout, exit_code: 124}} = run("hang", dir, timeout: 1)
   end
 
+  test "a stale results file that cannot be removed is an error, never read", %{tmp_dir: dir} do
+    File.mkdir_p!(Path.join(dir, "out/results.bin/inside"))
+
+    path = Path.join(dir, "out/results.bin")
+
+    assert {:error, {:results_not_removed, ^path, posix}} = run("pass", dir)
+    assert posix in [:eperm, :eisdir]
+  end
+
   test "the test files and both formatters follow the command; a stale results file is deleted first",
        %{tmp_dir: dir} do
     File.mkdir_p!(Path.join(dir, "out"))

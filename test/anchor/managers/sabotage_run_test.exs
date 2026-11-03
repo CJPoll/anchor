@@ -215,6 +215,57 @@ defmodule Anchor.Managers.SabotageRunTest do
                "Fix: git diff lib/calc.ex, restore it by hand, then delete .anchor/sabotage/in-flight.json"
     end
 
+    test "a recovery restore that does not reproduce the original keeps the journal, exit 2" do
+      entry = leftover()
+      expect_journal({:ok, entry})
+
+      expect(SourceMutationMock, :sha256_file, 2, fn @file_path ->
+        if calls_seen(:write_file),
+          do: {:ok, Journal.sha256("still wrong")},
+          else: {:ok, entry.mutated_sha}
+      end)
+
+      expect(SourceMutationMock, :write_file, fn @file_path, @source -> call(:write_file, :ok) end)
+
+      expect(SourceMutationMock, :touch_ahead, fn @file_path -> :ok end)
+
+      assert %{refusal: {2, message}, notes: []} = Sabotage.run(@facts, @opts)
+
+      assert message =~
+               "the restore of lib/calc.ex did not reproduce the original; the journal is kept"
+    end
+
+    test "a recovery restore whose write fails keeps the journal, exit 2" do
+      entry = leftover()
+      expect_journal({:ok, entry})
+      expect(SourceMutationMock, :sha256_file, fn @file_path -> {:ok, entry.mutated_sha} end)
+      expect(SourceMutationMock, :write_file, fn @file_path, @source -> {:error, :eacces} end)
+
+      assert %{refusal: {2, message}} = Sabotage.run(@facts, @opts)
+      assert message =~ "the journal is kept. Fix: mix anchor.sabotage restore"
+    end
+
+    test "a leftover journal whose file cannot be read refuses the run, exit 2: no write" do
+      entry = leftover()
+      expect_journal({:ok, entry})
+      expect(SourceMutationMock, :sha256_file, fn @file_path -> {:error, :enoent} end)
+
+      assert %{refusal: {2, message}} = Sabotage.run(@facts, @opts)
+
+      assert message =~
+               "lib/calc.ex changed since mutant #{entry.mutant_id} was applied (it cannot be read (:enoent))"
+    end
+
+    test "a discard whose journal cannot be deleted refuses the run, exit 2" do
+      entry = leftover()
+      expect_journal({:ok, entry})
+      expect(SourceMutationMock, :sha256_file, fn @file_path -> {:ok, entry.original_sha} end)
+      expect(SourceMutationMock, :delete_journal, fn @root -> {:error, :eacces} end)
+
+      assert %{refusal: {2, message}} = Sabotage.run(@facts, @opts)
+      assert message =~ "could not delete .anchor/sabotage/in-flight.json (:eacces)"
+    end
+
     test "a journal that cannot be decoded refuses the run, exit 2" do
       expect_journal({:error, :corrupt_journal})
 
@@ -383,6 +434,79 @@ defmodule Anchor.Managers.SabotageRunTest do
                {2,
                 "the restore of lib/calc.ex did not reproduce the original; the journal is kept. " <>
                   "Fix: mix anchor.sabotage restore"}
+    end
+
+    test "a journal already there (another run) refuses before any mutant is written, exit 2" do
+      expect_until_selection()
+      expect_baseline(test_run(:passed))
+      expect(SourceMutationMock, :write_journal, fn @root, _entry -> {:error, :eexist} end)
+
+      run = Sabotage.run(@facts, @opts)
+
+      assert run.outcomes == []
+      assert {2, message} = run.refusal
+      assert message =~ "another sabotage run is applying a mutant"
+
+      assert message =~
+               "Fix: let that run finish, or, if none is running, run mix anchor.sabotage restore"
+    end
+
+    test "a journal that cannot be written refuses before any mutant is written, exit 2" do
+      expect_until_selection()
+      expect_baseline(test_run(:passed))
+      expect(SourceMutationMock, :write_journal, fn @root, _entry -> {:error, :enospc} end)
+
+      assert %{refusal: {2, message}, outcomes: []} = Sabotage.run(@facts, @opts)
+
+      assert message =~
+               "could not write .anchor/sabotage/in-flight.json (:enospc); no mutant was written"
+    end
+
+    test "a mutant that cannot be written is restored, and the run stops, exit 2" do
+      expect_until_selection()
+      expect_baseline(test_run(:passed))
+      expect(SourceMutationMock, :write_journal, fn @root, _entry -> :ok end)
+
+      expect(SourceMutationMock, :write_file, 2, fn @file_path, bytes ->
+        if bytes == @source, do: call(:restored, :ok), else: {:error, :eacces}
+      end)
+
+      expect(SourceMutationMock, :touch_ahead, fn @file_path -> :ok end)
+
+      expect(SourceMutationMock, :sha256_file, fn @file_path -> {:ok, Journal.sha256(@source)} end)
+
+      expect_delete_journal()
+
+      run = Sabotage.run(@facts, @opts)
+
+      assert :restored in calls()
+      assert {2, message} = run.refusal
+
+      assert message =~
+               "could not write the mutant into lib/calc.ex (:eacces); the original was written back"
+    end
+
+    test "a restore whose journal cannot be deleted stops the run, exit 2" do
+      expect_until_selection()
+      expect_baseline(test_run(:passed))
+      expect_patcher(1)
+      expect(SourceMutationMock, :delete_journal, fn @root -> {:error, :eacces} end)
+      expect(TestExecutionMock, :run, fn _argv, _tests, _opts -> test_run(:failed, [@killer]) end)
+
+      assert %{refusal: {2, message}, outcomes: []} = Sabotage.run(@facts, @opts)
+
+      assert message =~
+               "the original is back, but .anchor/sabotage/in-flight.json could not be deleted"
+    end
+
+    test "a stale results file the runner cannot remove is COULD NOT MEASURE, exit 3" do
+      expect_until_selection()
+      expect_baseline({:error, {:results_not_removed, "/repo/_build/x/results.bin", :eisdir}})
+
+      assert %{refusal: {3, message}} = Sabotage.run(@facts, @opts)
+
+      assert message =~
+               "COULD NOT MEASURE: the previous results file /repo/_build/x/results.bin could not be removed"
     end
 
     test "10: a mutant with no test selected is no_tests, and nothing is written for it" do
