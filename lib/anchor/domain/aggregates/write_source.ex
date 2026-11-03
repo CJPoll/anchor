@@ -13,8 +13,9 @@ defmodule Anchor.Domain.Aggregates.WriteSource do
        `source`, an `%Ecto.Changeset{}` its `data` (how `from/2` and a built
        changeset look in Core);
     2. a literal schema module: `{:schema, S}`; a literal string `T`:
-       `{:table, T}`; a tuple `{T, S}`: what `T` traces to, or `{:schema, S}`
-       when `T` is a call Anchor cannot trace and `S` is a schema;
+       `{:table, T}`; a tuple `{T, S}`: what `T` traces to (in a `from/2`
+       query on a schema, `T` is `S.__schema__(:source)`, so rule 4 makes it
+       `{:schema, S}`);
     3. a variable bound by a `let`: its value. A variable bound by a `case`:
        the union of every clause's result; a clause that raises gives no value,
        and an unresolvable clause makes the whole value unresolved;
@@ -194,15 +195,7 @@ defmodule Anchor.Domain.Aggregates.WriteSource do
 
   defp concrete_struct(_map, _ctx), do: {:unresolved, "a map"}
 
-  defp concrete_pair({table, schema}, ctx) do
-    case concrete(table, ctx) do
-      {:ok, _sources} = ok ->
-        ok
-
-      unresolved ->
-        if MapSet.member?(ctx.schemas, schema), do: ok({:schema, schema}), else: unresolved
-    end
-  end
+  defp concrete_pair({table, _schema}, ctx), do: concrete(table, ctx)
 
   defp binary(node) do
     case Index.string_literal(node) do
@@ -211,18 +204,7 @@ defmodule Anchor.Domain.Aggregates.WriteSource do
     end
   end
 
-  defp tuple([table, schema], env, ctx) do
-    case trace(table, env, ctx) do
-      {:ok, _sources} = ok ->
-        ok
-
-      other ->
-        case FunctionWalk.atom(schema, env) do
-          {:ok, s} -> if MapSet.member?(ctx.schemas, s), do: ok({:schema, s}), else: other
-          _not_literal -> other
-        end
-    end
-  end
+  defp tuple([table, _schema], env, ctx), do: trace(table, env, ctx)
 
   defp tuple(_elements, _env, _ctx), do: {:unresolved, "a tuple"}
 

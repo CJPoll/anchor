@@ -49,6 +49,7 @@ defmodule Anchor.Domain.Aggregates.RealEctoTest do
     def e2(v), do: Repo.update_all(from(t in Thread, where: t.x == ^v), set: [x: "1"])
     def e2_piped(v), do: from(t in Thread, where: t.x == ^v) |> Repo.update_all(set: [x: "1"])
     def e3, do: Repo.delete_all(from(t in "threads"))
+    def e5(v), do: Repo.delete_all(where(Thread, [t], t.x == ^v))
 
     def e4 do
       Multi.new()
@@ -88,6 +89,12 @@ defmodule Anchor.Domain.Aggregates.RealEctoTest do
   test "E3: a from/2 query on a table is the table, keyed to its schema", %{analysis: a} do
     assert %{sources: [{:table, "threads"}], unresolved: nil} = site(a, :e3)
     assert WriteSource.key({:table, "threads"}, a.tables) == {:schema, @thread}
+  end
+
+  test "E5: a query built on a schema by Ecto.Query's builders is the schema (rule 6)", %{
+    analysis: a
+  } do
+    assert %{sources: [{:schema, @thread}], unresolved: nil} = site(a, :e5)
   end
 
   test "E4: a real Multi pipeline's scope keys are exactly the written schemas", %{analysis: a} do
