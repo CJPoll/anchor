@@ -150,6 +150,24 @@ defmodule Anchor.Adapters.CallTracerTest do
     assert_receive {:dumped, _messages}
   end
 
+  test "stop/0 asks for trace delivery and returns only once it is notified" do
+    parent = self()
+    ref = make_ref()
+
+    stopper =
+      spawn_link(fn ->
+        :ok = CallTracer.stop(fn -> send(parent, {:asked, self()}) && ref end)
+        send(parent, :returned)
+      end)
+
+    assert_receive {:asked, ^stopper}
+    # Not yet notified: stop has not returned.
+    refute_received :returned
+
+    send(stopper, {:trace_delivered, :all, ref})
+    assert_receive :returned
+  end
+
   defp drain(acc) do
     receive do
       message -> drain([message | acc])

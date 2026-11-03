@@ -41,11 +41,18 @@ defmodule Anchor.Adapters.CallTracer do
   end
 
   @impl Anchor.Adapters.Tracing
-  def stop do
+  def stop, do: stop(fn -> :erlang.trace_delivered(:all) end)
+
+  @doc false
+  # `delivered` asks for the delivery notice (`:erlang.trace_delivered(:all)`
+  # in `stop/0`); a test passes its own to see the wait happen (the race
+  # itself cannot be forced from a test).
+  @spec stop((-> reference())) :: :ok
+  def stop(delivered) do
     _flags = :erlang.trace(:all, false, [:all])
     _local = :erlang.trace_pattern({:_, :_, :_}, false, [:local])
     _global = :erlang.trace_pattern({:_, :_, :_}, false, [:global])
-    ref = :erlang.trace_delivered(:all)
+    ref = delivered.()
 
     receive do
       {:trace_delivered, :all, ^ref} -> :ok

@@ -115,6 +115,17 @@ processes and reads the sink's queue length at once after `stop/0`.
 |---|---|---|---|
 | S21 | the wait removed (the unfixed code, 00405f3) | **0 of 4, a measured zero** | none: on one node the messages arrive before the queue is read in every run seen. The race cannot be forced from a test (no hook delays delivery), so the test pins the contract but cannot prove it; the fix rests on the OTP documentation of `trace_delivered/1`. |
 
+The whole-MR critic held that a bug fix with only a measured zero has no
+fail-before evidence. So `stop/0` now calls `stop/1` with the delivery
+request as a function, and a test passes its own: it sees the request made
+and `stop` still waiting until the notice is sent. The race itself still
+cannot be forced; the wait now can be seen.
+
+| # | Mutation | Tests failed | First failure, verbatim |
+|---|---|---|---|
+| S21b | the wait removed (the unfixed code: no delivery request, no wait) | 1 of 5: call_tracer "stop/0 asks for trace delivery and returns only once it is notified" | `Assertion failed, no matching message after 100ms` (the `assert_receive {:asked, ^stopper}`) |
+| S21c | the request made, the wait skipped | 1 of 5: the same test | `code: refute_received :returned`. The stopper sends `:returned` straight after `{:asked, _}`, so this row can pass when `:returned` has not arrived by the check; S21b's red does not depend on timing. |
+
 `Anchor.Adapters.SuiteRunner` (`Mix.Task.run("test", ...)` in this VM) has no
 unit test: it cannot run a suite inside a running suite. The bounded real run
 below and the CI workflow exercise it.
