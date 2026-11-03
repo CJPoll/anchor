@@ -56,6 +56,13 @@ rules:
       - Anchor.Adapters.SourcePatcher
       - Anchor.Adapters.GitStatus
       - Anchor.Adapters.TestRunner
+      - Anchor.Adapters.CallTracer
+      - Anchor.Adapters.SuiteRunner
+      - Anchor.Adapters.ProjectModules
+      - Anchor.Adapters.CoverageFile
+      - Anchor.Adapters.RecordFile
+      - Anchor.Sabotage.CoverageCollector
+      - Anchor.Managers.Sabotage.Coverage
       - Anchor.Managers.Lint
       - Anchor.Managers.Sabotage
       - Anchor.Managers.Sabotage.Runner
@@ -101,6 +108,26 @@ rules:
       - "lib/anchor/check/struct_owned_by_module.ex"
     required_modules:
       - Anchor.Check.Base
+
+# --- Generated sabotage (DND-5473, DND-5484) ---
+#
+# `mix anchor.sabotage run` on Anchor's own tree. Records follow ADR 003:
+# test/sabotage_records/<domain>-YYYYMMDD-<slot>.md, the domain derived from
+# the mutated module's name (Anchor.Domain.Sabotage.Mutator -> sabotage,
+# Anchor.Check.NoDependency -> no_dependency, Anchor.Config -> config).
+sabotage:
+  records:
+    dir: "test/sabotage_records"
+    naming: domain_date_slot
+    domain_from: module
+    domain_strip_prefixes:
+      - "Anchor.Domain.Checks."
+      - "Anchor.Domain."
+      - "Anchor.Check."
+      - "Anchor.Managers."
+      - "Anchor.Adapters."
+      - "Anchor."
+    adr: "ADR 003"
 
 # The ADR-001 five buckets over Anchor's compiled code, judged by
 # `mix anchor.graph` (DND-5440) in Anchor's own CI (run in the dev env, so the

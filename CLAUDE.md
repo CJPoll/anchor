@@ -41,10 +41,10 @@ never an adapter.
 
 | Bucket | Modules |
 |---|---|
-| Framework | `Anchor.Check.*` (Credo checks, `Anchor.Check.Base`, `Anchor.Check.Source`), `Mix.Tasks.Anchor.*` (`lib/mix/tasks/`; `Mix.Tasks.Anchor.Sabotage`) |
-| Managers | `Anchor.Managers.Lint`, `Anchor.Managers.Sabotage` |
-| Side Effects | ports: `Anchor.Adapters.ConfigLoader`, `ChangeSource`, `BeamSource`; adapters: `ConfigFile`, `GitChangeSource`, `BeamReader` (`lib/anchor/adapters/`); `GitEnv`, the environment the git adapters run git with (DND-5581) |
-| Domain | everything under `lib/anchor/domain/`, including `Anchor.Domain.Sabotage.*` (`Mutator`, `Operators`, `DiffHunks`, `FunctionSpans`, `Scope`) and `Anchor.Domain.Graph.*` |
+| Framework | `Anchor.Check.*` (Credo checks, `Anchor.Check.Base`, `Anchor.Check.Source`), `Mix.Tasks.Anchor.*` (`lib/mix/tasks/`; `Mix.Tasks.Anchor.Sabotage`), `Anchor.Sabotage.CoverageCollector` (an OTP process, in `lib/mix/tasks/anchor/sabotage/` so `mix anchor.graph` buckets it as Framework) |
+| Managers | `Anchor.Managers.Lint`, `Anchor.Managers.Sabotage` (`.Runner`, `.Coverage`) |
+| Side Effects | ports: `Anchor.Adapters.ConfigLoader`, `ChangeSource`, `BeamSource`, `Tracing`, `InProcessTests`, `ProjectModuleSource`, `CoverageStore`; adapters: `ConfigFile`, `GitChangeSource`, `BeamReader`, `CallTracer`, `SuiteRunner`, `ProjectModules`, `CoverageFile`, `RecordFile` (port `RecordStore`) (`lib/anchor/adapters/`); `GitEnv`, the environment the git adapters run git with (DND-5581) |
+| Domain | everything under `lib/anchor/domain/`, including `Anchor.Domain.Sabotage.*` (`Mutator`, `Operators`, `DiffHunks`, `FunctionSpans`, `Scope`, `CoverageMap`, `Record`, `RecordNaming`, `KillMap`, `ChangedTests`, `TestPath`: the one rule for a path handed to `mix test`, DND-5640) and `Anchor.Domain.Graph.*` |
 
 ### Key Architectural Decisions
 
@@ -294,3 +294,31 @@ at all exit 0 but are never silent: a line per function with its reason
 `Anchor.Sabotage.ExUnitFormatter`'s frames, never from parsed output; the
 formatter calls no other Anchor module, so it loads alone in a project's test
 VM. The flow is in `Anchor.Managers.Sabotage.Runner`'s moduledoc.
+
+## Per-test coverage (DND-5474)
+
+`mix anchor.sabotage coverage` builds the map test -> project functions it
+executed, CI only unless `--local` (`.github/workflows/coverage-map.yml`,
+artifact `anchor-coverage`). Windows come from traced
+`ExUnit.EventManager.test_started/2`/`test_finished/2` calls with strict
+monotonic stamps, never from a formatter (formatter events are async). The
+windowing is pure (`Anchor.Domain.Sabotage.CoverageMap`); the collector
+process (`Anchor.Sabotage.CoverageCollector`, Framework) is started by the
+Mix task and reached by the Manager only through the `Tracing` port. The
+`:arity` trace flag keeps every traced argument out of the collector. A test
+that turns VM-wide tracing on is tagged `@moduletag :global_tracing`, and the
+coverage build runs with `--exclude global_tracing`. `run --coverage PATH`
+selects a mutant's tests from the map first (source `coverage`), then the
+mirror.
+
+## Sabotage records (DND-5484)
+
+`mix anchor.sabotage run` writes its own sabotage record after the run
+(`Anchor.Domain.Sabotage.Record`, the golden file
+`test/fixtures/sabotage/record_golden.md` is the authority for its text),
+named per `sabotage.records` (`RecordNaming`: anchor and crew
+`domain_date_slot`, gen_saas `ticket_nn_what`). Its `anchor-kills` block
+(`KillMap`, render and parse) is what `run` selects tests from next time
+(source `kill_map`, after `coverage`, before `mirror`) and what DND-5485
+replays. `RecordFile.create/3` never overwrites; a README is never written;
+nothing is staged or committed. The date is a fact the Mix task reads.
