@@ -142,3 +142,7 @@ before coining a synonym.
   (`Anchor.Domain.Checks.NoDiscardedPureExpression`, the definition of pure,
   the stdlib pure set and `pure_patterns`) and the
   `Anchor.Check.NoDiscardedPureExpression` shell that delegates to it.
+- `no_forwarding_function` — the `no_forwarding_function` rule (DND-5452,
+  proposal F4, same module): its pure detector
+  (`Anchor.Domain.Checks.NoForwardingFunction`) and the
+  `Anchor.Check.NoForwardingFunction` shell that delegates to it.

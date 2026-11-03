@@ -344,6 +344,7 @@ another type (`match` on a `no_transitive_dependency` rule) is unknown too.
 | `no_direct_dependency` | `allowed_callers`, `context_depth`, `forbidden_functions`, `forbidden_modules`, `forbidden_patterns`, `match`, `same_context` | `forbidden_functions`, `forbidden_modules`, `forbidden_patterns` |
 | `no_discarded_pure_expression` | `pure_patterns` | none |
 | `no_discarding_arrow_in_with` | none | none |
+| `no_forwarding_function` | none | none |
 | `no_transitive_dependency` | `forbidden_modules`, `forbidden_patterns` | `forbidden_modules`, `forbidden_patterns` |
 | `no_tuple_match_in_head` | none | none |
 | `single_control_flow` | none | none |
@@ -442,7 +443,8 @@ Configure Credo to use the custom checks in `.credo.exs`:
           {Anchor.Check.MaxFileLength, []},
           {Anchor.Check.NoComparisonInIf, []},
           {Anchor.Check.StructGetterConvention, []},
-          {Anchor.Check.NoDiscardedPureExpression, []}
+          {Anchor.Check.NoDiscardedPureExpression, []},
+          {Anchor.Check.NoForwardingFunction, []}
         ]
       }
     }
@@ -1078,3 +1080,48 @@ rest are misses or cosmetic:
 - Purity of your own functions is not inferred from the call graph: that is
   the graph engine's (DND-5447, DND-5470). Declare pure namespaces with
   `pure_patterns`.
+
+### `no_forwarding_function`
+
+Reports a function whose every clause only hands its arguments, unchanged and
+in order, to another function of the same module (DND-5452, proposal F4). The
+hop adds depth and causes nothing: inside one module no boundary is crossed.
+
+```elixir
+def total(items, tax), do: do_total(items, tax)   # reported: total/2
+defp do_total(items, tax), do: Enum.sum(items) * (1 + tax)
+```
+
+A clause forwards when its head is distinct bare variables (no pattern, no
+`_` name, no default, no guard) and its body is exactly one call, `g(a, b)`,
+`__MODULE__.g(a, b)` or `a |> g(b)`, passing exactly those variables in the
+same order to a `def`/`defp` of the same module that is not itself. A
+multi-clause function is reported only when every clause forwards to the same
+function. `defdelegate f(a, b), to: __MODULE__, as: :g` is reported the same
+way.
+
+Not reported: any change to an argument, a reordering, a dropped or added
+argument, a body of more than one expression, a call to a function the module
+does not define (imported, aliased or remote), a call to itself, a function
+marked `@impl` (a behaviour callback is a boundary) or `@deprecated` (an API
+transition), a `defimpl` body (protocol callbacks), and code inside `quote`. A
+nested `defmodule` is its own module.
+
+Each issue names both functions and ends with `Fix: inline the hop: make the
+callers of f/n call g/n directly and delete f/n, or rename g/n to f/n (public
+if f/n was). Keep a forwarding function only where it crosses a boundary (a
+behaviour callback marked @impl, another module's public API).`
+
+**The split with `no_inert_hop` (DND-5463).** This rule judges only what one
+file shows: a hop within one module, where no boundary can be crossed. A hop
+to another module, a `defdelegate` to another module and a facade module may
+cross a bucket, context, app, aggregate or interface boundary, which only the
+architecture model knows, so those are the graph rule `no_inert_hop`'s.
+
+```yaml
+- type: no_forwarding_function
+  paths:
+    - "lib/my_app/**/*.ex"
+  recursive: true
+```
+

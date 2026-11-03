@@ -38,6 +38,7 @@ defmodule Anchor.E2E.ChecksE2ETest do
   alias Anchor.Check.MustUseModule
   alias Anchor.Check.NoDependency
   alias Anchor.Check.NoDiscardedPureExpression
+  alias Anchor.Check.NoForwardingFunction
 
   # DND-1267: a function-level rule, from YAML to Credo issue, with no mocks.
   describe "forbidden_functions through the real pipeline" do
@@ -135,6 +136,52 @@ defmodule Anchor.E2E.ChecksE2ETest do
               to_source_file("defmodule MyApp.Other do\nend\n", "lib/my_app/other.ex")
             ],
             NoDiscardedPureExpression
+          )
+        end)
+
+      assert issues == []
+    end
+  end
+
+  # DND-5452: the rule type, from YAML to Credo issue, with no mocks.
+  # Sabotage record: ../../sabotage_records/no_forwarding_function-20261103-dnd_5451_ast_batch.md
+  describe "no_forwarding_function through the real pipeline" do
+    @forwarding_yaml """
+    rules:
+      - type: no_forwarding_function
+        paths:
+          - "lib/**/*.ex"
+        recursive: true
+    """
+
+    @forwarding_source """
+    defmodule MyApp.Thing do
+      def total(items, tax), do: do_total(items, tax)
+      defp do_total(items, tax), do: {items, tax}
+    end
+    """
+
+    test "F1: a selected file reports the forwarding function" do
+      issues =
+        with_anchor_config(@forwarding_yaml, fn ->
+          run_check(
+            [to_source_file(@forwarding_source, "lib/my_app/thing.ex")],
+            NoForwardingFunction
+          )
+        end)
+
+      assert Enum.map(issues, &{&1.line_no, &1.trigger}) == [{2, "total/2"}]
+    end
+
+    test "F2: a file the rule does not select has no issue (F1 is the control)" do
+      issues =
+        with_anchor_config(@forwarding_yaml, fn ->
+          all_issues(
+            [
+              to_source_file(@forwarding_source, "test/my_app/thing_test.exs"),
+              to_source_file("defmodule MyApp.Other do\nend\n", "lib/my_app/other.ex")
+            ],
+            NoForwardingFunction
           )
         end)
 

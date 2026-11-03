@@ -80,6 +80,7 @@ rules:
       - "lib/anchor/check/no_comparison_in_if.ex"
       - "lib/anchor/check/no_dependency.ex"
       - "lib/anchor/check/no_discarded_pure_expression.ex"
+      - "lib/anchor/check/no_forwarding_function.ex"
       - "lib/anchor/check/no_discarding_arrow_in_with.ex"
       - "lib/anchor/check/no_transitive_dependency.ex"
       - "lib/anchor/check/no_tuple_match_in_head.ex"

@@ -287,6 +287,16 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
       ]
   end
 
+  # DND-5452: no key of its own, so any other key is unknown.
+  defp table(:no_forwarding_function) do
+    common_rows(:no_forwarding_function) ++
+      [
+        {"an unknown key (pure_patterns belongs to another type)",
+         Map.put(base(:no_forwarding_function), "pure_patterns", ["MyApp.*"]),
+         {:refused, ~s(unknown key "pure_patterns" in a no_forwarding_function rule)}}
+      ]
+  end
+
   # The types with no relation and no key of their own: they check every file
   # they select, so only the common rows apply.
   defp table(type), do: common_rows(type)

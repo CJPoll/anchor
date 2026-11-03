@@ -47,6 +47,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
     no_direct_dependency: "forbiden_patterns",
     no_discarded_pure_expression: "pure_pattern",
     no_discarding_arrow_in_with: "pahts",
+    no_forwarding_function: "pahts",
     no_transitive_dependency: "forbiden_modules",
     no_tuple_match_in_head: "pahts",
     single_control_flow: "pahts",

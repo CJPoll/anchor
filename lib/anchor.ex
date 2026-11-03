@@ -26,6 +26,7 @@ defmodule Anchor do
   - `Anchor.Check.MaxFileLength` - Enforces a maximum number of lines per file
   - `Anchor.Check.StructGetterConvention` - Enforces a consistent convention for struct getter functions
   - `Anchor.Check.NoDiscardedPureExpression` - Reports a discarded expression that has no effect
+  - `Anchor.Check.NoForwardingFunction` - Reports a function that only forwards to another in its module
 
   ## Integration with Credo
 
@@ -49,7 +50,8 @@ defmodule Anchor do
                 {Anchor.Check.AlphabetizedFunctions, []},
                 {Anchor.Check.MaxFileLength, []},
                 {Anchor.Check.StructGetterConvention, []},
-                {Anchor.Check.NoDiscardedPureExpression, []}
+                {Anchor.Check.NoDiscardedPureExpression, []},
+                {Anchor.Check.NoForwardingFunction, []}
               ]
             }
           }
@@ -74,7 +76,8 @@ defmodule Anchor do
       Anchor.Check.AlphabetizedFunctions,
       Anchor.Check.MaxFileLength,
       Anchor.Check.StructGetterConvention,
-      Anchor.Check.NoDiscardedPureExpression
+      Anchor.Check.NoDiscardedPureExpression,
+      Anchor.Check.NoForwardingFunction
     ]
   end
 end

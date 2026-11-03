@@ -73,7 +73,7 @@ defmodule Anchor.Domain.RuleSchema do
     * `alphabetized_functions` and `max_file_length` read one optional
       parameter with a default (`mode`, `max_lines`), so they always check.
     * `case_on_bare_arg`, `no_comparison_in_if`, `no_discarding_arrow_in_with`,
-      `no_tuple_match_in_head`, `single_control_flow`,
+      `no_forwarding_function`, `no_tuple_match_in_head`, `single_control_flow`,
       `struct_getter_convention` read no key of their own: they check every
       file they select.
     * `no_discarded_pure_expression` (DND-5451) reads one optional key,
@@ -141,6 +141,7 @@ defmodule Anchor.Domain.RuleSchema do
          match same_context),
     no_discarded_pure_expression: ~w(pure_patterns),
     no_discarding_arrow_in_with: [],
+    no_forwarding_function: [],
     no_transitive_dependency: ~w(forbidden_modules forbidden_patterns),
     no_tuple_match_in_head: [],
     single_control_flow: [],
@@ -160,6 +161,7 @@ defmodule Anchor.Domain.RuleSchema do
     no_direct_dependency: ~w(forbidden_functions forbidden_modules forbidden_patterns),
     no_discarded_pure_expression: [],
     no_discarding_arrow_in_with: [],
+    no_forwarding_function: [],
     no_transitive_dependency: ~w(forbidden_modules forbidden_patterns),
     no_tuple_match_in_head: [],
     single_control_flow: [],

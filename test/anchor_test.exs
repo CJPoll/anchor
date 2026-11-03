@@ -4,7 +4,7 @@ defmodule AnchorTest do
 
   test "returns list of checks" do
     checks = Anchor.checks()
-    assert length(checks) == 13
+    assert length(checks) == 14
     assert Anchor.Check.NoDependency in checks
     assert Anchor.Check.NoTransitiveDependency in checks
     assert Anchor.Check.MustUseModule in checks
@@ -18,6 +18,7 @@ defmodule AnchorTest do
     assert Anchor.Check.MaxFileLength in checks
     assert Anchor.Check.StructGetterConvention in checks
     assert Anchor.Check.NoDiscardedPureExpression in checks
+    assert Anchor.Check.NoForwardingFunction in checks
   end
 
   test "every entry in checks/0 is a loadable, well-formed Credo check module" do

@@ -91,6 +91,8 @@ if File.dir?(anchor_ebin), do: Code.append_path(String.to_charlist(anchor_ebin))
           # DND-5451: listed, and off, until its report on Anchor's own tree
           # has been read. Enabling it here is a follow-up.
           {Anchor.Check.NoDiscardedPureExpression, false},
+          # DND-5452: listed, and off, on the same terms.
+          {Anchor.Check.NoForwardingFunction, false},
 
           # Readability — checks the current tree already satisfies.
           {Credo.Check.Readability.FunctionNames, []},
