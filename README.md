@@ -576,8 +576,8 @@ removed line maps to the function it was in at the merge-base (read with
 `git show`), so deleting lines or a whole clause of a function that still
 exists keeps it in scope; a function deleted whole is gone, and counted as a
 hunk outside a function. It reads git and source files only: nothing
-is compiled and no project code runs. Generated sabotage (the runner, later)
-mutates only these functions.
+is compiled and no project code runs. Generated sabotage (`mix anchor.sabotage
+run`, below) mutates only these functions.
 
 Text output is one TSV line per function (`file, module, name/arity, kind,
 changed line ranges`), then a summary that counts what was left out:
@@ -605,7 +605,7 @@ outside any function (attributes, docs, a deleted function), and macros
 opts)` (DND-5471) returns every mutant of one function's literal `def`/`defp`
 clauses. It only parses the source (with Sourceror, so each edit replaces
 exactly its range and nothing else is reformatted); it compiles nothing and
-writes nothing. The runner (`mix anchor.sabotage run`, later) applies them.
+writes nothing. The runner (`mix anchor.sabotage run`, below) applies them.
 
 | Operator | The mutant |
 |---|---|
@@ -623,6 +623,84 @@ edit that would not compile under `--warnings-as-errors` (a variable left
 unbound or unused; the last use of a private function, module attribute, alias
 or import removed) is returned as skipped, with the reason, never as a mutant.
 A function no literal `def`/`defp` defines is `{:error, :not_in_source}`.
+
+### Sabotage: running the mutants
+
+```bash
+mix anchor.sabotage run [--base REF] [--max N|all] [--only ID]... [--dry-run]
+mix anchor.sabotage restore
+```
+
+`run` (DND-5473) takes the functions `scope` finds, makes their mutants, and
+applies them **one at a time**: it writes the mutant, runs only the tests
+selected for it, puts the original back, and says what happened. It is built
+to be safe on a desktop: sequential, capped (30 mutants by default; `--max all`
+lifts the cap, for CI), targeted tests only, two test cases at once, every
+test run bounded by `timeout_seconds`, and the source tree always restored.
+
+It needs a `sabotage:` section in `.anchor.yml` (every key optional; the
+defaults are shown) and the journal path in `.gitignore`:
+
+```yaml
+sabotage:
+  test_command: ["mix", "test", "--max-cases", "2"]  # argv prefix, no shell
+  max_mutants: 30                    # --max N overrides; --max all lifts it
+  timeout_seconds: 300               # per test run, then `timeout --kill-after=10`
+  operators: [delete_statement, drop_effect_call, narrow_clause, with_passthrough, force_condition, return_input]
+  effect_calls: []                   # extra effect calls, "Module.fun" or "Module.fun/arity"
+  test_mirror:                       # lib file -> test file; the first matching `from` wins
+    - from: "apps/*/lib/**/*.ex"     # one `*` segment binds {app}; `**/*.ex` binds {rest}
+      to: "apps/{app}/test/{rest}_test.exs"
+    - from: "lib/**/*.ex"
+      to: "test/{rest}_test.exs"
+```
+
+```gitignore
+/.anchor/sabotage/in-flight.json
+```
+
+An unknown key or a bad value fails the load, naming the key, with a `Fix:`.
+
+How a run goes:
+
+1. A journal left by a killed run (`.anchor/sabotage/in-flight.json`) is dealt
+   with first: the file still holding the mutant is restored (and the run says
+   so); a file already back loses only the journal; a file that matches
+   neither is refused and left alone. `mix anchor.sabotage restore` does this
+   step alone.
+2. Every target file must be committed: sabotage starts from committed code.
+3. Mutants are ordered by file, function, operator and id; `--only` keeps the
+   named ids; the cap keeps the first N and lists the rest `not run (cap)`.
+   `--dry-run` prints this plan and writes nothing.
+4. Each mutant's tests are its mirror test file (`test_mirror`), if it exists.
+5. The union of the selected tests runs once with no mutant (the baseline). If
+   it fails, nothing can be judged: exit 3.
+6. Per mutant: the journal is written (the file, the original bytes, both
+   sha256s), then the mutant; its mtime is moved forward so Mix recompiles it;
+   its tests run with Anchor's ExUnit formatter
+   (`Anchor.Sabotage.ExUnitFormatter`, which writes each failed test to a
+   results file; output is never parsed); then, in an `after` block, the
+   original is written back, touched, its sha256 checked, and only then the
+   journal deleted.
+7. The run is saved to `_build/<env>/anchor/sabotage/last-run.etf`.
+
+| Status | Meaning |
+|---|---|
+| `killed` | a selected test failed; those tests are the killers |
+| `survived` | the selected tests ran and passed (`Fix: add a test that fails under this mutant`) |
+| `timeout` | the time bound killed the run; counts as killed, killer `(timeout)` |
+| `invalid` | the mutant did not compile (any reason, a type-checker warning under warnings-as-errors included: the compiler's first error line is shown), the test run crashed, or no test ran. Never killed, never survived; counted in the summary |
+| `no_tests` | no test was selected (the line names the mirror path looked for) |
+
+Skipped mutants are listed with their reason and never applied; a changed
+function with no literal clause is listed as an error, never as killed.
+
+| Condition | Exit |
+|---|---|
+| every mutant run killed, timed out or invalid | 0 |
+| a mutant survived or had no test | 1 |
+| a dirty target file; the journal not git-ignored; a leftover journal whose file changed; a restore that did not reproduce the original (the journal is kept); an unknown `--only` id; no `timeout` binary; bad flags | 2, with `Fix:` |
+| no loadable config or no `sabotage:` section; the scope could not be measured; the baseline fails; changed functions whose files cannot be read | 3, `COULD NOT MEASURE` with `Fix:` |
 
 ## Check Types
 

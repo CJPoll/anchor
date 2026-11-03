@@ -10,3 +10,10 @@ Hammox.defmock(Anchor.ConfigLoaderMock, for: Anchor.Adapters.ConfigLoader)
 # Hammox mock for the change-source port (DND-5472): `Anchor.Managers.Sabotage`
 # and `mix anchor.sabotage` take it through the `:change_source` option.
 Hammox.defmock(Anchor.ChangeSourceMock, for: Anchor.Adapters.ChangeSource)
+
+# DND-5473: the sabotage runner's ports (`Anchor.Managers.Sabotage.run/2`
+# takes them as the `:source_mutation`, `:git_worktree` and `:test_execution`
+# options).
+Hammox.defmock(Anchor.SourceMutationMock, for: Anchor.Adapters.SourceMutation)
+Hammox.defmock(Anchor.GitWorktreeMock, for: Anchor.Adapters.GitWorktree)
+Hammox.defmock(Anchor.TestExecutionMock, for: Anchor.Adapters.TestExecution)

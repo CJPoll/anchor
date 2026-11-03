@@ -18,4 +18,7 @@ defmodule Anchor.Adapters.ConfigLoader do
   """
 
   @callback load() :: {:ok, Anchor.Config.t()} | {:error, term()}
+
+  @doc "`load/0` searching from `root` instead of the working directory (DND-5473)."
+  @callback load_in(root :: String.t()) :: {:ok, Anchor.Config.t()} | {:error, term()}
 end

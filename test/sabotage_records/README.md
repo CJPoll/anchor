@@ -67,8 +67,12 @@ before coining a synonym.
 - `sabotage` — the causal sabotage generator (DND-5471): every
   `Anchor.Domain.Sabotage.*` module that makes mutants (`Mutator`,
   `Operators`, `OrphanCheck`, `SourceTree`, `Patch`, `MutantId`,
-  `EffectCalls`, `Mutant`, `Skipped`). `sabotage_scope` stays the word for
-  the diff scope.
+  `EffectCalls`, `Mutant`, `Skipped`), and the runner (DND-5473):
+  `mix anchor.sabotage run`/`restore`, its Domain (`Config`, `TestMirror`,
+  `TestSelection`, `Plan`, `TestRun`, `Outcome`, `Journal`, `Run`, `Report`),
+  `Anchor.Managers.Sabotage.Runner`, the adapters `SourcePatcher`,
+  `GitStatus` and `TestRunner`, and `Anchor.Sabotage.ExUnitFormatter`.
+  `sabotage_scope` stays the word for the diff scope.
 - `dependency_analyzer` — `Anchor.Domain.DependencyAnalyzer`, the pure AST
   walk behind every dependency fact (module names, references, calls, uses,
   the module graph).
