@@ -40,7 +40,10 @@ defmodule Mix.Tasks.Anchor.Graph do
   not, and an ebin with no beams is COULD NOT MEASURE. CI runs it from a
   checkout of the base branch (`bin/ci/base-judge.sh`), so the ratchet that
   judges a pull request is the code landed on its base, never the pull
-  request's own. It refuses (exit 2) a DIR that is not a directory, an
+  request's own. As that judge it loads DIR's config with rule types it does
+  not know set aside: each is a report-only FIRST LANDING, and a rule the
+  base config has that DIR removes or retypes fails (`Anchor.Domain.LandedJudge`).
+  It refuses (exit 2) a DIR that is not a directory, an
   umbrella judge, a compile path outside this checkout (`MIX_BUILD_PATH`), and
   `--write-baseline`: the judge never writes the judged tree.
 
@@ -121,6 +124,8 @@ defmodule Mix.Tasks.Anchor.Graph do
     {compile, deps} = Keyword.pop(opts, :compile, &compile/0)
     {apps_paths, deps} = Keyword.pop_lazy(deps, :apps_paths, &Mix.Project.apps_paths/0)
     target = target(project, apps_paths, request_opts)
+    # DND-5658: judging another checkout is the landed judge's run.
+    request_opts = Map.put(request_opts, :judge, project != nil)
     compile.()
 
     request = %Request{

@@ -375,7 +375,7 @@ defmodule Mix.Tasks.Anchor.GraphTest do
          %{beam: beam, dir: dir} do
       rule = Map.merge(rule(:stub_finds, "a", 1), %{baseline: ".anchor/baselines/a.txt"})
       key = "a|AnchorFixtures.AnchorGraphTaskTest.Thing|found"
-      expect(ConfigLoaderMock, :load_in, fn ^dir -> {:ok, config([rule])} end)
+      expect(ConfigLoaderMock, :load_judged, fn ^dir -> {:ok, config([rule])} end)
 
       Mox.expect(BeamSourceMock, :read_ebins, fn [{:anchor, ebin}] ->
         assert ebin == Path.join(dir, "_build/test/lib/anchor/ebin")

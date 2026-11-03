@@ -108,6 +108,7 @@ defmodule Anchor.Managers.Graph do
   alias Anchor.Domain.GraphReport
   alias Anchor.Domain.GraphReport.Finding
   alias Anchor.Domain.GraphRules
+  alias Anchor.Domain.LandedJudge
   alias Anchor.Domain.Model
   alias Anchor.Domain.Roots
   alias Anchor.Domain.Violation
@@ -120,7 +121,7 @@ defmodule Anchor.Managers.Graph do
   def run(%Request{} = request, deps \\ []) do
     deps = deps(deps)
 
-    with {:ok, config} <- load_config(deps.config_loader, request.root),
+    with {:ok, config} <- load_config(deps.config_loader, request),
          {:ok, rules} <- graph_rules(config, request, deps.graph_rules),
          :ok <- write_target(rules, request, config),
          {:ok, beams} <- read_beams(deps.beam_source, request) do
@@ -170,9 +171,12 @@ defmodule Anchor.Managers.Graph do
   end
 
   # The config under the request's root, never the working directory: under
-  # `mix anchor.graph --project DIR` the root is the judged project (DND-5658).
-  defp load_config(loader, root) do
-    case loader.load_in(root) do
+  # `mix anchor.graph --project DIR` the root is the judged project, and the
+  # judge sets aside rule types it does not know (DND-5658).
+  defp load_config(loader, %Request{root: root, opts: opts}) do
+    loaded = if Map.get(opts, :judge), do: loader.load_judged(root), else: loader.load_in(root)
+
+    case loaded do
       {:ok, %Config{architecture: nil} = config} ->
         {:could_not_check, Failures.graph_no_architecture(config.path)}
 
@@ -248,6 +252,8 @@ defmodule Anchor.Managers.Graph do
     deps =
       Map.merge(deps, %{base: base_config(deps.git_base, request, config), now: config.rules})
 
+    landed = landed_judge(request, config, deps.base)
+
     analyses = %{cfa: cfa, effects: effects}
     ran = Enum.map(rules, &run_rule(&1, model, analyses, config.path, request, deps))
 
@@ -259,7 +265,7 @@ defmodule Anchor.Managers.Graph do
       |> Enum.map(&Finding.fail_closed(&1, @config_file))
 
     GraphReport.new(
-      fail_closed ++ Enum.flat_map(ran, & &1.findings) ++ artifact_notes,
+      fail_closed ++ landed ++ Enum.flat_map(ran, & &1.findings) ++ artifact_notes,
       [],
       request
       |> counts(map_size(graph.modules), length(rules), length(Model.opaque(model)))
@@ -466,8 +472,9 @@ defmodule Anchor.Managers.Graph do
   # growth".
   defp base_config(git, request, config) do
     ref = Map.get(request.opts, :base)
+    judge? = Map.get(request.opts, :judge) == true
 
-    if ref != nil and Enum.any?(config.rules, &is_binary(Map.get(&1, :baseline))),
+    if ref != nil and (judge? or Enum.any?(config.rules, &is_binary(Map.get(&1, :baseline)))),
       do: read_base_rules(git, request.root, ref, config_path(config.path, request.root)),
       else: nil
   end
@@ -479,6 +486,33 @@ defmodule Anchor.Managers.Graph do
       {:error, reason} -> {:fail, Failures.baseline_base_config_unreadable(config, ref, reason)}
     end
   end
+
+  # DND-5658: under `--project` (the landed judge), the base rules this change
+  # removes or retypes fail, and each rule type the judge set aside is a
+  # report-only FIRST LANDING note (`Anchor.Domain.LandedJudge`). A base config
+  # that could not be read is an issue, never "nothing removed".
+  defp landed_judge(%Request{opts: %{judge: true}} = request, config, base) do
+    case base do
+      {:fail, violation} -> [Finding.fail_closed(violation, @config_file)]
+      read -> landed_findings(request, config, base_rules(read))
+    end
+  end
+
+  defp landed_judge(_request, _config, _base), do: []
+
+  defp landed_findings(request, config, base_rules) do
+    path = config_path(config.path, request.root)
+    ref = Map.get(request.opts, :base)
+    {failures, notes} = LandedJudge.judge(base_rules, config.rules, config.deferred, path, ref)
+
+    Enum.map(failures, &Finding.fail_closed(&1, @config_file)) ++
+      Enum.map(notes, &Finding.note(&1, @config_file))
+  end
+
+  # The base config's rules (`:absent` when the ref has no config), or `nil`
+  # without `--base`.
+  defp base_rules({:ok, rules}), do: rules
+  defp base_rules(nil), do: nil
 
   defp config_path(path, root),
     do: if(Path.type(path) == :relative, do: path, else: Path.relative_to(path, root))

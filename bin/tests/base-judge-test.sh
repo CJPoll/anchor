@@ -13,6 +13,10 @@
 #      exit 0, BOOTSTRAP, nothing built.
 #   T10 a base with no bin/ci/base-judge.sh and a pull request that does not
 #      add it (a branch cut before the judge, or the script deleted): exit 3.
+#   T11 a pull request that removes a base rule (context_acyclic): exit 1,
+#      the landed judge names the removed check.
+#   T12 a pull request that adds a top-level section the landed judge does
+#      not know: exit 3, COULD NOT MEASURE (the owner lands it).
 #   T3 a base whose bin/ci/base-judge.sh is a symlink: exit 3, never followed.
 #   T4 a base whose anchor does not compile: exit 3, never a pass.
 #   T5 the sabotage: a pull request that edits Enforcement to drop STALE and
@@ -22,15 +26,16 @@
 #      GREW line.
 #   T6 the positive control: an honest pull request (a README line) passes
 #      the landed judge.
-#   T7 a pull request whose .anchor.yml the landed judge cannot load (a rule
-#      type it does not know): exit 3, COULD NOT MEASURE (the owner lands it).
+#   T7 a pull request that adds a rule of a type the landed judge does not
+#      know: exit 0, with a FIRST LANDING line naming it (its own --base step
+#      judges it).
 #   T8 a pull request that does not compile: exit 3, before any judge is built.
 #   T9 stale beams: a pull request built once (as a restored CI cache holds
 #      _build), then renaming its app so its compile writes elsewhere: the
 #      old beams are deleted first, so the judge reads none and the run is not
 #      a pass.
 #
-# T4-T9 build anchor from scratch in throwaway worktrees (several minutes).
+# T4-T12 build anchor from scratch in throwaway worktrees (several minutes).
 # BASE_JUDGE_TEST_ONLY="T2 T5" runs only those cases (sabotage runs); CI runs
 # every case. Exit 0 when every case it ran holds, 1 otherwise.
 #
@@ -166,15 +171,15 @@ fi
 
 if want T7; then
   pr=$(pull_request t7 main)
-  perl -0pi -e 's/^rules:\n/rules:\n  - type: no_such_graph_rule\n    paths: ["lib\/**\/*.ex"]\n/m' \
+  perl -0pi -e 's/^rules:\n/rules:\n  - type: no_such_graph_rule\n    id: brand_new\n    paths: ["lib\/**\/*.ex"]\n/m' \
     "$pr/.anchor.yml"
   if ! grep -qF "no_such_graph_rule" "$pr/.anchor.yml"; then
-    fail "T7 setup: the unknown rule was not added to .anchor.yml"
+    fail "T7 setup: the new rule was not added to .anchor.yml"
   fi
   (cd "$pr" && git commit -qam "a rule type the landed judge does not know")
   entry "$pr" main "$work/t7.out"
-  expect "T7 a config the landed judge cannot load is COULD NOT MEASURE" 3 \
-    "COULD NOT MEASURE: the judge exited 3" $? "$work/t7.out"
+  expect "T7 a rule type new in the pull request is a FIRST LANDING, not a refusal" 0 \
+    'NOTE: FIRST LANDING of rule 1 (id: "brand_new", no_such_graph_rule)' $? "$work/t7.out"
 fi
 
 if want T8; then
@@ -216,6 +221,28 @@ if want T10; then
   entry "$pr" old-base "$work/t10.out"
   expect "T10 no landed judge and none added is COULD NOT MEASURE" 3 \
     "has no bin/ci/base-judge.sh and this pull request does not add one" $? "$work/t10.out"
+fi
+
+if want T11; then
+  pr=$(pull_request t11 main)
+  perl -0pi -e 's/  - type: context_acyclic\n    id: context_acyclic\n.*?\n\n/\n/s' "$pr/.anchor.yml"
+  if grep -qF "id: context_acyclic" "$pr/.anchor.yml"; then
+    fail "T11 setup: the context_acyclic rule was not removed"
+  fi
+  (cd "$pr" && git commit -qam "remove a base rule")
+  entry "$pr" main "$work/t11.out"
+  expect "T11 a removed base rule fails the landed judge" 1 \
+    'rule "context_acyclic" (context_acyclic) is in .anchor.yml at main and not in this change' \
+    $? "$work/t11.out"
+fi
+
+if want T12; then
+  pr=$(pull_request t12 main)
+  printf 'brand_new_section:\n  enabled: true\n' >>"$pr/.anchor.yml"
+  (cd "$pr" && git commit -qam "a top-level section the landed judge does not know")
+  entry "$pr" main "$work/t12.out"
+  expect "T12 an unknown top-level section is COULD NOT MEASURE" 3 \
+    "COULD NOT MEASURE: the judge exited 3" $? "$work/t12.out"
 fi
 
 if [ "$ran" -eq 0 ]; then

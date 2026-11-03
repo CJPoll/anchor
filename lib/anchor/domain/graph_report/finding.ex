@@ -56,6 +56,15 @@ defmodule Anchor.Domain.GraphReport.Finding do
   end
 
   @doc """
+  A report-only note from its `%Violation{}`: `fail_closed/2`, but
+  `:report`, so it prints and never fails the run (DND-5658: the landed
+  judge's FIRST LANDING lines).
+  """
+  @spec note(Violation.t(), String.t()) :: t()
+  def note(%Violation{} = violation, default_file),
+    do: %{fail_closed(violation, default_file) | enforcement: :report}
+
+  @doc """
   A rule finding: the rule's `%Violation{}`, labelled by `label`, with the
   rule's enforcement (`:enforce` unless the rule says `:report`).
   """

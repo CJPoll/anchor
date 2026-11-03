@@ -269,9 +269,11 @@ CI judges a pull request twice (DND-5658): with its own `mix anchor.graph
 runs the base's copy of `bin/ci/base-judge.sh`, which builds the base in a
 scratch worktree and runs its `mix anchor.graph --project <pull request>`. So a
 change to `Enforcement`, `Baseline`, `BaselineBase`, a rule's `check/2` or
-`narrows?/2` lands only after the landed judge passes it. A change the landed
-judge refuses (a new rule type or config key it cannot load, a narrowed rule) is
-landed by the owner. A pull request that edits `.github/workflows/ci.yml` or
+`narrows?/2` lands only after the landed judge passes it. A rule type the base
+does not know is a report-only FIRST LANDING (`Anchor.Config.parse_config/2`
+`defer_unknown_types`, `Anchor.Domain.LandedJudge`); a base rule removed,
+renamed or retyped fails; an unknown key on a base rule, an unknown top-level
+section and a narrowed rule are refused and landed by the owner. A pull request that edits `.github/workflows/ci.yml` or
 `bin/ci/judge-with-base.sh` is not caught (GitHub runs its workflow): review is
 the gate there. Self-test: `bin/tests/base-judge-test.sh`.
 

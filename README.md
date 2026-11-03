@@ -658,9 +658,21 @@ in; it refuses (exit 2) a `DIR` that is not a directory, an umbrella judge, a
 build path outside the judge's own root, and `--write-baseline`. A base that
 cannot be checked out or built, a pull request that does not compile, and a
 judge that exits other than 0 or 1 are exit 3 (COULD NOT MEASURE), never a
-pass. A change the landed judge refuses (a new rule type or config key it
-cannot parse, a rule narrowed so a baselined finding is gone) is landed by
-the owner. The pull request's own `mix anchor.graph --base` step still runs:
+pass. Per rule id, the landed judge (`--project` loads the config with rule
+types it does not know set aside):
+
+| The pull request's rule | Landed judge | Exit |
+|---|---|---|
+| on the base, same type, only keys the base knows | ratchets it as `--base` does | 0 / 1 |
+| new, of a type the base does not know | `NOTE: FIRST LANDING ...`, report-only; the pull request's own `--base` step judges it | 0 |
+| new, of a type the base knows | judged, its baseline a first landing | 0 / 1 |
+| on the base, removed or renamed by the pull request | fails: a check removed | 1 |
+| on the base, its type changed | fails: a check replaced | 1 |
+| on the base, with a key the base does not know | COULD NOT MEASURE | 3 |
+| any, beside a top-level section the base does not know | COULD NOT MEASURE | 3 |
+| on the base, narrowed so a baselined finding is gone | NEW under the base's rule | 1 |
+
+The refused rows are landed by the owner. The pull request's own `mix anchor.graph --base` step still runs:
 it is the product under test. A base with no `bin/ci/base-judge.sh` prints
 `BOOTSTRAP` and exits 0 only for a pull request whose diff adds the script;
 any other pull request into such a base is exit 3. Self-test: `bin/tests/base-judge-test.sh` (CI job `Base judge

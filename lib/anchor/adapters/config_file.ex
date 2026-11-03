@@ -39,7 +39,16 @@ defmodule Anchor.Adapters.ConfigFile do
   run is told its project root).
   """
   @impl Anchor.Adapters.ConfigLoader
-  def load_in(cwd) do
+  def load_in(cwd), do: load_in(cwd, [])
+
+  @doc """
+  `load_in/1` with unknown rule types deferred
+  (`Anchor.Config.parse_config/2`'s `defer_unknown_types: true`, DND-5658).
+  """
+  @impl Anchor.Adapters.ConfigLoader
+  def load_judged(cwd), do: load_in(cwd, defer_unknown_types: true)
+
+  defp load_in(cwd, opts) do
     apps? = File.dir?(Path.join(cwd, "apps"))
     searched = ConfigPaths.candidates(cwd, apps?)
 
@@ -47,7 +56,7 @@ defmodule Anchor.Adapters.ConfigFile do
     # a readable file must be reported by the read below, not skipped as absent.
     case Enum.find(searched, &File.exists?/1) do
       nil -> {:error, {:config_not_found, searched}}
-      path -> load_from_path(path)
+      path -> load_from_path(path, opts)
     end
   end
 
@@ -55,12 +64,12 @@ defmodule Anchor.Adapters.ConfigFile do
   Reads and parses the config at `path`, returning `{:ok, %Anchor.Config{}}` or
   `{:error, {:config_load_failed, path, detail}}`.
   """
-  def load_from_path(path) do
+  def load_from_path(path, opts \\ []) do
     with {:ok, content} <- read(path),
          {:ok, data} <- decode(content),
-         # `parse_config/1` returns `{:error, reason}` for an invalid document or
+         # `parse_config/2` returns `{:error, reason}` for an invalid document or
          # rule, so it fails the load instead of loading as a no-op.
-         %Config{} = config <- Config.parse_config(data) do
+         %Config{} = config <- Config.parse_config(data, opts) do
       {:ok, %{config | path: path}}
     else
       {:error, detail} -> {:error, {:config_load_failed, path, detail}}

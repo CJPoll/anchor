@@ -102,6 +102,9 @@ before coining a synonym.
   the stdlib calls Elixir inlines before Core, derived from `:elixir_rewrite`,
   their two spellings in `Graph.calls_to/2`, and the inlined `Map.put` the
   walker reads from a map update.
+- `landed_judge` — what the landed judge (`mix anchor.graph --project`) decides
+  beyond the ratchet (DND-5658): `Anchor.Domain.LandedJudge`, the deferred
+  config split (`Anchor.Config.parse_config/2`), `ConfigFile.load_judged/1`.
 - `base_judge` — CI's base-branch judge (DND-5658): `bin/ci/judge-with-base.sh`,
   `bin/ci/base-judge.sh` and their self-test `bin/tests/base-judge-test.sh`.
 - `graph_runner` — `mix anchor.graph` (DND-5440): the Manager
