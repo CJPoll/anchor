@@ -39,7 +39,7 @@ defmodule Anchor.Domain.Aggregates.Inference do
   def components(%Analysis{} = analysis) do
     edges =
       for %Scope{keys: keys} <- analysis.scopes,
-          [first | rest] = Enum.sort(keys),
+          [first | rest] <- [Enum.sort(keys)],
           other <- rest,
           do: {first, other}
 

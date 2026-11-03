@@ -99,6 +99,13 @@ defmodule Anchor.Domain.Aggregates.InferenceTest do
     assert {:ok, %Config{declare: []}} = Config.parse(section)
   end
 
+  test "F7: a scope with no resolved key adds no edge and does not crash" do
+    analysis = analysis([scope(1, [], false), scope(2, schema: App.S)], [])
+
+    assert Inference.components(analysis) == [MapSet.new(schema: App.S)]
+    assert [%{name: "App.S"}] = Inference.proposed_declarations(analysis)
+  end
+
   test "F6: a table-only component is named by the camelized table" do
     assert [%{name: "AuditLog", tables: ["audit_log"], schemas: []}] =
              Inference.proposed_declarations(analysis([], table: "audit_log"))
