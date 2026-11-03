@@ -63,3 +63,20 @@ integration test (a real tmp project, no doubles).
 After every row was restored: `replay_test.exs` and `killer_ref_test.exs`
 30 tests, 0 failures; `sabotage_replay_test.exs` 7 tests, 0 failures;
 `sabotage_replay_integration_test.exs` 1 test, 0 failures.
+
+### The frame atoms (a defect replay found)
+
+The first real `mix anchor.sabotage run` on this branch crashed on its
+baseline: `TestRunner` decodes the formatter's frames with
+`binary_to_term(bin, [:safe])`, and the task's VM never loads ExUnit or the
+formatter, so `:suite_started` did not exist there. Every test so far ran in
+a test VM, where ExUnit had made the atom. The regression test R1
+(`test_runner_test.exs`) decodes in a fresh `elixir` VM with only Anchor's
+ebin on the path.
+
+| # | Mutation | Tests failed | First failure, verbatim |
+|---|---|---|---|
+| R1 | the unfixed adapter (no `@frame_tags`); then `_tags = @frame_tags`, which the compiler drops | 1 of 19 both times: "R1: the frames decode in a VM that never loaded ExUnit or the formatter" | `** (ArgumentError) errors were found at the given arguments:` `* 1st argument: invalid or unsafe external representation of a term` `:erlang.binary_to_term(<<131, 104, 1, 119, 13, 115, 117, 105, 116, 101, 95, 115, 116, 97, 114, 116, 101, 100>>, [:safe])` |
+
+After the fix (`Enum.each(@frame_tags, &Atom.to_string/1)` before each
+decode): 19 tests, 0 failures.
