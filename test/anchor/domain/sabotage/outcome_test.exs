@@ -2,6 +2,7 @@ defmodule Anchor.Domain.Sabotage.OutcomeTest do
   # DND-5473: a test run's status, read from the formatter's frames, and the
   # mutant status it gives. A mutant that does not compile is never killed.
   # Sabotage record: ../../../sabotage_records/sabotage-20261103-dnd_5473_sabotage_run.md
+  # Sabotage record (DND-5570): ../../../sabotage_records/sabotage-20261103-dnd_5570_sabotage_hardening.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Sabotage.Outcome
@@ -57,17 +58,17 @@ defmodule Anchor.Domain.Sabotage.OutcomeTest do
                "did not compile: warning: variable \"y\" is unused"
     end
 
-    test "5: a crashed run is invalid" do
-      assert Outcome.classify(run(:crashed, exit_code: 1)) == {:invalid, []}
+    test "5: a crashed run is crashed (unmeasured), not invalid" do
+      assert Outcome.classify(run(:crashed, exit_code: 1)) == {:crashed, []}
       assert Outcome.reason(run(:crashed, exit_code: 1)) == "test run crashed (exit 1)"
     end
 
-    test "6: a run in which no test ran is invalid" do
-      assert Outcome.classify(run(:no_tests, total: 0)) == {:invalid, []}
+    test "6: a run in which no test ran is no_tests (unmeasured), not invalid" do
+      assert Outcome.classify(run(:no_tests, total: 0)) == {:no_tests, []}
       assert Outcome.reason(run(:no_tests, total: 0)) == "no test ran"
     end
 
-    test "only an invalid run has a reason" do
+    test "only an invalid, crashed or no_tests run has a reason" do
       for status <- [:failed, :passed, :timeout], do: assert(Outcome.reason(run(status)) == nil)
     end
   end

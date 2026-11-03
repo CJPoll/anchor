@@ -7,16 +7,24 @@ defmodule Anchor.Domain.Sabotage.Outcome do
   | `:failed` | `:killed` | each failed test, `{file, line, name}` |
   | `:passed` | `:survived` | none |
   | `:timeout` | `:timeout` (counts as killed) | `["(timeout)"]` |
-  | `:compile_error`, `:crashed`, `:no_tests` | `:invalid` | none |
+  | `:compile_error` | `:invalid` | none |
+  | `:crashed` | `:crashed` | none |
+  | `:no_tests` (the tests ran none) | `:no_tests` | none |
 
   A mutant that does not compile is `:invalid`, never killed and never
   survived: its tests said nothing about it. `reason/1` says why, quoting
   the compiler's first error line (or warning, under warnings-as-errors).
+
+  `:crashed` and `:no_tests` are the unmeasured mutants (DND-5570): the
+  tests could have killed them and did not get to say. `Report` fails a run
+  that holds one beside a measured mutant, like a survivor; an `:invalid`
+  mutant is a different thing (a mutation that is not valid code) and never
+  changes the exit code.
   """
 
   alias Anchor.Domain.Sabotage.TestRun
 
-  @type status :: :killed | :survived | :timeout | :invalid | :no_tests
+  @type status :: :killed | :survived | :timeout | :invalid | :crashed | :no_tests
   @type killer :: {String.t(), non_neg_integer(), String.t()} | String.t()
 
   @spec classify(TestRun.t()) :: {status(), [killer()]}
@@ -25,9 +33,11 @@ defmodule Anchor.Domain.Sabotage.Outcome do
 
   def classify(%TestRun{status: :passed}), do: {:survived, []}
   def classify(%TestRun{status: :timeout}), do: {:timeout, ["(timeout)"]}
+  def classify(%TestRun{status: :crashed}), do: {:crashed, []}
+  def classify(%TestRun{status: :no_tests}), do: {:no_tests, []}
   def classify(%TestRun{}), do: {:invalid, []}
 
-  @doc "Why an invalid run is invalid; `nil` for any other."
+  @doc "Why an invalid, crashed or no-test run is unmeasured or invalid; `nil` for any other."
   @spec reason(TestRun.t()) :: String.t() | nil
   def reason(%TestRun{status: :compile_error, output_head: output}),
     do: "did not compile: " <> first_error_line(output)

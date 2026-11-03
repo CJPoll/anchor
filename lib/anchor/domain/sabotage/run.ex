@@ -9,6 +9,9 @@ defmodule Anchor.Domain.Sabotage.Run do
     * `refusal` — `nil`, or `{exit_code, message}`: the run stopped there;
     * `dry_run` — the plan was printed and nothing applied;
     * `restore` — a `mix anchor.sabotage restore`: only its notes are said;
+    * `changed_functions` — how many functions the scope found (`nil` before the
+      scope is read, or when the run stopped before it); `0` after a good diff
+      read is a legitimate empty scope, said loudly by the report;
     * `baseline` — `:passed`, `:none` (no mutant selected a test), or `nil`;
     * `outcomes` — one per mutant applied (or with no test), in plan order;
     * `planned` — the dry run's mutants with their selection;
@@ -28,6 +31,7 @@ defmodule Anchor.Domain.Sabotage.Run do
             refusal: nil,
             dry_run: false,
             restore: false,
+            changed_functions: nil,
             baseline: nil,
             outcomes: [],
             planned: [],
@@ -49,6 +53,7 @@ defmodule Anchor.Domain.Sabotage.Run do
           refusal: nil | {pos_integer(), String.t()},
           dry_run: boolean(),
           restore: boolean(),
+          changed_functions: nil | non_neg_integer(),
           baseline: nil | :passed | :none,
           outcomes: [outcome()],
           planned: [{Mutant.t(), selection()}],

@@ -41,6 +41,10 @@ defmodule Anchor.Managers.Sabotage.Runner do
        run (exit 2) with the journal kept.
    10. The run is saved to `_build/<env>/anchor/sabotage/last-run.etf`.
 
+  The exit code is `Anchor.Domain.Sabotage.Report`'s (DND-5570): the Runner
+  only sets `Run.changed_functions` (the scope's count, `0` for a good diff
+  read that found none) and classifies a raised test run as `:crashed`.
+
   The `after` block runs on an exception and a throw; a VM kill skips it, and
   the journal covers that on the next run.
 
@@ -70,12 +74,13 @@ defmodule Anchor.Managers.Sabotage.Runner do
   alias Anchor.Domain.Sabotage.TestSelection
   alias Anchor.Managers.Sabotage
 
+  @default_base "origin/main"
   @restore_failed :anchor_sabotage_restore_failed
 
   @spec run(map(), keyword()) :: Run.t()
   def run(%{root: root} = facts, opts) do
     ports = ports(opts)
-    run = %Run{base: Map.get(facts, :base)}
+    run = %Run{base: Map.get(facts, :base, @default_base)}
 
     locked(run, root, ports, fn ->
       case recover(run, root, ports) do
@@ -311,7 +316,7 @@ defmodule Anchor.Managers.Sabotage.Runner do
   end
 
   defp scope(facts, %{change: change, opts: opts}) do
-    args = %{root: facts.root, base: Map.get(facts, :base, "origin/main")}
+    args = %{root: facts.root, base: Map.get(facts, :base, @default_base)}
 
     case Sabotage.scope(args, Keyword.put(opts, :change_source, change)) do
       {:ok, scope} -> {:ok, scope}
@@ -350,7 +355,12 @@ defmodule Anchor.Managers.Sabotage.Runner do
     errors = for {function, {:error, reason}} <- results, do: {function, reason}
     oks = for {_function, {:ok, result}} <- results, do: result
 
-    run = %{run | errors: errors, skipped: Enum.flat_map(oks, & &1.skipped)}
+    run = %{
+      run
+      | changed_functions: length(scope.functions),
+        errors: errors,
+        skipped: Enum.flat_map(oks, & &1.skipped)
+    }
 
     if results != [] and oks == [] and Enum.all?(errors, &unmeasured?/1),
       do: {:refuse, run, 3, could_not_read(errors)},
@@ -533,7 +543,7 @@ defmodule Anchor.Managers.Sabotage.Runner do
         {:ok,
          outcome(
            mutant,
-           :invalid,
+           :crashed,
            [],
            selection,
            "the test run raised: " <> Exception.message(error)

@@ -704,16 +704,23 @@ How a run goes:
 | `killed` | a selected test failed; those tests are the killers |
 | `survived` | the selected tests ran and passed (`Fix: add a test that fails under this mutant`) |
 | `timeout` | the time bound killed the run; counts as killed, killer `(timeout)` |
-| `invalid` | the mutant did not compile (any reason, a type-checker warning under warnings-as-errors included: the compiler's first error line is shown), the test run crashed, or no test ran. Never killed, never survived; counted in the summary |
-| `no_tests` | no test was selected (the line names the mirror path looked for) |
+| `invalid` | the mutant did not compile (any reason, a type-checker warning under warnings-as-errors included: the compiler's first error line is shown). Never killed, never survived; listed and counted, and it never changes the exit code |
+| `crashed` | the test run crashed or raised, so the tests could not judge the mutant (the line says why). Unmeasured |
+| `no_tests` | no test was selected (the line names the mirror path looked for), or the selected tests ran none under the mutant. Unmeasured |
+
+A mutant is **measured** when it is `killed`, `survived` or `timeout`.
+`crashed` and `no_tests` mutants are **unmeasured**: the tests could have
+killed them and did not get to say.
 
 Skipped mutants are listed with their reason and never applied; a changed
 function with no literal clause is listed as an error, never as killed.
 
 | Condition | Exit |
 |---|---|
-| every mutant run killed, timed out or invalid | 0 |
-| a mutant survived or had no test | 1 |
+| every measured mutant killed or timed out (an `invalid` one beside them changes nothing) | 0 |
+| zero changed functions from a good diff read (an empty scope: `sabotage: 0 changed functions in <base>..HEAD`) | 0 |
+| a mutant survived, crashed or had no test, beside a measured one (a survivors list that gives one a reason will exempt it: DND-5483) | 1 |
+| mutants were run and none was measured (all `invalid`, `crashed` or without a test) | 3, `COULD NOT MEASURE` with `Fix:` |
 | a dirty target file; the journal not git-ignored; the run lock or a journal another live run holds; a leftover journal whose file changed; a restore that did not reproduce the original (the journal is kept); an unknown `--only` id; no `timeout` binary; bad flags | 2, with `Fix:` |
 | no loadable config or no `sabotage:` section; the scope could not be measured; the baseline fails; changed functions whose files cannot be read | 3, `COULD NOT MEASURE` with `Fix:` |
 
