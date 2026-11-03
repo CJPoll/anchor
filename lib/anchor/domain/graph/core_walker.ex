@@ -53,7 +53,8 @@ defmodule Anchor.Domain.Graph.CoreWalker do
   function's def line, used when a node has no line; when it is `nil`, the
   line of the `c_fun`'s own annotation is used (and when that is missing too,
   the edge's line is `nil`, `line_source: :def`). `file` is the module's source
-  file as its `elixir_v1` metadata names it (`:file`): a line annotated with
+  file as Core's `{:file, _}` annotations name it, the cwd-relative path
+  (`elixir_v1` `:relative_file`, not the absolute `:file`): a line annotated with
   another file (code a macro injected with `quote location: :keep`) is a line
   of that other file, so it is not used, and the def line stands in. With
   `file` nil, every annotated line is used.

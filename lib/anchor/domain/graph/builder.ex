@@ -42,7 +42,9 @@ defmodule Anchor.Domain.Graph.Builder do
     {decoded, errors} = Enum.split_with(beams, &match?(%Beam{}, &1))
     {kept, duplicates} = first_per_module(decoded)
     nodes = Enum.map(kept, &module_node(&1, source_facts))
-    edges = Enum.zip_with(kept, nodes, &module_edges(&2, Map.get(&1.elixir, :file)))
+    # Core's `{:file, _}` annotations hold the cwd-relative path, which the
+    # node keeps as `source_file` (`elixir_v1` `:relative_file`).
+    edges = Enum.map(nodes, &module_edges(&1, &1.source_file))
 
     %Graph{
       modules: Map.new(nodes, &{&1.module, &1}),

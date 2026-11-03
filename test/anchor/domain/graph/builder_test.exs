@@ -275,6 +275,33 @@ defmodule Anchor.Domain.Graph.BuilderTest do
     end
   end
 
+  describe "build/2 lines of a module compiled from an absolute path" do
+    # `mix compile` names each source by its absolute path (elixir_v1 `:file`),
+    # while Core's `{:file, _}` annotations hold the cwd-relative path
+    # (`:relative_file`). The module's own lines must still be used.
+    test "an edge keeps its own line, flagged :call" do
+      file = Path.join(File.cwd!(), "lib/anchor_fixtures/absolute.ex")
+
+      [beam] =
+        decode!(
+          compile_unloaded(
+            """
+            defmodule AnchorFixtures.BuilderTest.Absolute do
+              def f(x), do: Enum.count(x)
+            end
+            """,
+            file
+          )
+        )
+
+      assert beam.elixir.file == file
+      graph = Builder.build([beam], %{})
+
+      assert [%Call{to: {Enum, :count, 1}, line: 2, line_source: :call}] =
+               Graph.calls_from(graph, {AnchorFixtures.BuilderTest.Absolute, :f, 1})
+    end
+  end
+
   describe "build/2 edges and Graph queries" do
     # Row 37
     test "calls between modules are aggregated and answered both ways", %{pair: pair} do
