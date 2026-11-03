@@ -7,6 +7,7 @@ defmodule Mix.Tasks.Anchor.GraphTest do
   # another async test's output would interleave with.
   #
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5440_graph_runner.md
+  # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5581_hardening_batch.md
   use ExUnit.Case, async: false
 
   import Anchor.Test.BeamFixtures
@@ -112,6 +113,43 @@ defmodule Mix.Tasks.Anchor.GraphTest do
 
     assert %{"rules" => 2, "findings" => [%{"rule_id" => "a", "file" => @file_path}]} =
              JSON.decode!(output)
+  end
+
+  # DND-5585: a project built somewhere other than <root>/_build/<env>
+  # (MIX_BUILD_PATH, as some docker setups set it) gets its artifact under its
+  # own build path. sync: MIX_BUILD_PATH is the VM's OS environment.
+  test "the artifact goes under Mix's build path, as MIX_BUILD_PATH sets it", %{beam: beam} do
+    build = Path.join(System.tmp_dir!(), "anchor-build-#{System.unique_integer([:positive])}")
+    previous = System.get_env("MIX_BUILD_PATH")
+
+    on_exit(fn ->
+      if previous,
+        do: System.put_env("MIX_BUILD_PATH", previous),
+        else: System.delete_env("MIX_BUILD_PATH")
+    end)
+
+    System.put_env("MIX_BUILD_PATH", build)
+
+    expect(ConfigLoaderMock, :load, fn -> {:ok, config([rule(:stub_ok, "ok", 1)])} end)
+
+    Mox.expect(BeamSourceMock, :read_ebins, fn [{:anchor, ebin}] ->
+      assert ebin == Path.join(build, "lib/anchor/ebin")
+      [beam]
+    end)
+
+    expect(SourceSourceMock, :read, fn _root, [@file_path] ->
+      %{@file_path => SourceFacts.from_source(@file_path, @source)}
+    end)
+
+    expect(GraphStoreMock, :write, fn dir, _key, _graph ->
+      send(self(), {:artifact_dir, dir})
+      :ok
+    end)
+
+    capture_io(fn -> assert Graph.run([], opts()) == :ok end)
+
+    assert_received {:artifact_dir, dir}
+    assert dir == Path.join(build, "anchor")
   end
 
   test "a violation exits {:shutdown, 1} after printing it", %{beam: beam} do

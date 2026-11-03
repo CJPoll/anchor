@@ -18,6 +18,12 @@ defmodule Anchor.Domain.Graph.Builder do
   non-literal name (which may be this module), it is `:unknown`, never `false`
   and never a guessed `true`.
 
+  With `root:` (the project root, `build/3`), a module's `source_file` is its
+  path as `Anchor.Domain.Graph.ProjectFile.place/2` gives it: an absolute path
+  inside the root is made relative to it (DND-5588), so it matches the
+  `source_facts` keys and the selectors' `paths`. Its edges are still read
+  against the path the beam names, which is the one Core's annotations hold.
+
   A decode error is carried into `graph.unreadable` (in path order), never
   dropped; the good beams beside it are all built. Two beams of one module (a
   stale copy in a second ebin) build the first by path, and the other is in
@@ -32,19 +38,27 @@ defmodule Anchor.Domain.Graph.Builder do
   alias Anchor.Domain.Graph.CoreWalker
   alias Anchor.Domain.Graph.FunctionNode
   alias Anchor.Domain.Graph.ModuleNode
+  alias Anchor.Domain.Graph.ProjectFile
   alias Anchor.Domain.Graph.SourceFacts
 
   @doc """
   Builds the graph. `source_facts` maps a source file (as the beams'
-  `relative_file` names it) to its `SourceFacts.from_source/2` result.
+  `relative_file` names it, relativised against `opts[:root]` when given) to
+  its `SourceFacts.from_source/2` result.
   """
-  @spec build([Beam.t() | Beam.decode_error()], %{
-          String.t() => SourceFacts.t() | {:error, :unparseable}
-        }) :: Graph.t()
-  def build(beams, source_facts) do
+  @spec build(
+          [Beam.t() | Beam.decode_error()],
+          %{String.t() => SourceFacts.t() | {:error, :unparseable}},
+          root: Path.t()
+        ) :: Graph.t()
+  def build(beams, source_facts, opts \\ []) do
+    root = Keyword.get(opts, :root)
     {decoded, errors} = Enum.split_with(beams, &match?(%Beam{}, &1))
     {kept, duplicates} = first_per_module(decoded)
-    {built, crashed} = kept |> Enum.map(&guarded_module(&1, source_facts)) |> split_built()
+
+    {built, crashed} =
+      kept |> Enum.map(&guarded_module(&1, source_facts, root)) |> split_built()
+
     paths = Map.new(kept, &{&1.module, &1.path})
     no_core = Enum.flat_map(built, fn {node, _edges} -> public_without_core(node, paths) end)
 
@@ -66,11 +80,11 @@ defmodule Anchor.Domain.Graph.Builder do
   # module behind (DND-5548). A raise, throw or exit while building it is that
   # module's `{:walk_crashed, summary}` entry in `unreadable`, never the whole
   # build's: every other module is still built.
-  defp guarded_module(%Beam{} = beam, source_facts) do
-    node = module_node(beam, source_facts)
-    # Core's `{:file, _}` annotations hold the cwd-relative path, which the
-    # node keeps as `source_file` (`elixir_v1` `:relative_file`).
-    {:built, {node, module_edges(node, node.source_file)}}
+  defp guarded_module(%Beam{} = beam, source_facts, root) do
+    node = module_node(beam, source_facts, root)
+    # Core's `{:file, _}` annotations hold the cwd-relative path, the beam's
+    # own `elixir_v1` `:relative_file`, before any relativising (DND-5588).
+    {:built, {node, module_edges(node, Map.get(beam.elixir, :relative_file))}}
   catch
     kind, reason ->
       {:crashed,
@@ -120,8 +134,8 @@ defmodule Anchor.Domain.Graph.Builder do
     end
   end
 
-  defp module_node(%Beam{module: module, elixir: elixir} = beam, source_facts) do
-    source_file = Map.get(elixir, :relative_file)
+  defp module_node(%Beam{module: module, elixir: elixir} = beam, source_facts, root) do
+    source_file = project_file(Map.get(elixir, :relative_file), root)
     attributes = Map.get(elixir, :attributes, [])
     core_defs = core_defs(beam.core)
 
@@ -141,6 +155,17 @@ defmodule Anchor.Domain.Graph.Builder do
         |> Map.new(&function_node(module, &1, core_defs)),
       generated?: generated(module, Map.get(source_facts, source_file))
     }
+  end
+
+  # The node's path: relativised against the root when one is given; a path
+  # the root does not hold stands as the beam names it.
+  defp project_file(file, nil), do: file
+
+  defp project_file(file, root) do
+    case ProjectFile.place(file, root) do
+      {:project, relative} -> relative
+      :outside_root -> file
+    end
   end
 
   defp module_edges(%ModuleNode{module: module, functions: functions}, file) do

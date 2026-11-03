@@ -63,7 +63,9 @@ before coining a synonym.
   (`Anchor.Domain.Sabotage.DiffHunks`), the function spans
   (`Anchor.Domain.Sabotage.FunctionSpans`), the mapping and its counts
   (`Anchor.Domain.Sabotage.Scope`), the git adapter
-  (`Anchor.Adapters.GitChangeSource`), the `scope/2` Manager path and the task.
+  (`Anchor.Adapters.GitChangeSource`) and the environment the git adapters run
+  with (`Anchor.Adapters.GitEnv`, DND-5581; `GitStatus`'s use of it is
+  `sabotage`'s), the `scope/2` Manager path and the task.
 - `sabotage` — the causal sabotage generator (DND-5471): every
   `Anchor.Domain.Sabotage.*` module that makes mutants (`Mutator`,
   `Operators`, `OrphanCheck`, `SourceTree`, `Patch`, `MutantId`,
@@ -84,7 +86,9 @@ before coining a synonym.
   struct-use edges read from a function's Core Erlang.
 - `builder` — `Anchor.Domain.Graph.Builder` (DND-5438): the causal graph built
   from decoded beams and source facts (module facts, `generated?`,
-  `unreadable`), with the `Anchor.Domain.Graph` queries.
+  `unreadable`), with the `Anchor.Domain.Graph` queries, and
+  `Anchor.Domain.Graph.ProjectFile` (DND-5588): a beam's source path placed
+  against the project root.
 - `inlines` — `Anchor.Domain.Graph.Inlines` and `Inlines.Derive` (DND-5551):
   the stdlib calls Elixir inlines before Core, derived from `:elixir_rewrite`,
   their two spellings in `Graph.calls_to/2`, and the inlined `Map.put` the
@@ -204,6 +208,10 @@ before coining a synonym.
 - `cfa` — the 0-CFA (DND-5497): `Anchor.Domain.Cfa`, `Cfa.Eval` and
   `Cfa.Value`, with the Core labels it reads (`Anchor.Domain.Core`) and the
   library invokers table (`Anchor.Domain.HigherOrder`), in one record.
+- `demand` — the demand (absence) analysis (DND-5498): `Anchor.Domain.Demand`,
+  `Demand.Lattice`, `Demand.Transfer` and `Demand.Param`, with the effect and
+  pure-call tables it reads (`Anchor.Domain.EffectPrimitives`,
+  `Anchor.Domain.PureCalls`), in one record.
 - `digraph` — `Anchor.Domain.Digraph` (DND-5444), the plain immutable graph
   value the graph algorithms run over.
 - `dialyzer_boundary` — the DND-5499 spike runner
