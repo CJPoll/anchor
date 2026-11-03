@@ -499,6 +499,41 @@ defmodule Anchor.Domain.Failures do
   end
 
   @doc """
+  The issue for a graph rule whose needed effect inference
+  (`Anchor.Domain.Effects`, DND-5447) crashed: it is not run, since without
+  the roles it would check nothing.
+  """
+  @spec rule_effects_crashed(map(), atom(), term(), Exception.stacktrace(), String.t() | nil) ::
+          Violation.t()
+  def rule_effects_crashed(rule, kind, reason, stacktrace, config_path) do
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "#{rule_label(rule)} could not run: the effect inference it needs " <>
+        "(Anchor.Domain.Effects) crashed: #{crash_summary(kind, reason, stacktrace)}, so it " <>
+        "checked nothing. Fix: this is an Anchor bug; file it with this line."
+    )
+  end
+
+  @doc """
+  The issue for an `effects_match_bucket` rule (DND-5447) that selects modules
+  of a judged bucket (`infer: true`, role domain, adapters or managers) of
+  which not one public function was analysed: the bucket is below the rule's
+  floor, so it checked nothing there.
+  """
+  @spec effects_bucket_unanalysed(map(), String.t(), String.t() | nil) :: Violation.t()
+  def effects_bucket_unanalysed(rule, bucket, config_path) do
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "#{rule_label(rule)} judged no public function of bucket #{bucket}: the modules it " <>
+        "selects there have none that was analysed (every one is a root, generated, or has " <>
+        "no Core body), so the bucket is below the rule's floor. Fix: select modules of " <>
+        "#{bucket} with public functions, or set infer: false on #{bucket} in a reviewed change."
+    )
+  end
+
+  @doc """
   The note for a graph artifact that could not be written (DND-5440). The
   verdict never reads the artifact, so this does not fail the run; `mix
   anchor.explain` and `place` rebuild the graph instead.

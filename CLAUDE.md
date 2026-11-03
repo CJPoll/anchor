@@ -285,6 +285,24 @@ contexts). Anchor's own `.anchor.yml` runs it with a baseline holding one
 five-context cycle through Lint's dynamic calls on the checks (DND-1288),
 and `Mutator`'s `apply/3`.
 
+## The effects_match_bucket rule (DND-5447)
+
+`Anchor.Domain.Effects.infer/2` gives every `def`/`defp` a role from what it
+causes: a root (`Anchor.Domain.Roots`: framework-bucket public functions,
+`architecture.roots`, external behaviour callbacks read through
+`behaviour_info/1`) is framework; a call of an effect primitive
+(`EffectPrimitives.primitive?/2`, its inference list, not demand's) itself or
+through its own module is adapters; reaching one through another module, or
+an unresolved call, is managers; else domain. Apply sites are read from
+`Model.cfa`, so the rule `needs: [:cfa, :effects]`; the runner computes
+`Model.effects` once and prints its counts in the summary. The rule judges
+public, non-root, non-`__name__` functions of `domain`/`adapters`/`managers`
+buckets with `infer: true`. Its canary is its own tree,
+`test/fixtures/graph_canary/effects/`, run by
+`test/anchor/integration/effects_canary_test.exs`. Anchor's own config
+declares its extra effects (tracing, `Path.wildcard`, `Mix.Task.run`) and a
+first-landing baseline.
+
 ## Higher-order flow (DND-5497)
 
 `Anchor.Domain.Cfa.analyze/3` is a whole-program 0-CFA over every

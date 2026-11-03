@@ -194,6 +194,9 @@ defmodule Anchor.Domain.RuleSchema do
     # DND-5445: context_acyclic reads only the graph common keys (the contexts
     # are the `architecture:` section's).
     context_acyclic: [],
+    # DND-5447: effects_match_bucket reads only the graph common keys (the
+    # buckets, effects and roots are the `architecture:` section's).
+    effects_match_bucket: [],
     # DND-5442: the graph engine's layering rule reads only the graph common
     # keys (its matrix is the `architecture:` section's `calls`).
     layering: [],
@@ -221,6 +224,7 @@ defmodule Anchor.Domain.RuleSchema do
     alphabetized_functions: [],
     case_on_bare_arg: [],
     context_acyclic: [],
+    effects_match_bucket: [],
     layering: [],
     max_file_length: [],
     module_pattern_restrictions: [],
@@ -244,6 +248,7 @@ defmodule Anchor.Domain.RuleSchema do
     alphabetized_functions: :ast,
     case_on_bare_arg: :ast,
     context_acyclic: :graph,
+    effects_match_bucket: :graph,
     layering: :graph,
     max_file_length: :ast,
     module_pattern_restrictions: :ast,

@@ -139,6 +139,26 @@ rules:
     paths: ["lib/**/*.ex"]
     baseline: .anchor/baselines/context_acyclic.txt
 
+  # --- Rule: each function's bucket matches what it causes (DND-5447) ---
+  #
+  # `mix anchor.graph` infers every function's role from its effects (a
+  # Domain function reaches no effect, an adapter performs one, a Manager
+  # orchestrates effects through other modules; roots are Framework) and
+  # judges each public function of the domain, adapters and managers buckets
+  # against its bucket. The effects Anchor's adapters perform through
+  # libraries outside the default primitives are declared in
+  # `architecture: effects` below.
+  #
+  # The baseline holds what it found when it landed: Domain functions that
+  # apply a function their caller passes in (an unresolved call counts as an
+  # effect until DND-5500's closed-world values narrow it), the root lookup
+  # that loads a stdlib behaviour, and adapter functions that are pure
+  # (conversions, GitEnv's environment list, a GenServer child_spec).
+  - type: effects_match_bucket
+    id: effects_match_bucket
+    paths: ["lib/**/*.ex"]
+    baseline: .anchor/baselines/effects_match_bucket.txt
+
 # --- Generated sabotage (DND-5473, DND-5484) ---
 #
 # `mix anchor.sabotage run` on Anchor's own tree. Records follow ADR 003:
@@ -198,3 +218,13 @@ architecture:
     managers: [managers, adapters, domain]
   interfaces:
     buckets: [managers]
+  # The effects Anchor's adapters perform through calls outside the default
+  # effect primitives (DND-5447): call tracing, a glob over the file system,
+  # and running a Mix task (the in-process test suite).
+  effects:
+    - ":erlang.trace"
+    - ":erlang.trace_pattern"
+    - ":erlang.trace_info"
+    - ":erlang.trace_delivered"
+    - "Path.wildcard"
+    - "Mix.Task.run"

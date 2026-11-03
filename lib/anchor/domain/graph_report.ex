@@ -22,7 +22,9 @@ defmodule Anchor.Domain.GraphReport do
       outside the project root, left out of the graph (DND-5588; each is
       also a report-only finding naming it); `apply_sites` is `nil` when no
       rule that ran needed the higher-order flow analysis (DND-5574), else
-      `apply_sites/1` of it.
+      `apply_sites/1` of it; `effects` (optional) is `nil` or absent when no
+      rule that ran needed the effect inference (DND-5447), else `effects/1`
+      of it.
     * `exit_code` — `exit_code/1`.
 
   ## Exit code
@@ -42,10 +44,15 @@ defmodule Anchor.Domain.GraphReport do
   each held one prints as `path:line: [held] <label> <message>`. When the run
   computed the higher-order flow analysis, the summary ends with `; apply
   sites: <r> resolved, <a> any`, and with `(step bound hit: every site reads
-  any)` after it when the analysis hit its bound (DND-5574, R6).
+  any)` after it when the analysis hit its bound (DND-5574, R6). When it
+  computed the effect inference, the summary then ends with `; effects: <n>
+  functions (domain <a>, managers <b>, adapters <c>, framework <d>), <u>
+  unresolved dynamic calls`, and `, not analysed: <k>` when some public
+  function had no Core body (DND-5447).
   """
 
   alias Anchor.Domain.Cfa
+  alias Anchor.Domain.Effects
   alias Anchor.Domain.GraphReport.Finding
 
   defstruct findings: [],
@@ -84,7 +91,15 @@ defmodule Anchor.Domain.GraphReport do
           required(:opaque) => non_neg_integer(),
           required(:no_core) => non_neg_integer(),
           required(:excluded) => non_neg_integer(),
-          required(:apply_sites) => apply_sites() | nil
+          required(:apply_sites) => apply_sites() | nil,
+          optional(:effects) => effects() | nil
+        }
+
+  @type effects :: %{
+          functions: non_neg_integer(),
+          by_role: %{atom() => non_neg_integer()},
+          unresolved: non_neg_integer(),
+          not_analysed: non_neg_integer()
         }
 
   @type t :: %__MODULE__{
@@ -132,6 +147,24 @@ defmodule Anchor.Domain.GraphReport do
   end
 
   @doc """
+  The effect-inference counts (DND-5447) for the summary: functions per
+  inferred role, unresolved dynamic calls, and functions not analysed. `nil`
+  for no inference.
+  """
+  @spec effects(Effects.t() | nil) :: effects() | nil
+  def effects(nil), do: nil
+
+  def effects(%Effects{counts: counts, unresolved_calls: unresolved, not_analysed: not_analysed}) do
+    %{
+      functions: counts |> Map.values() |> Enum.sum(),
+      by_role:
+        Map.new([:domain, :managers, :adapters, :framework], &{&1, Map.get(counts, &1, 0)}),
+      unresolved: unresolved,
+      not_analysed: not_analysed
+    }
+  end
+
+  @doc """
   3 when anything could not be checked, 2 when the run refused its request,
   1 for any `:enforce` finding, else 0.
   """
@@ -171,6 +204,7 @@ defmodule Anchor.Domain.GraphReport do
       "no_core" => report.counts.no_core,
       "excluded" => report.counts.excluded,
       "apply_sites" => apply_sites_json(report.counts.apply_sites),
+      "effects" => effects_json(Map.get(report.counts, :effects)),
       "exit_code" => report.exit_code,
       "findings" => Enum.map(report.findings, &Finding.to_json/1),
       "could_not_check" => Enum.map(report.could_not_check, &Finding.to_json/1),
@@ -195,7 +229,7 @@ defmodule Anchor.Domain.GraphReport do
     "anchor.graph: #{counts.modules} modules#{notes(counts)} in #{counts.apps} apps, " <>
       "#{counts.rules} rules, #{violations} violations " <>
       "(#{length(report_only)} report-only, #{length(report.held)} baselined)" <>
-      apply_sites_note(counts.apply_sites)
+      apply_sites_note(counts.apply_sites) <> effects_note(Map.get(counts, :effects))
   end
 
   defp apply_sites_json(nil), do: nil
@@ -218,6 +252,29 @@ defmodule Anchor.Domain.GraphReport do
 
   defp apply_sites_note(%{resolved: resolved, any: any, bound_hit?: bound_hit?}),
     do: "; apply sites: #{resolved} resolved, #{any} any#{bound_note(bound_hit?)}"
+
+  defp effects_json(nil), do: nil
+
+  defp effects_json(effects) do
+    %{
+      "functions" => effects.functions,
+      "by_role" => Map.new(effects.by_role, &stringify_key/1),
+      "unresolved" => effects.unresolved,
+      "not_analysed" => effects.not_analysed
+    }
+  end
+
+  # `nil`: no rule that ran needed the effect inference.
+  defp effects_note(nil), do: ""
+
+  defp effects_note(%{functions: functions, by_role: by_role} = effects) do
+    "; effects: #{functions} functions (domain #{by_role.domain}, managers " <>
+      "#{by_role.managers}, adapters #{by_role.adapters}, framework #{by_role.framework}), " <>
+      "#{effects.unresolved} unresolved dynamic calls" <> not_analysed_note(effects.not_analysed)
+  end
+
+  defp not_analysed_note(0), do: ""
+  defp not_analysed_note(count), do: ", not analysed: #{count}"
 
   defp bound_note(true), do: " (step bound hit: every site reads any)"
   defp bound_note(false), do: ""

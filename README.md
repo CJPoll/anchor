@@ -438,7 +438,8 @@ another type (`match` on a `no_transitive_dependency` rule) is unknown too.
 
 The Engine column is the one engine that runs the type: `ast` rules run as
 Credo checks over source, `graph` rules run under `mix anchor.graph` over the
-compiled code (DND-5440; `layering`, DND-5442, and `context_acyclic`, DND-5445). Credo never reports a
+compiled code (DND-5440; `layering`, DND-5442, `context_acyclic`, DND-5445, and
+`effects_match_bucket`, DND-5447). Credo never reports a
 `graph` rule as unchecked.
 
 | Rule type | Keys beyond the common ones | Relation (needs one, non-empty) | Engine |
@@ -446,6 +447,7 @@ compiled code (DND-5440; `layering`, DND-5442, and `context_acyclic`, DND-5445).
 | `alphabetized_functions` | `mode` | none | `ast` |
 | `case_on_bare_arg` | none | none | `ast` |
 | `context_acyclic` | none | none | `graph` |
+| `effects_match_bucket` | none | none | `graph` |
 | `layering` | none | none | `graph` |
 | `max_file_length` | `max_lines` | none | `ast` |
 | `module_pattern_restrictions` | `allowed_functions` | none | `ast` |
@@ -761,6 +763,85 @@ lib/my_app/billing/manager.ex:40: [enforce] rule 1 (id: "context_acyclic", conte
 Anchor's own `.anchor.yml` runs it over `lib/`, with a baseline holding what
 it found when it landed: one cycle through the dynamic calls of
 `Anchor.Managers.Lint` on the check modules, and `Mutator`'s `apply/3`.
+
+### The `effects_match_bucket` rule (DND-5447)
+
+```yaml
+rules:
+  - type: effects_match_bucket
+    id: effects_match_bucket
+    paths: ["lib/**/*.ex"]
+
+architecture:
+  contexts:
+    depth: 2
+  buckets:
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/**/domain/**/*.ex"]
+    - name: adapters
+      role: adapters
+      select:
+        - paths: ["lib/**/adapters/**/*.ex"]
+  calls:
+    domain: [domain]
+    adapters: [adapters, domain]
+  effects: ["Req", ":gen_tcp.connect"]   # effects beyond the defaults
+  roots:
+    - pattern: "Mix.Tasks.*"             # entry points beyond the defaults
+```
+
+A function's bucket follows from what it causes. `mix anchor.graph` infers
+every function's role from the compiled code (`Anchor.Domain.Effects`):
+
+- **framework** when it is a root: a public function of a `framework` bucket,
+  a function of a module an `architecture.roots` selector matches, or a
+  callback of a behaviour defined outside the project (`GenServer`,
+  `Mix.Task`, `Inspect`, ...);
+- else **adapters** when it calls an effect primitive, itself or through
+  functions of its own module (an adapter's public function that delegates to
+  its private helper stays an adapter);
+- else **managers** when it reaches an effect through another project
+  module's function, or reaches a call Anchor cannot resolve;
+- else **domain**.
+
+The effect primitives are every function of `File`, `IO`, `Logger`,
+`:logger`, `:telemetry`, `System`, `Process`, `Port`, `Node`, `GenServer`,
+`Agent`, `Task`, `Task.Supervisor`, `Registry`, `:ets`, `:dets`,
+`:persistent_term`, `:gen_tcp`, `:gen_udp`, `:ssl`, `:httpc`, `:os`, `:file`
+and `:rand`; `send`, `spawn*`, the process dictionary, the clocks
+(`DateTime.utc_now`, `NaiveDateTime.utc_now`, `Date.utc_today`,
+`:erlang.system_time`, `:erlang.monotonic_time`) and
+`:crypto.strong_rand_bytes/1`; and every project module declaring `@behaviour
+Ecto.Repo`. `architecture.effects` adds to them; nothing removes one. A call is
+matched by every name it may have been written as (`System.unique_integer/0`
+reaches Core as `:erlang.unique_integer/0`, DND-5613).
+
+A call on a computed module reaches every project module exporting the
+function; with none it is unresolved. A call whose function name is computed
+is unresolved. A closure application (`fun.(x)`, and the call inside
+`Enum.map(list, fun)`) reaches the closures the higher-order flow analysis
+finds there, and is unresolved where it finds a value from outside the
+project. **An unresolved call counts as an effect**: it never makes a
+function look pure, and the run prints how many there were.
+
+For each module the rule selects in a bucket of role `domain`, `adapters` or
+`managers` with `infer: true` (the default), each public function that is not
+a root must infer its bucket's role. Not judged: `framework` and `ui`
+buckets, private functions, roots, and compiler-named functions
+(`__struct__/1`). A bucket the rule selects modules of with no public function
+analysed is below the rule's floor, an issue. A mismatch is one violation per
+function at its def line, keyed `<id>|<Mod.fun/arity>|<inferred role>`, naming
+the evidence: the call chain to the first effect, or that none is reachable.
+
+```
+lib/my_app/orders/pricing.ex:12: [enforce] rule 4 (id: "effects_match_bucket", effects_match_bucket) MyApp.Orders.Pricing.total/1 is in bucket domain (domain) but reaches an effect: MyApp.Orders.Pricing.total/1 -> MyApp.Orders.Rates.load/0 -> File.read!/1. Fix: move the effect into an adapter and have a Manager call it; MyApp.Orders.Pricing.total/1 then returns the data the Manager needs.
+```
+
+The summary adds `; effects: <n> functions (domain <a>, managers <b>, adapters
+<c>, framework <d>), <u> unresolved dynamic calls`. Anchor's own `.anchor.yml`
+runs it over `lib/` with a baseline holding what it found when it landed.
 
 The only file it writes is `<build_path>/anchor/graph.etf` (Mix's build path:
 `_build/<env>`, or the directory `MIX_BUILD_PATH` names), the graph keyed by
