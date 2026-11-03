@@ -3,7 +3,6 @@
 - **Domain:** layering (dynamic calls, and the baselines they feed)
 - **Branch:** dnd-5648-graph-followups
 - **Date:** 2026-11-03
-- Off-domain mutations filed here (the run spans them): BeamReader and Builder callbacks (beam_reader, builder), Enforcement and the Manager (baseline), GraphReport (graph_runner).
 
 ## DND-5633: a dynamic call narrowed to a declared behaviour's implementers
 
@@ -24,13 +23,8 @@
 | DY-F | one typed receiver narrows a function with an untyped one too (`lib/anchor/domain/behaviour_receiver.ex`) | `behaviour_receiver_test.exs` | `11 tests, 1 failure` (red) | behaviour/2 and DynamicCalls.targets/2 one untyped receiver among the function's run/1 calls keeps them all fanned out |
 | DY-G | implementers are every exporter, @behaviour or not (`lib/anchor/domain/behaviour_receiver.ex`) | `behaviour_receiver_test.exs` | `11 tests, 3 failures` (red) | behaviour/2 and DynamicCalls.targets/2 a parameter the @spec types as a behaviour's t() reaches its implementers only; the layering rule over the narrowed call a typed receiver gives no finding; an untyped one reaches the Mix task; behaviour/2 and DynamicCalls.targets/2 implementers/3: the modules declaring the behaviour that export the function |
 | DY-H | tally swaps narrowed and fanned out (`lib/anchor/domain/dynamic_calls.ex`) | `behaviour_receiver_test.exs` | `11 tests, 1 failure` (red) | DynamicCalls.tally/1 counts each dynamic call as narrowed or fanned out |
-| DY-J | the judgement ignores the rule's narrows? (`lib/anchor/domain/enforcement.ex`) | `enforcement_test.exs`, `graph_baseline_test.exs` | `39 tests, 2 failures` (red) | judge/4 an added entry narrowing a removed one is a report NOTE, not GREW; run/2 --base REF (GREW) an entry narrowing one removed since REF is a NOTE, by the rule's narrows?/2 |
-| DY-K | the Manager does not hand the rule's narrows? over (`lib/anchor/managers/graph.ex`) | `enforcement_test.exs`, `graph_baseline_test.exs` | `39 tests, 1 failure` (red) | run/2 --base REF (GREW) an entry narrowing one removed since REF is a NOTE, by the rule's narrows?/2 |
-| DY-L | an equal cycle narrows (`lib/anchor/domain/graph_rules/context_acyclic.ex`) | `context_acyclic_test.exs`, `graph_rules_test.exs` | `27 tests, 1 failure` (red) | narrows?/2 the same set, a superset, another rule's or a disjoint cycle does not |
-| DY-M | the summary drops the dynamic-call counts (`lib/anchor/domain/graph_report.ex`) | `graph_report_test.exs` | `24 tests, 1 failure` (red) | dynamic calls (DND-5633) the summary ends with the fanned-out and narrowed counts |
-| DY-N | the reader drops the callbacks (`lib/anchor/adapters/beam_reader.ex`) | `beam_reader_test.exs` | `21 tests, 1 failure` (red) | decode/2 reads the callbacks a behaviour declares, sorted; none is [] |
-| DY-O | the builder drops the callbacks (`lib/anchor/domain/graph/builder.ex`) | `builder_test.exs`, `behaviour_receiver_test.exs` | `34 tests, 5 failures` (red) | behaviour/2 and DynamicCalls.targets/2 a function of several clauses narrows too (its parameters are a case's patterns); behaviour/2 and DynamicCalls.targets/2 a parameter the @spec types as a behaviour's t() reaches its implementers only; DynamicCalls.tally/1 counts each dynamic call as narrowed or fanned out; the layering rule over the narrowed call a typed receiver gives no finding; an untyped one reaches the Mix task; build/2 module facts a behaviour's node carries its callbacks |
-| DY-P | an entry still in the base file can be narrowed (`lib/anchor/domain/enforcement.ex`) | `enforcement_test.exs`, `graph_baseline_test.exs` | `39 tests, 1 failure` (red) | judge/4 a narrowing of an entry still there is GREW (it replaced nothing) |
+
+Filed under their own domain word (ADR 003): DY-J, DY-K, DY-P in `baseline-20261103-dnd_5648_graph_followups.md`; DY-L in `context_acyclic-20261103-dnd_5648_graph_followups.md`; DY-M in `graph_runner-20261103-dnd_5648_graph_followups.md`; DY-N in `beam_reader-20261103-dnd_5648_graph_followups.md`; DY-O in `builder-20261103-dnd_5648_graph_followups.md`.
 
 ### DY-R: the old fan-out: targets never narrows
 
@@ -329,229 +323,124 @@ Run summary: `11 tests, 1 failure`
             ]
 ```
 
-### DY-J: the judgement ignores the rule's narrows?
+## DND-5491: AST/graph parity (the engine split) (PA-B)
 
-Run summary: `39 tests, 2 failures`
+**Run with:** the `## DND-5491: AST/graph parity (the engine split)` section of `parity-20261103-dnd_5648_graph_followups.md`, which names the code under test and the suite run; filed here by the module mutated.
+
+| ID | Mutation | Tests | Result | Failing tests |
+|---|---|---|---|---|
+| PA-B | CallMatrix's other_context scope ignores the contexts (`lib/anchor/domain/call_matrix.ex`) | `parity_test.exs`, `layering_parity_test.exs`, `rule_schema_test.exs` | `50 tests, 2 failures` (red) | the pairs each engine flags, named (so a change in either is read here); both engines flag the same pairs, apart from the listed divergences |
+
+### PA-B: CallMatrix's other_context scope ignores the contexts
+
+Run summary: `50 tests, 2 failures`
 
 ```text
-
-
-  1) test judge/4 an added entry narrowing a removed one is a report NOTE, not GREW (Anchor.Domain.EnforcementTest)
-     test/anchor/domain/enforcement_test.exs:129
+  1) test the pairs each engine flags, named (so a change in either is read here) (Anchor.Integration.LayeringParityTest)
+     test/anchor/integration/layering_parity_test.exs:143
      Assertion with == failed
-     code:  assert note.enforcement == :report
-     left:  :enforce
-     right: :report
+     code:  assert context |> graph_pairs() |> Enum.sort() == Enum.sort([{@fee, @store} | expected_direct])
+     left:  [
+              {"AnchorFixtures.Parity.Billing.Domain.Fee",
+               "AnchorFixtures.Parity.Orders.Adapters.Store"},
+              {"AnchorFixtures.Parity.Orders.Domain.Calc",
+               "AnchorFixtures.Parity.Orders.Managers.Checkout"},
+              {"AnchorFixtures.Parity.Orders.Domain.Rules",
+               "AnchorFixtures.Parity.Orders.Adapters.Store"},
+              {"AnchorFixtures.Parity.Orders.Ui.Badge",
+               "AnchorFixtures.Parity.Orders.Managers.Checkout"}
+            ]
+     right: [
+              {"AnchorFixtures.Parity.Billing.Domain.Fee",
+               "AnchorFixtures.Parity.Orders.Adapters.Store"},
+              {"AnchorFixtures.Parity.Orders.Adapters.Store",
+               "AnchorFixtures.Parity.Orders.Managers.Checkout"},
+              {"AnchorFixtures.Parity.Orders.Domain.Calc",
+               "AnchorFixtures.Parity.Orders.Managers.Checkout"},
+              {"AnchorFixtures.Parity.Orders.Domain.Rules",
+               "AnchorFixtures.Parity.Orders.Adapters.Store"},
+              {"AnchorFixtures.Parity.Orders.Ui.Badge",
+               "AnchorFixtures.Parity.Orders.Managers.Checkout"}
+
+  2) test both engines flag the same pairs, apart from the listed divergences (Anchor.Integration.LayeringParityTest)
+     test/anchor/integration/layering_parity_test.exs:114
+     the engines disagree on: AnchorFixtures.Parity.Orders.Adapters.Store -> AnchorFixtures.Parity.Orders.Managers.Checkout (only the ast engine flags it)
+     code: assert found -- listed == [],
      stacktrace:
-       test/anchor/domain/enforcement_test.exs:136: (test)
+       test/anchor/integration/layering_parity_test.exs:130: (test)
+```
 
-..............................
+## Review floor (DND-5633): narrowing only on evidence that holds
 
+**Code under test:** `Anchor.Domain.BehaviourReceiver.behaviour/2`: its parameter-position map (`parameters/1`) and the new requirement that the behaviour has a project implementer; `Anchor.Domain.DynamicCalls.targets/2` and `tally/1` follow it.
 
+**Found by:** the review floor's code reviewer (2026-11-03): (1) the name-to-position map was built over every clause with the last clause winning, so a name at position 1 in one clause and 0 in another read as position 0 and narrowed on the wrong parameter's type; (2) a behaviour with no project implementer narrowed the call to `[]`, judged against nothing, and `tally/1` counted it narrowed.
 
-  2) test run/2 --base REF (GREW) an entry narrowing one removed since REF is a NOTE, by the rule's narrows?/2 (Anchor.Managers.GraphBaselineTest)
-     test/anchor/managers/graph_baseline_test.exs:281
+**Suite run:** FL-R is the two new tests on the unfixed code (`mix test --timeout 2000 --max-cases 2 test/anchor/domain/behaviour_receiver_test.exs` in `test-slot`). FL-A and FL-B were run by `sab.py` (wait 1.1 s, write, run, restore, wait 1.1 s), each undoing one half of the fix. With every source restored: `18 tests, 0 failures` over `behaviour_receiver_test.exs` and `dynamic_calls_test.exs`.
+
+| ID | Mutation | Tests | Result | Failing tests |
+|---|---|---|---|---|
+| FL-R | regression: the unfixed code, with the two new tests (`lib/anchor/domain/behaviour_receiver.ex`) | `behaviour_receiver_test.exs` | `13 tests, 2 failures` (red) | behaviour/2 and DynamicCalls.targets/2 a name at a different position in each clause is no one parameter: it fans out; behaviour/2 and DynamicCalls.targets/2 a behaviour no project module implements is no evidence: it fans out |
+| FL-A | a name at several positions keeps its first (`lib/anchor/domain/behaviour_receiver.ex`) | `behaviour_receiver_test.exs` | `13 tests, 1 failure` (red) | behaviour/2 and DynamicCalls.targets/2 a name at a different position in each clause is no one parameter: it fans out |
+| FL-B | no implementer is required (`lib/anchor/domain/behaviour_receiver.ex`) | `behaviour_receiver_test.exs` | `13 tests, 1 failure` (red) | behaviour/2 and DynamicCalls.targets/2 a behaviour no project module implements is no evidence: it fans out |
+
+### FL-R: regression: the unfixed code, with the two new tests
+
+Run summary: `13 tests, 2 failures`
+
+```text
+  1) test behaviour/2 and DynamicCalls.targets/2 a name at a different position in each clause is no one parameter: it fans out (Anchor.Domain.BehaviourReceiverTest)
+     test/anchor/domain/behaviour_receiver_test.exs:215
      Assertion with == failed
-     code:  assert report.exit_code == 0
-     left:  1
-     right: 0
+     code:  assert BehaviourReceiver.behaviour(graph, call) == :none
+     left:  {:ok, AnchorFixtures.BehaviourReceiverTest.Port}
+     right: :none
      stacktrace:
-       test/anchor/managers/graph_baseline_test.exs:292: (test)
+       test/anchor/domain/behaviour_receiver_test.exs:219: (test)
+
+..
+
+  2) test behaviour/2 and DynamicCalls.targets/2 a behaviour no project module implements is no evidence: it fans out (Anchor.Domain.BehaviourReceiverTest)
+     test/anchor/domain/behaviour_receiver_test.exs:225
+     Assertion with == failed
+     code:  assert BehaviourReceiver.behaviour(graph, call) == :none
+     left:  {:ok, AnchorFixtures.BehaviourReceiverTest.Lonely}
+     right: :none
+     stacktrace:
+       test/anchor/domain/behaviour_receiver_test.exs:227: (test)
 
 .
 ```
 
-### DY-K: the Manager does not hand the rule's narrows? over
+### FL-A: a name at several positions keeps its first
 
-Run summary: `39 tests, 1 failure`
+Run summary: `13 tests, 1 failure`
 
 ```text
-
-
-  1) test run/2 --base REF (GREW) an entry narrowing one removed since REF is a NOTE, by the rule's narrows?/2 (Anchor.Managers.GraphBaselineTest)
-     test/anchor/managers/graph_baseline_test.exs:281
+  1) test behaviour/2 and DynamicCalls.targets/2 a name at a different position in each clause is no one parameter: it fans out (Anchor.Domain.BehaviourReceiverTest)
+     test/anchor/domain/behaviour_receiver_test.exs:215
      Assertion with == failed
-     code:  assert report.exit_code == 0
-     left:  1
-     right: 0
+     code:  assert BehaviourReceiver.behaviour(graph, call) == :none
+     left:  {:ok, AnchorFixtures.BehaviourReceiverTest.Port}
+     right: :none
      stacktrace:
-       test/anchor/managers/graph_baseline_test.exs:292: (test)
-
-........
-```
-
-### DY-L: an equal cycle narrows
-
-Run summary: `27 tests, 1 failure`
-
-```text
-
-
-  1) test narrows?/2 the same set, a superset, another rule's or a disjoint cycle does not (Anchor.Domain.GraphRules.ContextAcyclicTest)
-     test/anchor/domain/graph_rules/context_acyclic_test.exs:186
-     Expected false or nil, got true
-     code: refute ContextAcyclic.narrows?("c|A,B", "c|A,B")
-     stacktrace:
-       test/anchor/domain/graph_rules/context_acyclic_test.exs:187: (test)
-
-...
-```
-
-### DY-M: the summary drops the dynamic-call counts
-
-Run summary: `24 tests, 1 failure`
-
-```text
-
-
-  1) test dynamic calls (DND-5633) the summary ends with the fanned-out and narrowed counts (Anchor.Domain.GraphReportTest)
-     test/anchor/domain/graph_report_test.exs:207
-     Assertion with == failed
-     code:  assert GraphReport.summary(report) ==
-              "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations " <>
-                "(0 report-only, 0 baselined); dynamic calls: 2 fanned out to every " <>
-                "exporter, 1 narrowed by behaviour"
-     left:  "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 baselined)"
-     right: "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 baselined); dynamic calls: 2 fanned out to every exporter, 1 narrowed by behaviour"
-     stacktrace:
-       test/anchor/domain/graph_report_test.exs:210: (test)
+       test/anchor/domain/behaviour_receiver_test.exs:219: (test)
 
 ....
 ```
 
-### DY-N: the reader drops the callbacks
+### FL-B: no implementer is required
 
-Run summary: `21 tests, 1 failure`
-
-```text
-
-
-  1) test decode/2 reads the callbacks a behaviour declares, sorted; none is [] (Anchor.Adapters.BeamReaderTest)
-     test/anchor/adapters/beam_reader_test.exs:52
-     Assertion with == failed
-     code:  assert callbacks == ["MACRO-expand": 2, check: 2, run: 1]
-     left:  []
-     right: ["MACRO-expand": 2, check: 2, run: 1]
-     stacktrace:
-       test/anchor/adapters/beam_reader_test.exs:63: (test)
-
-...
-```
-
-### DY-O: the builder drops the callbacks
-
-Run summary: `34 tests, 5 failures`
+Run summary: `13 tests, 1 failure`
 
 ```text
-
-
-
-
-
-
-  1) test behaviour/2 and DynamicCalls.targets/2 a function of several clauses narrows too (its parameters are a case's patterns) (Anchor.Domain.BehaviourReceiverTest)
-     test/anchor/domain/behaviour_receiver_test.exs:151
+  1) test behaviour/2 and DynamicCalls.targets/2 a behaviour no project module implements is no evidence: it fans out (Anchor.Domain.BehaviourReceiverTest)
+     test/anchor/domain/behaviour_receiver_test.exs:225
      Assertion with == failed
-     code:  assert BehaviourReceiver.behaviour(graph, call(graph, :two_clauses, 2)) == {:ok, mod(Port)}
-     left:  :none
-     right: {:ok, AnchorFixtures.BehaviourReceiverTest.Port}
+     code:  assert BehaviourReceiver.behaviour(graph, call) == :none
+     left:  {:ok, AnchorFixtures.BehaviourReceiverTest.Lonely}
+     right: :none
      stacktrace:
-       test/anchor/domain/behaviour_receiver_test.exs:154: (test)
-
-..
-
-
-
-  2) test behaviour/2 and DynamicCalls.targets/2 a parameter the @spec types as a behaviour's t() reaches its implementers only (Anchor.Domain.BehaviourReceiverTest)
-     test/anchor/domain/behaviour_receiver_test.exs:143
-     Assertion with == failed
-     code:  assert BehaviourReceiver.behaviour(graph, call) == {:ok, mod(Port)}
-     left:  :none
-     right: {:ok, AnchorFixtures.BehaviourReceiverTest.Port}
-     stacktrace:
-       test/anchor/domain/behaviour_receiver_test.exs:147: (test)
-
-
-
-
-
-
-
-  3) test DynamicCalls.tally/1 counts each dynamic call as narrowed or fanned out (Anchor.Domain.BehaviourReceiverTest)
-     test/anchor/domain/behaviour_receiver_test.exs:202
-     Assertion with in failed
-     code:  assert {{mod(Manager), :typed, 2}, :run, 1} in narrowed
-     left:  {{AnchorFixtures.BehaviourReceiverTest.Manager, :typed, 2}, :run, 1}
-     right: []
-     stacktrace:
-       test/anchor/domain/behaviour_receiver_test.exs:205: (test)
-
-.....
-
-
-
-  4) test the layering rule over the narrowed call a typed receiver gives no finding; an untyped one reaches the Mix task (Anchor.Domain.BehaviourReceiverTest)
-     test/anchor/domain/behaviour_receiver_test.exs:244
-     Refute with in failed
-     code:  refute "#{@ns}.Manager.typed/2" in callers
-     left:  "AnchorFixtures.BehaviourReceiverTest.Manager.typed/2"
-     right: MapSet.new(["AnchorFixtures.BehaviourReceiverTest.Manager.as_module/2",
-             "AnchorFixtures.BehaviourReceiverTest.Manager.from_options/1",
-             "AnchorFixtures.BehaviourReceiverTest.Manager.inner/2",
-             "AnchorFixtures.BehaviourReceiverTest.Manager.mixed/2",
-             "AnchorFixtures.BehaviourReceiverTest.Manager.nested/2",
-             "AnchorFixtures.BehaviourReceiverTest.Manager.no_callback/2",
-             "AnchorFixtures.BehaviourReceiverTest.Manager.not_module_type/2",
-             "AnchorFixtures.BehaviourReceiverTest.Manager.rebound/2",
-             "AnchorFixtures.BehaviourReceiverTest.Manager.two_clauses/2",
-             "AnchorFixtures.BehaviourReceiverTest.Manager.typed/2",
-             "AnchorFixtures.BehaviourReceiverTest.Manager.untyped/2"])
-     stacktrace:
-       test/anchor/domain/behaviour_receiver_test.exs:252: (test)
-
-....
-
-
-
-  5) test build/2 module facts a behaviour's node carries its callbacks (Anchor.Domain.Graph.BuilderTest)
-     test/anchor/domain/graph/builder_test.exs:103
-     Assertion with == failed
-     code:  assert Graph.module(graph, module).callbacks == [run: 1]
-     left:  []
-     right: [run: 1]
-     stacktrace:
-       test/anchor/domain/graph/builder_test.exs:114: (test)
-
-..................
-```
-
-### DY-P: an entry still in the base file can be narrowed
-
-Run summary: `39 tests, 1 failure`
-
-```text
-
-
-  1) test judge/4 a narrowing of an entry still there is GREW (it replaced nothing) (Anchor.Domain.EnforcementTest)
-     test/anchor/domain/enforcement_test.exs:153
-     match (=) failed
-     code:  assert [%{enforcement: :enforce, message: message}] = standing
-     left:  [%{enforcement: :enforce, message: message}]
-     right: [
-              %Anchor.Domain.GraphReport.Finding{
-                rule_id: "r",
-                type: :layering,
-                label: "rule 1 (id: \"r\", layering)",
-                enforcement: :report,
-                key: "r|A,B",
-                file: ".anchor/baselines/r.txt",
-                line: nil,
-                message: "NOTE: r|A,B in .anchor/baselines/r.txt narrows r|A,B,C, the entry it replaced since main; a narrower entry is not growth. Fix: review the narrowing in this change."
-              }
-            ]
-     stacktrace:
-       test/anchor/domain/enforcement_test.exs:165: (test)
-
-...................................
+       test/anchor/domain/behaviour_receiver_test.exs:227: (test)
 ```
 

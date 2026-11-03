@@ -9,7 +9,7 @@ defmodule Anchor.Domain.GraphReportTest do
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5630_graph_hardening.md
   # DND-5441 (held, refused, verbose):
   #   ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
-  # DND-5633 (dynamic calls): ../../sabotage_records/layering-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (DND-5633): ../../sabotage_records/graph_runner-20261103-dnd_5648_graph_followups.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.GraphReport

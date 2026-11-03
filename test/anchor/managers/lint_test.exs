@@ -61,7 +61,8 @@ defmodule Anchor.Managers.LintTest do
   # DND-5441: a rule in `enforcement: report` is detected apart from the
   # enforced ones; its findings are marked :report (printed, never failing).
   # Sabotage record: ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
-  # DND-5631 (one copy across the passes): ../../sabotage_records/lint-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (DND-5631): ../../sabotage_records/lint-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (DND-5631, PA-E): ../../sabotage_records/failures-20261103-dnd_5648_graph_followups.md
   describe "run/4 enforcement: report" do
     @thing """
     defmodule MyApp.Thing do

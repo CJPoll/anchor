@@ -4,7 +4,7 @@ defmodule Anchor.Domain.EnforcementTest do
   #
   # Sabotage record: ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
   # DND-5629 (a new rule id): ../../sabotage_records/baseline_rename-20261103-dnd_5441_graph_rules_a.md
-  # DND-5633 (a narrowed entry): ../../sabotage_records/layering-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (DND-5633): ../../sabotage_records/baseline-20261103-dnd_5648_graph_followups.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Enforcement

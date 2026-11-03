@@ -7,7 +7,7 @@ defmodule Anchor.Domain.Graph.ProjectFileTest do
   # Sabotage record: ../../../sabotage_records/builder-20261103-dnd_5581_hardening_batch.md
   # Sabotage record: ../../../sabotage_records/graph_runner-20261103-dnd_5630_graph_hardening.md
   # Sabotage record: ../../../sabotage_records/graph_runner-20261103-dnd_5648_graph_followups.md
-  # DND-5655 (an absolute apps_path): ../../../sabotage_records/graph_runner-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (DND-5655, AP-F): ../../../sabotage_records/failures-20261103-dnd_5648_graph_followups.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Graph.ProjectFile

@@ -10,7 +10,7 @@ defmodule Anchor.Domain.Graph.BuilderTest do
   # Sabotage record: ../../../sabotage_records/inlines-20261103-dnd_5551_graph_hardening.md
   # Sabotage record: ../../../sabotage_records/builder-20261103-dnd_5581_hardening_batch.md (DND-5587, DND-5588)
   # Sabotage record: ../../../sabotage_records/graph_runner-20261103-dnd_5630_graph_hardening.md (DND-5630)
-  # Sabotage record (DND-5633): ../../../sabotage_records/layering-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (DND-5633): ../../../sabotage_records/builder-20261103-dnd_5648_graph_followups.md
   # DND-5548 (the per-module walk guard): ../../../sabotage_records/builder-20261103-dnd_5440_graph_runner.md
   use ExUnit.Case, async: true
 

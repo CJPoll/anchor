@@ -4,7 +4,8 @@ defmodule Anchor.Adapters.BaselineFileTest do
   #
   # Sabotage record: ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
   # DND-5628 (symlinks): ../../sabotage_records/baseline_symlink-20261103-dnd_5441_graph_rules_a.md
-  # DND-5647 (a swap after the check): ../../sabotage_records/baseline-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (DND-5647): ../../sabotage_records/baseline-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (DND-5647, SW-G): ../../sabotage_records/failures-20261103-dnd_5648_graph_followups.md
   use ExUnit.Case, async: true
 
   alias Anchor.Adapters.BaselineFile

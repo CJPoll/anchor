@@ -17,7 +17,8 @@
 | PA-B | the kept copy does not name both modes (`lib/anchor/domain/enforcement_passes.ex`) | `enforcement_passes_test.exs`, `lint_test.exs` | `38 tests, 3 failures` (red) | merge/2 a violation both passes found is one, enforced, naming both modes; merge/2 a message with no Fix: gets the note at its end; run/4 enforcement: report an unresolvable directive under a report and an enforced rule is one violation |
 | PA-C | the line is left out of a violation's identity (`lib/anchor/domain/enforcement_passes.ex`) | `enforcement_passes_test.exs`, `lint_test.exs` | `38 tests, 1 failure` (red) | merge/2 the same message on another line is another violation |
 | PA-D | the report copy is kept instead of the enforced one (`lib/anchor/domain/enforcement_passes.ex`) | `enforcement_passes_test.exs`, `lint_test.exs` | `38 tests, 3 failures` (red) | merge/2 a violation both passes found is one, enforced, naming both modes; run/4 enforcement: report an unresolvable directive under a report and an enforced rule is one violation; run/4 enforcement: report the same finding from a report and an enforced rule is one, enforced |
-| PA-E | the note goes after the Fix: line (`lib/anchor/domain/failures.ex`) | `enforcement_passes_test.exs`, `lint_test.exs` | `38 tests, 1 failure` (red) | merge/2 a violation both passes found is one, enforced, naming both modes |
+
+Filed under their own domain word (ADR 003): PA-E in `failures-20261103-dnd_5648_graph_followups.md`.
 
 ### PA-R: regression: the unfixed code, with the new Lint tests
 
@@ -366,28 +367,242 @@ Run summary: `38 tests, 3 failures`
        test/anchor/managers/lint_test.exs:155: (test)
 ```
 
-### PA-E: the note goes after the Fix: line
+## DND-5632 critic round 1: a finding two rules make is judged by each, printed once, enforced first (AB-T)
 
-Run summary: `38 tests, 1 failure`
+**Run with:** the `## DND-5632 critic round 1: a finding two rules make is judged by each, printed once, enforced first` section of `baseline-20261103-dnd_5648_graph_followups.md`, which names the code under test and the suite run; filed here by the module mutated.
+
+| ID | Mutation | Tests | Result | Failing tests |
+|---|---|---|---|---|
+| AB-T | the enforced copy does not win over a report copy seen first (`lib/anchor/domain/enforcement_passes.ex`) | `lint_baseline_test.exs`, `enforcement_passes_test.exs`, `lint_test.exs` | `60 tests, 2 failures` (red) | unique/1 (DND-5632) the enforced copy wins over a report copy seen first; a finding two rules make a report rule's copy never downgrades an enforced baselined rule's NEW finding |
+
+### AB-T: the enforced copy does not win over a report copy seen first
+
+Run summary: `60 tests, 2 failures`
 
 ```text
-
-
-
-
-
-
-  1) test merge/2 a violation both passes found is one, enforced, naming both modes (Anchor.Domain.EnforcementPassesTest)
-     test/anchor/domain/enforcement_passes_test.exs:15
-     Assertion with == failed
-     code:  assert message ==
-              "cannot resolve. (Found under rules in enforcement: enforce and report; " <>
-                "reported once, enforced.) Fix: name it"
-     left:  "cannot resolve. Fix: name it (Found under rules in enforcement: enforce and report; reported once, enforced.)"
-     right: "cannot resolve. (Found under rules in enforcement: enforce and report; reported once, enforced.) Fix: name it"
+  1) test unique/1 (DND-5632) the enforced copy wins over a report copy seen first (Anchor.Domain.EnforcementPassesTest)
+     test/anchor/domain/enforcement_passes_test.exs:62
+     match (=) failed
+     code:  assert [%Violation{enforcement: :enforce, key: "pure|lib/a.ex|alias"}] =
+              EnforcementPasses.unique([reported, enforced])
+     left:  [%Anchor.Domain.Violation{enforcement: :enforce, key: "pure|lib/a.ex|alias"}]
+     right: [
+              %Anchor.Domain.Violation{
+                line: 3,
+                trigger: "alias",
+                message: "a",
+                filename: nil,
+                kind: :rule,
+                key: nil,
+                rule_id: nil,
+                enforcement: :report
+              }
+            ]
      stacktrace:
-       test/anchor/domain/enforcement_passes_test.exs:22: (test)
+       test/anchor/domain/enforcement_passes_test.exs:66: (test)
 
-.....................................
+.................
+
+  2) test a finding two rules make a report rule's copy never downgrades an enforced baselined rule's NEW finding (Anchor.Managers.LintBaselineTest)
+     test/anchor/managers/lint_baseline_test.exs:251
+     match (=) failed
+     code:  assert [%Violation{enforcement: :enforce, key: "pure|lib/b.ex|File"}] = violations
+     left:  [%Anchor.Domain.Violation{enforcement: :enforce, key: "pure|lib/b.ex|File"}]
+     right: [
+              %Anchor.Domain.Violation{
+                line: 2,
+                trigger: "File",
+                message: "Module has forbidden direct dependency on File",
+                filename: nil,
+                kind: :rule,
+                key: nil,
+                rule_id: nil,
+                enforcement: :report
+              }
+            ]
+     stacktrace:
+       test/anchor/managers/lint_baseline_test.exs:259: (test)
+
+......................................
 ```
 
+
+## DND-5632 critic round 2: a baselined rule's keyed copy is never dropped for an unkeyed one (AB-R2, AB-V, AB-W)
+
+**Run with:** the `## DND-5632 critic round 2: a baselined rule's keyed copy is never dropped for an unkeyed one` section of `baseline-20261103-dnd_5648_graph_followups.md`, which names the code under test and the suite run; filed here by the module mutated.
+
+| ID | Mutation | Tests | Result | Failing tests |
+|---|---|---|---|---|
+| AB-R2 | regression: round 1's unique/1 (first copy wins on a tie), with the new tests (`lib/anchor/domain/enforcement_passes.ex`) | `lint_baseline_test.exs`, `enforcement_passes_test.exs` | `31 tests, 5 failures` (red) | unique/1 (DND-5632) a keyed copy is kept over an unkeyed one of the same enforcement (its key is written); unique/1 (DND-5632) an enforced unkeyed copy is kept beside a report keyed copy; unique/1 (DND-5632) two baselined rules' keyed copies are both kept; a finding two rules make with no baseline yet, two report rules' finding keeps the baselined rule's key (for --write); beside rules with no baseline a violation every pass makes once per file is printed once |
+| AB-V | a keyed report copy is dropped for an unkeyed one (`lib/anchor/domain/enforcement_passes.ex`) | `lint_baseline_test.exs`, `enforcement_passes_test.exs`, `lint_test.exs`, `ast_baseline_test.exs`, `ast_baseline_integration_test.exs` | `83 tests, 4 failures` (red) | unique/1 (DND-5632) a keyed copy is kept over an unkeyed one of the same enforcement (its key is written); unique/1 (DND-5632) an enforced unkeyed copy is kept beside a report keyed copy; a finding two rules make with no baseline yet, two report rules' finding keeps the baselined rule's key (for --write); a baselined rule's findings STALE takes the rule's enforcement: report |
+| AB-W | a report copy covers an enforced one (`lib/anchor/domain/enforcement_passes.ex`) | `lint_baseline_test.exs`, `enforcement_passes_test.exs`, `lint_test.exs`, `ast_baseline_test.exs`, `ast_baseline_integration_test.exs` | `83 tests, 1 failure` (red) | unique/1 (DND-5632) an enforced unkeyed copy is kept beside a report keyed copy |
+
+### AB-R2: regression: round 1's unique/1 (first copy wins on a tie), with the new tests
+
+Run summary: `31 tests, 5 failures`
+
+```text
+  1) test unique/1 (DND-5632) a keyed copy is kept over an unkeyed one of the same enforcement (its key is written) (Anchor.Domain.EnforcementPassesTest)
+     test/anchor/domain/enforcement_passes_test.exs:71
+     match (=) failed
+     code:  assert [%Violation{key: "pure|lib/a.ex|alias"}] = EnforcementPasses.unique([plain, keyed])
+     left:  [%Anchor.Domain.Violation{key: "pure|lib/a.ex|alias"}]
+     right: [
+              %Anchor.Domain.Violation{
+                line: 3,
+                trigger: "alias",
+                message: "a",
+                filename: nil,
+                kind: :rule,
+                key: nil,
+                rule_id: nil,
+                enforcement: :report
+              }
+            ]
+     stacktrace:
+       test/anchor/domain/enforcement_passes_test.exs:75: (test)
+
+..
+
+  2) test unique/1 (DND-5632) an enforced unkeyed copy is kept beside a report keyed copy (Anchor.Domain.EnforcementPassesTest)
+     test/anchor/domain/enforcement_passes_test.exs:85
+     Assertion with == failed
+     code:  assert EnforcementPasses.unique([plain, keyed]) == [plain, keyed]
+     left:  [
+              %Anchor.Domain.Violation{
+                line: 3,
+                trigger: "alias",
+                message: "a",
+                filename: nil,
+                kind: :rule,
+                key: nil,
+                rule_id: nil,
+                enforcement: :enforce
+              }
+            ]
+     right: [
+              %Anchor.Domain.Violation{
+                line: 3,
+                trigger: "alias",
+                message: "a",
+                filename: nil,
+                kind: :rule,
+                key: nil,
+                rule_id: nil,
+
+  3) test unique/1 (DND-5632) two baselined rules' keyed copies are both kept (Anchor.Domain.EnforcementPassesTest)
+     test/anchor/domain/enforcement_passes_test.exs:78
+     Assertion with == failed
+     code:  assert EnforcementPasses.unique([a, b]) == [a, b]
+     left:  [
+              %Anchor.Domain.Violation{
+                line: 3,
+                trigger: "alias",
+                message: "a",
+                filename: nil,
+                kind: :rule,
+                key: "pure|lib/a.ex|alias",
+                rule_id: "pure",
+                enforcement: :enforce
+              }
+            ]
+     right: [
+              %Anchor.Domain.Violation{
+                line: 3,
+                trigger: "alias",
+                message: "a",
+                filename: nil,
+                kind: :rule,
+                key: "pure|lib/a.ex|alias",
+                rule_id: "pure",
+```
+
+(2 more failures in this run, not quoted; every failing test is named in the table.)
+
+### AB-V: a keyed report copy is dropped for an unkeyed one
+
+Run summary: `83 tests, 4 failures`
+
+```text
+  1) test unique/1 (DND-5632) a keyed copy is kept over an unkeyed one of the same enforcement (its key is written) (Anchor.Domain.EnforcementPassesTest)
+     test/anchor/domain/enforcement_passes_test.exs:71
+     match (=) failed
+     code:  assert [%Violation{key: "pure|lib/a.ex|alias"}] = EnforcementPasses.unique([plain, keyed])
+     left:  [%Anchor.Domain.Violation{key: "pure|lib/a.ex|alias"}]
+     right: []
+     stacktrace:
+       test/anchor/domain/enforcement_passes_test.exs:75: (test)
+
+.....
+
+  2) test unique/1 (DND-5632) an enforced unkeyed copy is kept beside a report keyed copy (Anchor.Domain.EnforcementPassesTest)
+     test/anchor/domain/enforcement_passes_test.exs:85
+     Assertion with == failed
+     code:  assert EnforcementPasses.unique([plain, keyed]) == [plain, keyed]
+     left:  [
+              %Anchor.Domain.Violation{
+                line: 3,
+                trigger: "alias",
+                message: "a",
+                filename: nil,
+                kind: :rule,
+                key: nil,
+                rule_id: nil,
+                enforcement: :enforce
+              }
+            ]
+     right: [
+              %Anchor.Domain.Violation{
+                line: 3,
+                trigger: "alias",
+                message: "a",
+                filename: nil,
+                kind: :rule,
+                key: nil,
+                rule_id: nil,
+
+  3) test a finding two rules make with no baseline yet, two report rules' finding keeps the baselined rule's key (for --write) (Anchor.Managers.LintBaselineTest)
+     test/anchor/managers/lint_baseline_test.exs:273
+     match (=) failed
+     code:  assert [{"lib/b.ex", "File", "pure|lib/b.ex|File"}] = findings(results)
+     left:  [{"lib/b.ex", "File", "pure|lib/b.ex|File"}]
+     right: []
+     stacktrace:
+       test/anchor/managers/lint_baseline_test.exs:282: (test)
+
+.....
+```
+
+(1 more failures in this run, not quoted; every failing test is named in the table.)
+
+### AB-W: a report copy covers an enforced one
+
+Run summary: `83 tests, 1 failure`
+
+```text
+  1) test unique/1 (DND-5632) an enforced unkeyed copy is kept beside a report keyed copy (Anchor.Domain.EnforcementPassesTest)
+     test/anchor/domain/enforcement_passes_test.exs:85
+     Assertion with == failed
+     code:  assert EnforcementPasses.unique([plain, keyed]) == [plain, keyed]
+     left:  [
+              %Anchor.Domain.Violation{
+                line: 3,
+                trigger: "alias",
+                message: "a",
+                filename: nil,
+                kind: :rule,
+                key: "pure|lib/a.ex|alias",
+                rule_id: "pure",
+                enforcement: :report
+              }
+            ]
+     right: [
+              %Anchor.Domain.Violation{
+                line: 3,
+                trigger: "alias",
+                message: "a",
+                filename: nil,
+                kind: :rule,
+                key: nil,
+                rule_id: nil,
+```

@@ -17,93 +17,14 @@ With every source restored: the full suite, `mix credo --strict` and `MIX_ENV=de
 
 | ID | Mutation | Tests | Result | Failing tests |
 |---|---|---|---|---|
-| PA-A | alias resolution removed from DependencyAnalyzer (an aliased call unseen by the AST) (`lib/anchor/domain/dependency_analyzer.ex`) | `parity_test.exs`, `layering_parity_test.exs`, `rule_schema_test.exs` | `50 tests, 2 failures` (red) | both engines flag the same pairs, apart from the listed divergences; the pairs each engine flags, named (so a change in either is read here) |
-| PA-B | CallMatrix's other_context scope ignores the contexts (`lib/anchor/domain/call_matrix.ex`) | `parity_test.exs`, `layering_parity_test.exs`, `rule_schema_test.exs` | `50 tests, 2 failures` (red) | the pairs each engine flags, named (so a change in either is read here); both engines flag the same pairs, apart from the listed divergences |
 | PA-C | diff/2 never reports a graph-only pair (`lib/anchor/domain/parity.ex`) | `parity_test.exs`, `layering_parity_test.exs`, `rule_schema_test.exs` | `50 tests, 2 failures` (red) | diff/2 one extra on each side lands in the right field, sorted; both engines flag the same pairs, apart from the listed divergences |
 | PA-D | uncovered/3 counts a flagged edge off the chain (`lib/anchor/domain/parity.ex`) | `parity_test.exs`, `layering_parity_test.exs`, `rule_schema_test.exs` | `50 tests, 2 failures` (red) | uncovered/3 (transitive findings) a flagged edge off the chain does not cover it; uncovered/3 (transitive findings) a chain with no flagged edge is uncovered |
 | PA-E | ast_rules_for/1 writes no same_context rule for an other_context entry (`lib/anchor/domain/parity.ex`) | `parity_test.exs`, `layering_parity_test.exs`, `rule_schema_test.exs` | `50 tests, 4 failures` (red) | ast_rules_for/1 an other_context entry forbids that bucket within the caller's own context; the pairs each engine flags, named (so a change in either is read here); the derivation reads every bucket of the tree, and its matrix is closed; both engines flag the same pairs, apart from the listed divergences |
 | PA-F | ast_rules_for/1 writes no transitive rule (`lib/anchor/domain/parity.ex`) | `parity_test.exs`, `layering_parity_test.exs`, `rule_schema_test.exs` | `50 tests, 4 failures` (red) | ast_rules_for/1 an other_context entry forbids that bucket within the caller's own context; ast_rules_for/1 a row forbids, directly and transitively, the buckets it omits; the derivation reads every bucket of the tree, and its matrix is closed; both engines flag the same pairs, apart from the listed divergences |
 | PA-G | pairs_from_ast/1 reads any trigger as a callee (`lib/anchor/domain/parity.ex`) | `parity_test.exs`, `layering_parity_test.exs`, `rule_schema_test.exs` | `50 tests, 1 failure` (red) | pairs_from_ast/1 and pairs_from_graph/1 an AST finding's caller is its file's module, its callee the trigger |
-| PA-H | no_direct_dependency warns of another graph type (`lib/anchor/domain/rule_schema.ex`) | `parity_test.exs`, `layering_parity_test.exs`, `rule_schema_test.exs` | `50 tests, 1 failure` (red) | early_warning_of/1 the AST dependency rules are layering's early warnings |
 | PA-J | a lower-case name reads as a module (module_name?/1 takes any first letter) (`lib/anchor/domain/parity.ex`) | `parity_test.exs`, `layering_parity_test.exs`, `rule_schema_test.exs` | `50 tests, 1 failure` (red) | pairs_from_ast/1 and pairs_from_graph/1 an AST finding's caller is its file's module, its callee the trigger |
 
-### PA-A: alias resolution removed from DependencyAnalyzer (an aliased call unseen by the AST)
-
-Run summary: `50 tests, 2 failures`
-
-```text
-  1) test both engines flag the same pairs, apart from the listed divergences (Anchor.Integration.LayeringParityTest)
-     test/anchor/integration/layering_parity_test.exs:114
-     the engines disagree on: AnchorFixtures.Parity.Orders.Ui.Badge -> AnchorFixtures.Parity.Orders.Managers.Checkout (only the graph engine flags it)
-     code: assert found -- listed == [],
-     stacktrace:
-       test/anchor/integration/layering_parity_test.exs:130: (test)
-
-  2) test the pairs each engine flags, named (so a change in either is read here) (Anchor.Integration.LayeringParityTest)
-     test/anchor/integration/layering_parity_test.exs:143
-     Assertion with == failed
-     code:  assert context |> then(&ast_results(NoDependency, &1)) |> Parity.pairs_from_ast() |> Enum.sort() ==
-              expected_direct
-     left:  [
-              {"AnchorFixtures.Parity.Orders.Adapters.Store",
-               "AnchorFixtures.Parity.Orders.Managers.Checkout"},
-              {"AnchorFixtures.Parity.Orders.Domain.Calc",
-               "AnchorFixtures.Parity.Orders.Managers.Checkout"},
-              {"AnchorFixtures.Parity.Orders.Domain.Rules",
-               "AnchorFixtures.Parity.Orders.Adapters.Store"}
-            ]
-     right: [
-              {"AnchorFixtures.Parity.Orders.Adapters.Store",
-               "AnchorFixtures.Parity.Orders.Managers.Checkout"},
-              {"AnchorFixtures.Parity.Orders.Domain.Calc",
-               "AnchorFixtures.Parity.Orders.Managers.Checkout"},
-              {"AnchorFixtures.Parity.Orders.Domain.Rules",
-               "AnchorFixtures.Parity.Orders.Adapters.Store"},
-              {"AnchorFixtures.Parity.Orders.Ui.Badge",
-               "AnchorFixtures.Parity.Orders.Managers.Checkout"}
-            ]
-     stacktrace:
-       test/anchor/integration/layering_parity_test.exs:153: (test)
-```
-
-### PA-B: CallMatrix's other_context scope ignores the contexts
-
-Run summary: `50 tests, 2 failures`
-
-```text
-  1) test the pairs each engine flags, named (so a change in either is read here) (Anchor.Integration.LayeringParityTest)
-     test/anchor/integration/layering_parity_test.exs:143
-     Assertion with == failed
-     code:  assert context |> graph_pairs() |> Enum.sort() == Enum.sort([{@fee, @store} | expected_direct])
-     left:  [
-              {"AnchorFixtures.Parity.Billing.Domain.Fee",
-               "AnchorFixtures.Parity.Orders.Adapters.Store"},
-              {"AnchorFixtures.Parity.Orders.Domain.Calc",
-               "AnchorFixtures.Parity.Orders.Managers.Checkout"},
-              {"AnchorFixtures.Parity.Orders.Domain.Rules",
-               "AnchorFixtures.Parity.Orders.Adapters.Store"},
-              {"AnchorFixtures.Parity.Orders.Ui.Badge",
-               "AnchorFixtures.Parity.Orders.Managers.Checkout"}
-            ]
-     right: [
-              {"AnchorFixtures.Parity.Billing.Domain.Fee",
-               "AnchorFixtures.Parity.Orders.Adapters.Store"},
-              {"AnchorFixtures.Parity.Orders.Adapters.Store",
-               "AnchorFixtures.Parity.Orders.Managers.Checkout"},
-              {"AnchorFixtures.Parity.Orders.Domain.Calc",
-               "AnchorFixtures.Parity.Orders.Managers.Checkout"},
-              {"AnchorFixtures.Parity.Orders.Domain.Rules",
-               "AnchorFixtures.Parity.Orders.Adapters.Store"},
-              {"AnchorFixtures.Parity.Orders.Ui.Badge",
-               "AnchorFixtures.Parity.Orders.Managers.Checkout"}
-
-  2) test both engines flag the same pairs, apart from the listed divergences (Anchor.Integration.LayeringParityTest)
-     test/anchor/integration/layering_parity_test.exs:114
-     the engines disagree on: AnchorFixtures.Parity.Orders.Adapters.Store -> AnchorFixtures.Parity.Orders.Managers.Checkout (only the ast engine flags it)
-     code: assert found -- listed == [],
-     stacktrace:
-       test/anchor/integration/layering_parity_test.exs:130: (test)
-```
+Filed under their own domain word (ADR 003): PA-A in `dependency_analyzer-20261103-dnd_5648_graph_followups.md`; PA-B in `layering-20261103-dnd_5648_graph_followups.md`; PA-H in `rule_schema-20261103-dnd_5648_graph_followups.md`.
 
 ### PA-C: diff/2 never reports a graph-only pair
 
@@ -292,23 +213,6 @@ Run summary: `50 tests, 1 failure`
        test/anchor/domain/parity_test.exs:125: (test)
 
 .............................................
-```
-
-### PA-H: no_direct_dependency warns of another graph type
-
-Run summary: `50 tests, 1 failure`
-
-```text
-  1) test early_warning_of/1 the AST dependency rules are layering's early warnings (Anchor.Domain.RuleSchemaTest)
-     test/anchor/domain/rule_schema_test.exs:240
-     Assertion with == failed
-     code:  assert RuleSchema.early_warning_of(:no_direct_dependency) == :layering
-     left:  :context_acyclic
-     right: :layering
-     stacktrace:
-       test/anchor/domain/rule_schema_test.exs:241: (test)
-
-.......................
 ```
 
 ### PA-J: a lower-case name reads as a module (module_name?/1 takes any first letter)

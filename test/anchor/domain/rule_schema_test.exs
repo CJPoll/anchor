@@ -7,7 +7,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
   # path anchored on this file (not the cwd, which sync modules change).
   #
   # Sabotage record: ../../sabotage_records/rule_schema-20260929-dnd_1286_rule_key_allowlist.md
-  # Sabotage record: ../../sabotage_records/baseline-20261103-dnd_5648_graph_followups.md (DND-5632)
+  # Sabotage record (DND-5632): ../../sabotage_records/baseline-20261103-dnd_5648_graph_followups.md
   # DND-5441 (engine common keys, enforcement, baseline, validate_architecture/3):
   #   ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
   use ExUnit.Case, async: true
@@ -235,7 +235,8 @@ defmodule Anchor.Domain.RuleSchemaTest do
   # engine is its authority; the AST dependency rules are its write-time early
   # warnings, held equal to it by test/anchor/integration/layering_parity_test.exs.
   # A target that is not a graph type is a CompileError, proven by sabotage.
-  # Sabotage record: ../../sabotage_records/parity-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (DND-5491): ../../sabotage_records/parity-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (DND-5491, PA-H): ../../sabotage_records/rule_schema-20261103-dnd_5648_graph_followups.md
   describe "early_warning_of/1" do
     test "the AST dependency rules are layering's early warnings" do
       assert RuleSchema.early_warning_of(:no_direct_dependency) == :layering

@@ -4,6 +4,7 @@ defmodule Anchor.Managers.LintBaselineTest do
   # self-proves); the analyzer, selection and comparison are real.
   #
   # Sabotage record: ../../sabotage_records/baseline-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (DND-5632, AB-R2 to AB-W): ../../sabotage_records/lint-20261103-dnd_5648_graph_followups.md
   use ExUnit.Case, async: true
 
   import Hammox

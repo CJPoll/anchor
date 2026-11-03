@@ -19,7 +19,8 @@
 | AP-C | a dir outside the root is keyed through .. instead of refused (`lib/anchor/domain/graph/project_file.ex`) | `project_file_test.exs`, `graph_test.exs`, `failures_graph_test.exs` | `63 tests, 2 failures` (red) | place/3 with the directory the compiler ran in source_dirs/2: an absolute dir outside the root is refused, naming each app; run/2 a two-app umbrella (DND-5637) an absolute apps_path outside the root is COULD NOT MEASURE with a Fix:, never a raise |
 | AP-D | a sibling sharing the root's prefix reads as under it (`lib/anchor/domain/graph/project_file.ex`) | `project_file_test.exs`, `graph_test.exs`, `failures_graph_test.exs` | `63 tests, 1 failure` (red) | place/3 with the directory the compiler ran in source_dirs/2: an absolute dir outside the root is refused, naming each app |
 | AP-E | the root itself is not made "." (`lib/anchor/domain/graph/project_file.ex`) | `project_file_test.exs`, `graph_test.exs`, `failures_graph_test.exs` | `63 tests, 1 failure` (red) | place/3 with the directory the compiler ran in source_dirs/2: the root itself, or none, is fine |
-| AP-F | the refusal has no Fix: line (`lib/anchor/domain/failures.ex`) | `project_file_test.exs`, `graph_test.exs`, `failures_graph_test.exs` | `63 tests, 2 failures` (red) | every graph message is fail-closed, on its file, with its subject and a Fix: line; run/2 a two-app umbrella (DND-5637) an absolute apps_path outside the root is COULD NOT MEASURE with a Fix:, never a raise |
+
+Filed under their own domain word (ADR 003): AP-F in `failures-20261103-dnd_5648_graph_followups.md`.
 
 ### AP-R: regression: the unfixed code, with the new tests
 
@@ -276,39 +277,6 @@ Run summary: `63 tests, 1 failure`
 ...........................................................
 ```
 
-### AP-F: the refusal has no Fix: line
-
-Run summary: `63 tests, 2 failures`
-
-```text
-
-
-  1) test every graph message is fail-closed, on its file, with its subject and a Fix: line (Anchor.Domain.FailuresGraphTest)
-     test/anchor/domain/failures_graph_test.exs:274
-     graph_apps_path_outside
-     code: for {name, violation, file, texts} <- rows() do
-     stacktrace:
-       test/anchor/domain/failures_graph_test.exs:277: anonymous fn/2 in Anchor.Domain.FailuresGraphTest."test every graph message is fail-closed, on its file, with its subject and a Fix: line"/1
-       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
-       test/anchor/domain/failures_graph_test.exs:275: (test)
-
-........................
-
-
-
-  2) test run/2 a two-app umbrella (DND-5637) an absolute apps_path outside the root is COULD NOT MEASURE with a Fix:, never a raise (Anchor.Managers.GraphTest)
-     test/anchor/managers/graph_test.exs:833
-     Assertion with =~ failed
-     code:  assert message =~ "Fix: "
-     left:  "COULD NOT MEASURE: the apps_path of :alpha is /elsewhere/alpha, outside the project root /proj, so its source paths cannot be keyed against the root. Set apps_path in the umbrella's mix.exs to a directory under the project root (Mix's default, \"apps\"), and run mix anchor.graph from that root."
-     right: "Fix: "
-     stacktrace:
-       test/anchor/managers/graph_test.exs:853: (test)
-
-........................
-```
-
-
 ## DND-5656: the outside-root count is taken after the builder dedupes beams
 
 **Code under test:** `Anchor.Managers.Graph`'s `outside_root_count/1` (now over the graph's modules) and `Anchor.Domain.Graph.ProjectFile.outside_root?/1`.
@@ -443,3 +411,32 @@ Run summary: `49 tests, 2 failures`
 ............................................
 ```
 
+## DND-5633: a dynamic call narrowed to a declared behaviour's implementers (DY-M)
+
+**Run with:** the `## DND-5633: a dynamic call narrowed to a declared behaviour's implementers` section of `layering-20261103-dnd_5648_graph_followups.md`, which names the code under test and the suite run; filed here by the module mutated.
+
+| ID | Mutation | Tests | Result | Failing tests |
+|---|---|---|---|---|
+| DY-M | the summary drops the dynamic-call counts (`lib/anchor/domain/graph_report.ex`) | `graph_report_test.exs` | `24 tests, 1 failure` (red) | dynamic calls (DND-5633) the summary ends with the fanned-out and narrowed counts |
+
+### DY-M: the summary drops the dynamic-call counts
+
+Run summary: `24 tests, 1 failure`
+
+```text
+
+
+  1) test dynamic calls (DND-5633) the summary ends with the fanned-out and narrowed counts (Anchor.Domain.GraphReportTest)
+     test/anchor/domain/graph_report_test.exs:207
+     Assertion with == failed
+     code:  assert GraphReport.summary(report) ==
+              "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations " <>
+                "(0 report-only, 0 baselined); dynamic calls: 2 fanned out to every " <>
+                "exporter, 1 narrowed by behaviour"
+     left:  "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 baselined)"
+     right: "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 baselined); dynamic calls: 2 fanned out to every exporter, 1 narrowed by behaviour"
+     stacktrace:
+       test/anchor/domain/graph_report_test.exs:210: (test)
+
+....
+```

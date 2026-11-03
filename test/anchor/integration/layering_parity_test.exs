@@ -18,6 +18,8 @@ defmodule Anchor.Integration.LayeringParityTest do
   # matrix is transitively closed, so on it that always holds.
   #
   # Sabotage record: ../../sabotage_records/parity-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (DND-5491, PA-A): ../../sabotage_records/dependency_analyzer-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (DND-5491, PA-B): ../../sabotage_records/layering-20261103-dnd_5648_graph_followups.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures

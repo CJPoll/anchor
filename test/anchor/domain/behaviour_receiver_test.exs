@@ -6,6 +6,7 @@ defmodule Anchor.Domain.BehaviourReceiverTest do
   # layering rule over the same graph.
   #
   # Sabotage record: ../../sabotage_records/layering-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (DND-5633, DY-O): ../../sabotage_records/builder-20261103-dnd_5648_graph_followups.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -110,10 +111,29 @@ defmodule Anchor.Domain.BehaviourReceiverTest do
                 suite.run([])
                 other.run([])
               end
+
+              # One name at two positions: Elixir names `suite` alike in both
+              # clauses, so it is the atom() parameter in the first and the
+              # Port.t() one in the second. No one position: no evidence.
+              @spec swapped(#{@ns}.Port.t(), atom()) :: :ok
+              def swapped(args, suite) when is_list(args), do: suite.run(args)
+              def swapped(suite, _other), do: suite.run([])
+
+              # A behaviour no project module implements: no evidence of
+              # where the call goes, so it is judged against every exporter.
+              @spec lonely(#{@ns}.Lonely.t(), [String.t()]) :: :ok
+              def lonely(suite, args), do: suite.run(args)
             end
             """, "lib/app/managers/manager.ex"}
 
-  @sources [@port, @impl_mod, @task, @untyped_port, @other_port, @manager]
+  @lonely_port {"""
+                defmodule #{@ns}.Lonely do
+                  @type t :: module()
+                  @callback run([String.t()]) :: :ok
+                end
+                """, "lib/app/adapters/lonely.ex"}
+
+  @sources [@port, @impl_mod, @task, @untyped_port, @other_port, @lonely_port, @manager]
 
   setup_all do
     beams =
@@ -188,6 +208,28 @@ defmodule Anchor.Domain.BehaviourReceiverTest do
       graph: graph
     } do
       assert BehaviourReceiver.behaviour(graph, call(graph, :mixed, 2)) == :none
+    end
+
+    # Review floor (2026-11-03): the name-to-position map was built across
+    # every clause, the last clause winning, so `suite` read as position 0
+    # (Port.t()) though the first clause's `suite` is the atom() parameter.
+    test "a name at a different position in each clause is no one parameter: it fans out", %{
+      graph: graph
+    } do
+      call = call(graph, :swapped, 2)
+      assert BehaviourReceiver.behaviour(graph, call) == :none
+      assert DynamicCalls.targets(graph, call) == Enum.sort([mod(Impl), task()])
+    end
+
+    # Review floor (2026-11-03): an empty implementer list judged the call
+    # against nothing, and tally/1 still counted it narrowed.
+    test "a behaviour no project module implements is no evidence: it fans out", %{graph: graph} do
+      call = call(graph, :lonely, 2)
+      assert BehaviourReceiver.behaviour(graph, call) == :none
+      assert DynamicCalls.targets(graph, call) == Enum.sort([mod(Impl), task()])
+
+      %{fanned_out: fanned_out} = DynamicCalls.tally(graph)
+      assert {{mod(Manager), :lonely, 2}, :run, 1} in fanned_out
     end
 
     test "implementers/3: the modules declaring the behaviour that export the function", %{

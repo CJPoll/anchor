@@ -15,9 +15,10 @@
 |---|---|---|---|---|
 | BC-R | regression: the unfixed code, with the new test (`lib/anchor/managers/graph.ex`) | `graph_baseline_test.exs` | `25 tests, 1 failure` (red) | run/2 --base REF finds the base baseline by rule id (DND-5629) a base config that cannot be read is one issue naming every baselined rule (three identical issues, one per rule; the captured tail starts inside the assertion) |
 | BC-A | the run's one config issue is dropped (`lib/anchor/managers/graph.ex`) | `graph_baseline_test.exs`, `failures_graph_test.exs` | `41 tests, 2 failures` (red) | run/2 --base REF finds the base baseline by rule id (DND-5629) a base config that cannot be read fails closed on the config, naming the ref; run/2 --base REF finds the base baseline by rule id (DND-5629) a base config that cannot be read is one issue naming every baselined rule |
-| BC-B | the issue names only the first unjudged rule (`lib/anchor/domain/failures.ex`) | `graph_baseline_test.exs`, `failures_graph_test.exs` | `41 tests, 2 failures` (red) | every graph message is fail-closed, on its file, with its subject and a Fix: line; run/2 --base REF finds the base baseline by rule id (DND-5629) a base config that cannot be read is one issue naming every baselined rule |
 | BC-C | an unjudged rule's findings are held, so the verdict changes (`lib/anchor/managers/graph.ex`) | `graph_baseline_test.exs`, `failures_graph_test.exs` | `41 tests, 1 failure` (red) | run/2 --base REF finds the base baseline by rule id (DND-5629) a base config that cannot be read is one issue naming every baselined rule |
 | BC-D | only the first rule's id is collected (`lib/anchor/managers/graph.ex`) | `graph_baseline_test.exs`, `failures_graph_test.exs` | `41 tests, 1 failure` (red) | run/2 --base REF finds the base baseline by rule id (DND-5629) a base config that cannot be read is one issue naming every baselined rule |
+
+Filed under their own domain word (ADR 003): BC-B in `failures-20261103-dnd_5648_graph_followups.md`.
 
 ### BC-R: regression: the unfixed code, with the new test
 
@@ -109,40 +110,6 @@ Run summary: `41 tests, 2 failures`
 ............
 ```
 
-### BC-B: the issue names only the first unjudged rule
-
-Run summary: `41 tests, 2 failures`
-
-```text
-
-
-  1) test every graph message is fail-closed, on its file, with its subject and a Fix: line (Anchor.Domain.FailuresGraphTest)
-     test/anchor/domain/failures_graph_test.exs:257
-     baseline_base_config_unreadable: "GREW could not be judged for rules \"web\", \"core\"" in Anchor could not read .anchor.yml at main (:boom), so no baseline's copy there could be found by its rule's id and GREW could not be judged for rules "web". Fix: pass a --base ref whose .anchor.yml loads, or drop --base.
-     code: for {name, violation, file, texts} <- rows() do
-     stacktrace:
-       (elixir 1.19.4) lib/enum.ex:1688: Enum."-map/2-lists^map/1-1-"/2
-       (elixir 1.19.4) lib/enum.ex:1688: Enum."-map/2-lists^map/1-1-"/2
-       test/anchor/domain/failures_graph_test.exs:262: anonymous fn/2 in Anchor.Domain.FailuresGraphTest."test every graph message is fail-closed, on its file, with its subject and a Fix: line"/1
-       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
-       test/anchor/domain/failures_graph_test.exs:258: (test)
-
-........
-
-
-
-  2) test run/2 --base REF finds the base baseline by rule id (DND-5629) a base config that cannot be read is one issue naming every baselined rule (Anchor.Managers.GraphBaselineTest)
-     test/anchor/managers/graph_baseline_test.exs:377
-     Assertion with =~ failed
-     code:  assert issue.message =~ ~s|rules "f", "g", "h"|
-     left:  "Anchor could not read .anchor.yml at main ({:invalid_config, \"the document is empty\"}), so no baseline's copy there could be found by its rule's id and GREW could not be judged for rules \"f\". Fix: pass a --base ref whose .anchor.yml loads, or drop --base."
-     right: "rules \"f\", \"g\", \"h\""
-     stacktrace:
-       test/anchor/managers/graph_baseline_test.exs:402: (test)
-
-.......................
-```
-
 ### BC-C: an unjudged rule's findings are held, so the verdict changes
 
 Run summary: `41 tests, 1 failure`
@@ -211,7 +178,8 @@ Run summary: `41 tests, 1 failure`
 | SW-D | the root is not resolved to its real path (`lib/anchor/adapters/baseline_file.ex`) | `baseline_file_test.exs`, `failures_graph_test.exs` | `31 tests, 1 failure` (red) | a directory swapped for a symlink after the check (DND-5647) a root reached through a symlink is its real path, not an escape |
 | SW-E | the before_write seam is never run (`lib/anchor/adapters/baseline_file.ex`) | `baseline_file_test.exs`, `failures_graph_test.exs` | `31 tests, 4 failures` (red) | a directory swapped for a symlink after the check (DND-5647) a swap of a directory higher on the path is caught too; a directory swapped for a symlink after the check (DND-5647) a sibling whose name starts with the root's is outside it; a directory swapped for a symlink after the check (DND-5647) the write is refused, naming where it went, and nothing remains outside; a directory swapped for a symlink after the check (DND-5647) positive control: with no swap the hook runs and the file is written |
 | SW-F | a sibling sharing the root's prefix reads as inside it (`lib/anchor/adapters/baseline_file.ex`) | `baseline_file_test.exs`, `failures_graph_test.exs` | `31 tests, 1 failure` (red) | a directory swapped for a symlink after the check (DND-5647) a sibling whose name starts with the root's is outside it |
-| SW-G | the escape message drops where the file landed (`lib/anchor/domain/failures.ex`) | `baseline_file_test.exs`, `failures_graph_test.exs` | `31 tests, 1 failure` (red) | every graph message is fail-closed, on its file, with its subject and a Fix: line |
+
+Filed under their own domain word (ADR 003): SW-G in `failures-20261103-dnd_5648_graph_followups.md`.
 
 ### SW-R: regression: the unfixed write (no post-write check), with the seam in place
 
@@ -535,27 +503,6 @@ Run summary: `31 tests, 1 failure`
        test/anchor/adapters/baseline_file_test.exs:190: (test)
 
 ..............................
-```
-
-### SW-G: the escape message drops where the file landed
-
-Run summary: `31 tests, 1 failure`
-
-```text
-
-
-  1) test every graph message is fail-closed, on its file, with its subject and a Fix: line (Anchor.Domain.FailuresGraphTest)
-     test/anchor/domain/failures_graph_test.exs:266
-     baseline_not_written escaped: "landed at /elsewhere/x.txt, outside the project root, and was removed there" in Anchor did not create b/x.txt: a directory on its path became a symlink while it was written, so the file landed outside the project root, and was removed there. Fix: find what is replacing directories in this checkout during the run, stop it, and run --write-baseline again.
-     code: for {name, violation, file, texts} <- rows() do
-     stacktrace:
-       (elixir 1.19.4) lib/enum.ex:1688: Enum."-map/2-lists^map/1-1-"/2
-       (elixir 1.19.4) lib/enum.ex:1688: Enum."-map/2-lists^map/1-1-"/2
-       test/anchor/domain/failures_graph_test.exs:271: anonymous fn/2 in Anchor.Domain.FailuresGraphTest."test every graph message is fail-closed, on its file, with its subject and a Fix: line"/1
-       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
-       test/anchor/domain/failures_graph_test.exs:267: (test)
-
-...............
 ```
 
 ## DND-5634: GitShow's tests capture git's stderr instead of printing it
@@ -1416,8 +1363,9 @@ Run summary: `132 tests, 18 failures`
 | ID | Mutation | Tests | Result | Failing tests |
 |---|---|---|---|---|
 | AB-R1 | regression: the unfixed lint.ex (first-wins unique before the ratchet), with the new tests (`lib/anchor/managers/lint.ex`) | `lint_baseline_test.exs` | `18 tests, 4 failures` (red) | a finding two rules make an enforced plain rule's copy stands when the baselined rule holds its own; a finding two rules make a report rule's copy never downgrades an enforced baselined rule's NEW finding; a finding two rules make held by the baseline: the report rule's copy still prints, report-only; no STALE; a finding two rules make two baselined rules each judge their own copy: both held, no false STALE |
-| AB-T | the enforced copy does not win over a report copy seen first (`lib/anchor/domain/enforcement_passes.ex`) | `lint_baseline_test.exs`, `enforcement_passes_test.exs`, `lint_test.exs` | `60 tests, 2 failures` (red) | unique/1 (DND-5632) the enforced copy wins over a report copy seen first; a finding two rules make a report rule's copy never downgrades an enforced baselined rule's NEW finding |
 | AB-U | the passes are not joined: a finding two rules make prints twice (`lib/anchor/managers/lint.ex`) | `lint_baseline_test.exs`, `enforcement_passes_test.exs`, `lint_test.exs` | `60 tests, 2 failures` (red) | a finding two rules make a report rule's copy never downgrades an enforced baselined rule's NEW finding; beside rules with no baseline a violation every pass makes once per file is printed once |
+
+Filed under their own domain word (ADR 003): AB-T in `lint-20261103-dnd_5648_graph_followups.md`.
 
 ### AB-R1: regression: the unfixed lint.ex (first-wins unique before the ratchet), with the new tests
 
@@ -1501,57 +1449,6 @@ Run summary: `18 tests, 4 failures`
 
 (1 more failures in this run, not quoted; every failing test is named in the table.)
 
-### AB-T: the enforced copy does not win over a report copy seen first
-
-Run summary: `60 tests, 2 failures`
-
-```text
-  1) test unique/1 (DND-5632) the enforced copy wins over a report copy seen first (Anchor.Domain.EnforcementPassesTest)
-     test/anchor/domain/enforcement_passes_test.exs:62
-     match (=) failed
-     code:  assert [%Violation{enforcement: :enforce, key: "pure|lib/a.ex|alias"}] =
-              EnforcementPasses.unique([reported, enforced])
-     left:  [%Anchor.Domain.Violation{enforcement: :enforce, key: "pure|lib/a.ex|alias"}]
-     right: [
-              %Anchor.Domain.Violation{
-                line: 3,
-                trigger: "alias",
-                message: "a",
-                filename: nil,
-                kind: :rule,
-                key: nil,
-                rule_id: nil,
-                enforcement: :report
-              }
-            ]
-     stacktrace:
-       test/anchor/domain/enforcement_passes_test.exs:66: (test)
-
-.................
-
-  2) test a finding two rules make a report rule's copy never downgrades an enforced baselined rule's NEW finding (Anchor.Managers.LintBaselineTest)
-     test/anchor/managers/lint_baseline_test.exs:251
-     match (=) failed
-     code:  assert [%Violation{enforcement: :enforce, key: "pure|lib/b.ex|File"}] = violations
-     left:  [%Anchor.Domain.Violation{enforcement: :enforce, key: "pure|lib/b.ex|File"}]
-     right: [
-              %Anchor.Domain.Violation{
-                line: 2,
-                trigger: "File",
-                message: "Module has forbidden direct dependency on File",
-                filename: nil,
-                kind: :rule,
-                key: nil,
-                rule_id: nil,
-                enforcement: :report
-              }
-            ]
-     stacktrace:
-       test/anchor/managers/lint_baseline_test.exs:259: (test)
-
-......................................
-```
-
 ### AB-U: the passes are not joined: a finding two rules make prints twice
 
 Run summary: `60 tests, 2 failures`
@@ -1602,180 +1499,9 @@ Run summary: `60 tests, 2 failures`
 
 | ID | Mutation | Tests | Result | Failing tests |
 |---|---|---|---|---|
-| AB-R2 | regression: round 1's unique/1 (first copy wins on a tie), with the new tests (`lib/anchor/domain/enforcement_passes.ex`) | `lint_baseline_test.exs`, `enforcement_passes_test.exs` | `31 tests, 5 failures` (red) | unique/1 (DND-5632) a keyed copy is kept over an unkeyed one of the same enforcement (its key is written); unique/1 (DND-5632) an enforced unkeyed copy is kept beside a report keyed copy; unique/1 (DND-5632) two baselined rules' keyed copies are both kept; a finding two rules make with no baseline yet, two report rules' finding keeps the baselined rule's key (for --write); beside rules with no baseline a violation every pass makes once per file is printed once |
-| AB-V | a keyed report copy is dropped for an unkeyed one (`lib/anchor/domain/enforcement_passes.ex`) | `lint_baseline_test.exs`, `enforcement_passes_test.exs`, `lint_test.exs`, `ast_baseline_test.exs`, `ast_baseline_integration_test.exs` | `83 tests, 4 failures` (red) | unique/1 (DND-5632) a keyed copy is kept over an unkeyed one of the same enforcement (its key is written); unique/1 (DND-5632) an enforced unkeyed copy is kept beside a report keyed copy; a finding two rules make with no baseline yet, two report rules' finding keeps the baselined rule's key (for --write); a baselined rule's findings STALE takes the rule's enforcement: report |
-| AB-W | a report copy covers an enforced one (`lib/anchor/domain/enforcement_passes.ex`) | `lint_baseline_test.exs`, `enforcement_passes_test.exs`, `lint_test.exs`, `ast_baseline_test.exs`, `ast_baseline_integration_test.exs` | `83 tests, 1 failure` (red) | unique/1 (DND-5632) an enforced unkeyed copy is kept beside a report keyed copy |
 | AB-X | --write takes another rule's keys whose id starts with this one's (`lib/anchor/managers/ast_baseline.ex`) | `lint_baseline_test.exs`, `enforcement_passes_test.exs`, `lint_test.exs`, `ast_baseline_test.exs`, `ast_baseline_integration_test.exs` | `83 tests, 1 failure` (red) | write/2 creates the rule's baseline from its keys alone, sorted, and notes it (exit 0) |
 
-### AB-R2: regression: round 1's unique/1 (first copy wins on a tie), with the new tests
-
-Run summary: `31 tests, 5 failures`
-
-```text
-  1) test unique/1 (DND-5632) a keyed copy is kept over an unkeyed one of the same enforcement (its key is written) (Anchor.Domain.EnforcementPassesTest)
-     test/anchor/domain/enforcement_passes_test.exs:71
-     match (=) failed
-     code:  assert [%Violation{key: "pure|lib/a.ex|alias"}] = EnforcementPasses.unique([plain, keyed])
-     left:  [%Anchor.Domain.Violation{key: "pure|lib/a.ex|alias"}]
-     right: [
-              %Anchor.Domain.Violation{
-                line: 3,
-                trigger: "alias",
-                message: "a",
-                filename: nil,
-                kind: :rule,
-                key: nil,
-                rule_id: nil,
-                enforcement: :report
-              }
-            ]
-     stacktrace:
-       test/anchor/domain/enforcement_passes_test.exs:75: (test)
-
-..
-
-  2) test unique/1 (DND-5632) an enforced unkeyed copy is kept beside a report keyed copy (Anchor.Domain.EnforcementPassesTest)
-     test/anchor/domain/enforcement_passes_test.exs:85
-     Assertion with == failed
-     code:  assert EnforcementPasses.unique([plain, keyed]) == [plain, keyed]
-     left:  [
-              %Anchor.Domain.Violation{
-                line: 3,
-                trigger: "alias",
-                message: "a",
-                filename: nil,
-                kind: :rule,
-                key: nil,
-                rule_id: nil,
-                enforcement: :enforce
-              }
-            ]
-     right: [
-              %Anchor.Domain.Violation{
-                line: 3,
-                trigger: "alias",
-                message: "a",
-                filename: nil,
-                kind: :rule,
-                key: nil,
-                rule_id: nil,
-
-  3) test unique/1 (DND-5632) two baselined rules' keyed copies are both kept (Anchor.Domain.EnforcementPassesTest)
-     test/anchor/domain/enforcement_passes_test.exs:78
-     Assertion with == failed
-     code:  assert EnforcementPasses.unique([a, b]) == [a, b]
-     left:  [
-              %Anchor.Domain.Violation{
-                line: 3,
-                trigger: "alias",
-                message: "a",
-                filename: nil,
-                kind: :rule,
-                key: "pure|lib/a.ex|alias",
-                rule_id: "pure",
-                enforcement: :enforce
-              }
-            ]
-     right: [
-              %Anchor.Domain.Violation{
-                line: 3,
-                trigger: "alias",
-                message: "a",
-                filename: nil,
-                kind: :rule,
-                key: "pure|lib/a.ex|alias",
-                rule_id: "pure",
-```
-
-(2 more failures in this run, not quoted; every failing test is named in the table.)
-
-### AB-V: a keyed report copy is dropped for an unkeyed one
-
-Run summary: `83 tests, 4 failures`
-
-```text
-  1) test unique/1 (DND-5632) a keyed copy is kept over an unkeyed one of the same enforcement (its key is written) (Anchor.Domain.EnforcementPassesTest)
-     test/anchor/domain/enforcement_passes_test.exs:71
-     match (=) failed
-     code:  assert [%Violation{key: "pure|lib/a.ex|alias"}] = EnforcementPasses.unique([plain, keyed])
-     left:  [%Anchor.Domain.Violation{key: "pure|lib/a.ex|alias"}]
-     right: []
-     stacktrace:
-       test/anchor/domain/enforcement_passes_test.exs:75: (test)
-
-.....
-
-  2) test unique/1 (DND-5632) an enforced unkeyed copy is kept beside a report keyed copy (Anchor.Domain.EnforcementPassesTest)
-     test/anchor/domain/enforcement_passes_test.exs:85
-     Assertion with == failed
-     code:  assert EnforcementPasses.unique([plain, keyed]) == [plain, keyed]
-     left:  [
-              %Anchor.Domain.Violation{
-                line: 3,
-                trigger: "alias",
-                message: "a",
-                filename: nil,
-                kind: :rule,
-                key: nil,
-                rule_id: nil,
-                enforcement: :enforce
-              }
-            ]
-     right: [
-              %Anchor.Domain.Violation{
-                line: 3,
-                trigger: "alias",
-                message: "a",
-                filename: nil,
-                kind: :rule,
-                key: nil,
-                rule_id: nil,
-
-  3) test a finding two rules make with no baseline yet, two report rules' finding keeps the baselined rule's key (for --write) (Anchor.Managers.LintBaselineTest)
-     test/anchor/managers/lint_baseline_test.exs:273
-     match (=) failed
-     code:  assert [{"lib/b.ex", "File", "pure|lib/b.ex|File"}] = findings(results)
-     left:  [{"lib/b.ex", "File", "pure|lib/b.ex|File"}]
-     right: []
-     stacktrace:
-       test/anchor/managers/lint_baseline_test.exs:282: (test)
-
-.....
-```
-
-(1 more failures in this run, not quoted; every failing test is named in the table.)
-
-### AB-W: a report copy covers an enforced one
-
-Run summary: `83 tests, 1 failure`
-
-```text
-  1) test unique/1 (DND-5632) an enforced unkeyed copy is kept beside a report keyed copy (Anchor.Domain.EnforcementPassesTest)
-     test/anchor/domain/enforcement_passes_test.exs:85
-     Assertion with == failed
-     code:  assert EnforcementPasses.unique([plain, keyed]) == [plain, keyed]
-     left:  [
-              %Anchor.Domain.Violation{
-                line: 3,
-                trigger: "alias",
-                message: "a",
-                filename: nil,
-                kind: :rule,
-                key: "pure|lib/a.ex|alias",
-                rule_id: "pure",
-                enforcement: :report
-              }
-            ]
-     right: [
-              %Anchor.Domain.Violation{
-                line: 3,
-                trigger: "alias",
-                message: "a",
-                filename: nil,
-                kind: :rule,
-                key: nil,
-                rule_id: nil,
-```
+Filed under their own domain word (ADR 003): AB-R2, AB-V, AB-W in `lint-20261103-dnd_5648_graph_followups.md`.
 
 ### AB-X: --write takes another rule's keys whose id starts with this one's
 
@@ -1799,3 +1525,93 @@ Run summary: `83 tests, 1 failure`
 .....................................
 ```
 
+## DND-5633: a dynamic call narrowed to a declared behaviour's implementers (DY-J, DY-K, DY-P)
+
+**Run with:** the `## DND-5633: a dynamic call narrowed to a declared behaviour's implementers` section of `layering-20261103-dnd_5648_graph_followups.md`, which names the code under test and the suite run; filed here by the module mutated.
+
+| ID | Mutation | Tests | Result | Failing tests |
+|---|---|---|---|---|
+| DY-J | the judgement ignores the rule's narrows? (`lib/anchor/domain/enforcement.ex`) | `enforcement_test.exs`, `graph_baseline_test.exs` | `39 tests, 2 failures` (red) | judge/4 an added entry narrowing a removed one is a report NOTE, not GREW; run/2 --base REF (GREW) an entry narrowing one removed since REF is a NOTE, by the rule's narrows?/2 |
+| DY-K | the Manager does not hand the rule's narrows? over (`lib/anchor/managers/graph.ex`) | `enforcement_test.exs`, `graph_baseline_test.exs` | `39 tests, 1 failure` (red) | run/2 --base REF (GREW) an entry narrowing one removed since REF is a NOTE, by the rule's narrows?/2 |
+| DY-P | an entry still in the base file can be narrowed (`lib/anchor/domain/enforcement.ex`) | `enforcement_test.exs`, `graph_baseline_test.exs` | `39 tests, 1 failure` (red) | judge/4 a narrowing of an entry still there is GREW (it replaced nothing) |
+
+### DY-J: the judgement ignores the rule's narrows?
+
+Run summary: `39 tests, 2 failures`
+
+```text
+
+
+  1) test judge/4 an added entry narrowing a removed one is a report NOTE, not GREW (Anchor.Domain.EnforcementTest)
+     test/anchor/domain/enforcement_test.exs:129
+     Assertion with == failed
+     code:  assert note.enforcement == :report
+     left:  :enforce
+     right: :report
+     stacktrace:
+       test/anchor/domain/enforcement_test.exs:136: (test)
+
+..............................
+
+
+
+  2) test run/2 --base REF (GREW) an entry narrowing one removed since REF is a NOTE, by the rule's narrows?/2 (Anchor.Managers.GraphBaselineTest)
+     test/anchor/managers/graph_baseline_test.exs:281
+     Assertion with == failed
+     code:  assert report.exit_code == 0
+     left:  1
+     right: 0
+     stacktrace:
+       test/anchor/managers/graph_baseline_test.exs:292: (test)
+
+.
+```
+
+### DY-K: the Manager does not hand the rule's narrows? over
+
+Run summary: `39 tests, 1 failure`
+
+```text
+
+
+  1) test run/2 --base REF (GREW) an entry narrowing one removed since REF is a NOTE, by the rule's narrows?/2 (Anchor.Managers.GraphBaselineTest)
+     test/anchor/managers/graph_baseline_test.exs:281
+     Assertion with == failed
+     code:  assert report.exit_code == 0
+     left:  1
+     right: 0
+     stacktrace:
+       test/anchor/managers/graph_baseline_test.exs:292: (test)
+
+........
+```
+
+### DY-P: an entry still in the base file can be narrowed
+
+Run summary: `39 tests, 1 failure`
+
+```text
+
+
+  1) test judge/4 a narrowing of an entry still there is GREW (it replaced nothing) (Anchor.Domain.EnforcementTest)
+     test/anchor/domain/enforcement_test.exs:153
+     match (=) failed
+     code:  assert [%{enforcement: :enforce, message: message}] = standing
+     left:  [%{enforcement: :enforce, message: message}]
+     right: [
+              %Anchor.Domain.GraphReport.Finding{
+                rule_id: "r",
+                type: :layering,
+                label: "rule 1 (id: \"r\", layering)",
+                enforcement: :report,
+                key: "r|A,B",
+                file: ".anchor/baselines/r.txt",
+                line: nil,
+                message: "NOTE: r|A,B in .anchor/baselines/r.txt narrows r|A,B,C, the entry it replaced since main; a narrower entry is not growth. Fix: review the narrowing in this change."
+              }
+            ]
+     stacktrace:
+       test/anchor/domain/enforcement_test.exs:165: (test)
+
+...................................
+```

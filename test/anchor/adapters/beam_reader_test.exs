@@ -6,7 +6,7 @@ defmodule Anchor.Adapters.BeamReaderTest do
   # Sabotage record: ../../sabotage_records/beam_reader-20261103-dnd_5438.md
   # Sabotage record (compile option allowlist): ../../sabotage_records/beam_reader-20261103-dnd_5551_graph_hardening.md
   # Sabotage record (Failures.crash_summary/3): ../../sabotage_records/failures-20261103-dnd_5438.md
-  # Sabotage record (DND-5633): ../../sabotage_records/layering-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (DND-5633): ../../sabotage_records/beam_reader-20261103-dnd_5648_graph_followups.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures

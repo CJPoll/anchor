@@ -3,7 +3,8 @@ defmodule Anchor.Domain.EnforcementPassesTest do
   # violation both found is printed once.
   #
   # Sabotage record: ../../sabotage_records/lint-20261103-dnd_5648_graph_followups.md
-  # unique/1 (DND-5632): ../../sabotage_records/baseline-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (DND-5632): ../../sabotage_records/baseline-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (DND-5631, PA-E): ../../sabotage_records/failures-20261103-dnd_5648_graph_followups.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.EnforcementPasses

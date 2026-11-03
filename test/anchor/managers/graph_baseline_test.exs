@@ -7,8 +7,8 @@ defmodule Anchor.Managers.GraphBaselineTest do
   #
   # Sabotage record: ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
   # DND-5629 (base found by rule id): ../../sabotage_records/baseline_rename-20261103-dnd_5441_graph_rules_a.md
-  # DND-5633 (a narrowed entry): ../../sabotage_records/layering-20261103-dnd_5648_graph_followups.md
-  # DND-5648 (one base-config issue): ../../sabotage_records/baseline-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (DND-5633, DND-5648): ../../sabotage_records/baseline-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (DND-5648, BC-B): ../../sabotage_records/failures-20261103-dnd_5648_graph_followups.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures

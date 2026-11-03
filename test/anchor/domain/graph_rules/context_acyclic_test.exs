@@ -3,7 +3,7 @@ defmodule Anchor.Domain.GraphRules.ContextAcyclicTest do
   # models.
   #
   # Sabotage record: ../../../sabotage_records/context_acyclic-20261103-dnd_5441_graph_rules_a.md
-  # Sabotage record (DND-5633): ../../../sabotage_records/layering-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (DND-5633): ../../../sabotage_records/context_acyclic-20261103-dnd_5648_graph_followups.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Classification

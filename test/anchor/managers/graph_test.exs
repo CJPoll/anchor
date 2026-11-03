@@ -9,7 +9,7 @@ defmodule Anchor.Managers.GraphTest do
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5581_hardening_batch.md
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5630_graph_hardening.md
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5648_graph_followups.md
-  # DND-5655, DND-5656: ../../sabotage_records/graph_runner-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (DND-5655, AP-F): ../../sabotage_records/failures-20261103-dnd_5648_graph_followups.md
   # DND-5584 (per-app, and AE-O with DND-5588): ../../sabotage_records/graph_runner-20261103-dnd_5441_graph_rules_a.md
   use ExUnit.Case, async: true
 

@@ -19,7 +19,15 @@ defmodule Anchor.Domain.BehaviourReceiver do
     * the function has exactly one `@spec`, and it types each of those
       parameters as `B.t()` for one module `B` of the project;
     * `B` declares `@type t :: module()` and `f/arity` among its
-      `@callback`s.
+      `@callback`s;
+    * at least one project module implements it. A behaviour whose only
+      implementers are test doubles or dependencies says nothing about which
+      project module the call reaches, and an empty target list would judge
+      the call against nothing.
+
+  A parameter's name must also hold one position in every clause: Elixir
+  names a variable alike in each clause, so `def f(x, suite)` and
+  `def f(suite, x)` share `suite` at two positions, and neither is evidence.
 
   Then the call's targets are the project modules that declare `@behaviour B`
   and export `f/arity` (`implementers/3`). Anything short of that is `:none`,
@@ -44,7 +52,8 @@ defmodule Anchor.Domain.BehaviourReceiver do
     with {:ok, node, function} <- caller(graph, from),
          {:ok, indexes} <- receiver_params(function.core, name, arity),
          {:ok, behaviour} <- spec_behaviour(node, from, indexes),
-         true <- contract?(Map.get(graph.modules, behaviour), name, arity) do
+         true <- contract?(Map.get(graph.modules, behaviour), name, arity),
+         [_ | _] <- implementers(graph, behaviour, {name, arity}) do
       {:ok, behaviour}
     else
       _no_evidence -> :none
@@ -106,7 +115,9 @@ defmodule Anchor.Domain.BehaviourReceiver do
   # The names that hold parameter `i`, `%{name => i}`: the Core parameters
   # themselves and, since Elixir compiles a function's clauses into one
   # `case <_0, _1> of <Suite, Args> -> ...`, a clause pattern that is a bare
-  # variable at position `i`. Also the variables nested deeper in those
+  # variable at position `i`. A name that is a bare variable at different
+  # positions in different clauses holds no one parameter, so it is left out
+  # (and a call on it is `:none`). Also the variables nested deeper in those
   # patterns (bound, so never a parameter's alias) and the trees left to walk
   # (each clause's guard and body, or the whole body).
   defp parameters(core) do
@@ -117,12 +128,15 @@ defmodule Anchor.Domain.BehaviourReceiver do
     if dispatch?(body, params) do
       clauses = :cerl.case_clauses(body)
 
-      aliases =
+      positions =
         for clause <- clauses,
             {pattern, index} <- Enum.with_index(:cerl.clause_pats(clause)),
             :cerl.is_c_var(pattern),
-            into: direct,
-            do: {:cerl.var_name(pattern), index}
+            reduce: %{} do
+          acc -> Map.update(acc, :cerl.var_name(pattern), [index], &Enum.uniq([index | &1]))
+        end
+
+      aliases = for {name, [index]} <- positions, into: direct, do: {name, index}
 
       nested =
         for clause <- clauses,
