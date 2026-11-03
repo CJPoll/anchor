@@ -52,6 +52,22 @@ defmodule Anchor.Managers.GraphTest do
   end
   """
 
+  # DND-5588: compiled from absolute paths outside this test's cwd, so each
+  # beam's relative_file is absolute: one inside the root, one outside it.
+  @inside_path "/proj/lib/my_app/domain/inside.ex"
+  @inside_file "lib/my_app/domain/inside.ex"
+  @inside_source """
+  defmodule AnchorFixtures.GraphManagerTest.Inside do
+    def i(x), do: x
+  end
+  """
+  @dep_path "/deps/dep/lib/dep/thing.ex"
+  @dep_source """
+  defmodule AnchorFixtures.GraphManagerTest.DepThing do
+    def t(x), do: x
+  end
+  """
+
   @user AnchorFixtures.GraphManagerTest.User
   @accounts AnchorFixtures.GraphManagerTest.Accounts
   @stray AnchorFixtures.GraphManagerTest.Stray
@@ -61,7 +77,9 @@ defmodule Anchor.Managers.GraphTest do
       [
         {@user_source, @user_file},
         {@accounts_source, @accounts_file},
-        {@stray_source, @stray_file}
+        {@stray_source, @stray_file},
+        {@inside_source, @inside_path},
+        {@dep_source, @dep_path}
       ]
       |> compile_all_unloaded()
       |> Map.new(fn {module, binary} ->
@@ -164,7 +182,15 @@ defmodule Anchor.Managers.GraphTest do
       report = Graph.run(request(), deps())
 
       assert %GraphReport{exit_code: 0, findings: [], could_not_check: []} = report
-      assert report.counts == %{modules: 2, apps: 1, rules: 1, opaque: 0, no_core: 0}
+
+      assert report.counts == %{
+               modules: 2,
+               apps: 1,
+               rules: 1,
+               opaque: 0,
+               no_core: 0,
+               excluded: 0
+             }
     end
 
     # DND-5549: a function with no Core body is never silent.
@@ -451,6 +477,52 @@ defmodule Anchor.Managers.GraphTest do
       assert report.exit_code == 3
       assert [%{message: message}] = report.could_not_check
       assert message =~ ~s(--only "typo" names no graph rule)
+    end
+  end
+
+  describe "run/2 source paths outside the project root (DND-5588)" do
+    @inside AnchorFixtures.GraphManagerTest.Inside
+    @dep AnchorFixtures.GraphManagerTest.DepThing
+
+    test "an absolute path inside the root is a project module, read and classified by its relative path",
+         %{beams: beams} do
+      assert beams[@inside].elixir.relative_file == @inside_path
+
+      expect_run(config([rule(:stub_ok, "ok")]), classified(beams) ++ [beams[@inside]],
+        sources: Map.put(@sources, @inside_file, {:ok, @inside_source})
+      )
+
+      report = Graph.run(request(), deps())
+
+      assert %GraphReport{exit_code: 0, findings: [], could_not_check: []} = report
+      assert %{modules: 3, excluded: 0} = report.counts
+    end
+
+    test "an absolute path outside the root is a dependency: left out, counted, never read",
+         %{beams: beams} do
+      assert beams[@dep].elixir.relative_file == @dep_path
+
+      # The source double answers only the project's files: a read of the
+      # dependency's would be an unreadable-source issue.
+      expect_run(config([rule(:stub_ok, "ok")]), classified(beams) ++ [beams[@dep]])
+
+      report = Graph.run(request(), deps())
+
+      assert %GraphReport{exit_code: 0, findings: [], could_not_check: []} = report
+      assert %{modules: 2, excluded: 1} = report.counts
+      assert GraphReport.summary(report) =~ "2 modules (1 dependency modules excluded) in 1 apps"
+    end
+
+    test "only dependency modules read is COULD NOT MEASURE, never an empty pass", %{beams: beams} do
+      expect(ConfigLoaderMock, :load, fn -> {:ok, config([rule(:stub_ok, "ok")])} end)
+      Mox.expect(BeamSourceMock, :read_ebins, fn [{:my_app, @ebin}] -> [beams[@dep]] end)
+      expect(GraphStoreMock, :write, 0, fn _dir, _key, _term -> :ok end)
+
+      report = Graph.run(request(), deps())
+
+      assert report.exit_code == 3
+      assert [%{message: message}] = report.could_not_check
+      assert message =~ "read 0 modules from #{@ebin}"
     end
   end
 

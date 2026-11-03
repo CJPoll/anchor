@@ -193,7 +193,9 @@ config, beams, sources and the artifact only through adapters
 with Hammox, BeamSource with plain Mox because Hammox cannot match its
 `:cerl` record type (see `test/test_helper.exs`), and pass them as options,
 as `mix anchor.sabotage` does). `SourceSource` returns each file's
-`SourceFacts`, never its text. It builds
+`SourceFacts`, never its text. A module whose source path is absolute and
+outside the root is a dependency's, left out and counted; one inside the root
+is made relative (`Anchor.Domain.Graph.ProjectFile`, DND-5588). It builds
 the graph fresh, builds `Anchor.Domain.Model` (classification of every
 module), checks bucket and rule floors (`min_modules`), runs each graph rule
 under a `try`/`rescue`/`catch` guard, and returns

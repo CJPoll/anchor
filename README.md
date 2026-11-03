@@ -611,7 +611,11 @@ summary as `(<n> opaque)`; an unclassified one is an issue. No setting
 excludes a module silently. A function whose Core body the graph lacks (a
 `defmacrop`, a `defp` nothing calls) has no edges read from it, so the summary
 counts those too, as `(<n> functions with no Core body)`, and the JSON as
-`no_core`.
+`no_core`. A module whose source path is absolute and outside the project root
+(a path dependency's file, a generated one) is a dependency's: it is left out of
+the graph and counted as `(<n> dependency modules excluded)`, and in the JSON as
+`excluded` (DND-5588). An absolute path inside the root is made relative to it,
+so `paths:` selectors match it as they match every other file.
 
 ### Graph rows of the fail-closed table
 

@@ -9,10 +9,15 @@ defmodule Anchor.Managers.Graph do
     1. load `.anchor.yml` (`Anchor.Adapters.ConfigLoader`); a missing or
        invalid config is COULD NOT MEASURE (exit 3), and so is a config with no
        `architecture:` section: nothing could be classified;
-    2. read every beam of the project's ebins (`Anchor.Adapters.BeamSource`);
-       zero modules read is COULD NOT MEASURE (exit 3);
+    2. read every beam of the project's ebins (`Anchor.Adapters.BeamSource`)
+       and leave out each module whose source is a dependency's: an absolute
+       path outside the root (`Anchor.Domain.Graph.ProjectFile`, DND-5588),
+       counted in the summary; zero project modules read is COULD NOT
+       MEASURE (exit 3);
     3. read each module's source file's facts (`Anchor.Adapters.SourceSource`):
-       its literal `defmodule`s and `use`s (`Anchor.Domain.Graph.SourceFacts`);
+       its literal `defmodule`s and `use`s (`Anchor.Domain.Graph.SourceFacts`),
+       by its path relative to the root (an absolute path inside the root is
+       made relative);
     4. build the graph fresh (`Anchor.Domain.Graph.Builder`): never a cached
        one, and never a cached verdict;
     5. build the model (`Anchor.Domain.Model`): classify every module into
@@ -51,6 +56,7 @@ defmodule Anchor.Managers.Graph do
   alias Anchor.Domain.Graph
   alias Anchor.Domain.Graph.Beam
   alias Anchor.Domain.Graph.Builder
+  alias Anchor.Domain.Graph.ProjectFile
   alias Anchor.Domain.GraphKey
   alias Anchor.Domain.GraphReport
   alias Anchor.Domain.GraphReport.Finding
@@ -68,8 +74,8 @@ defmodule Anchor.Managers.Graph do
 
     with {:ok, config} <- load_config(deps.config_loader),
          {:ok, rules} <- graph_rules(config, request, deps.graph_rules),
-         {:ok, beams} <- read_beams(deps.beam_source, request) do
-      measured(request, config, rules, beams, deps)
+         {:ok, beams, excluded} <- read_beams(deps.beam_source, request) do
+      measured(request, config, rules, {beams, excluded}, deps)
     else
       {:could_not_check, violation} ->
         GraphReport.new(
@@ -125,17 +131,25 @@ defmodule Anchor.Managers.Graph do
     end
   end
 
-  defp read_beams(source, %Request{apps: apps}) do
-    beams = source.read_ebins(apps)
+  # A dependency's module (its source outside the root) is left out before
+  # anything is built, and counted; a run that read only those read no
+  # project module (DND-5588).
+  defp read_beams(source, %Request{apps: apps, root: root}) do
+    {excluded, beams} = apps |> source.read_ebins() |> Enum.split_with(&dependency?(&1, root))
 
     if Enum.any?(beams, &match?(%Beam{}, &1)),
-      do: {:ok, beams},
+      do: {:ok, beams, length(excluded)},
       else: {:could_not_check, Failures.graph_no_modules(Enum.map(apps, &elem(&1, 1)))}
   end
 
-  defp measured(request, config, rules, beams, deps) do
+  defp dependency?(%Beam{elixir: %{relative_file: file}}, root) when is_binary(file),
+    do: ProjectFile.place(file, root) == :dependency
+
+  defp dependency?(_beam, _root), do: false
+
+  defp measured(request, config, rules, {beams, excluded}, deps) do
     {source_facts, source_issues} = source_facts(deps.source_source, request.root, beams)
-    graph = Builder.build(beams, source_facts)
+    graph = Builder.build(beams, source_facts, root: request.root)
     {model, class_issues} = Model.build(graph, config, source_facts)
     unreadable_issues = unreadable_issues(graph)
     rule_findings = Enum.flat_map(rules, &run_rule(&1, model, config.path))
@@ -153,6 +167,7 @@ defmodule Anchor.Managers.Graph do
       request
       |> counts(map_size(graph.modules), length(rules), length(Model.opaque(model)))
       |> Map.put(:no_core, no_core_count(graph))
+      |> Map.put(:excluded, excluded)
     )
   end
 
@@ -160,8 +175,12 @@ defmodule Anchor.Managers.Graph do
     files =
       beams
       |> Enum.flat_map(fn
-        %Beam{elixir: %{relative_file: file}} when is_binary(file) -> [file]
-        _other -> []
+        %Beam{elixir: %{relative_file: file}} when is_binary(file) ->
+          {:project, relative} = ProjectFile.place(file, root)
+          [relative]
+
+        _other ->
+          []
       end)
       |> Enum.uniq()
       |> Enum.sort()
@@ -294,7 +313,14 @@ defmodule Anchor.Managers.Graph do
   end
 
   defp counts(%Request{apps: apps}, modules, rules, opaque),
-    do: %{modules: modules, apps: length(apps), rules: rules, opaque: opaque, no_core: 0}
+    do: %{
+      modules: modules,
+      apps: length(apps),
+      rules: rules,
+      opaque: opaque,
+      no_core: 0,
+      excluded: 0
+    }
 
   # Every function the graph has no Core body for: no call in it was read, so
   # the summary counts them (DND-5549).
