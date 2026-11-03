@@ -531,6 +531,15 @@ defmodule Anchor.Domain.Failures do
     )
   end
 
+  def baseline_unreadable(rule, path, {:symlink, link}) do
+    graph_issue(
+      path,
+      nil,
+      "#{rule_label(rule)}'s baseline #{path} was not read: #{symlink_text(link)}, so none " <>
+        "of its findings is held. Fix: #{symlink_fix(link)}"
+    )
+  end
+
   def baseline_unreadable(rule, path, reason) do
     graph_issue(
       path,
@@ -591,6 +600,16 @@ defmodule Anchor.Domain.Failures do
   judged, and a failed read never reads as "no growth".
   """
   @spec baseline_base_unreadable(String.t(), String.t(), term()) :: Violation.t()
+  def baseline_base_unreadable(path, ref, {:symlink, link}) do
+    graph_issue(
+      path,
+      nil,
+      "#{path} at #{ref} was not read: #{link} is a symlink there, and Anchor never " <>
+        "follows one out of the project root, so whether the branch added to it (GREW) " <>
+        "could not be judged. Fix: #{symlink_fix(link)}"
+    )
+  end
+
   def baseline_base_unreadable(path, ref, reason) do
     graph_issue(
       path,
@@ -642,6 +661,14 @@ defmodule Anchor.Domain.Failures do
 
   @doc "The issue for a baseline `--write-baseline` could not create (DND-5441)."
   @spec baseline_not_written(String.t(), term()) :: Violation.t()
+  def baseline_not_written(path, {:symlink, link}) do
+    graph_issue(
+      path,
+      nil,
+      "Anchor did not create #{path}: #{symlink_text(link)}. Fix: #{symlink_fix(link)}"
+    )
+  end
+
   def baseline_not_written(path, reason) do
     graph_issue(
       path,
@@ -924,4 +951,13 @@ defmodule Anchor.Domain.Failures do
     "Anchor could not load #{path} (#{inspect(detail)}), so no Anchor rule was checked. " <>
       "Fix: correct #{path} to match #{@schema_pointer}."
   end
+
+  # DND-5628: a symlink on a baseline's path, which Anchor refuses to follow.
+  defp symlink_text(link),
+    do: "#{link} is a symlink, and Anchor never follows one out of the project root"
+
+  defp symlink_fix(link),
+    do:
+      "replace the symlink #{link} with a real directory or file inside the project, " <>
+        "or point baseline: at a path with no symlink on it."
 end

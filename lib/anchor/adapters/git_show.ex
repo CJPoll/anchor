@@ -12,10 +12,13 @@ defmodule Anchor.Adapters.GitShow do
 
     1. `git rev-parse --verify --quiet --end-of-options <ref>^{commit}`: a ref
        that does not resolve is an error, never an absent file;
-    2. `git ls-tree <sha> -- <path>`: an empty answer is an absent file (the
-       commit resolved, so the path is what is missing), and a failure is an
-       error, never absent. It prints nothing for an absent path, where
-       `cat-file -e` wrote a `fatal:` line to the terminal;
+    2. `git ls-tree -z <sha> -- <each prefix of path>`: an entry of mode
+       120000 (a symlink) at the file or any directory above it is
+       `{:error, {:symlink, prefix}}`, never followed (DND-5628); no entry
+       for the file is an absent file (the commit resolved, so the path is
+       what is missing), and a failure is an error, never absent. It prints
+       nothing for an absent path, where `cat-file -e` wrote a `fatal:` line
+       to the terminal;
     3. `git cat-file blob <sha>:./<path>`: the bytes, parsed by
        `Anchor.Domain.Baseline.parse/1` (the port returns entries).
 
@@ -38,16 +41,34 @@ defmodule Anchor.Adapters.GitShow do
   end
 
   defp show_valid(root, ref, path) do
+    parts = Path.split(path) -- ["."]
+    prefixes = Enum.scan(parts, &(&2 <> "/" <> &1))
+    full = List.last(prefixes)
+
     with {:ok, sha} <- resolve(root, ref),
-         {:ok, listed} <- git(root, ["ls-tree", sha, "--", path]),
-         :ok <- present(listed),
-         {:ok, bytes} <- git(root, ["cat-file", "blob", sha <> ":./" <> path]) do
+         {:ok, listed} <- git(root, ["ls-tree", "-z", sha, "--" | prefixes]),
+         :ok <- present(entries(listed), prefixes, full),
+         {:ok, bytes} <- git(root, ["cat-file", "blob", sha <> ":./" <> full]) do
       Baseline.parse(bytes)
     end
   end
 
-  defp present(""), do: {:error, :absent}
-  defp present(_listed), do: :ok
+  # `ls-tree -z` lines: `<mode> <type> <object>\t<path>`, NUL-terminated.
+  defp entries(listed) do
+    for line <- String.split(listed, <<0>>, trim: true),
+        [meta, entry_path] = String.split(line, "\t", parts: 2),
+        into: %{},
+        do: {entry_path, meta |> String.split(" ") |> hd()}
+  end
+
+  # A symlink (mode 120000) on the path, the file or a directory above it, is
+  # refused and never followed (DND-5628); the shallowest one is named.
+  defp present(entries, prefixes, full) do
+    case Enum.find(prefixes, &(Map.get(entries, &1) == "120000")) do
+      nil -> if Map.has_key?(entries, full), do: :ok, else: {:error, :absent}
+      link -> {:error, {:symlink, link}}
+    end
+  end
 
   defp resolve(root, ref) do
     with {:ok, out} <-

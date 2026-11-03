@@ -21,6 +21,8 @@ defmodule Anchor.Adapters.GitBase do
               | {:error,
                  :absent
                  | :bad_ref
+                 | :outside_root
+                 | {:symlink, String.t()}
                  | {:line, pos_integer(), :invalid_utf8}
                  | {:git, non_neg_integer() | :enoent, String.t()}}
 end

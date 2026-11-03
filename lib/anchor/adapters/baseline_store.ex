@@ -19,8 +19,12 @@ defmodule Anchor.Adapters.BaselineStore do
 
   @callback read(root :: Path.t(), path :: Path.t()) ::
               {:ok, [String.t()]}
-              | {:error, {:line, pos_integer(), :invalid_utf8} | :outside_root | File.posix()}
+              | {:error,
+                 {:line, pos_integer(), :invalid_utf8}
+                 | :outside_root
+                 | {:symlink, String.t()}
+                 | File.posix()}
 
   @callback create(root :: Path.t(), path :: Path.t(), contents :: binary()) ::
-              :ok | {:error, :exists | term()}
+              :ok | {:error, :exists | :outside_root | {:symlink, String.t()} | term()}
 end

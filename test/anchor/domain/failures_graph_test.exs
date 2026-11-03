@@ -10,6 +10,7 @@ defmodule Anchor.Domain.FailuresGraphTest do
   # DND-5441 (the baseline_* messages):
   #   ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
   # DND-5584 (graph_app_no_modules): ../../sabotage_records/graph_runner-20261103-dnd_5441_graph_rules_a.md
+  # DND-5628 (the symlink rows): ../../sabotage_records/baseline_symlink-20261103-dnd_5441_graph_rules_a.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Failures
@@ -143,6 +144,27 @@ defmodule Anchor.Domain.FailuresGraphTest do
        ["wrote 3 entries to b.txt.", "Fix: review it in this change"]},
       {"baseline_not_written", Failures.baseline_not_written("b.txt", :eacces), "b.txt",
        ["could not create b.txt (:eacces)", "Fix: make its directory writable"]},
+      # DND-5628: a symlink on the path is named, with what to do about it.
+      {"baseline_unreadable symlink",
+       Failures.baseline_unreadable(baselined, "b/x.txt", {:symlink, "b"}), "b/x.txt",
+       [
+         ~s|rule 2 (id: "web", layering)'s baseline b/x.txt was not read: b is a symlink|,
+         "Anchor never follows one out of the project root",
+         "Fix: replace the symlink b with a real directory or file inside the project"
+       ]},
+      {"baseline_not_written symlink",
+       Failures.baseline_not_written("b/x.txt", {:symlink, "b/x.txt"}), "b/x.txt",
+       [
+         "Anchor did not create b/x.txt: b/x.txt is a symlink",
+         "Fix: replace the symlink b/x.txt with a real directory or file inside the project"
+       ]},
+      {"baseline_base_unreadable symlink",
+       Failures.baseline_base_unreadable("b/x.txt", "main", {:symlink, "b"}), "b/x.txt",
+       [
+         "b/x.txt at main was not read: b is a symlink there",
+         "(GREW) could not be judged",
+         "Fix: replace the symlink b with a real directory or file inside the project"
+       ]},
       {"write_baseline_unknown", Failures.write_baseline_unknown("web", nil), ".anchor.yml",
        [~s|--write-baseline "web" names no graph rule of .anchor.yml|, "Fix: give that rule"]},
       {"graph_unknown_only", Failures.graph_unknown_only(["nope"], "proj/.anchor.yml"),

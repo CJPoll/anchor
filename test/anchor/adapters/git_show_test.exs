@@ -4,6 +4,7 @@ defmodule Anchor.Adapters.GitShowTest do
   # global config.
   #
   # Sabotage record: ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
+  # DND-5628 (symlinks): ../../sabotage_records/baseline_symlink-20261103-dnd_5441_graph_rules_a.md
   use ExUnit.Case, async: true
 
   alias Anchor.Adapters.GitShow
@@ -134,5 +135,29 @@ defmodule Anchor.Adapters.GitShowTest do
     assert GitShow.show(root, "--output=/tmp/x", ".anchor/baselines/r.txt") == {:error, :bad_ref}
     # Positive control: a valid ref in the same repository does reach git.
     assert {:ok, _bytes} = GitShow.show(root, "main", ".anchor/baselines/r.txt")
+  end
+
+  # DND-5628: --base reads the blob from git, never the working tree, so a
+  # symlink there is a tree entry of mode 120000, refused, never followed.
+  describe "a symlink at the ref (DND-5628)" do
+    test "a symlinked file is refused, naming it", %{tmp_dir: root} do
+      repo!(root)
+      File.ln_s!("/etc/hostname", Path.join(root, ".anchor/baselines/link.txt"))
+      git!(root, ["add", "."])
+      git!(root, ["commit", "-q", "-m", "link"])
+
+      assert GitShow.show(root, "main", ".anchor/baselines/link.txt") ==
+               {:error, {:symlink, ".anchor/baselines/link.txt"}}
+    end
+
+    test "a symlinked directory on the path is refused, naming it", %{tmp_dir: root} do
+      repo!(root)
+      File.ln_s!("/etc", Path.join(root, ".anchor/etc"))
+      git!(root, ["add", "."])
+      git!(root, ["commit", "-q", "-m", "link"])
+
+      assert GitShow.show(root, "main", ".anchor/etc/hostname") ==
+               {:error, {:symlink, ".anchor/etc"}}
+    end
   end
 end
