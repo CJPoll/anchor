@@ -64,6 +64,11 @@ before coining a synonym.
   (`Anchor.Domain.Sabotage.FunctionSpans`), the mapping and its counts
   (`Anchor.Domain.Sabotage.Scope`), the git adapter
   (`Anchor.Adapters.GitChangeSource`), the `scope/2` Manager path and the task.
+- `sabotage` — the causal sabotage generator (DND-5471): every
+  `Anchor.Domain.Sabotage.*` module that makes mutants (`Mutator`,
+  `Operators`, `OrphanCheck`, `SourceTree`, `Patch`, `MutantId`,
+  `EffectCalls`, `Mutant`, `Skipped`). `sabotage_scope` stays the word for
+  the diff scope.
 - `dependency_analyzer` — `Anchor.Domain.DependencyAnalyzer`, the pure AST
   walk behind every dependency fact (module names, references, calls, uses,
   the module graph).

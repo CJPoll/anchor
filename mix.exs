@@ -18,7 +18,7 @@ defmodule Anchor.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:logger]
+      extra_applications: [:logger, :crypto]
     ]
   end
 
@@ -27,6 +27,7 @@ defmodule Anchor.MixProject do
     [
       {:credo, "~> 1.7"},
       {:yaml_elixir, "~> 2.9"},
+      {:sourceror, "~> 1.7"},
       {:ex_doc, "~> 0.31", only: :dev, runtime: false},
       {:hammox, "~> 0.7", only: :test}
     ]
