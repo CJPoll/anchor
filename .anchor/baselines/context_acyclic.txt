@@ -1,0 +1,4 @@
+# anchor baseline for context_acyclic; shrink only
+# Landed with DND-5445. Anchor.Check <-> Anchor.Managers: the checks call
+# Lint.detect_file/5, and Lint calls Check.Source.ast/1 (DND-1288).
+context_acyclic|Anchor.Check,Anchor.Managers

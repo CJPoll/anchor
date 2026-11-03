@@ -5,7 +5,8 @@ defmodule Anchor.Domain.ViolationKey do
 
   A key is what a baseline file lists (`Anchor.Domain.Baseline`), so it must
   not move when unrelated code moves: it carries **no line number and no
-  message text**, only `<rule>|<subject>|<detail>`:
+  message text**, only `<rule>|<subject>|<detail>` (or `<rule>|<subject>`
+  for a rule whose finding has no target, such as `context_acyclic`):
 
     * `rule` — the rule's `id`, or its type when it has none (a rule that
       carries a `baseline` must have an `id`, so every baselined key starts
@@ -21,6 +22,15 @@ defmodule Anchor.Domain.ViolationKey do
   @spec graph_key(map(), String.t(), String.t()) :: String.t()
   def graph_key(rule, subject, detail) do
     Enum.map_join([rule_name(rule), subject, detail], "|", &segment!/1)
+  end
+
+  @doc """
+  The key of a finding of `rule` that is about `subject` alone, with no target
+  (`context_acyclic|A,B,C`).
+  """
+  @spec graph_key(map(), String.t()) :: String.t()
+  def graph_key(rule, subject) do
+    Enum.map_join([rule_name(rule), subject], "|", &segment!/1)
   end
 
   @doc "The key segment naming `rule`: its `id`, or its type when it has none."

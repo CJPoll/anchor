@@ -25,6 +25,7 @@ defmodule Anchor.Domain.GraphRules do
   """
 
   alias Anchor.Domain.GlobPattern
+  alias Anchor.Domain.GraphRules.ContextAcyclic
   alias Anchor.Domain.GraphRules.Layering
   alias Anchor.Domain.Model
 
@@ -32,7 +33,7 @@ defmodule Anchor.Domain.GraphRules do
 
   # Every module implementing `Anchor.Domain.GraphRule`. The rule tickets add
   # theirs here (see the moduledoc).
-  @rules [Layering]
+  @rules [Layering, ContextAcyclic]
 
   @doc "Every graph rule module."
   @spec all() :: [module()]

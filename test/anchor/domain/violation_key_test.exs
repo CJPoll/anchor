@@ -44,6 +44,14 @@ defmodule Anchor.Domain.ViolationKeyTest do
     end
   end
 
+  describe "graph_key/2" do
+    test "<id>|<subject>, for a finding with no target; a newline raises" do
+      assert ViolationKey.graph_key(%{type: :context_acyclic}, "A,B") == "context_acyclic|A,B"
+      assert ViolationKey.graph_key(%{type: :context_acyclic, id: "c"}, "A,B") == "c|A,B"
+      assert_raise ArgumentError, fn -> ViolationKey.graph_key(%{type: :t}, "A\nB") end
+    end
+  end
+
   describe "mfa/1" do
     test "Mod.fun/arity without the Elixir. prefix; an Erlang module keeps its colon" do
       assert ViolationKey.mfa({MyApp.Repo, :insert, 2}) == "MyApp.Repo.insert/2"

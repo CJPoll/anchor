@@ -438,13 +438,14 @@ another type (`match` on a `no_transitive_dependency` rule) is unknown too.
 
 The Engine column is the one engine that runs the type: `ast` rules run as
 Credo checks over source, `graph` rules run under `mix anchor.graph` over the
-compiled code (DND-5440; `layering` is the first, DND-5442). Credo never reports a
+compiled code (DND-5440; `layering`, DND-5442, and `context_acyclic`, DND-5445). Credo never reports a
 `graph` rule as unchecked.
 
 | Rule type | Keys beyond the common ones | Relation (needs one, non-empty) | Engine |
 |---|---|---|---|
 | `alphabetized_functions` | `mode` | none | `ast` |
 | `case_on_bare_arg` | none | none | `ast` |
+| `context_acyclic` | none | none | `graph` |
 | `layering` | none | none | `graph` |
 | `max_file_length` | `max_lines` | none | `ast` |
 | `module_pattern_restrictions` | `allowed_functions` | none | `ast` |
@@ -713,6 +714,48 @@ lib/my_app/web/page.ex:12: [enforce] rule 1 (id: "layering", layering) MyApp.Web
 
 Anchor's own `.anchor.yml` runs it over `lib/` with a baseline,
 `.anchor/baselines/layering.txt`, holding what it found when it landed.
+
+### The `context_acyclic` rule (DND-5445)
+
+```yaml
+rules:
+  - type: context_acyclic
+    id: context_acyclic
+    paths: ["lib/**/*.ex"]
+
+architecture:
+  contexts:
+    depth: 2
+  buckets:
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/**/*.ex"]
+  calls:
+    domain: [domain]
+```
+
+A cycle between contexts leaves the causal order between them undefined.
+`context_acyclic` collapses the calls of the modules it selects into a context
+graph: a call from one context to another (both known and different) is an
+edge `A -> B`, and a dynamic call resolved through a behaviour is an edge to
+each implementation's context. Each strongly connected component of more than
+one context is one violation; a context calling itself is not a cycle.
+
+The message lists every edge inside the cycle with one call that makes it,
+and names the edge to invert: the one with the fewest calls (ties: the
+lexically first), at its first call's line. Inverting `X -> Y` removes X's
+dependency on Y: X publishes an event Y subscribes to, or X declares the
+function it needs in an interface it owns and Y implements it. The key is
+`<id>|<the cycle's contexts, sorted, joined by ",">`, so it stays the same
+while the cycle's members do.
+
+```
+lib/my_app/billing/manager.ex:40: [enforce] rule 1 (id: "context_acyclic", context_acyclic) contexts MyApp.Billing, MyApp.Orders form a cycle: MyApp.Billing -> MyApp.Orders (MyApp.Billing.Manager.charge/1 calls MyApp.Orders.Manager.get/1), MyApp.Orders -> MyApp.Billing (MyApp.Orders.Manager.place/1 calls MyApp.Billing.Manager.charge/1). Fix: invert MyApp.Billing -> MyApp.Orders (its 1 call is the fewest): have MyApp.Billing publish an event MyApp.Orders subscribes to, or declare the function MyApp.Billing needs in an interface MyApp.Billing owns and have MyApp.Orders implement it.
+```
+
+Anchor's own `.anchor.yml` runs it over `lib/`, with a baseline holding the
+one cycle it found when it landed (`Anchor.Check <-> Anchor.Managers`).
 
 The only file it writes is `_build/<env>/anchor/graph.etf`, the graph keyed by
 a sha256 of the beams, the config and Anchor's version, for `mix

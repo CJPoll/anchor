@@ -244,6 +244,21 @@ pair, at its first line. The canary has a framework bucket with
 `.anchor.yml` runs the rule with a baseline (DND-1288's two `Lint ->
 Check.Source` calls, and dynamic calls no project behaviour declares).
 
+## The context_acyclic rule (DND-5445)
+
+`Anchor.Domain.ContextGraph.build/2` collapses the calls of the selected
+modules to context edges `{a, b} => [witness]` (witness `{caller_mfa,
+callee_mfa, file, line}`, sorted), skipping a call within one context, to an
+unclassified or non-project module, with a nil context, and a dynamic call
+`DynamicCalls` does not resolve (layering reports those).
+`Anchor.Domain.GraphRules.ContextAcyclic` runs `GraphAlgorithms.sccs/1` over
+it and reports each SCC of two or more contexts once, keyed
+`ViolationKey.graph_key/2` (`<id>|A,B,C`), at the first witness of the edge to
+invert (fewest witnesses, ties lexical). The canary's cycle pair is
+`lib/canary/domain/cycle/` (`AnchorFixtures.CycleA`/`CycleB`, their own
+contexts). Anchor's own `.anchor.yml` runs it with a baseline holding
+`Anchor.Check <-> Anchor.Managers` (DND-1288).
+
 ## Higher-order flow (DND-5497)
 
 `Anchor.Domain.Cfa.analyze/3` is a whole-program 0-CFA over every

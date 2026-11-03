@@ -191,6 +191,9 @@ defmodule Anchor.Domain.RuleSchema do
   @keys_by_type %{
     alphabetized_functions: ~w(mode),
     case_on_bare_arg: [],
+    # DND-5445: context_acyclic reads only the graph common keys (the contexts
+    # are the `architecture:` section's).
+    context_acyclic: [],
     # DND-5442: the graph engine's layering rule reads only the graph common
     # keys (its matrix is the `architecture:` section's `calls`).
     layering: [],
@@ -217,6 +220,7 @@ defmodule Anchor.Domain.RuleSchema do
   @relations_by_type %{
     alphabetized_functions: [],
     case_on_bare_arg: [],
+    context_acyclic: [],
     layering: [],
     max_file_length: [],
     module_pattern_restrictions: [],
@@ -239,6 +243,7 @@ defmodule Anchor.Domain.RuleSchema do
   @engine_by_type %{
     alphabetized_functions: :ast,
     case_on_bare_arg: :ast,
+    context_acyclic: :graph,
     layering: :graph,
     max_file_length: :ast,
     module_pattern_restrictions: :ast,

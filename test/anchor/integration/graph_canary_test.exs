@@ -8,7 +8,8 @@ defmodule Anchor.Integration.GraphCanaryTest do
   # and a violating module per rule here (epic QA plan).
   #
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5440_graph_runner.md
-  # (layering rows: ../../sabotage_records/layering-20261103-dnd_5441_graph_rules_a.md)
+  # (layering rows: ../../sabotage_records/layering-20261103-dnd_5441_graph_rules_a.md;
+  # context_acyclic rows: ../../sabotage_records/context_acyclic-20261103-dnd_5441_graph_rules_a.md)
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -30,7 +31,8 @@ defmodule Anchor.Integration.GraphCanaryTest do
   @ebin "_build/test/lib/canary/ebin"
   @stray_file "lib/canary/unclassified.ex"
   @layering_violating "lib/canary/framework/layering/violating.ex"
-  @violating [@stray_file, @layering_violating]
+  @cycle_violating "lib/canary/domain/cycle/cycle_b.ex"
+  @violating [@stray_file, @layering_violating, @cycle_violating]
 
   setup_all do
     files =
@@ -79,26 +81,26 @@ defmodule Anchor.Integration.GraphCanaryTest do
     assert %GraphReport{exit_code: 0, findings: [], could_not_check: []} = report
 
     assert GraphReport.summary(report) ==
-             "anchor.graph: 5 modules in 1 apps, 1 rules, 0 violations (0 report-only, 0 baselined)"
+             "anchor.graph: 6 modules in 1 apps, 2 rules, 0 violations (0 report-only, 0 baselined)"
   end
 
   test "positive control: the deliberately unclassified module gives exactly one issue", %{
     beams: beams
   } do
-    report = run(without(beams, [@layering_violating]))
+    report = run(without(beams, @violating -- [@stray_file]))
 
     assert report.exit_code == 1
     assert [finding] = report.findings
     assert finding.file == @stray_file
     assert finding.line == 3
     assert finding.message =~ "AnchorFixtures.GraphCanary.Stray is in no architecture bucket."
-    assert report.counts.modules == 6
+    assert report.counts.modules == 7
   end
 
   test "layering (DND-5442): the violating module gives exactly one finding, with the route", %{
     beams: beams
   } do
-    report = run(without(beams, [@stray_file]))
+    report = run(without(beams, @violating -- [@layering_violating]))
 
     assert report.exit_code == 1
     assert [finding] = report.findings
@@ -133,7 +135,7 @@ defmodule Anchor.Integration.GraphCanaryTest do
       )
 
     File.write!(Path.join(tmp_dir, ".anchor.yml"), config)
-    measured = without(beams, [@stray_file])
+    measured = without(beams, @violating -- [@layering_violating])
     baseline = Path.join(tmp_dir, ".anchor/baselines/layering.txt")
 
     written = run(measured, tmp_dir, %{write_baseline: "layering"})
@@ -152,6 +154,41 @@ defmodule Anchor.Integration.GraphCanaryTest do
     assert [finding] = stale.findings
     assert finding.file == ".anchor/baselines/layering.txt"
     assert finding.message =~ "matches no finding (it was fixed)"
+  end
+
+  test "context_acyclic (DND-5445): CycleA and CycleB calling each other give one finding", %{
+    beams: beams
+  } do
+    report = run(without(beams, @violating -- [@cycle_violating]))
+
+    assert report.exit_code == 1
+    assert [finding] = report.findings
+    assert finding.rule_id == "context_acyclic"
+    assert finding.key == "context_acyclic|AnchorFixtures.CycleA,AnchorFixtures.CycleB"
+
+    assert finding.message =~
+             "contexts AnchorFixtures.CycleA, AnchorFixtures.CycleB form a cycle: " <>
+               "AnchorFixtures.CycleA -> AnchorFixtures.CycleB (AnchorFixtures.CycleA.a/1 calls " <>
+               "AnchorFixtures.CycleB.b/1), AnchorFixtures.CycleB -> AnchorFixtures.CycleA"
+  end
+
+  test "context_acyclic: CycleB without its call back is none", %{beams: beams} do
+    one_way =
+      """
+      defmodule AnchorFixtures.CycleB do
+        @moduledoc false
+        def b(x), do: x
+      end
+      """
+      |> compile_unloaded(@cycle_violating)
+      |> Enum.map(fn {module, binary} ->
+        BeamReader.decode(binary, app: :canary, path: "#{@ebin}/#{module}.beam")
+      end)
+
+    report = run(without(beams, @violating) ++ one_way)
+
+    assert %GraphReport{exit_code: 0, findings: []} = report
+    assert report.counts.modules == 7
   end
 
   defp without(beams, files), do: Enum.reject(beams, &(&1.elixir.relative_file in files))

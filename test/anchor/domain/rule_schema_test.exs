@@ -47,6 +47,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
   @typos %{
     alphabetized_functions: "mdoe",
     case_on_bare_arg: "pahts",
+    context_acyclic: "min_module",
     layering: "min_module",
     max_file_length: "max_line",
     module_pattern_restrictions: "allowed_function",

@@ -424,21 +424,23 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
 
   # The types with no relation and no key of their own: they check every file
   # they select, so only the common rows apply.
-  # DND-5442: the first graph type. Its rows are the graph common rows,
-  # loaded through `Config.parse_config/1` with an `architecture:` section
-  # (`parse_one/1`), plus what only a whole document decides.
-  defp table(:layering) do
-    base = %{"type" => "layering", "bucket" => "domain"}
+  # DND-5442, DND-5445: the graph types, neither reading a key of its own.
+  # Their rows are the graph common rows, loaded through
+  # `Config.parse_config/1` with an `architecture:` section (`parse_one/1`),
+  # plus what only a whole document decides.
+  defp table(type) when type in [:layering, :context_acyclic] do
+    name = Atom.to_string(type)
+    base = %{"type" => name, "bucket" => "domain"}
 
     graph_common_rows()
     |> Enum.map(fn {label, rule, expected} ->
-      {label, Map.put(rule, "type", "layering"), expected}
+      {label, Map.put(rule, "type", name), expected}
     end)
     |> Enum.concat([
       {"a bucket naming no architecture bucket", Map.put(base, "bucket", "web"),
        {:refused, "`bucket: web` names no architecture: bucket"}},
       {"positive: a pattern rule with the architecture section",
-       %{"type" => "layering", "pattern" => "MyApp.*"}, :accepted}
+       %{"type" => name, "pattern" => "MyApp.*"}, :accepted}
     ])
   end
 

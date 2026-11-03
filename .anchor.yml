@@ -120,6 +120,17 @@ rules:
     paths: ["lib/**/*.ex"]
     baseline: .anchor/baselines/layering.txt
 
+  # --- Rule: no cycle between contexts (DND-5445) ---
+  #
+  # The calls of lib/ collapsed to contexts (depth 2: Anchor.Domain,
+  # Anchor.Managers, ...) must form no cycle. The baseline holds the one it
+  # found when it landed: Anchor.Check <-> Anchor.Managers, whose
+  # Managers -> Check half is Lint's reach into Check.Source (DND-1288).
+  - type: context_acyclic
+    id: context_acyclic
+    paths: ["lib/**/*.ex"]
+    baseline: .anchor/baselines/context_acyclic.txt
+
 # The ADR-001 five buckets over Anchor's compiled code, judged by
 # `mix anchor.graph` (DND-5440) in Anchor's own CI (run in the dev env, so the
 # graph is lib/ as it ships: test/support is compiled only under MIX_ENV=test).

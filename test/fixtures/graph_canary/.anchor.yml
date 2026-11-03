@@ -5,6 +5,9 @@ rules:
   - type: layering
     id: layering
     paths: ["lib/canary/**/*.ex"]
+  - type: context_acyclic
+    id: context_acyclic
+    paths: ["lib/canary/**/*.ex"]
 
 architecture:
   contexts:
