@@ -4,6 +4,8 @@ defmodule Anchor.Domain.FailuresGraphTest do
   # names its subject and ends with a Fix: line. Table-driven.
   #
   # Sabotage record: ../../sabotage_records/failures-20261103-dnd_5440_graph_runner.md
+  # DND-5441 (the baseline_* messages):
+  #   ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
   # DND-5584 (graph_app_no_modules): ../../sabotage_records/graph_runner-20261103-dnd_5441_graph_rules_a.md
   use ExUnit.Case, async: true
 
@@ -64,6 +66,7 @@ defmodule Anchor.Domain.FailuresGraphTest do
   # {name, violation, its file, the texts its message must hold}
   defp rows do
     rule = %{type: :layering, id: "web", index: 2}
+    baselined = Map.put(rule, :baseline, "b.txt")
 
     crashed =
       try do
@@ -94,6 +97,33 @@ defmodule Anchor.Domain.FailuresGraphTest do
          "read 0 modules for app :other from _build/dev/lib/other/ebin",
          "Fix: run mix compile for :other"
        ]},
+      {"baseline_unreadable", Failures.baseline_unreadable(baselined, "b.txt", :enoent), "b.txt",
+       [
+         ~s|rule 2 (id: "web", layering)'s baseline b.txt could not be read (:enoent)|,
+         "Fix: create it with mix anchor.graph --write-baseline web"
+       ]},
+      {"baseline_unreadable not UTF-8",
+       Failures.baseline_unreadable(baselined, "b.txt", {:line, 4, :invalid_utf8}), "b.txt",
+       ["b.txt line 4 is not UTF-8", "Fix: rewrite that line as UTF-8"]},
+      {"baseline_foreign", Failures.baseline_foreign(baselined, "b.txt", "x|A|y"), "b.txt",
+       [~s(b.txt is the baseline of "web" but holds "x|A|y"), "Fix: one baseline per rule"]},
+      {"baseline_base_unreadable", Failures.baseline_base_unreadable("b.txt", "main", :boom),
+       "b.txt",
+       [
+         "could not read b.txt at main (:boom)",
+         "(GREW) could not be judged",
+         "Fix: pass a --base"
+       ]},
+      {"baseline_first_landing", Failures.baseline_first_landing("b.txt", "main"), "b.txt",
+       ["NOTE: first landing of b.txt (absent at main); review is the gate.", "Fix: review"]},
+      {"baseline_exists", Failures.baseline_exists("b.txt"), "b.txt",
+       ["b.txt exists; --write-baseline only creates", "Fix: delete the lines of fixed findings"]},
+      {"baseline_written", Failures.baseline_written("b.txt", 3), "b.txt",
+       ["wrote 3 entries to b.txt.", "Fix: review it in this change"]},
+      {"baseline_not_written", Failures.baseline_not_written("b.txt", :eacces), "b.txt",
+       ["could not create b.txt (:eacces)", "Fix: make its directory writable"]},
+      {"write_baseline_unknown", Failures.write_baseline_unknown("web", nil), ".anchor.yml",
+       [~s|--write-baseline "web" names no graph rule of .anchor.yml|, "Fix: give that rule"]},
       {"graph_unknown_only", Failures.graph_unknown_only(["nope"], "proj/.anchor.yml"),
        "proj/.anchor.yml",
        [
@@ -175,5 +205,17 @@ defmodule Anchor.Domain.FailuresGraphTest do
           do:
             assert(violation.message =~ text, "#{name}: #{inspect(text)} in #{violation.message}")
     end
+  end
+
+  # STALE and GREW are rule findings (they take the rule's enforcement), not
+  # fail-closed issues: on the baseline path, keyed, ending with Fix:.
+  test "baseline_stale and baseline_grew are rule violations on the baseline path, keyed" do
+    stale = Failures.baseline_stale("b.txt", "web|A|x")
+    grew = Failures.baseline_grew("b.txt", "web|B|y", "main")
+
+    assert %Violation{kind: :rule, filename: "b.txt", key: "web|A|x"} = stale
+    assert stale.message =~ "web|A|x in b.txt matches no finding (it was fixed). Fix: delete"
+    assert %Violation{kind: :rule, filename: "b.txt", key: "web|B|y"} = grew
+    assert grew.message =~ "web|B|y was added to b.txt since main. Fix: fix the finding instead"
   end
 end

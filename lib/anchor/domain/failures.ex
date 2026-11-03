@@ -455,6 +455,160 @@ defmodule Anchor.Domain.Failures do
     )
   end
 
+  @doc """
+  The issue for a rule's `baseline:` file that could not be read (DND-5441):
+  missing, unreadable, or not UTF-8 (`{:line, n, :invalid_utf8}`). The rule's
+  findings could not be compared with it, so every one of them stands, and
+  this issue sits on the baseline path (exit 1).
+  """
+  @spec baseline_unreadable(map(), String.t(), term()) :: Violation.t()
+  def baseline_unreadable(rule, path, {:line, line, :invalid_utf8}) do
+    graph_issue(
+      path,
+      line,
+      "#{path} line #{line} is not UTF-8, so #{rule_label(rule)}'s baseline could not be " <>
+        "read and none of its findings is held. Fix: rewrite that line as UTF-8 text (one " <>
+        "key per line)."
+    )
+  end
+
+  def baseline_unreadable(rule, path, reason) do
+    graph_issue(
+      path,
+      nil,
+      "#{rule_label(rule)}'s baseline #{path} could not be read (#{capped(inspect(reason))}), " <>
+        "so none of its findings is held. Fix: create it with mix anchor.graph " <>
+        "--write-baseline #{rule.id} and review it, or remove baseline: from the rule."
+    )
+  end
+
+  @doc """
+  The issue for a baseline file holding an entry of another rule (DND-5441):
+  every entry starts with its rule's id, and one file is one rule's.
+  """
+  @spec baseline_foreign(map(), String.t(), String.t()) :: Violation.t()
+  def baseline_foreign(rule, path, entry) do
+    graph_issue(
+      path,
+      nil,
+      "#{path} is the baseline of #{inspect(rule.id)} but holds #{inspect(entry)}, an entry " <>
+        "of another rule, so it could not be compared. Fix: one baseline per rule; move that " <>
+        "line to its own rule's baseline, or delete it."
+    )
+  end
+
+  @doc """
+  A STALE entry (DND-5441): a baseline line no finding consumes. The finding
+  was fixed, so the line must go: a baseline only shrinks.
+  """
+  @spec baseline_stale(String.t(), String.t()) :: Violation.t()
+  def baseline_stale(path, key) do
+    %Violation{
+      filename: path,
+      key: key,
+      message:
+        "#{key} in #{path} matches no finding (it was fixed). Fix: delete that line from " <>
+          "#{path}; a baseline only shrinks."
+    }
+  end
+
+  @doc """
+  A GREW entry (DND-5441): a baseline line the branch added since `ref`.
+  """
+  @spec baseline_grew(String.t(), String.t(), String.t()) :: Violation.t()
+  def baseline_grew(path, key, ref) do
+    %Violation{
+      filename: path,
+      key: key,
+      message:
+        "#{key} was added to #{path} since #{ref}. Fix: fix the finding instead; a baseline " <>
+          "only shrinks (adding to it is a review decision on the base branch)."
+    }
+  end
+
+  @doc """
+  The issue for a baseline that could not be read at the `--base` ref
+  (DND-5441): git failed, or the bytes there are not UTF-8. GREW could not be
+  judged, and a failed read never reads as "no growth".
+  """
+  @spec baseline_base_unreadable(String.t(), String.t(), term()) :: Violation.t()
+  def baseline_base_unreadable(path, ref, reason) do
+    graph_issue(
+      path,
+      nil,
+      "Anchor could not read #{path} at #{ref} (#{capped(inspect(reason))}), so whether the " <>
+        "branch added to it (GREW) could not be judged. Fix: pass a --base ref that resolves " <>
+        "in this repository, or drop --base."
+    )
+  end
+
+  @doc """
+  The note for a baseline absent at the `--base` ref (DND-5441): a first
+  landing, which no ratchet can judge, so review is the gate. Report-only.
+  """
+  @spec baseline_first_landing(String.t(), String.t()) :: Violation.t()
+  def baseline_first_landing(path, ref) do
+    graph_issue(
+      path,
+      nil,
+      "NOTE: first landing of #{path} (absent at #{ref}); review is the gate. Fix: review " <>
+        "every line of #{path} in this change; from here it only shrinks."
+    )
+  end
+
+  @doc """
+  The refusal of `--write-baseline` over an existing file (DND-5441, exit 2):
+  it only creates, so a baseline can never be loosened by rewriting it.
+  """
+  @spec baseline_exists(String.t()) :: Violation.t()
+  def baseline_exists(path) do
+    graph_issue(
+      path,
+      nil,
+      "#{path} exists; --write-baseline only creates, and never rewrites a baseline. Fix: " <>
+        "delete the lines of fixed findings instead (a baseline only shrinks)."
+    )
+  end
+
+  @doc "The note that `--write-baseline` created `path` with `count` entries (DND-5441)."
+  @spec baseline_written(String.t(), non_neg_integer()) :: Violation.t()
+  def baseline_written(path, count) do
+    graph_issue(
+      path,
+      nil,
+      "wrote #{count} entries to #{path}. Fix: review it in this change; from here it only " <>
+        "shrinks."
+    )
+  end
+
+  @doc "The issue for a baseline `--write-baseline` could not create (DND-5441)."
+  @spec baseline_not_written(String.t(), term()) :: Violation.t()
+  def baseline_not_written(path, reason) do
+    graph_issue(
+      path,
+      nil,
+      "Anchor could not create #{path} (#{capped(inspect(reason))}). Fix: make its directory " <>
+        "writable."
+    )
+  end
+
+  @doc """
+  The refusal of `--write-baseline ID` naming no graph rule with a
+  `baseline:` key (DND-5441, exit 2), on the config.
+  """
+  @spec write_baseline_unknown(String.t(), String.t() | nil) :: Violation.t()
+  def write_baseline_unknown(id, config_path) do
+    config = config_path || @config_filename
+
+    graph_issue(
+      config,
+      nil,
+      "--write-baseline #{inspect(id)} names no graph rule of #{config} that has a baseline: " <>
+        "key, so there is nothing to write. Fix: give that rule an id: and a baseline: path " <>
+        "(convention .anchor/baselines/<id>.txt), or pass another rule's id."
+    )
+  end
+
   defp below_floor_text(selected, min) do
     "selects #{selected} modules, below min_modules #{min}. Fix: correct the selector; " <>
       "lowering min_modules is the owner's call."

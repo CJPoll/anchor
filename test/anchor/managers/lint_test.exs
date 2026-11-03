@@ -58,6 +58,49 @@ defmodule Anchor.Managers.LintTest do
     end
   end
 
+  # DND-5441: a rule in `enforcement: report` is detected apart from the
+  # enforced ones; its findings are marked :report (printed, never failing).
+  # Sabotage record: ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
+  describe "run/4 enforcement: report" do
+    @thing """
+    defmodule MyApp.Thing do
+      use Ecto.Schema
+    end
+    """
+
+    defp must_use(required, extra),
+      do:
+        Map.merge(
+          %{type: :must_use_module, uses_module: "Ecto.Schema", required_modules: [required]},
+          extra
+        )
+
+    test "a report rule's finding is :report; an enforced rule's beside it stays :enforce" do
+      source_file = SourceFile.parse(@thing, "lib/thing.ex")
+
+      rules = [
+        must_use(MyApp.Reported, %{enforcement: :report}),
+        must_use(MyApp.Enforced, %{})
+      ]
+
+      expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: rules}} end)
+
+      assert {:ok, [{_file, violations}]} =
+               Lint.run(MustUseModule, [source_file], [], config_loader: ConfigLoaderMock)
+
+      assert violations |> Enum.map(&{&1.trigger, &1.enforcement}) |> Enum.sort() ==
+               [{"MyApp.Enforced", :enforce}, {"MyApp.Reported", :report}]
+    end
+
+    test "positive control: with no report rule every finding is :enforce" do
+      source_file = SourceFile.parse(@thing, "lib/thing.ex")
+      expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [must_use(MyApp.A, %{})]}} end)
+
+      assert {:ok, [{_file, [%Violation{enforcement: :enforce}]}]} =
+               Lint.run(MustUseModule, [source_file], [], config_loader: ConfigLoaderMock)
+    end
+  end
+
   describe "run/4 rule selection" do
     test "a rule whose type is not the check's rule_type is not selected" do
       source = """

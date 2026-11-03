@@ -47,7 +47,9 @@ rules:
       - File
       - YamlElixir
       - Anchor.Adapters.ConfigFile
+      - Anchor.Adapters.BaselineFile
       - Anchor.Adapters.BeamReader
+      - Anchor.Adapters.GitShow
       - Anchor.Adapters.GitChangeSource
       - Anchor.Adapters.GraphArtifact
       - Anchor.Adapters.SourceReader

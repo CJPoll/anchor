@@ -23,32 +23,48 @@ defmodule Anchor.Managers.Graph do
        (`min_modules`), then its `check/2` under a guard (`try` with `rescue`, `catch :throw` and
        `catch :exit`, DND-1312's lesson): a rule that crashes is one issue,
        and the other rules still run;
-    7. write the graph artifact for `explain`/`place`
+    7. for each rule with a `baseline:` (DND-5441): read it
+       (`Anchor.Adapters.BaselineStore`), and under `--base REF` its copy at
+       `REF` (`Anchor.Adapters.GitBase`), and judge the rule's findings
+       against it (`Anchor.Domain.Enforcement`): held findings are counted,
+       NEW ones stand, STALE and GREW entries are findings. A baseline that is
+       missing, not UTF-8 or holds another rule's entries is an issue on its
+       path, and every finding of the rule stands. Under `--write-baseline
+       ID` that rule's baseline is created instead (`BaselineStore.create/3`
+       only creates: an existing file is refused, exit 2);
+    8. write the graph artifact for `explain`/`place`
        (`Anchor.Adapters.GraphStore`) under `_build/<env>/anchor`; the
        verdict never reads it;
-    8. return the `%Anchor.Domain.GraphReport{}`.
+    9. return the `%Anchor.Domain.GraphReport{}`.
 
   Every per-module problem is an issue on that module (exit 1), never a
   skipped module: a beam it could not decode, a module whose graph walk
   crashed (`{:walk_crashed, _}`, DND-5548), an Erlang module no bucket
   classifies, a source file it could not read, an unclassified or ambiguous
-  module. Baselines (DND-5441) are not compared yet: every rule finding
-  stands.
+  module.
+
+  A rule that crashed is not compared with its baseline: its one issue
+  stands, and its baseline is neither read nor written.
 
   ## Options (the adapters, for tests)
 
   `:config_loader` (default `Anchor.Adapters.ConfigFile`), `:beam_source`
   (`Anchor.Adapters.BeamReader`), `:source_source`
   (`Anchor.Adapters.SourceReader`), `:graph_store`
-  (`Anchor.Adapters.GraphArtifact`), `:graph_rules` (the rule modules,
-  `Anchor.Domain.GraphRules.all/0`).
+  (`Anchor.Adapters.GraphArtifact`), `:baseline_store`
+  (`Anchor.Adapters.BaselineFile`), `:git_base` (`Anchor.Adapters.GitShow`),
+  `:graph_rules` (the rule modules, `Anchor.Domain.GraphRules.all/0`).
   """
 
+  alias Anchor.Adapters.BaselineFile
   alias Anchor.Adapters.BeamReader
   alias Anchor.Adapters.ConfigFile
+  alias Anchor.Adapters.GitShow
   alias Anchor.Adapters.GraphArtifact
   alias Anchor.Adapters.SourceReader
   alias Anchor.Config
+  alias Anchor.Domain.Baseline
+  alias Anchor.Domain.Enforcement
   alias Anchor.Domain.Failures
   alias Anchor.Domain.Graph
   alias Anchor.Domain.Graph.Beam
@@ -70,6 +86,7 @@ defmodule Anchor.Managers.Graph do
 
     with {:ok, config} <- load_config(deps.config_loader),
          {:ok, rules} <- graph_rules(config, request, deps.graph_rules),
+         :ok <- write_target(rules, request, config),
          {:ok, beams} <- read_beams(deps.beam_source, request) do
       measured(request, config, rules, beams, deps)
     else
@@ -79,6 +96,25 @@ defmodule Anchor.Managers.Graph do
           [Finding.fail_closed(violation, @config_file)],
           counts(request, 0, 0, 0)
         )
+
+      {:refused, violation} ->
+        GraphReport.new([], [], counts(request, 0, 0, 0),
+          refused: [Finding.fail_closed(violation, @config_file)]
+        )
+    end
+  end
+
+  # DND-5441: `--write-baseline ID` must name a running graph rule with a
+  # `baseline:` path; anything else would write nothing and read as done.
+  defp write_target(rules, request, config) do
+    case Map.get(request.opts, :write_baseline) do
+      nil ->
+        :ok
+
+      id ->
+        if Enum.any?(rules, fn {rule, _module} -> rule[:id] == id and rule[:baseline] end),
+          do: :ok,
+          else: {:refused, Failures.write_baseline_unknown(id, config.path)}
     end
   end
 
@@ -88,6 +124,8 @@ defmodule Anchor.Managers.Graph do
       beam_source: Keyword.get(deps, :beam_source, BeamReader),
       source_source: Keyword.get(deps, :source_source, SourceReader),
       graph_store: Keyword.get(deps, :graph_store, GraphArtifact),
+      baseline_store: Keyword.get(deps, :baseline_store, BaselineFile),
+      git_base: Keyword.get(deps, :git_base, GitShow),
       graph_rules: Keyword.get(deps, :graph_rules, GraphRules.all())
     }
   end
@@ -140,7 +178,7 @@ defmodule Anchor.Managers.Graph do
     graph = Builder.build(beams, source_facts)
     {model, class_issues} = Model.build(graph, config, source_facts)
     unreadable_issues = empty_app_issues(request.apps, beams) ++ unreadable_issues(graph)
-    rule_findings = Enum.flat_map(rules, &run_rule(&1, model, config.path))
+    ran = Enum.map(rules, &run_rule(&1, model, config.path, request, deps))
     artifact_notes = write_artifact(deps.graph_store, request, beams, config, graph)
 
     fail_closed =
@@ -148,9 +186,11 @@ defmodule Anchor.Managers.Graph do
       |> Enum.map(&Finding.fail_closed(&1, @config_file))
 
     GraphReport.new(
-      fail_closed ++ rule_findings ++ artifact_notes,
+      fail_closed ++ Enum.flat_map(ran, & &1.findings) ++ artifact_notes,
       [],
-      counts(request, map_size(graph.modules), length(rules), length(Model.opaque(model)))
+      counts(request, map_size(graph.modules), length(rules), length(Model.opaque(model))),
+      held: Enum.flat_map(ran, & &1.held),
+      refused: Enum.flat_map(ran, & &1.refused)
     )
   end
 
@@ -205,8 +245,99 @@ defmodule Anchor.Managers.Graph do
   # A rule's floor is judged whenever it runs, `--only` or not: `--only`
   # narrows the rules, never the modules, so a rule selecting nothing must not
   # read as a pass.
-  defp run_rule({rule, module}, model, config_path) do
-    floor_findings(rule, model, config_path) ++ check(rule, module, model, config_path)
+  defp run_rule({rule, module}, model, config_path, request, deps) do
+    floor = floor_findings(rule, model, config_path)
+
+    case check(rule, module, model, config_path) do
+      {:ok, findings} ->
+        ran = ratchet(rule, findings, request, deps)
+        %{ran | findings: floor ++ ran.findings}
+
+      {:crashed, finding} ->
+        %{findings: floor ++ [finding], held: [], refused: []}
+    end
+  end
+
+  # DND-5441: a rule with no `baseline:` keeps every finding; one with a
+  # baseline is judged against it, or, under `--write-baseline` naming it, has
+  # its baseline created.
+  defp ratchet(%{baseline: path} = rule, findings, request, deps) when is_binary(path) do
+    if Map.get(request.opts, :write_baseline) == rule.id,
+      do: write_baseline(rule, path, findings, request, deps),
+      else: compare_baseline(rule, path, findings, request, deps)
+  end
+
+  defp ratchet(_rule, findings, _request, _deps), do: %{findings: findings, held: [], refused: []}
+
+  defp compare_baseline(rule, path, findings, request, deps) do
+    ref = Map.get(request.opts, :base)
+
+    with {:ok, entries} <- read_entries(deps.baseline_store, request.root, rule, path),
+         :ok <- no_foreign(rule, path, entries),
+         {:ok, base} <- base_entries(deps.git_base, request.root, ref, path) do
+      context = %{rule: rule, label: Failures.rule_label(rule), path: path, ref: ref}
+      {standing, held} = Enforcement.judge(findings, entries, base, context)
+      %{findings: standing, held: held, refused: []}
+    else
+      {:fail, violation} ->
+        %{findings: findings ++ [Finding.fail_closed(violation, path)], held: [], refused: []}
+    end
+  end
+
+  defp read_entries(store, root, rule, path) do
+    with {:ok, bytes} <- store.read(root, path),
+         {:ok, entries} <- Baseline.parse(bytes) do
+      {:ok, entries}
+    else
+      {:error, reason} -> {:fail, Failures.baseline_unreadable(rule, path, reason)}
+    end
+  end
+
+  defp no_foreign(rule, path, entries) do
+    case Baseline.foreign(rule.id, entries) do
+      [] -> :ok
+      [entry | _rest] -> {:fail, Failures.baseline_foreign(rule, path, entry)}
+    end
+  end
+
+  # The base branch's copy under `--base REF`: `nil` without it, `:absent`
+  # for a first landing. A failed read is an issue, never "no growth".
+  defp base_entries(_git, _root, nil, _path), do: {:ok, nil}
+
+  defp base_entries(git, root, ref, path) do
+    case git.show(root, ref, path) do
+      {:ok, bytes} -> parse_base(bytes, path, ref)
+      {:error, :absent} -> {:ok, :absent}
+      {:error, reason} -> {:fail, Failures.baseline_base_unreadable(path, ref, reason)}
+    end
+  end
+
+  defp parse_base(bytes, path, ref) do
+    case Baseline.parse(bytes) do
+      {:ok, entries} -> {:ok, {:ok, entries}}
+      {:error, reason} -> {:fail, Failures.baseline_base_unreadable(path, ref, reason)}
+    end
+  end
+
+  # `--write-baseline`: the rule's current keys, sorted, into a file that must
+  # not exist yet. A written finding is held; one with no key cannot be.
+  defp write_baseline(rule, path, findings, request, deps) do
+    {keyed, unkeyed} = Enum.split_with(findings, &is_binary(&1.key))
+    contents = Baseline.render(rule.id, Enum.map(keyed, & &1.key))
+
+    case deps.baseline_store.create(request.root, path, contents) do
+      :ok ->
+        note = Finding.fail_closed(Failures.baseline_written(path, length(keyed)), path)
+        %{findings: unkeyed ++ [%{note | enforcement: :report}], held: keyed, refused: []}
+
+      {:error, :exists} ->
+        refused = Finding.fail_closed(Failures.baseline_exists(path), path)
+        %{findings: findings, held: [], refused: [refused]}
+
+      {:error, reason} ->
+        issue = Finding.fail_closed(Failures.baseline_not_written(path, reason), path)
+        %{findings: findings ++ [issue], held: [], refused: []}
+    end
   end
 
   defp floor_findings(rule, model, config_path) do
@@ -224,14 +355,14 @@ defmodule Anchor.Managers.Graph do
     |> guarded_check(module, model)
     |> case do
       {:ok, violations} ->
-        Enum.map(violations, &Finding.from_rule(&1, rule, label, config_path || @config_file))
+        {:ok,
+         Enum.map(violations, &Finding.from_rule(&1, rule, label, config_path || @config_file))}
 
       {:crashed, kind, reason, stacktrace} ->
-        [
-          rule
-          |> Failures.rule_crashed(kind, reason, stacktrace, config_path)
-          |> Finding.fail_closed(@config_file)
-        ]
+        {:crashed,
+         rule
+         |> Failures.rule_crashed(kind, reason, stacktrace, config_path)
+         |> Finding.fail_closed(@config_file)}
     end
   end
 

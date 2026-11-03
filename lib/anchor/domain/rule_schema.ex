@@ -49,10 +49,27 @@ defmodule Anchor.Domain.RuleSchema do
 
   ## The allowlist is `@keys_by_type`, and it is the only one
 
-  Every rule accepts the **common keys**: `type`, the three selectors (`paths`,
-  `pattern`, `uses_module`), `recursive`, and the floor keys `min_files` and
-  `id`. On top of those, a rule accepts exactly the keys its type's check reads,
-  as listed in `@keys_by_type`. Any other key fails the load.
+  Every rule accepts its engine's **common keys** (`@common_keys_by_engine`,
+  `common_keys/1`):
+
+    * `ast`: `type`, the three selectors (`paths`, `pattern`, `uses_module`),
+      `recursive`, the floor keys `min_files` and `id`, and `enforcement`
+      (DND-5441);
+    * `graph` (shared contract section 3.2, DND-5441): `type`, `id`, the three
+      selectors (`bucket`, `paths`, `pattern`), the floor `min_modules`,
+      `enforcement` and `baseline`.
+
+  On top of those, a rule accepts exactly the keys its type's check reads, as
+  listed in `@keys_by_type`. Any other key fails the load; a common key of the
+  other engine is named as such (`uses_module` on a graph rule).
+
+  `enforcement` is `report` or `enforce` (default). `baseline` is a path
+  relative to the project root with no `..` segment, and needs `id` (every
+  baseline entry starts with it). It is refused on an `ast` rule: Credo
+  compares no baseline yet, so it would ratchet nothing. A graph rule needs
+  the config's `architecture:` section, and its `bucket` must name one of its
+  buckets: `validate_architecture/3`, which `Anchor.Config` calls once the
+  whole document is parsed.
 
   ## The relation is `@relations_by_type`
 
@@ -130,11 +147,14 @@ defmodule Anchor.Domain.RuleSchema do
 
   ## Selectors
 
-  A rule selects files by **exactly one** of `paths` (a non-empty list of path
-  globs), `pattern` (a module-name glob) or `uses_module` (a module name). These
-  are exactly the fields `Anchor.Domain.RuleMatching.rule_matches_file?/2`
-  reads, in that order, stopping at the first. An explicit `paths: []` is "no
-  path selector" and stays valid beside a `pattern` or `uses_module`.
+  An `ast` rule selects files by **exactly one** of `paths` (a non-empty list
+  of path globs), `pattern` (a module-name glob) or `uses_module` (a module
+  name). These are exactly the fields
+  `Anchor.Domain.RuleMatching.rule_matches_file?/2` reads, in that order,
+  stopping at the first. An explicit `paths: []` is "no path selector" and
+  stays valid beside a `pattern` or `uses_module`. A `graph` rule selects
+  modules by exactly one of `bucket`, `paths` or `pattern`, the fields
+  `Anchor.Domain.GraphRules.select/2` reads.
   """
 
   alias Anchor.Domain.AllowedCallers
@@ -143,7 +163,28 @@ defmodule Anchor.Domain.RuleSchema do
 
   @type engine :: :ast | :graph
 
-  @common_keys ~w(id min_files paths pattern recursive type uses_module)
+  # The keys every rule of an engine accepts (DND-5441: `enforcement` on both
+  # engines, `baseline` on graph rules only; the graph common keys are shared
+  # contract section 3.2). See the moduledoc, "Common keys per engine".
+  @common_keys_by_engine %{
+    ast: ~w(enforcement id min_files paths pattern recursive type uses_module),
+    graph: ~w(baseline bucket enforcement id min_modules paths pattern type)
+  }
+
+  # The selectors of an engine, in the order its selection reads them.
+  @selector_keys_by_engine %{
+    ast: ~w(paths pattern uses_module),
+    graph: ~w(bucket paths pattern)
+  }
+
+  @selector_descriptions %{
+    "bucket" => "bucket (an architecture: bucket name)",
+    "paths" => "paths (a non-empty list of path globs)",
+    "pattern" => "pattern (a module-name glob)",
+    "uses_module" => "uses_module (a module the file uses)"
+  }
+
+  @enforcements %{"enforce" => :enforce, "report" => :report}
 
   # THE per-type key allowlist. Keys beyond `@common_keys`, one entry per
   # shipped check's `rule_type/0`. See the moduledoc before extending it.
@@ -222,8 +263,6 @@ defmodule Anchor.Domain.RuleSchema do
   @string_list_keys ~w(allowed_callers allowed_functions forbidden_functions forbidden_modules
                        forbidden_patterns owned_namespaces pure_patterns required_modules)
 
-  @selector_keys ~w(paths pattern uses_module)
-
   # A misspelling this close to a known key (String.jaro_distance/2) is
   # suggested as that key.
   @suggestion_threshold 0.8
@@ -252,9 +291,35 @@ defmodule Anchor.Domain.RuleSchema do
     end
   end
 
-  @doc "The keys every rule type accepts, sorted."
+  @doc "The keys every `ast` rule accepts, sorted (`common_keys(:ast)`)."
   @spec common_keys() :: [String.t()]
-  def common_keys, do: Enum.sort(@common_keys)
+  def common_keys, do: common_keys(:ast)
+
+  @doc "The keys every rule of `engine` accepts, sorted."
+  @spec common_keys(engine()) :: [String.t()]
+  def common_keys(engine) when engine in @engines,
+    do: Enum.sort(Map.fetch!(@common_keys_by_engine, engine))
+
+  @doc """
+  The parsed `enforcement` of a rule (DND-5441): `:report` or `:enforce` (the
+  default). A rule map built in memory may carry the atom or the string.
+  """
+  @spec enforcement(map()) :: :enforce | :report
+  def enforcement(rule) do
+    case Map.get(rule, :enforcement) do
+      value when value in [:report, "report"] -> :report
+      _enforce -> :enforce
+    end
+  end
+
+  @doc """
+  Parses an `enforcement` token (a leading colon accepted), already validated
+  by `validate/2`: `nil` (absent) is `:enforce`.
+  """
+  @spec parse_enforcement(String.t() | nil) :: :enforce | :report
+  def parse_enforcement(nil), do: :enforce
+  def parse_enforcement(":" <> token), do: parse_enforcement(token)
+  def parse_enforcement(token), do: Map.fetch!(@enforcements, token)
 
   @doc """
   The engine that runs rules of `type` (DND-5437): `:ast` (a Credo check) or
@@ -275,7 +340,8 @@ defmodule Anchor.Domain.RuleSchema do
   sorted. `type` must be one of `rule_types/0`.
   """
   @spec known_keys(atom()) :: [String.t()]
-  def known_keys(type), do: Enum.sort(@common_keys ++ Map.fetch!(@keys_by_type, type))
+  def known_keys(type),
+    do: Enum.sort(common_keys(engine(type)) ++ Map.fetch!(@keys_by_type, type))
 
   @doc """
   The relation keys of `type`, sorted: a rule of the type must carry at least
@@ -288,9 +354,14 @@ defmodule Anchor.Domain.RuleSchema do
   @spec rule_types() :: [atom()]
   def rule_types, do: @keys_by_type |> Map.keys() |> Enum.sort()
 
-  @doc "The keys that select files, sorted."
+  @doc "The keys that select an `ast` rule's files, sorted (`selector_keys(:ast)`)."
   @spec selector_keys() :: [String.t()]
-  def selector_keys, do: Enum.sort(@selector_keys)
+  def selector_keys, do: selector_keys(:ast)
+
+  @doc "The keys that select a rule of `engine`'s files or modules, sorted."
+  @spec selector_keys(engine()) :: [String.t()]
+  def selector_keys(engine) when engine in @engines,
+    do: Enum.sort(Map.fetch!(@selector_keys_by_engine, engine))
 
   @doc """
   Checks a decoded rule map (string keys) of the already-validated `type`.
@@ -303,13 +374,7 @@ defmodule Anchor.Domain.RuleSchema do
   """
   @spec validate(map(), atom()) :: :ok | {:error, String.t()}
   def validate(rule, type) when is_map(rule) do
-    with :ok <- validate_keys(rule, type),
-         :ok <- validate_selector_types(rule),
-         :ok <- require_selector(rule),
-         :ok <- require_single_selector(rule),
-         :ok <- validate_recursive(rule),
-         :ok <- validate_floor(rule),
-         :ok <- validate_id(rule),
+    with :ok <- validate_common(rule, engine(type), Map.fetch!(@keys_by_type, type), type),
          :ok <- validate_string_lists(rule),
          :ok <- validate_function_refs(rule),
          :ok <- validate_allowed_callers(rule),
@@ -320,6 +385,119 @@ defmodule Anchor.Domain.RuleSchema do
       refuse_allow_all(rule)
     end
   end
+
+  @doc """
+  The checks every rule of `engine` shares (DND-5441), the first part of
+  `validate/2`: no key outside the engine's common keys and `type_keys`, one
+  selector of the engine's (`selector_keys/1`), `recursive`, the floor
+  (`min_files` for `ast`, `min_modules` for `graph`), `id`, `enforcement` and
+  `baseline`. `label` names the rule type in the unknown-key message.
+  """
+  @spec validate_common(map(), engine(), [String.t()], atom() | String.t()) ::
+          :ok | {:error, String.t()}
+  def validate_common(rule, engine, type_keys, label) when engine in @engines do
+    with :ok <- refuse_ast_baseline(rule, engine),
+         :ok <- validate_keys(rule, engine, type_keys, label),
+         :ok <- validate_selector_types(rule, engine),
+         :ok <- require_selector(rule, engine),
+         :ok <- require_single_selector(rule, engine),
+         :ok <- validate_recursive(rule, engine),
+         :ok <- validate_floor(rule),
+         :ok <- validate_min_modules(rule),
+         :ok <- validate_id(rule),
+         :ok <- validate_enforcement(rule) do
+      validate_baseline(rule)
+    end
+  end
+
+  @doc """
+  Checks a parsed graph rule (atom keys) against the config's `architecture:`
+  section (DND-5441), which load time knows only once the whole document is
+  parsed: every graph rule needs the section (the runner classifies modules
+  by its buckets), and a `bucket` selector must name one of its buckets.
+  `engine` is the rule type's (`engine/1`); `bucket_names` is `nil` when the
+  section is absent. An `ast` rule is `:ok`.
+  """
+  @spec validate_architecture(map(), engine(), [String.t()] | nil) :: :ok | {:error, String.t()}
+  def validate_architecture(_rule, :ast, _bucket_names), do: :ok
+
+  def validate_architecture(%{type: type}, :graph, nil) do
+    {:error,
+     "a #{type} rule runs on the graph engine (mix anchor.graph), which classifies modules " <>
+       "by the architecture: section, and the config has none; add an architecture: section " <>
+       "(the README section \"The `architecture:` section\"), or remove the rule"}
+  end
+
+  def validate_architecture(%{bucket: bucket}, :graph, names) when is_binary(bucket) do
+    if bucket in names do
+      :ok
+    else
+      {:error,
+       "`bucket: #{bucket}` names no architecture: bucket, so the rule would select no module; " <>
+         "name one of: #{Enum.join(names, ", ")}"}
+    end
+  end
+
+  def validate_architecture(_rule, :graph, _names), do: :ok
+
+  # DND-5441: a baseline is read by the graph runner only. Credo (the `ast`
+  # engine) has no baseline comparison yet, so `baseline` on an `ast` rule
+  # would load and ratchet nothing.
+  defp refuse_ast_baseline(%{"baseline" => _baseline}, :ast) do
+    {:error,
+     "`baseline` is read by graph rules only (mix anchor.graph); an ast rule's findings are " <>
+       "not compared with a baseline yet, so it would ratchet nothing; remove `baseline`, and " <>
+       "use `enforcement: report` while the rule's findings are being fixed"}
+  end
+
+  defp refuse_ast_baseline(_rule, _engine), do: :ok
+
+  defp validate_enforcement(%{"enforcement" => token}) do
+    case token do
+      ":" <> bare when is_map_key(@enforcements, bare) -> :ok
+      bare when is_map_key(@enforcements, bare) -> :ok
+      other -> {:error, "`enforcement` must be report or enforce, got: #{inspect(other)}"}
+    end
+  end
+
+  defp validate_enforcement(_rule), do: :ok
+
+  # A baseline path is relative to the project root and stays inside it: the
+  # runner reads it, `--write-baseline` creates it and `--base` reads it with
+  # `git show`, so an absolute path or a `..` segment is refused. Every entry
+  # starts with the rule's id, so a baseline needs one.
+  defp validate_baseline(%{"baseline" => path} = rule) do
+    cond do
+      not is_binary(path) or String.trim(path) == "" ->
+        {:error,
+         "`baseline` must be a non-empty path relative to the project root, got: " <>
+           inspect(path)}
+
+      Path.type(path) != :relative or ".." in Path.split(path) ->
+        {:error,
+         "`baseline: #{path}` must be a path relative to the project root with no `..` " <>
+           "segment (convention: .anchor/baselines/<rule-id>.txt)"}
+
+      not (is_binary(rule["id"]) and rule["id"] != "") ->
+        {:error,
+         "`baseline` needs the rule's `id`: every baseline entry starts with it; give the rule " <>
+           "an id"}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp validate_baseline(_rule), do: :ok
+
+  defp validate_min_modules(%{"min_modules" => min})
+       when not is_integer(min) or min < 1 do
+    {:error,
+     "`min_modules` must be a positive integer (the fewest modules the rule must select), " <>
+       "got: #{inspect(min)}"}
+  end
+
+  defp validate_min_modules(_rule), do: :ok
 
   # DND-5453: `owned_namespaces` names the namespaces whose structs are
   # checked, each one exact Elixir module name (`AllowedCallers`' grammar). A
@@ -381,19 +559,19 @@ defmodule Anchor.Domain.RuleSchema do
 
   defp refuse_unread_match(_rule), do: :ok
 
-  defp validate_keys(rule, type) do
-    known = known_keys(type)
+  defp validate_keys(rule, engine, type_keys, type) do
+    known = Enum.sort(common_keys(engine) ++ type_keys)
 
     case rule |> Map.keys() |> Enum.reject(&(&1 in known)) |> Enum.sort() do
       [] -> :ok
-      unknown -> {:error, unknown_keys_reason(unknown, type, known)}
+      unknown -> {:error, unknown_keys_reason(unknown, type, known, engine)}
     end
   end
 
-  defp unknown_keys_reason(unknown, type, known) do
+  defp unknown_keys_reason(unknown, type, known, engine) do
     noun = if match?([_], unknown), do: "key", else: "keys"
     named = Enum.map_join(unknown, ", ", &inspect/1)
-    hints = unknown |> Enum.flat_map(&hints(&1, known)) |> Enum.join("; ")
+    hints = unknown |> Enum.flat_map(&hints(&1, known, engine)) |> Enum.join("; ")
 
     "unknown #{noun} #{named} in a #{type} rule#{hints_clause(hints)}; " <>
       "known keys for #{type}: #{Enum.join(known, ", ")}"
@@ -404,11 +582,20 @@ defmodule Anchor.Domain.RuleSchema do
 
   # A hint for one unknown key: the known key it is probably a misspelling of,
   # and the other rule types that read it, when any do.
-  defp hints(key, known) when is_binary(key) do
-    Enum.reject([suggestion(key, known), elsewhere(key)], &is_nil/1)
+  defp hints(key, known, engine) when is_binary(key) do
+    Enum.reject([suggestion(key, known), elsewhere(key), other_engine(key, engine)], &is_nil/1)
   end
 
-  defp hints(_key, _known), do: []
+  defp hints(_key, _known, _engine), do: []
+
+  # A common key of the other engine (`bucket` on an ast rule, `uses_module`
+  # on a graph rule) says which rules read it.
+  defp other_engine(key, engine) do
+    [other] = @engines -- [engine]
+
+    if key in @common_keys_by_engine[other] and key not in @common_keys_by_engine[engine],
+      do: "`#{key}` applies to #{other} rules only"
+  end
 
   defp suggestion(key, known) do
     best = Enum.max_by(known, &String.jaro_distance(key, &1))
@@ -424,8 +611,12 @@ defmodule Anchor.Domain.RuleSchema do
     end
   end
 
-  defp validate_selector_types(rule) do
-    Enum.find_value(@selector_keys, :ok, &selector_type_error(&1, Map.get(rule, &1)))
+  defp validate_selector_types(rule, engine) do
+    Enum.find_value(
+      @selector_keys_by_engine[engine],
+      :ok,
+      &selector_type_error(&1, Map.get(rule, &1))
+    )
   end
 
   defp selector_type_error(_key, nil), do: nil
@@ -442,53 +633,61 @@ defmodule Anchor.Domain.RuleSchema do
     end
   end
 
-  defp require_selector(rule) do
-    if selectors(rule) == [] do
+  defp require_selector(rule, engine) do
+    if selectors(rule, engine) == [] do
+      keys = @selector_keys_by_engine[engine]
+
       {:error,
-       "the rule has no selector, so it would select no file; give it one of: " <>
-         "paths (a non-empty list of path globs), pattern (a module-name glob), " <>
-         "uses_module (a module the file uses)"}
+       "the rule has no selector, so it would select no #{selected_noun(engine)}; give it " <>
+         "one of: " <> Enum.map_join(keys, ", ", &Map.fetch!(@selector_descriptions, &1))}
     else
       :ok
     end
   end
 
+  defp selected_noun(:ast), do: "file"
+  defp selected_noun(:graph), do: "module"
+
   # DND-1290 (DND-1291): `RuleMatching` reads the first selector present and
   # ignores the rest, so a second selector narrowed nothing and read as if it
   # did.
-  defp require_single_selector(rule) do
-    case selectors(rule) do
+  defp require_single_selector(rule, engine) do
+    case selectors(rule, engine) do
       [_one] ->
         :ok
 
       several ->
         {:error,
          "the rule has more than one selector (#{Enum.join(several, ", ")}), but only the " <>
-           "first is read (paths, then pattern, then uses_module); keep exactly one"}
+           "first is read (#{Enum.join(@selector_keys_by_engine[engine], ", then ")}); " <>
+           "keep exactly one"}
     end
   end
 
-  # The selectors the rule carries, in the order `RuleMatching` tries them.
-  defp selectors(rule), do: Enum.filter(@selector_keys, &selects?(&1, Map.get(rule, &1)))
+  # The selectors the rule carries, in the order its engine's selection tries
+  # them (`RuleMatching` for ast, `GraphRules.select/2` for graph).
+  defp selectors(rule, engine),
+    do: Enum.filter(@selector_keys_by_engine[engine], &selects?(&1, Map.get(rule, &1)))
 
   defp selects?("paths", paths), do: is_list(paths) and paths != []
   defp selects?(_key, value), do: is_binary(value)
 
-  defp validate_recursive(%{"recursive" => recursive}) when not is_boolean(recursive) do
+  defp validate_recursive(%{"recursive" => recursive}, _engine) when not is_boolean(recursive) do
     {:error, "`recursive` must be true or false, got: #{inspect(recursive)}"}
   end
 
-  defp validate_recursive(%{"recursive" => _recursive} = rule) do
+  defp validate_recursive(%{"recursive" => _recursive} = rule, engine) do
     if selects?("paths", rule["paths"]) do
       :ok
     else
       {:error,
-       "`recursive` applies only to `paths`, and the rule selects by #{hd(selectors(rule))}, " <>
-         "so nothing reads it; remove `recursive`, or select by `paths`"}
+       "`recursive` applies only to `paths`, and the rule selects by " <>
+         "#{hd(selectors(rule, engine))}, so nothing reads it; remove `recursive`, or select " <>
+         "by `paths`"}
     end
   end
 
-  defp validate_recursive(_rule), do: :ok
+  defp validate_recursive(_rule, _engine), do: :ok
 
   defp validate_floor(%{"min_files" => min_files})
        when not is_integer(min_files) or min_files < 1 do

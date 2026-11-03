@@ -237,6 +237,9 @@ and are dropped rather than adapted:
 | `Anchor.Adapters.ConfigLoader` | Side Effect (port) | The behaviour `Anchor.Managers.Lint` depends on to load configuration; `Anchor.Adapters.ConfigFile` is its real implementation. |
 | `Anchor.Adapters.BeamSource` | Side Effect (port) | The behaviour the planned graph runner (DND-5440) depends on to read a project's compiled beams. |
 | `Anchor.Adapters.BeamReader` | Side Effect | The real `BeamSource`: reads each `.beam` with `:beam_lib` and returns `Anchor.Domain.Graph.Beam` records or decode errors. It never loads or calls a project module. |
+| `Anchor.Adapters.BaselineStore`, `Anchor.Adapters.GitBase` | Side Effect (port) | The behaviours `Anchor.Managers.Graph` depends on to read and create a rule's baseline file and to read it at a `--base` ref (DND-5441). Tests double them. |
+| `Anchor.Adapters.BaselineFile`, `Anchor.Adapters.GitShow` | Side Effect | The real ports: the file read and the `:exclusive` create under the project root; read-only `git` with `System.cmd/3` (argv, never a shell, the ref checked by Domain first). |
+| `Anchor.Domain.Baseline`, `Anchor.Domain.Enforcement`, `Anchor.Domain.ViolationKey` | Domain | Pure: the baseline file's grammar and multiset comparison (NEW, STALE, held, GREW), the judgement of a rule's findings against it, and the stable finding key. |
 | `Anchor.Domain.Sabotage.*` (e.g. `Mutator`, `Operators`, `DiffHunks`, `FunctionSpans`, `Scope`) | Domain | Pure: the diff parser, function spans, scope mapping and the mutant generator. `Mutator` reads a source string and returns mutants and skips as data; nothing is compiled, run or read from disk. |
 
 #### Amendment (2026-09-13, DND-123 / T3): Config split into Domain parser, Domain ConfigPaths, and a ConfigFile adapter

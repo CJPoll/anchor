@@ -29,3 +29,8 @@ Hammox.defmock(Anchor.GraphStoreMock, for: Anchor.Adapters.GraphStore)
 Hammox.defmock(Anchor.SourceMutationMock, for: Anchor.Adapters.SourceMutation)
 Hammox.defmock(Anchor.GitWorktreeMock, for: Anchor.Adapters.GitWorktree)
 Hammox.defmock(Anchor.TestExecutionMock, for: Anchor.Adapters.TestExecution)
+
+# DND-5441: the baseline ports (`Anchor.Managers.Graph.run/2` takes them as the
+# `:baseline_store` and `:git_base` options).
+Hammox.defmock(Anchor.BaselineStoreMock, for: Anchor.Adapters.BaselineStore)
+Hammox.defmock(Anchor.GitBaseMock, for: Anchor.Adapters.GitBase)

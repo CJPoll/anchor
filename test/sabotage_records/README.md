@@ -201,6 +201,10 @@ before coining a synonym.
   library invokers table (`Anchor.Domain.HigherOrder`), in one record.
 - `digraph` — `Anchor.Domain.Digraph` (DND-5444), the plain immutable graph
   value the graph algorithms run over.
+- `baseline` — report, baseline, enforce (DND-5441): `Anchor.Domain.Baseline`,
+  `Enforcement` and `ViolationKey`, the engine common keys in `RuleSchema`,
+  report-mode detection in `Managers.Lint` and `Check.Base`, the ratchet in
+  `Managers.Graph`, `BaselineFile`, `GitShow` and the task's baseline flags.
 - `dialyzer_boundary` — the DND-5499 spike runner
   `test/fixtures/dialyzer_boundary/run.exs` (not a check: it measures what
   Dialyzer reports for clause reachability on the fixtures beside it, so F8

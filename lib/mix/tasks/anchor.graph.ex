@@ -7,7 +7,8 @@ defmodule Mix.Tasks.Anchor.Graph do
   one `Anchor.Managers.Graph.run/2` call, renders the report and exits. It
   calls no adapter itself.
 
-      mix anchor.graph [--format text|json] [--only RULE_ID]...
+      mix anchor.graph [--format text|json] [--only RULE_ID]... [--base REF]
+                       [--write-baseline RULE_ID] [--verbose]
 
   It builds the graph fresh from this compile's beams every run (never a
   cached verdict), classifies every project module into exactly one bucket of
@@ -20,25 +21,45 @@ defmodule Mix.Tasks.Anchor.Graph do
   (each still judged against its floor); an id that names no graph rule is
   COULD NOT MEASURE.
 
+  Baselines (DND-5441): a rule with `baseline: <path>` has its findings
+  compared with that file; held findings are counted (`--verbose` prints
+  them), NEW ones fail an `enforce` rule, and an entry no finding matches
+  (STALE) fails too. `--base REF` also fails every entry the branch added to a
+  baseline since `REF` (GREW), read with `git show`; a baseline absent at `REF`
+  is a first landing, printed as a NOTE. `--write-baseline RULE_ID` creates
+  that rule's baseline from its current findings, and refuses (exit 2) when
+  the file exists.
+
   It reads beams with `:beam_lib` only: no project module is loaded or run.
   The only file it writes is `_build/<env>/anchor/graph.etf`, the graph for
   `mix anchor.explain` and `place`; the verdict never reads it.
+  `--write-baseline` also creates the one baseline file it names.
 
-  Exit codes: 0 pass (report-only findings print); 1 a violation or a
-  fail-closed issue (a module Anchor could not read or classify, a floor, a
-  rule that crashed); 2 usage; 3 COULD NOT MEASURE (no or invalid config, no
-  `architecture:` section, zero modules read). `--base` and
-  `--write-baseline` come with baselines (DND-5441) and are refused until
-  then.
+  Exit codes: 0 pass (report-only and held findings print); 1 a violation
+  or a fail-closed issue (a module Anchor could not read or classify, a
+  floor, a rule that crashed, a baseline that could not be read, STALE or
+  GREW); 2 usage, a `--base` ref Anchor refuses to pass to git, or a
+  `--write-baseline` refusal; 3 COULD NOT MEASURE (no or invalid config, no
+  `architecture:` section, zero modules read).
   """
 
   use Mix.Task
 
+  alias Anchor.Domain.Baseline
   alias Anchor.Domain.GraphReport
   alias Anchor.Managers.Graph
   alias Anchor.Managers.Graph.Request
 
-  @usage "Usage: mix anchor.graph [--format text|json] [--only RULE_ID]..."
+  @usage "Usage: mix anchor.graph [--format text|json] [--only RULE_ID]... [--base REF] " <>
+           "[--write-baseline RULE_ID] [--verbose]"
+
+  @switches [
+    format: :string,
+    only: :keep,
+    base: :string,
+    write_baseline: :string,
+    verbose: :boolean
+  ]
 
   @impl Mix.Task
   def run(argv), do: run(argv, [])
@@ -50,18 +71,35 @@ defmodule Mix.Tasks.Anchor.Graph do
   """
   @spec run([String.t()], keyword()) :: :ok
   def run(argv, opts) do
-    case OptionParser.parse(argv, strict: [format: :string, only: :keep]) do
-      {parsed, [], []} ->
-        run_parsed(format(parsed[:format]), Keyword.get_values(parsed, :only), opts)
-
-      _invalid ->
-        usage()
+    case OptionParser.parse(argv, strict: @switches) do
+      {parsed, [], []} -> run_parsed(request_opts(parsed), opts)
+      _invalid -> usage()
     end
   end
 
-  defp run_parsed(:invalid, _only, _opts), do: usage()
+  # The Manager's request options, or `:invalid` (a usage error): an unknown
+  # --format, or a --base ref Anchor would not pass to git
+  # (`Anchor.Domain.Baseline.valid_ref?/1`).
+  defp request_opts(parsed) do
+    base = parsed[:base]
 
-  defp run_parsed(format, only, opts) do
+    with format when format != :invalid <- format(parsed[:format]),
+         true <- is_nil(base) or Baseline.valid_ref?(base) do
+      %{
+        format: format,
+        only: Keyword.get_values(parsed, :only),
+        base: base,
+        write_baseline: parsed[:write_baseline],
+        verbose: parsed[:verbose] == true
+      }
+    else
+      _invalid -> :invalid
+    end
+  end
+
+  defp run_parsed(:invalid, _opts), do: usage()
+
+  defp run_parsed(request_opts, opts) do
     {compile, deps} = Keyword.pop(opts, :compile, &compile/0)
     compile.()
 
@@ -69,11 +107,15 @@ defmodule Mix.Tasks.Anchor.Graph do
       apps: ebins(),
       root: File.cwd!(),
       env: Mix.env(),
-      opts: %{format: format, only: only}
+      opts: request_opts
     }
 
     report = Graph.run(request, deps)
-    Mix.shell().info(GraphReport.render(report, format))
+
+    Mix.shell().info(
+      GraphReport.render(report, request_opts.format, verbose: request_opts.verbose)
+    )
+
     finish(report.exit_code)
   end
 
@@ -105,8 +147,9 @@ defmodule Mix.Tasks.Anchor.Graph do
   defp usage do
     Mix.shell().error(
       @usage <>
-        "\nFix: pass only --format text|json and --only RULE_ID (repeatable); --base and " <>
-        "--write-baseline arrive with baselines (DND-5441)."
+        "\nFix: pass only --format text|json, --only RULE_ID (repeatable), --base REF (a " <>
+        "branch, tag or commit: letters, digits and _ . / @ ^ ~ -, not starting with -), " <>
+        "--write-baseline RULE_ID and --verbose."
     )
 
     exit({:shutdown, 2})

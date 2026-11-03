@@ -8,7 +8,10 @@ defmodule Anchor.Managers.Graph.Request do
     * `root` — the project root, where source paths are relative to and
       `_build/<env>/anchor` lives;
     * `env` — the Mix env (`:dev`, `:test`, ...);
-    * `opts` — `%{format: :text | :json, only: [rule_id]}`.
+    * `opts` — `%{format: :text | :json, only: [rule_id]}`, and optionally
+      (DND-5441) `base: ref` (judge GREW against that ref's baselines),
+      `write_baseline: rule_id` (create that rule's baseline) and
+      `verbose: true` (print held findings).
   """
 
   @enforce_keys [:apps, :root, :env]
@@ -18,6 +21,12 @@ defmodule Anchor.Managers.Graph.Request do
           apps: [{atom(), Path.t()}],
           root: Path.t(),
           env: atom(),
-          opts: %{format: :text | :json, only: [String.t()]}
+          opts: %{
+            optional(:base) => String.t() | nil,
+            optional(:write_baseline) => String.t() | nil,
+            optional(:verbose) => boolean(),
+            format: :text | :json,
+            only: [String.t()]
+          }
         }
 end

@@ -43,7 +43,7 @@ never an adapter.
 |---|---|
 | Framework | `Anchor.Check.*` (Credo checks, `Anchor.Check.Base`, `Anchor.Check.Source`), `Mix.Tasks.Anchor.*` (`lib/mix/tasks/`; `Mix.Tasks.Anchor.Sabotage`) |
 | Managers | `Anchor.Managers.Lint`, `Anchor.Managers.Sabotage` |
-| Side Effects | ports: `Anchor.Adapters.ConfigLoader`, `ChangeSource`, `BeamSource`; adapters: `ConfigFile`, `GitChangeSource`, `BeamReader` (`lib/anchor/adapters/`) |
+| Side Effects | ports: `Anchor.Adapters.ConfigLoader`, `ChangeSource`, `BeamSource`, `BaselineStore`, `GitBase`; adapters: `ConfigFile`, `GitChangeSource`, `BeamReader`, `BaselineFile`, `GitShow` (`lib/anchor/adapters/`) |
 | Domain | everything under `lib/anchor/domain/`, including `Anchor.Domain.Sabotage.*` (`Mutator`, `Operators`, `DiffHunks`, `FunctionSpans`, `Scope`) and `Anchor.Domain.Graph.*` |
 
 ### Key Architectural Decisions
@@ -193,16 +193,36 @@ under a `try`/`rescue`/`catch` guard, and returns
 A graph rule implements `Anchor.Domain.GraphRule` (`rule_type/0`,
 `check/2` over the model) and is listed in `Anchor.Domain.GraphRules.all/0`;
 `graph_rules_test.exs` holds that list's types equal to RuleSchema's `:graph`
-types. No graph type ships with the runner: the first rule ticket also adds
-the graph common keys (`bucket`, `min_modules`, `enforcement`) to RuleSchema,
-their rows to `rule_checks_nothing_test.exs` and the README keys table, and
-decides what `uses_module` means for a graph rule (`GraphRules.select/2` reads
-`bucket`, `paths` and `pattern` only). Each new fail-closed case gets a `Failures` function, a row in
+types. The graph common keys (`type`, `id`, one selector of `bucket`, `paths`
+or `pattern`, `min_modules`, `enforcement`, `baseline`; DND-5441) are
+`RuleSchema`'s `@common_keys_by_engine[:graph]`; `uses_module`, `recursive`
+and `min_files` are refused on a graph rule. Their rows are
+`graph_common_rows/0` in `rule_checks_nothing_test.exs`, run through
+`RuleSchema.validate_common/4`; a graph type's own table starts with them. A
+graph rule needs `architecture:` and its `bucket` must name a bucket
+(`RuleSchema.validate_architecture/3`, called by `Anchor.Config`). Each new fail-closed case gets a `Failures` function, a row in
 `failures_graph_test.exs` and a row in the README's graph fail-closed table.
 The canary tree `test/fixtures/graph_canary/` gets a compliant and a violating
 module per graph rule. Anchor's own `.anchor.yml` has an `architecture:`
 section with floors at today's counts, and CI runs `MIX_ENV=dev mix
 anchor.graph` after credo.
+
+## Report, baseline, enforce (DND-5441)
+
+Every rule takes `enforcement: report | enforce`. A report finding is
+`Violation.enforcement: :report`: `Anchor.Managers.Lint.detect_file/5`
+detects report rules apart from enforced ones (one call as before when there
+are none), and `Anchor.Check.Base` gives their issues exit status 0 and low
+priority. Graph rules also take `baseline:`: `Anchor.Managers.Graph` reads it
+through `Anchor.Adapters.BaselineStore` (`BaselineFile`; `create/3` opens
+`:exclusive`, never overwriting), and under `--base REF` its copy at `REF`
+through `Anchor.Adapters.GitBase` (`GitShow`: argv only, the ref checked by
+`Anchor.Domain.Baseline.valid_ref?/1` first). `Anchor.Domain.Baseline` parses
+and compares (multisets: NEW, STALE, held; GREW against base), and
+`Anchor.Domain.Enforcement.judge/4` turns the result into findings. A key is
+`Anchor.Domain.ViolationKey.graph_key/3`: `<id or type>|<subject>|<detail>`,
+no line, no message. `baseline` on an `ast` rule is refused at load until
+Credo compares baselines.
 
 ## Higher-order flow (DND-5497)
 

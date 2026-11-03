@@ -28,7 +28,8 @@ defmodule Anchor.Test.GraphRuleStubs do
           filename: classified.source_file,
           line: 2,
           message: "#{inspect(module)} was found. Fix: do not be found.",
-          key: inspect(module)
+          # DND-5441: a stable key, `<id>|<Module>|found`.
+          key: Anchor.Domain.ViolationKey.graph_key(rule, inspect(module), "found")
         }
       end
     end
