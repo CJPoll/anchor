@@ -93,6 +93,35 @@ defmodule Anchor.Domain.FunctionRef do
   def alias_name?(name) when is_binary(name),
     do: name |> String.split(".") |> Enum.all?(&alias_segment?/1)
 
+  @doc """
+  Whether `name` is an Erlang module name in this grammar (the part after the
+  leading colon of `":ets.insert"`): a lower-case letter, then letters, digits,
+  `_` or `@`. Shared with `Anchor.Domain.Architecture` (DND-5437).
+  """
+  @spec erlang_module_name?(String.t()) :: boolean()
+  def erlang_module_name?(name) when is_binary(name), do: erlang_name?(name)
+
+  @doc """
+  Parses `"fun/arity"`, a function named without its module (an
+  `exports_function` selector, DND-5437): `fun` and the arity as this grammar
+  reads them, and the arity is required. Returns `{:ok, {fun, arity}}` or
+  `{:error, why}`.
+  """
+  @spec parse_name_arity(String.t()) :: {:ok, {atom(), arity()}} | {:error, String.t()}
+  def parse_name_arity(token) when is_binary(token) do
+    case split_arity(token) do
+      {:ok, _name, :any} -> {:error, "has no arity"}
+      {:ok, name, arity} -> build_name_arity(name, arity)
+      {:error, why} -> {:error, why}
+    end
+  end
+
+  defp build_name_arity(name, arity) do
+    if function_name?(name),
+      do: {:ok, {String.to_atom(name), arity}},
+      else: {:error, "has #{inspect(name)}, which is not a function name"}
+  end
+
   defp arity_matches?(:any, _arity), do: true
   defp arity_matches?(_expected, :any), do: true
   defp arity_matches?(expected, arity), do: expected == arity
@@ -133,7 +162,7 @@ defmodule Anchor.Domain.FunctionRef do
 
   defp build_erlang(module, function) do
     cond do
-      not erlang_module_name?(module) ->
+      not erlang_name?(module) ->
         {:error, "has #{inspect(":" <> module)}, which is not a module name"}
 
       not function_name?(function) ->
@@ -171,11 +200,11 @@ defmodule Anchor.Domain.FunctionRef do
 
   # An Erlang module atom that needs no quoting: a lower-case letter, then
   # letters, digits, `_` or `@`.
-  defp erlang_module_name?(<<first, rest::binary>>) when first in ?a..?z do
+  defp erlang_name?(<<first, rest::binary>>) when first in ?a..?z do
     rest |> String.to_charlist() |> Enum.all?(&(word_char?(&1) or &1 == ?@))
   end
 
-  defp erlang_module_name?(_module), do: false
+  defp erlang_name?(_module), do: false
 
   # A function identifier: a lower-case letter or `_`, then letters, digits or
   # `_`, with an optional final `?` or `!`.

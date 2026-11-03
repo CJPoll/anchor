@@ -190,15 +190,20 @@ defmodule Anchor.Domain.RuleSchemaTest do
 
     # Doc drift guard: the README's per-type key table is the allowlist. A key
     # added to one without the other turns this red.
-    test "the README lists exactly the keys each rule type accepts, and its relation" do
+    test "the README lists exactly the keys each rule type accepts, its relation and engine" do
       rows = readme_rows()
-      documented = Map.new(rows, fn {type, keys, relation} -> {type, {keys, relation}} end)
+
+      documented =
+        Map.new(rows, fn {type, keys, relation, engine} -> {type, {keys, relation, engine}} end)
 
       # One row per type: a duplicated row fails here instead of being merged.
       assert rows |> Enum.map(&elem(&1, 0)) |> Enum.sort() == RuleSchema.rule_types()
 
       for type <- RuleSchema.rule_types() do
-        {keys, relation} = documented[type]
+        {keys, relation, engine} = documented[type]
+
+        # DND-5437: the engine column is `@engine_by_type`.
+        assert engine == Atom.to_string(RuleSchema.engine(type)), "README engine for #{type}"
 
         assert Enum.sort(keys ++ RuleSchema.common_keys()) == RuleSchema.known_keys(type),
                "README keys for #{type}"
@@ -207,6 +212,32 @@ defmodule Anchor.Domain.RuleSchemaTest do
         assert Enum.sort(relation) == RuleSchema.relation_keys(type),
                "README relation for #{type}"
       end
+    end
+  end
+
+  # DND-5437: every rule type has exactly one authoritative engine. Completeness
+  # (a type with no engine) is a CompileError, proven by sabotage, not here.
+  # Sabotage record: ../../sabotage_records/rule_schema-20261103-dnd_5437.md
+  describe "engine/1" do
+    test "every shipped type has an engine, and today every one is :ast" do
+      engines = Enum.map(RuleSchema.rule_types(), &RuleSchema.engine/1)
+
+      assert length(engines) == length(RuleSchema.rule_types())
+      assert Enum.all?(engines, &(&1 == :ast)), inspect(engines)
+    end
+
+    test "the engines partition the rule types: each type in exactly one" do
+      ast = RuleSchema.rule_types_for_engine(:ast)
+      graph = RuleSchema.rule_types_for_engine(:graph)
+
+      assert Enum.sort(ast ++ graph) == RuleSchema.rule_types()
+      assert MapSet.disjoint?(MapSet.new(ast), MapSet.new(graph))
+      assert ast == Enum.sort(ast)
+      assert graph == Enum.sort(graph)
+    end
+
+    test "an unknown type raises: callers pass parsed types only" do
+      assert_raise KeyError, fn -> RuleSchema.engine(:no_such_type) end
     end
   end
 
@@ -313,7 +344,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
     |> Enum.reject(&(&1 == key))
   end
 
-  # The rows of the README table, in order, as `{type, keys, relation}`. Only
+  # The rows of the README table, in order, as `{type, keys, relation, engine}`. Only
   # the table paragraph under the heading is read, and rows are kept as a list,
   # so a duplicated row is visible to the caller rather than merged into a map.
   defp readme_rows do
@@ -325,10 +356,10 @@ defmodule Anchor.Domain.RuleSchemaTest do
 
     table = section |> String.split("\n\n") |> Enum.find(&String.starts_with?(&1, "| Rule type"))
 
-    ~r/^\| `([a-z_]+)` \| ([^|]+) \| ([^|]+) \|$/m
+    ~r/^\| `([a-z_]+)` \| ([^|]+) \| ([^|]+) \| `([a-z]+)` \|$/m
     |> Regex.scan(table, capture: :all_but_first)
-    |> Enum.map(fn [type, keys, relation] ->
-      {String.to_existing_atom(type), backticked(keys), backticked(relation)}
+    |> Enum.map(fn [type, keys, relation, engine] ->
+      {String.to_existing_atom(type), backticked(keys), backticked(relation), engine}
     end)
   end
 
