@@ -90,6 +90,8 @@ defmodule Mix.Tasks.Anchor.Sabotage do
       facts = %{
         root: File.cwd!(),
         env: Mix.env(),
+        # The last run is saved under Mix's build path (DND-5635).
+        build_path: Mix.Project.build_path(),
         base: Keyword.get(parsed, :base, @default_base),
         max: max,
         only: Keyword.get_values(parsed, :only),

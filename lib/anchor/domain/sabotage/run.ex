@@ -2,7 +2,7 @@ defmodule Anchor.Domain.Sabotage.Run do
   @moduledoc """
   One `mix anchor.sabotage run` (DND-5473), as data: what it found, did and
   refused. Pure **Domain**; `Anchor.Domain.Sabotage.Report` renders it, and
-  the Manager saves it to `_build/<env>/anchor/sabotage/last-run.etf` for
+  the Manager saves it to `<build_path>/anchor/sabotage/last-run.etf` for
   DND-5483 and DND-5484.
 
     * `notes` — lines said before anything else (a leftover journal restored);

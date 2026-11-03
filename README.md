@@ -828,7 +828,8 @@ How a run goes:
    results file; output is never parsed); then, in an `after` block, the
    original is written back, touched, its sha256 checked, and only then the
    journal deleted.
-7. The run is saved to `_build/<env>/anchor/sabotage/last-run.etf`.
+7. The run is saved to `<build_path>/anchor/sabotage/last-run.etf`: Mix's build
+   path, `_build/<env>` or the directory `MIX_BUILD_PATH` names.
 
 | Status | Meaning |
 |---|---|
