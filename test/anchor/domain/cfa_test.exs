@@ -93,7 +93,9 @@ defmodule Anchor.Domain.CfaTest do
     end
 
     def var_mod_start, do: var_mod(B)
-    defp var_mod(mod), do: mod.maker().()
+    # With an argument: a zero-arity mod.f() is a case that also tries a
+    # map field, whose library call is :any on its own.
+    defp var_mod(mod), do: mod.maker_with(1).()
 
     def spread, do: apply(fn x -> x.() end, [fn -> :spread end])
 
@@ -129,6 +131,7 @@ defmodule Anchor.Domain.CfaTest do
     def run1(g, x), do: g.(x)
     def f(x), do: x
     def maker, do: fn -> :made_in_b end
+    def maker_with(_x), do: fn -> :made_with end
     def run_apply(g), do: g.()
     def run_spawn(g), do: g.()
   end
