@@ -64,6 +64,7 @@ exists and are not re-run. DC-D to DC-H, LA-J and CF-B are the new code's.
 | LA-H | regression (critic on e92f4eb): an unknown arity printed as fetch/ in the key (`lib/anchor/domain/violation_key.ex`) | `layering_test.exs` | `16 tests, 1 failure` (red) | check/2 dynamic calls an unknown arity resolved to a forbidden implementation prints /? |
 | LA-I | regression (critic on f04064c): every nameless dynamic call was skipped as a closure (`lib/anchor/domain/graph_rules/layering.ex`) | `layering_test.exs` | `18 tests, 1 failure` (red) | check/2 dynamic calls a module dispatch whose function is computed is one unresolved violation |
 | DC-R | regression (review floor on d9a61de): a dynamic call resolved only to behaviour implementations (`lib/anchor/domain/dynamic_calls.ex`) | `layering_test.exs` | `18 tests, 4 failures` (red) | check/2 dynamic calls an unknown arity resolved to a forbidden implementation prints /?; check/2 dynamic calls no project module exports it (Mix.shell().info/1): it reaches no bucket, none; check/2 dynamic calls a forbidden module exporting the function is one violation naming it; check/2 dynamic calls only allowed modules export it: none |
+| WK-A | regression (merge of origin/main 39f55e1): a fun a call returned, applied (`clock.()`), was tagged `:call` and read as a computed function name (`lib/anchor/domain/graph/core_walker.ex`) | `core_walker_test.exs` | `35 tests, 1 failure` (red) | walk/3 call edges (AC1) applying a fun a call returned is still :apply through a variable |
 
 ## CM-A — a row's scope is ignored
 
@@ -944,3 +945,29 @@ Run summary: `18 tests, 4 failures`
      stacktrace:
        test/anchor/domain/graph_rules/layering_test.exs:229: (test)
 ```
+
+## WK-A — regression (merge of origin/main 39f55e1): a closure a call returned read as a computed function name
+
+Merging main brought `Anchor.Adapters.TestRunner.execute/4`, which binds
+`clock = Keyword.get(opts, :clock, ...)` and applies `clock.()`. The walker
+tagged that apply `:call` (the variable was bound to a call), the tag apply/3
+with a computed name carries, so `mix anchor.graph` on the merged tree gave
+four findings, `TestRunner.execute/4 calls a function it computes (?/0)` and
+`(?/3)`, under both rules. The regression test ran on the unfixed walker with
+`mix test --force test/anchor/domain/graph/core_walker_test.exs`:
+
+Run summary: `35 tests, 1 failure`
+
+```text
+  1) test walk/3 call edges (AC1) applying a fun a call returned is still :apply through a variable (Anchor.Domain.Graph.CoreWalkerTest)
+     test/anchor/domain/graph/core_walker_test.exs:169
+     Assertion with == failed
+     code:  assert call.to == {:dynamic, nil, 1, :variable}
+     left:  {:dynamic, nil, 1, :call}
+     right: {:dynamic, nil, 1, :variable}
+     stacktrace:
+       test/anchor/domain/graph/core_walker_test.exs:171: (test)
+```
+
+After the fix: `1808 tests, 0 failures`, and `mix anchor.graph` on the merged
+tree reads `0 violations (0 report-only, 80 baselined)`.
