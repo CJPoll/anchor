@@ -19,7 +19,9 @@ defmodule Anchor.Domain.Graph.Builder do
   and never a guessed `true`.
 
   A decode error is carried into `graph.unreadable` (in path order), never
-  dropped; the good beams beside it are all built.
+  dropped; the good beams beside it are all built. Two beams of one module (a
+  stale copy in a second ebin) build the first by path, and the other is in
+  `unreadable` as `{:duplicate_module, kept_path}`.
   """
 
   alias Anchor.Domain.Graph
@@ -38,15 +40,37 @@ defmodule Anchor.Domain.Graph.Builder do
         }) :: Graph.t()
   def build(beams, source_facts) do
     {decoded, errors} = Enum.split_with(beams, &match?(%Beam{}, &1))
-    nodes = Enum.map(decoded, &module_node(&1, source_facts))
-    edges = Enum.map(nodes, &module_edges/1)
+    {kept, duplicates} = first_per_module(decoded)
+    nodes = Enum.map(kept, &module_node(&1, source_facts))
+    edges = Enum.zip_with(kept, nodes, &module_edges(&2, Map.get(&1.elixir, :file)))
 
     %Graph{
       modules: Map.new(nodes, &{&1.module, &1}),
       calls: Enum.flat_map(edges, &elem(&1, 0)),
       struct_uses: Enum.flat_map(edges, &elem(&1, 1)),
-      unreadable: errors |> Enum.map(fn {:error, error} -> error end) |> Enum.sort_by(& &1.path)
+      unreadable:
+        errors
+        |> Enum.map(fn {:error, error} -> error end)
+        |> Enum.concat(duplicates)
+        |> Enum.sort_by(& &1.path)
     }
+  end
+
+  # One beam per module: the first by path. Every other beam of that module (a
+  # stale copy in a second ebin) is reported, naming the beam that was kept.
+  defp first_per_module(decoded) do
+    decoded
+    |> Enum.sort_by(& &1.path)
+    |> Enum.group_by(& &1.module)
+    |> Enum.reduce({[], []}, fn {_module, [first | others]}, {kept, duplicates} ->
+      extra =
+        Enum.map(
+          others,
+          &%{path: &1.path, module: &1.module, reason: {:duplicate_module, first.path}}
+        )
+
+      {[first | kept], extra ++ duplicates}
+    end)
   end
 
   defp module_node(%Beam{module: module, elixir: elixir} = beam, source_facts) do
@@ -71,18 +95,18 @@ defmodule Anchor.Domain.Graph.Builder do
     }
   end
 
-  defp module_edges(%ModuleNode{module: module, functions: functions}) do
+  defp module_edges(%ModuleNode{module: module, functions: functions}, file) do
     functions
     |> Enum.sort_by(fn {name_arity, _node} -> name_arity end)
-    |> Enum.map(fn {name_arity, node} -> function_edges(module, name_arity, node) end)
+    |> Enum.map(fn {name_arity, node} -> function_edges(module, name_arity, node, file) end)
     |> Enum.unzip()
     |> then(fn {calls, uses} -> {List.flatten(calls), List.flatten(uses)} end)
   end
 
-  defp function_edges(_module, _name_arity, %FunctionNode{core: nil}), do: {[], []}
+  defp function_edges(_module, _name_arity, %FunctionNode{core: nil}, _file), do: {[], []}
 
-  defp function_edges(module, name_arity, %FunctionNode{core: core, line: line}),
-    do: CoreWalker.walk(module, name_arity, core, line)
+  defp function_edges(module, name_arity, %FunctionNode{core: core, line: line}, file),
+    do: CoreWalker.walk(module, name_arity, core, line, file)
 
   defp function_node(module, {{name, arity}, kind, meta, clauses}, core_defs) do
     node = %FunctionNode{

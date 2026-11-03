@@ -122,12 +122,14 @@ defmodule Anchor.Adapters.BeamReaderTest do
       {:ok, {Plain, [debug_info: {:debug_info_v1, :elixir_erl, {:elixir_v1, map, specs}}]}} =
         :beam_lib.chunks(binary, [:debug_info])
 
-      transform = {:parse_transform, :anchor_fixtures_no_such_transform}
-      map = Map.put(map, :compile_opts, [transform])
-      rebuilt = with_debug_info(binary, {:debug_info_v1, :elixir_erl, {:elixir_v1, map, specs}})
+      for kind <- [:parse_transform, :core_transform] do
+        transform = {kind, :anchor_fixtures_no_such_transform}
+        map = Map.put(map, :compile_opts, [:debug_info, transform])
+        rebuilt = with_debug_info(binary, {:debug_info_v1, :elixir_erl, {:elixir_v1, map, specs}})
 
-      assert {:error, %{reason: {:core_v1_refused, {:transform, ^transform}}, module: Plain}} =
-               BeamReader.decode(rebuilt, app: :demo, path: "x.beam")
+        assert {:error, %{reason: {:core_v1_refused, {:transform, ^transform}}, module: Plain}} =
+                 BeamReader.decode(rebuilt, app: :demo, path: "x.beam")
+      end
     end
 
     # Row 8

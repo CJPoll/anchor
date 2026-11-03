@@ -51,15 +51,21 @@ defmodule Anchor.Domain.Graph.CoreWalker do
   Walks `core_fun`, the Core `c_fun` of `module.name/arity`, and returns its
   call and struct-use edges in source traversal order. `def_line` is the
   function's def line, used when a node has no line; when it is `nil`, the
-  line of the `c_fun`'s own annotation is used.
+  line of the `c_fun`'s own annotation is used (and when that is missing too,
+  the edge's line is `nil`, `line_source: :def`). `file` is the module's source
+  file as its `elixir_v1` metadata names it (`:file`): a line annotated with
+  another file (code a macro injected with `quote location: :keep`) is a line
+  of that other file, so it is not used, and the def line stands in. With
+  `file` nil, every annotated line is used.
   """
-  @spec walk(module(), {atom(), arity()}, :cerl.cerl(), non_neg_integer() | nil) ::
+  @spec walk(module(), {atom(), arity()}, :cerl.cerl(), non_neg_integer() | nil, String.t() | nil) ::
           {[Call.t()], [StructUse.t()]}
-  def walk(module, {name, arity}, core_fun, def_line \\ nil) do
+  def walk(module, {name, arity}, core_fun, def_line \\ nil, file \\ nil) do
     ctx = %{
       module: module,
+      file: file,
       from: {module, name, arity},
-      def_line: def_line || own_line(core_fun),
+      def_line: def_line || own_line(core_fun, file),
       env: %{},
       letrec: MapSet.new(),
       pattern?: false
@@ -434,22 +440,37 @@ defmodule Anchor.Domain.Graph.CoreWalker do
   end
 
   defp line_of(node, ctx) do
-    case first_line(node) do
+    case first_line(node, ctx.file) do
       nil -> {ctx.def_line, :def}
       line -> {line, :call}
     end
   end
 
   # The node's own line, else the first line found inside it (pre-order).
-  defp first_line(node) do
-    case own_line(node) do
-      nil -> node |> :cerl.subtrees() |> List.flatten() |> Enum.find_value(&first_line/1)
+  defp first_line(node, file) do
+    case own_line(node, file) do
+      nil -> node |> :cerl.subtrees() |> List.flatten() |> Enum.find_value(&first_line(&1, file))
       line -> line
     end
   end
 
-  defp own_line(node) do
-    Enum.find_value(:cerl.get_ann(node), fn
+  # A line of `file`: an annotation naming another file is not one.
+  defp own_line(node, file) do
+    annotation = :cerl.get_ann(node)
+    if same_file?(annotation, file), do: annotation_line(annotation), else: nil
+  end
+
+  defp same_file?(_annotation, nil), do: true
+
+  defp same_file?(annotation, file) do
+    case List.keyfind(annotation, :file, 0) do
+      {:file, annotated} -> List.to_string(annotated) == file
+      nil -> true
+    end
+  end
+
+  defp annotation_line(annotation) do
+    Enum.find_value(annotation, fn
       line when is_integer(line) and line > 0 -> line
       {line, column} when is_integer(line) and line > 0 and is_integer(column) -> line
       _other -> nil

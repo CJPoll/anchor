@@ -214,6 +214,67 @@ defmodule Anchor.Domain.Graph.BuilderTest do
     end
   end
 
+  describe "build/2 duplicate modules" do
+    test "a second beam of one module is reported, naming the kept one; its edges are not built",
+         %{
+           pair: pair
+         } do
+      [a | _] = Enum.filter(pair, &(&1.module == A))
+      stale = %{a | path: "other_ebin/#{A}.beam"}
+
+      graph = Builder.build([stale | pair], %{})
+
+      assert graph.unreadable == [
+               %{path: "other_ebin/#{A}.beam", module: A, reason: {:duplicate_module, a.path}}
+             ]
+
+      assert Graph.module(graph, A).app == :demo
+      assert Enum.count(graph.calls, &(&1.from == {A, :f, 1})) == 1
+    end
+  end
+
+  describe "build/2 lines of code a macro injects from another file" do
+    # `quote location: :keep` keeps the macro file's lines; such a line is not
+    # a line of the module's own file, so the def line stands in.
+    test "a call annotated with another file gets the def line, flagged :def", %{pair: pair} do
+      [lib, user] =
+        decode!(
+          compile_all_unloaded([
+            {"""
+             defmodule AnchorFixtures.BuilderTest.KeepLib do
+               defmacro __using__(_opts) do
+                 quote location: :keep do
+                   def hello(x) do
+                     Enum.map(x, & &1)
+                   end
+                 end
+               end
+             end
+             """, "deps/keep_lib/lib/keep_lib.ex"},
+            {"""
+             defmodule AnchorFixtures.BuilderTest.KeepUser do
+               use AnchorFixtures.BuilderTest.KeepLib
+             end
+             """, "lib/keep_user.ex"}
+          ])
+        )
+
+      graph = Builder.build([lib, user | pair], %{})
+      user_module = AnchorFixtures.BuilderTest.KeepUser
+      def_line = Graph.function(graph, {user_module, :hello, 1}).line
+
+      assert [%Call{to: {Enum, :map, 2}, line: ^def_line, line_source: :def}] =
+               Enum.filter(
+                 Graph.calls_from(graph, {user_module, :hello, 1}),
+                 &(&1.to == {Enum, :map, 2})
+               )
+
+      # Positive control: the module's own file's lines are still used.
+      assert [%Call{line: 6, line_source: :call}] =
+               Enum.filter(Graph.calls_from(graph, {B, :g, 1}), &(&1.to == {A, :f, 1}))
+    end
+  end
+
   describe "build/2 edges and Graph queries" do
     # Row 37
     test "calls between modules are aggregated and answered both ways", %{pair: pair} do

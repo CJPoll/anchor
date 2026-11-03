@@ -8,7 +8,9 @@ defmodule Anchor.Domain.Graph do
     * `:struct_uses` — every `%StructUse{}` edge.
     * `:unreadable` — every beam that could not be decoded, as the error map
       `%{path, module, reason}` (see `t:Anchor.Domain.Graph.Beam.decode_error/0`),
-      in path order. The runner reports each; none is dropped.
+      in path order, and every extra beam of a module two ebins hold
+      (`reason: {:duplicate_module, kept_path}`). The runner reports each;
+      none is dropped.
 
   `Anchor.Domain.Graph.Builder.build/2` makes one.
   """
