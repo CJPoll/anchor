@@ -61,7 +61,8 @@ defmodule Anchor.Domain.Demand.Transfer do
     * A tuple, list or map built with demand `d`: each component gets `d`'s
       demand on its key (`Lattice.at/2`); a list element or a field under a
       key that is not a literal atom gets everything or nothing.
-    * `primop match_fail(...)`: nothing. It is the compiler's report of a
+    * `primop match_fail(...)` outside a `try`: nothing (inside one, its
+      payload is used in full, as above). It is the compiler's report of a
       failed match (`function_clause`, `case_clause`, `badmatch`), and every
       function's Core ends in one that holds every parameter; reading it as a
       use would make every parameter used. A raise the program writes

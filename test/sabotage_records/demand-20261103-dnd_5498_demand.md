@@ -18,7 +18,7 @@ The two mutations the QA plan names: DEM-A (the SCC loop runs one round only: bo
 - DEM-AM and DEM-AN ran on efa463f, the critic round 3 fix, with DEM-Y again: DEM-Y there reddens both protection rows (the pure call and the failed match), DEM-AN only the failed-match row, DEM-AM only the apply/2 row.
 - DEM-AO ran on 54a7db7, alone.
 - Critic rounds 1-4 each found one more path the try protection missed (project calls and closure applies; apply/2 and a failed match; binaries; field reads): one cluster. 9264a40 replaced the per-path patches with one rule at the call choke point, and e17c788 adds one table row per Core construct under try, so a missed construct is a red row. DEM-AP ran on 9264a40; DEM-Y, DEM-AL, DEM-AP and DEM-AQ ran again on e17c788, and each reddens the table row.
-- Every one of the 88 tests in the six files is seen failing in at least one row.
+- Every one of the 88 tests in the six files at e17c788 is seen failing in at least one row. The three tests 94e3bb1 adds (the unlabelled-apply and no-clause fail-closed rows, and param/3's index guard) are killed by DEM-AU, DEM-AT and DEM-AV, so all 91 are. DEM-AR..DEM-AV ran on 94e3bb1.
 - Not counted: in 13 rows the self test (`Anchor's own code: ...`) also failed by **timing out** at the mutation runs' 2000 ms `--timeout` under a loaded machine; those are not kills and are left out of the "Tests failed" counts. The self test now carries `@moduletag timeout: 60_000` (43d2404). The self test is killed for real (an assertion) by DEM-C, DEM-T and SELF-A.
 - Measured zeros: none in the final runs. DEM-M (a literal-key field read uses the whole value) of the first run targeted a helper the review-floor fix removed; DEM-AH covers the code that replaced it.
 
@@ -1203,7 +1203,7 @@ Run summary: `91 tests, 1 failure`
 
 ## The unreached-apply table row, red on 94e3bb1's `protected_call/3`
 
-The row `unreached_apply` (an apply inside try at a site no closure reaches) run against 94e3bb1's `transfer.ex`, where a protected apply used its arguments only when some closure reached the site; restored afterwards: `41 tests, 1 failure` (left is actual, right is expected).
+The row `unreached_apply` (an apply inside try at a site no closure reaches) run against 94e3bb1's `transfer.ex`, where a protected apply used its arguments only when some closure reached the site; restored afterwards: `41 tests, 1 failure` (left is actual, right is expected). After the fix (6a0e9b2): `41 tests, 0 failures` for that file, and `1443 tests, 0 failures` for the whole suite.
 
 ```
   1) test inside try (one row per construct) a construct that can raise uses its value; a tuple or list cell does not (Anchor.Domain.Demand.TransferTest)
