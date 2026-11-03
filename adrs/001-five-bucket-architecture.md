@@ -19,6 +19,12 @@ Examples → Correct showed `parse_config/1` defaulting a missing `rules` key to
 fail-closed shape. Standard unchanged — see "Amendment: fail-closed config
 example" under Examples.
 
+Amended 2026-11-03 (DND-5518): the ADR described the Framework bucket as the
+Credo checks only. Mix tasks are Framework too, and Anchor now has Managers,
+ports and adapters beyond `ConfigFile`; the mapping table lists them. Standard
+unchanged — see "Amendment (2026-11-03, DND-5518)" under "How this maps to
+Anchor".
+
 ## Context
 
 Anchor is a small library, but the class of problems the five-bucket
@@ -50,7 +56,9 @@ Every module belongs to exactly one of five buckets:
 1. **Framework** — controllers, middleware, routers, and other
    framework-specific code: the glue that a framework invokes. In Anchor this
    is the Credo integration surface — `Anchor.Check.*` modules that `use
-   Anchor.Check.Base` and are called by Credo's check runner.
+   Anchor.Check.Base` and are called by Credo's check runner — and the Mix
+   tasks (`Mix.Tasks.Anchor.*`) that the `mix` runner invokes (see the
+   2026-11-03 amendment under "How this maps to Anchor").
 2. **UI Components** — presentational; receive state and render it. **Not
    applicable to Anchor** — a library with no user interface has no modules in
    this bucket, and so no directory for it. The bucket is retained in the
@@ -88,8 +96,12 @@ lib/anchor/
     config.ex        # Domain — pure YAML-map -> %Config{} parser + struct
     config_paths.ex  # Domain — pure candidate-path computation
   dependency_analyzer.ex   # Domain — pure AST analysis
-  <managers>/     # Managers — orchestration, added as it accrues
+  managers/       # Managers — orchestration (Lint, Sabotage)
+lib/mix/tasks/    # Framework — Mix tasks (Mix.Tasks.Anchor.*)
 ```
+
+(The tree shows one file per directory as an illustration; the table under
+"How this maps to Anchor" is the list of modules and their buckets.)
 
 A bucket with no code gets no directory. The umbrella/many-context layout from
 the source ADRs (`<context>/domain/`, `<context>/adapters/`,
@@ -215,6 +227,15 @@ and are dropped rather than adapted:
 | `Anchor.DependencyAnalyzer` | Domain | Pure AST analysis: extracts dependencies and `use`s, computes transitive closures over an in-memory map. Same input, same output, no IO. |
 | `%Anchor.Config{}` struct | Domain (data) | A typed struct is Domain data; the adapter that produced it is the Side Effect. |
 | Orchestration that loads config then runs analysis | Manager | Coordinates the Side Effect (config load) and Domain (analysis). Kept thin today. |
+| `Mix.Tasks.Anchor.Sabotage` (and the Mix tasks that follow it) | Framework | The `mix` runner invokes it: it parses argv, makes one Manager call, renders the result and sets the exit code. It calls no adapter itself. |
+| `Anchor.Managers.Lint` | Manager | The lint use case: loads config through the `Anchor.Adapters.ConfigLoader` port, derives the pure facts, selects the rules that apply and calls the check's Domain detection, returning Domain violations. Checks (Framework) go through it. |
+| `Anchor.Managers.Sabotage` | Manager | The sabotage use case (`scope/2`): reads the diff through the `ChangeSource` port, then calls the Domain (`DiffHunks`, `FunctionSpans`, `Scope`). Reaches git and the file system only through the port. |
+| `Anchor.Adapters.ChangeSource` | Side Effect (port) | The behaviour `Anchor.Managers.Sabotage` depends on: merge-base, diff, untracked files, show, read. Tests double it. |
+| `Anchor.Adapters.GitChangeSource` | Side Effect | The real `ChangeSource`: runs read-only `git` with `System.cmd/3` (argv, never a shell) and returns diff text and paths. |
+| `Anchor.Adapters.ConfigLoader` | Side Effect (port) | The behaviour `Anchor.Managers.Lint` depends on to load configuration; `Anchor.Adapters.ConfigFile` is its real implementation. |
+| `Anchor.Adapters.BeamSource` | Side Effect (port) | The behaviour the graph runner depends on to read a project's compiled beams. |
+| `Anchor.Adapters.BeamReader` | Side Effect | The real `BeamSource`: reads each `.beam` with `:beam_lib` and returns `Anchor.Domain.Graph.Beam` records or decode errors. It never loads or calls a project module. |
+| `Anchor.Domain.Sabotage.*` (e.g. `Mutator`, `Operators`, `DiffHunks`, `FunctionSpans`, `Scope`) | Domain | Pure: the diff parser, function spans, scope mapping and the mutant generator. `Mutator` reads a source string and returns mutants and skips as data; nothing is compiled, run or read from disk. |
 
 #### Amendment (2026-09-13, DND-123 / T3): Config split into Domain parser, Domain ConfigPaths, and a ConfigFile adapter
 
@@ -251,6 +272,25 @@ Manager to obtain configuration, but it must not itself do the file IO that
 `Anchor.Adapters.ConfigFile` owns. And `Anchor.DependencyAnalyzer` (or the pure
 `Anchor.Config` parser) must never grow a `File.read/1` or a call into a check
 module — the moment it does, it has stopped being Domain.
+
+#### Amendment (2026-11-03, DND-5518): Mix tasks are Framework, and the Manager, port and adapter modules are listed
+
+The ADR described the Framework bucket as the Credo integration surface and
+the table listed the Credo checks and `ConfigFile` only. Anchor has since grown
+a second entry point, the Mix task (`Mix.Tasks.Anchor.Sabotage` today; the
+graph tasks follow the same rule), and the Managers, ports and adapters behind
+it. A Mix task is "framework-specific code: the glue that a framework invokes",
+exactly the Decision's definition, with `mix` as the framework: it parses
+argv, makes one Manager call and renders the result. The Framework rules bind
+it as they bind a check: it may call Managers and Domain, and it must not call
+an adapter (the task's moduledoc says it calls none). Domain must not reach
+the new Managers or adapters either: `.anchor.yml` rule 1 forbids
+`Managers.Lint`, `Managers.Sabotage`, `GitChangeSource` and `BeamReader` in
+`lib/anchor/domain/`.
+
+This is an amendment, not a supersession: the five-bucket rule and the
+allowed-calls matrix are unchanged and bind every subject exactly as before.
+Only the classification of subjects the table had not yet listed is added.
 
 ## Examples
 
@@ -379,4 +419,7 @@ configuration.
 - `lib/anchor/adapters/config_file.ex` (Side Effect),
   `lib/anchor/domain/config.ex` and `lib/anchor/domain/config_paths.ex`
   (Domain), `lib/anchor/dependency_analyzer.ex` (Domain),
-  `lib/anchor/check/` (Framework) — the modules that exemplify each bucket.
+  `lib/anchor/check/` and `lib/mix/tasks/` (Framework),
+  `lib/anchor/managers/` (Managers), `lib/anchor/adapters/` (Side Effects),
+  `lib/anchor/domain/sabotage/` (Domain) — the modules that exemplify each
+  bucket.
