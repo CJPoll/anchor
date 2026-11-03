@@ -34,3 +34,14 @@ Hammox.defmock(Anchor.TestExecutionMock, for: Anchor.Adapters.TestExecution)
 # `:baseline_store` and `:git_base` options).
 Hammox.defmock(Anchor.BaselineStoreMock, for: Anchor.Adapters.BaselineStore)
 Hammox.defmock(Anchor.GitBaseMock, for: Anchor.Adapters.GitBase)
+
+# DND-5474: the coverage command's ports (`Anchor.Managers.Sabotage.coverage/2`
+# takes them as the `:tracing`, `:in_process_tests`, `:project_modules` and
+# `:coverage_store` options; the run's `--coverage` reads through the last).
+Hammox.defmock(Anchor.TracingMock, for: Anchor.Adapters.Tracing)
+Hammox.defmock(Anchor.InProcessTestsMock, for: Anchor.Adapters.InProcessTests)
+Hammox.defmock(Anchor.ProjectModuleSourceMock, for: Anchor.Adapters.ProjectModuleSource)
+Hammox.defmock(Anchor.CoverageStoreMock, for: Anchor.Adapters.CoverageStore)
+
+# DND-5484: the sabotage record files (`:record_store`).
+Hammox.defmock(Anchor.RecordStoreMock, for: Anchor.Adapters.RecordStore)

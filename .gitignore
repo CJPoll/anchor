@@ -23,3 +23,7 @@ erl_crash.dump
 /tmp/
 
 .claude*
+
+# Generated sabotage (DND-5473): the in-flight journal and a file mid-write.
+/.anchor/sabotage/in-flight.json
+*.anchor-tmp

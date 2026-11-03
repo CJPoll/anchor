@@ -3,6 +3,7 @@ defmodule Anchor.Domain.Sabotage.ReportTest do
   # Sabotage record: ../../../sabotage_records/sabotage-20261103-dnd_5473_sabotage_run.md
   # Sabotage record (DND-5570): ../../../sabotage_records/sabotage-20261103-dnd_5570_sabotage_hardening.md
   # Sabotage record (DND-5617): ../../../sabotage_records/sabotage-20261103-dnd_5617_sabotage_cfa_batch.md
+  # Sabotage record (DND-5624): ../../../sabotage_records/sabotage-20261103-dnd_5624_sabotage_defimpl.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Sabotage.ChangedFunction
@@ -58,6 +59,21 @@ defmodule Anchor.Domain.Sabotage.ReportTest do
                "0 crashed, 0 no_tests; 0 skipped; 0 not run (cap); 0 errors"
   end
 
+  test "DND-5474: a line counts the mutants by the source that chose their tests" do
+    run = %Run{
+      outcomes: [
+        outcome("aaa", :killed, [@killer], nil, {:coverage, ["test/other_test.exs:9"]}),
+        outcome("bbb", :killed, [@killer], nil, {:coverage, ["test/other_test.exs:9"]}),
+        outcome("ccc", :killed, [@killer])
+      ]
+    }
+
+    text = Report.render(run)
+
+    assert text =~ "selected by coverage: test/other_test.exs:9"
+    assert text =~ "\ntests selected by: 2 coverage, 1 mirror\nanchor.sabotage run: 3 mutants"
+  end
+
   test "2: one survivor: exit 1, its line ends with a Fix:" do
     run = %Run{outcomes: [outcome("aaa", :killed, [@killer]), outcome("bbb", :survived)]}
 
@@ -110,6 +126,25 @@ defmodule Anchor.Domain.Sabotage.ReportTest do
     assert text =~ "error\tlib/gen.ex\tGen.init/1\tno literal def/defp clause in the source"
     assert text =~ "0 mutants run: 0 killed,"
     assert text =~ "; 1 errors"
+  end
+
+  test "a function in a defimpl whose for: is not a literal is its own error line (DND-5624)" do
+    function = %ChangedFunction{
+      file: "lib/gen.ex",
+      module: nil,
+      name: :to_string,
+      arity: 1,
+      kind: :def,
+      changed_lines: [3]
+    }
+
+    text = Report.render(%Run{errors: [{function, :defimpl_target_not_literal}]})
+
+    assert text =~
+             "error\tlib/gen.ex\tnil.to_string/1\tdefimpl target not a literal (its module " <>
+               "cannot be named): no mutant, not killed"
+
+    refute text =~ "a macro made it"
   end
 
   test "an invalid mutant says why, is counted in the summary, and does not fail the run" do
@@ -348,6 +383,49 @@ defmodule Anchor.Domain.Sabotage.ReportTest do
       text = Report.render(run)
       assert text =~ "sabotage: 0 changed functions in origin/main..HEAD"
       refute text =~ "no mutants generated"
+    end
+  end
+
+  describe "a record that could not be written (DND-5641)" do
+    # Sabotage record: ../../../sabotage_records/sabotage-20261103-dnd_5641_record_error_exit.md
+    @record_error "could not write the sabotage record test/sabotage_records/x.md (:eacces); " <>
+                    "nothing was overwritten. Fix: check test/sabotage_records is writable, then rerun"
+
+    defp failed_record(statuses) do
+      outcomes =
+        statuses
+        |> Enum.with_index()
+        |> Enum.map(fn {status, i} ->
+          killers = if status == :killed, do: [@killer], else: []
+          outcome("m#{i}", status, killers, "why")
+        end)
+
+      %Run{base: "origin/main", outcomes: outcomes, record_error: @record_error}
+    end
+
+    test "a survivor keeps exit 1; the record failure is said loudly" do
+      run = failed_record([:killed, :survived])
+
+      assert Report.exit_code(run) == 1
+      assert Report.render(run) =~ "sabotage: record not written: #{@record_error}\n"
+    end
+
+    test "nothing measured keeps exit 3, COULD NOT MEASURE; the record failure is said loudly" do
+      run = failed_record([:invalid, :crashed])
+
+      assert Report.exit_code(run) == 3
+      assert Report.render(run) =~ "sabotage: record not written: #{@record_error}\n"
+    end
+
+    test "only a passing verdict becomes exit 2" do
+      run = failed_record([:killed, :timeout])
+
+      assert Report.exit_code(run) == 2
+      assert Report.render(run) =~ "sabotage: record not written: #{@record_error}\n"
+    end
+
+    test "a written record is no failure: the pass stays exit 0" do
+      assert Report.exit_code(%{failed_record([:killed]) | record_error: nil}) == 0
     end
   end
 end

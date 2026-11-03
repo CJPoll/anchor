@@ -39,6 +39,9 @@ defmodule Anchor.Domain.Sabotage.Scope do
       function defined inside `quote` holds.
 
   One hunk can count in both. Functions are ordered by file, then by first line.
+
+  `test_changes` holds each changed `_test.exs` file's hunks (DND-5484), and
+  `Anchor.Managers.Sabotage.scope/2` sets `base_sha` to the merge-base.
   """
 
   alias Anchor.Domain.Sabotage.ChangedFunction
@@ -46,6 +49,8 @@ defmodule Anchor.Domain.Sabotage.Scope do
   alias Anchor.Domain.Sabotage.Span
 
   defstruct functions: [],
+            test_changes: %{},
+            base_sha: nil,
             counts: %{
               test_files: 0,
               non_source_files: 0,
@@ -62,7 +67,12 @@ defmodule Anchor.Domain.Sabotage.Scope do
           macros: non_neg_integer()
         }
 
-  @type t :: %__MODULE__{functions: [ChangedFunction.t()], counts: counts()}
+  @type t :: %__MODULE__{
+          functions: [ChangedFunction.t()],
+          test_changes: %{String.t() => [{non_neg_integer(), non_neg_integer()}]},
+          base_sha: String.t() | nil,
+          counts: counts()
+        }
 
   @excluded_segments ["test", "deps", "_build"]
 
@@ -80,8 +90,27 @@ defmodule Anchor.Domain.Sabotage.Scope do
       classify_file(path, change, {spans_by_file, old_spans_by_file}, acc)
     end)
     |> then(fn {functions, counts} ->
-      %__MODULE__{functions: ordered(functions), counts: counts}
+      %__MODULE__{
+        functions: ordered(functions),
+        test_changes: test_changes(files),
+        counts: counts
+      }
     end)
+  end
+
+  @doc """
+  The changed `_test.exs` files that still exist, each with its hunks' new
+  side (`{start, count}`): the lines a sabotage record's "tests still lacking
+  a red" reads (DND-5484). An untracked test file is not in the diff, so it
+  is not here.
+  """
+  @spec test_changes(DiffHunks.t()) :: %{String.t() => [{non_neg_integer(), non_neg_integer()}]}
+  def test_changes(files) do
+    for {path, %{status: status, hunks: hunks}} <- files,
+        status != :deleted,
+        String.ends_with?(path, "_test.exs"),
+        into: %{},
+        do: {path, hunks}
   end
 
   @doc """

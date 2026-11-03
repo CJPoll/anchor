@@ -50,6 +50,31 @@ defmodule Anchor.Sabotage.ExUnitFormatterTest do
            ]
   end
 
+  test "DND-5484: with a root, an umbrella app's test file keeps its apps/<app>/ prefix",
+       %{tmp_dir: dir} do
+    # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5484_records.md
+    # An umbrella's mix test runs inside apps/core, so the working directory
+    # would drop the prefix; the root keeps it.
+    path = Path.join(dir, "results.bin")
+    root = Path.join(dir, "umbrella")
+    {:ok, pid} = GenServer.start_link(ExUnitFormatter, results_path: path, root: root)
+
+    test = %ExUnit.Test{
+      name: :"test adds",
+      module: CalcTest,
+      state: {:failed, [{:error, %RuntimeError{message: "boom"}, []}]},
+      tags: %{file: Path.join(root, "apps/core/test/calc_test.exs"), line: 4}
+    }
+
+    GenServer.cast(pid, {:test_finished, test})
+    :ok = GenServer.stop(pid)
+
+    assert frames(path) == [
+             {:test_failed, "apps/core/test/calc_test.exs", 4, "test adds",
+              "** (RuntimeError) boom"}
+           ]
+  end
+
   test "a test whose setup_all failed counts as a failure", %{tmp_dir: dir} do
     path = Path.join(dir, "results.bin")
     {:ok, pid} = GenServer.start_link(ExUnitFormatter, results_path: path)

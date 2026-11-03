@@ -17,7 +17,8 @@ defmodule Anchor.Domain.Sabotage.Run do
     * `planned` — the dry run's mutants with their selection;
     * `skipped` — `Anchor.Domain.Sabotage.Skipped`, never applied;
     * `errors` — `{changed_function, reason}` for a function no mutant could
-      be made of (`:not_in_source`, `{:parse_error, line, message}`,
+      be made of (`:not_in_source`, `:defimpl_target_not_literal`,
+      `{:parse_error, line, message}`,
       `{:unreadable, posix}`);
     * `not_run` — the mutants past the cap;
     * `generated` — how many mutants the changed functions yielded (`nil`
@@ -25,6 +26,11 @@ defmodule Anchor.Domain.Sabotage.Run do
       functions is said loudly by the report (DND-5617);
     * `no_mutant` — `{changed_function, reason}` for each changed function
       that yielded no mutant (`Anchor.Domain.Sabotage.NoMutant.reason/1`).
+    * `records` — the sabotage records written (DND-5484), `{:create |
+      :append, path}`;
+    * `record_error` — `nil`, or why a record could not be written. The
+      outcomes still stand and keep their verdict: a survivor stays exit 1
+      and an unmeasured run exit 3; only a pass becomes exit 2 (DND-5641).
   """
 
   alias Anchor.Domain.Sabotage.Mutant
@@ -44,7 +50,9 @@ defmodule Anchor.Domain.Sabotage.Run do
             errors: [],
             not_run: [],
             generated: nil,
-            no_mutant: []
+            no_mutant: [],
+            records: [],
+            record_error: nil
 
   @type selection :: {atom(), [String.t()]}
   @type outcome :: %{
@@ -68,6 +76,8 @@ defmodule Anchor.Domain.Sabotage.Run do
           errors: [{map(), term()}],
           not_run: [Mutant.t()],
           generated: nil | non_neg_integer(),
-          no_mutant: [{map(), String.t()}]
+          no_mutant: [{map(), String.t()}],
+          records: [{:create | :append, String.t()}],
+          record_error: String.t() | nil
         }
 end
