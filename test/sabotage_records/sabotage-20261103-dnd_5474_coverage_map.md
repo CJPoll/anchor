@@ -70,6 +70,20 @@ puts `--max-cases 1` last.
 | F2 | the unfixed code (3e9563a) | 1 of 12: manager "a --max-cases in the test args is refused, exit 2: tests must never overlap" | `** (Mox.UnexpectedCallError) no expectation defined for Anchor.ProjectModuleSourceMock.list/1 in process #PID<0.265.0> with args [["/repo/_build/test/lib/app/ebin"]]` |
 | S17 | the refusal reads no test arguments (`serial([])`) | 1 of 12: the same test | as F2 |
 
+## Critic round 3 (one finding)
+
+The critic found that a map's ref into a test file deleted or renamed since
+the map was built was still passed to `mix test` (and, after round 1, as a
+whole-file path), so the baseline would fail and the run end in exit 3. The
+fix: the Runner looks up every file a coverage selection could pass
+(`TestSelection.coverage_files/2`) with the mirror paths, and `select/2` drops
+a ref whose file is not there; with none left the mutant falls to the mirror.
+
+| # | Mutation | Tests failed | First failure, verbatim |
+|---|---|---|---|
+| F3 | the unfixed code (5a20390) | 2 of 16: selection "a ref whose file no longer exists is dropped; with none left, the mirror", "coverage_files/2 names the test files ..." | `code:  assert TestSelection.select(mutant("lib/x.ex", M, {:f, 1}), inputs) ==` `left:  {:coverage, ["test/a_test.exs:10", "test/b_test.exs:4"]}` `right: {:coverage, ["test/a_test.exs:10"]}` |
+| S18 | the existence filter keeps every ref | 2 of 60: the selection row above, and run "a selected test file deleted since the map was built is dropped: the mirror runs" | as F3 |
+
 `Anchor.Adapters.SuiteRunner` (`Mix.Task.run("test", ...)` in this VM) has no
 unit test: it cannot run a suite inside a running suite. The bounded real run
 below and the CI workflow exercise it.

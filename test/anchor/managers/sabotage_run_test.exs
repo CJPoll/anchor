@@ -725,6 +725,26 @@ defmodule Anchor.Managers.SabotageRunTest do
       }
     end
 
+    # The mirror and the map's test file are both looked for; `exist` says
+    # which are there.
+    defp expect_cov_tests(exist \\ ["/repo/test/calc_test.exs", "/repo/test/other_test.exs"]) do
+      expect(SourceMutationMock, :existing, fn paths ->
+        assert Enum.sort(paths) == ["/repo/test/calc_test.exs", "/repo/test/other_test.exs"]
+        Enum.filter(paths, &(&1 in exist))
+      end)
+    end
+
+    test "a selected test file deleted since the map was built is dropped: the mirror runs" do
+      expect_until_plan()
+      expect_cov_tests(["/repo/test/calc_test.exs"])
+      expect_map({:ok, coverage_map()})
+      expect_ancestor(true, {:ok, ["test/other_test.exs"]})
+
+      run = Sabotage.run(%{@facts | dry_run: true} |> Map.put(:coverage, "cov.etf"), @cov_opts)
+
+      assert Enum.all?(run.planned, fn {_m, sel} -> sel == {:mirror, ["test/calc_test.exs"]} end)
+    end
+
     defp expect_map(result) do
       expect(Anchor.CoverageStoreMock, :read, fn "/repo/cov.etf" -> call(:read_map, result) end)
     end
@@ -736,7 +756,8 @@ defmodule Anchor.Managers.SabotageRunTest do
     end
 
     test "a selected test file changed since the map's commit runs whole, the mirror too" do
-      expect_until_selection()
+      expect_until_plan()
+      expect_cov_tests()
       expect_map({:ok, coverage_map()})
       expect_ancestor(true, {:ok, ["test/other_test.exs", "test/calc_test.exs"]})
 
@@ -748,7 +769,8 @@ defmodule Anchor.Managers.SabotageRunTest do
     end
 
     test "when git cannot say what changed, every selected file runs whole, with a note" do
-      expect_until_selection()
+      expect_until_plan()
+      expect_cov_tests()
       expect_map({:ok, coverage_map()})
       expect_ancestor(true, {:error, {:git_failed, ["diff"], 128, "bad object"}})
 
@@ -763,7 +785,8 @@ defmodule Anchor.Managers.SabotageRunTest do
     end
 
     test "a map that names no commit is used, with a warning, every file whole" do
-      expect_until_selection()
+      expect_until_plan()
+      expect_cov_tests()
       expect_map({:ok, coverage_map(nil)})
 
       run = Sabotage.run(%{@facts | dry_run: true} |> Map.put(:coverage, "cov.etf"), @cov_opts)
@@ -778,7 +801,8 @@ defmodule Anchor.Managers.SabotageRunTest do
     end
 
     test "a mutant of a function a test in another file runs selects that test, by coverage" do
-      expect_until_selection()
+      expect_until_plan()
+      expect_cov_tests()
       expect_map({:ok, coverage_map()})
       expect_ancestor(true)
 
@@ -804,7 +828,8 @@ defmodule Anchor.Managers.SabotageRunTest do
     end
 
     test "the config's coverage_map is read when no --coverage is given" do
-      expect_until_selection(config: %SabotageConfig{coverage_map: "cov.etf"})
+      expect_until_plan(%SabotageConfig{coverage_map: "cov.etf"})
+      expect_cov_tests()
       expect_map({:ok, coverage_map()})
       expect_ancestor(true)
 
@@ -814,7 +839,8 @@ defmodule Anchor.Managers.SabotageRunTest do
     end
 
     test "a function the map does not list falls back to the mirror" do
-      expect_until_selection()
+      expect_until_plan()
+      expect_tests_exist(true)
       map = %{coverage_map() | tests: [%{hd(coverage_map().tests) | functions: ["Other.f/0"]}]}
       expect_map({:ok, map})
       expect_ancestor(true)
@@ -825,7 +851,8 @@ defmodule Anchor.Managers.SabotageRunTest do
     end
 
     test "a map from a commit that is not an ancestor of HEAD is used, with a warning" do
-      expect_until_selection()
+      expect_until_plan()
+      expect_cov_tests()
       expect_map({:ok, coverage_map()})
       expect_ancestor(false)
 
@@ -842,9 +869,9 @@ defmodule Anchor.Managers.SabotageRunTest do
 
     # Every step before selection: a refused map is refused before any test
     # file is looked for.
-    defp expect_until_plan do
+    defp expect_until_plan(config \\ %SabotageConfig{}) do
       expect_journal(:none)
-      expect_config()
+      expect_config(config)
       expect_ignored()
       expect_scope()
       expect_clean()

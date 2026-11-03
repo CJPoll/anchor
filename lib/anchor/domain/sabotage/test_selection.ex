@@ -14,7 +14,9 @@ defmodule Anchor.Domain.Sabotage.TestSelection do
   A function absent from the coverage index (or a run with no map) falls to
   the next source. The source is always stated in the report.
 
-  A map's `file:line` refs are as of the commit it was built at. Input
+  A ref into a test file that no longer exists (`existing_tests`) is dropped;
+  with none left the mutant falls to the next source. A map's `file:line`
+  refs are as of the commit it was built at. Input
   `stale_tests` names the test files that changed since then (`:all` when
   that is unknown): a ref into one of them runs its whole file, never a line
   that may now hold another test, and the mutant's mirror file, when it is
@@ -34,11 +36,25 @@ defmodule Anchor.Domain.Sabotage.TestSelection do
 
   @spec select(%{file: String.t()}, inputs()) :: {source(), [String.t()]}
   def select(%{file: file} = mutant, %{mirror: rules, existing_tests: existing} = inputs) do
-    case indexed(Map.get(inputs, :coverage), mfa(mutant)) do
-      [_ | _] = refs -> {:coverage, fresh(refs, rules, file, existing, stale(inputs))}
+    refs =
+      inputs
+      |> Map.get(:coverage)
+      |> indexed(mfa(mutant))
+      |> Enum.filter(&MapSet.member?(existing, ref_file(&1)))
+
+    case refs do
+      [_ | _] -> {:coverage, fresh(refs, rules, file, existing, stale(inputs))}
       [] -> mirror(rules, file, existing)
     end
   end
+
+  @doc """
+  The test files a coverage selection of `mutant` could pass: the files of
+  its refs in the index, which the caller checks exist (`existing_tests`).
+  """
+  @spec coverage_files(map(), %{String.t() => [String.t()]} | nil) :: [String.t()]
+  def coverage_files(mutant, index),
+    do: index |> indexed(mfa(mutant)) |> Enum.map(&ref_file/1) |> Enum.uniq()
 
   @doc "The test file the mirror looks for, or `nil` when no rule matches the file."
   @spec mirror_path(%{file: String.t()}, [TestMirror.rule()]) :: String.t() | nil

@@ -489,9 +489,14 @@ defmodule Anchor.Managers.Sabotage.Runner do
   end
 
   defp select(planned, root, config, coverage, %{patcher: patcher}) do
+    index = if coverage, do: coverage.index
+
     candidates =
       planned
-      |> Enum.map(&TestSelection.mirror_path(&1, config.test_mirror))
+      |> Enum.flat_map(fn mutant ->
+        [TestSelection.mirror_path(mutant, config.test_mirror)] ++
+          TestSelection.coverage_files(mutant, index)
+      end)
       |> Enum.reject(&is_nil/1)
       |> Enum.uniq()
 

@@ -45,9 +45,10 @@ defmodule Anchor.Domain.Sabotage.TestSelectionTest do
     defp mutant(file, module, function), do: %{file: file, module: module, function: function}
 
     @index %{"M.f/1" => ["test/a_test.exs:10", "test/b_test.exs:4"]}
+    @ref_files ["test/a_test.exs", "test/b_test.exs"]
 
     test "1: a function the map lists selects its tests as file:line, over the mirror" do
-      inputs = Map.put(inputs(["test/x_test.exs"]), :coverage, @index)
+      inputs = Map.put(inputs(["test/x_test.exs" | @ref_files]), :coverage, @index)
 
       assert TestSelection.select(mutant("lib/x.ex", M, {:f, 1}), inputs) ==
                {:coverage, ["test/a_test.exs:10", "test/b_test.exs:4"]}
@@ -62,7 +63,7 @@ defmodule Anchor.Domain.Sabotage.TestSelectionTest do
 
     test "a selected test file changed since the map was built runs whole, never by a stale line" do
       inputs =
-        inputs(["test/x_test.exs"])
+        inputs(["test/x_test.exs" | @ref_files])
         |> Map.put(:coverage, @index)
         |> Map.put(:stale_tests, MapSet.new(["test/b_test.exs"]))
 
@@ -72,7 +73,7 @@ defmodule Anchor.Domain.Sabotage.TestSelectionTest do
 
     test "a mirror file changed since the map was built is added whole: its new tests run" do
       inputs =
-        inputs(["test/x_test.exs"])
+        inputs(["test/x_test.exs" | @ref_files])
         |> Map.put(:coverage, @index)
         |> Map.put(:stale_tests, MapSet.new(["test/x_test.exs"]))
 
@@ -82,12 +83,37 @@ defmodule Anchor.Domain.Sabotage.TestSelectionTest do
 
     test "when what changed is unknown (:all), every selected file runs whole, the mirror too" do
       inputs =
-        inputs(["test/x_test.exs"])
+        inputs(["test/x_test.exs" | @ref_files])
         |> Map.put(:coverage, @index)
         |> Map.put(:stale_tests, :all)
 
       assert TestSelection.select(mutant("lib/x.ex", M, {:f, 1}), inputs) ==
                {:coverage, ["test/a_test.exs", "test/b_test.exs", "test/x_test.exs"]}
+    end
+
+    test "a ref whose file no longer exists is dropped; with none left, the mirror" do
+      inputs = Map.put(inputs(["test/x_test.exs", "test/a_test.exs"]), :coverage, @index)
+
+      assert TestSelection.select(mutant("lib/x.ex", M, {:f, 1}), inputs) ==
+               {:coverage, ["test/a_test.exs:10"]}
+
+      inputs = Map.put(inputs(["test/x_test.exs"]), :coverage, @index)
+
+      assert TestSelection.select(mutant("lib/x.ex", M, {:f, 1}), inputs) ==
+               {:mirror, ["test/x_test.exs"]}
+
+      stale = Map.put(inputs, :stale_tests, :all)
+
+      assert TestSelection.select(mutant("lib/x.ex", M, {:f, 1}), stale) ==
+               {:mirror, ["test/x_test.exs"]}
+    end
+
+    test "coverage_files/2 names the test files a coverage selection could pass" do
+      assert TestSelection.coverage_files(mutant("lib/x.ex", M, {:f, 1}), @index) ==
+               ["test/a_test.exs", "test/b_test.exs"]
+
+      assert TestSelection.coverage_files(mutant("lib/x.ex", M, {:g, 0}), @index) == []
+      assert TestSelection.coverage_files(mutant("lib/x.ex", M, {:f, 1}), nil) == []
     end
 
     test "no map at all is the mirror, as before" do
