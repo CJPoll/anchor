@@ -30,7 +30,10 @@ table and the sections after it are that run. A mutation whose source text the
 fixes changed was re-anchored to the same defect in the new code. A row marked
 "regression" is the unfixed code itself, not a mutation: its block is quoted
 from the run that showed it red before the fix, as the fix commit records it.
-The checkout's absolute path in the output reads `<worktree>`.
+The checkout's absolute path in the output reads `<worktree>`. Each run
+forced compilation (`mix test --force`, and a write never in the same second
+as the last): a first pass of this re-run measured BL-C on BL-B's stale beam,
+which the critic caught from its verbatim output.
 
 | # | Mutation | Tests run | Result | Failing tests |
 |---|---|---|---|---|
@@ -60,16 +63,7 @@ Run summary: `23 tests, 1 failure`
 Run summary: `26 tests, 3 failures`
 
 ```text
-  1) test apps_without_modules/2 an app with no beam is listed, in apps order; an app with one is not (Anchor.Domain.Graph.BeamTest)
-     test/anchor/domain/graph/beam_test.exs:15
-     Assertion with == failed
-     code:  assert Beam.apps_without_modules(@apps, [beam(:b)]) == [a: "ebin/a", c: "ebin/c"]
-     left:  []
-     right: [a: "ebin/a", c: "ebin/c"]
-     stacktrace:
-       test/anchor/domain/graph/beam_test.exs:16: (test)
-
-  2) test apps_without_modules/2 an app whose every beam failed to decode read no module (Anchor.Domain.Graph.BeamTest)
+  1) test apps_without_modules/2 an app whose every beam failed to decode read no module (Anchor.Domain.Graph.BeamTest)
      test/anchor/domain/graph/beam_test.exs:19
      Assertion with == failed
      code:  assert Beam.apps_without_modules(@apps, [beam(:a), beam(:c), error("ebin/b/y.beam")]) == [b: "ebin/b"]
@@ -77,6 +71,15 @@ Run summary: `26 tests, 3 failures`
      right: [b: "ebin/b"]
      stacktrace:
        test/anchor/domain/graph/beam_test.exs:20: (test)
+
+  2) test apps_without_modules/2 an app with no beam is listed, in apps order; an app with one is not (Anchor.Domain.Graph.BeamTest)
+     test/anchor/domain/graph/beam_test.exs:15
+     Assertion with == failed
+     code:  assert Beam.apps_without_modules(@apps, [beam(:b)]) == [a: "ebin/a", c: "ebin/c"]
+     left:  []
+     right: [a: "ebin/a", c: "ebin/c"]
+     stacktrace:
+       test/anchor/domain/graph/beam_test.exs:16: (test)
 
   3) test run/2 an app that read no module (exit 1) one app of two with an empty ebin is one issue on that ebin, naming the app (Anchor.Managers.GraphTest)
      test/anchor/managers/graph_test.exs:240
@@ -108,16 +111,7 @@ Run summary: `3 tests, 1 failure`
 Run summary: `26 tests, 21 failures`
 
 ```text
-  1) test apps_without_modules/2 an app with no beam is listed, in apps order; an app with one is not (Anchor.Domain.Graph.BeamTest)
-     test/anchor/domain/graph/beam_test.exs:15
-     Assertion with == failed
-     code:  assert Beam.apps_without_modules(@apps, [beam(:b)]) == [a: "ebin/a", c: "ebin/c"]
-     left:  [a: "ebin/a", b: "ebin/b", c: "ebin/c"]
-     right: [a: "ebin/a", c: "ebin/c"]
-     stacktrace:
-       test/anchor/domain/graph/beam_test.exs:16: (test)
-
-  2) test apps_without_modules/2 an app whose every beam failed to decode read no module (Anchor.Domain.Graph.BeamTest)
+  1) test apps_without_modules/2 an app whose every beam failed to decode read no module (Anchor.Domain.Graph.BeamTest)
      test/anchor/domain/graph/beam_test.exs:19
      Assertion with == failed
      code:  assert Beam.apps_without_modules(@apps, [beam(:a), beam(:c), error("ebin/b/y.beam")]) == [b: "ebin/b"]
@@ -125,6 +119,15 @@ Run summary: `26 tests, 21 failures`
      right: [b: "ebin/b"]
      stacktrace:
        test/anchor/domain/graph/beam_test.exs:20: (test)
+
+  2) test apps_without_modules/2 an app with no beam is listed, in apps order; an app with one is not (Anchor.Domain.Graph.BeamTest)
+     test/anchor/domain/graph/beam_test.exs:15
+     Assertion with == failed
+     code:  assert Beam.apps_without_modules(@apps, [beam(:b)]) == [a: "ebin/a", c: "ebin/c"]
+     left:  [a: "ebin/a", b: "ebin/b", c: "ebin/c"]
+     right: [a: "ebin/a", c: "ebin/c"]
+     stacktrace:
+       test/anchor/domain/graph/beam_test.exs:16: (test)
 
   3) test apps_without_modules/2 positive control: every app read a module, none listed (Anchor.Domain.Graph.BeamTest)
      test/anchor/domain/graph/beam_test.exs:24
@@ -135,202 +138,7 @@ Run summary: `26 tests, 21 failures`
      stacktrace:
        test/anchor/domain/graph/beam_test.exs:25: (test)
 
-  4) test run/2 per-module fail-closed issues (exit 1) a beam with no debug_info is an issue on it; the other modules still classify and their findings print (Anchor.Managers.GraphTest)
-     test/anchor/managers/graph_test.exs:265
-     match (=) failed
-     code:  assert [issue, rule_finding] = report.findings
-     left:  [issue, rule_finding]
-     right: [
-              %Anchor.Domain.GraphReport.Finding{
-                rule_id: nil,
-                type: nil,
-                label: "anchor.graph",
-                enforcement: :enforce,
-                key: nil,
-                file: "/proj/_build/test/lib/my_app/ebin",
-                line: nil,
-                message: "read 0 modules for app :my_app from /proj/_build/test/lib/my_app/ebin, so none of its code was checked. Fix: run mix compile for :my_app; check that /proj/_build/test/lib/my_app/ebin is the app's ebin (its build path and app name)."
-              },
-              %Anchor.Domain.GraphReport.Finding{
-                rule_id: nil,
-                type: nil,
-                label: "anchor.graph",
-                enforcement: :enforce,
-                key: nil,
-                file: "/proj/_build/test/lib/my_app/ebin/Elixir.Broken.beam",
-                line: nil,
-                message: "Broken was compiled without debug_info, so Anchor cannot read it. Fix: remove debug_info: false from the project's elixirc_options (Elixir keeps debug_info by default)."
-              },
-              %Anchor.Domain.GraphReport.Finding{
-                rule_id: "f",
-                type: :stub_finds,
-                label: "rule 1 (id: \"f\", stub_finds)",
-                enforcement: :enforce,
-                key: "f|AnchorFixtures.GraphManagerTest.User|found",
-                file: "lib/my_app/domain/user.ex",
-                line: 2,
-                message: "AnchorFixtures.GraphManagerTest.User was found. Fix: do not be found."
-              }
-            ]
-     ... (block cut at 40 lines)
-
-  5) test run/2 per-module fail-closed issues (exit 1) a source file that cannot be read is an issue on it (Anchor.Managers.GraphTest)
-     test/anchor/managers/graph_test.exs:304
-     match (=) failed
-     code:  assert [%{file: @accounts_file, message: message}] = report.findings
-     left:  [%{file: "lib/my_app/managers/accounts.ex", message: message}]
-     right: [
-              %Anchor.Domain.GraphReport.Finding{
-                rule_id: nil,
-                type: nil,
-                label: "anchor.graph",
-                enforcement: :enforce,
-                key: nil,
-                file: "/proj/_build/test/lib/my_app/ebin",
-                line: nil,
-                message: "read 0 modules for app :my_app from /proj/_build/test/lib/my_app/ebin, so none of its code was checked. Fix: run mix compile for :my_app; check that /proj/_build/test/lib/my_app/ebin is the app's ebin (its build path and app name)."
-              },
-              %Anchor.Domain.GraphReport.Finding{
-                rule_id: nil,
-                type: nil,
-                label: "anchor.graph",
-                enforcement: :enforce,
-                key: nil,
-                file: "lib/my_app/managers/accounts.ex",
-                line: nil,
-                message: "Anchor could not read the source of lib/my_app/managers/accounts.ex (:enoent), so its uses_module selectors and generated? are unknown. Fix: make lib/my_app/managers/accounts.ex a readable file that parses (mix compile reports a syntax error), or run from the project root."
-              }
-            ]
-     stacktrace:
-       test/anchor/managers/graph_test.exs:310: (test)
-
-  6) test run/2 per-module fail-closed issues (exit 1) an interfaces.exports entry naming no module is an issue on the config; one naming a module is not (Anchor.Managers.GraphTest)
-     test/anchor/managers/graph_test.exs:353
-     match (=) failed
-     code:  assert [%{file: ".anchor.yml", message: message}] = report.findings
-     left:  [%{file: ".anchor.yml", message: message}]
-     right: [
-              %Anchor.Domain.GraphReport.Finding{
-                rule_id: nil,
-                type: nil,
-                label: "anchor.graph",
-                enforcement: :enforce,
-                key: nil,
-                file: "/proj/_build/test/lib/my_app/ebin",
-                line: nil,
-                message: "read 0 modules for app :my_app from /proj/_build/test/lib/my_app/ebin, so none of its code was checked. Fix: run mix compile for :my_app; check that /proj/_build/test/lib/my_app/ebin is the app's ebin (its build path and app name)."
-              },
-              %Anchor.Domain.GraphReport.Finding{
-                rule_id: nil,
-                type: nil,
-                label: "anchor.graph",
-                enforcement: :enforce,
-                key: nil,
-                file: ".anchor.yml",
-                line: nil,
-                message: "architecture interfaces.exports names MyApp.Gone, which is no module of the project, so it exports nothing today and would export any module later given that name. Fix: in .anchor.yml, rename the entry to the module that is the interface, or remove it."
-              }
-            ]
-     stacktrace:
-       test/anchor/managers/graph_test.exs:378: (test)
-
-  7) test run/2 per-module fail-closed issues (exit 1) a rule below its min_modules is an issue on the config (Anchor.Managers.GraphTest)
-     test/anchor/managers/graph_test.exs:382
-     match (=) failed
-     code:  assert [%{file: ".anchor.yml", message: message}] = report.findings
-     left:  [%{file: ".anchor.yml", message: message}]
-     right: [
-              %Anchor.Domain.GraphReport.Finding{
-                rule_id: nil,
-                type: nil,
-                label: "anchor.graph",
-                enforcement: :enforce,
-                key: nil,
-                file: "/proj/_build/test/lib/my_app/ebin",
-                line: nil,
-                message: "read 0 modules for app :my_app from /proj/_build/test/lib/my_app/ebin, so none of its code was checked. Fix: run mix compile for :my_app; check that /proj/_build/test/lib/my_app/ebin is the app's ebin (its build path and app name)."
-              },
-              %Anchor.Domain.GraphReport.Finding{
-                rule_id: nil,
-                type: nil,
-                label: "anchor.graph",
-                enforcement: :enforce,
-                key: nil,
-                file: ".anchor.yml",
-                line: nil,
-                message: "rule 1 (id: \"ok\", stub_ok) selects 1 modules, below min_modules 2. Fix: correct the selector; lowering min_modules is the owner's call."
-              }
-            ]
-     stacktrace:
-       test/anchor/managers/graph_test.exs:387: (test)
-
-  8) test run/2 --only narrows to the named rules; a running rule's floor is still judged (Anchor.Managers.GraphTest)
-     test/anchor/managers/graph_test.exs:420
-     Assertion with == failed
-     code:  assert Enum.map(report.findings, & &1.rule_id) == ["a", nil]
-     left:  [nil, "a", nil]
-     right: ["a", nil]
-     stacktrace:
-       test/anchor/managers/graph_test.exs:431: (test)
-
-  9) test run/2 per-module fail-closed issues (exit 1) an unclassified module is one issue on its source file (Anchor.Managers.GraphTest)
-     test/anchor/managers/graph_test.exs:295
-     match (=) failed
-     code:  assert [%{file: @stray_file, line: 1, message: message}] = report.findings
-     left:  [%{file: "lib/my_app/stray.ex", line: 1, message: message}]
-     right: [
-              %Anchor.Domain.GraphReport.Finding{
-                rule_id: nil,
-                type: nil,
-                label: "anchor.graph",
-                enforcement: :enforce,
-                key: nil,
-                file: "/proj/_build/test/lib/my_app/ebin",
-                line: nil,
-                message: "read 0 modules for app :my_app from /proj/_build/test/lib/my_app/ebin, so none of its code was checked. Fix: run mix compile for :my_app; check that /proj/_build/test/lib/my_app/ebin is the app's ebin (its build path and app name)."
-              },
-              %Anchor.Domain.GraphReport.Finding{
-                rule_id: nil,
-                type: nil,
-                label: "anchor.graph",
-                enforcement: :enforce,
-                key: nil,
-                file: "lib/my_app/stray.ex",
-                line: 1,
-                message: "AnchorFixtures.GraphManagerTest.Stray is in no architecture bucket. Fix: add a selector that matches lib/my_app/stray.ex to the bucket this module belongs in (mix anchor.explain lib/my_app/stray.ex shows the candidates)."
-              }
-            ]
-     stacktrace:
-       test/anchor/managers/graph_test.exs:300: (test)
-
- 10) test run/2 happy path every module classifies and the rule holds: exit 0, counts exact, artifact written once (Anchor.Managers.GraphTest)
-     test/anchor/managers/graph_test.exs:149
-     match (=) failed
-     code:  assert %GraphReport{exit_code: 0, findings: [], could_not_check: []} = report
-     left:  %Anchor.Domain.GraphReport{exit_code: 0, findings: [], could_not_check: []}
-     right: %Anchor.Domain.GraphReport{
-              findings: [
-                %Anchor.Domain.GraphReport.Finding{
-                  rule_id: nil,
-                  type: nil,
-                  label: "anchor.graph",
-                  enforcement: :enforce,
-                  key: nil,
-                  file: "/proj/_build/test/lib/my_app/ebin",
-                  line: nil,
-                  message: "read 0 modules for app :my_app from /proj/_build/test/lib/my_app/ebin, so none of its code was checked. Fix: run mix compile for :my_app; check that /proj/_build/test/lib/my_app/ebin is the app's ebin (its build path and app name)."
-                }
-              ],
-              could_not_check: [],
-              held: [],
-              refused: [],
-              counts: %{modules: 2, opaque: 0, apps: 1, rules: 1},
-              exit_code: 1
-            }
-     stacktrace:
-       test/anchor/managers/graph_test.exs:155: (test)
-
- 11) test run/2 graph artifact a failed write is a report-only note; the verdict stands (Anchor.Managers.GraphTest)
+  4) test run/2 graph artifact a failed write is a report-only note; the verdict stands (Anchor.Managers.GraphTest)
      test/anchor/managers/graph_test.exs:459
      Assertion with == failed
      code:  assert report.exit_code == 0
@@ -339,132 +147,7 @@ Run summary: `26 tests, 21 failures`
      stacktrace:
        test/anchor/managers/graph_test.exs:465: (test)
 
- 12) test run/2 per-module fail-closed issues (exit 1) an Erlang module a pattern selector classifies is opaque and counted, not an issue (Anchor.Managers.GraphTest)
-     test/anchor/managers/graph_test.exs:314
-     Assertion with == failed
-     code:  assert report.exit_code == 0
-     left:  1
-     right: 0
-     stacktrace:
-       test/anchor/managers/graph_test.exs:330: (test)
-
- 13) test run/2 rule crash isolation (AC4) stub_throws: one issue naming the rule and reason; a second rule's finding still prints (Anchor.Managers.GraphTest)
-     test/anchor/managers/graph_test.exs:399
-     match (=) failed
-     code:  assert [crash, found] = report.findings
-     left:  [crash, found]
-     right: [
-              %Anchor.Domain.GraphReport.Finding{
-                rule_id: nil,
-                type: nil,
-                label: "anchor.graph",
-                enforcement: :enforce,
-                key: nil,
-                file: "/proj/_build/test/lib/my_app/ebin",
-                line: nil,
-                message: "read 0 modules for app :my_app from /proj/_build/test/lib/my_app/ebin, so none of its code was checked. Fix: run mix compile for :my_app; check that /proj/_build/test/lib/my_app/ebin is the app's ebin (its build path and app name)."
-              },
-              %Anchor.Domain.GraphReport.Finding{
-                rule_id: nil,
-                type: nil,
-                label: "anchor.graph",
-                enforcement: :enforce,
-                key: nil,
-                file: ".anchor.yml",
-                line: nil,
-                message: "rule 1 (id: \"crash\", stub_throws) could not run: throw: :thrown (raised at test/support/graph_rule_stubs.ex:50: Anchor.Test.GraphRuleStubs.Throws.check/2), so it checked nothing. Fix: this is an Anchor bug; file it with this line."
-              },
-              %Anchor.Domain.GraphReport.Finding{
-                rule_id: "f",
-                type: :stub_finds,
-                label: "rule 2 (id: \"f\", stub_finds)",
-                enforcement: :enforce,
-                key: "f|AnchorFixtures.GraphManagerTest.User|found",
-                file: "lib/my_app/domain/user.ex",
-                line: 2,
-                message: "AnchorFixtures.GraphManagerTest.User was found. Fix: do not be found."
-              }
-            ]
-     stacktrace:
-       test/anchor/managers/graph_test.exs:407: (test)
-
- 14) test run/2 rule crash isolation (AC4) stub_malformed: one issue naming the rule and reason; a second rule's finding still prints (Anchor.Managers.GraphTest)
-     test/anchor/managers/graph_test.exs:399
-     match (=) failed
-     code:  assert [crash, found] = report.findings
-     left:  [crash, found]
-     right: [
-              %Anchor.Domain.GraphReport.Finding{
-                rule_id: nil,
-                type: nil,
-                label: "anchor.graph",
-                enforcement: :enforce,
-                key: nil,
-                file: "/proj/_build/test/lib/my_app/ebin",
-                line: nil,
-                message: "read 0 modules for app :my_app from /proj/_build/test/lib/my_app/ebin, so none of its code was checked. Fix: run mix compile for :my_app; check that /proj/_build/test/lib/my_app/ebin is the app's ebin (its build path and app name)."
-              },
-              %Anchor.Domain.GraphReport.Finding{
-                rule_id: nil,
-                type: nil,
-                label: "anchor.graph",
-                enforcement: :enforce,
-                key: nil,
-                file: ".anchor.yml",
-                line: nil,
-                message: "rule 1 (id: \"crash\", stub_malformed) could not run: ArgumentError: check/2 returned :oops, not a list (raised at lib/anchor/managers/graph.ex:378: Anchor.Managers.Graph.violations!/1), so it checked nothing. Fix: this is an Anchor bug; file it with this line."
-              },
-              %Anchor.Domain.GraphReport.Finding{
-                rule_id: "f",
-                type: :stub_finds,
-                label: "rule 2 (id: \"f\", stub_finds)",
-                enforcement: :enforce,
-                key: "f|AnchorFixtures.GraphManagerTest.User|found",
-                file: "lib/my_app/domain/user.ex",
-                line: 2,
-                message: "AnchorFixtures.GraphManagerTest.User was found. Fix: do not be found."
-              }
-            ]
-     ... (block cut at 40 lines)
-
- 15) test run/2 happy path a report-only rule's findings print and exit 0 (Anchor.Managers.GraphTest)
-     test/anchor/managers/graph_test.exs:159
-     match (=) failed
-     code:  assert %GraphReport{exit_code: 0, findings: [finding]} = Graph.run(request(), deps())
-     left:  %Anchor.Domain.GraphReport{exit_code: 0, findings: [finding]}
-     right: %Anchor.Domain.GraphReport{
-              findings: [
-                %Anchor.Domain.GraphReport.Finding{
-                  rule_id: nil,
-                  type: nil,
-                  label: "anchor.graph",
-                  enforcement: :enforce,
-                  key: nil,
-                  file: "/proj/_build/test/lib/my_app/ebin",
-                  line: nil,
-                  message: "read 0 modules for app :my_app from /proj/_build/test/lib/my_app/ebin, so none of its code was checked. Fix: run mix compile for :my_app; check that /proj/_build/test/lib/my_app/ebin is the app's ebin (its build path and app name)."
-                },
-                %Anchor.Domain.GraphReport.Finding{
-                  rule_id: "f",
-                  type: :stub_finds,
-                  label: "rule 1 (id: \"f\", stub_finds)",
-                  enforcement: :report,
-                  key: "f|AnchorFixtures.GraphManagerTest.User|found",
-                  file: "lib/my_app/domain/user.ex",
-                  line: 2,
-                  message: "AnchorFixtures.GraphManagerTest.User was found. Fix: do not be found."
-                }
-              ],
-              could_not_check: [],
-              held: [],
-              refused: [],
-              counts: %{modules: 2, opaque: 0, apps: 1, rules: 1},
-              exit_code: 1
-            }
-     stacktrace:
-       test/anchor/managers/graph_test.exs:162: (test)
-
- 16) test run/2 an app that read no module (exit 1) positive control: both apps read a module, the run is clean (Anchor.Managers.GraphTest)
+  5) test run/2 an app that read no module (exit 1) positive control: both apps read a module, the run is clean (Anchor.Managers.GraphTest)
      test/anchor/managers/graph_test.exs:254
      match (=) failed
      code:  assert %GraphReport{exit_code: 0, findings: []} = report
@@ -501,7 +184,37 @@ Run summary: `26 tests, 21 failures`
      stacktrace:
        test/anchor/managers/graph_test.exs:260: (test)
 
- 17) test run/2 rule crash isolation (AC4) stub_raises: one issue naming the rule and reason; a second rule's finding still prints (Anchor.Managers.GraphTest)
+  6) test run/2 per-module fail-closed issues (exit 1) a rule below its min_modules is an issue on the config (Anchor.Managers.GraphTest)
+     test/anchor/managers/graph_test.exs:382
+     match (=) failed
+     code:  assert [%{file: ".anchor.yml", message: message}] = report.findings
+     left:  [%{file: ".anchor.yml", message: message}]
+     right: [
+              %Anchor.Domain.GraphReport.Finding{
+                rule_id: nil,
+                type: nil,
+                label: "anchor.graph",
+                enforcement: :enforce,
+                key: nil,
+                file: "/proj/_build/test/lib/my_app/ebin",
+                line: nil,
+                message: "read 0 modules for app :my_app from /proj/_build/test/lib/my_app/ebin, so none of its code was checked. Fix: run mix compile for :my_app; check that /proj/_build/test/lib/my_app/ebin is the app's ebin (its build path and app name)."
+              },
+              %Anchor.Domain.GraphReport.Finding{
+                rule_id: nil,
+                type: nil,
+                label: "anchor.graph",
+                enforcement: :enforce,
+                key: nil,
+                file: ".anchor.yml",
+                line: nil,
+                message: "rule 1 (id: \"ok\", stub_ok) selects 1 modules, below min_modules 2. Fix: correct the selector; lowering min_modules is the owner's call."
+              }
+            ]
+     stacktrace:
+       test/anchor/managers/graph_test.exs:387: (test)
+
+  7) test run/2 rule crash isolation (AC4) stub_raises: one issue naming the rule and reason; a second rule's finding still prints (Anchor.Managers.GraphTest)
      test/anchor/managers/graph_test.exs:399
      match (=) failed
      code:  assert [crash, found] = report.findings
@@ -540,11 +253,48 @@ Run summary: `26 tests, 21 failures`
             ]
      ... (block cut at 40 lines)
 
- 18) test run/2 per-module fail-closed issues (exit 1) an Erlang module no bucket classifies is an issue (Anchor.Managers.GraphTest)
-     test/anchor/managers/graph_test.exs:335
+  8) test run/2 happy path a report-only rule's findings print and exit 0 (Anchor.Managers.GraphTest)
+     test/anchor/managers/graph_test.exs:159
      match (=) failed
-     code:  assert [%{message: message}] = report.findings
-     left:  [%{message: message}]
+     code:  assert %GraphReport{exit_code: 0, findings: [finding]} = Graph.run(request(), deps())
+     left:  %Anchor.Domain.GraphReport{exit_code: 0, findings: [finding]}
+     right: %Anchor.Domain.GraphReport{
+              findings: [
+                %Anchor.Domain.GraphReport.Finding{
+                  rule_id: nil,
+                  type: nil,
+                  label: "anchor.graph",
+                  enforcement: :enforce,
+                  key: nil,
+                  file: "/proj/_build/test/lib/my_app/ebin",
+                  line: nil,
+                  message: "read 0 modules for app :my_app from /proj/_build/test/lib/my_app/ebin, so none of its code was checked. Fix: run mix compile for :my_app; check that /proj/_build/test/lib/my_app/ebin is the app's ebin (its build path and app name)."
+                },
+                %Anchor.Domain.GraphReport.Finding{
+                  rule_id: "f",
+                  type: :stub_finds,
+                  label: "rule 1 (id: \"f\", stub_finds)",
+                  enforcement: :report,
+                  key: "f|AnchorFixtures.GraphManagerTest.User|found",
+                  file: "lib/my_app/domain/user.ex",
+                  line: 2,
+                  message: "AnchorFixtures.GraphManagerTest.User was found. Fix: do not be found."
+                }
+              ],
+              could_not_check: [],
+              held: [],
+              refused: [],
+              counts: %{modules: 2, opaque: 0, apps: 1, rules: 1},
+              exit_code: 1
+            }
+     stacktrace:
+       test/anchor/managers/graph_test.exs:162: (test)
+
+  9) test run/2 per-module fail-closed issues (exit 1) a beam with no debug_info is an issue on it; the other modules still classify and their findings print (Anchor.Managers.GraphTest)
+     test/anchor/managers/graph_test.exs:265
+     match (=) failed
+     code:  assert [issue, rule_finding] = report.findings
+     left:  [issue, rule_finding]
      right: [
               %Anchor.Domain.GraphReport.Finding{
                 rule_id: nil,
@@ -562,15 +312,90 @@ Run summary: `26 tests, 21 failures`
                 label: "anchor.graph",
                 enforcement: :enforce,
                 key: nil,
-                file: "/proj/_build/test/lib/my_app/ebin/my_erl.beam",
+                file: "/proj/_build/test/lib/my_app/ebin/Elixir.Broken.beam",
                 line: nil,
-                message: ":my_erl is Erlang source; the graph engine reads Elixir only, and no architecture bucket classifies it. Fix: move it under a dependency, or classify it with a pattern: selector so its calls are checked as a black box."
+                message: "Broken was compiled without debug_info, so Anchor cannot read it. Fix: remove debug_info: false from the project's elixirc_options (Elixir keeps debug_info by default)."
+              },
+              %Anchor.Domain.GraphReport.Finding{
+                rule_id: "f",
+                type: :stub_finds,
+                label: "rule 1 (id: \"f\", stub_finds)",
+                enforcement: :enforce,
+                key: "f|AnchorFixtures.GraphManagerTest.User|found",
+                file: "lib/my_app/domain/user.ex",
+                line: 2,
+                message: "AnchorFixtures.GraphManagerTest.User was found. Fix: do not be found."
+              }
+            ]
+     ... (block cut at 40 lines)
+
+ 10) test run/2 --only narrows to the named rules; a running rule's floor is still judged (Anchor.Managers.GraphTest)
+     test/anchor/managers/graph_test.exs:420
+     Assertion with == failed
+     code:  assert Enum.map(report.findings, & &1.rule_id) == ["a", nil]
+     left:  [nil, "a", nil]
+     right: ["a", nil]
+     stacktrace:
+       test/anchor/managers/graph_test.exs:431: (test)
+
+ 11) test run/2 per-module fail-closed issues (exit 1) an interfaces.exports entry naming no module is an issue on the config; one naming a module is not (Anchor.Managers.GraphTest)
+     test/anchor/managers/graph_test.exs:353
+     match (=) failed
+     code:  assert [%{file: ".anchor.yml", message: message}] = report.findings
+     left:  [%{file: ".anchor.yml", message: message}]
+     right: [
+              %Anchor.Domain.GraphReport.Finding{
+                rule_id: nil,
+                type: nil,
+                label: "anchor.graph",
+                enforcement: :enforce,
+                key: nil,
+                file: "/proj/_build/test/lib/my_app/ebin",
+                line: nil,
+                message: "read 0 modules for app :my_app from /proj/_build/test/lib/my_app/ebin, so none of its code was checked. Fix: run mix compile for :my_app; check that /proj/_build/test/lib/my_app/ebin is the app's ebin (its build path and app name)."
+              },
+              %Anchor.Domain.GraphReport.Finding{
+                rule_id: nil,
+                type: nil,
+                label: "anchor.graph",
+                enforcement: :enforce,
+                key: nil,
+                file: ".anchor.yml",
+                line: nil,
+                message: "architecture interfaces.exports names MyApp.Gone, which is no module of the project, so it exports nothing today and would export any module later given that name. Fix: in .anchor.yml, rename the entry to the module that is the interface, or remove it."
               }
             ]
      stacktrace:
-       test/anchor/managers/graph_test.exs:348: (test)
+       test/anchor/managers/graph_test.exs:378: (test)
 
- 19) test run/2 an app that read no module (exit 1) one app of two with an empty ebin is one issue on that ebin, naming the app (Anchor.Managers.GraphTest)
+ 12) test run/2 happy path every module classifies and the rule holds: exit 0, counts exact, artifact written once (Anchor.Managers.GraphTest)
+     test/anchor/managers/graph_test.exs:149
+     match (=) failed
+     code:  assert %GraphReport{exit_code: 0, findings: [], could_not_check: []} = report
+     left:  %Anchor.Domain.GraphReport{exit_code: 0, findings: [], could_not_check: []}
+     right: %Anchor.Domain.GraphReport{
+              findings: [
+                %Anchor.Domain.GraphReport.Finding{
+                  rule_id: nil,
+                  type: nil,
+                  label: "anchor.graph",
+                  enforcement: :enforce,
+                  key: nil,
+                  file: "/proj/_build/test/lib/my_app/ebin",
+                  line: nil,
+                  message: "read 0 modules for app :my_app from /proj/_build/test/lib/my_app/ebin, so none of its code was checked. Fix: run mix compile for :my_app; check that /proj/_build/test/lib/my_app/ebin is the app's ebin (its build path and app name)."
+                }
+              ],
+              could_not_check: [],
+              held: [],
+              refused: [],
+              counts: %{modules: 2, opaque: 0, apps: 1, rules: 1},
+              exit_code: 1
+            }
+     stacktrace:
+       test/anchor/managers/graph_test.exs:155: (test)
+
+ 13) test run/2 an app that read no module (exit 1) one app of two with an empty ebin is one issue on that ebin, naming the app (Anchor.Managers.GraphTest)
      test/anchor/managers/graph_test.exs:240
      match (=) failed
      code:  assert [%{file: @other_ebin, label: "anchor.graph", message: message}] = report.findings
@@ -600,7 +425,7 @@ Run summary: `26 tests, 21 failures`
      stacktrace:
        test/anchor/managers/graph_test.exs:248: (test)
 
- 20) test run/2 rule crash isolation (AC4) stub_exits: one issue naming the rule and reason; a second rule's finding still prints (Anchor.Managers.GraphTest)
+ 14) test run/2 rule crash isolation (AC4) stub_exits: one issue naming the rule and reason; a second rule's finding still prints (Anchor.Managers.GraphTest)
      test/anchor/managers/graph_test.exs:399
      match (=) failed
      code:  assert [crash, found] = report.findings
@@ -637,10 +462,78 @@ Run summary: `26 tests, 21 failures`
                 message: "AnchorFixtures.GraphManagerTest.User was found. Fix: do not be found."
               }
             ]
-     stacktrace:
-       test/anchor/managers/graph_test.exs:407: (test)
+     ... (block cut at 40 lines)
 
- 21) test run/2 per-module fail-closed issues (exit 1) a core_v1 refusal is a per-module issue (Anchor.Managers.GraphTest)
+ 15) test run/2 per-module fail-closed issues (exit 1) an unclassified module is one issue on its source file (Anchor.Managers.GraphTest)
+     test/anchor/managers/graph_test.exs:295
+     match (=) failed
+     code:  assert [%{file: @stray_file, line: 1, message: message}] = report.findings
+     left:  [%{file: "lib/my_app/stray.ex", line: 1, message: message}]
+     right: [
+              %Anchor.Domain.GraphReport.Finding{
+                rule_id: nil,
+                type: nil,
+                label: "anchor.graph",
+                enforcement: :enforce,
+                key: nil,
+                file: "/proj/_build/test/lib/my_app/ebin",
+                line: nil,
+                message: "read 0 modules for app :my_app from /proj/_build/test/lib/my_app/ebin, so none of its code was checked. Fix: run mix compile for :my_app; check that /proj/_build/test/lib/my_app/ebin is the app's ebin (its build path and app name)."
+              },
+              %Anchor.Domain.GraphReport.Finding{
+                rule_id: nil,
+                type: nil,
+                label: "anchor.graph",
+                enforcement: :enforce,
+                key: nil,
+                file: "lib/my_app/stray.ex",
+                line: 1,
+                message: "AnchorFixtures.GraphManagerTest.Stray is in no architecture bucket. Fix: add a selector that matches lib/my_app/stray.ex to the bucket this module belongs in (mix anchor.explain lib/my_app/stray.ex shows the candidates)."
+              }
+            ]
+     stacktrace:
+       test/anchor/managers/graph_test.exs:300: (test)
+
+ 16) test run/2 rule crash isolation (AC4) stub_throws: one issue naming the rule and reason; a second rule's finding still prints (Anchor.Managers.GraphTest)
+     test/anchor/managers/graph_test.exs:399
+     match (=) failed
+     code:  assert [crash, found] = report.findings
+     left:  [crash, found]
+     right: [
+              %Anchor.Domain.GraphReport.Finding{
+                rule_id: nil,
+                type: nil,
+                label: "anchor.graph",
+                enforcement: :enforce,
+                key: nil,
+                file: "/proj/_build/test/lib/my_app/ebin",
+                line: nil,
+                message: "read 0 modules for app :my_app from /proj/_build/test/lib/my_app/ebin, so none of its code was checked. Fix: run mix compile for :my_app; check that /proj/_build/test/lib/my_app/ebin is the app's ebin (its build path and app name)."
+              },
+              %Anchor.Domain.GraphReport.Finding{
+                rule_id: nil,
+                type: nil,
+                label: "anchor.graph",
+                enforcement: :enforce,
+                key: nil,
+                file: ".anchor.yml",
+                line: nil,
+                message: "rule 1 (id: \"crash\", stub_throws) could not run: throw: :thrown (raised at test/support/graph_rule_stubs.ex:50: Anchor.Test.GraphRuleStubs.Throws.check/2), so it checked nothing. Fix: this is an Anchor bug; file it with this line."
+              },
+              %Anchor.Domain.GraphReport.Finding{
+                rule_id: "f",
+                type: :stub_finds,
+                label: "rule 2 (id: \"f\", stub_finds)",
+                enforcement: :enforce,
+                key: "f|AnchorFixtures.GraphManagerTest.User|found",
+                file: "lib/my_app/domain/user.ex",
+                line: 2,
+                message: "AnchorFixtures.GraphManagerTest.User was found. Fix: do not be found."
+              }
+            ]
+     ... (block cut at 40 lines)
+
+ 17) test run/2 per-module fail-closed issues (exit 1) a core_v1 refusal is a per-module issue (Anchor.Managers.GraphTest)
      test/anchor/managers/graph_test.exs:284
      match (=) failed
      code:  assert [%{message: message}] = report.findings
@@ -669,6 +562,114 @@ Run summary: `26 tests, 21 failures`
             ]
      stacktrace:
        test/anchor/managers/graph_test.exs:290: (test)
+
+ 18) test run/2 per-module fail-closed issues (exit 1) an Erlang module a pattern selector classifies is opaque and counted, not an issue (Anchor.Managers.GraphTest)
+     test/anchor/managers/graph_test.exs:314
+     Assertion with == failed
+     code:  assert report.exit_code == 0
+     left:  1
+     right: 0
+     stacktrace:
+       test/anchor/managers/graph_test.exs:330: (test)
+
+ 19) test run/2 rule crash isolation (AC4) stub_malformed: one issue naming the rule and reason; a second rule's finding still prints (Anchor.Managers.GraphTest)
+     test/anchor/managers/graph_test.exs:399
+     match (=) failed
+     code:  assert [crash, found] = report.findings
+     left:  [crash, found]
+     right: [
+              %Anchor.Domain.GraphReport.Finding{
+                rule_id: nil,
+                type: nil,
+                label: "anchor.graph",
+                enforcement: :enforce,
+                key: nil,
+                file: "/proj/_build/test/lib/my_app/ebin",
+                line: nil,
+                message: "read 0 modules for app :my_app from /proj/_build/test/lib/my_app/ebin, so none of its code was checked. Fix: run mix compile for :my_app; check that /proj/_build/test/lib/my_app/ebin is the app's ebin (its build path and app name)."
+              },
+              %Anchor.Domain.GraphReport.Finding{
+                rule_id: nil,
+                type: nil,
+                label: "anchor.graph",
+                enforcement: :enforce,
+                key: nil,
+                file: ".anchor.yml",
+                line: nil,
+                message: "rule 1 (id: \"crash\", stub_malformed) could not run: ArgumentError: check/2 returned :oops, not a list (raised at lib/anchor/managers/graph.ex:378: Anchor.Managers.Graph.violations!/1), so it checked nothing. Fix: this is an Anchor bug; file it with this line."
+              },
+              %Anchor.Domain.GraphReport.Finding{
+                rule_id: "f",
+                type: :stub_finds,
+                label: "rule 2 (id: \"f\", stub_finds)",
+                enforcement: :enforce,
+                key: "f|AnchorFixtures.GraphManagerTest.User|found",
+                file: "lib/my_app/domain/user.ex",
+                line: 2,
+                message: "AnchorFixtures.GraphManagerTest.User was found. Fix: do not be found."
+              }
+            ]
+     ... (block cut at 40 lines)
+
+ 20) test run/2 per-module fail-closed issues (exit 1) a source file that cannot be read is an issue on it (Anchor.Managers.GraphTest)
+     test/anchor/managers/graph_test.exs:304
+     match (=) failed
+     code:  assert [%{file: @accounts_file, message: message}] = report.findings
+     left:  [%{file: "lib/my_app/managers/accounts.ex", message: message}]
+     right: [
+              %Anchor.Domain.GraphReport.Finding{
+                rule_id: nil,
+                type: nil,
+                label: "anchor.graph",
+                enforcement: :enforce,
+                key: nil,
+                file: "/proj/_build/test/lib/my_app/ebin",
+                line: nil,
+                message: "read 0 modules for app :my_app from /proj/_build/test/lib/my_app/ebin, so none of its code was checked. Fix: run mix compile for :my_app; check that /proj/_build/test/lib/my_app/ebin is the app's ebin (its build path and app name)."
+              },
+              %Anchor.Domain.GraphReport.Finding{
+                rule_id: nil,
+                type: nil,
+                label: "anchor.graph",
+                enforcement: :enforce,
+                key: nil,
+                file: "lib/my_app/managers/accounts.ex",
+                line: nil,
+                message: "Anchor could not read the source of lib/my_app/managers/accounts.ex (:enoent), so its uses_module selectors and generated? are unknown. Fix: make lib/my_app/managers/accounts.ex a readable file that parses (mix compile reports a syntax error), or run from the project root."
+              }
+            ]
+     stacktrace:
+       test/anchor/managers/graph_test.exs:310: (test)
+
+ 21) test run/2 per-module fail-closed issues (exit 1) an Erlang module no bucket classifies is an issue (Anchor.Managers.GraphTest)
+     test/anchor/managers/graph_test.exs:335
+     match (=) failed
+     code:  assert [%{message: message}] = report.findings
+     left:  [%{message: message}]
+     right: [
+              %Anchor.Domain.GraphReport.Finding{
+                rule_id: nil,
+                type: nil,
+                label: "anchor.graph",
+                enforcement: :enforce,
+                key: nil,
+                file: "/proj/_build/test/lib/my_app/ebin",
+                line: nil,
+                message: "read 0 modules for app :my_app from /proj/_build/test/lib/my_app/ebin, so none of its code was checked. Fix: run mix compile for :my_app; check that /proj/_build/test/lib/my_app/ebin is the app's ebin (its build path and app name)."
+              },
+              %Anchor.Domain.GraphReport.Finding{
+                rule_id: nil,
+                type: nil,
+                label: "anchor.graph",
+                enforcement: :enforce,
+                key: nil,
+                file: "/proj/_build/test/lib/my_app/ebin/my_erl.beam",
+                line: nil,
+                message: ":my_erl is Erlang source; the graph engine reads Elixir only, and no architecture bucket classifies it. Fix: move it under a dependency, or classify it with a pattern: selector so its calls are checked as a black box."
+              }
+            ]
+     stacktrace:
+       test/anchor/managers/graph_test.exs:348: (test)
 ```
 
 ## AE-E — the issue sits on the config, not the app's ebin
