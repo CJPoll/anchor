@@ -56,6 +56,18 @@ defmodule Anchor.Domain.DemandTest do
 
     def via_open(f, p), do: open(f, p)
 
+    def received(m) do
+      receive do
+        {:x, y} -> y + m
+      end
+    end
+
+    def received_drop(_m) do
+      receive do
+        {:x, y} -> y
+      end
+    end
+
     def notify(p) do
       ExtNotifier.push(p)
       :ok
@@ -191,6 +203,12 @@ defmodule Anchor.Domain.DemandTest do
       refute Map.has_key?(demand.imprecise, {A, :ignored, 1})
     end
 
+    test "receive (a letrec over recv primops): a captured parameter the clause uses is used",
+         %{demand: demand} do
+      assert demands(demand, {A, :received, 1}) == [:all]
+      assert demands(demand, {A, :received_drop, 1}) == [:absent]
+    end
+
     test "AC6 a parameter passed to an :any apply: used, and the function is imprecise",
          %{demand: demand} do
       assert demands(demand, {A, :open, 2}) == [:all, :all]
@@ -233,13 +251,14 @@ defmodule Anchor.Domain.DemandTest do
   end
 
   describe "counts" do
-    # 16 functions (A 12, B 3, C 1), 23 parameters; absent: first/2's b,
-    # chain, g, h, loop's acc, ping's and pong's p, ignored's p, run's p.
+    # 18 functions (A 14, B 3, C 1), 25 parameters; absent: first/2's b,
+    # chain, g, h, loop's acc, ping's and pong's p, ignored's p, run's p,
+    # received_drop's m.
     test "functions analysed, absent parameters and imprecise functions, exact", %{demand: demand} do
       assert %{
-               functions: 16,
-               parameters: 23,
-               absent: 9,
+               functions: 18,
+               parameters: 25,
+               absent: 10,
                imprecise_parameters: 4,
                imprecise_functions: 4
              } = demand.counts

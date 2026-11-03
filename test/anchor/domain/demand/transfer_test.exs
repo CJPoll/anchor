@@ -50,6 +50,15 @@ defmodule Anchor.Domain.Demand.TransferTest do
     end
 
     def built(a, b), do: %{kept: a, dropped: b}.kept
+    def pair(a, b), do: elem({a, b}, 0)
+
+    def tried(a, b, _c) do
+      try do
+        a
+      catch
+        _thrown -> b
+      end
+    end
 
     def dep(p) do
       SomeDep.call(p)
@@ -136,6 +145,14 @@ defmodule Anchor.Domain.Demand.TransferTest do
 
     test "a map built and read: the field read is used, the other absent", context do
       assert params(context, :built, 2) == [:all, :absent]
+    end
+
+    test "a tuple built and read: the element read is used, the other absent", context do
+      assert params(context, :pair, 2) == [:all, :absent]
+    end
+
+    test "try: the body's value and the handler's are used, nothing else", context do
+      assert params(context, :tried, 3) == [:all, :all, :absent]
     end
   end
 
