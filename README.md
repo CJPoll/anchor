@@ -189,6 +189,10 @@ rule's position (and its `id`, when it has one) and ending with `Fix:`:
 - an `allowed_callers` entry that is not exactly one Elixir module name: a glob
   (`"*"` allows every caller, so the rule checks nothing), an Erlang module
   (`":ets"`), or a malformed name (`"MyApp.adapter"`, `"MyApp.Repo.insert/1"`);
+- an `owned_namespaces: []`, which checks no struct, and an `owned_namespaces`
+  entry that is not an exact Elixir module name (a glob, an Erlang module);
+- a `pure_patterns` entry of only wildcards (`*`, `**`), which declares every
+  module pure;
 - an `allowed_functions` entry of only wildcards (`*`, `**`), which allows
   every function. Every other glob character is a literal (see
   [Glob syntax](#glob-syntax)), so `*?` allows the functions ending in `?`, not
@@ -410,6 +414,8 @@ semantics and edge cases.
 | `same_context` | `no_direct_dependency` | Boolean, default `false`. When `true`, a `forbidden_patterns` match is a violation **only if** the dependency shares the checked file's own context. Exact `forbidden_modules` matches are never scoped. |
 | `context_depth` | `no_direct_dependency` | Positive integer, default `2`. Number of leading module-namespace segments that define a "context/subdomain". Inert unless `same_context: true`. |
 | `allowed_functions` | `module_pattern_restrictions` | Function-name allow-list (globs). |
+| `owned_namespaces` | `struct_owned_by_module` | Exact module names, default: every struct. Limits the check to structs equal to or nested under an entry, and reports a selected top-level module outside them. `[]`, a glob, an Erlang module or a malformed name fails the load. See [`struct_owned_by_module`](#struct_owned_by_module). |
+| `pure_patterns` | `no_discarded_pure_expression` | Module-name globs, default `[]`: modules whose functions are pure, beside the stdlib pure set. A non-list, a blank entry or a match-all glob (`*`, `**`) fails the load. See [`no_discarded_pure_expression`](#no_discarded_pure_expression). |
 | `mode`, `max_lines` | `alphabetized_functions`, `max_file_length` | Style-check parameters. `mode` is `all`, `public_only` or `separate` (a leading colon is accepted); any other token fails the load. |
 
 #### Keys each rule type accepts
@@ -437,11 +443,14 @@ compiled code (DND-5440; no `graph` type ships yet). Credo never reports a
 | `must_use_module` | `required_modules` | `required_modules` | `ast` |
 | `no_comparison_in_if` | none | none | `ast` |
 | `no_direct_dependency` | `allowed_callers`, `context_depth`, `forbidden_functions`, `forbidden_modules`, `forbidden_patterns`, `match`, `same_context` | `forbidden_functions`, `forbidden_modules`, `forbidden_patterns` | `ast` |
+| `no_discarded_pure_expression` | `pure_patterns` | none | `ast` |
 | `no_discarding_arrow_in_with` | none | none | `ast` |
+| `no_forwarding_function` | none | none | `ast` |
 | `no_transitive_dependency` | `forbidden_modules`, `forbidden_patterns` | `forbidden_modules`, `forbidden_patterns` | `ast` |
 | `no_tuple_match_in_head` | none | none | `ast` |
 | `single_control_flow` | none | none | `ast` |
 | `struct_getter_convention` | none | none | `ast` |
+| `struct_owned_by_module` | `owned_namespaces` | none | `ast` |
 
 Every rule also needs exactly one **selector**: a non-empty `paths` list, a
 `pattern` string or a `uses_module` string. A rule with none selects no file,
@@ -535,7 +544,10 @@ Configure Credo to use the custom checks in `.credo.exs`:
           {Anchor.Check.AlphabetizedFunctions, []},
           {Anchor.Check.MaxFileLength, []},
           {Anchor.Check.NoComparisonInIf, []},
-          {Anchor.Check.StructGetterConvention, []}
+          {Anchor.Check.StructGetterConvention, []},
+          {Anchor.Check.NoDiscardedPureExpression, []},
+          {Anchor.Check.NoForwardingFunction, []},
+          {Anchor.Check.StructOwnedByModule, []}
         ]
       }
     }
@@ -1104,3 +1116,220 @@ Note: This check allows getters to return `%Ecto.Association.NotLoaded{}` struct
     - "lib/my_app/**/*.ex"
   recursive: true
 ```
+
+### `no_discarded_pure_expression`
+
+Reports an expression whose value nobody uses and which has no effect, so it
+causes nothing (DND-5451). It is dead code that reads as if it mattered: a
+leftover computation, or a `Map.put/3` whose result was meant to be rebound.
+The compiler warns about an unused variable, but not about
+`Map.put(state, :k, v)` on its own line, nor about `_ = Enum.map(xs, f)`.
+
+Two positions are checked:
+
+- every expression of a block except the last (the last is the block's value):
+  function, `fn`, clause, `do`/`else` and module bodies;
+- the right side of `_ = expr` or `_name = expr` written in such a position.
+  `x = expr` binds a value and `:ok = call()` asserts a match, so neither is
+  reported.
+
+Code inside `quote` is skipped (it is a macro's output).
+
+An expression is **pure**, by Anchor's definition, exactly when it is:
+
+1. a literal: an atom, a number, a string, `nil`, `true`, `false`;
+2. a variable, or a module attribute read (`@attr`);
+3. a list, tuple, map, map update, struct, binary or interpolated string whose
+   every element is pure;
+4. an operator over pure operands: `+ - * / ++ -- <> == != === !== < > <= >=
+   and or not && || ! in .. |>` (a pipe is the call it builds), or a field
+   read `x.field` / `x[:k]` on a pure value;
+5. a call `M.f(args)` where `M`, resolved through the aliases in scope, is in
+   the **stdlib pure set** or matches a `pure_patterns` glob, `f` does not end
+   in `!`, and every argument is pure. The stdlib pure set is `Access`,
+   `Atom`, `Base`, `Bitwise`, `Date`, `Enum`, `Float`, `Integer`, `Keyword`,
+   `List`, `Map`, `MapSet`, `NaiveDateTime`, `Range`, `Stream`, `String`,
+   `Time`, `Tuple`, `URI`, except the clock reads (`Date.utc_today`,
+   `NaiveDateTime.utc_now`, `NaiveDateTime.local_now`, `Time.utc_now`), the
+   random reads (`Enum.random`, `Enum.shuffle`, `Enum.take_random`), the
+   atom-table writes and lookups (`String.to_atom`, `List.to_atom`,
+   `String.to_existing_atom`, `List.to_existing_atom`), `Stream.run` and
+   `URI.default_port/2` (a setter). An argument a stdlib function may call (its `@spec` types it
+   as a function, or as a `Collectable.t()`) must be written out: an `fn` or
+   a capture literal that is pure (not the `&1` placeholder), `:asc`,
+   `:desc`, a boolean or `nil`, or a container literal naming no module. A
+   function held in a variable, a field or an attribute may be any function,
+   and a module there has its `compare/2` called, so
+   `Enum.each(xs, notify)` is not pure. A stdlib function with no spec is
+   judged as calling every argument;
+6. a local call `f(args)` to a function its own module defines (`def` or
+   `defp`), in a module whose name matches a `pure_patterns` glob, `f` not
+   ending in `!`, every argument pure. A name an `import` or a `use` brings in
+   (`field/2` inside `embedded_schema`) is unknown, so not pure;
+7. a `Kernel` pure function over pure arguments: `abs div rem max min length
+   elem hd tl tuple_size map_size byte_size bit_size to_string inspect` and the
+   `is_*` guards;
+8. an `fn` whose every clause body is pure, `&(...)` of a pure expression, or
+   a capture `&M.f/n` / `&f/n` of a pure function.
+
+Anything else is not pure, so it is never reported: an unknown call (it may be
+an effect), a dynamic call (`mod.f()`, `apply/3`, `fun.()`), `send`, `raise`,
+`throw`, `exit`, `spawn`, a bang function, and every `case`, `cond`, `if`,
+`with`, `receive` or `try` (control flow is judged inside, not as a whole).
+So `Enum.each(xs, &IO.puts/1)` is not reported and
+`Enum.each(xs, fn x -> x + 1 end)` is.
+
+```elixir
+def put(state, value) do
+  Map.put(state, :key, value)   # reported: its result is thrown away
+  state
+end
+```
+
+Each issue ends with `Fix: use the value (bind it and use the binding, or make
+it the block's last expression), or delete it. A call kept for its effect must
+be to a module outside pure_patterns and the stdlib pure set.`
+
+```yaml
+- type: no_discarded_pure_expression
+  paths:
+    - "lib/my_app/**/*.ex"
+  recursive: true
+  pure_patterns:          # optional: your own pure modules
+    - "MyApp.*.Domain.*"
+```
+
+Known limits. The first four can report code that does have an effect; the
+rest are misses or cosmetic:
+
+- Raising is an effect only for a bang function and `raise`/`throw`/`exit`. A
+  non-bang call kept only for its raise (`String.to_integer(s)` as
+  validation) is reported; bind and use it, or check explicitly.
+- A variable holding a lazy stream with effects (`File.stream!/1`) is a pure
+  value here, so `Enum.each(stream, fn _ -> nil end)` on it is reported. The
+  graph engine's effects inference (DND-5447) knows better. The same holds
+  for any value whose protocol implementation has an effect: `inspect/1` or
+  `to_string/1` on a struct with its own `Inspect` or `String.Chars`, or an
+  `Enum` call on a struct with its own `Enumerable`.
+- A `pure_patterns` module's arguments are judged as data: a function value
+  passed to one of its functions is trusted to be called purely, because the
+  declaration says the module is pure. Keep callbacks with effects out of
+  `pure_patterns` modules.
+- `mod.f` written without parentheses on a variable reads as a field read, so
+  a zero-arity call through a module held in a variable is judged pure
+  (Elixir warns on that form).
+- A bare literal carries no line in the parsed source, so its issue sits on
+  the nearest enclosing line.
+- Purity of your own functions is not inferred from the call graph: that is
+  the graph engine's (DND-5447, DND-5470). Declare pure namespaces with
+  `pure_patterns`.
+
+### `no_forwarding_function`
+
+Reports a function whose every clause only hands its arguments, unchanged and
+in order, to another function of the same module (DND-5452, proposal F4). The
+hop adds depth and causes nothing: inside one module no boundary is crossed.
+
+```elixir
+def total(items, tax), do: do_total(items, tax)   # reported: total/2
+defp do_total(items, tax), do: Enum.sum(items) * (1 + tax)
+```
+
+A clause forwards when its head is distinct bare variables (no pattern, no
+`_` name, no default, no guard) and its body is exactly one call, `g(a, b)`,
+`__MODULE__.g(a, b)` or `a |> g(b)`, passing exactly those variables in the
+same order to a `def`/`defp` of the same module that is not itself. A
+multi-clause function is reported only when every clause forwards to the same
+function. `defdelegate f(a, b), to: __MODULE__, as: :g` is reported the same
+way.
+
+Not reported: any change to an argument, a reordering, a dropped or added
+argument, a body of more than one expression, a call to a function the module
+does not define (imported, aliased or remote), a call to itself, a function
+marked `@impl` (a behaviour callback is a boundary) or `@deprecated` (an API
+transition), a `defimpl` body (protocol callbacks), and code inside `quote`. A
+nested `defmodule` is its own module.
+
+Each issue names both functions and ends with `Fix: inline the hop: make the
+callers of f/n call g/n directly and delete f/n, or rename g/n to f/n (public
+if f/n was). Keep a forwarding function only where it crosses a boundary (a
+behaviour callback marked @impl, another module's public API).`
+
+**The split with `no_inert_hop` (DND-5463).** This rule judges only what one
+file shows: a hop within one module, where no boundary can be crossed. A hop
+to another module, a `defdelegate` to another module and a facade module may
+cross a bucket, context, app, aggregate or interface boundary, which only the
+architecture model knows, so those are the graph rule `no_inert_hop`'s.
+
+```yaml
+- type: no_forwarding_function
+  paths:
+    - "lib/my_app/**/*.ex"
+  recursive: true
+```
+
+### `struct_owned_by_module`
+
+Only a struct's own module builds or changes it, so each invariant has one
+home (DND-5453, proposal M2). This is the part of crew's
+`StructOnlyChangedByOwnModule` that one file's text decides.
+
+Outside the struct `S`'s own module, in an expression position, it reports:
+
+- `%S{...}` and `%S{s | ...}`;
+- `struct(S)`, `struct(S, kw)`, `struct!(S)`, `struct!(S, kw)` (bare or
+  `Kernel.`) naming another module;
+- on a variable known, in the same function clause, to be another module's
+  struct: `%{s | ...}`, `Map.put`, `put_new`, `put_new_lazy`, `merge`,
+  `replace`, `replace!`, `update`, `update!`, `delete`, `drop` (piped or
+  not), `struct(s, ...)`, and `put_in`/`update_in`/`pop_in`/`get_and_update_in`
+  on a path through it.
+
+A variable is **known** as `S` when every place the clause binds it (the
+head, `=`, a `case`/`with`/`fn`/`receive` clause pattern, a `<-`) matches it
+as `%S{}` (`%S{} = s`), or binds it to a `%S{...}` literal. Any other binding
+of that name in the clause (bare, rebound to a call, matched as a different
+struct, an `fn` argument of the same name) makes it unknown, and nothing is
+reported on it.
+
+**Allowed:** reading fields, `Map.get/2,3`, `Map.from_struct/1`,
+`Map.delete(s, :__struct__)` and a `Map.drop/2` that drops `:__struct__`
+(both convert to a plain map), struct patterns anywhere (heads, `case`,
+`with`, `fn`, `receive`, `for`, `=`, `match?`), and typespec attributes. The
+owner is the innermost `defmodule`, and inside `defimpl P, for: M` it is `M`:
+a protocol implementation for a struct is that struct's own code. Code
+outside every module owns no struct. Names resolve the way Elixir resolves
+them (aliases, `as:`, multi-aliases, a nested module's automatic alias,
+`__MODULE__`). Code inside `quote` is skipped.
+
+**Test code** is exempt by selection, not by a hard-coded path: select `lib`
+paths.
+
+```yaml
+- type: struct_owned_by_module
+  paths:
+    - "lib/**/*.ex"
+  recursive: true
+  owned_namespaces:      # optional: only these namespaces' structs
+    - MyApp
+```
+
+With `owned_namespaces`, only structs equal to or nested under an entry are
+checked, so a stdlib or dependency struct (`URI`, `DateTime`, `MapSet`), which
+your code cannot give a function, is out of scope. A selected top-level
+`defmodule` outside them is itself an issue, so a new namespace is never
+silently unchecked: `Module NewApp.Thing is outside owned_namespaces, so its
+structs would never be checked. Fix: add its namespace to owned_namespaces,
+or stop selecting this file.`
+
+Each build or change issue names the struct and ends with `Fix: call a
+function on S's own module that builds or changes it (e.g. S.new/1,
+S.put_<field>/2); read fields and pattern-match freely.`
+
+Known limits, each a miss: a value bound to a function's return
+(`s = Turn.new()`) or a field typed as a struct (`state.turn`) is not known,
+because that needs another file's typespec: the graph rule DND-5454 judges
+it. A name the source cannot resolve (an `unquote` in a struct literal, an
+alias of a non-literal module) is not reported. A top-level module named by
+an alias in scope inherits DND-1282's literal-`defmodule` naming.
+

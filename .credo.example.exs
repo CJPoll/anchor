@@ -43,6 +43,9 @@
           {Anchor.Check.AlphabetizedFunctions, []},
           {Anchor.Check.MaxFileLength, []},
           {Anchor.Check.StructGetterConvention, []},
+          {Anchor.Check.NoDiscardedPureExpression, []},
+          {Anchor.Check.NoForwardingFunction, []},
+          {Anchor.Check.StructOwnedByModule, []},
 
           # More built-in checks...
           {Credo.Check.Design.AliasUsage, []},

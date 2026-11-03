@@ -326,6 +326,15 @@ defmodule Anchor.Config do
       # a literal glob character, not an Erlang-atom module token.
       forbidden_patterns: rule["forbidden_patterns"] || [],
       allowed_functions: rule["allowed_functions"] || [],
+      # DND-5451: module-name globs (`GlobPattern`) a `no_discarded_pure_expression`
+      # rule declares pure, beside the stdlib pure set. `RuleSchema.validate/2`
+      # has already refused a non-list, a blank entry and a match-all glob.
+      # Absent => `[]`.
+      pure_patterns: rule["pure_patterns"] || [],
+      # DND-5453: the namespaces a `struct_owned_by_module` rule checks, as
+      # module atoms, or `nil` (absent: every struct). `RuleSchema.validate/2`
+      # has already refused `[]` and an entry that is not a module name.
+      owned_namespaces: parse_owned_namespaces(rule["owned_namespaces"]),
       recursive: rule["recursive"] || false,
       max_lines: rule["max_lines"],
       mode: mode,
@@ -391,6 +400,9 @@ defmodule Anchor.Config do
       ref
     end)
   end
+
+  defp parse_owned_namespaces(nil), do: nil
+  defp parse_owned_namespaces(tokens), do: parse_allowed_callers(tokens)
 
   defp parse_allowed_callers(nil), do: []
 

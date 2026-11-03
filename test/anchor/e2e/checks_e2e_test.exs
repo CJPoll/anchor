@@ -37,6 +37,9 @@ defmodule Anchor.E2E.ChecksE2ETest do
   alias Anchor.Check.ModulePatternRestrictions
   alias Anchor.Check.MustUseModule
   alias Anchor.Check.NoDependency
+  alias Anchor.Check.NoDiscardedPureExpression
+  alias Anchor.Check.NoForwardingFunction
+  alias Anchor.Check.StructOwnedByModule
 
   # DND-1267: a function-level rule, from YAML to Credo issue, with no mocks.
   describe "forbidden_functions through the real pipeline" do
@@ -80,6 +83,156 @@ defmodule Anchor.E2E.ChecksE2ETest do
                {5, "Athena.Slack.user_info/1"},
                {8, "Athena.Slack.rule_post/2"}
              ]
+    end
+  end
+
+  # DND-5451: the rule type, from YAML to Credo issue, with no mocks.
+  # Sabotage record: ../../sabotage_records/no_discarded_pure_expression-20261103-dnd_5451_ast_batch.md
+  describe "no_discarded_pure_expression through the real pipeline" do
+    @pure_yaml """
+    rules:
+      - type: no_discarded_pure_expression
+        paths:
+          - "lib/**/*.ex"
+        recursive: true
+        pure_patterns:
+          - "MyApp.Calc"
+    """
+
+    @pure_source """
+    defmodule MyApp.Thing do
+      alias MyApp.Calc
+
+      def put(m) do
+        Map.put(m, :a, 1)
+        Calc.add(m, 1)
+        m
+      end
+    end
+    """
+
+    test "F1: a selected file reports each discarded pure expression, pure_patterns too" do
+      issues =
+        with_anchor_config(@pure_yaml, fn ->
+          run_check(
+            [to_source_file(@pure_source, "lib/my_app/thing.ex")],
+            NoDiscardedPureExpression
+          )
+        end)
+
+      assert issues |> Enum.map(&{&1.line_no, &1.trigger}) |> Enum.sort() == [
+               {5, "Map.put(m, :a, 1)"},
+               {6, "Calc.add(m, 1)"}
+             ]
+
+      assert Enum.all?(issues, &(&1.message =~ "Fix: use the value"))
+    end
+
+    test "F2: a file the rule does not select has no issue (F1 is the control)" do
+      issues =
+        with_anchor_config(@pure_yaml, fn ->
+          all_issues(
+            [
+              to_source_file(@pure_source, "test/my_app/thing_test.exs"),
+              to_source_file("defmodule MyApp.Other do\nend\n", "lib/my_app/other.ex")
+            ],
+            NoDiscardedPureExpression
+          )
+        end)
+
+      assert issues == []
+    end
+  end
+
+  # DND-5452: the rule type, from YAML to Credo issue, with no mocks.
+  # Sabotage record: ../../sabotage_records/no_forwarding_function-20261103-dnd_5451_ast_batch.md
+  describe "no_forwarding_function through the real pipeline" do
+    @forwarding_yaml """
+    rules:
+      - type: no_forwarding_function
+        paths:
+          - "lib/**/*.ex"
+        recursive: true
+    """
+
+    @forwarding_source """
+    defmodule MyApp.Thing do
+      def total(items, tax), do: do_total(items, tax)
+      defp do_total(items, tax), do: {items, tax}
+    end
+    """
+
+    test "F1: a selected file reports the forwarding function" do
+      issues =
+        with_anchor_config(@forwarding_yaml, fn ->
+          run_check(
+            [to_source_file(@forwarding_source, "lib/my_app/thing.ex")],
+            NoForwardingFunction
+          )
+        end)
+
+      assert Enum.map(issues, &{&1.line_no, &1.trigger}) == [{2, "total/2"}]
+    end
+
+    test "F2: a file the rule does not select has no issue (F1 is the control)" do
+      issues =
+        with_anchor_config(@forwarding_yaml, fn ->
+          all_issues(
+            [
+              to_source_file(@forwarding_source, "test/my_app/thing_test.exs"),
+              to_source_file("defmodule MyApp.Other do\nend\n", "lib/my_app/other.ex")
+            ],
+            NoForwardingFunction
+          )
+        end)
+
+      assert issues == []
+    end
+  end
+
+  # DND-5453: the rule type, from YAML to Credo issue, with no mocks. F2 is
+  # crew's test-code exemption (crew:651/657) as selection.
+  # Sabotage record: ../../sabotage_records/struct_owned_by_module-20261103-dnd_5451_ast_batch.md
+  describe "struct_owned_by_module through the real pipeline" do
+    @struct_yaml """
+    rules:
+      - type: struct_owned_by_module
+        paths:
+          - "lib/**/*.ex"
+        recursive: true
+        owned_namespaces:
+          - App
+    """
+
+    @struct_source """
+    defmodule App.X do
+      def run, do: %App.Turn{status: :idle}
+      def stamp(%URI{} = uri), do: %{uri | path: "/"}
+    end
+    """
+
+    test "F1: a selected lib file reports the repo struct built outside its module" do
+      issues =
+        with_anchor_config(@struct_yaml, fn ->
+          run_check([to_source_file(@struct_source, "lib/app/x.ex")], StructOwnedByModule)
+        end)
+
+      assert Enum.map(issues, &{&1.line_no, &1.trigger}) == [{2, "%App.Turn{"}]
+    end
+
+    test "F2: the same code in a test file the rule does not select has no issue" do
+      issues =
+        with_anchor_config(@struct_yaml, fn ->
+          all_issues(
+            [
+              to_source_file(@struct_source, "test/app/x_test.exs"),
+              to_source_file("defmodule App.Other do\nend\n", "lib/app/other.ex")
+            ],
+            StructOwnedByModule
+          )
+        end)
+
+      assert issues == []
     end
   end
 

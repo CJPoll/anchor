@@ -39,6 +39,9 @@ defmodule Anchor.Domain.DependencyAnalyzer do
       separate nodes). This is what `Anchor.Managers.Lint.build_modules_map/2`
       reduces over.
     * `find_transitive_dependencies/2,3` — pure reachability over that graph.
+    * `resolved_modules/1` — every module reference, `__MODULE__` and literal
+      `defmodule` name, resolved, keyed by its source position (DND-5451), so
+      an AST rule can ask what one node names without a resolver of its own.
 
   ## Alias and import resolution (DND-1266)
 
@@ -220,7 +223,8 @@ defmodule Anchor.Domain.DependencyAnalyzer do
     dynamic: [],
     owned: %{},
     owned_calls: %{},
-    defined: MapSet.new()
+    defined: MapSet.new(),
+    resolved: %{}
   }
 
   @typedoc """
@@ -409,6 +413,32 @@ defmodule Anchor.Domain.DependencyAnalyzer do
   end
 
   @doc """
+  Every module name in `ast` that the lexical environment resolves (see *Alias
+  and import resolution*), keyed by the position `{line, column}` of the node
+  that names it (DND-5451). An AST rule that needs to know which module one
+  node names (a remote call's callee, a struct literal's name) looks it up
+  here, so alias resolution has one home.
+
+  Recorded: an alias (`B`, `A.B`, `__MODULE__.Sub`), a bare `__MODULE__`, and
+  the name of a literal `defmodule`, keyed on that name node, resolved to the
+  module the body's `__MODULE__` names. Not recorded: a node with no position
+  (no `:line` and no `:column` in its metadata), a name bound by an
+  unresolvable directive, and `__MODULE__` inside a `quote` (it names
+  whichever module the macro expands into). A miss is a node this pass cannot
+  name, never a guess. The positions are exact only for an AST parsed with
+  `columns: true`, as `Credo.Code.ast/1` parses every file; without columns,
+  two names on one line share a key and the later one wins.
+  """
+  @spec resolved_modules(Macro.t()) :: %{
+          {pos_integer() | nil, pos_integer() | nil} => module()
+        }
+  def resolved_modules(ast) do
+    ast
+    |> analyze(:reference)
+    |> Map.fetch!(:resolved)
+  end
+
+  @doc """
   Returns the sorted, de-duplicated list of modules `ast` `use`s.
   """
   @spec extract_uses(Macro.t()) :: [module()]
@@ -551,7 +581,9 @@ defmodule Anchor.Domain.DependencyAnalyzer do
   end
 
   defp step({:defmodule, _meta, [name_ast, body_kw]}, env, acc) do
-    step_defmodule(literal_alias_parts(name_ast), module_scope(name_ast, env), body_kw, env, acc)
+    parts = literal_alias_parts(name_ast)
+    acc = record_position(acc, name_ast, defined_name(parts, env))
+    step_defmodule(parts, module_scope(name_ast, env), body_kw, env, acc)
   end
 
   # `quote` with arguments. A variable named `quote` is `{:quote, meta, context}`
@@ -625,6 +657,10 @@ defmodule Anchor.Domain.DependencyAnalyzer do
     inner_env = %{env | owner_scope: scope}
     {env, walk(do_block(body_kw), inner_env, record_defined(acc, inner_env))}
   end
+
+  # The module a literal `defmodule` names, as its body's `__MODULE__` does.
+  defp defined_name({:ok, parts}, env), do: {:ok, Module.concat((env.enclosing || []) ++ parts)}
+  defp defined_name(:error, _env), do: :error
 
   # ---- attribution (DND-1269) ----
   #
@@ -849,11 +885,20 @@ defmodule Anchor.Domain.DependencyAnalyzer do
   # A module reference. Reference mode records it; call mode records only
   # callees (below), so an inert alias is not a call.
   defp visit({:__aliases__, meta, parts} = node, env, acc) when is_list(parts) do
+    resolution = resolve_module(node, env)
+    acc = record_position(acc, node, resolution)
+
     if env.mode == :reference do
-      record_resolved(acc, env, resolve_module(node, env), line(meta))
+      record_resolved(acc, env, resolution, line(meta))
     else
       acc
     end
+  end
+
+  # A bare `__MODULE__` names the enclosing module (outside a `quote`). It is
+  # never a dependency, only a position `resolved_modules/1` reports.
+  defp visit({:__MODULE__, _meta, ctx} = node, env, acc) when is_atom(ctx) do
+    record_position(acc, node, resolve_module(node, env))
   end
 
   # A type attribute in call mode — skip its body entirely (no call recorded).
@@ -1004,6 +1049,7 @@ defmodule Anchor.Domain.DependencyAnalyzer do
          acc
        ) do
     resolution = resolve_module(callee, env)
+    acc = record_position(acc, callee, resolution)
     acc = record_resolved(acc, env, resolution, line(ameta))
     record_remote(acc, env, resolution, fun, args, arity, line(meta) || line(ameta), kind)
   end
@@ -1015,7 +1061,9 @@ defmodule Anchor.Domain.DependencyAnalyzer do
 
   defp visit_remote({:__MODULE__, _m, ctx} = callee, fun, args, arity, meta, kind, env, acc)
        when is_atom(ctx) do
-    record_remote(acc, env, resolve_module(callee, env), fun, args, arity, line(meta), kind)
+    resolution = resolve_module(callee, env)
+    acc = record_position(acc, callee, resolution)
+    record_remote(acc, env, resolution, fun, args, arity, line(meta), kind)
   end
 
   # An attribute bound to a literal module in this module (`@repo MyApp.Repo`,
@@ -1304,6 +1352,18 @@ defmodule Anchor.Domain.DependencyAnalyzer do
     do: record_reference(acc, env, module, line)
 
   defp record_resolved(acc, _env, _unresolved, _line), do: acc
+
+  # DND-5451: the module a name node resolves to, keyed by its position, for
+  # `resolved_modules/1`. A node with no position, or one that does not
+  # resolve, records nothing.
+  defp record_position(acc, {_form, meta, _args}, {:ok, module}) when is_list(meta) do
+    case {Keyword.get(meta, :line), Keyword.get(meta, :column)} do
+      {nil, nil} -> acc
+      position -> %{acc | resolved: Map.put(acc.resolved, position, module)}
+    end
+  end
+
+  defp record_position(acc, _node, _resolution), do: acc
 
   # Records `module` against the file (first line wins) and against the module
   # whose body it occurs in.

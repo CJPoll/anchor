@@ -34,6 +34,10 @@ defmodule Anchor.Domain.RuleSchema do
       glob widens it with every later module of a matching name), an Erlang
       module, or a malformed name (`Anchor.Domain.AllowedCallers`, DND-1269);
     * a relation-bearing rule whose relation is missing or empty (see below);
+    * a `pure_patterns` entry that is a match-all glob, which declares every
+      module pure (DND-5451);
+    * an `owned_namespaces` list that is empty, which checks no struct, or that
+      holds an entry that is not exactly one Elixir module name (DND-5453);
     * a `module_pattern_restrictions` rule whose `allowed_functions` holds a
       match-all glob (only wildcards: `*`, `**`), which allows every function.
       Since DND-1292 every other glob character is a literal, so no other entry
@@ -71,9 +75,17 @@ defmodule Anchor.Domain.RuleSchema do
     * `alphabetized_functions` and `max_file_length` read one optional
       parameter with a default (`mode`, `max_lines`), so they always check.
     * `case_on_bare_arg`, `no_comparison_in_if`, `no_discarding_arrow_in_with`,
-      `no_tuple_match_in_head`, `single_control_flow`,
+      `no_forwarding_function`, `no_tuple_match_in_head`, `single_control_flow`,
       `struct_getter_convention` read no key of their own: they check every
       file they select.
+    * `struct_owned_by_module` (DND-5453) reads one optional key,
+      `owned_namespaces`, that narrows which structs it checks; without it
+      every struct is checked. An empty list, and an entry that is not an
+      exact module name, are refused.
+    * `no_discarded_pure_expression` (DND-5451) reads one optional key,
+      `pure_patterns`, that widens what it reports; without it the stdlib pure
+      set still applies, so it always checks. A match-all entry
+      (`GlobPattern.wildcard_only?/1`) is refused on its own.
 
   ## Extending it
 
@@ -145,11 +157,14 @@ defmodule Anchor.Domain.RuleSchema do
     no_direct_dependency:
       ~w(allowed_callers context_depth forbidden_functions forbidden_modules forbidden_patterns
          match same_context),
+    no_discarded_pure_expression: ~w(pure_patterns),
     no_discarding_arrow_in_with: [],
+    no_forwarding_function: [],
     no_transitive_dependency: ~w(forbidden_modules forbidden_patterns),
     no_tuple_match_in_head: [],
     single_control_flow: [],
-    struct_getter_convention: []
+    struct_getter_convention: [],
+    struct_owned_by_module: ~w(owned_namespaces)
   }
 
   # THE relation each type checks against: a rule of the type must carry at
@@ -163,11 +178,14 @@ defmodule Anchor.Domain.RuleSchema do
     must_use_module: ~w(required_modules),
     no_comparison_in_if: [],
     no_direct_dependency: ~w(forbidden_functions forbidden_modules forbidden_patterns),
+    no_discarded_pure_expression: [],
     no_discarding_arrow_in_with: [],
+    no_forwarding_function: [],
     no_transitive_dependency: ~w(forbidden_modules forbidden_patterns),
     no_tuple_match_in_head: [],
     single_control_flow: [],
-    struct_getter_convention: []
+    struct_getter_convention: [],
+    struct_owned_by_module: []
   }
 
   # THE engine each type runs on (DND-5437): `:ast` (a Credo check reads the
@@ -181,11 +199,14 @@ defmodule Anchor.Domain.RuleSchema do
     must_use_module: :ast,
     no_comparison_in_if: :ast,
     no_direct_dependency: :ast,
+    no_discarded_pure_expression: :ast,
     no_discarding_arrow_in_with: :ast,
+    no_forwarding_function: :ast,
     no_transitive_dependency: :ast,
     no_tuple_match_in_head: :ast,
     single_control_flow: :ast,
-    struct_getter_convention: :ast
+    struct_getter_convention: :ast,
+    struct_owned_by_module: :ast
   }
 
   @engines [:ast, :graph]
@@ -199,7 +220,7 @@ defmodule Anchor.Domain.RuleSchema do
 
   # Keys whose value is a list of strings, each of which must be non-blank.
   @string_list_keys ~w(allowed_callers allowed_functions forbidden_functions forbidden_modules
-                       forbidden_patterns required_modules)
+                       forbidden_patterns owned_namespaces pure_patterns required_modules)
 
   @selector_keys ~w(paths pattern uses_module)
 
@@ -293,8 +314,52 @@ defmodule Anchor.Domain.RuleSchema do
          :ok <- validate_function_refs(rule),
          :ok <- validate_allowed_callers(rule),
          :ok <- require_relation(rule, type),
-         :ok <- refuse_unread_match(rule) do
+         :ok <- refuse_unread_match(rule),
+         :ok <- refuse_all_pure(rule),
+         :ok <- validate_owned_namespaces(rule) do
       refuse_allow_all(rule)
+    end
+  end
+
+  # DND-5453: `owned_namespaces` names the namespaces whose structs are
+  # checked, each one exact Elixir module name (`AllowedCallers`' grammar). A
+  # glob would widen with every later module of a matching name, an Erlang
+  # module is never a struct, and an empty list would check no struct. Runs
+  # after `validate_string_lists/1`, so each entry is a non-blank string here.
+  defp validate_owned_namespaces(%{"owned_namespaces" => []}) do
+    {:error,
+     "`owned_namespaces: []` checks no struct; owned_namespaces lists module names, " <>
+       ~s|e.g. ["MyApp"], or leave it out to check every struct|}
+  end
+
+  defp validate_owned_namespaces(%{"owned_namespaces" => namespaces}) do
+    case Enum.find(namespaces, &match?({:error, _reason}, AllowedCallers.parse(&1))) do
+      nil ->
+        :ok
+
+      entry ->
+        {:error,
+         "`owned_namespaces` entry #{inspect(entry)} is not an exact Elixir module name " <>
+           ~s|(a glob, an Erlang module or a malformed name); owned_namespaces lists module names, e.g. ["MyApp"]|}
+    end
+  end
+
+  defp validate_owned_namespaces(_rule), do: :ok
+
+  # DND-5451: a `pure_patterns` entry of only wildcards declares every module
+  # pure, so every call to anything would read as an expression with no
+  # effect. Runs after `validate_string_lists/1`, so each entry is a non-blank
+  # string here.
+  defp refuse_all_pure(rule) do
+    case Enum.find(rule["pure_patterns"] || [], &GlobPattern.wildcard_only?/1) do
+      nil ->
+        :ok
+
+      entry ->
+        {:error,
+         "`pure_patterns` entry #{inspect(entry)} declares every module pure, so every call " <>
+           "would read as having no effect; name the pure namespaces " <>
+           ~s|(e.g. ["MyApp.*.Domain.*"]), a match-all glob declares every module pure|}
     end
   end
 

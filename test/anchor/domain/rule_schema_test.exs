@@ -25,9 +25,11 @@ defmodule Anchor.Domain.RuleSchemaTest do
     "match" => "call",
     "max_lines" => 200,
     "min_files" => 1,
+    "owned_namespaces" => ["MyApp"],
     "mode" => "all",
     "paths" => ["lib/**/*.ex"],
     "pattern" => "*.Domain.*",
+    "pure_patterns" => ["MyApp.*.Domain.*"],
     "recursive" => true,
     "required_modules" => ["MyApp.Base"],
     "same_context" => true,
@@ -44,11 +46,14 @@ defmodule Anchor.Domain.RuleSchemaTest do
     must_use_module: "require_modules",
     no_comparison_in_if: "pahts",
     no_direct_dependency: "forbiden_patterns",
+    no_discarded_pure_expression: "pure_pattern",
     no_discarding_arrow_in_with: "pahts",
+    no_forwarding_function: "pahts",
     no_transitive_dependency: "forbiden_modules",
     no_tuple_match_in_head: "pahts",
     single_control_flow: "pahts",
-    struct_getter_convention: "pahts"
+    struct_getter_convention: "pahts",
+    struct_owned_by_module: "owned_namespace"
   }
 
   defp rule(type, extra \\ %{}) do

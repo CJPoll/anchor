@@ -24,6 +24,9 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
   #   ../../sabotage_records/rule_schema-20260929-dnd_1267_forbidden_functions.md
   # The DND-1269 `allowed_callers` rows:
   #   ../../sabotage_records/rule_schema-20260929-dnd_1269_allowed_callers.md
+  # The DND-5451 `pure_patterns`, DND-5452 `no_forwarding_function` and
+  # DND-5453 `owned_namespaces` rows:
+  #   ../../sabotage_records/rule_schema-20261103-dnd_5451_ast_batch.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config
@@ -254,6 +257,70 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
     common_rows(:max_file_length) ++
       [
         {"positive: max_lines", Map.put(base(:max_file_length), "max_lines", 200), :accepted}
+      ]
+  end
+
+  # DND-5451: `pure_patterns` widens what the rule reports (the stdlib pure set
+  # applies without it), so it is not a relation. A match-all entry declares
+  # every module pure, so every call would read as having no effect.
+  defp table(:no_discarded_pure_expression) do
+    base = base(:no_discarded_pure_expression)
+    list = "`pure_patterns` must be a list of non-empty strings"
+    match_all = "declares every module pure"
+
+    common_rows(:no_discarded_pure_expression) ++
+      [
+        {"positive: pure_patterns", Map.put(base, "pure_patterns", ["MyApp.*.Domain.*"]),
+         :accepted},
+        {"positive: pure_patterns: [] (the stdlib pure set only)",
+         Map.put(base, "pure_patterns", []), :accepted},
+        {"pure_patterns that is a string", Map.put(base, "pure_patterns", "MyApp.*"),
+         {:refused, list}},
+        {"pure_patterns of empty strings", Map.put(base, "pure_patterns", [""]),
+         {:refused, list}},
+        {"pure_patterns of a non-string", Map.put(base, "pure_patterns", [1]), {:refused, list}},
+        {"pure_patterns: [\"*\"] declares every module pure",
+         Map.put(base, "pure_patterns", ["MyApp.*", "*"]), {:refused, match_all}},
+        {"pure_patterns: [\"**\"] declares every module pure",
+         Map.put(base, "pure_patterns", ["**"]), {:refused, match_all}},
+        {"an unknown key (pure_modules)", Map.put(base, "pure_modules", ["MyApp.Calc"]),
+         {:refused, ~s(unknown key "pure_modules" in a no_discarded_pure_expression rule)}}
+      ]
+  end
+
+  # DND-5452: no key of its own, so any other key is unknown.
+  defp table(:no_forwarding_function) do
+    common_rows(:no_forwarding_function) ++
+      [
+        {"an unknown key (pure_patterns belongs to another type)",
+         Map.put(base(:no_forwarding_function), "pure_patterns", ["MyApp.*"]),
+         {:refused, ~s(unknown key "pure_patterns" in a no_forwarding_function rule)}}
+      ]
+  end
+
+  # DND-5453: `owned_namespaces` narrows which structs are checked, so it is
+  # not a relation. Each entry names one module exactly; `[]` checks nothing.
+  defp table(:struct_owned_by_module) do
+    base = base(:struct_owned_by_module)
+    not_a_module = "is not an exact Elixir module name"
+
+    common_rows(:struct_owned_by_module) ++
+      [
+        {"positive: owned_namespaces", Map.put(base, "owned_namespaces", ["App"]), :accepted},
+        {"positive: nested namespaces", Map.put(base, "owned_namespaces", ["App", "Lib.Core"]),
+         :accepted},
+        {"owned_namespaces: [] checks no struct", Map.put(base, "owned_namespaces", []),
+         {:refused, "`owned_namespaces: []` checks no struct"}},
+        {"an owned_namespaces glob", Map.put(base, "owned_namespaces", ["App.*"]),
+         {:refused, not_a_module}},
+        {"an owned_namespaces Erlang module", Map.put(base, "owned_namespaces", [":app"]),
+         {:refused, not_a_module}},
+        {"an owned_namespaces empty string", Map.put(base, "owned_namespaces", [""]),
+         {:refused, "`owned_namespaces` must be a list of non-empty strings"}},
+        {"owned_namespaces that is a string", Map.put(base, "owned_namespaces", "App"),
+         {:refused, "`owned_namespaces` must be a list of non-empty strings"}},
+        {"a malformed owned_namespaces entry after a valid one",
+         Map.put(base, "owned_namespaces", ["App", "app.core"]), {:refused, ~s("app.core")}}
       ]
   end
 
