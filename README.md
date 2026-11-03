@@ -966,8 +966,9 @@ it fails every selected module that persists, one violation at its
 `Fix:` is to declare the aggregate and remove `declare: none`. A module
 persists when it exports `__schema__/1` (`use Ecto.Schema`), declares
 `@behaviour Ecto.Repo`, declares `@anchor_aggregate`, or calls a Repo write
-(a write on a module whose name ends in `Repo`), any function of `Ecto.Repo`
-or `Ecto.Multi`, or an `Ecto.Adapters.*` module; the first of these that holds
+(a write on a module whose name ends in `Repo`), raw SQL (`query`, `query!`,
+`query_many`, `query_many!`) on such a module, any function of `Ecto.Repo` or
+`Ecto.Multi`, or an `Ecto.Adapters.*` module; the first of these that holds
 is the reason the message gives. Not seen: a read through a repo the project
 does not define, and a call on a computed module.
 

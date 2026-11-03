@@ -18,8 +18,9 @@ defmodule Anchor.Domain.Aggregates.Inference do
   shape of `.anchor.yml`, sorted by name, which
   `Anchor.Domain.Aggregates.Config.parse/1` reads back, with a leading comment
   when some writes are unresolved. With no write at all it prints
-  `declare: none` with a reason (DND-5659); with no repo, or writes none of
-  which resolved, it is an error, never `none`.
+  `declare: none` with a reason (DND-5659), and only when there is no write
+  site, no transaction and no unattributed call outside one; with no repo,
+  or such evidence but nothing resolved, it is an error, never `none`.
   """
 
   alias Anchor.Domain.Aggregates.Analysis
@@ -79,21 +80,36 @@ defmodule Anchor.Domain.Aggregates.Inference do
   end
 
   def render_yaml(%Analysis{counts: counts} = analysis) do
-    case {proposed_declarations(analysis), counts.writes} do
-      {[], 0} ->
+    case {proposed_declarations(analysis), evidence(analysis)} do
+      {[], []} ->
         {:ok,
          "aggregates:\n  declare: none\n" <>
            "  reason: \"anchor found no transaction and no write in this project\"\n"}
 
-      {[], writes} ->
+      {[], evidence} ->
         {:error,
-         "#{writes} write(s) found, #{counts.unresolved} unresolved, and none traced to a " <>
-           "schema or table, so there is nothing to propose. Fix: resolve the writes " <>
+         "#{Enum.join(evidence, ", ")}, and nothing traced to a schema or table, so there " <>
+           "is nothing to propose. Fix: resolve the writes and calls " <>
            "(aggregate_write_sources lists them) and propose again"}
 
-      {proposals, _writes} ->
+      {proposals, _evidence} ->
         {:ok, unresolved_note(counts) <> declarations_yaml(proposals)}
     end
+  end
+
+  # What says the project persists even when nothing resolved: a write site,
+  # a transaction, or a call Anchor cannot attribute outside one (raw SQL, a
+  # write on a module held in a variable make no write site, only a gap).
+  # `declare: none` is rendered only when all three are absent.
+  defp evidence(%Analysis{counts: counts, scopes: scopes, nontx: nontx}) do
+    outside = nontx |> Map.values() |> Enum.flat_map(& &1.gaps) |> Enum.uniq() |> length()
+
+    [
+      counts.writes > 0 && "#{counts.writes} write(s) found, #{counts.unresolved} unresolved",
+      scopes != [] && "#{length(scopes)} transaction(s)",
+      outside > 0 && "#{outside} call(s) Anchor cannot attribute outside a transaction"
+    ]
+    |> Enum.filter(&is_binary/1)
   end
 
   defp unresolved_note(%{unresolved: 0}), do: ""

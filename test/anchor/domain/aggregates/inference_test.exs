@@ -109,6 +109,28 @@ defmodule Anchor.Domain.Aggregates.InferenceTest do
     assert why =~ "Fix: "
   end
 
+  # Critic round 2: raw SQL and a write on a module held in a variable make no
+  # write site, only a gap, so "no write site" is not "nothing persists".
+  test "F8: a transaction with no write site, only a gap, is an error, never declare: none" do
+    gap_only = %{
+      analysis([%{scope(1, [], false) | gaps: [{:dynamic_call, {App.Tx, :run, 0}, 3}]}], [])
+      | counts: %{counts() | scopes: 1, incomplete: 1}
+    }
+
+    assert {:error, why} = Inference.render_yaml(gap_only)
+    assert why =~ "1 transaction(s)"
+  end
+
+  test "F8: a gap outside every transaction is an error, never declare: none" do
+    outside =
+      put_in(analysis([], []).nontx[{App.Plain, :write, 0}].gaps, [
+        {:dynamic_call, {App.Plain, :write, 0}, 4}
+      ])
+
+    assert {:error, why} = Inference.render_yaml(outside)
+    assert why =~ "1 call(s) Anchor cannot attribute"
+  end
+
   test "F8: no repo is an error, never declare: none" do
     assert {:error, why} = Inference.render_yaml(%Analysis{no_repo?: true})
     assert why =~ "no Ecto repo"

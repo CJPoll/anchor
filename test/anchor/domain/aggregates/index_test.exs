@@ -496,7 +496,9 @@ defmodule Anchor.Domain.Aggregates.IndexTest do
       {"an Ecto.Multi step", {Ecto.Multi, :insert, 3}, "it calls Ecto.Multi.insert/3 (line 7)"},
       {"Ecto.Repo itself", {Ecto.Repo, :all, 2}, "it calls Ecto.Repo.all/2 (line 7)"},
       {"an Ecto adapter", {Ecto.Adapters.SQL, :query, 3},
-       "it calls Ecto.Adapters.SQL.query/3 (line 7)"}
+       "it calls Ecto.Adapters.SQL.query/3 (line 7)"},
+      {"raw SQL on a Repo it does not define", {MyDep.Repo, :query!, 2},
+       "it calls MyDep.Repo.query!/2 (line 7)"}
     ]
 
     for {label, to, detail} <- @persistence_calls do

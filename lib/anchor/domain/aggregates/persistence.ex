@@ -15,11 +15,13 @@ defmodule Anchor.Domain.Aggregates.Persistence do
     4. one of its functions calls a database write
        (`Anchor.Domain.EffectPrimitives.repo_write?/1`: a write on a module
        whose last name segment ends in `Repo`), or any function of
-       `Ecto.Repo`, `Ecto.Multi` or an `Ecto.Adapters.*` module; the reason
-       names the call with the lowest line.
+       `Ecto.Repo`, `Ecto.Multi` or an `Ecto.Adapters.*` module, or raw SQL
+       (`query`, `query!`, `query_many`, `query_many!`) on a `Repo`; the
+       reason names the call with the lowest line.
 
   Not seen: a read through a repo the project does not define (a
-  dependency's `Repo.get/2`), and a call on a computed module. Both leave a
+  dependency's `Repo.get/2`), and a call on a computed module (`mod.insert(x)`
+  with `mod` held in a variable). Both leave a
   repo or a schema in the project, or a write, which the rows above see.
   """
 
@@ -30,6 +32,7 @@ defmodule Anchor.Domain.Aggregates.Persistence do
   alias Anchor.Domain.ViolationKey
 
   @ecto_modules [Ecto.Repo, Ecto.Multi]
+  @raw_sql [:query, :query!, :query_many, :query_many!]
 
   @doc """
   Every module of `graph` that persists, with its reason, sorted by module:
@@ -47,8 +50,15 @@ defmodule Anchor.Domain.Aggregates.Persistence do
 
   @doc "Whether a call of `mfa` is a persistence call (rule 4 of the moduledoc)."
   @spec call?(mfa()) :: boolean()
-  def call?({module, _name, _arity} = mfa),
-    do: EffectPrimitives.repo_write?(mfa) or module in @ecto_modules or adapter?(module)
+  def call?({module, name, _arity} = mfa) do
+    EffectPrimitives.repo_write?(mfa) or raw_sql?(module, name) or module in @ecto_modules or
+      adapter?(module)
+  end
+
+  # Raw SQL on a Repo (`MyDep.Repo.query!/2`): it persists whether or not the
+  # project defines the repo.
+  defp raw_sql?(module, name),
+    do: name in @raw_sql and EffectPrimitives.repo_write?({module, :insert, 2})
 
   defp reason(%ModuleNode{} = node, call) do
     cond do
