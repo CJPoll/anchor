@@ -51,6 +51,10 @@ Command: `mix test --max-cases 2 test/anchor/x_test.exs:7` (1 tests, 0 failures;
 
 - bbb222 Anchor.Domain.Sabotage.Calc.add/2 delete_statement: the selected tests ran and passed. Fix: add a test that fails under this mutant
 
+## Kills by timeout
+
+None.
+
 ## Skipped, invalid, not run
 
 - skipped Anchor.Domain.Sabotage.Calc.add/2 drop_effect_call `Logger.info(x)`: orphans `x`

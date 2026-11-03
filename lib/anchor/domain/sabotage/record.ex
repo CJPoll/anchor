@@ -19,14 +19,18 @@ defmodule Anchor.Domain.Sabotage.Record do
        status, the patch as a diff block, the test command with its counts
        and failed tests, and the first failure as ExUnit printed it;
     3. `## Survivors`: each survivor and why it counts as one;
-    4. `## Skipped, invalid, not run`: each with its reason, and the changed
+    4. `## Kills by timeout` (DND-5653): each mutant killed by time alone
+       (the run's bound, or only ExUnit per-test timeouts), with its killers:
+       no assertion failed under it, so the test it names is still lacking
+       a red;
+    5. `## Skipped, invalid, not run`: each with its reason, and the changed
        functions no mutant could be made of;
-    5. `## Tests still lacking a red`: each new or changed test (in this
+    6. `## Tests still lacking a red`: each new or changed test (in this
        record's app) that no mutant's run failed: it still needs a hand
        sabotage under the repo's ADR;
-    6. `## Kill map`: the `anchor-kills` block (`Anchor.Domain.Sabotage.KillMap`).
+    7. `## Kill map`: the `anchor-kills` block (`Anchor.Domain.Sabotage.KillMap`).
 
-  An appended section starts `## Run HH:MM UTC` and repeats sections 2 to 6
+  An appended section starts `## Run HH:MM UTC` and repeats sections 2 to 7
   one heading level down.
 
   `ctx`: `records` (the naming config, with `adr`: the rule a hand sabotage
@@ -212,6 +216,9 @@ defmodule Anchor.Domain.Sabotage.Record do
       "#{h} Survivors",
       "",
       survivors(outcomes),
+      "#{h} Kills by timeout",
+      "",
+      timeout_kills(outcomes),
       "#{h} Skipped, invalid, not run",
       "",
       not_measured(items, outcomes),
@@ -270,7 +277,18 @@ defmodule Anchor.Domain.Sabotage.Record do
     end
   end
 
-  defp first_failure(%{status: :timeout}), do: "(the time bound killed the test run)"
+  # A per-test timeout (DND-5653) quotes ExUnit's own timeout failure; a run
+  # the time bound stopped has none to quote.
+  defp first_failure(%{status: :timeout} = o) do
+    case Map.get(o, :test_run) do
+      %{status: :failed, failures: [first | _]} ->
+        "#{first.file}:#{first.line} #{first.name}\n#{first.text}"
+
+      _bound ->
+        "(the time bound killed the test run)"
+    end
+  end
+
   defp first_failure(%{status: :survived}), do: "(no test failed)"
   defp first_failure(%{reason: reason}) when is_binary(reason), do: reason
   defp first_failure(%{status: status}), do: "(#{status})"
@@ -284,6 +302,19 @@ defmodule Anchor.Domain.Sabotage.Record do
         Enum.map_join(survived, "", fn %{mutant: m} ->
           "- #{m.id} #{mfa(m)} #{operator(m)}: the selected tests ran and passed. " <>
             "Fix: add a test that fails under this mutant\n"
+        end)
+    end
+  end
+
+  defp timeout_kills(outcomes) do
+    case for(%{status: :timeout} = o <- outcomes, do: o) do
+      [] ->
+        "None.\n"
+
+      timed_out ->
+        Enum.map_join(timed_out, "", fn %{mutant: m} = o ->
+          "- #{m.id} #{mfa(m)} #{operator(m)}: #{failed_list(o)}. " <>
+            "No assertion failed: a hang the mutant caused, or a slow host\n"
         end)
     end
   end

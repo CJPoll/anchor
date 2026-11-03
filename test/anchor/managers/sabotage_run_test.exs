@@ -8,6 +8,7 @@ defmodule Anchor.Managers.SabotageRunTest do
   # Sabotage record (DND-5570): ../../sabotage_records/sabotage-20261103-dnd_5570_sabotage_hardening.md
   # Sabotage record (DND-5617): ../../sabotage_records/sabotage-20261103-dnd_5617_sabotage_cfa_batch.md
   # Sabotage record (DND-5624): ../../sabotage_records/sabotage-20261103-dnd_5624_sabotage_defimpl.md
+  # Sabotage record (DND-5653): ../../sabotage_records/sabotage-20261103-dnd_5639_sabotage_followups.md
   # Sabotage record (DND-5654): ../../sabotage_records/sabotage-20261103-dnd_5639_sabotage_followups.md
   # Sabotage record (DND-5635): ../../sabotage_records/sabotage-20261103-dnd_5630_graph_hardening.md
   use ExUnit.Case, async: true
@@ -1462,6 +1463,79 @@ defmodule Anchor.Managers.SabotageRunTest do
       assert run.refusal == nil
       paths = for {:results_path, path} <- Process.info(self(), :messages) |> elem(1), do: path
       assert paths == List.duplicate("/builds/repo-test/anchor/sabotage/results.bin", 3)
+    end
+  end
+
+  describe "run/2: test timeouts and the test command (DND-5653)" do
+    @slow %{
+      file: "test/calc_test.exs",
+      line: 9,
+      name: "test slow",
+      text: "** (ExUnit.TimeoutError) test timed out after 2000ms. You can change the timeout:"
+    }
+
+    test "TO1: a baseline whose selected test times out is COULD NOT MEASURE, no mutant applied" do
+      expect_until_selection()
+      expect_baseline(test_run(:failed, [@slow]))
+
+      run = Sabotage.run(@facts, @opts)
+
+      assert {3, message} = run.refusal
+      assert message =~ "COULD NOT MEASURE: the selected tests fail with no mutant applied"
+      assert message =~ "test/calc_test.exs:9 test slow: ** (ExUnit.TimeoutError)"
+      assert run.outcomes == []
+    end
+
+    test "TO2: a mutant whose only failure is a test timeout is a timeout kill, by that test" do
+      [_first, second] = mutants()
+      expect_until_selection()
+      expect_baseline(test_run(:passed))
+      expect_patcher(2)
+      expect_delete_journal(2)
+      expect_save()
+
+      expect(TestExecutionMock, :run, 2, fn _argv, ["test/calc_test.exs"], _opts ->
+        if calls_seen({:write_journal, second.id}),
+          do: test_run(:failed, [@killer]),
+          else: test_run(:failed, [@slow])
+      end)
+
+      run = Sabotage.run(@facts, @opts)
+
+      assert [
+               %{status: :timeout, killers: ["(test timeout) test/calc_test.exs:9 test slow"]},
+               %{status: :killed}
+             ] = run.outcomes
+
+      assert Report.exit_code(run) == 0
+    end
+
+    test "TO3: the test command's own arguments reach the baseline and every mutant run identically" do
+      command = ["mix", "test", "--max-cases", "2", "--timeout", "2000", "--exclude", "slow"]
+      [_first, second] = mutants()
+      expect_until_selection(config: %SabotageConfig{test_command: command})
+      expect_patcher(2)
+      expect_delete_journal(2)
+      expect_save()
+
+      expect(TestExecutionMock, :run, 3, fn argv, tests, _opts ->
+        send(self(), {:argv, argv, tests})
+
+        cond do
+          not calls_seen(:baseline) -> call(:baseline, test_run(:passed))
+          calls_seen({:write_journal, second.id}) -> test_run(:passed)
+          true -> test_run(:failed, [@killer])
+        end
+      end)
+
+      run = Sabotage.run(@facts, @opts)
+
+      assert run.refusal == nil
+
+      runs =
+        for {:argv, argv, tests} <- Process.info(self(), :messages) |> elem(1), do: {argv, tests}
+
+      assert runs == List.duplicate({command, ["test/calc_test.exs"]}, 3)
     end
   end
 end

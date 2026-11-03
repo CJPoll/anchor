@@ -2,6 +2,7 @@ defmodule Anchor.Domain.Sabotage.RecordTest do
   # DND-5484: the sabotage record a run writes, against the golden file.
   # The date and time are facts passed in, never read here.
   # Sabotage record: ../../../sabotage_records/sabotage-20261103-dnd_5484_records.md
+  # Sabotage record (DND-5653): ../../../sabotage_records/sabotage-20261103-dnd_5639_sabotage_followups.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Sabotage.ChangedFunction
@@ -255,5 +256,52 @@ defmodule Anchor.Domain.Sabotage.RecordTest do
 
     assert lacking =~ "calc_test.exs:12 \"test subtracts\""
     refute lacking =~ "calc_test.exs:4 "
+  end
+
+  describe "kills by timeout (DND-5653)" do
+    @timeout_failure %{
+      file: "test/anchor/domain/sabotage/calc_test.exs",
+      line: 9,
+      name: "test slow",
+      text: "** (ExUnit.TimeoutError) test timed out after 2000ms. You can change the timeout:"
+    }
+
+    defp timed_out(id) do
+      %{
+        mutant: mutant(id, operator: :delete_statement, variant: nil),
+        status: :timeout,
+        killers: ["(test timeout) test/anchor/domain/sabotage/calc_test.exs:9 test slow"],
+        selection: {:mirror, ["test/anchor/domain/sabotage/calc_test.exs"]},
+        reason: nil,
+        test_run: %TestRun{
+          status: :failed,
+          total: 3,
+          failures: [@timeout_failure],
+          exit_code: 2,
+          output_head: ""
+        }
+      }
+    end
+
+    test "K1: a timeout kill has its own section, and its mutant section quotes the timeout" do
+      run = %{run() | outcomes: run().outcomes ++ [timed_out("eee555")]}
+      {:ok, [entry]} = Record.render(run, ctx())
+
+      assert entry.content =~
+               "## Kills by timeout\n\n- eee555 Anchor.Domain.Sabotage.Calc.add/2 delete_statement: " <>
+                 "(test timeout) test/anchor/domain/sabotage/calc_test.exs:9 test slow. No assertion " <>
+                 "failed: a hang the mutant caused, or a slow host\n"
+
+      assert entry.content =~
+               "test/anchor/domain/sabotage/calc_test.exs:9 test slow\n" <>
+                 "** (ExUnit.TimeoutError) test timed out after 2000ms."
+
+      assert KillMap.parse(entry.content) == {:ok, KillMap.rows(run.outcomes)}
+    end
+
+    test "K2: positive control: a run with no timeout kill says None. there" do
+      {:ok, [entry]} = Record.render(run(), ctx())
+      assert entry.content =~ "## Kills by timeout\n\nNone.\n"
+    end
   end
 end
