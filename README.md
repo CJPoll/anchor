@@ -1118,12 +1118,16 @@ window, made while none of those windows is open, is a **window leak**
 (DND-5642). Leaks are listed in the map (`window_leaks`: the earlier tests,
 the credited test, the number of calls), and the run prints one line per
 credited test file after the summary, `anchor.sabotage coverage: warning:
-<file>: N calls from a process an earlier test started were credited to a
-later test (selection unchanged): <earlier test> -> <credited test> (N
-calls)`, at most five pairs to a line. Visibility only: the calls are still
-in the credited test's set and the exit code does not change. A process first
-seen outside every window (an application process, `setup_all`) is never a
-leak, since no test is known to have started it.
+<file>: N calls from a process first seen during an earlier test were
+credited to a later test (selection unchanged): <earlier test> -> <credited
+test> (N calls)`, at most five pairs to a line. Visibility only: the calls are
+still in the credited test's set and the exit code does not change. What is
+measured is where a process was first seen, not what started it: an
+application process (a server, a cache) idle until a test first calls it is
+first seen in that test, so its later calls for other tests are reported too.
+A line names a process to look at, not proof the earlier test leaked it. A
+process first seen outside every window (one that called project code at
+boot, `setup_all`) is never a leak.
 
 It is **CI only by default**: without `CI=true` it refuses, exit 2, and
 traces nothing (`Fix: run it in CI, or pass --local where that load is

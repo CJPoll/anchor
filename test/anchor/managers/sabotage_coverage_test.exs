@@ -240,8 +240,8 @@ defmodule Anchor.Managers.SabotageCoverageTest do
       ])
     end
 
-    @warning "anchor.sabotage coverage: warning: test/b_test.exs: 1 calls from a process an " <>
-               "earlier test started were credited to a later test (selection unchanged): " <>
+    @warning "anchor.sabotage coverage: warning: test/b_test.exs: 1 calls from a process first " <>
+               "seen during an earlier test were credited to a later test (selection unchanged): " <>
                "test/a_test.exs:3 test one -> test/b_test.exs:8 test two (1 calls)"
 
     test "LM1: a passing suite with a leak: the summary, then the warning; exit 0, the map written whole" do

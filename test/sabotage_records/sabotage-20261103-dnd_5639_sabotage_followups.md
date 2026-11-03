@@ -87,7 +87,7 @@ a `:failed` run with no failure frame stays `{:killed, []}`, as before.
 | P8 | `attribute/3` keeps the first target's selection | 1 | G6 `code:  assert shared == %{` |
 | P9 | the runner never records a measured run | 1 | T1 `** (Mox.UnexpectedCallError) expected Anchor.SourceMutationMock.write_journal/2 to be called once but it has been called 2 times` |
 
-## DND-5642 — a call from a process an earlier test started is named, never hidden
+## DND-5642 — a call from a process first seen in an earlier test is named, never hidden
 
 - **Code under test:** `Anchor.Domain.Sabotage.CoverageMap` (`{:call,
   stamp, mfa, pid}` events, the first-seen windows per pid, `window_leaks`
@@ -121,3 +121,19 @@ L2 and LT2 are the clean-pair positive controls. L5 and L7 pin behaviour
 that comes from what already existed (the stamp-ordered release; the 3-tuple
 call event and a map written before DND-5642); no mutation of this ticket's
 code reddens them.
+
+### DND-5642 review round 1 — the line says first seen, never started
+
+The critic found the warning and the docs claimed more than is measured: "a
+process an earlier test started", and "an application process is never a
+leak". A server that sits idle until a test first calls it is first seen in
+that test, so its later calls for other tests are reported, under a claim that
+the earlier test started it. The ticket asks for exactly the first-seen rule,
+so the claim was narrowed to it: the line reads "a process first seen during
+an earlier test", and the README and moduledoc say a line names a process to
+look at, not proof. Collector test 1 now makes each test's call from its own
+process, so it holds no leak and asserts so.
+
+| # | Mutation | Tests failed | First failure, verbatim |
+|---|---|---|---|
+| U10 | the round-0 text (L8 added first, run on 8b3558a; 26 tests) | 1 | L8 `code:  assert line =~ "1 calls from a process first seen during an earlier test"` `left:  "anchor.sabotage coverage: warning: test/b_test.exs: 1 calls from a process an earlier test started were credited to a later test (selection unchanged): test/a_test.exs:3 test one -> test/b_test.exs:7 test two (1 calls)"` |

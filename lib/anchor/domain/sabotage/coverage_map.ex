@@ -35,13 +35,17 @@ defmodule Anchor.Domain.Sabotage.CoverageMap do
   is running when it next calls project code: attribution is by time alone.
   Where a call carries its pid, the windows open when that pid was first seen
   are kept; a later call from it while none of them is open, inside another
-  window, is a **leak** from those windows to the open one. Leaks are counted
+  window, is a **leak** from those windows to the open one. What is measured
+  is where a process was first SEEN, not what started it: an application
+  process (a server, a cache) that sits idle until a test first calls it is
+  first seen in that test, so its later calls for other tests are reported
+  too. A leak line names a process to look at, not proof that the earlier
+  test left it running. Leaks are counted
   per (earlier windows, credited window) pair and listed in the map as
   `window_leaks`; `leak_warnings/1` gives one line per credited test file.
   Visibility only: the call is still attributed to the open window, so the
-  selection does not change. A pid first seen outside every window (an
-  application process, `setup_all`) is never a leak: no test is known to
-  have started it.
+  selection does not change. A pid first seen outside every window (a
+  process that called project code at boot, `setup_all`) is never a leak.
 
   ## The map (`finalize/2`)
 
@@ -342,8 +346,9 @@ defmodule Anchor.Domain.Sabotage.CoverageMap do
 
     more = if hidden == [], do: "", else: "; and #{length(hidden)} more"
 
-    "anchor.sabotage coverage: warning: #{file}: #{total} calls from a process an earlier " <>
-      "test started were credited to a later test (selection unchanged): " <> pairs <> more
+    "anchor.sabotage coverage: warning: #{file}: #{total} calls from a process first seen " <>
+      "during an earlier test were credited to a later test (selection unchanged): " <>
+      pairs <> more
   end
 
   defp ref_text(ref), do: "#{ref.file}:#{ref.line} #{ref.name}"

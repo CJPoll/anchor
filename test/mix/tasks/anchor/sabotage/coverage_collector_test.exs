@@ -22,6 +22,8 @@ defmodule Anchor.Sabotage.CoverageCollectorTest do
 
   test "1: trace messages give the same map CoverageMap gives on the same events" do
     {:ok, pid} = CoverageCollector.start_link(slack: 2)
+    # Each test's call from its own process, as ExUnit runs them: no leak.
+    other = spawn(fn -> :ok end)
     t1 = test_struct(3, :"test one")
     t2 = test_struct(9, :"test two")
     em = ExUnit.EventManager
@@ -30,7 +32,7 @@ defmodule Anchor.Sabotage.CoverageCollectorTest do
           {:trace_ts, self(), :call, {em, :test_started, [:mgr, t1]}, 1},
           {:trace_ts, self(), :call, {A, :f, [1, 2]}, 2},
           {:trace_ts, self(), :call, {em, :test_finished, 2}, t1, 3},
-          {:trace_ts, self(), :call, {B, :g, 0}, 5},
+          {:trace_ts, other, :call, {B, :g, 0}, 5},
           {:trace_ts, self(), :call, {em, :test_started, 2}, t2, 4},
           {:trace_ts, self(), :call, {em, :test_finished, [:mgr, t2]}, 6},
           {:something, :else}
@@ -46,12 +48,13 @@ defmodule Anchor.Sabotage.CoverageCollectorTest do
         {:window_open, 1, ref(3, :"test one")},
         {:call, 2, {A, :f, 2}, self()},
         {:window_close, 3, ref(3, :"test one")},
-        {:call, 5, {B, :g, 0}, self()},
+        {:call, 5, {B, :g, 0}, other},
         {:window_open, 4, ref(9, :"test two")},
         {:window_close, 6, ref(9, :"test two")}
       ])
 
     assert CoverageMap.finalize(state, @meta) == CoverageMap.finalize(expected, @meta)
+    assert CoverageMap.finalize(state, @meta).window_leaks == []
 
     assert Map.new(CoverageMap.finalize(state, @meta).tests, &{&1.line, &1.functions}) ==
              %{3 => ["A.f/2"], 9 => ["B.g/0"]}

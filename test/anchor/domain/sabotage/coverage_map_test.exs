@@ -263,8 +263,8 @@ defmodule Anchor.Domain.Sabotage.CoverageMapTest do
       assert sets(map) == %{"test one" => ["A.f/0"], "test two" => ["B.g/0"]}
 
       assert CoverageMap.leak_warnings(map) == [
-               "anchor.sabotage coverage: warning: test/b_test.exs: 2 calls from a process an " <>
-                 "earlier test started were credited to a later test (selection unchanged): " <>
+               "anchor.sabotage coverage: warning: test/b_test.exs: 2 calls from a process first " <>
+                 "seen during an earlier test were credited to a later test (selection unchanged): " <>
                  "test/a_test.exs:3 test one -> test/b_test.exs:7 test two (2 calls)"
              ]
     end
@@ -369,6 +369,27 @@ defmodule Anchor.Domain.Sabotage.CoverageMapTest do
       assert [a_line, b_line2] = CoverageMap.leak_warnings(two_files)
       assert a_line =~ "warning: test/a_test.exs: 1 calls"
       assert b_line2 =~ "warning: test/b_test.exs: "
+    end
+
+    test "L8: an application process a test first wakes is reported as first seen there, never as started by it" do
+      # A long-lived server sits idle until test one calls it, then serves
+      # test two: its calls in test two are reported, and the line claims
+      # only where it was first seen.
+      server = :erlang.list_to_pid(~c"<0.950.0>")
+
+      map =
+        build([
+          {:window_open, 1, @t1},
+          {:call, 2, "Cache.get/1", server},
+          {:window_close, 3, @t1},
+          {:window_open, 4, @t2},
+          {:call, 5, "Cache.get/1", server},
+          {:window_close, 6, @t2}
+        ])
+
+      assert [line] = CoverageMap.leak_warnings(map)
+      assert line =~ "1 calls from a process first seen during an earlier test"
+      refute line =~ "started"
     end
 
     test "L7: a call with no pid (an older event shape) and a map with no window_leaks warn of nothing" do
