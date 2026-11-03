@@ -41,8 +41,9 @@ defmodule Mix.Tasks.Anchor.Graph do
   checkout of the base branch (`bin/ci/base-judge.sh`), so the ratchet that
   judges a pull request is the code landed on its base, never the pull
   request's own. As that judge it loads DIR's config with rule types it does
-  not know set aside: each is a report-only FIRST LANDING, and a rule the
-  base config has that DIR removes or retypes fails (`Anchor.Domain.LandedJudge`).
+  not know set aside: each is a report-only FIRST LANDING, a rule the base
+  config has that DIR removes or retypes fails, and every base rule runs as
+  the base defines it (`Anchor.Domain.LandedJudge`).
   It refuses (exit 2) a DIR that is not a directory, an
   umbrella judge, a compile path outside this checkout (`MIX_BUILD_PATH`), and
   `--write-baseline`: the judge never writes the judged tree.

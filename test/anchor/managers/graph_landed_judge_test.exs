@@ -178,6 +178,20 @@ defmodule Anchor.Managers.GraphLandedJudgeTest do
              Graph.run(request(%{}), deps())
   end
 
+  test "a base rule the change downgrades and shrinks is judged as the base defines it: exit 1",
+       %{beam: beam} do
+    downgraded = Map.put(baselined(), :enforcement, :report)
+    expect_run([downgraded], [], beam, {:ok, [baselined()]})
+
+    expect(BaselineStoreMock, :read, fn @root, @path -> Baseline.parse("") end)
+    expect(GitBaseMock, :show, fn @root, @ref, @path -> Baseline.parse("#{@key}\n") end)
+
+    report = Graph.run(request(%{}), deps())
+
+    assert report.exit_code == 1
+    assert [%{key: @key, enforcement: :enforce}] = Enum.filter(report.findings, &(&1.key == @key))
+  end
+
   test "outside the judge, the config loads with load_in and nothing is compared", %{beam: beam} do
     expect(ConfigLoaderMock, :load_in, fn @root -> {:ok, config([rule()], [])} end)
     Mox.expect(BeamSourceMock, :read_ebins, fn _apps -> [beam] end)

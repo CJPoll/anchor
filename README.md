@@ -644,7 +644,7 @@ findings can only shrink along the way:
 
 **The base branch judges a pull request (DND-5658).** `--base` reads the
 baselines at `REF`, but the code that compares them (`Enforcement`,
-`Baseline`, `BaselineBase`, each rule's `check/2` and `narrows?/2`) is the
+`Baseline`, `BaselineBase`, each rule's `check/2`) is the
 code that runs. In Anchor's own CI that is the pull request's code, so a pull
 request could change the judge that judges it. CI therefore also runs
 `bin/ci/judge-with-base.sh origin/<base>`: it takes `bin/ci/base-judge.sh` as
@@ -658,19 +658,21 @@ in; it refuses (exit 2) a `DIR` that is not a directory, an umbrella judge, a
 build path outside the judge's own root, and `--write-baseline`. A base that
 cannot be checked out or built, a pull request that does not compile, and a
 judge that exits other than 0 or 1 are exit 3 (COULD NOT MEASURE), never a
-pass. Per rule id, the landed judge (`--project` loads the config with rule
-types it does not know set aside):
+pass. The landed judge (`--project`) loads the config with rule types it does
+not know set aside, and runs every rule the base has as the BASE defines it
+(its selector, keys and enforcement), plus the pull request's rules the base
+does not have. Per rule id:
 
 | The pull request's rule | Landed judge | Exit |
 |---|---|---|
-| on the base, same type, only keys the base knows | ratchets it as `--base` does | 0 / 1 |
+| on the base, same type, only keys the base knows | ratchets the base's definition, as `--base` does | 0 / 1 |
 | new, of a type the base does not know | `NOTE: FIRST LANDING ...`, report-only; the pull request's own `--base` step judges it | 0 |
 | new, of a type the base knows | judged, its baseline a first landing | 0 / 1 |
 | on the base, removed or renamed by the pull request | fails: a check removed | 1 |
 | on the base, its type changed | fails: a check replaced | 1 |
 | on the base, with a key the base does not know | COULD NOT MEASURE | 3 |
 | any, beside a top-level section the base does not know | COULD NOT MEASURE | 3 |
-| on the base, narrowed so a baselined finding is gone | NEW under the base's rule | 1 |
+| on the base, narrowed (a smaller selector, `enforcement: report`) with its baseline shrunk or grown to match | the base's definition still finds it: NEW or GREW | 1 |
 
 The refused rows are landed by the owner. The pull request's own `mix anchor.graph --base` step still runs:
 it is the product under test. A base with no `bin/ci/base-judge.sh` prints

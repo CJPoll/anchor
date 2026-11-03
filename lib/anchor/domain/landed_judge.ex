@@ -20,7 +20,12 @@ defmodule Anchor.Domain.LandedJudge do
 
   With no base config to compare (`nil`: no `--base`; `:absent`: none at the
   ref), every set-aside rule is a note and nothing fails. A base rule with no
-  `id` cannot be followed and is not judged here.
+  `id` cannot be followed by `judge/5`.
+
+  `rules/2` is the rule set the landed judge runs: every base rule as the base
+  defines it, so a change that narrows a base rule's selector or downgrades
+  its enforcement (and shrinks its baseline to match) is still judged by the
+  base's rule, plus the change's own rules that the base does not have.
   """
 
   alias Anchor.Domain.Failures
@@ -51,6 +56,28 @@ defmodule Anchor.Domain.LandedJudge do
       |> Enum.map(&Failures.landed_judge_first_landing(config, &1, ref))
 
     {failures, notes}
+  end
+
+  @doc """
+  The rules the landed judge runs: every base rule as the base defines it,
+  then each of the change's rules whose `id` no base rule has, or, with no
+  `id`, that is not one of the base rules as written (its position aside).
+  """
+  @spec rules([map()], [map()]) :: [map()]
+  def rules(base_rules, rules) do
+    base_ids = MapSet.new(base_rules, &Map.get(&1, :id))
+    as_written = MapSet.new(base_rules, &Map.delete(&1, :index))
+
+    added =
+      Enum.reject(rules, fn rule ->
+        id = Map.get(rule, :id)
+
+        if is_binary(id),
+          do: MapSet.member?(base_ids, id),
+          else: MapSet.member?(as_written, Map.delete(rule, :index))
+      end)
+
+    base_rules ++ added
   end
 
   defp ids(rules, type) do

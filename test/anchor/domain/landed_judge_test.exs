@@ -66,4 +66,25 @@ defmodule Anchor.Domain.LandedJudgeTest do
   test "a base rule with no id is not followed" do
     assert judge([%{type: :layering}], []) == {[], []}
   end
+
+  describe "rules/2: what the landed judge runs" do
+    @base %{id: "layering", type: :layering, bucket: "domain", enforcement: :enforce, index: 1}
+
+    test "a base rule the change narrows or downgrades runs as the base defines it" do
+      narrowed = %{@base | bucket: "nothing", enforcement: :report, index: 4}
+      assert LandedJudge.rules([@base], [narrowed]) == [@base]
+    end
+
+    test "positive control: a rule whose id the base lacks is added after the base's" do
+      fresh = %{id: "fresh", type: :layering, bucket: "domain", index: 2}
+      assert LandedJudge.rules([@base], [@base, fresh]) == [@base, fresh]
+    end
+
+    test "an id-less rule runs once when the base has it as written, and is added when new" do
+      base = %{type: :context_acyclic, paths: ["lib/**/*.ex"], index: 3}
+      same = %{base | index: 7}
+      new = %{base | paths: ["lib/web/**/*.ex"], index: 8}
+      assert LandedJudge.rules([base], [same, new]) == [base, new]
+    end
+  end
 end

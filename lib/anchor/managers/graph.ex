@@ -122,6 +122,7 @@ defmodule Anchor.Managers.Graph do
     deps = deps(deps)
 
     with {:ok, config} <- load_config(deps.config_loader, request),
+         {config, deps} = landed(request, config, deps),
          {:ok, rules} <- graph_rules(config, request, deps.graph_rules),
          :ok <- write_target(rules, request, config),
          {:ok, beams} <- read_beams(deps.beam_source, request) do
@@ -249,10 +250,9 @@ defmodule Anchor.Managers.Graph do
     effects = effects(rules, model, cfa, deps)
     model = %{model | effects: effects_analysis(effects)}
 
-    deps =
-      Map.merge(deps, %{base: base_config(deps.git_base, request, config), now: config.rules})
-
-    landed = landed_judge(request, config, deps.base)
+    base = Map.get_lazy(deps, :base, fn -> base_config(deps.git_base, request, config) end)
+    deps = Map.merge(deps, %{base: base, now: config.rules})
+    landed = Map.get(deps, :landed, [])
 
     analyses = %{cfa: cfa, effects: effects}
     ran = Enum.map(rules, &run_rule(&1, model, analyses, config.path, request, deps))
@@ -487,27 +487,41 @@ defmodule Anchor.Managers.Graph do
     end
   end
 
-  # DND-5658: under `--project` (the landed judge), the base rules this change
-  # removes or retypes fail, and each rule type the judge set aside is a
-  # report-only FIRST LANDING note (`Anchor.Domain.LandedJudge`). A base config
-  # that could not be read is an issue, never "nothing removed".
-  defp landed_judge(%Request{opts: %{judge: true}} = request, config, base) do
-    case base do
-      {:fail, violation} -> [Finding.fail_closed(violation, @config_file)]
-      read -> landed_findings(request, config, base_rules(read))
-    end
+  # DND-5658: under `--project` (the landed judge), the base config is read
+  # once, up front: the base rules this change removes or retypes fail, each
+  # rule type the judge set aside is a report-only FIRST LANDING note, and
+  # every rule the base has is judged as the BASE defines it
+  # (`Anchor.Domain.LandedJudge.rules/2`), so a change cannot narrow a base
+  # rule's selector or downgrade its enforcement and shrink its baseline to
+  # match. A base config that could not be read is an issue, never "nothing
+  # removed", and the change's rules then run as written.
+  defp landed(%Request{opts: %{judge: true}} = request, config, deps) do
+    base = base_config(deps.git_base, request, config)
+    findings = landed_findings(request, config, base)
+    config = %{config | rules: judged_rules(base, config.rules)}
+    {config, Map.merge(deps, %{base: base, landed: findings})}
   end
 
-  defp landed_judge(_request, _config, _base), do: []
+  defp landed(_request, config, deps), do: {config, deps}
 
-  defp landed_findings(request, config, base_rules) do
+  defp landed_findings(_request, _config, {:fail, violation}),
+    do: [Finding.fail_closed(violation, @config_file)]
+
+  defp landed_findings(request, config, base) do
     path = config_path(config.path, request.root)
     ref = Map.get(request.opts, :base)
-    {failures, notes} = LandedJudge.judge(base_rules, config.rules, config.deferred, path, ref)
+
+    {failures, notes} =
+      LandedJudge.judge(base_rules(base), config.rules, config.deferred, path, ref)
 
     Enum.map(failures, &Finding.fail_closed(&1, @config_file)) ++
       Enum.map(notes, &Finding.note(&1, @config_file))
   end
+
+  defp judged_rules({:ok, base_rules}, rules) when is_list(base_rules),
+    do: LandedJudge.rules(base_rules, rules)
+
+  defp judged_rules(_no_base, rules), do: rules
 
   # The base config's rules (`:absent` when the ref has no config), or `nil`
   # without `--base`.

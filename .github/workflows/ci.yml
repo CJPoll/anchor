@@ -74,7 +74,7 @@ jobs:
 
       # DND-5658: the step above runs the pull request's OWN anchor, so a pull
       # request that changes Enforcement, Baseline, BaselineBase or a rule's
-      # narrows?/2 would be judged by its changed code. This step judges the
+      # check/2 would be judged by its changed code. This step judges the
       # same beams, .anchor.yml and baselines with the anchor landed on the
       # base branch, built in a scratch worktree, through the base's own copy
       # of bin/ci/base-judge.sh. A judge that cannot be built or run is exit 3

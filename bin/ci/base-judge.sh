@@ -16,9 +16,10 @@
 #      checkout's deps/);
 #   4. runs the judge's `mix anchor.graph --project <this checkout> --base REF`.
 #
-# So every rule, Enforcement, Baseline, BaselineBase and each rule's narrows?/2
-# that judge the pull request's lib/ are the base's code, and the pull
-# request's beams, .anchor.yml and baselines are what is judged.
+# So Enforcement, Baseline, BaselineBase and every rule's check/2 that judge
+# the pull request's lib/ are the base's code, and every rule the base has is
+# run as the base defines it; the pull request's beams, baselines and its new
+# rules are what is judged.
 #
 # Not caught here (review is the gate): a pull request that edits CI itself
 # (.github/workflows/ci.yml, bin/ci/judge-with-base.sh: GitHub runs the pull

@@ -17,6 +17,9 @@
 #      the landed judge names the removed check.
 #   T12 a pull request that adds a top-level section the landed judge does
 #      not know: exit 3, COULD NOT MEASURE (the owner lands it).
+#   T13 a pull request that downgrades a base rule (layering) to `enforcement:
+#      report` and grows its baseline: the landed judge runs the base's
+#      definition (enforce), so the GREW line fails it: exit 1.
 #   T3 a base whose bin/ci/base-judge.sh is a symlink: exit 3, never followed.
 #   T4 a base whose anchor does not compile: exit 3, never a pass.
 #   T5 the sabotage: a pull request that edits Enforcement to drop STALE and
@@ -35,7 +38,7 @@
 #      old beams are deleted first, so the judge reads none and the run is not
 #      a pass.
 #
-# T4-T12 build anchor from scratch in throwaway worktrees (several minutes).
+# T4-T13 build anchor from scratch in throwaway worktrees (several minutes).
 # BASE_JUDGE_TEST_ONLY="T2 T5" runs only those cases (sabotage runs); CI runs
 # every case. Exit 0 when every case it ran holds, 1 otherwise.
 #
@@ -243,6 +246,20 @@ if want T12; then
   entry "$pr" main "$work/t12.out"
   expect "T12 an unknown top-level section is COULD NOT MEASURE" 3 \
     "COULD NOT MEASURE: the judge exited 3" $? "$work/t12.out"
+fi
+
+if want T13; then
+  pr=$(pull_request t13 main)
+  perl -0pi -e 's/(    id: layering\n)/$1    enforcement: report\n/' "$pr/.anchor.yml"
+  if ! grep -qF "enforcement: report" "$pr/.anchor.yml"; then
+    fail "T13 setup: the layering rule was not downgraded"
+  fi
+  echo "layering|SelfTest.Grown|entry" >>"$pr/.anchor/baselines/layering.txt"
+  (cd "$pr" && git commit -qam "downgrade a base rule and grow its baseline")
+  entry "$pr" main "$work/t13.out"
+  expect "T13 a downgraded base rule is judged as the base defines it" 1 \
+    "layering|SelfTest.Grown|entry was added to .anchor/baselines/layering.txt since main." \
+    $? "$work/t13.out"
 fi
 
 if [ "$ran" -eq 0 ]; then
