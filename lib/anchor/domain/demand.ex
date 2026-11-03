@@ -126,7 +126,7 @@ defmodule Anchor.Domain.Demand do
   @spec param(t(), mfa(), non_neg_integer()) :: Lattice.t()
   def param(%__MODULE__{summaries: summaries}, mfa, index) do
     case Map.fetch(summaries, mfa) do
-      {:ok, params} when index < length(params) ->
+      {:ok, params} when is_integer(index) and index >= 0 and index < length(params) ->
         Enum.at(params, index).demand
 
       _missing ->
@@ -195,8 +195,13 @@ defmodule Anchor.Domain.Demand do
 
   defp callees(node, mfa, module, program) do
     case :cerl.type(node) do
+      # A call is an edge to its callee, and a call that is an apply site
+      # (`apply/2`, a `HigherOrder` function) to the closures it resolves to.
       :call ->
-        [Core.call_mfa(node)]
+        [
+          Core.call_mfa(node)
+          | Enum.flat_map(Core.site_ordinals(node), &site_owners({mfa, &1}, program.cfa))
+        ]
 
       :apply ->
         operator = :cerl.apply_op(node)

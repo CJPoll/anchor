@@ -18,7 +18,13 @@ defmodule Anchor.Domain.Demand.TransferTest do
   alias AnchorFixtures.TransferTest.F
 
   @source """
+  defmodule AnchorFixtures.TransferTest.S do
+    defstruct [:name, :age]
+  end
+
   defmodule AnchorFixtures.TransferTest.F do
+    alias AnchorFixtures.TransferTest.S
+
     def first(a, _b), do: a
     def field(m), do: m.x
     def fields(m), do: {m.x, m.y}
@@ -64,6 +70,54 @@ defmodule Anchor.Domain.Demand.TransferTest do
       SomeDep.call(p)
       :ok
     end
+
+    def returned(a), do: a + 1
+    def put_read(a, b), do: Map.get(Map.put(%{x: b}, :k, a), :k)
+    def update_read(m, a), do: %{m | k: a}.j
+    def dyn(mod, x), do: mod.run(x)
+    def ap3(mod, x), do: apply(mod, :run, [x])
+    def ap2(f, x), do: apply(f, [x])
+
+    def received_t(m) do
+      receive do
+        {:x, y} -> y + m
+      end
+    end
+
+    def each(xs, p) do
+      Enum.each(xs, fn _x -> IO.puts(p) end)
+      :ok
+    end
+
+    def guarded_try(a) do
+      try do
+        _ = hd(a)
+        :ok
+      rescue
+        _error -> :error
+      end
+    end
+
+    def unguarded(a) do
+      _ = hd(a)
+      :ok
+    end
+
+    def set_fold(s, pid) do
+      _ = :sets.fold(fn x, acc -> send(pid, x) && acc end, :ok, s)
+      :ok
+    end
+
+    def has?(m, k), do: match?(%{^k => _}, m)
+
+    def take(bin, n) do
+      <<x::binary-size(n), _rest::binary>> = bin
+      x
+    end
+
+    def name(%S{name: n}), do: n
+    def bin(a, _b), do: <<a::binary>>
+    def comprehension(xs, p), do: for(x <- xs, do: x + p)
 
     def forward(a, b), do: other(a, b)
     defp other(a, _b), do: a
@@ -153,6 +207,82 @@ defmodule Anchor.Domain.Demand.TransferTest do
 
     test "try: the body's value and the handler's are used, nothing else", context do
       assert params(context, :tried, 3) == [:all, :all, :absent]
+    end
+  end
+
+  describe "more Core shapes" do
+    test "a + 1 returned uses a (the positive control of the discarded row)", context do
+      assert params(context, :returned, 1) == [:all]
+    end
+
+    test "Map.put then Map.get of the put key: the value is used, the base's other field not",
+         context do
+      assert params(context, :put_read, 2) == [:all, :absent]
+    end
+
+    test "a map update read at another key: that key of the map, not the new value", context do
+      assert params(context, :update_read, 2) == [{:used, %{j: :all}}, :absent]
+    end
+
+    test "a call on a variable module uses everything and names the reason", context do
+      result = transfer(context, :dyn, 2)
+      assert result.params == [:all, :all]
+      assert MapSet.to_list(result.reasons) == [{:dynamic_call, 1}]
+    end
+
+    test "apply/3 to a variable module uses everything and names the reason", context do
+      result = transfer(context, :ap3, 2)
+      assert result.params == [:all, :all]
+      assert MapSet.to_list(result.reasons) == [{:dynamic_apply, {:erlang, :apply, 3}}]
+    end
+
+    test "apply/2 of an :any function uses the list and names its site", context do
+      result = transfer(context, :ap2, 2)
+      assert result.params == [:all, :all]
+      assert MapSet.to_list(result.reasons) == [{:any_apply, {{F, :ap2, 2}, 0}}]
+    end
+
+    test "a receive loop the summaries lack fails closed as an unknown closure", context do
+      result = transfer(context, :received_t, 1)
+      assert result.params == [:all]
+      assert MapSet.to_list(result.reasons) == [{:unknown_closure, {{F, :received_t, 1}, 0}}]
+    end
+
+    test "Enum.each with a fn that prints p: both used, precisely", context do
+      result = transfer(context, :each, 2)
+      assert result.params == [:all, :all]
+      assert MapSet.size(result.reasons) == 0
+    end
+
+    test "inside try, a pure call whose result is unused uses its argument (it can raise)",
+         context do
+      assert params(context, :guarded_try, 1) == [:all]
+      # Positive control: the same body outside a try.
+      assert params(context, :unguarded, 1) == [:absent]
+    end
+
+    test "a pure module's call with its result unused still uses a fn argument", context do
+      assert params(context, :set_fold, 2) == [:all, :all]
+    end
+
+    test "a pinned map key in a pattern is used", context do
+      assert params(context, :has?, 2) == [:all, :all]
+    end
+
+    test "a bitstring size in a pattern is used", context do
+      assert params(context, :take, 2) == [:all, :all]
+    end
+
+    test "a struct head reads __struct__ and the named field", context do
+      assert params(context, :name, 1) == [{:used, %{__struct__: :all, name: :all}}]
+    end
+
+    test "a binary built from a uses a, not b", context do
+      assert params(context, :bin, 2) == [:all, :absent]
+    end
+
+    test "a comprehension (Enum.map of a fn) uses the list and what the fn captures", context do
+      assert params(context, :comprehension, 2) == [:all, :all]
     end
   end
 

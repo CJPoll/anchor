@@ -50,6 +50,19 @@ defmodule Anchor.Domain.EffectPrimitivesTest do
       refute EffectPrimitives.effect?({Notifier, :push, 1}, [])
     end
 
+    test "a module token makes every function of that module an effect" do
+      extra = EffectPrimitives.parse_extra!(["Req", ":gen_tcp"])
+      assert EffectPrimitives.effect?({Req, :get, 2}, extra)
+      assert EffectPrimitives.effect?({:gen_tcp, :connect, 3}, extra)
+      refute EffectPrimitives.effect?({Req.Request, :new, 1}, extra)
+      refute EffectPrimitives.effect?({Req, :get, 2}, [])
+    end
+
+    test "module_name/1 spells a module as a token does" do
+      assert EffectPrimitives.module_name(IO) == "IO"
+      assert EffectPrimitives.module_name(:ets) == ":ets"
+    end
+
     test "a token that does not parse raises with the grammar's message" do
       assert_raise ArgumentError, ~r/is not a function reference/, fn ->
         EffectPrimitives.parse_extra!(["Notifier.*"])
@@ -58,8 +71,8 @@ defmodule Anchor.Domain.EffectPrimitivesTest do
 
     test "default/0 lists every row once with its kind" do
       rows = EffectPrimitives.default()
-      assert {:escape, {:erlang, :send, :*}} in rows
-      assert {:effect, {IO, :*, :*}} in rows
+      assert {:escape, {":erlang", :send, :*}} in rows
+      assert {:effect, {"IO", :*, :*}} in rows
       assert length(rows) == length(Enum.uniq(rows))
     end
   end

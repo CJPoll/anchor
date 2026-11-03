@@ -3,10 +3,16 @@ defmodule Anchor.Domain.PureCalls do
   The library calls the absence analysis (`Anchor.Domain.Demand`) reads as
   pure — **Domain**, pure data (DND-5498, requirement R4).
 
-  A pure call's arguments matter only through its result: when its result is
-  used they are used in full, and when it is not they are not. Every other
-  library call that is not an effect (`Anchor.Domain.EffectPrimitives`) uses
-  its arguments in full and makes the calling function imprecise.
+  A pure call has no effect of its own, so it never makes the calling
+  function imprecise. A BIF row's arguments matter only through its result:
+  used in full when the result is used, not at all when it is not. A module
+  row may take a function argument that `Anchor.Domain.HigherOrder` has no
+  row for (`MapSet.filter/2`, `String.replace/4`), whose effects run whatever
+  happens to the result, so `Anchor.Domain.Demand.Transfer` uses a module
+  row's arguments in full. Every other library call that is not an effect
+  (`Anchor.Domain.EffectPrimitives`) uses its arguments in full and makes the
+  calling function imprecise; a function that calls an argument
+  (`HigherOrder`) uses them in full, precisely.
 
   Two kinds of row:
 

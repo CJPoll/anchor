@@ -21,6 +21,8 @@ defmodule Anchor.Domain.DemandTest do
   alias AnchorFixtures.DemandTest.D
   alias AnchorFixtures.DemandTest.Used
 
+  @runs [:run, :run_used, :run_wrong, :run_cap, :apply_it]
+
   @source """
   defmodule AnchorFixtures.DemandTest.A do
     alias AnchorFixtures.DemandTest.B
@@ -47,6 +49,10 @@ defmodule Anchor.Domain.DemandTest do
     end
 
     def ignored(p), do: B.run(fn _x -> :ignored end, p)
+    def used_apply(p), do: B.run_used(fn x -> x end, p)
+    def wrong_arity(p), do: B.run_wrong(fn _a, _b -> :two end, p)
+    def captured(p), do: B.run_cap(&IO.puts/1, p)
+    def listed(p), do: B.apply_it(fn x -> x end, p)
     def open(f, p), do: f.(p)
 
     def dep(p) do
@@ -81,6 +87,10 @@ defmodule Anchor.Domain.DemandTest do
     def g(x), do: C.h(x)
     def pong(n, p), do: A.ping(n, p)
     def run(f, p), do: f.(p)
+    def run_used(f, p), do: f.(p)
+    def run_wrong(f, p), do: f.(p)
+    def run_cap(f, p), do: f.(p)
+    def apply_it(f, x), do: apply(f, [x])
   end
 
   defmodule AnchorFixtures.DemandTest.C do
@@ -108,11 +118,16 @@ defmodule Anchor.Domain.DemandTest do
   end
   """
 
-  # Every exported function of A is a root, but not B.run/2: its apply site
-  # gets only what A passes it.
+  # Every exported function of A is a root, but not B's run functions: their
+  # apply sites get only what A passes them.
   setup_all do
     graph = graph!(@source)
-    seed = graph |> Cfa.default_seed() |> Map.reject(fn {mfa, _any} -> mfa == {B, :run, 2} end)
+
+    seed =
+      graph
+      |> Cfa.default_seed()
+      |> Map.reject(fn {{m, f, _a}, _any} -> m == B and f in @runs end)
+
     cfa = Cfa.analyze(graph, seed)
     used_graph = graph!(@used_source)
     used_cfa = Cfa.analyze(used_graph, Cfa.default_seed(used_graph))
@@ -209,6 +224,37 @@ defmodule Anchor.Domain.DemandTest do
       assert demands(demand, {A, :received_drop, 1}) == [:absent]
     end
 
+    test "positive control: the same shape with a lambda that returns its argument: used",
+         %{demand: demand} do
+      assert demands(demand, {A, :used_apply, 1}) == [:all]
+      assert demands(demand, {B, :run_used, 2}) == [:all, :all]
+      refute Map.has_key?(demand.imprecise, {A, :used_apply, 1})
+    end
+
+    test "a closure of another arity reaching the site uses nothing (the call raises badarity)",
+         %{demand: demand} do
+      assert demands(demand, {B, :run_wrong, 2}) == [:all, :absent]
+      assert demands(demand, {A, :wrong_arity, 1}) == [:absent]
+    end
+
+    test "a library capture resolved at a site: an effect uses the argument, precisely",
+         %{demand: demand} do
+      assert demands(demand, {B, :run_cap, 2}) == [:all, :all]
+      refute Map.has_key?(demand.imprecise, {B, :run_cap, 2})
+    end
+
+    test "apply(f, [x]) with f resolved to a lambda that returns its argument: x used",
+         %{demand: demand} do
+      assert demands(demand, {B, :apply_it, 2}) == [:all, :all]
+      assert demands(demand, {A, :listed, 1}) == [:all]
+      refute Map.has_key?(demand.imprecise, {B, :apply_it, 2})
+    end
+
+    test "an extra module token makes every function of the module an effect", context do
+      demand = Demand.analyze(context.graph, context.cfa, ["ExtNotifier"])
+      refute Map.has_key?(demand.imprecise, {A, :notify, 1})
+    end
+
     test "AC6 a parameter passed to an :any apply: used, and the function is imprecise",
          %{demand: demand} do
       assert demands(demand, {A, :open, 2}) == [:all, :all]
@@ -251,17 +297,21 @@ defmodule Anchor.Domain.DemandTest do
   end
 
   describe "counts" do
-    # 18 functions (A 14, B 3, C 1), 25 parameters; absent: first/2's b,
+    # 26 functions (A 18, B 7, C 1), 37 parameters; absent: first/2's b,
     # chain, g, h, loop's acc, ping's and pong's p, ignored's p, run's p,
-    # received_drop's m.
+    # received_drop's m, wrong_arity's p, run_wrong's p. 21 components (the
+    # ping/pong cycle is one, and listed/apply_it another: apply_it applies
+    # listed's lambda); 43 rounds, each component's last unchanged.
     test "functions analysed, absent parameters and imprecise functions, exact", %{demand: demand} do
       assert %{
-               functions: 18,
-               parameters: 25,
-               absent: 10,
+               functions: 26,
+               parameters: 37,
+               absent: 12,
                imprecise_parameters: 4,
-               imprecise_functions: 4
-             } = demand.counts
+               imprecise_functions: 4,
+               components: 21,
+               rounds: 43
+             } == demand.counts
 
       assert demand.imprecise |> Map.keys() |> Enum.sort() == [
                {A, :dep, 1},

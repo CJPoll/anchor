@@ -28,18 +28,29 @@ defmodule Anchor.Domain.Demand.Transfer do
       demands every argument in full.
     * A call of an effect (`Anchor.Domain.EffectPrimitives`) or of a function
       that calls an argument (`Anchor.Domain.HigherOrder`): every argument in
-      full. A pure call (`Anchor.Domain.PureCalls`): every argument in full
-      when the result is used, else none. A type test (`is_map/1`) uses its
+      full, precisely. A pure BIF (`Anchor.Domain.PureCalls`, an `:erlang`
+      row): every argument in full when the result is used, else none. A
+      pure library module's function: every argument in full (it may call a
+      function argument `HigherOrder` has no row for, so a missing row costs
+      precision, never soundness). A type test (`is_map/1`) uses its
       argument for its shape alone (`Lattice.shape/0`). Reads of a literal
       field (`erlang:element/2`, `maps:get/2,3`, `Map.get/2,3`,
-      `Map.fetch!/2`, and `elixir_erl_pass:no_parens_remote/2`, the dot-call
-      Core gives `m.x`) demand that field. Any other call (a library call not
-      in a table, a call on a variable module, `apply/3` to a target the
-      Core does not name) demands every argument in full and is recorded as a
-      reason the function may be imprecise.
+      `Map.fetch!/2`) demand that field; `elixir_erl_pass:no_parens_remote/2`
+      (the other half of `m.x`, which calls `m:x()` on a module atom) uses
+      field `x` of its subject even when its result is unused. Any other call
+      (a library call not in a table, a call on a variable module, `apply/3`
+      to a target the Core does not name) demands every argument in full and
+      is recorded as a reason the function may be imprecise. `apply(f,
+      list)` is an apply site: the list is used when a resolved closure uses
+      a parameter.
+    * Inside a `try`'s protected expression or a `catch`, a raise is
+      observable, so a call (and a map update) there uses its arguments even
+      when its result is unused.
     * A `fun` whose value is used: its body in full, so what it captures is
       used. A `letrec` definition (a receive or comprehension loop) is
       walked in full.
+    * A map key (`%{^k => v}`) or a bitstring size (`size(n)`) inside a
+      pattern is read in full.
     * A tuple, list or map built with demand `d`: each component gets `d`'s
       demand on its key (`Lattice.at/2`); a list element or a field under a
       key that is not a literal atom gets everything or nothing.
@@ -126,7 +137,7 @@ defmodule Anchor.Domain.Demand.Transfer do
   """
   @spec function(:cerl.cerl(), env()) :: result()
   def function(core_fun, env) do
-    ctx = Map.put(env, :letrecs, letrecs(core_fun, env.mfa))
+    ctx = env |> Map.put(:letrecs, letrecs(core_fun, env.mfa)) |> Map.put(:protected?, false)
     {params, passes, st} = run(core_fun, new_state(), ctx)
 
     {lambdas, st} =
@@ -231,7 +242,7 @@ defmodule Anchor.Domain.Demand.Transfer do
       :case -> case_of(node, demand, st, ctx)
       :receive -> receive_of(node, demand, st, ctx)
       :try -> try_of(node, demand, st, ctx)
-      :catch -> walk(:cerl.catch_body(node), demand, st, ctx)
+      :catch -> walk(:cerl.catch_body(node), demand, st, %{ctx | protected?: true})
       :apply -> apply_of(node, st, ctx)
       :call -> call(node, demand, st, ctx)
       :primop -> primop(node, st, ctx)
@@ -257,7 +268,8 @@ defmodule Anchor.Domain.Demand.Transfer do
   defp lambda(node, demand, st, ctx) do
     if Lattice.used?(demand) do
       names = Enum.map(:cerl.fun_vars(node), &:cerl.var_name/1)
-      {:ok, st} = scoped(st, names, &{:ok, walk(:cerl.fun_body(node), :all, &1, ctx)})
+      body_ctx = %{ctx | protected?: false}
+      {:ok, st} = scoped(st, names, &{:ok, walk(:cerl.fun_body(node), :all, &1, body_ctx)})
       st
     else
       st
@@ -342,7 +354,7 @@ defmodule Anchor.Domain.Demand.Transfer do
     arg = :cerl.case_arg(node)
     parts = if :cerl.is_c_values(arg), do: :cerl.values_es(arg), else: [arg]
 
-    if Enum.all?(clauses, &(length(:cerl.clause_pats(&1)) == length(parts))) do
+    if clauses != [] and Enum.all?(clauses, &(length(:cerl.clause_pats(&1)) == length(parts))) do
       {columns, st} = Enum.map_reduce(clauses, st, &clause(&1, parts, demand, &2, ctx))
 
       columns
@@ -370,12 +382,33 @@ defmodule Anchor.Domain.Demand.Transfer do
           do: st,
           else: walk(guard, :all, st, ctx)
 
+      st = walk_all(pattern_expressions(patterns), :all, st, ctx)
+
       st =
         patterns
         |> Enum.zip(parts)
         |> Enum.reduce(st, fn {pattern, part}, st -> pattern_passes(pattern, part, st) end)
 
       {Enum.map(patterns, &pattern_demand(&1, st)), st}
+    end)
+  end
+
+  # The expressions inside patterns that are no pattern variable: a map key
+  # (`%{^k => v}`) and a bitstring size (`<<x::binary-size(n)>>`). Matching
+  # reads them in full.
+  defp pattern_expressions(patterns) do
+    Enum.flat_map(patterns, fn pattern ->
+      :cerl_trees.fold(
+        fn node, acc ->
+          case :cerl.type(node) do
+            :map_pair -> [:cerl.map_pair_key(node) | acc]
+            :bitstr -> [:cerl.bitstr_size(node) | acc]
+            _other -> acc
+          end
+        end,
+        [],
+        pattern
+      )
     end)
   end
 
@@ -457,7 +490,9 @@ defmodule Anchor.Domain.Demand.Transfer do
     evars = Enum.map(:cerl.try_evars(node), &:cerl.var_name/1)
     {:ok, st} = scoped(st, evars, &{:ok, walk(:cerl.try_handler(node), demand, &1, ctx)})
 
-    bind(:cerl.try_vars(node), :cerl.try_arg(node), st, ctx, fn st ->
+    # Inside the protected expression a raise is observable (the handler sees
+    # it), so a call there uses its arguments even when its result is unused.
+    bind(:cerl.try_vars(node), :cerl.try_arg(node), st, %{ctx | protected?: true}, fn st ->
       walk(:cerl.try_body(node), demand, st, ctx)
     end)
   end
@@ -477,6 +512,8 @@ defmodule Anchor.Domain.Demand.Transfer do
   end
 
   defp map(node, demand, st, ctx) do
+    # An update of a key that must exist (`%{m | k: v}`) can raise.
+    demand = protected(demand, ctx)
     st = walk(:cerl.map_arg(node), demand, st, ctx)
 
     Enum.reduce(:cerl.map_es(node), st, fn pair, st ->
@@ -502,9 +539,11 @@ defmodule Anchor.Domain.Demand.Transfer do
     else
       st = walk(operator, :all, st, ctx)
 
-      node
-      |> Core.site_ordinals()
-      |> Enum.reduce(st, &apply_site({ctx.mfa, &1}, args, &2, ctx))
+      case Core.site_ordinals(node) do
+        # Unlabelled Core: no site to resolve, so fail closed.
+        [] -> unknown_args(args, {:any_apply, {ctx.mfa, nil}}, st, ctx)
+        ordinals -> Enum.reduce(ordinals, st, &apply_site({ctx.mfa, &1}, args, &2, ctx))
+      end
     end
   end
 
@@ -567,14 +606,51 @@ defmodule Anchor.Domain.Demand.Transfer do
 
   defp call(node, demand, st, ctx) do
     args = :cerl.call_args(node)
+    demand = protected(demand, ctx)
 
     case Core.call_mfa(node) do
       nil ->
         st = walk_all([:cerl.call_module(node), :cerl.call_name(node)], :all, st, ctx)
         unknown_args(args, {:dynamic_call, length(args)}, st, ctx)
 
+      {:erlang, :apply, 2} ->
+        apply_list(node, args, st, ctx)
+
       mfa ->
         call_mfa(mfa, args, demand, st, ctx)
+    end
+  end
+
+  # Inside a `try` or a `catch` a call that can raise is observable even when
+  # its result is not used: it is demanded in full there.
+  defp protected(:absent, %{protected?: true}), do: :all
+  defp protected(demand, _ctx), do: demand
+
+  # `apply(f, list)`: an apply site whose arguments are the list's elements.
+  # The list is used when any closure the site resolves to uses a parameter.
+  defp apply_list(node, [function, list], st, ctx) do
+    st = walk(function, :all, st, ctx)
+
+    case Core.site_ordinals(node) do
+      [] -> unknown_args([list], {:any_apply, {ctx.mfa, nil}}, st, ctx)
+      ordinals -> Enum.reduce(ordinals, st, &apply_list_site({ctx.mfa, &1}, list, &2, ctx))
+    end
+  end
+
+  defp apply_list_site(site_id, list, st, ctx) do
+    case resolve(ctx.cfa, site_id) do
+      {:ok, closures} ->
+        {known, library} = Enum.split_with(Enum.sort(closures), &Map.has_key?(ctx.summaries, &1))
+        st = %{st | callees: MapSet.union(st.callees, MapSet.new(known))}
+        st = Enum.reduce(library, st, &library_closure(&1, [list], &2, ctx))
+
+        used? =
+          Enum.any?(known, &Enum.any?(Map.fetch!(ctx.summaries, &1), fn d -> d != :absent end))
+
+        walk(list, if(used?, do: :all, else: :absent), st, ctx)
+
+      :any ->
+        unknown_args([list], {:any_apply, site_id}, st, ctx)
     end
   end
 
@@ -589,9 +665,19 @@ defmodule Anchor.Domain.Demand.Transfer do
     end
   end
 
-  defp other_call({:elixir_erl_pass, :no_parens_remote, 2}, [subject, key], demand, st, ctx) do
-    st = walk(key, spread(demand), st, ctx)
-    walk(subject, read_demand(key, demand), st, ctx)
+  # `m.x`'s other half: when `m` is a module atom this runs `m:x()`, which may
+  # have an effect, so the subject is used (for field `x` only) even when the
+  # result is not.
+  defp other_call({:elixir_erl_pass, :no_parens_remote, 2}, [subject, key], _demand, st, ctx) do
+    st = walk(key, :all, st, ctx)
+
+    field =
+      case literal_atom(key) do
+        nil -> :all
+        atom -> Lattice.field(atom, :all)
+      end
+
+    walk(subject, field, st, ctx)
   end
 
   defp other_call({:erlang, :element, 2}, [index, tuple], demand, st, ctx) do
@@ -617,18 +703,16 @@ defmodule Anchor.Domain.Demand.Transfer do
       else: reason(st, ctx, {:dynamic_apply, mfa})
   end
 
+  # A BIF row of `PureCalls` takes no function, so its arguments matter only
+  # through its result. A module row may take one that `HigherOrder` lacks a
+  # row for (`MapSet.filter/2`), whose effects run even when the result is
+  # unused, so its arguments are used in full: a missing row costs precision,
+  # never soundness.
   defp other_call(mfa, args, demand, st, ctx) do
-    if PureCalls.pure?(mfa),
-      do: walk_all(args, spread(demand), st, ctx),
-      else: unknown_args(args, {:unknown_call, mfa}, st, ctx)
-  end
-
-  # `s.f`, `Map.get(m, :f)`: the field read when the key is a literal atom.
-  defp read_demand(key, demand) do
     cond do
-      not Lattice.used?(demand) -> :absent
-      literal_atom(key) != nil -> Lattice.field(literal_atom(key), :all)
-      true -> :all
+      not PureCalls.pure?(mfa) -> unknown_args(args, {:unknown_call, mfa}, st, ctx)
+      elem(mfa, 0) == :erlang -> walk_all(args, spread(demand), st, ctx)
+      true -> walk_all(args, :all, st, ctx)
     end
   end
 
