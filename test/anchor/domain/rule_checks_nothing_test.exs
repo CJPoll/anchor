@@ -18,6 +18,7 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
   # `Anchor.Managers.LintTest` and the e2e suite.
   #
   # Sabotage record: ../../sabotage_records/rule_schema-20260929-dnd_1290_empty_relation_list.md
+  # Sabotage record (DND-5447, DND-5454 rows): ../../sabotage_records/rule_schema-20261103-dnd_5447_graph_rules_c.md
   # The DND-1292 rows (glob metacharacters, the `***` match-all, `*?`):
   #   ../../sabotage_records/rule_schema-20260929-dnd_1292_glob_escape.md
   # The DND-1267 `forbidden_functions` rows:
@@ -425,11 +426,40 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
 
   # The types with no relation and no key of their own: they check every file
   # they select, so only the common rows apply.
-  # DND-5442, DND-5445, DND-5476: the graph types, none reading a key of its own.
+  # DND-5442, DND-5445, DND-5447, DND-5476: the graph types, none reading a key of its own.
   # Their rows are the graph common rows, loaded through
   # `Config.parse_config/1` with an `architecture:` section (`parse_one/1`),
   # plus what only a whole document decides.
-  defp table(type) when type in [:aggregate_declarations, :layering, :context_acyclic] do
+  defp table(type)
+       when type in [
+              :aggregate_declarations,
+              :layering,
+              :context_acyclic,
+              :effects_match_bucket
+            ],
+       do: graph_rows(type)
+
+  # DND-5454: the graph half of struct ownership reads the AST half's one
+  # optional key, `owned_namespaces`, under the same rules.
+  defp table(:struct_owned_by_module_flow) do
+    base = %{"type" => "struct_owned_by_module_flow", "bucket" => "domain"}
+    not_a_module = "is not an exact Elixir module name"
+
+    graph_rows(:struct_owned_by_module_flow) ++
+      [
+        {"positive: owned_namespaces", Map.put(base, "owned_namespaces", ["App"]), :accepted},
+        {"owned_namespaces: [] checks no struct", Map.put(base, "owned_namespaces", []),
+         {:refused, "`owned_namespaces: []` checks no struct"}},
+        {"an owned_namespaces glob", Map.put(base, "owned_namespaces", ["App.*"]),
+         {:refused, not_a_module}},
+        {"owned_namespaces that is a string", Map.put(base, "owned_namespaces", "App"),
+         {:refused, "`owned_namespaces` must be a list of non-empty strings"}}
+      ]
+  end
+
+  defp table(type), do: common_rows(type)
+
+  defp graph_rows(type) do
     name = Atom.to_string(type)
     base = %{"type" => name, "bucket" => "domain"}
 
@@ -444,8 +474,6 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
        %{"type" => name, "pattern" => "MyApp.*"}, :accepted}
     ])
   end
-
-  defp table(type), do: common_rows(type)
 
   defp extra_rows(:no_direct_dependency) do
     base = base(:no_direct_dependency)

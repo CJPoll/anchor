@@ -95,7 +95,8 @@ defmodule Anchor.Domain.RuleSchema do
       `no_forwarding_function`, `no_tuple_match_in_head`, `single_control_flow`,
       `struct_getter_convention` read no key of their own: they check every
       file they select.
-    * `struct_owned_by_module` (DND-5453) reads one optional key,
+    * `struct_owned_by_module` (DND-5453) and its graph half
+      `struct_owned_by_module_flow` (DND-5454) read one optional key,
       `owned_namespaces`, that narrows which structs it checks; without it
       every struct is checked. An empty list, and an entry that is not an
       exact module name, are refused.
@@ -197,6 +198,9 @@ defmodule Anchor.Domain.RuleSchema do
     # DND-5445: context_acyclic reads only the graph common keys (the contexts
     # are the `architecture:` section's).
     context_acyclic: [],
+    # DND-5447: effects_match_bucket reads only the graph common keys (the
+    # buckets, effects and roots are the `architecture:` section's).
+    effects_match_bucket: [],
     # DND-5442: the graph engine's layering rule reads only the graph common
     # keys (its matrix is the `architecture:` section's `calls`).
     layering: [],
@@ -214,7 +218,8 @@ defmodule Anchor.Domain.RuleSchema do
     no_tuple_match_in_head: [],
     single_control_flow: [],
     struct_getter_convention: [],
-    struct_owned_by_module: ~w(owned_namespaces)
+    struct_owned_by_module: ~w(owned_namespaces),
+    struct_owned_by_module_flow: ~w(owned_namespaces)
   }
 
   # THE relation each type checks against: a rule of the type must carry at
@@ -225,6 +230,7 @@ defmodule Anchor.Domain.RuleSchema do
     alphabetized_functions: [],
     case_on_bare_arg: [],
     context_acyclic: [],
+    effects_match_bucket: [],
     layering: [],
     max_file_length: [],
     module_pattern_restrictions: [],
@@ -238,7 +244,8 @@ defmodule Anchor.Domain.RuleSchema do
     no_tuple_match_in_head: [],
     single_control_flow: [],
     struct_getter_convention: [],
-    struct_owned_by_module: []
+    struct_owned_by_module: [],
+    struct_owned_by_module_flow: []
   }
 
   # THE engine each type runs on (DND-5437): `:ast` (a Credo check reads the
@@ -249,6 +256,7 @@ defmodule Anchor.Domain.RuleSchema do
     alphabetized_functions: :ast,
     case_on_bare_arg: :ast,
     context_acyclic: :graph,
+    effects_match_bucket: :graph,
     layering: :graph,
     max_file_length: :ast,
     module_pattern_restrictions: :ast,
@@ -262,7 +270,8 @@ defmodule Anchor.Domain.RuleSchema do
     no_tuple_match_in_head: :ast,
     single_control_flow: :ast,
     struct_getter_convention: :ast,
-    struct_owned_by_module: :ast
+    struct_owned_by_module: :ast,
+    struct_owned_by_module_flow: :graph
   }
 
   @engines [:ast, :graph]

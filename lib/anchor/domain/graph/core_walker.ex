@@ -46,7 +46,12 @@ defmodule Anchor.Domain.Graph.CoreWalker do
 
   Elixir rewrites other stdlib calls before Core too (`Map.merge/2` is
   `:maps.merge/2`); an edge names the Erlang function, and
-  `Anchor.Domain.Graph.Inlines` maps it back to its Elixir names.
+  `Anchor.Domain.Graph.Inlines` maps it back to its Elixir names. A rewrite
+  that adds a literal tag is read back into its Elixir name when the call
+  holds that tag (DND-5613): `:erlang.monitor(:process, pid)` is an edge to
+  `{Process, :monitor, 1}`, `:erlang.monitor(:port, p)` one to `{Port,
+  :monitor, 1}`, and `:erlang.monitor(type, pid)` stays `{:erlang, :monitor,
+  2}` (`Inlines.tagged_source/2`).
 
   Calls into the helpers the compiler emits (`:erlang` BIFs in guards,
   `:erlang.error/1` on a failed struct update) are kept as `:remote` calls:
@@ -60,6 +65,7 @@ defmodule Anchor.Domain.Graph.CoreWalker do
   """
 
   alias Anchor.Domain.Graph.Call
+  alias Anchor.Domain.Graph.Inlines
   alias Anchor.Domain.Graph.StructUse
 
   @maps_put {:maps, :put, 3}
@@ -179,12 +185,23 @@ defmodule Anchor.Domain.Graph.CoreWalker do
 
     to =
       case {resolved_literal(module, ctx), literal(name)} do
-        {{:ok, mod}, {:ok, fun}} when is_atom(mod) and is_atom(fun) -> {mod, fun, arity}
-        {_mod, name_lit} -> {:dynamic, atom_or_nil(name_lit), arity, receiver(module, ctx)}
+        {{:ok, mod}, {:ok, fun}} when is_atom(mod) and is_atom(fun) ->
+          source_name({mod, fun, arity}, args, ctx)
+
+        {_mod, name_lit} ->
+          {:dynamic, atom_or_nil(name_lit), arity, receiver(module, ctx)}
       end
 
     acc = add_call(acc, node, to, :remote, ctx)
     visit_all([module, name | args], ctx, acc)
+  end
+
+  # DND-5613: an inlined call whose tag (a literal argument the rewrite adds)
+  # names one Elixir function is that function: `:erlang.monitor(:process,
+  # pid)` is `Process.monitor/1`, never `Port.monitor/1`. Any other call keeps
+  # its Core name.
+  defp source_name(mfa, args, ctx) do
+    Inlines.tagged_source(mfa, Enum.map(args, &resolved_literal(&1, ctx))) || mfa
   end
 
   defp visit_apply(node, ctx, acc) do

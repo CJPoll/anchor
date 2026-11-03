@@ -10,7 +10,8 @@ defmodule Anchor.Integration.GraphCanaryTest do
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5440_graph_runner.md
   # (the CFA run, DND-5574 R7: ../../sabotage_records/graph_runner-20261103-dnd_5574_cfa_wiring.md)
   # (layering rows: ../../sabotage_records/layering-20261103-dnd_5441_graph_rules_a.md;
-  # context_acyclic rows: ../../sabotage_records/context_acyclic-20261103-dnd_5441_graph_rules_a.md)
+  # context_acyclic rows: ../../sabotage_records/context_acyclic-20261103-dnd_5441_graph_rules_a.md;
+  # struct_owned_by_module_flow rows: ../../sabotage_records/struct_flow-20261103-dnd_5447_graph_rules_c.md)
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -35,7 +36,8 @@ defmodule Anchor.Integration.GraphCanaryTest do
   @stray_file "lib/canary/unclassified.ex"
   @layering_violating "lib/canary/framework/layering/violating.ex"
   @cycle_violating "lib/canary/domain/cycle/cycle_b.ex"
-  @violating [@stray_file, @layering_violating, @cycle_violating]
+  @struct_violating "lib/canary/domain/struct_flow/rebate.ex"
+  @violating [@stray_file, @layering_violating, @cycle_violating, @struct_violating]
 
   setup_all do
     files =
@@ -90,7 +92,7 @@ defmodule Anchor.Integration.GraphCanaryTest do
     assert %GraphReport{exit_code: 0, findings: [], could_not_check: []} = report
 
     assert GraphReport.summary(report) ==
-             "anchor.graph: 6 modules in 1 apps, 2 rules, 0 violations (0 report-only, 0 baselined)"
+             "anchor.graph: 6 modules in 1 apps, 3 rules, 0 violations (0 report-only, 0 baselined)"
   end
 
   test "positive control: the deliberately unclassified module gives exactly one issue", %{
@@ -218,8 +220,28 @@ defmodule Anchor.Integration.GraphCanaryTest do
            ] == %{total: 1, resolved: 1, any: 0}
 
     assert GraphReport.summary(report) ==
-             "anchor.graph: 6 modules in 1 apps, 3 rules, 1 violations " <>
+             "anchor.graph: 6 modules in 1 apps, 4 rules, 1 violations " <>
                "(0 report-only, 0 baselined); apply sites: 2 resolved, 0 any"
+  end
+
+  test "struct_owned_by_module_flow (DND-5454): Rebate changing a spec-known Order is one " <>
+         "finding; Pricing changing it through Order is none",
+       %{beams: beams} do
+    report = run(without(beams, @violating -- [@struct_violating]))
+
+    assert report.exit_code == 1
+    assert [finding] = report.findings
+    assert finding.rule_id == "struct_owned_by_module_flow"
+    assert finding.file == @struct_violating
+    assert finding.line == 7
+
+    assert finding.key ==
+             "struct_owned_by_module_flow|AnchorFixtures.GraphCanary.Orders.Rebate.free/1|" <>
+               "AnchorFixtures.GraphCanary.Orders.Order|Map.put"
+
+    assert finding.message =~
+             "known as AnchorFixtures.GraphCanary.Orders.Order by the @spec of " <>
+               "AnchorFixtures.GraphCanary.Orders.Order.new/1"
   end
 
   defp without(beams, files), do: Enum.reject(beams, &(&1.elixir.relative_file in files))

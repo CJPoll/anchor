@@ -2,6 +2,7 @@ defmodule Anchor.Sabotage.CoverageCollectorTest do
   # DND-5474: the collector turns trace messages into CoverageMap events; the
   # messages are sent to it directly (no tracing), with explicit stamps.
   # Sabotage record: ../../../../sabotage_records/sabotage-20261103-dnd_5474_coverage_map.md
+  # Sabotage record (DND-5642): ../../../../sabotage_records/sabotage-20261103-dnd_5639_sabotage_followups.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Sabotage.CoverageMap
@@ -21,6 +22,8 @@ defmodule Anchor.Sabotage.CoverageCollectorTest do
 
   test "1: trace messages give the same map CoverageMap gives on the same events" do
     {:ok, pid} = CoverageCollector.start_link(slack: 2)
+    # Each test's call from its own process, as ExUnit runs them: no leak.
+    other = spawn(fn -> :ok end)
     t1 = test_struct(3, :"test one")
     t2 = test_struct(9, :"test two")
     em = ExUnit.EventManager
@@ -29,7 +32,7 @@ defmodule Anchor.Sabotage.CoverageCollectorTest do
           {:trace_ts, self(), :call, {em, :test_started, [:mgr, t1]}, 1},
           {:trace_ts, self(), :call, {A, :f, [1, 2]}, 2},
           {:trace_ts, self(), :call, {em, :test_finished, 2}, t1, 3},
-          {:trace_ts, self(), :call, {B, :g, 0}, 5},
+          {:trace_ts, other, :call, {B, :g, 0}, 5},
           {:trace_ts, self(), :call, {em, :test_started, 2}, t2, 4},
           {:trace_ts, self(), :call, {em, :test_finished, [:mgr, t2]}, 6},
           {:something, :else}
@@ -43,14 +46,15 @@ defmodule Anchor.Sabotage.CoverageCollectorTest do
       |> CoverageMap.new()
       |> CoverageMap.attribute([
         {:window_open, 1, ref(3, :"test one")},
-        {:call, 2, {A, :f, 2}},
+        {:call, 2, {A, :f, 2}, self()},
         {:window_close, 3, ref(3, :"test one")},
-        {:call, 5, {B, :g, 0}},
+        {:call, 5, {B, :g, 0}, other},
         {:window_open, 4, ref(9, :"test two")},
         {:window_close, 6, ref(9, :"test two")}
       ])
 
     assert CoverageMap.finalize(state, @meta) == CoverageMap.finalize(expected, @meta)
+    assert CoverageMap.finalize(state, @meta).window_leaks == []
 
     assert Map.new(CoverageMap.finalize(state, @meta).tests, &{&1.line, &1.functions}) ==
              %{3 => ["A.f/2"], 9 => ["B.g/0"]}
@@ -69,5 +73,35 @@ defmodule Anchor.Sabotage.CoverageCollectorTest do
     refute inspect(:sys.get_state(pid), limit: :infinity, printable_limit: :infinity) =~ "secret"
     assert [set] = Map.values(state.open)
     assert MapSet.to_list(set) == [{A, :f, 2}]
+  end
+
+  test "3: each call keeps the pid that made it, so a process from an earlier window is a leak (DND-5642)" do
+    {:ok, pid} = CoverageCollector.start_link()
+    t1 = test_struct(3, :"test one")
+    t2 = test_struct(9, :"test two")
+    em = ExUnit.EventManager
+    leaker = spawn(fn -> :ok end)
+    fresh = spawn(fn -> :ok end)
+
+    for message <- [
+          {:trace_ts, self(), :call, {em, :test_started, 2}, t1, 1},
+          {:trace_ts, leaker, :call, {A, :f, 0}, 2},
+          {:trace_ts, self(), :call, {em, :test_finished, 2}, t1, 3},
+          {:trace_ts, self(), :call, {em, :test_started, 2}, t2, 4},
+          {:trace_ts, fresh, :call, {B, :g, 0}, 5},
+          {:trace_ts, leaker, :call, {B, :g, [1]}, 6},
+          {:trace_ts, self(), :call, {em, :test_finished, 2}, t2, 7}
+        ],
+        do: send(pid, message)
+
+    assert {:ok, state} = CoverageCollector.finish(pid)
+
+    assert CoverageMap.finalize(state, @meta).window_leaks == [
+             %{
+               from: [ref(3, :"test one") |> Map.put(:file, "test/a_test.exs")],
+               to: ref(9, :"test two") |> Map.put(:file, "test/a_test.exs"),
+               calls: 1
+             }
+           ]
   end
 end

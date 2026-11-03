@@ -420,7 +420,7 @@ semantics and edge cases.
 | `same_context` | `no_direct_dependency` | Boolean, default `false`. When `true`, a `forbidden_patterns` match is a violation **only if** the dependency shares the checked file's own context. Exact `forbidden_modules` matches are never scoped. |
 | `context_depth` | `no_direct_dependency` | Positive integer, default `2`. Number of leading module-namespace segments that define a "context/subdomain". Inert unless `same_context: true`. |
 | `allowed_functions` | `module_pattern_restrictions` | Function-name allow-list (globs). |
-| `owned_namespaces` | `struct_owned_by_module` | Exact module names, default: every struct. Limits the check to structs equal to or nested under an entry, and reports a selected top-level module outside them. `[]`, a glob, an Erlang module or a malformed name fails the load. See [`struct_owned_by_module`](#struct_owned_by_module). |
+| `owned_namespaces` | `struct_owned_by_module`, `struct_owned_by_module_flow` | Exact module names, default: every struct. Limits the check to structs equal to or nested under an entry, and reports a selected top-level module outside them. `[]`, a glob, an Erlang module or a malformed name fails the load. See [`struct_owned_by_module`](#struct_owned_by_module). |
 | `pure_patterns` | `no_discarded_pure_expression` | Module-name globs, default `[]`: modules whose functions are pure, beside the stdlib pure set. A non-list, a blank entry or a match-all glob (`*`, `**`) fails the load. See [`no_discarded_pure_expression`](#no_discarded_pure_expression). |
 | `mode`, `max_lines` | `alphabetized_functions`, `max_file_length` | Style-check parameters. `mode` is `all`, `public_only` or `separate` (a leading colon is accepted); any other token fails the load. |
 
@@ -439,8 +439,9 @@ another type (`match` on a `no_transitive_dependency` rule) is unknown too.
 
 The Engine column is the one engine that runs the type: `ast` rules run as
 Credo checks over source, `graph` rules run under `mix anchor.graph` over the
-compiled code (DND-5440; `layering`, DND-5442, `context_acyclic`, DND-5445, and
-`aggregate_declarations`, DND-5476). Credo never reports a
+compiled code (DND-5440; `layering`, DND-5442, `context_acyclic`, DND-5445,
+`aggregate_declarations`, DND-5476, `effects_match_bucket`, DND-5447, and
+`struct_owned_by_module_flow`, DND-5454). Credo never reports a
 `graph` rule as unchecked.
 
 | Rule type | Keys beyond the common ones | Relation (needs one, non-empty) | Engine |
@@ -449,6 +450,7 @@ compiled code (DND-5440; `layering`, DND-5442, `context_acyclic`, DND-5445, and
 | `alphabetized_functions` | `mode` | none | `ast` |
 | `case_on_bare_arg` | none | none | `ast` |
 | `context_acyclic` | none | none | `graph` |
+| `effects_match_bucket` | none | none | `graph` |
 | `layering` | none | none | `graph` |
 | `max_file_length` | `max_lines` | none | `ast` |
 | `module_pattern_restrictions` | `allowed_functions` | none | `ast` |
@@ -463,6 +465,7 @@ compiled code (DND-5440; `layering`, DND-5442, `context_acyclic`, DND-5445, and
 | `single_control_flow` | none | none | `ast` |
 | `struct_getter_convention` | none | none | `ast` |
 | `struct_owned_by_module` | `owned_namespaces` | none | `ast` |
+| `struct_owned_by_module_flow` | `owned_namespaces` | none | `graph` |
 
 Every rule also needs exactly one **selector**: a non-empty `paths` list, a
 `pattern` string or a `uses_module` string. A rule with none selects no file,
@@ -799,6 +802,157 @@ Anchor's own `.anchor.yml` runs it over `lib/`, with a baseline holding what
 it found when it landed: one cycle through the dynamic calls of
 `Anchor.Managers.Lint` on the check modules, and `Mutator`'s `apply/3`.
 
+### The `effects_match_bucket` rule (DND-5447)
+
+```yaml
+rules:
+  - type: effects_match_bucket
+    id: effects_match_bucket
+    paths: ["lib/**/*.ex"]
+
+architecture:
+  contexts:
+    depth: 2
+  buckets:
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/**/domain/**/*.ex"]
+    - name: adapters
+      role: adapters
+      select:
+        - paths: ["lib/**/adapters/**/*.ex"]
+  calls:
+    domain: [domain]
+    adapters: [adapters, domain]
+  effects: ["Req", ":gen_tcp.connect"]   # effects beyond the defaults
+  roots:
+    - pattern: "Mix.Tasks.*"             # entry points beyond the defaults
+```
+
+A function's bucket follows from what it causes. `mix anchor.graph` infers
+every function's role from the compiled code (`Anchor.Domain.Effects`):
+
+- **framework** when it is a root: a public function of a `framework` bucket,
+  a function of a module an `architecture.roots` selector matches, or a
+  callback of a behaviour defined outside the project (`GenServer`,
+  `Mix.Task`, `Inspect`, ...);
+- else **adapters** when it calls an effect primitive, itself or through
+  functions of its own module (an adapter's public function that delegates to
+  its private helper stays an adapter);
+- else **managers** when it reaches an effect through another project
+  module's function, or reaches a call Anchor cannot resolve;
+- else **domain**.
+
+The effect primitives are every function of `File`, `IO`, `Logger`,
+`:logger`, `:telemetry`, `System`, `Process`, `Port`, `Node`, `GenServer`,
+`Agent`, `Task`, `Task.Supervisor`, `Registry`, `:ets`, `:dets`,
+`:persistent_term`, `:gen_tcp`, `:gen_udp`, `:ssl`, `:httpc`, `:os`, `:file`
+and `:rand`; `send`, `spawn*`, the process dictionary, the clocks
+(`DateTime.utc_now`, `NaiveDateTime.utc_now`, `Date.utc_today`,
+`:erlang.system_time`, `:erlang.monotonic_time`) and
+`:crypto.strong_rand_bytes/1`; and every project module declaring `@behaviour
+Ecto.Repo`. `architecture.effects` adds to them; nothing removes one. A call is
+matched by every name it may have been written as (`System.unique_integer/0`
+reaches Core as `:erlang.unique_integer/0`, DND-5613).
+
+A call on a computed module reaches every project module exporting the
+function; with none it is unresolved. A call whose function name is computed
+is unresolved. A closure application (`fun.(x)`, and the call inside
+`Enum.map(list, fun)`) reaches the closures the higher-order flow analysis
+finds there, and is unresolved where it finds a value from outside the
+project. A comprehension's collector (`for ..., into: target`) applies
+nothing to resolve when the target is a literal (no struct but a `MapSet`)
+or a `Map.new`/`MapSet.new`
+the function builds itself; into any other target (a parameter, which may be
+an `IO.stream/0`), it is unresolved. **An unresolved call counts as an effect**: it never makes a
+function look pure, and the run prints how many there were.
+
+For each module the rule selects in a bucket of role `domain`, `adapters` or
+`managers` with `infer: true` (the default), each public function that is not
+a root must infer its bucket's role. Not judged: `framework` and `ui`
+buckets, private functions, roots, and compiler-named functions
+(`__struct__/1`). A bucket the rule selects modules of with no public function
+analysed is below the rule's floor, an issue. A mismatch is one violation per
+function at its def line, keyed `<id>|<Mod.fun/arity>|<inferred role>`, naming
+the evidence: the call chain to the first effect, or that none is reachable.
+
+```
+lib/my_app/orders/pricing.ex:12: [enforce] rule 4 (id: "effects_match_bucket", effects_match_bucket) MyApp.Orders.Pricing.total/1 is in bucket domain (domain) but reaches an effect: MyApp.Orders.Pricing.total/1 -> MyApp.Orders.Rates.load/0 -> File.read!/1. Fix: move the effect into an adapter and have a Manager call it; MyApp.Orders.Pricing.total/1 then returns the data the Manager needs.
+```
+
+The summary adds `; effects: <n> functions (domain <a>, managers <b>, adapters
+<c>, framework <d>), <u> unresolved dynamic calls`. Anchor's own `.anchor.yml`
+runs it over `lib/` with a baseline holding what it found when it landed.
+
+### The `struct_owned_by_module_flow` rule (DND-5454)
+
+```yaml
+rules:
+  - type: struct_owned_by_module_flow
+    id: struct_owned_by_module_flow
+    paths: ["lib/**/*.ex"]
+    owned_namespaces: ["MyApp"]   # optional, as in struct_owned_by_module
+
+architecture:
+  contexts:
+    depth: 2
+  buckets:
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/**/*.ex"]
+  calls:
+    domain: [domain]
+```
+
+The graph half of struct ownership. `struct_owned_by_module` (above, under
+the AST rules) decides what one file's text shows; this rule reads the
+compiled code, so it knows what a value is from the typespecs of every
+module and sees writes a macro injected. In each selected function's Core it
+follows each value (`Anchor.Domain.StructFlow`) and reports a write that
+changes a value known as another module's struct `S`:
+
+- a map update (`%{v | k: x}`, op `map update`), `Map.put`, `merge`,
+  `replace`, `replace!`, `update`, `update!`, `delete`, `drop`, `put_new`,
+  `put_new_lazy`, `struct/2`, `struct!/2`, and `put_in`, `update_in`,
+  `get_and_update_in`, `pop_in` (a dotted `put_in(g.turn.status, v)` judges
+  `g` and `g.turn`, never the leaf).
+
+A value is **known** as `S` when:
+
+- a pattern matches it as `%S{}`;
+- it is what a call returns whose every `@spec` returns `S` (`S.t()`,
+  `%S{}`, a named type that is one of those; `nil | S.t()` counts as `S`):
+  `Turn.new() |> Map.put(:status, :idle)`;
+- it is a field of a known struct whose `@type t` types that field as `S`:
+  `%{state.turn | status: :idle}`, `%Game{turn: t}` in a head;
+- it flows unchanged through a `let` or a `case` clause variable.
+
+Anything else is unknown and never reported: a union of two structs,
+`map()`, a type outside the project, a type variable, a call on a variable
+module, a variable rebound to `Map.from_struct/1`.
+
+The owner and scope rules are the AST rule's: the struct's own module owns
+it, `defimpl P, for: S` is `S`'s own code (`for: [A, B]` is the protocol's),
+and `owned_namespaces` limits the structs judged; a selected module that
+defines a struct outside them is itself a violation.
+
+**One finding per site.** A site the AST rule reports is not reported again:
+a line holding literal struct syntax for another module's struct (`%S{...}`,
+`%S{s | ...}`), and a write on a value known only by a match in code the
+source holds (the AST rule knows that variable). A match in code a macro
+injected is this rule's, reported at the `use` line. A site with several
+writes gives one violation, on the value the site starts from. Keyed
+`<id>|<Mod.fun/a>|<S>|<op>`:
+
+```
+lib/my_app/decider.ex:12: [enforce] rule 5 (id: "struct_owned_by_module_flow", struct_owned_by_module_flow) MyApp.Decider.finish/1 changes MyApp.Turn (Map.put; known as MyApp.Turn by the @type t of MyApp.Game (field :turn)) outside MyApp.Turn: call a function on MyApp.Turn instead (e.g. MyApp.Turn.put_<field>/2). Fix: only a struct's own module builds or changes it: call a function on the struct's module (e.g. S.new/1, S.put_<field>/2) instead; read fields and pattern-match freely
+```
+
+Anchor's own `.anchor.yml` runs it over `lib/` with a baseline holding what
+it found when it landed.
+
 The only file it writes is `<build_path>/anchor/graph.etf` (Mix's build path:
 `_build/<env>`, or the directory `MIX_BUILD_PATH` names), the graph keyed by
 a sha256 of the project root's real path (two checkouts with the same build
@@ -819,6 +973,12 @@ if the analysis hit its bound. The JSON's `apply_sites` holds `total`,
 `resolved`, `any`, `bound_hit` and the same counts `by_function`
 (`"MyApp.X.run/1"`). When no rule that runs needs it, it is not computed: the
 summary says nothing of apply sites and `apply_sites` is `null`.
+
+Likewise a rule that reads the effect inference (`Anchor.Domain.Effects`,
+DND-5447) declares `needs: [:cfa, :effects]`: the run then infers it once,
+after the flow analysis, and the summary and the JSON's `effects`
+(`functions`, `by_role`, `unresolved`, `not_analysed`) carry its counts;
+`effects` is `null` when no rule that runs needs it.
 
 An Erlang module in the project is classified by its name only (a `pattern:`
 selector): a classified one is an opaque node with no edges, counted in the
@@ -1011,8 +1171,10 @@ line.
 | `--write-baseline` that created the file | 0 | the baseline path | `anchor.graph wrote 3 entries to .anchor/baselines/web.txt. Fix: review it in this change; from here it only shrinks.` (`[report]`) |
 | `--write-baseline` over an existing file, or naming no rule with a `baseline:` | 2 | the baseline path, or the config | `.anchor/baselines/web.txt exists; --write-baseline only creates, and never rewrites a baseline. Fix: ...` |
 | A `--base` ref with a character git must not see (a leading `-`, a space, `;`, `$`, `:`) | 2 | | usage, with a `Fix:` line |
-| A graph rule whose `needs/0` names an analysis the runner does not compute, or is not a list (DND-5574) | 1 | the config | `rule 2 (id: "web", layering) could not run: ArgumentError: MyApp.Rule.needs/0 names [:nope], which the graph runner does not compute (it computes [:cfa]), so it checked nothing. Fix: this is an Anchor bug; file it with this line.` The rule is not run; the other rules still run. |
+| A graph rule whose `needs/0` names an analysis the runner does not compute, or is not a list (DND-5574) | 1 | the config | `rule 2 (id: "web", layering) could not run: ArgumentError: MyApp.Rule.needs/0 names [:nope], which the graph runner does not compute (it computes [:cfa, :effects]), so it checked nothing. Fix: this is an Anchor bug; file it with this line.` The rule is not run; the other rules still run. |
 | The higher-order flow analysis a rule needs raises, throws or exits (DND-5574) | 1 | the config | `rule 2 (id: "web", layering) could not run: the higher-order flow analysis it needs (Anchor.Domain.Cfa) crashed: RuntimeError: ..., so it checked nothing. Fix: this is an Anchor bug; file it with this line.` One per rule that needs it; the rules that do not still run. |
+| The effect inference a rule needs raises, throws or exits, or returns no `%Effects{}` (DND-5447) | 1 | the config | `rule 2 (id: "effects", effects_match_bucket) could not run: the effect inference it needs (Anchor.Domain.Effects) crashed: RuntimeError: ..., so it checked nothing. Fix: this is an Anchor bug; file it with this line.` One per rule that needs it; the rules that do not still run. |
+| An `effects_match_bucket` rule selects modules of a judged bucket of which no public function was analysed (DND-5447) | 1 | the config | `rule 4 (id: "effects", effects_match_bucket) judged no public function of bucket domain: the modules it selects there have none that was analysed (every one is a root, generated, or has no Core body), so the bucket is below the rule's floor. Fix: select modules of domain with public functions, or set infer: false on domain in a reviewed change.` |
 | Findings of a `report` rule | 0 | the finding | printed `[report]` |
 
 Exit 2 is a usage error (an unknown option, `--format` other than `text` or
@@ -1086,7 +1248,9 @@ A function no literal `def`/`defp` defines is `{:error, :not_in_source}`.
 A protocol implementation's function is found as `scope` names it (DND-5624):
 `defimpl P, for: T` is `P.T`; a `defimpl P` with no `for:` inside
 `defmodule T` is `P.T`; `for: [T1, T2]` makes each `P.Tn` resolve to the one
-block, so each target gets the same edits under its own ids. A `defimpl` whose
+block, so each target gets the same edits under its own ids. Targets whose
+mutants select the same tests share one run: the edit is applied and its tests
+run once, and each target is listed with that verdict (DND-5639). A `defimpl` whose
 `for:` is not a literal module name (a variable, an attribute), or that has no
 `for:` inside an unnamed module, has no module name to give, so its functions
 are `{:error, :defimpl_target_not_literal}`, reported as `defimpl target not a
@@ -1193,7 +1357,9 @@ How a run goes:
    (`Anchor.Sabotage.ExUnitFormatter`, which writes each failed test to a
    results file; output is never parsed); then, in an `after` block, the
    original is written back, touched, its sha256 checked, and only then the
-   journal deleted.
+   journal deleted. A mutant whose run another target of the same
+   `defimpl ..., for: [...]` edit already made (the same tests) is not applied
+   again: it takes that run's verdict (DND-5639).
 7. The run is saved to `<build_path>/anchor/sabotage/last-run.etf`: Mix's build
    path, `_build/<env>` or the directory `MIX_BUILD_PATH` names.
 8. The sabotage record is written (DND-5484), unless `--no-record`: one
@@ -1204,8 +1370,9 @@ How a run goes:
    sanitized, case kept (ADR 003: `dnd-5473-runner` -> `dnd_5473_runner`). Each record
    holds the header (Domain, Branch, Date, Code under test, Suite run,
    Generated by: the command, the Anchor version, the base and head SHAs),
-   each mutant's patch, command, counts, failed tests and first failure as
-   ExUnit printed it, the survivors, the skipped, invalid and not-run
+   a **summary table** (one row per mutant: id, function, mutation, status,
+   killer count; DND-5643), each mutant's patch, command, counts, failed tests and first failure as
+   ExUnit printed it, the survivors, the kills by timeout, the skipped, invalid and not-run
    mutants, the **tests still lacking a red** (each new or changed test the
    diff touched that no mutant's run failed: it still needs a hand
    sabotage), and the **kill map**: a fenced `anchor-kills` block, one
@@ -1220,9 +1387,9 @@ How a run goes:
 
 | Status | Meaning |
 |---|---|
-| `killed` | a selected test failed; those tests are the killers |
+| `killed` | a selected test failed an assertion; those tests are the killers |
 | `survived` | the selected tests ran and passed (`Fix: add a test that fails under this mutant`) |
-| `timeout` | the time bound killed the run; counts as killed, killer `(timeout)` |
+| `timeout` | the time bound killed the run (killer `(timeout)`), or every failed test hit ExUnit's per-test timeout (killers `(test timeout) file:line name`; DND-5653). Counts as killed, but no assertion failed: the run names these on a `sabotage: N kills rest on time alone` line, and the record lists them under `## Kills by timeout` |
 | `invalid` | the mutant did not compile (any reason, a type-checker warning under warnings-as-errors included: the compiler's first error line is shown). Never killed, never survived; listed and counted, and beside a measured mutant it never changes the exit code |
 | `crashed` | the test run crashed or raised, so the tests could not judge the mutant (the line says why; an exit 137 inside the time bound reads `killed by signal 9`, an out-of-memory kill for one, and is never a timeout). Unmeasured |
 | `no_tests` | no test was selected (the line names the mirror path looked for), or the selected tests ran none under the mutant. Unmeasured |
@@ -1269,6 +1436,24 @@ its test) are counted (`outside_windows`), and so are trace messages that
 arrived later than the reorder buffer allows (`late_events`). The map records
 the commit it was built at, the Elixir and OTP versions, the number of tests
 and traced modules, and those counts.
+
+A process a test started that keeps running is credited, by time alone, to
+whichever test is running when it next calls project code. Each call keeps
+the pid that made it, so a call from a process first seen in an earlier test's
+window, made while none of those windows is open, is a **window leak**
+(DND-5642). Leaks are listed in the map (`window_leaks`: the earlier tests,
+the credited test, the number of calls), and the run prints one line per
+credited test file after the summary, `anchor.sabotage coverage: warning:
+<file>: N calls from a process first seen during an earlier test were
+credited to a later test (selection unchanged): <earlier test> -> <credited
+test> (N calls)`, at most five pairs to a line. Visibility only: the calls are
+still in the credited test's set and the exit code does not change. What is
+measured is where a process was first seen, not what started it: an
+application process (a server, a cache) idle until a test first calls it is
+first seen in that test, so its later calls for other tests are reported too.
+A line names a process to look at, not proof the earlier test leaked it. A
+process first seen outside every window (one that called project code at
+boot, `setup_all`) is never a leak.
 
 It is **CI only by default**: without `CI=true` it refuses, exit 2, and
 traces nothing (`Fix: run it in CI, or pass --local where that load is
@@ -1390,6 +1575,24 @@ reported, whatever `match` says. (`match` still governs the rule's
 | `defdelegate` | `defdelegate lookup(id), to: Athena.Slack, as: :user_info` |
 | A module attribute bound to a literal module in the same module | `@slack Athena.Slack` then `@slack.user_info(id)` or `apply(@slack, :user_info, [id])` |
 | A bare `Kernel` call (for a `Kernel.*` token) | `send(pid, msg)`, `pid \|> send(msg)`, `&send/2` match `"Kernel.send/2"` while `Kernel` owns `send/2` |
+
+**One function, every spelling (DND-5613).** Elixir compiles some stdlib calls
+into Erlang ones before the graph engine sees them (`Map.put/3` is
+`:maps.put/3`, `Process.monitor/1` is `:erlang.monitor(:process, pid)`). An
+entry may name either spelling, and both engines match a call written in
+either: `":maps.put/3"` matches a source `Map.put(m, k, v)`, and `"Map.put/3"`
+matches `:maps.put(k, v, m)`. Two Elixir names the compiled call tells apart by
+a literal tag stay apart: `"Process.monitor/1"` never matches
+`Port.monitor(p)`. Two it cannot tell apart (`Bitwise.band/2` and
+`Bitwise.&&&/2`) match each other; `Inlines.describe/1` names every candidate
+of such a call (`effects_match_bucket` names an effect primitive that way).
+Residuals: a `Map.put` onto a literal map folds into the literal when compiled,
+so the graph sees no call (the AST rule still does); and a source call written
+in Erlang spelling with a tag (`:erlang.monitor(:port, p)`) matches every Elixir
+name of that Erlang function in the AST rule, which does not read arguments. A
+token in `architecture.effects` is matched the same way, so the demand analysis
+reads a token `Process.monitor/1` against a Core `:erlang.monitor(:port, p)`
+too: a false positive there, never a miss.
 
 Each function reached is reported once per rule, at its first line. Where the
 source does not show an arity (`apply(M, :f, args)`), the call matches every
@@ -2009,6 +2212,10 @@ or stop selecting this file.`
 Each build or change issue names the struct and ends with `Fix: call a
 function on S's own module that builds or changes it (e.g. S.new/1,
 S.put_<field>/2); read fields and pattern-match freely.`
+
+What a typespec in another file says (a field typed as a struct, a
+function's return) and what a macro injects is the graph rule
+[`struct_owned_by_module_flow`](#the-struct_owned_by_module_flow-rule-dnd-5454)'s.
 
 Known limits, each a miss: a value bound to a function's return
 (`s = Turn.new()`) or a field typed as a struct (`state.turn`) is not known,

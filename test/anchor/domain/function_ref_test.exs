@@ -5,6 +5,7 @@ defmodule Anchor.Domain.FunctionRefTest do
   # becoming a rule that checks nothing.
   #
   # Sabotage record: ../../sabotage_records/function_ref-20260929-dnd_1267_forbidden_functions.md
+  # Sabotage record (DND-5613): ../../sabotage_records/inlines-20261103-dnd_5447_graph_rules_c.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.FunctionRef
@@ -103,6 +104,43 @@ defmodule Anchor.Domain.FunctionRefTest do
   # DND-5437: the `architecture:` section reuses this grammar for an
   # `exports_function` selector ("name/arity") and Erlang module tokens.
   # Sabotage record: ../../sabotage_records/function_ref-20261103-dnd_5437.md
+  # DND-5613: a token names a function, and a call site in either spelling of
+  # an inlined function is that function.
+  describe "matches?/4 across Elixir's inlining (DND-5613)" do
+    defp ref!(token), do: token |> FunctionRef.parse() |> elem(1)
+
+    test "the Erlang spelling matches a call of the Elixir name, and back" do
+      assert FunctionRef.matches?(ref!(":maps.put/3"), Map, :put, 3)
+      assert FunctionRef.matches?(ref!("Map.put/3"), :maps, :put, 3)
+      assert FunctionRef.matches?(ref!("Map.put"), :maps, :put, 3)
+      assert FunctionRef.matches?(ref!(":maps.put"), Map, :put, :any)
+    end
+
+    test "a tagged name does not match its sibling" do
+      refute FunctionRef.matches?(ref!("Process.monitor/1"), Port, :monitor, 1)
+      refute FunctionRef.matches?(ref!("Process.monitor"), Port, :monitor, 1)
+      # Positive control.
+      assert FunctionRef.matches?(ref!("Process.monitor/1"), Process, :monitor, 1)
+    end
+
+    test "names/1 lists every name a token stands for" do
+      assert FunctionRef.names(ref!("Map.put/3")) == [{Map, :put, 3}, {:maps, :put, 3}]
+
+      assert {Map, :put, :any} in FunctionRef.names(ref!("Map.put"))
+      assert {:maps, :put, 3} in FunctionRef.names(ref!("Map.put"))
+    end
+
+    test "a function with no other spelling matches only itself (positive control)" do
+      assert FunctionRef.matches?(ref!("Map.get/2"), Map, :get, 2)
+      refute FunctionRef.matches?(ref!("Map.get/2"), :maps, :get, 2)
+    end
+
+    test "may_reach?/4 matches through the names too" do
+      assert FunctionRef.may_reach?(ref!(":maps.put/3"), Map, nil, 3)
+      refute FunctionRef.may_reach?(ref!("Process.monitor/1"), Port, nil, 1)
+    end
+  end
+
   describe "parse_name_arity/1" do
     test "a function name and an arity parse" do
       assert FunctionRef.parse_name_arity("__aggregate__/0") == {:ok, {:__aggregate__, 0}}
