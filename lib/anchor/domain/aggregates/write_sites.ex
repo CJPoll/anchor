@@ -27,7 +27,10 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
       is `via: :run_callback_repo`.
 
   Any other call on a module held in a variable is a dynamic call, not a
-  write: a gap of every scope that reaches it.
+  write: a gap of every scope that reaches it. So is raw SQL (`query`,
+  `query!`, `query_many`, `query_many!` on a repo, on a callback's repo, or
+  on `Ecto.Adapters.SQL`): it writes what no schema or table names, so the
+  scope is incomplete, never complete and missing a write.
 
   ## Transactions
 
@@ -86,6 +89,10 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   }
 
   @multi Ecto.Multi
+
+  # Raw SQL writes what no schema or table names: a gap, never a missed write.
+  @raw_sql [:query, :query!, :query_many, :query_many!]
+  @raw_sql_module Ecto.Adapters.SQL
 
   @type raw_site :: %{
           op: atom(),
@@ -574,9 +581,16 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
         literal_call(acc, {module, name, length(args)}, args, env, tags, line, ctx)
 
       {:repo, name} ->
-        if repo_write?(name, length(args)),
-          do: add_site(acc, name, :run_callback_repo, Enum.at(args, 0), env, tags, line),
-          else: acc
+        cond do
+          repo_write?(name, length(args)) ->
+            add_site(acc, name, :run_callback_repo, Enum.at(args, 0), env, tags, line)
+
+          name in @raw_sql ->
+            dynamic(acc, line, raw_sql({:repo, name}, length(args)), tags)
+
+          true ->
+            acc
+        end
 
       {:error, name} ->
         dynamic(
@@ -660,6 +674,9 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
       arity > 0 and Enum.any?(ctx.write_functions, &FunctionRef.matches?(&1, module, name, arity)) ->
         add_site(acc, name, :write_function, Enum.at(args, 0), env, tags, line)
 
+      name in @raw_sql and (module == @raw_sql_module or MapSet.member?(ctx.repos, module)) ->
+        dynamic(acc, line, raw_sql(module, name, arity), tags)
+
       MapSet.member?(ctx.repos, module) ->
         acc
 
@@ -681,6 +698,12 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
       acc
     end
   end
+
+  defp raw_sql({:repo, name}, arity),
+    do: "raw SQL (repo.#{name}/#{arity} in a Multi.run callback) Anchor cannot attribute"
+
+  defp raw_sql(module, name, arity),
+    do: "raw SQL (#{inspect(module)}.#{name}/#{arity}) Anchor cannot attribute"
 
   defp dynamic(acc, line, what, tags),
     do: %{acc | dynamic: [%{line: line, what: what, tags: tags} | acc.dynamic]}

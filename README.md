@@ -994,7 +994,11 @@ alias, a pipe and an `@repo` attribute are already resolved):
   `update!`, `delete`, `delete!`, `insert_or_update`, `insert_or_update!`,
   `insert_all`, `update_all`, `delete_all`), the `Ecto.Multi` writes (the same
   without bangs), every `aggregates.write_functions` entry, and a `Repo` write
-  on the repo argument of a `Multi.run` callback.
+  on the repo argument of a `Multi.run` callback. Raw SQL (`query`, `query!`,
+  `query_many`, `query_many!` on a repo or a callback's repo, and
+  `Ecto.Adapters.SQL.query*`) writes what no schema or table names: it is a
+  gap, so a transaction that runs it is incomplete, never complete and missing
+  a write.
 - **Each write's source** (its schema or table) is traced through Core: a
   struct, a changeset built from one, a schema module, a call on a schema, a
   `from` query, a literal table, `{table, schema}`, a parameter whose `@spec`

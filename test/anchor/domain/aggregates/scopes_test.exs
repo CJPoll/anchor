@@ -71,6 +71,16 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
     def s12(xs), do: Repo.transaction(fn -> Enum.each(xs, &Helper.write_s/1) end)
 
     def s13(x), do: Repo.transaction(fn -> Repo.insert(%S{}); JSON.encode!(x) end)
+
+    def s14, do: Repo.transaction(fn -> Repo.insert(%S{}); Repo.query!("UPDATE t SET x = 1") end)
+
+    def s15 do
+      Multi.new()
+      |> Multi.run(:sql, fn repo, _ -> repo.query("DELETE FROM t") end)
+      |> Repo.transaction()
+    end
+
+    def s16, do: Repo.transaction(fn -> Ecto.Adapters.SQL.query!(Repo, "DELETE FROM t", []) end)
   end
   """
 
@@ -216,6 +226,28 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
     } do
       assert %Scope{complete?: true, gaps: []} = scope = one(a, :s13)
       assert scope.keys == keys([@s])
+    end
+  end
+
+  # Code-review finding: raw SQL writes what Anchor cannot attribute, so it
+  # is a gap, never a complete scope missing a write.
+  describe "raw SQL" do
+    for {name, def_text} <- [
+          s14: "def s14,",
+          s15: "|> Multi.run(:sql,",
+          s16: "def s16,"
+        ] do
+      @tag name: name, def_text: def_text
+      test "S14: raw SQL in #{name} makes its scope incomplete, at the call's line", %{
+        analysis: a,
+        name: name,
+        def_text: def_text
+      } do
+        assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, ^name, 0}, line}]} =
+                 one(a, name)
+
+        assert line == BeamFixtures.line_of(@source, def_text)
+      end
     end
   end
 
