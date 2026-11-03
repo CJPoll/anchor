@@ -6,6 +6,7 @@ defmodule Anchor.Managers.SabotageRunTest do
   # process, so the order of calls is asserted, not assumed.
   # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5473_sabotage_run.md
   # Sabotage record (DND-5570): ../../sabotage_records/sabotage-20261103-dnd_5570_sabotage_hardening.md
+  # Sabotage record (DND-5617): ../../sabotage_records/sabotage-20261103-dnd_5617_sabotage_cfa_batch.md
   use ExUnit.Case, async: true
 
   import Hammox
@@ -797,5 +798,73 @@ defmodule Anchor.Managers.SabotageRunTest do
   defp calls_seen(name) do
     {:messages, messages} = Process.info(self(), :messages)
     {:call, name} in messages
+  end
+
+  describe "run/2: changed functions that yield no mutant (DND-5617)" do
+    # The scope reads `source` (line 3 changed) and the generator yields no
+    # mutant: no baseline, no test run, no write; exit 0, said loudly.
+    defp expect_barren_run(source) do
+      expect_journal(:none)
+      expect_config()
+      expect_ignored()
+      expect(ChangeSourceMock, :merge_base, fn @root, "origin/main" -> {:ok, "abc"} end)
+      expect(ChangeSourceMock, :diff, fn @root, "abc" -> {:ok, @diff} end)
+      expect(ChangeSourceMock, :untracked, fn @root -> {:ok, []} end)
+      expect(ChangeSourceMock, :read, 2, fn @root, "lib/calc.ex" -> {:ok, source} end)
+      expect(ChangeSourceMock, :show, fn @root, "abc", "lib/calc.ex" -> {:ok, source} end)
+      expect_clean()
+      expect(SourceMutationMock, :existing, fn [] -> [] end)
+      expect_save()
+    end
+
+    test "M1: only a function no literal clause covers (a defimpl): exit 0, its line and the count" do
+      source =
+        "defimpl String.Chars, for: Calc do\n  def to_string(c) do\n    c.a\n  end\nend\n"
+
+      expect_barren_run(source)
+
+      run = Sabotage.run(@facts, @opts)
+
+      assert run.refusal == nil
+      assert {run.changed_functions, run.generated, run.outcomes} == {1, 0, []}
+      assert Report.exit_code(run) == 0
+      text = Report.render(run)
+
+      assert text =~
+               "sabotage: no mutant from String.Chars.Calc.to_string/1 (lib/calc.ex): macro: " <>
+                 "no literal def/defp clause in the source (a macro made it)"
+
+      assert text =~
+               "sabotage: no mutants generated from 1 changed functions: nothing was measured"
+    end
+
+    test "M2: only skipped edits: exit 0, the line names the skip rule, then the count" do
+      source = "defmodule Calc do\n  def add(_a, _b) do\n    x = :ok\n    x\n  end\nend\n"
+      expect_barren_run(source)
+
+      run = Sabotage.run(@facts, @opts)
+
+      assert {run.changed_functions, run.generated, run.outcomes} == {1, 0, []}
+      assert Report.exit_code(run) == 0
+      text = Report.render(run)
+
+      assert text =~
+               "sabotage: no mutant from Calc.add/2 (lib/calc.ex): skipped: delete_statement: " <>
+                 "orphans variable `x` bound at line 3 and used at line 4"
+
+      assert text =~
+               "sabotage: no mutants generated from 1 changed functions: nothing was measured"
+    end
+
+    test "M3: positive control: a function with mutants prints no such line" do
+      expect_until_selection()
+
+      run = Sabotage.run(%{@facts | dry_run: true}, @opts)
+
+      assert {run.changed_functions, run.generated, run.no_mutant} == {1, 2, []}
+      text = Report.render(run)
+      refute text =~ "no mutants generated"
+      refute text =~ "sabotage: no mutant from"
+    end
   end
 end
