@@ -7,7 +7,9 @@ defmodule Anchor.Domain.Sabotage.Report do
   `Fix:`; a `no_tests` mutant names the mirror path it looked for; an
   `invalid` one says why. Then the skipped mutants (with their reason), the
   functions no mutant could be made of, the cap, and a summary that counts
-  every status, `invalid` included.
+  every status, `invalid` included. Before the summary, one line counts the
+  mutants run by the source that chose their tests (`coverage`, `mirror`,
+  `none`; DND-5474).
 
   Exit codes: the refusal's own code; else 1 when a mutant survived or had no
   test; else 0 (every mutant run was killed, timed out or was invalid).
@@ -50,7 +52,7 @@ defmodule Anchor.Domain.Sabotage.Report do
     lines(
       run.notes ++
         Enum.map(run.outcomes, &outcome/1) ++
-        skipped(run) ++ errors(run) ++ not_run(run) ++ [summary(run)]
+        skipped(run) ++ errors(run) ++ not_run(run) ++ sources(run) ++ [summary(run)]
     )
   end
 
@@ -98,6 +100,18 @@ defmodule Anchor.Domain.Sabotage.Report do
 
   defp not_run(%Run{not_run: not_run}),
     do: ["not run (cap): #{length(not_run)} mutants; rerun with --max all (CI)"]
+
+  defp sources(%Run{outcomes: []}), do: []
+
+  defp sources(run) do
+    counts =
+      run.outcomes
+      |> Enum.frequencies_by(fn %{selection: {source, _tests}} -> source end)
+      |> Enum.sort()
+      |> Enum.map_join(", ", fn {source, n} -> "#{n} #{source}" end)
+
+    ["tests selected by: #{counts}"]
+  end
 
   defp summary(run) do
     counts = Enum.frequencies_by(run.outcomes, & &1.status)

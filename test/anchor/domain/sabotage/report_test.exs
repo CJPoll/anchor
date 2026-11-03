@@ -56,6 +56,21 @@ defmodule Anchor.Domain.Sabotage.ReportTest do
                "0 no_tests; 0 skipped; 0 not run (cap); 0 errors"
   end
 
+  test "DND-5474: a line counts the mutants by the source that chose their tests" do
+    run = %Run{
+      outcomes: [
+        outcome("aaa", :killed, [@killer], nil, {:coverage, ["test/other_test.exs:9"]}),
+        outcome("bbb", :killed, [@killer], nil, {:coverage, ["test/other_test.exs:9"]}),
+        outcome("ccc", :killed, [@killer])
+      ]
+    }
+
+    text = Report.render(run)
+
+    assert text =~ "selected by coverage: test/other_test.exs:9"
+    assert text =~ "\ntests selected by: 2 coverage, 1 mirror\nanchor.sabotage run: 3 mutants"
+  end
+
   test "2: one survivor: exit 1, its line ends with a Fix:" do
     run = %Run{outcomes: [outcome("aaa", :killed, [@killer]), outcome("bbb", :survived)]}
 

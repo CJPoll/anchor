@@ -17,3 +17,11 @@ Hammox.defmock(Anchor.ChangeSourceMock, for: Anchor.Adapters.ChangeSource)
 Hammox.defmock(Anchor.SourceMutationMock, for: Anchor.Adapters.SourceMutation)
 Hammox.defmock(Anchor.GitWorktreeMock, for: Anchor.Adapters.GitWorktree)
 Hammox.defmock(Anchor.TestExecutionMock, for: Anchor.Adapters.TestExecution)
+
+# DND-5474: the coverage command's ports (`Anchor.Managers.Sabotage.coverage/2`
+# takes them as the `:tracing`, `:in_process_tests`, `:project_modules` and
+# `:coverage_store` options; the run's `--coverage` reads through the last).
+Hammox.defmock(Anchor.TracingMock, for: Anchor.Adapters.Tracing)
+Hammox.defmock(Anchor.InProcessTestsMock, for: Anchor.Adapters.InProcessTests)
+Hammox.defmock(Anchor.ProjectModuleSourceMock, for: Anchor.Adapters.ProjectModuleSource)
+Hammox.defmock(Anchor.CoverageStoreMock, for: Anchor.Adapters.CoverageStore)

@@ -52,6 +52,12 @@ rules:
       - Anchor.Adapters.SourcePatcher
       - Anchor.Adapters.GitStatus
       - Anchor.Adapters.TestRunner
+      - Anchor.Adapters.CallTracer
+      - Anchor.Adapters.SuiteRunner
+      - Anchor.Adapters.ProjectModules
+      - Anchor.Adapters.CoverageFile
+      - Anchor.Sabotage.CoverageCollector
+      - Anchor.Managers.Sabotage.Coverage
       - Anchor.Managers.Lint
       - Anchor.Managers.Sabotage
       - Anchor.Managers.Sabotage.Runner

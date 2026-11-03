@@ -29,7 +29,10 @@ defmodule Anchor.Managers.Sabotage.Runner do
        mutant can be made of is an error, listed. Every function an error of
        `:parse_error` or `:unreadable` is exit 3.
     7. `Plan.build/2` (order, `--only`, cap), then `TestSelection.select/2`
-       per mutant. `--dry-run` stops here: it writes no mutant (step 1 may
+       per mutant. With a coverage map (`--coverage PATH`, or the config's
+       `coverage_map`; DND-5474) it is read first: one that cannot be read
+       or is not a version-1 map is exit 2; one built from a commit that is
+       not an ancestor of `HEAD` is used, with a warning in the notes. `--dry-run` stops here: it writes no mutant (step 1 may
        still have restored a leftover one).
     8. The baseline: the union of the selected tests, run once with no
        mutant. Anything but a pass is exit 3 (COULD NOT MEASURE).
@@ -46,7 +49,8 @@ defmodule Anchor.Managers.Sabotage.Runner do
 
   ## Adapters (options)
 
-  `:config_loader` (`Anchor.Adapters.ConfigFile`), `:change_source`
+  `:config_loader` (`Anchor.Adapters.ConfigFile`), `:coverage_store`
+  (`Anchor.Adapters.CoverageFile`), `:change_source`
   (`Anchor.Adapters.GitChangeSource`), `:source_mutation`
   (`Anchor.Adapters.SourcePatcher`), `:git_worktree`
   (`Anchor.Adapters.GitStatus`), `:test_execution`
@@ -54,11 +58,13 @@ defmodule Anchor.Managers.Sabotage.Runner do
   """
 
   alias Anchor.Adapters.ConfigFile
+  alias Anchor.Adapters.CoverageFile
   alias Anchor.Adapters.GitChangeSource
   alias Anchor.Adapters.GitStatus
   alias Anchor.Adapters.SourcePatcher
   alias Anchor.Adapters.TestRunner
   alias Anchor.Domain.Failures
+  alias Anchor.Domain.Sabotage.CoverageMap
   alias Anchor.Domain.Sabotage.Journal
   alias Anchor.Domain.Sabotage.Mutant
   alias Anchor.Domain.Sabotage.Mutator
@@ -171,9 +177,10 @@ defmodule Anchor.Managers.Sabotage.Runner do
          {:ok, scope} <- scope(facts, ports),
          :ok <- clean_targets(root, scope, ports),
          {:ok, run, sources, mutants} <- generate(run, root, scope, config, ports),
-         {:ok, plan} <- plan(mutants, facts, config) do
-      run = %{run | not_run: plan.not_run}
-      planned = Enum.zip(plan.planned, select(plan.planned, root, config, ports))
+         {:ok, plan} <- plan(mutants, facts, config),
+         {:ok, coverage, notes} <- coverage(facts, config, ports) do
+      run = %{run | not_run: plan.not_run, notes: run.notes ++ notes}
+      planned = Enum.zip(plan.planned, select(plan.planned, root, config, coverage, ports))
 
       if Map.get(facts, :dry_run, false),
         do: %{run | dry_run: true, planned: planned},
@@ -191,6 +198,7 @@ defmodule Anchor.Managers.Sabotage.Runner do
       patcher: Keyword.get(opts, :source_mutation, SourcePatcher),
       git: Keyword.get(opts, :git_worktree, GitStatus),
       tests: Keyword.get(opts, :test_execution, TestRunner),
+      coverage: Keyword.get(opts, :coverage_store, CoverageFile),
       opts: opts
     }
   end
@@ -405,7 +413,55 @@ defmodule Anchor.Managers.Sabotage.Runner do
     end
   end
 
-  defp select(planned, root, config, %{patcher: patcher}) do
+  # DND-5474: the coverage map, as an index from function to test args.
+  defp coverage(facts, config, ports) do
+    case Map.get(facts, :coverage) || config.coverage_map do
+      nil -> {:ok, nil, []}
+      path -> read_coverage(path, facts.root, ports)
+    end
+  end
+
+  defp read_coverage(path, root, %{coverage: store, git: git}) do
+    with {:read, {:ok, term}} <- {:read, store.read(Path.expand(path, root))},
+         {:check, {:ok, map}} <- {:check, CoverageMap.check(term)} do
+      {:ok, CoverageMap.index(map), stale(map.commit, root, git)}
+    else
+      {:read, {:error, reason}} ->
+        {:refuse, 2,
+         "the coverage map #{path} cannot be read (#{inspect(reason)}). " <>
+           "Fix: download the anchor-coverage artifact again"}
+
+      {:check, {:error, reason}} ->
+        {:refuse, 2,
+         "#{path} is not a version-1 coverage map (#{inspect(reason)}). " <>
+           "Fix: download the anchor-coverage artifact again"}
+    end
+  end
+
+  defp stale(commit, root, git) do
+    with true <- is_binary(commit),
+         {:ok, head} <- git.head_sha(root),
+         {:ok, false} <- git.ancestor?(root, commit) do
+      [
+        "coverage map built at #{commit} is not an ancestor of HEAD #{head}; " <>
+          "selections from it may miss new tests"
+      ]
+    else
+      {:ok, true} ->
+        []
+
+      false ->
+        ["the coverage map names no commit; selections from it may miss new tests"]
+
+      {:error, reason} ->
+        [
+          "could not check the coverage map's commit #{commit} against HEAD " <>
+            "(#{inspect(reason)}); selections from it may miss new tests"
+        ]
+    end
+  end
+
+  defp select(planned, root, config, coverage, %{patcher: patcher}) do
     candidates =
       planned
       |> Enum.map(&TestSelection.mirror_path(&1, config.test_mirror))
@@ -418,7 +474,7 @@ defmodule Anchor.Managers.Sabotage.Runner do
       |> patcher.existing()
       |> MapSet.new(&Path.relative_to(&1, root))
 
-    inputs = %{mirror: config.test_mirror, existing_tests: existing}
+    inputs = %{mirror: config.test_mirror, existing_tests: existing, coverage: coverage}
     Enum.map(planned, &TestSelection.select(&1, inputs))
   end
 

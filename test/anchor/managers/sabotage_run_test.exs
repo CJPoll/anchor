@@ -699,6 +699,137 @@ defmodule Anchor.Managers.SabotageRunTest do
     end
   end
 
+  describe "run/2 with a coverage map (DND-5474)" do
+    # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5474_coverage_map.md
+    @cov_opts @opts ++ [coverage_store: Anchor.CoverageStoreMock]
+
+    defp coverage_map(commit \\ "c0ffee") do
+      %{
+        version: 1,
+        commit: commit,
+        elixir: "1.19.4",
+        otp: "28",
+        tests: [
+          %{
+            file: "test/other_test.exs",
+            line: 12,
+            name: "test uses add",
+            module: "OtherTest",
+            functions: ["Calc.add/2"]
+          }
+        ],
+        modules_traced: 3,
+        outside_windows: 0,
+        late_events: 0,
+        suite_exit: 0
+      }
+    end
+
+    defp expect_map(result) do
+      expect(Anchor.CoverageStoreMock, :read, fn "/repo/cov.etf" -> call(:read_map, result) end)
+    end
+
+    defp expect_ancestor(answer) do
+      expect(GitWorktreeMock, :head_sha, fn @root -> {:ok, "headsha"} end)
+      expect(GitWorktreeMock, :ancestor?, fn @root, "c0ffee" -> {:ok, answer} end)
+    end
+
+    test "a mutant of a function a test in another file runs selects that test, by coverage" do
+      expect_until_selection()
+      expect_map({:ok, coverage_map()})
+      expect_ancestor(true)
+
+      expect(TestExecutionMock, :run, 3, fn _argv, ["test/other_test.exs:12"], _opts ->
+        if calls_seen(:baseline),
+          do: test_run(:failed, [@killer]),
+          else: call(:baseline, test_run(:passed))
+      end)
+
+      expect_patcher(2)
+      expect_delete_journal(2)
+      expect_save()
+
+      run = Sabotage.run(%{@facts | max: :all} |> Map.put(:coverage, "cov.etf"), @cov_opts)
+
+      assert [_, _] = run.outcomes
+      assert Enum.all?(run.outcomes, &(&1.selection == {:coverage, ["test/other_test.exs:12"]}))
+      assert run.notes == []
+
+      text = Report.render(run)
+      assert text =~ "selected by coverage: test/other_test.exs:12"
+      assert text =~ "tests selected by: 2 coverage\n"
+    end
+
+    test "the config's coverage_map is read when no --coverage is given" do
+      expect_until_selection(config: %SabotageConfig{coverage_map: "cov.etf"})
+      expect_map({:ok, coverage_map()})
+      expect_ancestor(true)
+
+      run = Sabotage.run(%{@facts | dry_run: true}, @cov_opts)
+
+      assert Enum.all?(run.planned, fn {_m, selection} -> elem(selection, 0) == :coverage end)
+    end
+
+    test "a function the map does not list falls back to the mirror" do
+      expect_until_selection()
+      map = %{coverage_map() | tests: [%{hd(coverage_map().tests) | functions: ["Other.f/0"]}]}
+      expect_map({:ok, map})
+      expect_ancestor(true)
+
+      run = Sabotage.run(%{@facts | dry_run: true} |> Map.put(:coverage, "cov.etf"), @cov_opts)
+
+      assert Enum.all?(run.planned, fn {_m, sel} -> sel == {:mirror, ["test/calc_test.exs"]} end)
+    end
+
+    test "a map from a commit that is not an ancestor of HEAD is used, with a warning" do
+      expect_until_selection()
+      expect_map({:ok, coverage_map()})
+      expect_ancestor(false)
+
+      run = Sabotage.run(%{@facts | dry_run: true} |> Map.put(:coverage, "cov.etf"), @cov_opts)
+
+      assert run.notes == [
+               "coverage map built at c0ffee is not an ancestor of HEAD headsha; " <>
+                 "selections from it may miss new tests"
+             ]
+
+      assert Enum.all?(run.planned, fn {_m, selection} -> elem(selection, 0) == :coverage end)
+      assert Report.render(run) =~ "is not an ancestor of HEAD headsha"
+    end
+
+    # Every step before selection: a refused map is refused before any test
+    # file is looked for.
+    defp expect_until_plan do
+      expect_journal(:none)
+      expect_config()
+      expect_ignored()
+      expect_scope()
+      expect_clean()
+    end
+
+    test "an unreadable map is exit 2 with a Fix:, and no test runs" do
+      expect_until_plan()
+      expect_map({:error, :enoent})
+
+      run = Sabotage.run(%{@facts | dry_run: true} |> Map.put(:coverage, "cov.etf"), @cov_opts)
+
+      assert {2, message} = run.refusal
+      assert message =~ "cov.etf cannot be read (:enoent)"
+      assert message =~ "Fix: download the anchor-coverage artifact again"
+    end
+
+    test "a map of another version is exit 2 with a Fix:" do
+      expect_until_plan()
+      expect_map({:ok, %{coverage_map() | version: 2}})
+
+      run = Sabotage.run(%{@facts | dry_run: true} |> Map.put(:coverage, "cov.etf"), @cov_opts)
+
+      assert {2, message} = run.refusal
+      assert message =~ "is not a version-1 coverage map ({:version, 2})"
+      assert message =~ "Fix: download the anchor-coverage artifact again"
+    end
+  end
+
   # Whether a call was reported, without consuming the mailbox.
   defp calls_seen(name) do
     {:messages, messages} = Process.info(self(), :messages)

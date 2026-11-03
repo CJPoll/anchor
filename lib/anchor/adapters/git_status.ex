@@ -6,7 +6,10 @@ defmodule Anchor.Adapters.GitStatus do
   rewrites the index. It only reads.
 
     * `git status --porcelain=v1 -z --no-renames --untracked-files=all -- <paths>`;
-    * `git check-ignore -q -- <path>` (exit 0 ignored, 1 not).
+    * `git check-ignore -q -- <path>` (exit 0 ignored, 1 not);
+    * `git rev-parse --verify HEAD` (DND-5474);
+    * `git merge-base --is-ancestor <sha> HEAD` (exit 0 an ancestor, 1 not,
+      128 a commit git does not have: not an ancestor).
   """
 
   @behaviour Anchor.Adapters.GitWorktree
@@ -36,6 +39,27 @@ defmodule Anchor.Adapters.GitStatus do
     case git(root, args) do
       {_out, 0} -> {:ok, true}
       {_out, 1} -> {:ok, false}
+      {out, status} -> {:error, {:git_failed, args, status, out}}
+    end
+  end
+
+  @impl Anchor.Adapters.GitWorktree
+  def head_sha(root) do
+    args = ["rev-parse", "--verify", "HEAD"]
+
+    case git(root, args) do
+      {out, 0} -> {:ok, String.trim(out)}
+      {out, status} -> {:error, {:git_failed, args, status, out}}
+    end
+  end
+
+  @impl Anchor.Adapters.GitWorktree
+  def ancestor?(root, sha) do
+    args = ["merge-base", "--is-ancestor", sha, "HEAD"]
+
+    case git(root, args) do
+      {_out, 0} -> {:ok, true}
+      {_out, status} when status in [1, 128] -> {:ok, false}
       {out, status} -> {:error, {:git_failed, args, status, out}}
     end
   end

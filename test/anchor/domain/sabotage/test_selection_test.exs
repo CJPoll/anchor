@@ -40,6 +40,34 @@ defmodule Anchor.Domain.Sabotage.TestSelectionTest do
     end
   end
 
+  describe "select/2 with a coverage index (DND-5474)" do
+    # Sabotage record: ../../../sabotage_records/sabotage-20261103-dnd_5474_coverage_map.md
+    defp mutant(file, module, function), do: %{file: file, module: module, function: function}
+
+    @index %{"M.f/1" => ["test/a_test.exs:10", "test/b_test.exs:4"]}
+
+    test "1: a function the map lists selects its tests as file:line, over the mirror" do
+      inputs = Map.put(inputs(["test/x_test.exs"]), :coverage, @index)
+
+      assert TestSelection.select(mutant("lib/x.ex", M, {:f, 1}), inputs) ==
+               {:coverage, ["test/a_test.exs:10", "test/b_test.exs:4"]}
+    end
+
+    test "2: a function the map does not list falls back to the mirror" do
+      inputs = Map.put(inputs(["test/x_test.exs"]), :coverage, @index)
+
+      assert TestSelection.select(mutant("lib/x.ex", M, {:g, 0}), inputs) ==
+               {:mirror, ["test/x_test.exs"]}
+    end
+
+    test "no map at all is the mirror, as before" do
+      inputs = Map.put(inputs(["test/x_test.exs"]), :coverage, nil)
+
+      assert TestSelection.select(mutant("lib/x.ex", M, {:f, 1}), inputs) ==
+               {:mirror, ["test/x_test.exs"]}
+    end
+  end
+
   describe "mirror_path/2" do
     test "names the path the mirror looked for, or nil" do
       assert TestSelection.mirror_path(mutant("lib/x.ex"), @rules) == "test/x_test.exs"

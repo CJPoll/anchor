@@ -11,6 +11,7 @@ defmodule Anchor.Domain.Sabotage.Config do
   | `operators` | all six | the subset of `Anchor.Domain.Sabotage.Operators.all/0` to run |
   | `effect_calls` | `[]` | extra effect calls (`Anchor.Domain.FunctionRef` tokens) |
   | `test_mirror` | the two rules below | lib file to test file, first matching `from` wins |
+  | `coverage_map` | none | a per-test coverage map file (DND-5474), relative to the project root; `--coverage PATH` overrides |
 
   The default `test_command` runs two test cases at once: a sabotage run must
   never load the machine it runs on (the sabotage load rule).
@@ -27,14 +28,16 @@ defmodule Anchor.Domain.Sabotage.Config do
     %{from: "apps/*/lib/**/*.ex", to: "apps/{app}/test/{rest}_test.exs"},
     %{from: "lib/**/*.ex", to: "test/{rest}_test.exs"}
   ]
-  @keys ~w(test_command max_mutants timeout_seconds operators effect_calls test_mirror)
+  @keys ~w(test_command max_mutants timeout_seconds operators effect_calls test_mirror
+           coverage_map)
 
   defstruct test_command: ["mix", "test", "--max-cases", "2"],
             max_mutants: 30,
             timeout_seconds: 300,
             operators: Operators.all(),
             effect_calls: [],
-            test_mirror: @default_mirror
+            test_mirror: @default_mirror,
+            coverage_map: nil
 
   @type t :: %__MODULE__{
           test_command: [String.t(), ...],
@@ -42,7 +45,8 @@ defmodule Anchor.Domain.Sabotage.Config do
           timeout_seconds: pos_integer(),
           operators: [atom()],
           effect_calls: [String.t()],
-          test_mirror: [TestMirror.rule()]
+          test_mirror: [TestMirror.rule()],
+          coverage_map: String.t() | nil
         }
 
   @doc "Parses the decoded section (`nil` for a bare `sabotage:`)."
@@ -56,7 +60,8 @@ defmodule Anchor.Domain.Sabotage.Config do
          {:ok, timeout} <- positive(section, "timeout_seconds", 300),
          {:ok, operators} <- operators(section),
          {:ok, effects} <- effect_calls(section),
-         {:ok, mirror} <- test_mirror(section) do
+         {:ok, mirror} <- test_mirror(section),
+         {:ok, coverage_map} <- coverage_map(section) do
       {:ok,
        %__MODULE__{
          test_command: command,
@@ -64,7 +69,8 @@ defmodule Anchor.Domain.Sabotage.Config do
          timeout_seconds: timeout,
          operators: operators,
          effect_calls: effects,
-         test_mirror: mirror
+         test_mirror: mirror,
+         coverage_map: coverage_map
        }}
     end
   end
@@ -215,6 +221,18 @@ defmodule Anchor.Domain.Sabotage.Config do
       "write it as {from: \"lib/**/*.ex\", to: \"test/{rest}_test.exs\"}"
     )
   end
+
+  defp coverage_map(%{"coverage_map" => path}) when is_binary(path) and path != "",
+    do: {:ok, path}
+
+  defp coverage_map(%{"coverage_map" => path}) do
+    refuse(
+      "sabotage.coverage_map must be a non-empty path, got: #{inspect(path)}",
+      "set it to the coverage map file (the anchor-coverage artifact), or remove the key"
+    )
+  end
+
+  defp coverage_map(_section), do: {:ok, nil}
 
   defp refuse(message, fix), do: {:error, {:invalid_config, message <> ". Fix: " <> fix}}
 end

@@ -628,7 +628,7 @@ A function no literal `def`/`defp` defines is `{:error, :not_in_source}`.
 ### Sabotage: running the mutants
 
 ```bash
-mix anchor.sabotage run [--base REF] [--max N|all] [--only ID]... [--dry-run]
+mix anchor.sabotage run [--base REF] [--max N|all] [--only ID]... [--dry-run] [--coverage PATH]
 mix anchor.sabotage restore
 ```
 
@@ -654,6 +654,7 @@ sabotage:
       to: "apps/{app}/test/{rest}_test.exs"
     - from: "lib/**/*.ex"
       to: "test/{rest}_test.exs"
+  coverage_map: anchor-coverage.etf  # optional: a per-test coverage map; --coverage PATH overrides
 ```
 
 ```gitignore
@@ -687,7 +688,15 @@ How a run goes:
 3. Mutants are ordered by file, function, operator and id; `--only` keeps the
    named ids; the cap keeps the first N and lists the rest `not run (cap)`.
    `--dry-run` prints this plan and writes nothing.
-4. Each mutant's tests are its mirror test file (`test_mirror`), if it exists.
+4. Each mutant's tests come from the first source that has any (the report
+   names it on each line, and counts them in `tests selected by:`):
+   `coverage`, the tests a per-test coverage map (`--coverage PATH` or
+   `coverage_map`; below) lists for its `Module.fun/arity`, as `file:line`;
+   else `mirror`, its mirror test file (`test_mirror`), if it exists; else
+   `none`. A map that cannot be read, or is not a version-1 map, is exit 2
+   (`Fix: download the anchor-coverage artifact again`); one built from a
+   commit that is not an ancestor of `HEAD` is used, with a warning naming
+   both commits.
 5. The union of the selected tests runs once with no mutant (the baseline). If
    it fails, nothing can be judged: exit 3.
 6. Per mutant: the journal is written (the file, the original bytes, both
@@ -716,6 +725,41 @@ function with no literal clause is listed as an error, never as killed.
 | a mutant survived or had no test | 1 |
 | a dirty target file; the journal not git-ignored; the run lock or a journal another live run holds; a leftover journal whose file changed; a restore that did not reproduce the original (the journal is kept); an unknown `--only` id; no `timeout` binary; bad flags | 2, with `Fix:` |
 | no loadable config or no `sabotage:` section; the scope could not be measured; the baseline fails; changed functions whose files cannot be read | 3, `COULD NOT MEASURE` with `Fix:` |
+
+### Sabotage: the per-test coverage map
+
+```bash
+MIX_ENV=test mix anchor.sabotage coverage [--out PATH] [--local] [-- TEST_ARGS]
+```
+
+`coverage` (DND-5474) runs the whole suite in its own VM, one test at a time
+(`--max-cases 1`), with every call of the project's own modules traced (the
+beams in the project's ebin directories; never a dependency or the standard
+library). It writes the map test -> functions that test executed, private ones
+included, to `PATH` (default `_build/test/anchor/coverage.etf`). `TEST_ARGS`
+go to `mix test`.
+
+A test's window is read from traced calls of `ExUnit.EventManager.test_started/2`
+and `test_finished/2`, stamped with strict monotonic timestamps, never from a
+formatter: ExUnit notifies formatters asynchronously, so a formatter cannot
+bound a test. Calls outside every window (`setup_all`, a process that outlived
+its test) are counted (`outside_windows`), and so are trace messages that
+arrived later than the reorder buffer allows (`late_events`). The map records
+the commit it was built at, the Elixir and OTP versions, the number of tests
+and traced modules, and those counts.
+
+It is **CI only by default**: without `CI=true` it refuses, exit 2, and
+traces nothing (`Fix: run it in CI, or pass --local where that load is
+acceptable`). Anchor's own map is built by `.github/workflows/coverage-map.yml`
+(on push to main, weekly, and by hand) and uploaded as the artifact
+`anchor-coverage` (30 days).
+
+| Condition | Exit |
+|---|---|
+| the map was written | 0 |
+| the map was written, but the suite failed (`suite_exit: 1`; `Fix: make the suite green first`) | 1 |
+| not CI and no `--local`; `MIX_ENV` not `test`; another tracer already on; the map not writable | 2, with `Fix:` |
+| zero project modules or zero tests: no map is written | 3, `COULD NOT MEASURE` |
 
 ## Check Types
 

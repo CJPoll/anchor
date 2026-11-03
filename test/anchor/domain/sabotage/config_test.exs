@@ -15,6 +15,7 @@ defmodule Anchor.Domain.Sabotage.ConfigTest do
       assert config.timeout_seconds == 300
       assert config.operators == Operators.all()
       assert config.effect_calls == []
+      assert config.coverage_map == nil
 
       assert config.test_mirror == [
                %{from: "apps/*/lib/**/*.ex", to: "apps/{app}/test/{rest}_test.exs"},
@@ -34,7 +35,8 @@ defmodule Anchor.Domain.Sabotage.ConfigTest do
                  "timeout_seconds" => 60,
                  "operators" => ["return_input", "delete_statement"],
                  "effect_calls" => ["Notifier.push/1"],
-                 "test_mirror" => [%{"from" => "src/**/*.ex", "to" => "spec/{rest}_test.exs"}]
+                 "test_mirror" => [%{"from" => "src/**/*.ex", "to" => "spec/{rest}_test.exs"}],
+                 "coverage_map" => "anchor-coverage.etf"
                })
 
       assert config.test_command == ["bin/test"]
@@ -42,10 +44,13 @@ defmodule Anchor.Domain.Sabotage.ConfigTest do
       assert config.operators == [:delete_statement, :return_input]
       assert config.effect_calls == ["Notifier.push/1"]
       assert config.test_mirror == [%{from: "src/**/*.ex", to: "spec/{rest}_test.exs"}]
+      assert config.coverage_map == "anchor-coverage.etf"
     end
 
     @refusals [
       {"an unknown key", %{"max_mutant" => 3}, "sabotage: unknown key(s) \"max_mutant\""},
+      {"an empty coverage_map (DND-5474)", %{"coverage_map" => ""}, "sabotage.coverage_map"},
+      {"a coverage_map list (DND-5474)", %{"coverage_map" => ["x"]}, "sabotage.coverage_map"},
       {"an empty test_command", %{"test_command" => []}, "sabotage.test_command"},
       {"a non-string test_command element", %{"test_command" => [1]}, "sabotage.test_command"},
       {"max_mutants 0", %{"max_mutants" => 0}, "sabotage.max_mutants"},

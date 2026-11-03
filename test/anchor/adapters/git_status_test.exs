@@ -48,4 +48,25 @@ defmodule Anchor.Adapters.GitStatusTest do
     File.write!(Path.join(root, ".gitignore"), "/.anchor/sabotage/in-flight.json\n")
     assert GitStatus.ignored?(root, journal) == {:ok, true}
   end
+
+  describe "head_sha/1 and ancestor?/2 (DND-5474)" do
+    # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5474_coverage_map.md
+    test "HEAD's sha; an earlier commit is an ancestor, a later or unknown one is not",
+         %{tmp_dir: root} do
+      {:ok, first} = GitStatus.head_sha(root)
+      assert first =~ ~r/\A[0-9a-f]{40}\z/
+
+      File.write!(Path.join(root, "lib/clean.ex"), "changed")
+      git!(root, ["commit", "-q", "-am", "second"])
+      {:ok, second} = GitStatus.head_sha(root)
+
+      assert second != first
+      assert GitStatus.ancestor?(root, first) == {:ok, true}
+      assert GitStatus.ancestor?(root, second) == {:ok, true}
+
+      git!(root, ["checkout", "-q", first])
+      assert GitStatus.ancestor?(root, second) == {:ok, false}
+      assert GitStatus.ancestor?(root, String.duplicate("0", 40)) == {:ok, false}
+    end
+  end
 end
