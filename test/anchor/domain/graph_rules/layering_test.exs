@@ -68,8 +68,12 @@ defmodule Anchor.Domain.GraphRules.LayeringTest do
     graph = %Graph{
       modules: Map.new(nodes, &{&1.module, &1}),
       calls:
-        Enum.map(calls, fn {from, to, line} ->
-          %Call{from: from, to: to, kind: :remote, line: line, line_source: :call}
+        Enum.map(calls, fn
+          {from, to, line} ->
+            %Call{from: from, to: to, kind: :remote, line: line, line_source: :call}
+
+          {from, to, line, kind} ->
+            %Call{from: from, to: to, kind: kind, line: line, line_source: :call}
         end)
     }
 
@@ -208,9 +212,29 @@ defmodule Anchor.Domain.GraphRules.LayeringTest do
                  "checked. Fix: declare @callback store/2 in a behaviour"
     end
 
-    test "a closure application names no function and is not judged" do
-      call = [{{App.Web.Page, :show, 1}, {:dynamic, nil, 1, :variable}, 5}]
+    test "a closure application (fun.(x)) names no function and is not judged" do
+      call = [{{App.Web.Page, :show, 1}, {:dynamic, nil, 1, :variable}, 5, :apply}]
       assert Layering.check(model(call), @rule) == []
+    end
+
+    # Regression (critic, f04064c): every nameless dynamic call was skipped as
+    # a closure, but apply(M, f_var, args), mod.f_var(x) and &M.f_var/1 are
+    # module dispatches the rule cannot check, so each is unresolved.
+    test "a module dispatch whose function is computed is one unresolved violation" do
+      for {to, kind} <- [
+            {{:dynamic, nil, 1, :call}, :apply},
+            {{:dynamic, nil, 1, :variable}, :remote},
+            {{:dynamic, nil, 1, :call}, :capture}
+          ] do
+        call = [{{App.Web.Page, :show, 1}, to, 5, kind}]
+
+        assert [v] = Layering.check(model(call), @rule), inspect({to, kind})
+        assert v.key == "layering|App.Web.Page.show/1|-> dynamic ?/1"
+
+        assert v.message =~
+                 "App.Web.Page.show/1 calls a function it computes (?/1), so its target " <>
+                   "cannot be checked. Fix: call the module's function by name"
+      end
     end
   end
 
@@ -288,6 +312,20 @@ defmodule Anchor.Domain.GraphRules.LayeringTest do
 
       assert v.key ==
                "l|AnchorFixtures.LayeringTest.Web.save/1|-> AnchorFixtures.LayeringTest.Repo.insert/1"
+    end
+
+    test "apply/3 with a computed function name is unresolved, not skipped" do
+      source = """
+      defmodule AnchorFixtures.LayeringTest.Applier do
+        def run(op, x), do: apply(AnchorFixtures.LayeringTest.Repo, op, [x])
+      end
+      """
+
+      [{module, binary}] = compile_unloaded(source, "lib/app/framework/applier.ex")
+      beam = BeamReader.decode(binary, app: :app, path: "ebin/#{module}.beam")
+
+      [call] = Builder.build([beam], %{}).calls
+      assert %Call{kind: :apply, to: {:dynamic, nil, 1, :call}} = call
     end
 
     test "the AST rule no_direct_dependency on the same source does not see it" do

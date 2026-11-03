@@ -112,7 +112,8 @@ rules:
   # The baseline holds what it found when it landed: Lint's two calls into
   # Anchor.Check.Source (DND-1288), and dynamic calls no project behaviour
   # declares (`Mix.shell().info/1`, and Lint's calls on a computed check
-  # module). It only shrinks; `mix anchor.graph --base origin/main` fails one
+  # module), and one computed function name (Mutator's `apply/3`). It only
+  # shrinks; `mix anchor.graph --base origin/main` fails one
   # a branch adds.
   - type: layering
     id: layering

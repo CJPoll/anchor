@@ -20,9 +20,14 @@ defmodule Anchor.Domain.GraphRules.Layering do
       implements a behaviour declaring that callback
       (`Anchor.Domain.DynamicCalls`), and each candidate is judged as a static
       call. No declaring behaviour is one violation: its target cannot be
-      checked. A closure application (`fun.(x)`) names no function and is not
-      a module dispatch; it is the higher-order analysis' (DND-5497), not this
-      rule's.
+      checked.
+    * A call whose function name is computed (`apply(M, op, args)`,
+      `mod.op_var(x)`, `&M.op_var/1`, `apply(fun, args)`) cannot be checked
+      either: one violation. Only applying a variable (`fun.(x)`, an `:apply`
+      call through a `:variable`) is a closure application, left to the
+      higher-order analysis (DND-5497). `apply/2` and `apply/3` with a computed
+      name give the walker the same shape, so `apply(fun, args)` is reported
+      too; `fun.(args)` says the same thing and is not.
 
   One violation per (caller function, callee function), on the caller's
   source file at the first such call's line, keyed
@@ -65,7 +70,10 @@ defmodule Anchor.Domain.GraphRules.Layering do
 
   # Each forbidden (caller, target) of one call, with the call and why:
   # `{:forbidden, callee_mfa}` or `{:unresolved, name, arity}`.
-  defp judge(%Call{to: {:dynamic, nil, _arity, _receiver}}, _model), do: []
+  defp judge(%Call{kind: :apply, to: {:dynamic, nil, _arity, :variable}}, _model), do: []
+
+  defp judge(%Call{from: from, to: {:dynamic, nil, arity, _receiver}} = call, _model),
+    do: [{{from, {:dynamic, nil, arity}}, call, :unresolved}]
 
   defp judge(%Call{from: from, to: {:dynamic, name, arity, _receiver}} = call, model) do
     case DynamicCalls.candidates(model.graph, {name, arity}) do
@@ -105,8 +113,14 @@ defmodule Anchor.Domain.GraphRules.Layering do
     }
   end
 
-  defp target_text({:dynamic, name, arity}), do: "dynamic #{name}/#{arity || "?"}"
+  defp target_text({:dynamic, name, arity}), do: "dynamic #{name || "?"}/#{arity || "?"}"
   defp target_text(mfa), do: ViolationKey.mfa(mfa)
+
+  defp message(:unresolved, from, {:dynamic, nil, arity}, _caller_class, _model) do
+    "#{ViolationKey.mfa(from)} calls a function it computes (?/#{arity || "?"}), so its " <>
+      "target cannot be checked. Fix: call the module's function by name (or declare it as " <>
+      "a behaviour's @callback and call it on the module); apply a closure as fun.(args)."
+  end
 
   defp message(:unresolved, from, {:dynamic, name, arity}, _caller_class, _model) do
     arity_text = arity || "?"

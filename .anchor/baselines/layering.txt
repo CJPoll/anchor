@@ -1,8 +1,11 @@
 # anchor baseline for layering; shrink only
 # Landed with DND-5442. The two Anchor.Check.Source.ast/1 entries are Lint's
-# reach into the framework bucket, DND-1288. Each "dynamic" entry is a call on
-# a computed module that no project behaviour declares: Mix.shell() (Mix.Shell
-# is not a project behaviour), and Lint's calls on a computed check module.
+# reach into the framework bucket, DND-1288. Each "dynamic" entry is a call
+# whose target cannot be checked: a computed module no project behaviour
+# declares the callback of (Mix.shell(): Mix.Shell is not a project
+# behaviour; Lint's calls on a computed check module), or a computed function
+# name (Mutator's apply(Operators, operator, args)).
+layering|Anchor.Domain.Sabotage.Mutator.generate/4|-> dynamic ?/1
 layering|Anchor.Managers.Lint.build_modules_map/3|-> dynamic needs_module_graph?/0
 layering|Anchor.Managers.Lint.detect_group/5|-> dynamic detect_violations/4
 layering|Anchor.Managers.Lint.file_facts/4|-> dynamic extract_module_names/1

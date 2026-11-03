@@ -234,8 +234,11 @@ by default: a bucket and scope the caller's `calls` row lists).
 `Anchor.Domain.DynamicCalls.candidates/2`: every module implementing a
 behaviour whose `ModuleNode.callbacks` (read from the beam by `BeamReader`,
 `Code.Typespec.fetch_callbacks/1`) declare that name and arity; none is
-`:unresolved`, one violation. A closure application (`{:dynamic, nil, ...}`)
-is left to the higher-order analysis. One violation per (caller, callee)
+`:unresolved`, one violation. A call with a computed function name
+(`{:dynamic, nil, ...}`) is unresolved too, except a variable application
+(`kind: :apply`, receiver `:variable`: `fun.(x)`), the one closure form,
+left to the higher-order analysis. The walker gives `apply/2` and `apply/3`
+with a computed name the same shape, so `apply(fun, args)` is reported. One violation per (caller, callee)
 pair, at its first line. The canary has a framework bucket with
 `layering/compliant.ex` and `layering/violating.ex`. Anchor's own
 `.anchor.yml` runs the rule with a baseline (DND-1288's two `Lint ->

@@ -693,8 +693,13 @@ a literal module are calls too.
   project behaviour declares it, the call is one violation, because its
   target cannot be checked: `Fix: declare @callback fetch/1 in a behaviour`.
   A behaviour from a dependency (`Mix.Shell`) is not a project behaviour, so
-  such a call is a violation to baseline. Applying a closure (`fun.(x)`)
-  names no function and is not judged by this rule.
+  such a call is a violation to baseline.
+- A call whose function name is computed (`apply(MyApp.Repo, op, args)`,
+  `mod.op_var(x)`, `&MyApp.Repo.op_var/1`) is one violation too, keyed
+  `-> dynamic ?/n`: its target cannot be checked. Only applying a variable
+  (`fun.(x)`) is a closure application, not judged by this rule; `apply(fun,
+  args)` compiles to the same shape as `apply/3` with a computed name, so it
+  is reported, and `fun.(args)` is the form that is not.
 - One violation per caller function and callee function, at the first such
   call's line, keyed `<id>|<Caller.f/a>|-> <Callee.g/b>` (an unresolved call
   is `-> dynamic fetch/1`). The message names both modules' bucket and
