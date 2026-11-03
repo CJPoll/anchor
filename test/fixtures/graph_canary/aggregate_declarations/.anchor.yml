@@ -1,0 +1,25 @@
+# The aggregate_declarations canary (DND-5476): its own root, so the shared
+# canary tree's counts do not move. The integration test compiles lib/ in the
+# test and runs the Manager over it. Compliant: thread.ex and store.ex (the
+# macro form) and the config's Agg.Audit. Violating: rogue.ex, whose
+# hand-written attribute claims the config's table "audit_rows" again.
+rules:
+  - type: aggregate_declarations
+    id: aggregate_declarations
+    paths: ["lib/agg/**/*.ex"]
+
+aggregates:
+  declare:
+    - name: Agg.Audit
+      tables: ["audit_rows"]
+
+architecture:
+  contexts:
+    depth: 2
+  buckets:
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/agg/**/*.ex"]
+  calls:
+    domain: [domain]

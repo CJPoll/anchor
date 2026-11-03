@@ -442,6 +442,22 @@ defmodule Anchor.Domain.Failures do
   end
 
   @doc """
+  The issue for an `aggregate_declarations` rule when no aggregate is
+  declared at all (DND-5476), on the config: the rule checks nothing. It is
+  fail-closed, so the runner never holds it in a baseline and never prints
+  it as report-only. `shape` is the declaration shape the rule names.
+  """
+  @spec aggregates_none_declared(map(), String.t(), String.t() | nil) :: Violation.t()
+  def aggregates_none_declared(rule, shape, config_path) do
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "#{rule_label(rule)} checks nothing: no aggregate is declared in .anchor.yml or by an " <>
+        "@anchor_aggregate attribute. Fix: declare one or remove the rule: #{shape}"
+    )
+  end
+
+  @doc """
   The issue for a graph rule whose `check/2` raised, threw or exited
   (DND-5440): one issue naming the rule and the reason (at most
   #{@crash_reason_limit} characters, with the frame that raised). The other
@@ -485,6 +501,41 @@ defmodule Anchor.Domain.Failures do
       "#{rule_label(rule)} could not run: the higher-order flow analysis it needs " <>
         "(Anchor.Domain.Cfa) crashed: #{crash_summary(kind, reason, stacktrace)}, so it " <>
         "checked nothing. Fix: this is an Anchor bug; file it with this line."
+    )
+  end
+
+  @doc """
+  The issue for a graph rule whose needed effect inference
+  (`Anchor.Domain.Effects`, DND-5447) crashed: it is not run, since without
+  the roles it would check nothing.
+  """
+  @spec rule_effects_crashed(map(), atom(), term(), Exception.stacktrace(), String.t() | nil) ::
+          Violation.t()
+  def rule_effects_crashed(rule, kind, reason, stacktrace, config_path) do
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "#{rule_label(rule)} could not run: the effect inference it needs " <>
+        "(Anchor.Domain.Effects) crashed: #{crash_summary(kind, reason, stacktrace)}, so it " <>
+        "checked nothing. Fix: this is an Anchor bug; file it with this line."
+    )
+  end
+
+  @doc """
+  The issue for an `effects_match_bucket` rule (DND-5447) that selects modules
+  of a judged bucket (`infer: true`, role domain, adapters or managers) of
+  which not one public function was analysed: the bucket is below the rule's
+  floor, so it checked nothing there.
+  """
+  @spec effects_bucket_unanalysed(map(), String.t(), String.t() | nil) :: Violation.t()
+  def effects_bucket_unanalysed(rule, bucket, config_path) do
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "#{rule_label(rule)} judged no public function of bucket #{bucket}: the modules it " <>
+        "selects there have none that was analysed (every one is a root, generated, or has " <>
+        "no Core body), so the bucket is below the rule's floor. Fix: select modules of " <>
+        "#{bucket} with public functions, or set infer: false on #{bucket} in a reviewed change."
     )
   end
 

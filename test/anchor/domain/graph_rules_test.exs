@@ -4,6 +4,7 @@ defmodule Anchor.Domain.GraphRulesTest do
   #
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5440_graph_runner.md
   # Sabotage record (DND-5633): ../../sabotage_records/context_acyclic-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (DND-5447, DND-5454 rows): ../../sabotage_records/rule_schema-20261103-dnd_5447_graph_rules_c.md
   # (needs/1, DND-5574: ../../sabotage_records/graph_runner-20261103-dnd_5574_cfa_wiring.md)
   use ExUnit.Case, async: true
 
@@ -47,14 +48,14 @@ defmodule Anchor.Domain.GraphRulesTest do
 
       assert error.message ==
                "Anchor.Test.GraphRuleStubs.NeedsUnknown.needs/0 names [:nope], which the " <>
-                 "graph runner does not compute (it computes [:cfa])"
+                 "graph runner does not compute (it computes [:cfa, :effects])"
     end
 
     test "a needs/0 that is not a list raises" do
       error = assert_raise ArgumentError, fn -> GraphRules.needs(Stubs.NeedsNonList) end
 
       assert error.message ==
-               "Anchor.Test.GraphRuleStubs.NeedsNonList.needs/0 returned :cfa, not a list of [:cfa]"
+               "Anchor.Test.GraphRuleStubs.NeedsNonList.needs/0 returned :cfa, not a list of [:cfa, :effects]"
     end
   end
 

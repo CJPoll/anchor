@@ -5,7 +5,8 @@ defmodule Anchor.Domain.GraphRules do
 
   `all/0` lists every module implementing `Anchor.Domain.GraphRule`. The rule
   modules ship with their rule tickets, not with the runner (DND-5440): each
-  (`layering`, DND-5442; `context_acyclic`, DND-5445; interfaces, struct flow,
+  (`layering`, DND-5442; `context_acyclic`, DND-5445; `aggregate_declarations`,
+  DND-5476; interfaces, struct flow,
   ...) adds its module here and its type to `Anchor.Domain.RuleSchema` with
   engine `:graph`. A test
   holds the two sets equal, so a graph type with no module (scheduled but
@@ -37,18 +38,27 @@ defmodule Anchor.Domain.GraphRules do
   """
 
   alias Anchor.Domain.GlobPattern
+  alias Anchor.Domain.GraphRules.AggregateDeclarations
   alias Anchor.Domain.GraphRules.ContextAcyclic
+  alias Anchor.Domain.GraphRules.EffectsMatchBucket
   alias Anchor.Domain.GraphRules.Layering
+  alias Anchor.Domain.GraphRules.StructOwnedByModuleFlow
   alias Anchor.Domain.Model
 
   @default_min_modules 1
 
   # What the runner computes on demand (`Anchor.Managers.Graph`).
-  @provided_needs [:cfa]
+  @provided_needs [:cfa, :effects]
 
   # Every module implementing `Anchor.Domain.GraphRule`. The rule tickets add
   # theirs here (see the moduledoc).
-  @rules [Layering, ContextAcyclic]
+  @rules [
+    Layering,
+    ContextAcyclic,
+    AggregateDeclarations,
+    EffectsMatchBucket,
+    StructOwnedByModuleFlow
+  ]
 
   @doc "Every graph rule module."
   @spec all() :: [module()]
@@ -67,7 +77,7 @@ defmodule Anchor.Domain.GraphRules do
   without duplicates. Raises `ArgumentError` when it names one
   the runner does not compute (#{inspect(@provided_needs)}) or is not a list.
   """
-  @spec needs(module()) :: [:cfa]
+  @spec needs(module()) :: [:cfa | :effects]
   def needs(module) do
     module
     |> declared_needs()

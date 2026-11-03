@@ -41,7 +41,7 @@ never an adapter.
 
 | Bucket | Modules |
 |---|---|
-| Framework | `Anchor.Check.*` (Credo checks, `Anchor.Check.Base`, `Anchor.Check.Source`), `Mix.Tasks.Anchor.*` (`lib/mix/tasks/`; `Mix.Tasks.Anchor.Sabotage`), `Anchor.Sabotage.CoverageCollector` (an OTP process, in `lib/mix/tasks/anchor/sabotage/` so `mix anchor.graph` buckets it as Framework) |
+| Framework | `Anchor.Check.*` (Credo checks, `Anchor.Check.Base`, `Anchor.Check.Source`), `Anchor.Aggregate` (the compile-time macro, DND-5476), `Mix.Tasks.Anchor.*` (`lib/mix/tasks/`; `Mix.Tasks.Anchor.Sabotage`), `Anchor.Sabotage.CoverageCollector` (an OTP process, in `lib/mix/tasks/anchor/sabotage/` so `mix anchor.graph` buckets it as Framework) |
 | Managers | `Anchor.Managers.Lint`, `Anchor.Managers.AstBaseline`, `Anchor.Managers.Sabotage` (`.Runner`, `.Coverage`) |
 | Side Effects | ports: `Anchor.Adapters.ConfigLoader`, `ChangeSource`, `BeamSource`, `Tracing`, `InProcessTests`, `ProjectModuleSource`, `CoverageStore`, `BaselineStore`, `GitBase`, `LintKeys`; adapters: `ConfigFile`, `CredoKeys`, `GitChangeSource`, `BeamReader`, `CallTracer`, `SuiteRunner`, `ProjectModules`, `CoverageFile`, `RecordFile` (port `RecordStore`), `BaselineFile`, `GitShow` (`lib/anchor/adapters/`); `GitEnv`, the environment the git adapters run git with (DND-5581) |
 | Domain | everything under `lib/anchor/domain/`, including `Anchor.Domain.Sabotage.*` (`Mutator`, `Operators`, `DiffHunks`, `FunctionSpans`, `Scope`, `CoverageMap`, `Record`, `RecordNaming`, `KillMap`, `ChangedTests`, `TestPath`: the one rule for a path handed to `mix test`, DND-5640) and `Anchor.Domain.Graph.*` |
@@ -141,11 +141,25 @@ Extension rule:
 
 Every rule type has exactly one engine, `@engine_by_type` in
 `Anchor.Domain.RuleSchema` (DND-5437): `:ast` (a Credo check) or `:graph`
-(`mix anchor.graph`, DND-5440; the graph types are `layering`, DND-5442, and
-`context_acyclic`, DND-5445). A new rule type adds its entry there too (compilation
+(`mix anchor.graph`, DND-5440; the graph types are `layering`, DND-5442,
+`context_acyclic`, DND-5445, `aggregate_declarations`, DND-5476,
+`effects_match_bucket`, DND-5447, and `struct_owned_by_module_flow`, DND-5454). A new rule type adds its entry there too (compilation
 fails without it) and to the README table's Engine column (a test compares
 them). Credo never reports a `:graph` rule as unchecked
 (`RuleCoverage.unchecked/3`).
+
+The optional top-level `aggregates:` section (DND-5476) is parsed by
+`Anchor.Domain.Aggregates.Config`; `Anchor.Domain.Aggregates.Index` merges it
+with every module's persisted `@anchor_aggregate` (`use Anchor.Aggregate`,
+Framework, `lib/anchor/aggregate.ex`, or the attribute by hand) into
+`Model.aggregates`, and the `aggregate_declarations` graph rule reports what
+names nothing or is claimed twice. Its canary has its own root,
+`test/fixtures/graph_canary/aggregate_declarations/` (with its own config, so
+the shared canary's counts do not move). A rule's fail-closed violation
+(`kind: :fail_closed`, here "checks nothing") is an issue of the run: the
+runner enforces it under `enforcement: report` and never holds it in a
+baseline. A schema's table is read from its
+`__schema__(:source)` clause in Core, never by calling it.
 
 The optional top-level `architecture:` section (DND-5437) is parsed by
 `Anchor.Domain.Architecture.parse/1` into `%Anchor.Config{architecture: ...}`
@@ -176,7 +190,13 @@ update, read back as `:maps.put/3`), so an edge names the Erlang function.
 `Anchor.Domain.Graph.Inlines` carries the table, derived from Elixir's own
 rewrite rules when Anchor compiles, never copied by hand (DND-5551). A rule
 that names a stdlib function matches every spelling, through
-`Inlines.spellings/1` (`Graph.calls_to/2` already does). A function with no Core
+`Inlines.spellings/1` (`Graph.calls_to/2` already does), and the AST engine
+matches the same set through `Anchor.Domain.FunctionRef.names/1` (DND-5613). A
+rewrite that adds a literal tag (`Process.monitor/1` is `:erlang.monitor(:process,
+_)`) is read back into its Elixir name by the walker, and a tagged name's
+spellings leave out a sibling with another tag; an inline no tag tells apart
+stays ambiguous; `Inlines.describe/1` names every candidate, for the rule that
+renders such a call edge in a finding. A function with no Core
 body (`core: nil`: a `defmacrop`, a `defp` nothing calls) has no edges read
 from it; `Graph.functions_without_core/1` counts them per module for the
 runner's summary, and a public one is also an `unreadable` entry
@@ -312,6 +332,46 @@ invert (fewest witnesses, ties lexical). The canary's cycle pair is
 contexts). Anchor's own `.anchor.yml` runs it with a baseline holding one
 five-context cycle through Lint's dynamic calls on the checks (DND-1288),
 and `Mutator`'s `apply/3`.
+
+## The effects_match_bucket rule (DND-5447)
+
+`Anchor.Domain.Effects.infer/2` gives every `def`/`defp` a role from what it
+causes: a root (`Anchor.Domain.Roots`: framework-bucket public functions,
+`architecture.roots`, external behaviour callbacks, which the runner reads
+through the `Anchor.Adapters.BehaviourSource` port (`BehaviourReader`) for
+`Roots.external_behaviours/1` and passes in as `:callbacks`, so `Roots` stays
+pure; the result keeps them as `Effects.roots`) is framework; a call of an effect primitive
+(`EffectPrimitives.primitive?/2`, its inference list, not demand's) itself or
+through its own module is adapters; reaching one through another module, or
+an unresolved call, is managers; else domain. Apply sites are read from
+`Model.cfa`, so the rule `needs: [:cfa, :effects]`; the runner computes
+`Model.effects` once and prints its counts in the summary. The rule judges
+public, non-root, non-`__name__` functions of `domain`/`adapters`/`managers`
+buckets with `infer: true`. Its canary is its own tree,
+`test/fixtures/graph_canary/effects/`, run by
+`test/anchor/integration/effects_canary_test.exs`. Anchor's own config
+declares its extra effects (tracing, `Path.wildcard`, `Mix.Task.run`) and a
+first-landing baseline.
+
+## The struct_owned_by_module_flow rule (DND-5454)
+
+The graph half of struct ownership; the AST rule `struct_owned_by_module`
+(DND-5453) is the literal half, and both read their scope from
+`Anchor.Domain.StructOwnership` (`owned_namespaces`, exact names with a
+prefix rule). `Anchor.Domain.StructTypes.index/1` reads `@type t` fields and
+`@spec` returns from `ModuleNode.types`/`specs` (one project struct, named
+exactly, or unknown). `Anchor.Domain.StructFlow` walks one function's Core
+with a lexical environment (a `case` body is evaluated in its clause's
+scope), finds a `fun`'s parameter from the `Map.update!/3`/`update/4` it is
+handed to by a fixpoint over seeds, and returns writes `%{struct, op, line,
+how}`. The rule owns a `defimpl` by its `__impl__(:for)` spec, or by its
+protocol when several impls share protocol, file and line (`for: [A, B]`).
+It skips the AST rule's sites: a line with another struct's `:build` or
+`:update` struct use, and a `:matched` write in a function whose clauses
+carry no macro `:context`. One violation per (function, line). In a `for`
+comprehension a `x = expr` line is a filter: bind a value that may be false
+with `x <- [expr]`. Fixtures that hold a `defimpl` put `@compile {:debug_info,
+true}` in its body (BeamFixtures adds it to `defmodule`s only).
 
 ## Higher-order flow (DND-5497)
 

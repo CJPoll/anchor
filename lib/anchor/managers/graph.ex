@@ -33,7 +33,9 @@ defmodule Anchor.Managers.Graph do
        `:cfa`, run the higher-order flow analysis once
        (`Anchor.Domain.Cfa.analyze/3` with `Cfa.default_seed/1`, under the
        guard) and store it on `Model.cfa` (DND-5574). When none does, it is
-       not run: rules that do not need it pay nothing;
+       not run: rules that do not need it pay nothing. Likewise `:effects`:
+       the effect inference (`Anchor.Domain.Effects.infer/2`, DND-5447) runs
+       once after the flow analysis, under the guard, onto `Model.effects`;
     7. for each enabled graph rule (narrowed by `--only`): its floor
        (`min_modules`), then its `check/2` under a guard (`try` with `rescue`, `catch :throw` and
        `catch :exit`, DND-1312's lesson): a rule that crashes is one issue,
@@ -52,7 +54,10 @@ defmodule Anchor.Managers.Graph do
        (`Anchor.Adapters.GraphStore`) under `<build_path>/anchor`, the build
        path the task gathered from Mix (DND-5585); the verdict never reads it;
     9. return the `%Anchor.Domain.GraphReport{}`, with the apply-site
-       counts (`GraphReport.apply_sites/1`) when the analysis ran.
+       counts (`GraphReport.apply_sites/1`) when the analysis ran, and the
+       effect counts (`GraphReport.effects/1`) when the effect inference ran,
+       and declared aggregates' counts (`Anchor.Domain.Aggregates.Index`,
+       DND-5476) when any is declared.
 
   Every per-module problem is an issue on that module (exit 1), never a
   skipped module: a beam it could not decode, a module whose graph walk
@@ -73,20 +78,26 @@ defmodule Anchor.Managers.Graph do
   `:graph_rules` (the rule modules, `Anchor.Domain.GraphRules.all/0`), `:cfa`
   (a one-argument function from the graph to its `%Anchor.Domain.Cfa{}`,
   default `Cfa.analyze(graph, Cfa.default_seed(graph))`; tests pass one that
-  crashes).
+  crashes), `:effects` (a two-argument function from the model and its
+  options to its `%Anchor.Domain.Effects{}`, default `Effects.infer/2`), and
+  `:behaviour_source` (`Anchor.Adapters.BehaviourReader`, the external
+  behaviours' callbacks the inference's roots read).
   """
 
   alias Anchor.Adapters.BaselineFile
   alias Anchor.Adapters.BeamReader
+  alias Anchor.Adapters.BehaviourReader
   alias Anchor.Adapters.ConfigFile
   alias Anchor.Adapters.GitShow
   alias Anchor.Adapters.GraphArtifact
   alias Anchor.Adapters.SourceReader
   alias Anchor.Config
+  alias Anchor.Domain.Aggregates.Index
   alias Anchor.Domain.Baseline
   alias Anchor.Domain.BaselineBase
   alias Anchor.Domain.Cfa
   alias Anchor.Domain.DynamicCalls
+  alias Anchor.Domain.Effects
   alias Anchor.Domain.Enforcement
   alias Anchor.Domain.Failures
   alias Anchor.Domain.Graph
@@ -98,6 +109,7 @@ defmodule Anchor.Managers.Graph do
   alias Anchor.Domain.GraphReport.Finding
   alias Anchor.Domain.GraphRules
   alias Anchor.Domain.Model
+  alias Anchor.Domain.Roots
   alias Anchor.Domain.Violation
   alias Anchor.Managers.Graph.Request
 
@@ -165,7 +177,9 @@ defmodule Anchor.Managers.Graph do
       baseline_store: Keyword.get(deps, :baseline_store, BaselineFile),
       git_base: Keyword.get(deps, :git_base, GitShow),
       graph_rules: Keyword.get(deps, :graph_rules, GraphRules.all()),
-      cfa: Keyword.get(deps, :cfa, &analyze_cfa/1)
+      cfa: Keyword.get(deps, :cfa, &analyze_cfa/1),
+      effects: Keyword.get(deps, :effects, &Effects.infer/2),
+      behaviour_source: Keyword.get(deps, :behaviour_source, BehaviourReader)
     }
   end
 
@@ -236,11 +250,14 @@ defmodule Anchor.Managers.Graph do
     rules = Enum.map(rules, fn {rule, module} -> {rule, module, guarded_needs(module)} end)
     cfa = cfa(rules, graph, deps.cfa)
     model = %{model | cfa: analysis(cfa)}
+    effects = effects(rules, model, cfa, deps)
+    model = %{model | effects: effects_analysis(effects)}
 
     deps =
       Map.merge(deps, %{base: base_config(deps.git_base, request, config), now: config.rules})
 
-    ran = Enum.map(rules, &run_rule(&1, model, cfa, config.path, request, deps))
+    analyses = %{cfa: cfa, effects: effects}
+    ran = Enum.map(rules, &run_rule(&1, model, analyses, config.path, request, deps))
 
     artifact_notes =
       write_artifact(deps.graph_store, request, {beams, source_facts}, config, graph)
@@ -258,13 +275,62 @@ defmodule Anchor.Managers.Graph do
       |> Map.put(:no_core, no_core_count(graph))
       |> Map.put(:outside_root, outside_root_count(graph))
       |> Map.put(:apply_sites, GraphReport.apply_sites(model.cfa))
-      |> Map.put(:dynamic_calls, DynamicCalls.tally(graph)),
+      |> Map.put(:dynamic_calls, DynamicCalls.tally(graph))
+      |> put_effects(GraphReport.effects(model.effects))
+      |> put_aggregates(model.aggregates),
       held: Enum.flat_map(ran, & &1.held),
       refused: Enum.flat_map(ran, & &1.refused)
     )
   end
 
+  # DND-5476: the declared aggregates and their unknown tables are counted
+  # in the summary when there are any.
+  defp put_aggregates(counts, index) do
+    case Index.declared(index) do
+      0 ->
+        counts
+
+      declared ->
+        Map.put(counts, :aggregates, %{declared: declared, tables_unknown: index.tables_unknown})
+    end
+  end
+
   defp analyze_cfa(graph), do: Cfa.analyze(graph, Cfa.default_seed(graph))
+
+  # DND-5447: the effect inference runs once, after the flow analysis it
+  # reads, and only when a rule that runs needs it: `nil` when none does or
+  # when the flow analysis crashed (that rule then reports the flow
+  # analysis), else the guarded result.
+  defp effects(rules, model, cfa, deps) do
+    needed? = Enum.any?(rules, fn {_rule, _module, needs} -> needs?(needs, :effects) end)
+
+    case {needed?, cfa} do
+      {true, {:crashed, _kind, _reason, _stacktrace}} -> nil
+      {true, _ok_or_not_run} -> guarded(fn -> effects!(infer(model, deps)) end)
+      {false, _cfa} -> nil
+    end
+  end
+
+  # The external behaviours' callbacks (the roots' one read of the world) come
+  # through the BehaviourSource port, so the inference itself stays pure.
+  defp infer(model, deps) do
+    callbacks = deps.behaviour_source.callbacks(Roots.external_behaviours(model.graph))
+    deps.effects.(model, callbacks: callbacks)
+  end
+
+  # An inference that returns anything but an `%Effects{}` is reported like
+  # one that raised.
+  defp effects!(%Effects{} = effects), do: effects
+
+  defp effects!(other),
+    do: raise(ArgumentError, "the inference returned #{inspect(other, limit: 5)}, not %Effects{}")
+
+  # The effect counts appear only when the inference ran (DND-5447).
+  defp put_effects(counts, nil), do: counts
+  defp put_effects(counts, effects), do: Map.put(counts, :effects, effects)
+
+  defp effects_analysis({:ok, %Effects{} = effects}), do: effects
+  defp effects_analysis(_none_or_crashed), do: nil
 
   # The analysis runs once, and only when a rule that runs needs it: `nil`
   # when none does, else the guarded result.
@@ -350,10 +416,10 @@ defmodule Anchor.Managers.Graph do
   # A rule's floor is judged whenever it runs, `--only` or not: `--only`
   # narrows the rules, never the modules, so a rule selecting nothing must not
   # read as a pass.
-  defp run_rule({rule, module, needs}, model, cfa, config_path, request, deps) do
+  defp run_rule({rule, module, needs}, model, analyses, config_path, request, deps) do
     floor = floor_findings(rule, model, config_path)
 
-    case run_check(needs, cfa, rule, module, model, config_path) do
+    case run_check(needs, analyses, rule, module, model, config_path) do
       {:ok, findings} ->
         ran =
           ratchet(rule, findings, request, Map.put(deps, :narrows, GraphRules.narrows(module)))
@@ -508,18 +574,40 @@ defmodule Anchor.Managers.Graph do
 
   # A rule whose needs could not be read, or whose analysis crashed, is not
   # run: run without what it reads, it would check nothing and read clean.
-  defp run_check({:crashed, kind, reason, stacktrace}, _cfa, rule, _module, _model, path),
+  defp run_check({:crashed, kind, reason, stacktrace}, _analyses, rule, _module, _model, path),
     do: {:crashed, rule |> Failures.rule_crashed(kind, reason, stacktrace, path) |> fail_closed()}
 
-  defp run_check({:ok, needs}, {:crashed, kind, reason, stacktrace}, rule, module, model, path) do
+  defp run_check(
+         {:ok, needs},
+         %{cfa: {:crashed, kind, reason, stacktrace}} = analyses,
+         rule,
+         module,
+         model,
+         path
+       ) do
     if :cfa in needs,
       do:
         {:crashed,
          rule |> Failures.rule_cfa_crashed(kind, reason, stacktrace, path) |> fail_closed()},
+      else: run_check({:ok, needs}, %{analyses | cfa: nil}, rule, module, model, path)
+  end
+
+  defp run_check(
+         {:ok, needs},
+         %{effects: {:crashed, kind, reason, stacktrace}},
+         rule,
+         module,
+         model,
+         path
+       ) do
+    if :effects in needs,
+      do:
+        {:crashed,
+         rule |> Failures.rule_effects_crashed(kind, reason, stacktrace, path) |> fail_closed()},
       else: check(rule, module, model, path)
   end
 
-  defp run_check({:ok, _needs}, _cfa, rule, module, model, path),
+  defp run_check({:ok, _needs}, _analyses, rule, module, model, path),
     do: check(rule, module, model, path)
 
   defp fail_closed(violation), do: Finding.fail_closed(violation, @config_file)
@@ -539,8 +627,7 @@ defmodule Anchor.Managers.Graph do
     |> guarded_check(module, model)
     |> case do
       {:ok, violations} ->
-        {:ok,
-         Enum.map(violations, &Finding.from_rule(&1, rule, label, config_path || @config_file))}
+        {:ok, Enum.map(violations, &finding(&1, rule, label, config_path || @config_file))}
 
       {:crashed, kind, reason, stacktrace} ->
         {:crashed,
@@ -549,6 +636,15 @@ defmodule Anchor.Managers.Graph do
          |> Finding.fail_closed(@config_file)}
     end
   end
+
+  # A rule's fail-closed violation (DND-5476: a rule that checks nothing)
+  # is an issue of the run, like a floor: always enforced, and with no key it
+  # is never held by a baseline. Every other violation takes the rule's
+  # enforcement and is judged against its baseline.
+  defp finding(%Violation{kind: :fail_closed} = violation, _rule, _label, file),
+    do: Finding.fail_closed(%{violation | key: nil}, file)
+
+  defp finding(violation, rule, label, file), do: Finding.from_rule(violation, rule, label, file)
 
   # The rule's return is validated inside the guard: a rule that returns
   # anything but a list of violations is reported like one that raised.

@@ -8,8 +8,10 @@ defmodule Anchor.Domain.RuleSchemaTest do
   #
   # Sabotage record: ../../sabotage_records/rule_schema-20260929-dnd_1286_rule_key_allowlist.md
   # Sabotage record (DND-5632): ../../sabotage_records/baseline-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (DND-5447, DND-5454 rows): ../../sabotage_records/rule_schema-20261103-dnd_5447_graph_rules_c.md
   # DND-5441 (engine common keys, enforcement, baseline, validate_architecture/3):
   #   ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
+  # DND-5476 (aggregate_declarations rows): ../../sabotage_records/aggregates-20261103-dnd_5476_aggregate_decls.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config
@@ -46,9 +48,11 @@ defmodule Anchor.Domain.RuleSchemaTest do
   # A typo of a key the type really reads, per type. For a type that reads no
   # key of its own, the typo is of the `paths` selector.
   @typos %{
+    aggregate_declarations: "min_module",
     alphabetized_functions: "mdoe",
     case_on_bare_arg: "pahts",
     context_acyclic: "min_module",
+    effects_match_bucket: "min_module",
     layering: "min_module",
     max_file_length: "max_line",
     module_pattern_restrictions: "allowed_function",
@@ -62,7 +66,8 @@ defmodule Anchor.Domain.RuleSchemaTest do
     no_tuple_match_in_head: "pahts",
     single_control_flow: "pahts",
     struct_getter_convention: "pahts",
-    struct_owned_by_module: "owned_namespace"
+    struct_owned_by_module: "owned_namespace",
+    struct_owned_by_module_flow: "owned_namespace"
   }
 
   defp rule(type, extra \\ %{}) do
