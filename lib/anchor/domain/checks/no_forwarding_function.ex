@@ -39,6 +39,8 @@ defmodule Anchor.Domain.Checks.NoForwardingFunction do
 
   alias Anchor.Domain.Violation
 
+  @behaviour Anchor.Domain.RuleShape
+
   @shape "inline the hop: make the callers of f/n call g/n directly and delete f/n, or " <>
            "rename g/n to f/n (public if f/n was). Keep a forwarding function only where it " <>
            "crosses a boundary (a behaviour callback marked @impl, another module's public API)."
@@ -53,6 +55,7 @@ defmodule Anchor.Domain.Checks.NoForwardingFunction do
   end
 
   @doc "The conforming shape: a violation's `Fix:` text."
+  @impl Anchor.Domain.RuleShape
   @spec shape(map()) :: String.t()
   def shape(_rule), do: @shape
 

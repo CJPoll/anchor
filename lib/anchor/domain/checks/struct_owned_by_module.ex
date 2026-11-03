@@ -49,6 +49,8 @@ defmodule Anchor.Domain.Checks.StructOwnedByModule do
   alias Anchor.Domain.DependencyAnalyzer
   alias Anchor.Domain.Violation
 
+  @behaviour Anchor.Domain.RuleShape
+
   @def_kinds [:def, :defp, :defmacro, :defmacrop]
   @type_attrs [:type, :typep, :opaque, :spec, :callback, :macrocallback]
   @map_writers [
@@ -81,6 +83,7 @@ defmodule Anchor.Domain.Checks.StructOwnedByModule do
   end
 
   @doc "The conforming shape: a violation's `Fix:` text."
+  @impl Anchor.Domain.RuleShape
   @spec shape(map()) :: String.t()
   def shape(_rule), do: @shape
 

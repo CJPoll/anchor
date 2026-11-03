@@ -64,6 +64,8 @@ defmodule Anchor.Domain.Checks.NoDiscardedPureExpression do
   alias Anchor.Domain.GlobPattern
   alias Anchor.Domain.Violation
 
+  @behaviour Anchor.Domain.RuleShape
+
   @binary_operators ~w(+ - * / ++ -- <> == != === !== < > <= >= and or && || in .. |)a
   @unary_operators ~w(+ - ! not)a
 
@@ -220,6 +222,7 @@ defmodule Anchor.Domain.Checks.NoDiscardedPureExpression do
   end
 
   @doc "The conforming shape: a violation's `Fix:` text."
+  @impl Anchor.Domain.RuleShape
   @spec shape(map()) :: String.t()
   def shape(_rule), do: @shape
 

@@ -199,11 +199,14 @@ defmodule Anchor.Domain.RuleSchema do
     must_use_module: :ast,
     no_comparison_in_if: :ast,
     no_direct_dependency: :ast,
+    no_discarded_pure_expression: :ast,
     no_discarding_arrow_in_with: :ast,
+    no_forwarding_function: :ast,
     no_transitive_dependency: :ast,
     no_tuple_match_in_head: :ast,
     single_control_flow: :ast,
-    struct_getter_convention: :ast
+    struct_getter_convention: :ast,
+    struct_owned_by_module: :ast
   }
 
   @engines [:ast, :graph]
