@@ -339,6 +339,14 @@ defmodule Anchor.Domain.DataFlowTest do
           do: assert(MapSet.member?(slice, id_at(flow, line)), "line #{line}")
 
       refute MapSet.member?(slice, id_at(flow, 2))
+
+      # `r = k()` reads nothing: only control dependence brings in the case and `s`.
+      from_inside = DataFlow.backward_slice(flow, [id_at(flow, 5)])
+
+      assert MapSet.equal?(
+               from_inside,
+               MapSet.new([id_at(flow, 5), id_at(flow, 3), id_at(flow, 1)])
+             )
     end
 
     test "16b: an effect inside a branch needs the branch's decision, not the branch's value" do
