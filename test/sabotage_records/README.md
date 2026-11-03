@@ -74,7 +74,9 @@ before coining a synonym.
   `TestSelection`, `Plan`, `TestRun`, `Outcome`, `Journal`, `Run`, `Report`,
   `BoundedOutput`, `NoMutant`, `SharedRun`),
   `Anchor.Managers.Sabotage.Runner`, the adapters `SourcePatcher`,
-  `GitStatus` and `TestRunner`, and `Anchor.Sabotage.ExUnitFormatter`.
+  `GitStatus` and `TestRunner`, and `Anchor.Sabotage.ExUnitFormatter`; the
+  survivors list (DND-5483: `Survivors`) and the replay (DND-5485: `Replay`,
+  `KillerRef`, `Anchor.Managers.Sabotage.Replay`).
   `sabotage_scope` stays the word for the diff scope.
 - `dependency_analyzer` — `Anchor.Domain.DependencyAnalyzer`, the pure AST
   walk behind every dependency fact (module names, references, calls, uses,

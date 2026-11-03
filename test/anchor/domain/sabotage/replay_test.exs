@@ -110,6 +110,17 @@ defmodule Anchor.Domain.Sabotage.ReplayTest do
       end
     end
 
+    test "a row file or killer file with a symlink on its path is drifted, never followed" do
+      i = item()
+
+      assert plan([i], facts(%{symlinked: MapSet.new(["lib/calc.ex"])})).drifted == [
+               {i, :symlink}
+             ]
+
+      assert plan([i], facts(%{symlinked: MapSet.new(["test/calc_test.exs"])})).drifted ==
+               [{i, {:killer_symlink, "test/calc_test.exs"}}]
+    end
+
     test "a (timeout) row runs the killer files of the function's other killed rows, whole" do
       timed = item(%{id: "aaaaaaaaaaaa", status: "timeout", killers: ["(timeout)"]})
       killed = item()
@@ -191,6 +202,17 @@ defmodule Anchor.Domain.Sabotage.ReplayTest do
     test "5: some drifted, the rest still killed: 0" do
       r = %Result{rows: 2, drifted: [{item(), :file_gone}], results: [{item(), :still_killed}]}
       assert Replay.exit_code(r) == 0
+    end
+
+    test "a record that could not be read, beside rows still killed: 3; beside lost power: 1" do
+      r = %Result{
+        rows: 1,
+        unreadable: ["kill map in x.md:2 (bad)"],
+        results: [{item(), :still_killed}]
+      }
+
+      assert Replay.exit_code(r) == 3
+      assert Replay.exit_code(%{r | results: [{item(), {:lost_power, []}}]}) == 1
     end
 
     test "a crashed row: 1; a refusal: its own code" do

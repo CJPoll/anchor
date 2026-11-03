@@ -15,10 +15,13 @@ defmodule Anchor.Managers.Sabotage.Replay do
     1. Records: every `*.md` under the configured records directories (or
        each `--records` directory glob), their `anchor-kills` rows parsed
        (`KillMap.parse/1`). A record whose kill map does not parse is named
-       (`could not read ...`) and skipped. Zero `killed` or `timeout` rows is
-       exit 3, naming the directories searched.
+       (`could not read ...`), and the replay ends exit 3 however its other
+       rows fare (unless one lost power: 1): its kills went unchecked. Zero
+       `killed` or `timeout` rows is exit 3, naming the directories searched.
     2. Plan (`Anchor.Domain.Sabotage.Replay.plan/2`): each row's file read
-       (only a path inside the project), its function's mutants regenerated
+       (only a path inside the project with no symlink on it,
+       `SourceMutation.symlinked/2`; a killer file with one is drifted too),
+       its function's mutants regenerated
        with every operator (`Mutator.generate/4`), the row's id looked up,
        and its killers' test files checked. The rest are drifted.
     3. The replayable rows' files must be clean in git (else exit 2), and
@@ -109,7 +112,8 @@ defmodule Anchor.Managers.Sabotage.Replay do
   # -- 2..5. plan, cap, baseline, each row -------------------------------------
 
   defp planned(result, items, facts, config, ports) do
-    sources = sources(items, facts.root, ports)
+    symlinked = symlinked(items, facts.root, ports)
+    sources = sources(items, facts.root, symlinked, ports)
     tests = existing_tests(items, facts.root, ports)
 
     generated =
@@ -121,7 +125,8 @@ defmodule Anchor.Managers.Sabotage.Replay do
       Replay.plan(items, %{
         sources: Map.new(sources, fn {file, _text} -> {file, true} end),
         generated: generated,
-        tests: tests
+        tests: tests,
+        symlinked: symlinked
       })
 
     {kept, capped} = cap(plan.replayable, Map.get(facts, :max) || config.max_mutants)
@@ -135,12 +140,26 @@ defmodule Anchor.Managers.Sabotage.Replay do
     end
   end
 
-  # Only a file inside the project is read; the plan drifts the others.
-  defp sources(items, root, %{change: change}) do
+  # Every row file and killer file inside the project with a symlink on its
+  # path: never read, written or run (the plan drifts their rows).
+  defp symlinked(items, root, %{patcher: patcher}) do
+    killer_files =
+      for %{row: row} <- items,
+          killer <- row.killers,
+          {:ok, ref} <- [KillerRef.parse(killer)],
+          do: ref.file
+
+    paths = Enum.uniq(Enum.map(items, & &1.row.file) ++ killer_files)
+    MapSet.new(patcher.symlinked(root, Enum.filter(paths, &Replay.inside?/1)))
+  end
+
+  # Only a file inside the project, with no symlink on its path, is read; the
+  # plan drifts the others.
+  defp sources(items, root, symlinked, %{change: change}) do
     items
     |> Enum.map(& &1.row.file)
     |> Enum.uniq()
-    |> Enum.filter(&Replay.inside?/1)
+    |> Enum.filter(&(Replay.inside?(&1) and not MapSet.member?(symlinked, &1)))
     |> Enum.flat_map(fn file ->
       case change.read(root, file) do
         {:ok, text} -> [{file, text}]

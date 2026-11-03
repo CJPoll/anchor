@@ -13,8 +13,9 @@ defmodule Anchor.Domain.Sabotage.Replay do
 
   Each item is replayable or drifted. Drifted (reason in parentheses):
 
-    * the row's file is absolute or has a `..` segment (`:file_outside`): a
-      record must never steer a write outside the project;
+    * the row's file is absolute or has a `..` segment (`:file_outside`), or
+      has a symlink at the file or a directory above it (`:symlink`): a
+      record must never steer a read or a write outside the project;
     * the file is gone (`:file_gone`);
     * its `Module.fun/arity` does not read as one (`:bad_function`), or the
       function is gone (`{:function_gone, why}`);
@@ -22,7 +23,8 @@ defmodule Anchor.Domain.Sabotage.Replay do
       (`:no_mutant_with_id`): the function changed;
     * the row names no test (`:no_killer_test`): only `(timeout)`, and no
       other killed row of the same function in the same record names one;
-    * a killer's test file is gone (`{:killer_gone, file}`).
+    * a killer's test file is gone (`{:killer_gone, file}`), or has a
+      symlink on its path (`{:killer_symlink, file}`).
 
   A replayable item carries the regenerated mutant and the test args: by
   name (`Anchor.Domain.Sabotage.KillerRef.to_test_args/1`), or, for a row
@@ -40,8 +42,9 @@ defmodule Anchor.Domain.Sabotage.Replay do
   ## exit_code/1
 
   The refusal's code; 3 (COULD NOT MEASURE) with zero rows; 1 when any row
-  lost power or crashed; 3 when no row was replayed (every one drifted); 0
-  otherwise. A drifted row is never a failure on its own: the code changed,
+  lost power or crashed; 3 when a record's kill map could not be read (its
+  kills went unchecked, so a green job would hide them) or no row was
+  replayed (every one drifted); 0 otherwise. A drifted row is never a failure on its own: the code changed,
   and a newer record covers the new code.
   """
 
@@ -80,7 +83,8 @@ defmodule Anchor.Domain.Sabotage.Replay do
   @type facts :: %{
           sources: %{String.t() => boolean()},
           generated: %{{String.t(), String.t()} => {:ok, [Mutant.t()]} | {:error, term()}},
-          tests: MapSet.t(String.t())
+          tests: MapSet.t(String.t()),
+          symlinked: MapSet.t(String.t())
         }
 
   @doc "The items of `rows_by_record` (`[{path, rows}]`) a replay judges."
@@ -131,13 +135,16 @@ defmodule Anchor.Domain.Sabotage.Replay do
   end
 
   defp plan_item(%{row: row} = item, items, facts) do
+    symlinked = Map.get(facts, :symlinked, MapSet.new())
+
     with :ok <- check(inside?(row.file), :file_outside),
+         :ok <- check(not MapSet.member?(symlinked, row.file), :symlink),
          :ok <- check(Map.get(facts.sources, row.file, false), :file_gone),
          {:ok, _mfa} <- tagged(function(row.mfa), :bad_function),
          {:ok, mutants} <- generated(facts, row),
          {:ok, mutant} <- with_id(mutants, row.id),
          {:ok, args, by_file} <- test_args(item, items),
-         :ok <- killers_exist(args, by_file, facts.tests) do
+         :ok <- killers_exist(args, by_file, facts.tests, symlinked) do
       {:ok, Map.merge(item, %{mutant: mutant, test_args: args, by_file: by_file})}
     else
       {:drifted, reason} -> {:drifted, item, reason}
@@ -197,12 +204,18 @@ defmodule Anchor.Domain.Sabotage.Replay do
     end)
   end
 
-  defp killers_exist(args, by_file, tests) do
+  defp killers_exist(args, by_file, tests, symlinked) do
     files = if by_file, do: args, else: Enum.take_while(args, &(&1 != "--only"))
 
-    case Enum.find(files, &(not MapSet.member?(tests, &1))) do
-      nil -> :ok
-      file -> {:drifted, {:killer_gone, file}}
+    cond do
+      file = Enum.find(files, &MapSet.member?(symlinked, &1)) ->
+        {:drifted, {:killer_symlink, file}}
+
+      file = Enum.find(files, &(not MapSet.member?(tests, &1))) ->
+        {:drifted, {:killer_gone, file}}
+
+      true ->
+        :ok
     end
   end
 
@@ -223,11 +236,12 @@ defmodule Anchor.Domain.Sabotage.Replay do
   def exit_code(%Result{refusal: {code, _message}}), do: code
   def exit_code(%Result{rows: 0}), do: 3
 
-  def exit_code(%Result{results: results}) do
+  def exit_code(%Result{results: results, unreadable: unreadable}) do
     verdicts = Enum.map(results, &elem(&1, 1))
 
     cond do
       Enum.any?(verdicts, &failed?/1) -> 1
+      unreadable != [] -> 3
       not Enum.any?(verdicts, &(&1 == :still_killed)) -> 3
       true -> 0
     end
@@ -299,12 +313,14 @@ defmodule Anchor.Domain.Sabotage.Replay do
   defp by_file(_item), do: ""
 
   defp drift_text(:file_outside), do: "file outside the project"
+  defp drift_text(:symlink), do: "a symlink on the file's path: never followed"
   defp drift_text(:file_gone), do: "file gone"
   defp drift_text(:bad_function), do: "not a Module.fun/arity"
   defp drift_text({:function_gone, why}), do: "function gone: #{inspect(why)}"
   defp drift_text(:no_mutant_with_id), do: "no mutant with id"
   defp drift_text(:no_killer_test), do: "no killer test"
   defp drift_text({:killer_gone, file}), do: "killer gone: #{file}"
+  defp drift_text({:killer_symlink, file}), do: "a symlink on the killer's path: #{file}"
   defp drift_text({:bad_killer, killer, why}), do: "killer #{inspect(killer)}: #{inspect(why)}"
   defp drift_text(:no_longer_compiles), do: "no longer compiles"
   defp drift_text(:killer_not_found), do: "killer test not found: no test ran"
@@ -318,6 +334,16 @@ defmodule Anchor.Domain.Sabotage.Replay do
       "#{count.(&match?({:lost_power, _}, &1))} LOST POWER, " <>
       "#{count.(&match?({:crashed, _}, &1))} crashed, #{length(drifted)} drifted, " <>
       "#{length(r.not_replayed)} not replayed (cap)"
+  end
+
+  defp conclusion(%Result{unreadable: [_ | _]} = r) do
+    if exit_code(r) == 3,
+      do: [
+        "COULD NOT MEASURE: #{length(r.unreadable)} records could not be read (above), so " <>
+          "their kills went unchecked. Fix: repair each kill map, or regenerate the record " <>
+          "with mix anchor.sabotage run"
+      ],
+      else: []
   end
 
   defp conclusion(r) do

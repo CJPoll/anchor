@@ -1074,6 +1074,7 @@ mutable site`).
 ```bash
 mix anchor.sabotage run [--base REF] [--max N|all] [--only ID]... [--dry-run] [--coverage PATH]
                         [--no-record] [--domain D] [--ticket KEY] [--slot S]
+                        [--print-survivor-lines]
 mix anchor.sabotage restore
 ```
 

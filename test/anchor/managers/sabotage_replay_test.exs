@@ -101,6 +101,10 @@ defmodule Anchor.Managers.SabotageReplayTest do
       {:ok, Map.fetch!(records, path)}
     end)
 
+    expect(SourceMutationMock, :symlinked, fn @root, ["lib/calc.ex", "test/calc_test.exs"] ->
+      []
+    end)
+
     expect(ChangeSourceMock, :read, fn @root, "lib/calc.ex" -> {:ok, @source} end)
 
     expect(SourceMutationMock, :existing, fn ["/repo/test/calc_test.exs"] = paths -> paths end)
@@ -258,6 +262,84 @@ defmodule Anchor.Managers.SabotageReplayTest do
     text = Replay.render(result)
     assert text =~ "could not read kill map in test/sabotage_records/bad.md:2"
     assert text =~ "found no killed or timeout row in 2 records under test/sabotage_records"
+  end
+
+  test "a record that cannot be read beside rows still killed: exit 3, never green" do
+    [first | _rest] = mutants()
+
+    expect_until_plan(%{
+      "test/sabotage_records/a.md" => record([first]),
+      "test/sabotage_records/bad.md" => "```anchor-kills\nx\n```\n"
+    })
+
+    expect_clean()
+    expect_patcher(1)
+
+    expect(TestExecutionMock, :run, 2, fn _argv, @args, _opts ->
+      if :baseline in calls_so_far(),
+        do: test_run(:failed, [@failure]),
+        else: call(:baseline, test_run(:passed))
+    end)
+
+    result = Sabotage.replay(@facts, @opts)
+
+    assert [{_item, :still_killed}] = result.results
+    assert Replay.exit_code(result) == 3
+    text = Replay.render(result)
+    assert text =~ "could not read kill map in test/sabotage_records/bad.md:2"
+    assert text =~ "COULD NOT MEASURE: 1 records could not be read (above)"
+  end
+
+  test "a row file or killer file with a symlink on its path is drifted: never read, written or run" do
+    [first | _rest] = mutants()
+    expect(SourceMutationMock, :read_journal, fn @root -> :none end)
+
+    expect(ConfigLoaderMock, :load_in, fn @root ->
+      {:ok, %Anchor.Config{rules: [], sabotage: %SabotageConfig{}}}
+    end)
+
+    expect(GitWorktreeMock, :ignored?, fn @root, _path -> {:ok, true} end)
+
+    expect(RecordStoreMock, :list, fn @root, "test/sabotage_records" ->
+      ["test/sabotage_records/a.md"]
+    end)
+
+    expect(RecordStoreMock, :read, fn @root, _path -> {:ok, record([first])} end)
+
+    expect(SourceMutationMock, :symlinked, fn @root, ["lib/calc.ex", "test/calc_test.exs"] ->
+      ["lib/calc.ex"]
+    end)
+
+    expect(SourceMutationMock, :existing, fn paths -> paths end)
+
+    result = Sabotage.replay(@facts, @opts)
+
+    assert [{_item, :symlink}] = result.drifted
+    assert Replay.exit_code(result) == 3
+    assert Replay.render(result) =~ "drifted (a symlink on the file's path: never followed)"
+  end
+
+  test "the run lock is taken before anything else and released after; held, exit 2, nothing touched" do
+    expect(SourceMutationMock, :take_lock, fn @root -> call(:take_lock, :ok) end)
+    expect(SourceMutationMock, :release_lock, fn @root -> call(:release_lock, :ok) end)
+    expect(SourceMutationMock, :read_journal, fn @root -> call(:read_journal, :none) end)
+
+    expect(ConfigLoaderMock, :load_in, fn @root ->
+      {:ok, %Anchor.Config{rules: [], sabotage: %SabotageConfig{}}}
+    end)
+
+    expect(GitWorktreeMock, :ignored?, fn @root, _path -> {:ok, true} end)
+    expect(RecordStoreMock, :list, fn @root, _glob -> [] end)
+
+    Sabotage.replay(@facts, @opts)
+    assert calls() == [:take_lock, :read_journal, :release_lock]
+
+    expect(SourceMutationMock, :take_lock, fn @root ->
+      {:error, {:held, %{os_pid: 4242, started: "777"}}}
+    end)
+
+    assert %{refusal: {2, message}} = Sabotage.replay(@facts, @opts)
+    assert message =~ "another sabotage run (OS pid 4242) is running in this project"
   end
 
   test "--records names the directory globs read instead of the configured one" do

@@ -67,6 +67,7 @@ rules:
       - Anchor.Managers.Sabotage.Coverage
       - Anchor.Managers.Lint
       - Anchor.Managers.Sabotage
+      - Anchor.Managers.Sabotage.Replay
       - Anchor.Managers.Sabotage.Runner
       - System
 

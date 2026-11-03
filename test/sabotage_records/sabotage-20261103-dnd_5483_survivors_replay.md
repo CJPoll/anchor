@@ -59,7 +59,6 @@ integration test (a real tmp project, no doubles).
 | P6 | `to_test_args/1` drops the `--only test:` filters (whole files) | 6 of 15: killer_ref row 3; manager rows 2, 3; the integration test (two tests ran, not one) | `** (FunctionClauseError) no function clause matching in anonymous fn/3 in Anchor.Managers.SabotageReplayTest."test 3: ..."` (the double was called with the file alone) |
 | P7 | `judge/2` reads a survived run as still killed | 3 of 31: judge "3: passed"; manager row 3; the integration test | `code:  assert Replay.judge(item(), %{status: :survived, reason: nil}) ==` `left:  :still_killed` |
 | P8 | the dirty-file check given no files | 5 of 7: "a replayable row's file with uncommitted changes refuses, exit 2 ..." and rows 1-4 | `** (Mox.UnexpectedCallError) no expectation defined for Anchor.TestExecutionMock.run/3` |
-
 | P9 | (critic round 1 note) a baseline that ran no test read as a red main | 1 of 8: "every named killer gone (the baseline ran no test): exit 3, said as drift, not a red main" | `code:  assert message =~ "every test the rows name is gone (renamed or deleted)"` `left:  "COULD NOT MEASURE: the recorded killers did not pass with no mutant applied (no_tests): nothing can be judged. ..."` |
 
 After every row was restored: `replay_test.exs` and `killer_ref_test.exs`
@@ -673,3 +672,36 @@ f846683dba5d	lib/anchor/domain/sabotage/replay.ex	Anchor.Domain.Sabotage.Replay.
 3f57e7db56aa	lib/anchor/domain/sabotage/replay.ex	Anchor.Domain.Sabotage.Replay.judge/2	narrow_clause	killed	test/anchor/domain/sabotage/replay_test.exs:154 test judge/2 4: a compile error is drifted, no longer compiles
 5702dc500749	lib/anchor/domain/sabotage/replay.ex	Anchor.Domain.Sabotage.Replay.judge/2	narrow_clause	killed	test/anchor/domain/sabotage/replay_test.exs:145 test judge/2 2: timeout is still killed ; test/anchor/domain/sabotage/replay_test.exs:141 test judge/2 1: failed (killed) is still killed
 ```
+
+## Review floor (code-reviewer and adr-reviewer, one round)
+
+The ADR reviewer found tests with no recorded red; the code reviewer found
+that a replayed record could steer a read or write through a committed
+symlink, and that an unreadable record next to readable rows left the job
+green. Rows F1-F20 cover each, with the same driver. F10's first form
+(dropping `@replayed`) did not compile and was rewritten.
+
+| # | Mutation | Tests failed | First failure, verbatim |
+|---|---|---|---|
+| F1 | `Config`: an absolute or `..` survivors path accepted | 1 of 7: "2: each refusal names its key and ends with a Fix: line" (the table holds the three survivors rows) | `** (MatchError) no match of right hand side value:` |
+| F2 | `Config`: an empty survivors path accepted | 1 of 7: the same refusal table | `** (MatchError) no match of right hand side value:` |
+| F3 | the task: `--records` outside the project accepted | 2 of 11: "replay_facts/1 maps --max and --records ...", "replay with a bad flag is a usage error ..." | `** (Mox.UnexpectedCallError) no expectation defined for Anchor.SourceMutationMock.read_journal/1` |
+| F4 | the task: `--print-survivor-lines` not mapped | 1 of 11: "run_facts/1 maps --print-survivor-lines; off by default" | `code:  assert {:ok, %{print_survivor_lines: true}} = Sabotage.run_facts(["--print-survivor-lines"])` |
+| F5 | `Report`: a first landing worded as an ordinary addition | 1 of 41: S3b | `code:  assert Report.render(run) =~ "Survivors added by this branch: review each reason (#{@path} is not on origin/main: " <>` |
+| F6 | `Report`: the not-run wording changed | 1 of 41: S4 | `code:  assert Report.render(run) =~ "survivor aaaaaaaaaaaa Calc.add/2 return_input not judged (not run, cap)\n"` |
+| F7 | `Report`: a run that measured nothing passes when nothing fails | 2 of 41: S8 and "exit-code policy" | `code: for statuses <- [` (the unmeasured row exits 0) |
+| F8 | `Report`: the survivor lines never printed | 1 of 41: S9 | `code:  assert Report.render(run) =~ "Survivor lines to add to #{@path} (nothing was written; ...` |
+| F9 | `Runner`: a malformed list not refused | 1 of 86: SV4b | `** (FunctionClauseError) no function clause matching in Anchor.Managers.Sabotage.Runner.parsed_survivors/2` |
+| F10 | `Replay.items/1` keeps every status | 1 of 25: "items/1 keeps killed and timeout rows only" | `code:  assert [%{row: %{status: "killed"}}, %{row: %{status: "timeout"}}] = Replay.items([{@record, rows}])` |
+| F11 | `judge/2`: no test ran read as still killed | 1 of 25: "no test ran is drifted ..." | `left:  :still_killed` |
+| F12 | `render/1`: the zero-rows line reworded | 1 of 25: "zero rows says COULD NOT MEASURE and names the directories searched" | `code:  assert text =~ "COULD NOT MEASURE: anchor.sabotage replay found no killed or timeout row in 3 " <>` |
+| F13 | the Manager: an unreadable kill map dropped silently | 2 of 11: "zero rows: ... a malformed kill map is named", "a record that cannot be read beside rows still killed: exit 3, never green" | `code:  assert text =~ "could not read kill map in test/sabotage_records/bad.md:2"` |
+| F14 | the Manager: `--records` ignored | 1 of 11: "--records names the directory globs read instead of the configured one" | `** (FunctionClauseError) no function clause matching in anonymous fn/2 in ...` (the configured glob was listed) |
+| F15 | `exit_code/1`: an unreadable record ignored | 2 of 36: the domain row and the Manager row | `code:  assert Replay.exit_code(r) == 3` `left:  0` |
+| F16 | `plan/2`: a symlinked row file followed | 1 of 25: "a row file or killer file with a symlink on its path is drifted, never followed" | `code:  assert plan([i], facts(%{symlinked: MapSet.new(["lib/calc.ex"])})).drifted == [{i, :symlink}]` `left:  []` |
+| F17 | `plan/2`: a symlinked killer file run | 1 of 25: the same test | `code:  assert plan(...).drifted == [{i, {:killer_symlink, "test/calc_test.exs"}}]` |
+| F18 | `SourcePatcher.symlinked/2` never sees a symlink | 1 of 13: "symlinked/2 names each path with a symlink at the file or a directory above it" | `left:  []` |
+| F19 | the Manager: the symlink answer dropped | 1 of 11: "a row file or killer file with a symlink on its path is drifted ..." | `** (Mox.UnexpectedCallError) no expectation defined for Anchor.ChangeSourceMock.read/2 ... with args ["/repo", "lib/calc.ex"]` |
+| F20 | the Manager: the run lock not taken | 1 of 11: "the run lock is taken before anything else and released after; held, exit 2, nothing touched" | `code:  assert calls() == [:take_lock, :read_journal, :release_lock]` `left:  [:read_journal]` |
+
+After every row was restored, each file named above was green.
