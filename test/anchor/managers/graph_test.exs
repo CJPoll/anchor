@@ -9,6 +9,7 @@ defmodule Anchor.Managers.GraphTest do
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5581_hardening_batch.md
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5630_graph_hardening.md
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5637_umbrella_paths.md
+  # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5638_root_in_key.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -732,6 +733,31 @@ defmodule Anchor.Managers.GraphTest do
 
       assert key.(commented) == base
       refute key.(another_module) == base
+    end
+
+    # DND-5638: the same beams, sources and config under two roots (two
+    # checkouts with the same build output) get two keys.
+    test "the key changes with the project root", %{beams: beams} do
+      key = fn root ->
+        expect(ConfigLoaderMock, :load, fn -> {:ok, config([rule(:stub_ok, "ok")])} end)
+        Mox.expect(BeamSourceMock, :read_ebins, fn _apps -> classified(beams) end)
+
+        expect(SourceSourceMock, :read, fn ^root, files ->
+          Map.new(files, &{&1, source_facts(&1, Map.fetch!(@sources, &1))})
+        end)
+
+        expect(GraphStoreMock, :write, fn @artifact_dir, key, _graph ->
+          send(self(), {:artifact_key, key})
+          :ok
+        end)
+
+        Graph.run(%{request() | root: root}, deps())
+        assert_received {:artifact_key, key}
+        key
+      end
+
+      assert key.("/checkout-a") == key.("/checkout-a")
+      refute key.("/checkout-a") == key.("/checkout-b")
     end
 
     test "a failed write is a report-only note; the verdict stands", %{beams: beams} do

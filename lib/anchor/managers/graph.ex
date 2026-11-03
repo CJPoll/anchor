@@ -350,13 +350,15 @@ defmodule Anchor.Managers.Graph do
   defp violations!(other),
     do: raise(ArgumentError, "check/2 returned #{inspect(other, limit: 5)}, not a list")
 
-  # The key covers every input the graph was built from: the beams and each
+  # The key covers every input the graph was built from: the project root
+  # (DND-5638: the facts' paths are relative to it), the beams and each
   # source file's facts (DND-5586), the config and Anchor's version.
   defp write_artifact(store, request, {beams, source_facts}, config, graph) do
     dir = Path.join(request.build_path, "anchor")
 
     key =
       GraphKey.key(
+        Path.expand(request.root),
         beam_entries(beams),
         Enum.map(source_facts, fn {file, facts} ->
           {file, :erlang.term_to_binary(facts, [:deterministic])}
