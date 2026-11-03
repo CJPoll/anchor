@@ -150,7 +150,9 @@ reads each `.beam` with `:beam_lib` only and asks its debug-info backend for
 `elixir_v1` (module facts) and `core_v1` with `[:no_copt]` (function bodies as
 Core Erlang, the way Dialyzer reads them). It never loads or calls a project
 module. A beam it cannot decode is an error value naming path, module and
-cause, never skipped. `Anchor.Domain.Graph.Builder` builds `%Anchor.Domain.Graph{}`
+cause, never skipped. The builder guards each module (DND-5548): a module
+whose node or Core walk raises, throws or exits is an `unreadable` entry
+`{:walk_crashed, summary}`, and every other module is still built. `Anchor.Domain.Graph.Builder` builds `%Anchor.Domain.Graph{}`
 from those records and `Anchor.Domain.Graph.SourceFacts` (literal `defmodule`s,
 for `generated?`); `Anchor.Domain.Graph.CoreWalker` reads call and struct-use
 edges from Core. A new Core shape goes into the walker with a row in
