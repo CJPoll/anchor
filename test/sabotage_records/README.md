@@ -81,7 +81,7 @@ before coining a synonym.
   `EffectCalls`, `Mutant`, `Skipped`), and the runner (DND-5473):
   `mix anchor.sabotage run`/`restore`, its Domain (`Config`, `TestMirror`,
   `TestSelection`, `Plan`, `TestRun`, `Outcome`, `Journal`, `Run`, `Report`,
-  `BoundedOutput`, `NoMutant`),
+  `BoundedOutput`, `NoMutant`, `SharedRun`),
   `Anchor.Managers.Sabotage.Runner`, the adapters `SourcePatcher`,
   `GitStatus` and `TestRunner`, and `Anchor.Sabotage.ExUnitFormatter`.
   `sabotage_scope` stays the word for the diff scope.
@@ -231,6 +231,10 @@ before coining a synonym.
   `Anchor.Domain.GraphRules.Layering`, `CallMatrix`, `DynamicCalls`,
   `ViolationKey.mfa/1`, its registration and Config's architecture check of
   graph rules and known types.
+- `aggregates` — aggregate declarations (DND-5476): the `aggregates:`
+  section (`Anchor.Domain.Aggregates.Config`), the declaration index
+  (`Anchor.Domain.Aggregates.Index`), the `aggregate_declarations` graph rule
+  and the `use Anchor.Aggregate` macro.
 - `context_acyclic` — the `context_acyclic` graph rule (DND-5445):
   `Anchor.Domain.ContextGraph`, `GraphRules.ContextAcyclic`,
   `ViolationKey.graph_key/2` and its registration.

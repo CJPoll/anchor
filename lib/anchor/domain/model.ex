@@ -17,7 +17,11 @@ defmodule Anchor.Domain.Model do
     * `architecture` — the config's `%Anchor.Domain.Architecture{}`;
     * `classification` — `%{module => %Classification{}}`, the modules that
       classified into exactly one bucket;
-    * `aggregates` — the aggregate declarations (DND-5476; `[]` until then);
+    * `aggregates` — the aggregate declarations
+      (`%Anchor.Domain.Aggregates.Index{}`, DND-5476), built from the config's
+      `aggregates:` section and every module's persisted `@anchor_aggregate`;
+      the index holds its own issues, which the `aggregate_declarations` rule
+      reports;
     * `config` — the `%Anchor.Config{}`;
     * `cfa` — the higher-order flow analysis (`%Anchor.Domain.Cfa{}`,
       DND-5574), set by the runner only when a rule that runs declares
@@ -41,6 +45,7 @@ defmodule Anchor.Domain.Model do
   """
 
   alias Anchor.Config
+  alias Anchor.Domain.Aggregates.Index
   alias Anchor.Domain.Architecture
   alias Anchor.Domain.Cfa
   alias Anchor.Domain.Classification
@@ -56,7 +61,7 @@ defmodule Anchor.Domain.Model do
     :architecture,
     :classification,
     :config,
-    aggregates: [],
+    aggregates: %Index{},
     cfa: nil,
     effects: nil,
     facts: %{}
@@ -66,7 +71,7 @@ defmodule Anchor.Domain.Model do
           graph: Graph.t(),
           architecture: Architecture.t(),
           classification: %{module() => Classification.t()},
-          aggregates: list(),
+          aggregates: Index.t(),
           config: Config.t(),
           cfa: Cfa.t() | nil,
           effects: Effects.t() | nil,
@@ -109,6 +114,7 @@ defmodule Anchor.Domain.Model do
       architecture: architecture,
       classification: classification,
       config: config,
+      aggregates: Index.build(config.aggregates, graph),
       facts: Map.new(facts, &{&1.module, &1})
     }
 

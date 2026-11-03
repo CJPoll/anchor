@@ -190,6 +190,9 @@ defmodule Anchor.Domain.RuleSchema do
   # THE per-type key allowlist. Keys beyond `@common_keys`, one entry per
   # shipped check's `rule_type/0`. See the moduledoc before extending it.
   @keys_by_type %{
+    # DND-5476: aggregate_declarations reads only the graph common keys (the
+    # declarations are the `aggregates:` section's and the modules').
+    aggregate_declarations: [],
     alphabetized_functions: ~w(mode),
     case_on_bare_arg: [],
     # DND-5445: context_acyclic reads only the graph common keys (the contexts
@@ -223,6 +226,7 @@ defmodule Anchor.Domain.RuleSchema do
   # least one of these as a non-empty list. `[]` is a decision, not an omission:
   # the type has no relation to require (see the moduledoc for why, per type).
   @relations_by_type %{
+    aggregate_declarations: [],
     alphabetized_functions: [],
     case_on_bare_arg: [],
     context_acyclic: [],
@@ -248,6 +252,7 @@ defmodule Anchor.Domain.RuleSchema do
   # source AST) or `:graph` (`mix anchor.graph` reads the compiled graph). One
   # authoritative engine per type; compilation fails when a type has none.
   @engine_by_type %{
+    aggregate_declarations: :graph,
     alphabetized_functions: :ast,
     case_on_bare_arg: :ast,
     context_acyclic: :graph,

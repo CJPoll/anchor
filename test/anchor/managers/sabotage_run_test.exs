@@ -8,6 +8,9 @@ defmodule Anchor.Managers.SabotageRunTest do
   # Sabotage record (DND-5570): ../../sabotage_records/sabotage-20261103-dnd_5570_sabotage_hardening.md
   # Sabotage record (DND-5617): ../../sabotage_records/sabotage-20261103-dnd_5617_sabotage_cfa_batch.md
   # Sabotage record (DND-5624): ../../sabotage_records/sabotage-20261103-dnd_5624_sabotage_defimpl.md
+  # Sabotage record (DND-5653): ../../sabotage_records/sabotage-20261103-dnd_5639_sabotage_followups.md
+  # Sabotage record (DND-5654): ../../sabotage_records/sabotage-20261103-dnd_5639_sabotage_followups.md
+  # Sabotage record (DND-5635): ../../sabotage_records/sabotage-20261103-dnd_5630_graph_hardening.md
   use ExUnit.Case, async: true
 
   import Hammox
@@ -39,11 +42,16 @@ defmodule Anchor.Managers.SabotageRunTest do
 
   @root "/repo"
   @file_path "/repo/lib/calc.ex"
+  # DND-5635: a build path that is not <root>/_build/<env> (MIX_BUILD_PATH):
+  # the last run is saved under it, never under the root; so is the results
+  # file every test run writes (DND-5654).
   # `no_record: true`: these tests are about the run; the record tests
   # (DND-5484) set it false.
+  @build_path "/builds/repo-test"
   @facts %{
     root: @root,
     env: :test,
+    build_path: @build_path,
     base: "origin/main",
     max: nil,
     only: [],
@@ -141,7 +149,7 @@ defmodule Anchor.Managers.SabotageRunTest do
                                        opts ->
       assert opts[:cd] == @root
       assert opts[:timeout_seconds] == 300
-      assert opts[:results_path] == "/repo/_build/test/anchor/sabotage/results.bin"
+      assert opts[:results_path] == "/builds/repo-test/anchor/sabotage/results.bin"
       call(:baseline, result)
     end)
   end
@@ -168,7 +176,7 @@ defmodule Anchor.Managers.SabotageRunTest do
     do: expect(SourceMutationMock, :delete_journal, n, fn @root -> call(:delete_journal, :ok) end)
 
   defp expect_save do
-    expect(SourceMutationMock, :save_run, fn "/repo/_build/test/anchor/sabotage/last-run.etf",
+    expect(SourceMutationMock, :save_run, fn "/builds/repo-test/anchor/sabotage/last-run.etf",
                                              bytes ->
       assert %Anchor.Domain.Sabotage.Run{} = :erlang.binary_to_term(bytes)
       :ok
@@ -1429,6 +1437,237 @@ defmodule Anchor.Managers.SabotageRunTest do
       text = Report.render(run)
       refute text =~ "no mutants generated"
       refute text =~ "sabotage: no mutant from"
+    end
+  end
+
+  describe "run/2: the build path (DND-5654)" do
+    test "B1: the baseline, every mutant run and the last run all use the build path, never the root's _build" do
+      [_first, second] = mutants()
+      expect_until_selection()
+      expect_patcher(2)
+      expect_delete_journal(2)
+      expect_save()
+
+      expect(TestExecutionMock, :run, 3, fn _argv, ["test/calc_test.exs"], opts ->
+        send(self(), {:results_path, opts[:results_path]})
+
+        cond do
+          not calls_seen(:baseline) -> call(:baseline, test_run(:passed))
+          calls_seen({:write_journal, second.id}) -> test_run(:passed)
+          true -> test_run(:failed, [@killer])
+        end
+      end)
+
+      run = Sabotage.run(@facts, @opts)
+
+      assert run.refusal == nil
+      paths = for {:results_path, path} <- Process.info(self(), :messages) |> elem(1), do: path
+      assert paths == List.duplicate("/builds/repo-test/anchor/sabotage/results.bin", 3)
+    end
+  end
+
+  describe "run/2: test timeouts and the test command (DND-5653)" do
+    @slow %{
+      file: "test/calc_test.exs",
+      line: 9,
+      name: "test slow",
+      text: "** (ExUnit.TimeoutError) test timed out after 2000ms. You can change the timeout:"
+    }
+
+    test "TO1: a baseline whose selected test times out is COULD NOT MEASURE, no mutant applied" do
+      expect_until_selection()
+      expect_baseline(test_run(:failed, [@slow]))
+
+      run = Sabotage.run(@facts, @opts)
+
+      assert {3, message} = run.refusal
+      assert message =~ "COULD NOT MEASURE: the selected tests fail with no mutant applied"
+      assert message =~ "test/calc_test.exs:9 test slow: ** (ExUnit.TimeoutError)"
+      assert run.outcomes == []
+    end
+
+    test "TO2: a mutant whose only failure is a test timeout is a timeout kill, by that test" do
+      [_first, second] = mutants()
+      expect_until_selection()
+      expect_baseline(test_run(:passed))
+      expect_patcher(2)
+      expect_delete_journal(2)
+      expect_save()
+
+      expect(TestExecutionMock, :run, 2, fn _argv, ["test/calc_test.exs"], _opts ->
+        if calls_seen({:write_journal, second.id}),
+          do: test_run(:failed, [@killer]),
+          else: test_run(:failed, [@slow])
+      end)
+
+      run = Sabotage.run(@facts, @opts)
+
+      assert [
+               %{status: :timeout, killers: ["(test timeout) test/calc_test.exs:9 test slow"]},
+               %{status: :killed}
+             ] = run.outcomes
+
+      assert Report.exit_code(run) == 0
+    end
+
+    test "TO3: the test command's own arguments reach the baseline and every mutant run identically" do
+      command = ["mix", "test", "--max-cases", "2", "--timeout", "2000", "--exclude", "slow"]
+      [_first, second] = mutants()
+      expect_until_selection(config: %SabotageConfig{test_command: command})
+      expect_patcher(2)
+      expect_delete_journal(2)
+      expect_save()
+
+      expect(TestExecutionMock, :run, 3, fn argv, tests, _opts ->
+        send(self(), {:argv, argv, tests})
+
+        cond do
+          not calls_seen(:baseline) -> call(:baseline, test_run(:passed))
+          calls_seen({:write_journal, second.id}) -> test_run(:passed)
+          true -> test_run(:failed, [@killer])
+        end
+      end)
+
+      run = Sabotage.run(@facts, @opts)
+
+      assert run.refusal == nil
+
+      runs =
+        for {:argv, argv, tests} <- Process.info(self(), :messages) |> elem(1), do: {argv, tests}
+
+      assert runs == List.duplicate({command, ["test/calc_test.exs"]}, 3)
+    end
+  end
+
+  describe "run/2: a multi-target defimpl mutant (DND-5639)" do
+    # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5639_sabotage_followups.md
+    # `for: [Calc, Other]`: one changed function is two targets, String.Chars.Calc
+    # and String.Chars.Other, each with one mutant of the same edit.
+    @listed "defimpl String.Chars, for: [Calc, Other] do\n  def to_string(c) do\n    c.a\n  end\nend\n"
+    @listed_cov_opts @opts ++ [coverage_store: Anchor.CoverageStoreMock]
+
+    defp expect_listed_scope do
+      expect_journal(:none)
+      expect_config()
+      expect_ignored()
+      expect(ChangeSourceMock, :merge_base, fn @root, "origin/main" -> {:ok, "abc"} end)
+      expect(ChangeSourceMock, :diff, fn @root, "abc" -> {:ok, @diff} end)
+      expect(ChangeSourceMock, :untracked, fn @root -> {:ok, []} end)
+      expect(ChangeSourceMock, :read, 2, fn @root, "lib/calc.ex" -> {:ok, @listed} end)
+      expect(ChangeSourceMock, :show, fn @root, "abc", "lib/calc.ex" -> {:ok, @listed} end)
+      expect_clean()
+    end
+
+    # The patcher of `n` applied mutants of @listed.
+    defp expect_listed_patcher(n) do
+      expect(SourceMutationMock, :write_journal, n, fn @root, %Journal{} = entry ->
+        call({:write_journal, entry.mutant_id}, :ok)
+      end)
+
+      expect(SourceMutationMock, :write_file, 2 * n, fn @file_path, _bytes -> :ok end)
+      expect(SourceMutationMock, :touch_ahead, 2 * n, fn @file_path -> :ok end)
+
+      expect(SourceMutationMock, :sha256_file, n, fn @file_path ->
+        {:ok, Journal.sha256(@listed)}
+      end)
+
+      expect_delete_journal(n)
+    end
+
+    test "T1: two targets with one test set: one run, both carry its verdict, each listed" do
+      expect_listed_scope()
+      expect_tests_exist(true)
+      expect_listed_patcher(1)
+      expect_save()
+
+      expect(TestExecutionMock, :run, 2, fn _argv, ["test/calc_test.exs"], _opts ->
+        if calls_seen(:baseline),
+          do: call(:tests, test_run(:failed, [@killer])),
+          else: call(:baseline, test_run(:passed))
+      end)
+
+      run = Sabotage.run(@facts, @opts)
+
+      assert run.refusal == nil
+      assert Enum.count(calls(), &(&1 == :tests)) == 1
+
+      assert [
+               %{mutant: first, status: :killed, killers: [killer]},
+               %{mutant: second, status: :killed, killers: [killer]}
+             ] = run.outcomes
+
+      assert killer == {"test/calc_test.exs", 4, "test adds"}
+      assert Enum.sort([first.module, second.module]) == [String.Chars.Calc, String.Chars.Other]
+      assert first.id != second.id
+      assert {first.range, first.replacement} == {second.range, second.replacement}
+      assert Enum.all?(run.outcomes, &(&1.selection == {:mirror, ["test/calc_test.exs"]}))
+      assert Report.exit_code(run) == 0
+    end
+
+    test "T2: positive control: two targets with different test sets run twice" do
+      map = %{
+        version: 1,
+        commit: "c0ffee0000000000000000000000000000000000",
+        elixir: "1.19.4",
+        otp: "28",
+        tests: [
+          %{
+            file: "test/other_test.exs",
+            line: 12,
+            name: "test renders",
+            module: "OtherTest",
+            functions: ["String.Chars.Calc.to_string/1"]
+          }
+        ],
+        modules_traced: 3,
+        outside_windows: 0,
+        late_events: 0,
+        suite_exit: 0
+      }
+
+      expect_listed_scope()
+
+      expect(SourceMutationMock, :existing, fn paths ->
+        assert Enum.sort(paths) == ["/repo/test/calc_test.exs", "/repo/test/other_test.exs"]
+        paths
+      end)
+
+      expect(Anchor.CoverageStoreMock, :read, fn "/repo/cov.etf" -> {:ok, map} end)
+      expect(GitWorktreeMock, :head_sha, fn @root -> {:ok, "headsha"} end)
+
+      expect(GitWorktreeMock, :ancestor?, fn @root, "c0ffee0000000000000000000000000000000000" ->
+        {:ok, true}
+      end)
+
+      expect(GitWorktreeMock, :changed_since, fn @root,
+                                                 "c0ffee0000000000000000000000000000000000" ->
+        {:ok, []}
+      end)
+
+      expect_listed_patcher(2)
+      expect_save()
+
+      expect(TestExecutionMock, :run, 3, fn _argv, tests, _opts ->
+        if calls_seen(:baseline),
+          do: call({:tests, tests}, test_run(:failed, [@killer])),
+          else: call(:baseline, test_run(:passed))
+      end)
+
+      run = Sabotage.run(Map.put(@facts, :coverage, "cov.etf"), @listed_cov_opts)
+
+      assert run.refusal == nil
+
+      assert Enum.sort(for {:tests, tests} <- calls(), do: tests) == [
+               ["test/calc_test.exs"],
+               ["test/other_test.exs:12"]
+             ]
+
+      assert Enum.sort(Enum.map(run.outcomes, &{&1.mutant.module, &1.selection})) == [
+               {String.Chars.Calc, {:coverage, ["test/other_test.exs:12"]}},
+               {String.Chars.Other, {:mirror, ["test/calc_test.exs"]}}
+             ]
+
+      assert Enum.all?(run.outcomes, &(&1.status == :killed))
     end
   end
 end

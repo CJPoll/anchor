@@ -30,6 +30,7 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
   #   ../../sabotage_records/rule_schema-20261103-dnd_5451_ast_batch.md
   # The DND-5441 rows (enforcement, ast baseline, the graph common keys):
   #   ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
+  # DND-5476 (aggregate_declarations rows): ../../sabotage_records/aggregates-20261103-dnd_5476_aggregate_decls.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config
@@ -425,12 +426,18 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
 
   # The types with no relation and no key of their own: they check every file
   # they select, so only the common rows apply.
-  # DND-5442, DND-5445, DND-5447: the graph types, none reading a key of its own.
+  # DND-5442, DND-5445, DND-5447, DND-5476: the graph types, none reading a key of its own.
   # Their rows are the graph common rows, loaded through
   # `Config.parse_config/1` with an `architecture:` section (`parse_one/1`),
   # plus what only a whole document decides.
-  defp table(type) when type in [:layering, :context_acyclic, :effects_match_bucket],
-    do: graph_rows(type)
+  defp table(type)
+       when type in [
+              :aggregate_declarations,
+              :layering,
+              :context_acyclic,
+              :effects_match_bucket
+            ],
+       do: graph_rows(type)
 
   # DND-5454: the graph half of struct ownership reads the AST half's one
   # optional key, `owned_namespaces`, under the same rules.

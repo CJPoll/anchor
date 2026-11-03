@@ -8,7 +8,8 @@ defmodule Anchor.Sabotage.CoverageCollector do
   `Anchor.Domain.Sabotage.CoverageMap` event and hands them to
   `CoverageMap.attribute/2` in batches.
 
-  It keeps no trace argument: a call becomes its `{module, name, arity}`, and
+  It keeps no trace argument: a call becomes its `{module, name, arity}` and
+  the pid that made it (for `CoverageMap`'s window leaks, DND-5642), and
   the `%ExUnit.Test{}` that `ExUnit.EventManager.test_started/2` and
   `test_finished/2` are called with becomes the test's ref
   (`%{file, line, name, module}`, from its tags). It reads both message shapes
@@ -46,24 +47,25 @@ defmodule Anchor.Sabotage.CoverageCollector do
   end
 
   @impl GenServer
-  def handle_info({:trace_ts, _pid, :call, {module, name, args}, stamp}, state),
-    do: {:noreply, add(state, event(module, name, args, nil, stamp))}
+  def handle_info({:trace_ts, pid, :call, {module, name, args}, stamp}, state),
+    do: {:noreply, add(state, event(module, name, args, nil, stamp, pid))}
 
-  def handle_info({:trace_ts, _pid, :call, {module, name, arity}, message, stamp}, state),
-    do: {:noreply, add(state, event(module, name, arity, message, stamp))}
+  def handle_info({:trace_ts, pid, :call, {module, name, arity}, message, stamp}, state),
+    do: {:noreply, add(state, event(module, name, arity, message, stamp, pid))}
 
   def handle_info(_other, state), do: {:noreply, state}
 
-  defp event(@event_manager, :test_started, args, message, stamp),
+  defp event(@event_manager, :test_started, args, message, stamp, _pid),
     do: {:window_open, stamp, test_ref(test_arg(args, message))}
 
-  defp event(@event_manager, :test_finished, args, message, stamp),
+  defp event(@event_manager, :test_finished, args, message, stamp, _pid),
     do: {:window_close, stamp, test_ref(test_arg(args, message))}
 
-  defp event(module, name, args, _message, stamp) when is_list(args),
-    do: {:call, stamp, {module, name, length(args)}}
+  defp event(module, name, args, _message, stamp, pid) when is_list(args),
+    do: {:call, stamp, {module, name, length(args)}, pid}
 
-  defp event(module, name, arity, _message, stamp), do: {:call, stamp, {module, name, arity}}
+  defp event(module, name, arity, _message, stamp, pid),
+    do: {:call, stamp, {module, name, arity}, pid}
 
   defp test_arg([_manager, test], _message), do: test
   defp test_arg(_arity, message), do: message

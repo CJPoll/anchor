@@ -9,6 +9,7 @@ defmodule Anchor.Domain.Graph.BuilderTest do
   # Sabotage record: ../../../sabotage_records/builder-20261103-dnd_5551_graph_hardening.md
   # Sabotage record: ../../../sabotage_records/inlines-20261103-dnd_5551_graph_hardening.md
   # Sabotage record: ../../../sabotage_records/builder-20261103-dnd_5581_hardening_batch.md (DND-5587, DND-5588)
+  # Sabotage record: ../../../sabotage_records/graph_runner-20261103-dnd_5630_graph_hardening.md (DND-5630)
   # DND-5548 (the per-module walk guard): ../../../sabotage_records/builder-20261103-dnd_5440_graph_runner.md
   use ExUnit.Case, async: true
 
@@ -566,6 +567,29 @@ defmodule Anchor.Domain.Graph.BuilderTest do
       # Without a root the path stands as the beam names it.
       assert Builder.build([beam], %{}).modules[AnchorFixtures.BuilderTest.Far].source_file ==
                file
+    end
+  end
+
+  # DND-5630: a source outside the root is project code too, keyed by its
+  # root-relative ../ path; its source facts are read under that key.
+  describe "build/3 with a root: a source path outside the root" do
+    test "is keyed by its root-relative ../ path, for the node and the source facts" do
+      root = "/anchor-builder-root/app"
+      file = "/anchor-builder-root/shared/near.ex"
+
+      source = """
+      defmodule AnchorFixtures.BuilderTest.Near do
+        def f(x), do: Enum.count(x)
+      end
+      """
+
+      [beam] = decode!(compile_unloaded(source, file))
+      assert beam.elixir.relative_file == file
+
+      graph = Builder.build([beam], facts("../shared/near.ex", source), root: root)
+
+      assert %ModuleNode{source_file: "../shared/near.ex", generated?: false} =
+               graph.modules[AnchorFixtures.BuilderTest.Near]
     end
   end
 

@@ -13,6 +13,7 @@ defmodule Anchor.Domain.FailuresGraphTest do
   #   ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
   # DND-5584 (graph_app_no_modules): ../../sabotage_records/graph_runner-20261103-dnd_5441_graph_rules_a.md
   # DND-5628 (the symlink rows): ../../sabotage_records/baseline_symlink-20261103-dnd_5441_graph_rules_a.md
+  # DND-5476 (aggregate_declarations rows): ../../sabotage_records/aggregates-20261103-dnd_5476_aggregate_decls.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Failures
@@ -228,6 +229,12 @@ defmodule Anchor.Domain.FailuresGraphTest do
          ~s|rule 2 (id: "web", layering) selects 0 modules, below min_modules 1.|,
          "lowering min_modules is the owner's call"
        ]},
+      {"aggregates_none_declared",
+       Failures.aggregates_none_declared(rule, "<shape>", "proj/.anchor.yml"), "proj/.anchor.yml",
+       [
+         ~s|rule 2 (id: "web", layering) checks nothing: no aggregate is declared in .anchor.yml|,
+         "Fix: declare one or remove the rule: <shape>"
+       ]},
       {"rule_crashed", crashed, "proj/.anchor.yml",
        [
          ~s|rule 2 (id: "web", layering) could not run: RuntimeError: rule blew up|,
@@ -265,22 +272,6 @@ defmodule Anchor.Domain.FailuresGraphTest do
        [
          "could not write the graph artifact under _build/dev/anchor (:eacces)",
          "Fix: make _build/dev/anchor writable (_build/dev/anchor is Mix's build path joined with anchor)."
-       ]},
-      {"graph_all_outside_root",
-       Failures.graph_all_outside_root(3, "/proj", ["_build/dev/lib/app/ebin"]),
-       "_build/dev/lib/app/ebin",
-       [
-         "COULD NOT MEASURE: read 3 modules from _build/dev/lib/app/ebin",
-         "every one has a source file outside the project root /proj",
-         "Fix: run mix anchor.graph from the project root"
-       ]},
-      {"graph_module_outside_root",
-       Failures.graph_module_outside_root(MyApp.Shared, "/shared/lib/shared.ex", "/proj"),
-       "/shared/lib/shared.ex",
-       [
-         "MyApp.Shared was compiled from /shared/lib/shared.ex, outside the project root /proj",
-         "left out of the graph and no rule judged it",
-         "Fix: move its source under /proj"
        ]}
     ]
   end

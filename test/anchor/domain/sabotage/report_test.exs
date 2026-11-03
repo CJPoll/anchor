@@ -4,6 +4,7 @@ defmodule Anchor.Domain.Sabotage.ReportTest do
   # Sabotage record (DND-5570): ../../../sabotage_records/sabotage-20261103-dnd_5570_sabotage_hardening.md
   # Sabotage record (DND-5617): ../../../sabotage_records/sabotage-20261103-dnd_5617_sabotage_cfa_batch.md
   # Sabotage record (DND-5624): ../../../sabotage_records/sabotage-20261103-dnd_5624_sabotage_defimpl.md
+  # Sabotage record (DND-5653): ../../../sabotage_records/sabotage-20261103-dnd_5639_sabotage_followups.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Sabotage.ChangedFunction
@@ -426,6 +427,33 @@ defmodule Anchor.Domain.Sabotage.ReportTest do
 
     test "a written record is no failure: the pass stays exit 0" do
       assert Report.exit_code(%{failed_record([:killed]) | record_error: nil}) == 0
+    end
+  end
+
+  describe "kills that rest on time alone (DND-5653)" do
+    test "R1: the timeout kills get their own line, naming each mutant and its killers; still exit 0" do
+      run = %Run{
+        outcomes: [
+          outcome("aaa", :killed, [@killer]),
+          outcome("bbb", :timeout, ["(test timeout) test/calc_test.exs:9 test slow"]),
+          outcome("ccc", :timeout, ["(timeout)"])
+        ]
+      }
+
+      assert Report.exit_code(run) == 0
+      text = Report.render(run)
+
+      assert text =~
+               "sabotage: 2 kills rest on time alone (no assertion failed; a hang the mutant " <>
+                 "caused, or a slow host): bbb Calc.add/2 by (test timeout) " <>
+                 "test/calc_test.exs:9 test slow; ccc Calc.add/2 by (timeout)\n"
+
+      assert text =~ "1 killed, 0 survived, 2 timeout,"
+    end
+
+    test "R2: positive control: no timeout kill, no such line" do
+      run = %Run{outcomes: [outcome("aaa", :killed, [@killer])]}
+      refute Report.render(run) =~ "rest on time alone"
     end
   end
 end

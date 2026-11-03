@@ -3,6 +3,7 @@ defmodule Anchor.Domain.Sabotage.OutcomeTest do
   # mutant status it gives. A mutant that does not compile is never killed.
   # Sabotage record: ../../../sabotage_records/sabotage-20261103-dnd_5473_sabotage_run.md
   # Sabotage record (DND-5570): ../../../sabotage_records/sabotage-20261103-dnd_5570_sabotage_hardening.md
+  # Sabotage record (DND-5653): ../../../sabotage_records/sabotage-20261103-dnd_5639_sabotage_followups.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Sabotage.Outcome
@@ -166,6 +167,41 @@ defmodule Anchor.Domain.Sabotage.OutcomeTest do
 
       assert run.output_head |> String.split("\n") |> length() == 40
       assert String.starts_with?(run.output_head, "line 1\n")
+    end
+  end
+
+  describe "classify/1: per-test timeouts (DND-5653)" do
+    @t1 %{
+      file: "test/x_test.exs",
+      line: 12,
+      name: "test slow",
+      text: "** (ExUnit.TimeoutError) test timed out after 2000ms. You can change the timeout:"
+    }
+    @t2 %{@t1 | line: 20, name: "test slower"}
+
+    test "T1: every failure an ExUnit.TimeoutError: timeout, each killer named (test timeout) file:line name" do
+      assert Outcome.classify(run(:failed, total: 3, failures: [@t1, @t2])) ==
+               {:timeout,
+                [
+                  "(test timeout) test/x_test.exs:12 test slow",
+                  "(test timeout) test/x_test.exs:20 test slower"
+                ]}
+    end
+
+    test "T2: a timeout beside a real assertion failure: killed, by the assertion only" do
+      assert Outcome.classify(run(:failed, total: 3, failures: [@t1, @f1])) ==
+               {:killed, [{"test/x_test.exs", 4, "test adds"}]}
+    end
+
+    test "T3: positive control: a failure that only mentions a timeout in its text is a real failure" do
+      mention = %{@f1 | text: "Assertion with == failed\nleft: \"** (ExUnit.TimeoutError)\""}
+
+      assert Outcome.classify(run(:failed, total: 1, failures: [mention])) ==
+               {:killed, [{"test/x_test.exs", 4, "test adds"}]}
+    end
+
+    test "T4: a failed run with no failure frame stays killed, by no test, as before" do
+      assert Outcome.classify(run(:failed, total: 3, failures: [])) == {:killed, []}
     end
   end
 end
