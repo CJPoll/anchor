@@ -563,6 +563,22 @@ defmodule Anchor.Domain.Failures do
   end
 
   @doc """
+  The note for a baseline entry the branch replaced with a narrower one
+  since `ref` (DND-5633): `key` covers less than `base_key` (a cycle with
+  fewer contexts), so it is not growth. Report-only.
+  """
+  @spec baseline_narrowed(String.t(), String.t(), String.t(), String.t()) :: Violation.t()
+  def baseline_narrowed(path, base_key, key, ref) do
+    %Violation{
+      filename: path,
+      key: key,
+      message:
+        "NOTE: #{key} in #{path} narrows #{base_key}, the entry it replaced since #{ref}; " <>
+          "a narrower entry is not growth. Fix: review the narrowing in this change."
+    }
+  end
+
+  @doc """
   The issue for a baseline that could not be read at the `--base` ref
   (DND-5441): git failed, or the bytes there are not UTF-8. GREW could not be
   judged, and a failed read never reads as "no growth".

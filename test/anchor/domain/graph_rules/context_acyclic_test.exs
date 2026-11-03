@@ -3,6 +3,7 @@ defmodule Anchor.Domain.GraphRules.ContextAcyclicTest do
   # models.
   #
   # Sabotage record: ../../../sabotage_records/context_acyclic-20261103-dnd_5441_graph_rules_a.md
+  # Sabotage record (DND-5633): ../../../sabotage_records/layering-20261103-dnd_5648_graph_followups.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Classification
@@ -173,6 +174,27 @@ defmodule Anchor.Domain.GraphRules.ContextAcyclicTest do
     test "the rule's conforming shape" do
       assert ContextAcyclic.shape(@rule) ==
                "the context graph has no cycle; a dependency between contexts runs one way"
+    end
+  end
+
+  # DND-5633: a cycle that lost a context narrows the baselined one.
+  describe "narrows?/2" do
+    test "a strict subset of the same rule's cycle narrows it" do
+      assert ContextAcyclic.narrows?("c|A,B,C", "c|A,B")
+      assert ContextAcyclic.narrows?("c|A,B,C,D", "c|B,D")
+    end
+
+    test "the same set, a superset, another rule's or a disjoint cycle does not" do
+      refute ContextAcyclic.narrows?("c|A,B", "c|A,B")
+      refute ContextAcyclic.narrows?("c|A,B", "c|A,B,C")
+      refute ContextAcyclic.narrows?("c|A,B,C", "d|A,B")
+      refute ContextAcyclic.narrows?("c|A,B,C", "c|A,D")
+    end
+
+    test "an unseen-call key or a one-context list is no cycle" do
+      refute ContextAcyclic.narrows?("c|A,B,C", "c|A.f/1|-> dynamic ?/1")
+      refute ContextAcyclic.narrows?("c|A.f/1|-> dynamic ?/1", "c|A")
+      refute ContextAcyclic.narrows?("c|A,B,C", "c|A")
     end
   end
 end

@@ -36,6 +36,18 @@ defmodule Anchor.Test.GraphRuleStubs do
     end
   end
 
+  # DND-5633: finds as `Finds` does, and reads any key ending `|found` as a
+  # narrowing of the same rule's key ending `|wider`.
+  defmodule FindsNarrowing do
+    @moduledoc false
+    @behaviour Anchor.Domain.GraphRule
+    def rule_type, do: :stub_finds_narrowing
+    def check(model, rule), do: Finds.check(model, rule)
+
+    def narrows?(base_key, key),
+      do: String.ends_with?(base_key, "|wider") and String.ends_with?(key, "|found")
+  end
+
   defmodule Raises do
     @moduledoc false
     @behaviour Anchor.Domain.GraphRule
@@ -121,6 +133,7 @@ defmodule Anchor.Test.GraphRuleStubs do
     do: [
       Ok,
       Finds,
+      FindsNarrowing,
       Raises,
       Throws,
       Exits,

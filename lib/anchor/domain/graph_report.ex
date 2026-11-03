@@ -22,7 +22,10 @@ defmodule Anchor.Domain.GraphReport do
       source outside the project root, judged like every other module and
       counted so the layout is visible (DND-5588, DND-5630); `apply_sites` is `nil` when no
       rule that ran needed the higher-order flow analysis (DND-5574), else
-      `apply_sites/1` of it.
+      `apply_sites/1` of it. The optional `dynamic_calls` is
+      `Anchor.Domain.DynamicCalls.tally/1` of the graph (DND-5633): the
+      dynamic calls narrowed to a declared behaviour's implementers, and those
+      fanned out to every module exporting the function.
     * `exit_code` — `exit_code/1`.
 
   ## Exit code
@@ -42,7 +45,10 @@ defmodule Anchor.Domain.GraphReport do
   each held one prints as `path:line: [held] <label> <message>`. When the run
   computed the higher-order flow analysis, the summary ends with `; apply
   sites: <r> resolved, <a> any`, and with `(step bound hit: every site reads
-  any)` after it when the analysis hit its bound (DND-5574, R6).
+  any)` after it when the analysis hit its bound (DND-5574, R6). When the
+  graph has a dynamic call with a known function name, it ends with `;
+  dynamic calls: <f> fanned out to every exporter, <n> narrowed by behaviour`
+  (DND-5633), and the JSON's `dynamic_calls` names each call.
   """
 
   alias Anchor.Domain.Cfa
@@ -84,7 +90,13 @@ defmodule Anchor.Domain.GraphReport do
           required(:opaque) => non_neg_integer(),
           required(:no_core) => non_neg_integer(),
           required(:outside_root) => non_neg_integer(),
-          required(:apply_sites) => apply_sites() | nil
+          required(:apply_sites) => apply_sites() | nil,
+          optional(:dynamic_calls) => dynamic_calls() | nil
+        }
+
+  @type dynamic_calls :: %{
+          narrowed: [{mfa(), atom(), arity()}],
+          fanned_out: [{mfa(), atom(), arity()}]
         }
 
   @type t :: %__MODULE__{
@@ -171,6 +183,7 @@ defmodule Anchor.Domain.GraphReport do
       "no_core" => report.counts.no_core,
       "outside_root" => report.counts.outside_root,
       "apply_sites" => apply_sites_json(report.counts.apply_sites),
+      "dynamic_calls" => dynamic_calls_json(Map.get(report.counts, :dynamic_calls)),
       "exit_code" => report.exit_code,
       "findings" => Enum.map(report.findings, &Finding.to_json/1),
       "could_not_check" => Enum.map(report.could_not_check, &Finding.to_json/1),
@@ -195,8 +208,31 @@ defmodule Anchor.Domain.GraphReport do
     "anchor.graph: #{counts.modules} modules#{notes(counts)} in #{counts.apps} apps, " <>
       "#{counts.rules} rules, #{violations} violations " <>
       "(#{length(report_only)} report-only, #{length(report.held)} baselined)" <>
-      apply_sites_note(counts.apply_sites)
+      apply_sites_note(counts.apply_sites) <>
+      dynamic_calls_note(Map.get(counts, :dynamic_calls))
   end
+
+  defp dynamic_calls_json(nil), do: nil
+
+  defp dynamic_calls_json(%{narrowed: narrowed, fanned_out: fanned_out}),
+    do: %{
+      "narrowed" => Enum.map(narrowed, &dynamic_call_text/1),
+      "fanned_out" => Enum.map(fanned_out, &dynamic_call_text/1)
+    }
+
+  defp dynamic_call_text({{module, name, arity}, callee, callee_arity}),
+    do: "#{Exception.format_mfa(module, name, arity)} -> ?.#{callee}/#{callee_arity || "?"}"
+
+  # DND-5633: a dynamic call judged against every exporter is an
+  # over-approximation, so the run says how many there were.
+  defp dynamic_calls_note(%{narrowed: [], fanned_out: []}), do: ""
+
+  defp dynamic_calls_note(%{narrowed: narrowed, fanned_out: fanned_out}),
+    do:
+      "; dynamic calls: #{length(fanned_out)} fanned out to every exporter, " <>
+        "#{length(narrowed)} narrowed by behaviour"
+
+  defp dynamic_calls_note(nil), do: ""
 
   defp apply_sites_json(nil), do: nil
 

@@ -96,6 +96,17 @@ defmodule Anchor.Domain.GraphRules do
     |> Enum.filter(fn {rule, selected} -> selected < min_modules(rule) end)
   end
 
+  @doc """
+  The rule module's `narrows?/2` (DND-5633), or a function that narrows
+  nothing when the module does not declare one.
+  """
+  @spec narrows(module()) :: (String.t(), String.t() -> boolean())
+  def narrows(module) do
+    if Code.ensure_loaded?(module) and function_exported?(module, :narrows?, 2),
+      do: &module.narrows?/2,
+      else: fn _base_key, _key -> false end
+  end
+
   defp declared_needs(module) do
     if Code.ensure_loaded?(module) and function_exported?(module, :needs, 0),
       do: module.needs(),

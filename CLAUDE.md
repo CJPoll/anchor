@@ -256,7 +256,15 @@ by default: a bucket and scope the caller's `calls` row lists).
 `Anchor.Domain.DynamicCalls.candidates/2`: every project module with a `def`
 of that name and arity (any arity for `nil`), behaviour or not, each judged
 as a static call; none means the call reaches no project module, and nothing
-is judged. A call with a computed function name (`{:dynamic, nil, ...}`) is
+is judged. `DynamicCalls.targets/2` narrows only on declared evidence
+(DND-5633, `Anchor.Domain.BehaviourReceiver`): a receiver parameter the
+caller's one `@spec` types as `B.t()` (`B` a project behaviour with `@type t
+:: module()` and the callback) reaches `B`'s implementers only; the summary
+counts the narrowed and fanned-out calls (`DynamicCalls.tally/1`). A port
+held in a Manager's options map gets that type through a small function with
+the spec (`Sabotage.Coverage.run_suite/2`). A rule whose key can narrow (a
+cycle) declares `narrows?/2`, so the narrower entry is a NOTE under
+`--base`, not GREW. A call with a computed function name (`{:dynamic, nil, ...}`) is
 one unresolved violation (`DynamicCalls.computed_name_message/2`), except a
 variable application
 (`kind: :apply`, receiver `:variable`: `fun.(x)`), the one closure form,

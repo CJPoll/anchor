@@ -7,6 +7,7 @@ defmodule Anchor.Managers.GraphBaselineTest do
   #
   # Sabotage record: ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
   # DND-5629 (base found by rule id): ../../sabotage_records/baseline_rename-20261103-dnd_5441_graph_rules_a.md
+  # DND-5633 (a narrowed entry): ../../sabotage_records/layering-20261103-dnd_5648_graph_followups.md
   # DND-5648 (one base-config issue): ../../sabotage_records/baseline-20261103-dnd_5648_graph_followups.md
   use ExUnit.Case, async: true
 
@@ -274,6 +275,41 @@ defmodule Anchor.Managers.GraphBaselineTest do
 
       assert report.exit_code == 1
       assert Enum.any?(messages(report), &(&1 =~ "could not read #{@path} at nosuch"))
+    end
+
+    # DND-5633: the Manager hands the rule's narrows?/2 to the judgement.
+    test "an entry narrowing one removed since REF is a NOTE, by the rule's narrows?/2", %{
+      beam: beam
+    } do
+      wider = "f|AnchorFixtures.GraphBaselineTest.User|wider"
+      expect_run([rule(%{type: :stub_finds_narrowing})], beam)
+      expect_baseline("#{@key}\n")
+      expect_base_rules("main", [rule(%{type: :stub_finds_narrowing})])
+      expect(GitBaseMock, :show, fn @root, "main", @path -> Baseline.parse("#{wider}\n") end)
+
+      report = Graph.run(request(%{base: "main"}), deps())
+
+      assert report.exit_code == 0
+      assert [%{enforcement: :report, message: message}] = report.findings
+      assert message =~ "NOTE: #{@key} in #{@path} narrows #{wider}"
+    end
+
+    test "positive control: a rule with no narrows?/2 reads the same files as GREW", %{
+      beam: beam
+    } do
+      expect_run([rule()], beam)
+      expect_baseline("#{@key}\n")
+      expect_base_rules("main", [rule()])
+
+      expect(GitBaseMock, :show, fn @root, "main", @path ->
+        Baseline.parse("f|AnchorFixtures.GraphBaselineTest.User|wider\n")
+      end)
+
+      report = Graph.run(request(%{base: "main"}), deps())
+
+      assert report.exit_code == 1
+      assert [%{enforcement: :enforce, message: message}] = report.findings
+      assert message =~ "#{@key} was added to"
     end
 
     test "without --base, git is never asked", %{beam: beam} do

@@ -20,6 +20,10 @@ defmodule Anchor.Domain.Enforcement do
       rule id no rule had at `REF` (`Failures.baseline_new_rule/4`, DND-5629:
       the base copy is found by the rule's id, `Anchor.Domain.BaselineBase`).
 
+  An entry added since `REF` that narrows one removed since it (the
+  context's optional `:narrows`, the rule's `narrows?/2`, DND-5633) is not
+  GREW: a report-only NOTE names both (`Failures.baseline_narrowed/4`).
+
   STALE and GREW take the rule's enforcement: a `report` rule reports them,
   an `enforce` rule fails on them. A finding with no key cannot be held.
   """
@@ -37,7 +41,13 @@ defmodule Anchor.Domain.Enforcement do
   @type base :: nil | :absent | {:new_rule, [String.t()]} | {:ok, [String.t()]}
 
   @typedoc "The rule, its label, its baseline path, and the `--base` ref (or nil)."
-  @type context :: %{rule: map(), label: String.t(), path: String.t(), ref: String.t() | nil}
+  @type context :: %{
+          required(:rule) => map(),
+          required(:label) => String.t(),
+          required(:path) => String.t(),
+          required(:ref) => String.t() | nil,
+          optional(:narrows) => (String.t(), String.t() -> boolean())
+        }
 
   @doc "The findings that stand and the held ones; see the moduledoc."
   @spec judge([Finding.t()], [String.t()], base(), context()) :: {[Finding.t()], [Finding.t()]}
@@ -67,9 +77,28 @@ defmodule Anchor.Domain.Enforcement do
   defp base_findings(entries, {:ok, base_entries}, context) do
     %{rule: rule, label: label, path: path, ref: ref} = context
 
+    narrows = Map.get(context, :narrows, fn _base_key, _key -> false end)
+    removed = Baseline.grew(base_entries, entries)
+
     entries
     |> Baseline.grew(base_entries)
-    |> Enum.map(&Finding.from_rule(Failures.baseline_grew(path, &1, ref), rule, label, path))
+    |> Enum.map(fn key ->
+      case Enum.find(removed, &narrows.(&1, key)) do
+        nil ->
+          Finding.from_rule(Failures.baseline_grew(path, key, ref), rule, label, path)
+
+        base_key ->
+          note =
+            Finding.from_rule(
+              Failures.baseline_narrowed(path, base_key, key, ref),
+              rule,
+              label,
+              path
+            )
+
+          %{note | enforcement: :report}
+      end
+    end)
   end
 
   # Each finding whose key is among `held_keys` (as a multiset) is held, in

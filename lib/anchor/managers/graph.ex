@@ -86,6 +86,7 @@ defmodule Anchor.Managers.Graph do
   alias Anchor.Domain.Baseline
   alias Anchor.Domain.BaselineBase
   alias Anchor.Domain.Cfa
+  alias Anchor.Domain.DynamicCalls
   alias Anchor.Domain.Enforcement
   alias Anchor.Domain.Failures
   alias Anchor.Domain.Graph
@@ -246,7 +247,8 @@ defmodule Anchor.Managers.Graph do
       |> counts(map_size(graph.modules), length(rules), length(Model.opaque(model)))
       |> Map.put(:no_core, no_core_count(graph))
       |> Map.put(:outside_root, outside_root_count(beams, request))
-      |> Map.put(:apply_sites, GraphReport.apply_sites(model.cfa)),
+      |> Map.put(:apply_sites, GraphReport.apply_sites(model.cfa))
+      |> Map.put(:dynamic_calls, DynamicCalls.tally(graph)),
       held: Enum.flat_map(ran, & &1.held),
       refused: Enum.flat_map(ran, & &1.refused)
     )
@@ -343,7 +345,9 @@ defmodule Anchor.Managers.Graph do
 
     case run_check(needs, cfa, rule, module, model, config_path) do
       {:ok, findings} ->
-        ran = ratchet(rule, findings, request, deps)
+        ran =
+          ratchet(rule, findings, request, Map.put(deps, :narrows, GraphRules.narrows(module)))
+
         %{ran | findings: floor ++ ran.findings}
 
       {:crashed, finding} ->
@@ -368,7 +372,14 @@ defmodule Anchor.Managers.Graph do
     with {:ok, entries} <- read_entries(deps.baseline_store, request.root, rule, path),
          :ok <- no_foreign(rule, path, entries),
          {:ok, base} <- base_entries(deps, request, rule) do
-      context = %{rule: rule, label: Failures.rule_label(rule), path: path, ref: ref}
+      context = %{
+        rule: rule,
+        label: Failures.rule_label(rule),
+        path: path,
+        ref: ref,
+        narrows: deps.narrows
+      }
+
       {standing, held} = Enforcement.judge(findings, entries, base, context)
       %{findings: standing, held: held, refused: []}
     else

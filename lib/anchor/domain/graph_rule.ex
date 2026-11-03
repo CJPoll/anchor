@@ -24,6 +24,15 @@ defmodule Anchor.Domain.GraphRule do
   on `Model.cfa`. A rule with no `needs/0` needs nothing, and when no rule
   that runs needs `:cfa`, the analysis is not run and `Model.cfa` is `nil`.
   `Anchor.Domain.GraphRules.needs/1` reads and checks it.
+
+  ## Narrowed keys (DND-5633)
+
+  A rule whose key names a set that can shrink (a cycle's contexts) may
+  declare `narrows?/2`: `true` when `key` is a narrowing of `base_key` (the
+  same finding, covering less). Under `--base`, an entry added since the ref
+  that narrows an entry removed since it is not growth
+  (`Anchor.Domain.Enforcement`): a report-only NOTE names both. A rule with no
+  `narrows?/2` narrows nothing.
   """
 
   @doc "The rule type this module checks (a key of RuleSchema's `@engine_by_type`, engine `:graph`)."
@@ -35,5 +44,8 @@ defmodule Anchor.Domain.GraphRule do
   @doc "The analyses this rule reads from the model (`:cfa`, `Model.cfa`); `[]` when absent."
   @callback needs() :: [:cfa]
 
-  @optional_callbacks needs: 0
+  @doc "Whether baseline key `key` is a narrowing of `base_key`; see the moduledoc."
+  @callback narrows?(base_key :: String.t(), key :: String.t()) :: boolean()
+
+  @optional_callbacks needs: 0, narrows?: 2
 end

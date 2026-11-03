@@ -9,6 +9,7 @@ defmodule Anchor.Domain.GraphReportTest do
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5630_graph_hardening.md
   # DND-5441 (held, refused, verbose):
   #   ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
+  # DND-5633 (dynamic calls): ../../sabotage_records/layering-20261103-dnd_5648_graph_followups.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.GraphReport
@@ -193,6 +194,43 @@ defmodule Anchor.Domain.GraphReportTest do
                "bound_hit" => false,
                "by_function" => %{"MyApp.X.run/1" => %{"total" => 3, "resolved" => 2, "any" => 1}}
              }
+    end
+  end
+
+  # DND-5633: an over-approximated dynamic call is counted, never silent.
+  describe "dynamic calls (DND-5633)" do
+    @dynamic %{
+      narrowed: [{{MyApp.M, :typed, 2}, :run, 1}],
+      fanned_out: [{{MyApp.L, :go, 1}, :check, 2}, {{MyApp.L, :any, 1}, :f, nil}]
+    }
+
+    test "the summary ends with the fanned-out and narrowed counts" do
+      report = GraphReport.new([], [], Map.put(@counts, :dynamic_calls, @dynamic))
+
+      assert GraphReport.summary(report) ==
+               "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations " <>
+                 "(0 report-only, 0 baselined); dynamic calls: 2 fanned out to every " <>
+                 "exporter, 1 narrowed by behaviour"
+    end
+
+    test "the JSON names each call" do
+      report = GraphReport.new([], [], Map.put(@counts, :dynamic_calls, @dynamic))
+
+      assert JSON.decode!(GraphReport.render(report, :json))["dynamic_calls"] == %{
+               "narrowed" => ["MyApp.M.typed/2 -> ?.run/1"],
+               "fanned_out" => ["MyApp.L.go/1 -> ?.check/2", "MyApp.L.any/1 -> ?.f/?"]
+             }
+    end
+
+    test "none, or no tally, says nothing" do
+      none =
+        GraphReport.new([], [], Map.put(@counts, :dynamic_calls, %{narrowed: [], fanned_out: []}))
+
+      refute GraphReport.summary(none) =~ "dynamic calls"
+      refute GraphReport.summary(GraphReport.new([], [], @counts)) =~ "dynamic calls"
+
+      assert %{"dynamic_calls" => nil} =
+               JSON.decode!(GraphReport.render(GraphReport.new([], [], @counts), :json))
     end
   end
 

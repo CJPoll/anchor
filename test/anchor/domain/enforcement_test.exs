@@ -4,6 +4,7 @@ defmodule Anchor.Domain.EnforcementTest do
   #
   # Sabotage record: ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
   # DND-5629 (a new rule id): ../../sabotage_records/baseline_rename-20261103-dnd_5441_graph_rules_a.md
+  # DND-5633 (a narrowed entry): ../../sabotage_records/layering-20261103-dnd_5648_graph_followups.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Enforcement
@@ -121,6 +122,48 @@ defmodule Anchor.Domain.EnforcementTest do
 
       assert note.message =~
                ~s|rules with a baseline at main that this config no longer has: "old_r"|
+    end
+
+    # DND-5633: a cycle that lost a context changes its key; the narrower
+    # entry replacing the removed one is a NOTE, not GREW.
+    test "an added entry narrowing a removed one is a report NOTE, not GREW" do
+      narrows = fn base_key, key -> {base_key, key} == {"r|A,B,C", "r|A,B"} end
+      context = Map.put(context(rule(), "main"), :narrows, narrows)
+
+      {[note], _held} =
+        Enforcement.judge([finding("r|A,B")], ["r|A,B"], {:ok, ["r|A,B,C"]}, context)
+
+      assert note.enforcement == :report
+      assert note.file == @path
+      assert note.message =~ "NOTE: r|A,B in #{@path} narrows r|A,B,C"
+
+      # Positive control: the same files with no narrowing are GREW.
+      {[grew], _held} =
+        Enforcement.judge(
+          [finding("r|A,B")],
+          ["r|A,B"],
+          {:ok, ["r|A,B,C"]},
+          context(rule(), "main")
+        )
+
+      assert grew.enforcement == :enforce
+      assert grew.message =~ "was added to"
+    end
+
+    test "a narrowing of an entry still there is GREW (it replaced nothing)" do
+      narrows = fn _base_key, _key -> true end
+      context = Map.put(context(rule(), "main"), :narrows, narrows)
+
+      {standing, _held} =
+        Enforcement.judge(
+          [finding("r|A,B"), finding("r|A,B,C")],
+          ["r|A,B", "r|A,B,C"],
+          {:ok, ["r|A,B,C"]},
+          context
+        )
+
+      assert [%{enforcement: :enforce, message: message}] = standing
+      assert message =~ "r|A,B was added to"
     end
 
     test "a new rule id with nothing gone says so" do

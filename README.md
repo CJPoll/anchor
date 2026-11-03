@@ -699,12 +699,24 @@ a literal module are calls too.
   of them can be the receiver, whether it declares a `@behaviour` or not.
   When no project module exports it (`Mix.shell().info(msg)`), the call
   reaches no bucket of the project, and there is nothing to judge.
+  The one narrowing is declared (DND-5633): when the receiver is a parameter
+  the function's one `@spec` types as `B.t()`, where `B` is a project module
+  with `@type t :: module()` and the function among its `@callback`s, the call
+  is judged against the modules that declare `@behaviour B` and export it.
+  A `@spec` is a declaration Dialyzer checks, not Anchor. Never on the
+  function name alone. Each run ends its summary with `; dynamic calls: <f>
+  fanned out to every exporter, <n> narrowed by behaviour`, and the JSON's
+  `dynamic_calls` names each (`"MyApp.M.run/2 -> ?.fetch/1"`).
 - A call whose function name is computed (`apply(MyApp.Repo, op, args)`,
   `mod.op_var(x)`, `&MyApp.Repo.op_var/1`) is one violation too, keyed
   `-> dynamic ?/n`: its target cannot be checked. Only applying a variable
   (`fun.(x)`) is a closure application, not judged by this rule; `apply(fun,
   args)` compiles to the same shape as `apply/3` with a computed name, so it
   is reported, and `fun.(args)` is the form that is not.
+- Under `--base`, a `context_acyclic` cycle entry the branch replaced with a
+  strict subset of its contexts (one edge of the cycle was broken) is a
+  report-only NOTE, not GREW: a narrower entry is not growth (a rule's
+  optional `narrows?/2`, DND-5633).
 - One violation per caller function and callee function, at the first such
   call's line, keyed `<id>|<Caller.f/a>|-> <Callee.g/b>` (an unresolved call
   is `-> dynamic fetch/1`). The message names both modules' bucket and

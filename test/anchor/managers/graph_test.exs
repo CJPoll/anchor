@@ -193,7 +193,8 @@ defmodule Anchor.Managers.GraphTest do
                opaque: 0,
                no_core: 0,
                outside_root: 0,
-               apply_sites: nil
+               apply_sites: nil,
+               dynamic_calls: %{narrowed: [], fanned_out: []}
              }
     end
 
@@ -346,7 +347,8 @@ defmodule Anchor.Managers.GraphTest do
                opaque: 0,
                no_core: 0,
                outside_root: 0,
-               apply_sites: nil
+               apply_sites: nil,
+               dynamic_calls: %{narrowed: [], fanned_out: []}
              }
     end
 

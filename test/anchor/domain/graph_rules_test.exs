@@ -3,6 +3,7 @@ defmodule Anchor.Domain.GraphRulesTest do
   # Pure Domain over a hand-built model.
   #
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5440_graph_runner.md
+  # Sabotage record (DND-5633): ../../sabotage_records/layering-20261103-dnd_5648_graph_followups.md
   # (needs/1, DND-5574: ../../sabotage_records/graph_runner-20261103-dnd_5574_cfa_wiring.md)
   use ExUnit.Case, async: true
 
@@ -81,6 +82,20 @@ defmodule Anchor.Domain.GraphRulesTest do
       |> List.flatten()
 
     Anchor.Domain.GraphRule in behaviours
+  end
+
+  # DND-5633: a rule's narrows?/2, or one that narrows nothing.
+  describe "narrows/1" do
+    test "a rule declaring narrows?/2 gives it" do
+      narrows = GraphRules.narrows(Anchor.Domain.GraphRules.ContextAcyclic)
+      assert narrows.("c|A,B,C", "c|A,B")
+      refute narrows.("c|A,B", "c|A,B,C")
+    end
+
+    test "a rule without it narrows nothing" do
+      narrows = GraphRules.narrows(Anchor.Domain.GraphRules.Layering)
+      refute narrows.("c|A,B,C", "c|A,B")
+    end
   end
 
   describe "select/2" do
