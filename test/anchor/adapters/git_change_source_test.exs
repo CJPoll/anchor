@@ -3,7 +3,8 @@ defmodule Anchor.Adapters.GitChangeSourceTest do
   # repository each test makes in its own tmp_dir. The commit identity is argv
   # (`-c user.name=...`), never global config.
   # Sabotage record: ../../sabotage_records/sabotage_scope-20261103-dnd_5472.md
-  # (G6: ../../sabotage_records/sabotage_scope-20261103-dnd_5519_scope_findings.md)
+  # (G6: ../../sabotage_records/sabotage_scope-20261103-dnd_5519_scope_findings.md;
+  # G7: ../../sabotage_records/sabotage_scope-20261103-dnd_5581_hardening_batch.md)
   use ExUnit.Case, async: true
 
   alias Anchor.Adapters.GitChangeSource
@@ -64,12 +65,11 @@ defmodule Anchor.Adapters.GitChangeSourceTest do
     assert diff =~ "diff --git a/lib/a.ex b/lib/a.ex"
   end
 
-  test "G6: a user's diff.submodule=log cannot change the diff format", %{tmp_dir: tmp_dir} do
-    # A submodule whose checked-out commit moved is the case `--submodule=short`
-    # exists for: with `diff.submodule=log` and no flag, git prints a
-    # `Submodule vendor/sub a..b:` line DiffHunks refuses (a false COULD NOT
-    # MEASURE). The submodule is made from a local path, so no network is
-    # touched; `protocol.file.allow=always` lets git clone from it.
+  # A repository at tmp_dir/work with a submodule at vendor/sub whose checkout
+  # moved back one commit, and a changed lib/a.ex. The submodule is made from
+  # a local path, so no network is touched; `protocol.file.allow=always` lets
+  # git clone from it.
+  defp repo_with_moved_submodule!(tmp_dir) do
     upstream = Path.join(tmp_dir, "upstream")
     root = Path.join(tmp_dir, "work")
     File.mkdir_p!(upstream)
@@ -95,11 +95,20 @@ defmodule Anchor.Adapters.GitChangeSourceTest do
     ])
 
     git!(root, ["commit", "-q", "-m", "add the submodule"])
-    git!(root, ["config", "diff.submodule", "log"])
 
     # The submodule's checkout moves back one commit, and a source file changes.
     git!(Path.join(root, "vendor/sub"), ["checkout", "-q", "HEAD~1"])
     File.write!(Path.join(root, "lib/a.ex"), "defmodule A do\n  def f, do: 2\nend\n")
+    root
+  end
+
+  test "G6: a user's diff.submodule=log cannot change the diff format", %{tmp_dir: tmp_dir} do
+    # A submodule whose checked-out commit moved is the case `--submodule=short`
+    # exists for: with `diff.submodule=log` and no flag, git prints a
+    # `Submodule vendor/sub a..b:` line DiffHunks refuses (a false COULD NOT
+    # MEASURE).
+    root = repo_with_moved_submodule!(tmp_dir)
+    git!(root, ["config", "diff.submodule", "log"])
 
     {:ok, sha} = GitChangeSource.merge_base(root, "HEAD")
     assert {:ok, diff} = GitChangeSource.diff(root, sha)
@@ -110,6 +119,28 @@ defmodule Anchor.Adapters.GitChangeSourceTest do
     assert {:ok, files} = DiffHunks.parse(diff)
     assert files |> Map.keys() |> Enum.sort() == ["lib/a.ex", "vendor/sub"]
     assert %{status: :modified, hunks: [{2, 1}]} = files["lib/a.ex"]
+  end
+
+  # DND-5582: either setting drops the submodule from a plain `git diff`
+  # without an error; `--ignore-submodules=none` overrides both.
+  for {key, value} <- [{"diff.ignoreSubmodules", "all"}, {"submodule.vendor/sub.ignore", "all"}] do
+    @tag config: {key, value}
+    test "G7: a user's #{key}=#{value} cannot hide a moved submodule", %{
+      tmp_dir: tmp_dir,
+      config: {key, value}
+    } do
+      root = repo_with_moved_submodule!(tmp_dir)
+      {:ok, sha} = GitChangeSource.merge_base(root, "HEAD")
+      git!(root, ["config", key, value])
+
+      # Positive control: the setting does hide the submodule from a plain diff.
+      refute git!(root, ["diff", "--submodule=short", sha, "--"]) =~ "vendor/sub"
+
+      assert {:ok, diff} = GitChangeSource.diff(root, sha)
+      assert diff =~ "+++ b/vendor/sub\n"
+      assert {:ok, files} = DiffHunks.parse(diff)
+      assert files |> Map.keys() |> Enum.sort() == ["lib/a.ex", "vendor/sub"]
+    end
   end
 
   test "G5: show returns a file as it was at a commit, by a path relative to root", %{

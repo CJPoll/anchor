@@ -18,10 +18,14 @@ defmodule Anchor.Adapters.GitChangeSource do
     * `git rev-parse --verify --quiet --end-of-options <ref>^{commit}`, then
       `git merge-base <sha> HEAD`;
     * `git diff --unified=0 --no-color --no-ext-diff --no-textconv --no-renames
-      --relative --submodule=short --src-prefix=a/ --dst-prefix=b/ <sha> --`
+      --relative --submodule=short --ignore-submodules=none --src-prefix=a/
+      --dst-prefix=b/ <sha> --`
       (`--relative`: paths relative to `root`, the same base `ls-files` uses;
       the submodule format and the prefixes are set so a user's
-      `diff.submodule` or `diff.noprefix` cannot change the text);
+      `diff.submodule` or `diff.noprefix` cannot change the text, and
+      `--ignore-submodules=none` so a user's `diff.ignoreSubmodules` or
+      `submodule.<name>.ignore` cannot drop a moved submodule from it,
+      DND-5582);
     * `git ls-files -z --others --exclude-standard -- *.ex`;
     * `git show <sha>:./<path>` (`./`: the path is relative to `root`, as the
       diff's are).
@@ -37,7 +41,7 @@ defmodule Anchor.Adapters.GitChangeSource do
   alias Anchor.Adapters.GitEnv
 
   @diff_args ~w(diff --unified=0 --no-color --no-ext-diff --no-textconv --no-renames --relative
-                --submodule=short --src-prefix=a/ --dst-prefix=b/)
+                --submodule=short --ignore-submodules=none --src-prefix=a/ --dst-prefix=b/)
 
   @impl Anchor.Adapters.ChangeSource
   def merge_base(root, ref) do

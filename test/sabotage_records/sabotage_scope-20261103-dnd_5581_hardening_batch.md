@@ -105,3 +105,63 @@ repository-locating variable (their own `git!` helpers clear them).
 - A mutation that leaves `alias Anchor.Adapters.GitEnv` unused does not compile (warnings are errors), so
   A and B keep the alias and take the first element of `GitEnv.env/0`, which is the old env.
 - The commit ids differ per run: the repositories are made fresh in each test's `tmp_dir`.
+
+---
+
+# `--ignore-submodules=none` pinned by G7 (DND-5582)
+
+- **Code under test:** `Anchor.Adapters.GitChangeSource.diff/2` (the `--ignore-submodules=none` entry of
+  `@diff_args`)
+- **Suite run:** per mutation, `mix test --timeout 2000 --max-cases 2
+  test/anchor/adapters/git_change_source_test.exs`, restored byte-for-byte (`cmp`) after each run.
+
+G7 is two tests, one per setting: `diff.ignoreSubmodules=all` and `submodule.vendor/sub.ignore=all`. Each
+makes G6's repository (a submodule whose checkout moved back one commit, and a changed `lib/a.ex`), sets the
+config, checks that a plain `git diff --submodule=short` no longer names `vendor/sub` (the positive control:
+the setting really hides it), and asserts the adapter's diff still has `+++ b/vendor/sub` and that
+`DiffHunks.parse/1` reads both files.
+
+## Mutations
+
+| # | Mutation | Tests that failed | Run |
+|---|---|---|---|
+| A | `@diff_args` without `--ignore-submodules=none` (the unfixed code) | G7 (both) | `11 tests, 2 failures` |
+| B | `@diff_args` says `--ignore-submodules=all` | G6, G7 (both) | `11 tests, 3 failures` |
+
+Without a mutation the file runs `11 tests, 0 failures`. Rows that stayed green: G1–G5 and `read` under both
+(no submodule); G6 under A (it sets no ignore config).
+
+## Failure strings (verbatim)
+
+### A (the same on the unfixed code, before the flag was added)
+
+```
+  1) test G7: a user's diff.ignoreSubmodules=all cannot hide a moved submodule (Anchor.Adapters.GitChangeSourceTest)
+     test/anchor/adapters/git_change_source_test.exs:127
+     Assertion with =~ failed
+     code:  assert diff =~ "+++ b/vendor/sub\n"
+     left:  "diff --git a/lib/a.ex b/lib/a.ex\nindex 2576990..ca674d3 100644\n--- a/lib/a.ex\n+++ b/lib/a.ex\n@@ -2 +2 @@ defmodule A do\n-  def f, do: 1\n+  def f, do: 2\n"
+     right: "+++ b/vendor/sub\n"
+     stacktrace:
+       test/anchor/adapters/git_change_source_test.exs:139: (test)
+
+  2) test G7: a user's submodule.vendor/sub.ignore=all cannot hide a moved submodule (Anchor.Adapters.GitChangeSourceTest)
+     test/anchor/adapters/git_change_source_test.exs:127
+     Assertion with =~ failed
+     code:  assert diff =~ "+++ b/vendor/sub\n"
+     left:  "diff --git a/lib/a.ex b/lib/a.ex\nindex 2576990..ca674d3 100644\n--- a/lib/a.ex\n+++ b/lib/a.ex\n@@ -2 +2 @@ defmodule A do\n-  def f, do: 1\n+  def f, do: 2\n"
+     right: "+++ b/vendor/sub\n"
+     stacktrace:
+       test/anchor/adapters/git_change_source_test.exs:139: (test)
+```
+
+### B
+
+```
+  1) test G7: a user's diff.ignoreSubmodules=all cannot hide a moved submodule (Anchor.Adapters.GitChangeSourceTest)
+     test/anchor/adapters/git_change_source_test.exs:127
+     Assertion with =~ failed
+     code:  assert diff =~ "+++ b/vendor/sub\n"
+     left:  "diff --git a/lib/a.ex b/lib/a.ex\nindex 2576990..ca674d3 100644\n--- a/lib/a.ex\n+++ b/lib/a.ex\n@@ -2 +2 @@ defmodule A do\n-  def f, do: 1\n+  def f, do: 2\n"
+     right: "+++ b/vendor/sub\n"
+```
