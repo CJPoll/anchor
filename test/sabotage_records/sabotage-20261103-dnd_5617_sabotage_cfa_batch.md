@@ -42,3 +42,30 @@ Positive controls: report Z4 (one mutant generated: no such line) and manager
 M3 (a function with mutants, dry run) pass on S1, S2, S3, S6, S7, S9 and S10,
 and both fail under S4. M3 also asserts the counts, so it fails under U1, S5
 and S8, where `generated` or `no_mutant` is wrong.
+
+## DND-5618 — the time bound tested with an injected clock and command runner
+
+- **Code under test:** `Anchor.Adapters.TestRunner` (`execute/4`: the
+  `timeout` argv, the new `:clock` and `:command_runner` options),
+  `Anchor.Domain.Sabotage.TestRun` (`status/5`, `bound_reached?/1`: the
+  exit-137 rule of the sabotage contract's 2026-11-03 Later block)
+- **Suite run:** `mix test test/anchor/adapters/test_runner_test.exs --only
+  "describe:the time bound with an injected clock and command runner
+  (DND-5618)" --timeout 2000 --max-cases 2` (5 tests, 12 excluded; green after
+  the fix and after every row). No row runs a real `timeout` or sleeps: the
+  fake runner returns a canned exit and the clock returns queued readings.
+
+| # | Mutation | Tests failed | First failure, verbatim |
+|---|---|---|---|
+| U2 | the unfixed adapter (it ignores `:clock` and `:command_runner`, so it runs the real `timeout` on a command that does not exist) | 5 | K4 `code:  assert {:ok, %TestRun{status: :timeout, exit_code: 137} = run} = run_fake(137, dir, [])` `exit_code: 127`; K1 `code: assert_received {:cmd, timeout, args, cmd_opts}` (also K2, K3, K5) |
+| T1 | `--kill-after` ignores the grace period given (always 10) | 1 | K1 `code:  assert args ==` `left:  ["--kill-after=10", "30", "anchor-fake-never-run", "test",` |
+| T2 | the bound before `--kill-after` in the argv | 2 | K2 `code: assert_received {:cmd, _timeout, ["--kill-after=10", "30" \| _rest], _cmd_opts}` (also K1) |
+| T3 | the bound is reached only past it (`>` for `>=`) | 1 | K4 `code:  assert {:ok, %TestRun{status: :timeout, exit_code: 137} = run} = run_fake(137, dir, [])` `status: :crashed,` |
+| T4 | every 137 is a crash (DND-5573's superseded text) | 1 | K4, same `code:`, `status: :crashed,` |
+| T5 | every 137 is a timeout | 1 | K5 `code:  assert {:ok, %TestRun{status: :crashed, exit_code: 137} = run} = run_fake(137, dir, [])` `status: :timeout,` |
+| T6 | the elapsed time is not measured (always 0) | 1 | K4, same `code:`, `status: :crashed,` |
+| T7 | a 124 below the bound is a crash (124 judged by the clock) | 1 | K3 `code:  assert {:ok, %TestRun{status: :timeout, exit_code: 124} = run} = run_fake(124, dir, [])` `status: :crashed,` |
+
+The wall-clock rows 5 and 7 of the same file (the real `timeout` binary on a
+hanging and a stubborn fake command) are kept: they are the only check that
+the argv shape works with coreutils `timeout` itself.

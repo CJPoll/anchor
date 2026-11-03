@@ -4,6 +4,7 @@ defmodule Anchor.Adapters.TestRunnerTest do
   # The time bound is the `timeout` binary's, never a sleep in the test.
   # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5473_sabotage_run.md
   # Sabotage record (DND-5570): ../../sabotage_records/sabotage-20261103-dnd_5570_sabotage_hardening.md
+  # Sabotage record (DND-5618): ../../sabotage_records/sabotage-20261103-dnd_5617_sabotage_cfa_batch.md
   use ExUnit.Case, async: true
 
   alias Anchor.Adapters.TestRunner
@@ -116,5 +117,91 @@ defmodule Anchor.Adapters.TestRunnerTest do
     assert head =~
              "test/a_test.exs test/b_test.exs --formatter Anchor.Sabotage.ExUnitFormatter " <>
                "--formatter ExUnit.CLIFormatter"
+  end
+
+  describe "the time bound with an injected clock and command runner (DND-5618)" do
+    # No real timeout, no sleep: the command runner is a fake that reports
+    # its call and returns a canned exit; the clock returns the readings the
+    # test queued, in order. The command named is never run.
+    @argv ["anchor-fake-never-run", "test"]
+
+    defp tick(readings), do: Enum.each(readings, &send(self(), {:clock, &1}))
+
+    defp clock do
+      receive do
+        {:clock, ms} -> ms
+      after
+        0 -> flunk("the clock was read more often than the test queued readings")
+      end
+    end
+
+    defp fake_runner(code) do
+      test = self()
+
+      fn executable, args, cmd_opts ->
+        send(test, {:cmd, executable, args, cmd_opts})
+        {Enum.into(["canned output\n"], Keyword.fetch!(cmd_opts, :into)), code}
+      end
+    end
+
+    defp run_fake(code, dir, opts) do
+      TestRunner.run(
+        @argv,
+        ["test/calc_test.exs"],
+        [
+          cd: dir,
+          results_path: Path.join(dir, "out/results.bin"),
+          timeout_seconds: 30,
+          clock: &clock/0,
+          command_runner: fake_runner(code)
+        ] ++ opts
+      )
+    end
+
+    test "K1: --kill-after and the bound lead the argv given to `timeout`", %{tmp_dir: dir} do
+      tick([1_000, 1_500])
+
+      assert {:ok, %TestRun{}} = run_fake(0, dir, kill_after_seconds: 7)
+
+      assert_received {:cmd, timeout, args, cmd_opts}
+      assert Path.basename(timeout) == "timeout"
+
+      assert args ==
+               ["--kill-after=7", "30", "anchor-fake-never-run", "test", "test/calc_test.exs"] ++
+                 ~w(--formatter Anchor.Sabotage.ExUnitFormatter --formatter ExUnit.CLIFormatter)
+
+      assert cmd_opts[:cd] == dir
+      assert {"MIX_ENV", "test"} in cmd_opts[:env]
+    end
+
+    test "K2: with no grace period given, --kill-after is 10", %{tmp_dir: dir} do
+      tick([0, 10])
+
+      assert {:ok, %TestRun{}} = run_fake(0, dir, [])
+      assert_received {:cmd, _timeout, ["--kill-after=10", "30" | _rest], _cmd_opts}
+    end
+
+    test "K3: exit 124 is a timeout, whatever the clock says", %{tmp_dir: dir} do
+      tick([0, 5])
+
+      assert {:ok, %TestRun{status: :timeout, exit_code: 124} = run} = run_fake(124, dir, [])
+      assert Outcome.classify(run) == {:timeout, ["(timeout)"]}
+    end
+
+    test "K4: exit 137 with the measured time at the bound is a timeout (the KILL after the grace)",
+         %{tmp_dir: dir} do
+      tick([2_000, 32_000])
+
+      assert {:ok, %TestRun{status: :timeout, exit_code: 137} = run} = run_fake(137, dir, [])
+      assert Outcome.classify(run) == {:timeout, ["(timeout)"]}
+    end
+
+    test "K5: exit 137 one millisecond below the bound is a crash, killed by signal 9",
+         %{tmp_dir: dir} do
+      tick([2_000, 31_999])
+
+      assert {:ok, %TestRun{status: :crashed, exit_code: 137} = run} = run_fake(137, dir, [])
+      assert Outcome.reason(run) == "test run crashed: killed by signal 9 (exit 137)"
+    end
   end
 end
