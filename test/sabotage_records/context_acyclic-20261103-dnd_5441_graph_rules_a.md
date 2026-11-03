@@ -21,7 +21,10 @@ table and the sections after it are that run. A mutation whose source text the
 fixes changed was re-anchored to the same defect in the new code. A row marked
 "regression" is the unfixed code itself, not a mutation: its block is quoted
 from the run that showed it red before the fix, as the fix commit records it.
-The checkout's absolute path in the output reads `<worktree>`.
+The checkout's absolute path in the output reads `<worktree>`. Each run
+forced compilation (`mix test --force`, and a write never in the same second
+as the last): a first pass of this re-run measured BL-C on BL-B's stale beam,
+which the critic caught from its verbatim output.
 
 | # | Mutation | Tests run | Result | Failing tests |
 |---|---|---|---|---|
@@ -189,18 +192,7 @@ Run summary: `6 tests, 1 failure`
 Run summary: `16 tests, 5 failures`
 
 ```text
-  1) test check/2 the rule reads the calls of the modules it selects (Anchor.Domain.GraphRules.ContextAcyclicTest)
-     test/anchor/domain/graph_rules/context_acyclic_test.exs:117
-     ** (Enum.EmptyError) empty error
-     code: assert ContextAcyclic.check(cycle, %{@rule | paths: ["lib/a.ex"]}) == []
-     stacktrace:
-       (elixir 1.19.4) lib/enum.ex:2139: anonymous fn/0 in Enum.min_by/2
-       (anchor 0.1.0) lib/anchor/domain/graph_rules/context_acyclic.ex:97: Anchor.Domain.GraphRules.ContextAcyclic.violation/3
-       (elixir 1.19.4) lib/enum.ex:1688: Enum."-map/2-lists^map/1-1-"/2
-       (anchor 0.1.0) lib/anchor/domain/graph_rules/context_acyclic.ex:58: Anchor.Domain.GraphRules.ContextAcyclic.check/2
-       test/anchor/domain/graph_rules/context_acyclic_test.exs:120: (test)
-
-  2) test check/2 an acyclic chain is none; closing it is one (Anchor.Domain.GraphRules.ContextAcyclicTest)
+  1) test check/2 an acyclic chain is none; closing it is one (Anchor.Domain.GraphRules.ContextAcyclicTest)
      test/anchor/domain/graph_rules/context_acyclic_test.exs:81
      ** (Enum.EmptyError) empty error
      code: assert ContextAcyclic.check(model(chain), @rule) == []
@@ -211,7 +203,7 @@ Run summary: `16 tests, 5 failures`
        (anchor 0.1.0) lib/anchor/domain/graph_rules/context_acyclic.ex:58: Anchor.Domain.GraphRules.ContextAcyclic.check/2
        test/anchor/domain/graph_rules/context_acyclic_test.exs:84: (test)
 
-  3) test check/2 a context calling itself is not a cycle (Anchor.Domain.GraphRules.ContextAcyclicTest)
+  2) test check/2 a context calling itself is not a cycle (Anchor.Domain.GraphRules.ContextAcyclicTest)
      test/anchor/domain/graph_rules/context_acyclic_test.exs:101
      ** (Enum.EmptyError) empty error
      code: assert ContextAcyclic.check(model, @rule) == []
@@ -222,7 +214,7 @@ Run summary: `16 tests, 5 failures`
        (anchor 0.1.0) lib/anchor/domain/graph_rules/context_acyclic.ex:58: Anchor.Domain.GraphRules.ContextAcyclic.check/2
        test/anchor/domain/graph_rules/context_acyclic_test.exs:114: (test)
 
-  4) test check/2 a triangle with a tail D -> A is one violation on A, B, C; D is not in it (Anchor.Domain.GraphRules.ContextAcyclicTest)
+  3) test check/2 a triangle with a tail D -> A is one violation on A, B, C; D is not in it (Anchor.Domain.GraphRules.ContextAcyclicTest)
      test/anchor/domain/graph_rules/context_acyclic_test.exs:71
      ** (Enum.EmptyError) empty error
      code: assert [v] = ContextAcyclic.check(model(edges), @rule)
@@ -233,6 +225,17 @@ Run summary: `16 tests, 5 failures`
        (elixir 1.19.4) lib/enum.ex:1688: Enum."-map/2-lists^map/1-1-"/2
        (anchor 0.1.0) lib/anchor/domain/graph_rules/context_acyclic.ex:58: Anchor.Domain.GraphRules.ContextAcyclic.check/2
        test/anchor/domain/graph_rules/context_acyclic_test.exs:74: (test)
+
+  4) test check/2 the rule reads the calls of the modules it selects (Anchor.Domain.GraphRules.ContextAcyclicTest)
+     test/anchor/domain/graph_rules/context_acyclic_test.exs:117
+     ** (Enum.EmptyError) empty error
+     code: assert ContextAcyclic.check(cycle, %{@rule | paths: ["lib/a.ex"]}) == []
+     stacktrace:
+       (elixir 1.19.4) lib/enum.ex:2139: anonymous fn/0 in Enum.min_by/2
+       (anchor 0.1.0) lib/anchor/domain/graph_rules/context_acyclic.ex:97: Anchor.Domain.GraphRules.ContextAcyclic.violation/3
+       (elixir 1.19.4) lib/enum.ex:1688: Enum."-map/2-lists^map/1-1-"/2
+       (anchor 0.1.0) lib/anchor/domain/graph_rules/context_acyclic.ex:58: Anchor.Domain.GraphRules.ContextAcyclic.check/2
+       test/anchor/domain/graph_rules/context_acyclic_test.exs:120: (test)
 
   5) test context_acyclic: CycleB without its call back is none (Anchor.Integration.GraphCanaryTest)
      test/anchor/integration/graph_canary_test.exs:175
@@ -267,16 +270,7 @@ Run summary: `16 tests, 5 failures`
 Run summary: `10 tests, 3 failures`
 
 ```text
-  1) test check/2 a triangle with a tail D -> A is one violation on A, B, C; D is not in it (Anchor.Domain.GraphRules.ContextAcyclicTest)
-     test/anchor/domain/graph_rules/context_acyclic_test.exs:71
-     Assertion with =~ failed
-     code:  assert v.message =~ "invert A -> B (its 2 calls are the fewest)"
-     left:  "contexts A, B, C form a cycle: A -> B (A.M.f/0 calls B.M.g/0), B -> C (B.M.f/0 calls C.M.g/0), C -> A (C.M.f/0 calls A.M.g/0). Fix: invert C -> A (its 2 calls are the fewest): have C publish an event A subscribes to, or declare the function C needs in an interface C owns and have A implement it."
-     right: "invert A -> B (its 2 calls are the fewest)"
-     stacktrace:
-       test/anchor/domain/graph_rules/context_acyclic_test.exs:78: (test)
-
-  2) test check/2 A <-> B is one violation listing both edges; the edge with fewer calls is inverted (Anchor.Domain.GraphRules.ContextAcyclicTest)
+  1) test check/2 A <-> B is one violation listing both edges; the edge with fewer calls is inverted (Anchor.Domain.GraphRules.ContextAcyclicTest)
      test/anchor/domain/graph_rules/context_acyclic_test.exs:56
      Assertion with == failed
      code:  assert v.filename == "lib/b.ex"
@@ -284,6 +278,15 @@ Run summary: `10 tests, 3 failures`
      right: "lib/b.ex"
      stacktrace:
        test/anchor/domain/graph_rules/context_acyclic_test.exs:60: (test)
+
+  2) test check/2 a triangle with a tail D -> A is one violation on A, B, C; D is not in it (Anchor.Domain.GraphRules.ContextAcyclicTest)
+     test/anchor/domain/graph_rules/context_acyclic_test.exs:71
+     Assertion with =~ failed
+     code:  assert v.message =~ "invert A -> B (its 2 calls are the fewest)"
+     left:  "contexts A, B, C form a cycle: A -> B (A.M.f/0 calls B.M.g/0), B -> C (B.M.f/0 calls C.M.g/0), C -> A (C.M.f/0 calls A.M.g/0). Fix: invert C -> A (its 2 calls are the fewest): have C publish an event A subscribes to, or declare the function C needs in an interface C owns and have A implement it."
+     right: "invert A -> B (its 2 calls are the fewest)"
+     stacktrace:
+       test/anchor/domain/graph_rules/context_acyclic_test.exs:78: (test)
 
   3) test check/2 a tie on calls inverts the lexically first edge (Anchor.Domain.GraphRules.ContextAcyclicTest)
      test/anchor/domain/graph_rules/context_acyclic_test.exs:95
@@ -339,14 +342,14 @@ Run summary: `10 tests, 1 failure`
 Run summary: `16 tests, 5 failures`
 
 ```text
-  1) test check/2 A <-> B is one violation listing both edges; the edge with fewer calls is inverted (Anchor.Domain.GraphRules.ContextAcyclicTest)
-     test/anchor/domain/graph_rules/context_acyclic_test.exs:56
+  1) test check/2 a triangle with a tail D -> A is one violation on A, B, C; D is not in it (Anchor.Domain.GraphRules.ContextAcyclicTest)
+     test/anchor/domain/graph_rules/context_acyclic_test.exs:71
      Assertion with == failed
-     code:  assert v.key == "context_acyclic|A,B"
-     left:  "context_acyclic|B,A"
-     right: "context_acyclic|A,B"
+     code:  assert v.key == "context_acyclic|A,B,C"
+     left:  "context_acyclic|C,B,A"
+     right: "context_acyclic|A,B,C"
      stacktrace:
-       test/anchor/domain/graph_rules/context_acyclic_test.exs:59: (test)
+       test/anchor/domain/graph_rules/context_acyclic_test.exs:75: (test)
 
   2) test check/2 two disjoint cycles are two violations, in context order (Anchor.Domain.GraphRules.ContextAcyclicTest)
      test/anchor/domain/graph_rules/context_acyclic_test.exs:88
@@ -379,14 +382,14 @@ Run summary: `16 tests, 5 failures`
      stacktrace:
        test/anchor/domain/graph_rules/context_acyclic_test.exs:91: (test)
 
-  3) test check/2 a triangle with a tail D -> A is one violation on A, B, C; D is not in it (Anchor.Domain.GraphRules.ContextAcyclicTest)
-     test/anchor/domain/graph_rules/context_acyclic_test.exs:71
+  3) test check/2 A <-> B is one violation listing both edges; the edge with fewer calls is inverted (Anchor.Domain.GraphRules.ContextAcyclicTest)
+     test/anchor/domain/graph_rules/context_acyclic_test.exs:56
      Assertion with == failed
-     code:  assert v.key == "context_acyclic|A,B,C"
-     left:  "context_acyclic|C,B,A"
-     right: "context_acyclic|A,B,C"
+     code:  assert v.key == "context_acyclic|A,B"
+     left:  "context_acyclic|B,A"
+     right: "context_acyclic|A,B"
      stacktrace:
-       test/anchor/domain/graph_rules/context_acyclic_test.exs:75: (test)
+       test/anchor/domain/graph_rules/context_acyclic_test.exs:59: (test)
 
   4) test check/2 with an id, the key starts with it (Anchor.Domain.GraphRules.ContextAcyclicTest)
      test/anchor/domain/graph_rules/context_acyclic_test.exs:124
@@ -487,16 +490,7 @@ Run summary: `14 tests, 3 failures`
      stacktrace:
        test/anchor/domain/graph_rules_test.exs:36: (test)
 
-  2) test context_acyclic (DND-5445): CycleA and CycleB calling each other give one finding (Anchor.Integration.GraphCanaryTest)
-     test/anchor/integration/graph_canary_test.exs:159
-     Assertion with == failed
-     code:  assert report.exit_code == 1
-     left:  0
-     right: 1
-     stacktrace:
-       test/anchor/integration/graph_canary_test.exs:164: (test)
-
-  3) test the compliant canary modules give no findings, and the summary counts the tree (Anchor.Integration.GraphCanaryTest)
+  2) test the compliant canary modules give no findings, and the summary counts the tree (Anchor.Integration.GraphCanaryTest)
      test/anchor/integration/graph_canary_test.exs:76
      Assertion with == failed
      code:  assert GraphReport.summary(report) ==
@@ -505,6 +499,15 @@ Run summary: `14 tests, 3 failures`
      right: "anchor.graph: 6 modules in 1 apps, 2 rules, 0 violations (0 report-only, 0 baselined)"
      stacktrace:
        test/anchor/integration/graph_canary_test.exs:83: (test)
+
+  3) test context_acyclic (DND-5445): CycleA and CycleB calling each other give one finding (Anchor.Integration.GraphCanaryTest)
+     test/anchor/integration/graph_canary_test.exs:159
+     Assertion with == failed
+     code:  assert report.exit_code == 1
+     left:  0
+     right: 1
+     stacktrace:
+       test/anchor/integration/graph_canary_test.exs:164: (test)
 ```
 
 ## CG-F — a closure application is listed as unresolved
