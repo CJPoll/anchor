@@ -160,6 +160,12 @@ strengthened to a warnings-only output and C32 re-run red.
 | C42 | a raise inside the run leaves the lock held | 1: Manager "a raise inside the run still releases it" | `code:  assert calls() == [:release_lock]` `left:  []` |
 | C43 | a dead holder's lock is never taken over | 1: SourcePatcher "a dead or unnamed holder's lock is taken over" | `code:  assert SourcePatcher.take_lock(root) == :ok` `left:  {:error, {:held, %{os_pid: 2147483646, started: "1"}}}` |
 | C44 | the lock never records its holder | 3: Journal lock round-trip; SourcePatcher lock rows | `code:  assert Journal.decode_lock(Journal.encode_lock(owner)) == owner` `left:  nil` |
+| C45 | under the takeover lock, a live holder's lock is taken over (critic round 4) | 1: SourcePatcher "the run lock: ... refused while held" | `code:  assert SourcePatcher.take_lock(root) == {:error, {:held, me}}` `left:  :ok` |
+| C46 | a takeover skips the takeover lock (the round-4 race) | 1: SourcePatcher "a takeover goes through the takeover lock" | `code:  assert SourcePatcher.take_lock(root) == {:error, {:held, me}}` `left:  :ok` |
+| C47 | the takeover lock is left behind | 2: SourcePatcher "a dead or unnamed holder's lock is taken over", the run-lock row | `code:  assert File.ls!(Path.dirname(lock)) == []` `left:  ["anchor-sabotage.lock.takeover"]` |
+| C48 | a dead takeover-lock holder read as a live run | 1: SourcePatcher "a takeover goes through the takeover lock" | `left:  {:error, {:held, %{os_pid: 2147483646, started: "1"}}}` `right: {:error, {:stuck, "_build/anchor-sabotage.lock.takeover"}}` |
+| C49 | `release_lock/1` removes a lock another run holds | 1: SourcePatcher "a lock another run holds is never released" | `** (File.Error) could not read file ".../_build/anchor-sabotage.lock"` `code: assert File.read!(lock) == theirs` |
+| C50 | `{:stuck, path}` worded as a live holder | 1: Manager run-lock "held by a run that names no pid, or not takeable" | `code:  assert stuck ==` |
 
 From C39 on, `mutate.sh` touches each file it puts back, so the next row
 recompiles it (a restored file's mtime is older than its mutant's, and Mix

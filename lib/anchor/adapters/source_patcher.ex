@@ -9,11 +9,11 @@ defmodule Anchor.Adapters.SourcePatcher do
   The journal carries its owner (this OS process's pid and start time, from
   `/proc`); `owner_alive?/1` tells a live run's journal from a dead run's.
   The run lock is linked into place from a temp file already holding its
-  owner, so it is never seen empty; a lock whose holder is dead, or names
-  none, is removed and taken again (once). Two runs that find the same dead
-  holder's lock at the same moment can both remove it; the second link then
-  fails and that run reads the first as the live holder. Where there is no
-  `/proc` the owner is `nil` and the lock does not protect. `touch_ahead/1` sets the mtime to one
+  owner, so it is never seen empty. A lock whose holder is dead, or names
+  none, is taken over under a second lock (`<lock>.takeover`), so two runs
+  can never both remove it (see `take_over/2`); `release_lock/1` removes only
+  this run's own lock. Where there is no `/proc` the owner is `nil` and the
+  lock does not protect. `touch_ahead/1` sets the mtime to one
   second past the later of now and the file's current mtime: always forward,
   so a restore in the same second as its mutant still recompiles (Mix compares
   the mtime and the size before it reads the content).
@@ -51,53 +51,109 @@ defmodule Anchor.Adapters.SourcePatcher do
     me = owner(System.pid())
 
     with :ok <- File.mkdir_p(Path.dirname(path)) do
-      claim(path, me, 1)
+      case link_owned(path, me) do
+        {:error, :eexist} -> take_over(path, me)
+        result -> result
+      end
     end
   end
 
+  # Removes the lock only while it is this run's: a lock another run holds
+  # is never touched.
   @impl Anchor.Adapters.SourceMutation
   def release_lock(root) do
-    case File.rm(Path.join(root, Journal.lock_path())) do
-      :ok -> :ok
+    path = Path.join(root, Journal.lock_path())
+
+    case read_holder(path) do
+      {:ok, holder} -> if holder == owner(System.pid()), do: removed(path), else: :ok
       {:error, :enoent} -> :ok
-      error -> error
+      {:error, posix} -> {:error, posix}
     end
   end
 
-  # The lock is a hard link to a temp file holding the owner: `File.ln/2`
-  # fails `:eexist` when a lock is there, and never leaves an empty one.
-  defp claim(path, me, retries) do
+  # A hard link to a temp file already holding the owner: `File.ln/2` fails
+  # `:eexist` when the path is taken, and the path is never seen empty.
+  defp link_owned(path, me) do
     tmp = "#{path}.#{System.pid()}.anchor-tmp"
 
     with :ok <- File.write(tmp, Journal.encode_lock(me), [:binary]) do
       linked = File.ln(tmp, path)
       _removed = File.rm(tmp)
-      claimed(linked, path, me, retries)
+      linked
     end
   end
 
-  defp claimed(:ok, _path, _me, _retries), do: :ok
+  # A lock is there. Whether its holder is alive is decided only under the
+  # takeover lock, which one run holds at a time: the holder is read, a dead
+  # one's lock removed and this run's linked, with no other run able to
+  # remove or replace the lock in between (a plain link cannot land while a
+  # lock is there, and only the takeover lock's holder removes one). A run
+  # that finds the takeover lock held refuses; one whose holder is dead (a
+  # run killed in those few lines) is `{:stuck, path}`, left for a person.
+  defp take_over(path, me) do
+    mutex = path <> ".takeover"
 
-  defp claimed({:error, :eexist}, path, me, retries) do
-    case File.read(path) do
-      {:ok, bytes} -> holder(Journal.decode_lock(bytes), path, me, retries)
-      {:error, :enoent} when retries > 0 -> claim(path, me, retries - 1)
-      {:error, :enoent} -> {:error, {:held, nil}}
-      {:error, posix} -> {:error, posix}
+    case link_owned(mutex, me) do
+      :ok ->
+        result = under_takeover(path, me)
+        _released = File.rm(mutex)
+        result
+
+      {:error, :eexist} ->
+        takeover_held(mutex)
+
+      error ->
+        error
     end
   end
 
-  defp claimed({:error, posix}, _path, _me, _retries), do: {:error, posix}
+  defp under_takeover(path, me) do
+    case read_holder(path) do
+      {:ok, holder} ->
+        if owner_alive?(holder),
+          do: {:error, {:held, holder}},
+          else: with(:ok <- removed(path), do: link_or_held(path, me))
 
-  defp holder(owner, path, me, retries) do
-    cond do
-      owner_alive?(owner) -> {:error, {:held, owner}}
-      retries == 0 -> {:error, {:held, owner}}
-      true -> with :ok <- stale_removed(path), do: claim(path, me, retries - 1)
+      {:error, :enoent} ->
+        link_or_held(path, me)
+
+      {:error, posix} ->
+        {:error, posix}
     end
   end
 
-  defp stale_removed(path) do
+  # A run that linked by the plain path after the dead lock went is live.
+  defp link_or_held(path, me) do
+    case link_owned(path, me) do
+      {:error, :eexist} -> held_now(path)
+      result -> result
+    end
+  end
+
+  defp held_now(path) do
+    case read_holder(path) do
+      {:ok, holder} -> {:error, {:held, holder}}
+      {:error, _posix} -> {:error, {:held, nil}}
+    end
+  end
+
+  defp takeover_held(mutex) do
+    case read_holder(mutex) do
+      {:ok, holder} ->
+        if owner_alive?(holder),
+          do: {:error, {:held, holder}},
+          else: {:error, {:stuck, Path.join("_build", Path.basename(mutex))}}
+
+      {:error, _gone} ->
+        {:error, {:held, nil}}
+    end
+  end
+
+  defp read_holder(path) do
+    with {:ok, bytes} <- File.read(path), do: {:ok, Journal.decode_lock(bytes)}
+  end
+
+  defp removed(path) do
     case File.rm(path) do
       {:error, :enoent} -> :ok
       result -> result

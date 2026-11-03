@@ -63,7 +63,44 @@ defmodule Anchor.Adapters.SourcePatcherTest do
     assert SourcePatcher.release_lock(root) == :ok
     refute File.exists?(lock)
     assert SourcePatcher.release_lock(root) == :ok
-    assert Path.wildcard(Path.join(root, "_build/*anchor-tmp")) == []
+    assert File.ls!(Path.join(root, "_build")) == []
+  end
+
+  test "a lock another run holds is never released by this one", %{tmp_dir: root} do
+    lock = Path.join(root, "_build/anchor-sabotage.lock")
+    File.mkdir_p!(Path.dirname(lock))
+    theirs = Journal.encode_lock(%{os_pid: 2_147_483_646, started: "1"})
+    File.write!(lock, theirs)
+
+    assert SourcePatcher.release_lock(root) == :ok
+    assert File.read!(lock) == theirs
+  end
+
+  test "a takeover goes through the takeover lock: held by a live run, the dead lock is left",
+       %{tmp_dir: root} do
+    lock = Path.join(root, "_build/anchor-sabotage.lock")
+    mutex = lock <> ".takeover"
+    File.mkdir_p!(Path.dirname(lock))
+    dead = Journal.encode_lock(%{os_pid: 2_147_483_646, started: "1"})
+    File.write!(lock, dead)
+
+    # The takeover lock names this (live) process: another run is mid-takeover.
+    assert SourcePatcher.take_lock(root) == :ok
+    me = Journal.decode_lock(File.read!(lock))
+    assert SourcePatcher.release_lock(root) == :ok
+
+    File.write!(lock, dead)
+    File.write!(mutex, Journal.encode_lock(me))
+
+    assert SourcePatcher.take_lock(root) == {:error, {:held, me}}
+    assert File.read!(lock) == dead
+
+    File.write!(mutex, dead)
+
+    assert SourcePatcher.take_lock(root) ==
+             {:error, {:stuck, "_build/anchor-sabotage.lock.takeover"}}
+
+    assert File.read!(lock) == dead
   end
 
   test "a dead or unnamed holder's lock is taken over", %{tmp_dir: root} do
@@ -80,6 +117,7 @@ defmodule Anchor.Adapters.SourcePatcherTest do
       assert %{os_pid: pid} = Journal.decode_lock(File.read!(lock))
       assert Integer.to_string(pid) == System.pid()
       assert SourcePatcher.release_lock(root) == :ok
+      assert File.ls!(Path.dirname(lock)) == []
     end
   end
 

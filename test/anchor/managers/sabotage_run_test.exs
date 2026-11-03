@@ -620,6 +620,17 @@ defmodule Anchor.Managers.SabotageRunTest do
       assert %{refusal: {2, held}} = Sabotage.run(@facts, @opts)
       assert held =~ "another sabotage run holds _build/anchor-sabotage.lock; nothing was touched"
 
+      expect(SourceMutationMock, :take_lock, fn @root ->
+        {:error, {:stuck, "_build/anchor-sabotage.lock.takeover"}}
+      end)
+
+      assert %{refusal: {2, stuck}} = Sabotage.run(@facts, @opts)
+
+      assert stuck ==
+               "a run was killed while taking over _build/anchor-sabotage.lock, and left " <>
+                 "_build/anchor-sabotage.lock.takeover; nothing was touched. Fix: check no " <>
+                 "sabotage run is going, delete _build/anchor-sabotage.lock.takeover, then rerun"
+
       expect(SourceMutationMock, :take_lock, fn @root -> {:error, :eacces} end)
       assert %{refusal: {2, eacces}} = Sabotage.run(@facts, @opts)
 

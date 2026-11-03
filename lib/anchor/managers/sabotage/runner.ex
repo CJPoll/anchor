@@ -123,6 +123,9 @@ defmodule Anchor.Managers.Sabotage.Runner do
       {:error, {:held, owner}} ->
         %{run | refusal: {2, lock_held(owner)}}
 
+      {:error, {:stuck, path}} ->
+        %{run | refusal: {2, lock_stuck(path)}}
+
       {:error, posix} ->
         %{run | refusal: {2, lock_not_taken(posix)}}
     end
@@ -151,6 +154,11 @@ defmodule Anchor.Managers.Sabotage.Runner do
     do:
       "another sabotage run (OS pid #{pid}) is running in this project; nothing was " <>
         "touched. Fix: let that run finish, then rerun"
+
+  defp lock_stuck(path),
+    do:
+      "a run was killed while taking over #{Journal.lock_path()}, and left #{path}; " <>
+        "nothing was touched. Fix: check no sabotage run is going, delete #{path}, then rerun"
 
   defp lock_not_taken(posix),
     do:

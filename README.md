@@ -672,7 +672,9 @@ How a run goes:
    pid and `/proc` start time) for its whole length, `restore` included: while
    a live run holds it a second run refuses, exit 2, and touches nothing, so
    two runs never share the journal, the results file or `_build`. A killed
-   run's lock is taken over. Linux only: with no `/proc` the lock and the
+   run's lock is taken over, one run at a time (under
+   `_build/anchor-sabotage.lock.takeover`; a run killed in that step leaves it,
+   and the next run refuses, exit 2, naming it to delete). Linux only: with no `/proc` the lock and the
    journal's owner name no process, and protect nothing.
 1. A journal left by a killed run (`.anchor/sabotage/in-flight.json`) is dealt
    with first: the file still holding the mutant is restored (and the run says
