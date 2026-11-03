@@ -182,22 +182,6 @@ defmodule Anchor.Domain.FailuresGraphTest do
        [
          "could not write the graph artifact under _build/dev/anchor (:eacces)",
          "Fix: make _build/dev/anchor writable (_build/dev/anchor is Mix's build path joined with anchor)."
-       ]},
-      {"graph_all_outside_root",
-       Failures.graph_all_outside_root(3, "/proj", ["_build/dev/lib/app/ebin"]),
-       "_build/dev/lib/app/ebin",
-       [
-         "COULD NOT MEASURE: read 3 modules from _build/dev/lib/app/ebin",
-         "every one has a source file outside the project root /proj",
-         "Fix: run mix anchor.graph from the project root"
-       ]},
-      {"graph_module_outside_root",
-       Failures.graph_module_outside_root(MyApp.Shared, "/shared/lib/shared.ex", "/proj"),
-       "/shared/lib/shared.ex",
-       [
-         "MyApp.Shared was compiled from /shared/lib/shared.ex, outside the project root /proj",
-         "left out of the graph and no rule judged it",
-         "Fix: move its source under /proj"
        ]}
     ]
   end

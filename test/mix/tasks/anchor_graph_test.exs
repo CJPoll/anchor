@@ -8,6 +8,7 @@ defmodule Mix.Tasks.Anchor.GraphTest do
   #
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5440_graph_runner.md
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5581_hardening_batch.md
+  # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5630_graph_hardening.md
   use ExUnit.Case, async: false
 
   import Anchor.Test.BeamFixtures
@@ -150,6 +151,58 @@ defmodule Mix.Tasks.Anchor.GraphTest do
 
     assert_received {:artifact_dir, dir}
     assert dir == Path.join(build, "anchor")
+  end
+
+  # DND-5630: a module compiled from a source outside the root
+  # (`elixirc_paths: ["../shared"]`) has an absolute relative_file. It is
+  # project code: enforced, and printed on its root-relative ../ path.
+  test "a module compiled from outside the root is enforced on its ../ path" do
+    shared_path = Path.expand("../anchor-graph-task-shared/lib/shared.ex", File.cwd!())
+    shared_file = "../anchor-graph-task-shared/lib/shared.ex"
+
+    shared_source = """
+    defmodule AnchorFixtures.AnchorGraphTaskTest.Shared do
+      def y, do: :y
+    end
+    """
+
+    [{_module, binary}] = compile_unloaded(shared_source, shared_path)
+    beam = BeamReader.decode(binary, app: :anchor, path: "ebin/shared.beam")
+    assert beam.elixir.relative_file == shared_path
+
+    {:ok, arch} =
+      Architecture.parse(%{
+        "contexts" => %{"depth" => 2},
+        "buckets" => [
+          %{
+            "name" => "shared",
+            "role" => "domain",
+            "select" => [%{"paths" => ["../anchor-graph-task-shared/**/*.ex"]}]
+          }
+        ],
+        "calls" => %{"shared" => []}
+      })
+
+    rules = [%{type: :stub_finds, id: "a", bucket: "shared", index: 1}]
+
+    expect(ConfigLoaderMock, :load, fn ->
+      {:ok, %Config{rules: rules, architecture: arch, path: ".anchor.yml"}}
+    end)
+
+    Mox.expect(BeamSourceMock, :read_ebins, fn [{:anchor, _ebin}] -> [beam] end)
+
+    expect(SourceSourceMock, :read, fn _root, [^shared_file] ->
+      %{shared_file => SourceFacts.from_source(shared_file, shared_source)}
+    end)
+
+    expect(GraphStoreMock, :write, fn _dir, _key, _graph -> :ok end)
+
+    output = capture_io(fn -> assert catch_exit(Graph.run([], opts())) == {:shutdown, 1} end)
+
+    assert output =~
+             ~s|#{shared_file}:2: [enforce] rule 1 (id: "a", stub_finds) AnchorFixtures.AnchorGraphTaskTest.Shared was found.|
+
+    assert output =~ "anchor.graph: 1 modules (1 outside the root) in 1 apps"
   end
 
   test "a violation exits {:shutdown, 1} after printing it", %{beam: beam} do

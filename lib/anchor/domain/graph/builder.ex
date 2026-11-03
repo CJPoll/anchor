@@ -19,8 +19,9 @@ defmodule Anchor.Domain.Graph.Builder do
   and never a guessed `true`.
 
   With `root:` (the project root, `build/3`), a module's `source_file` is its
-  path as `Anchor.Domain.Graph.ProjectFile.place/2` gives it: an absolute path
-  inside the root is made relative to it (DND-5588), so it matches the
+  path as `Anchor.Domain.Graph.ProjectFile.place/2` keys it: an absolute path
+  inside the root is made relative to it (DND-5588), and one outside it is
+  relative through `..` (`../shared/foo.ex`, DND-5630), so it matches the
   `source_facts` keys and the selectors' `paths`. Its edges are still read
   against the path the beam names, which is the one Core's annotations hold.
 
@@ -157,15 +158,13 @@ defmodule Anchor.Domain.Graph.Builder do
     }
   end
 
-  # The node's path: relativised against the root when one is given; a path
-  # the root does not hold stands as the beam names it.
+  # The node's path: relative to the root when one is given, through `..`
+  # for a source outside it (DND-5630).
   defp project_file(file, nil), do: file
 
   defp project_file(file, root) do
-    case ProjectFile.place(file, root) do
-      {:project, relative} -> relative
-      :outside_root -> file
-    end
+    {_side, relative} = ProjectFile.place(file, root)
+    relative
   end
 
   defp module_edges(%ModuleNode{module: module, functions: functions}, file) do

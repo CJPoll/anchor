@@ -6,6 +6,7 @@ defmodule Anchor.Domain.GraphReportTest do
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5551_graph_hardening.md
   # (apply sites, DND-5574: ../../sabotage_records/graph_runner-20261103-dnd_5574_cfa_wiring.md)
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5581_hardening_batch.md
+  # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5630_graph_hardening.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.GraphReport
@@ -17,7 +18,7 @@ defmodule Anchor.Domain.GraphReportTest do
     rules: 3,
     opaque: 0,
     no_core: 0,
-    excluded: 0,
+    outside_root: 0,
     apply_sites: nil
   }
 
@@ -171,18 +172,20 @@ defmodule Anchor.Domain.GraphReportTest do
     end
   end
 
-  describe "render/2 modules outside the root, excluded (DND-5588)" do
+  describe "render/2 modules outside the root (DND-5588, DND-5630)" do
+    # Judged like every other module (DND-5630), and still counted, so the
+    # layout is visible.
     test "are counted in the summary and the JSON when there are any" do
-      report = GraphReport.new([], [], %{@counts | excluded: 4})
+      report = GraphReport.new([], [], %{@counts | outside_root: 4})
 
       assert GraphReport.render(report, :text) ==
-               "anchor.graph: 12 modules (4 outside the root, excluded) in 2 apps, " <>
+               "anchor.graph: 12 modules (4 outside the root) in 2 apps, " <>
                  "3 rules, 0 violations (0 report-only, 0 baselined)"
 
-      assert %{"excluded" => 4} = JSON.decode!(GraphReport.render(report, :json))
+      assert %{"outside_root" => 4} = JSON.decode!(GraphReport.render(report, :json))
 
       # Positive control: none, and the summary says nothing of them.
-      refute GraphReport.render(GraphReport.new([], [], @counts), :text) =~ "excluded"
+      refute GraphReport.render(GraphReport.new([], [], @counts), :text) =~ "outside the root"
     end
   end
 

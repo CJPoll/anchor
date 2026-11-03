@@ -7,6 +7,7 @@ defmodule Anchor.Managers.GraphTest do
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5440_graph_runner.md
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5551_graph_hardening.md
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5581_hardening_batch.md
+  # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5630_graph_hardening.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -190,7 +191,7 @@ defmodule Anchor.Managers.GraphTest do
                rules: 1,
                opaque: 0,
                no_core: 0,
-               excluded: 0,
+               outside_root: 0,
                apply_sites: nil
              }
     end
@@ -482,9 +483,34 @@ defmodule Anchor.Managers.GraphTest do
     end
   end
 
-  describe "run/2 source paths outside the project root (DND-5588)" do
+  describe "run/2 source paths outside the project root (DND-5588, DND-5630)" do
+    # Every beam the runner reads came from a project ebin, so a module
+    # compiled from a source outside the root (`elixirc_paths: ["../shared"]`)
+    # is project code: classified, judged and enforced like any other, keyed
+    # by its root-relative path. The summary still counts such modules.
     @inside AnchorFixtures.GraphManagerTest.Inside
     @outside AnchorFixtures.GraphManagerTest.Shared
+    @outside_file "../shared/lib/shared.ex"
+
+    defp shared_bucket,
+      do: %{
+        "name" => "shared",
+        "role" => "domain",
+        "select" => [%{"paths" => ["../shared/**/*.ex"]}]
+      }
+
+    defp only_shared_architecture do
+      {:ok, arch} =
+        Architecture.parse(%{
+          "contexts" => %{"depth" => 2},
+          "buckets" => [shared_bucket()],
+          "calls" => %{"shared" => []}
+        })
+
+      arch
+    end
+
+    defp with_outside_source(sources), do: Map.put(sources, @outside_file, {:ok, @outside_source})
 
     test "an absolute path inside the root is a project module, read and classified by its relative path",
          %{beams: beams} do
@@ -497,47 +523,88 @@ defmodule Anchor.Managers.GraphTest do
       report = Graph.run(request(), deps())
 
       assert %GraphReport{exit_code: 0, findings: [], could_not_check: []} = report
-      assert %{modules: 3, excluded: 0} = report.counts
+      assert %{modules: 3, outside_root: 0} = report.counts
     end
 
-    test "an absolute path outside the root is left out, counted and named, never read",
-         %{beams: beams} do
+    test "an outside-root module no bucket selects fails the run on its ../ path", %{beams: beams} do
       assert beams[@outside].elixir.relative_file == @outside_path
 
-      # The source double answers only the files inside the root: a read of
-      # the outside one would be an unreadable-source issue.
-      expect_run(config([rule(:stub_ok, "ok")]), classified(beams) ++ [beams[@outside]])
+      expect_run(config([rule(:stub_ok, "ok")]), classified(beams) ++ [beams[@outside]],
+        sources: with_outside_source(@sources)
+      )
 
       report = Graph.run(request(), deps())
 
-      # Report-only: the verdict stands, and the module is named, not dropped.
-      assert %GraphReport{exit_code: 0, could_not_check: []} = report
-
-      assert [%{enforcement: :report, file: @outside_path, message: message}] = report.findings
-
-      assert message =~
-               "AnchorFixtures.GraphManagerTest.Shared was compiled from #{@outside_path}"
-
-      assert message =~ "outside the project root #{@root}"
-      assert message =~ "Fix: "
-
-      assert %{modules: 2, excluded: 1} = report.counts
-      assert GraphReport.summary(report) =~ "2 modules (1 outside the root, excluded) in 1 apps"
+      assert report.exit_code == 1
+      assert [%{enforcement: :enforce, file: @outside_file, message: message}] = report.findings
+      assert message =~ "AnchorFixtures.GraphManagerTest.Shared is in no architecture bucket"
+      assert message =~ "matches #{@outside_file}"
+      assert %{modules: 3, outside_root: 1} = report.counts
+      assert GraphReport.summary(report) =~ "3 modules (1 outside the root) in 1 apps"
     end
 
-    test "only modules outside the root read is COULD NOT MEASURE, never an empty pass", %{
-      beams: beams
-    } do
-      expect(ConfigLoaderMock, :load, fn -> {:ok, config([rule(:stub_ok, "ok")])} end)
-      Mox.expect(BeamSourceMock, :read_ebins, fn [{:my_app, @ebin}] -> [beams[@outside]] end)
-      expect(GraphStoreMock, :write, 0, fn _dir, _key, _term -> :ok end)
+    test "an outside-root module is enforced by a rule like an inside one, keyed by its ../ path",
+         %{beams: beams} do
+      rules = [rule(:stub_finds, "shared", %{bucket: "shared"})]
+
+      expect_run(
+        config(rules, architecture([shared_bucket()])),
+        classified(beams) ++ [beams[@outside]],
+        sources: with_outside_source(@sources)
+      )
 
       report = Graph.run(request(), deps())
 
-      assert report.exit_code == 3
-      assert [%{message: message}] = report.could_not_check
-      assert message =~ "read 1 modules from #{@ebin}, and every one has a source file outside"
-      assert message =~ "Fix: run mix anchor.graph from the project root"
+      assert report.exit_code == 1
+      assert [finding] = report.findings
+      assert finding.enforcement == :enforce
+      assert finding.file == @outside_file
+      assert finding.message =~ "#{inspect(@outside)} was found."
+    end
+
+    test "positive control: the same rule over an inside bucket finds the inside module",
+         %{beams: beams} do
+      rules = [rule(:stub_finds, "domain", %{bucket: "domain"})]
+
+      expect_run(
+        config(rules, architecture([shared_bucket()])),
+        classified(beams) ++ [beams[@outside]],
+        sources: with_outside_source(@sources)
+      )
+
+      report = Graph.run(request(), deps())
+
+      assert [%{enforcement: :enforce, file: @user_file}] = report.findings
+    end
+
+    test "its source facts are read by its ../ path like any project file", %{beams: beams} do
+      # The source double answers @outside_file with an error: had the runner
+      # not asked for it, there would be no issue (positive control: the
+      # inside files answer and raise none).
+      expect_run(
+        config([rule(:stub_ok, "ok")], architecture([shared_bucket()])),
+        classified(beams) ++ [beams[@outside]],
+        sources: Map.put(@sources, @outside_file, {:error, :eacces})
+      )
+
+      report = Graph.run(request(), deps())
+
+      assert [%{file: @outside_file, message: message}] = report.findings
+      assert message =~ "could not read the source of #{@outside_file} (:eacces)"
+    end
+
+    test "a run whose every module is outside the root is measured, never COULD NOT MEASURE",
+         %{beams: beams} do
+      rules = [rule(:stub_ok, "ok", %{bucket: "shared"})]
+
+      expect_run(config(rules, only_shared_architecture()), [beams[@outside]],
+        sources: %{@outside_file => {:ok, @outside_source}}
+      )
+
+      report = Graph.run(request(), deps())
+
+      assert %GraphReport{exit_code: 0, findings: [], could_not_check: []} = report
+      assert %{modules: 1, outside_root: 1} = report.counts
     end
   end
 
