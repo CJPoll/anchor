@@ -52,8 +52,12 @@ rules:
       - Anchor.Adapters.GraphArtifact
       - Anchor.Adapters.SourceReader
       - Anchor.Managers.Graph
+      - Anchor.Adapters.SourcePatcher
+      - Anchor.Adapters.GitStatus
+      - Anchor.Adapters.TestRunner
       - Anchor.Managers.Lint
       - Anchor.Managers.Sabotage
+      - Anchor.Managers.Sabotage.Runner
       - System
 
   # --- Rule 2: the config parser specifically must not read files ---

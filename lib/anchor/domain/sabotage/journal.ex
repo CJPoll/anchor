@@ -1,0 +1,147 @@
+defmodule Anchor.Domain.Sabotage.Journal do
+  @moduledoc """
+  The in-flight journal of a sabotage run (DND-5473): written before a mutant
+  touches a file, deleted once the original is back and verified. Pure
+  **Domain**: the entry, its hashes and its bytes on disk
+  (`.anchor/sabotage/in-flight.json`, JSON with the original base64-encoded,
+  so any bytes round-trip). The file I/O is `Anchor.Adapters.SourcePatcher`'s.
+
+  A leftover journal (the BEAM was killed between apply and restore) is read
+  first on the next run: `recovery/2` says what to do with it. A journal whose
+  `owner` (the run that wrote it) is still alive is not a leftover: that run
+  is mid-mutant, and the next run refuses rather than touch it.
+
+  The run lock (`lock_path/0`, under `_build/`) is held by one run from its
+  first step to its last, so two runs in one project never overlap: the
+  journal, the results file and `_build` are each one run's at a time. Its
+  bytes are the holder's owner (`encode_lock/1`, `decode_lock/1`).
+  """
+
+  @lock_path "_build/anchor-sabotage.lock"
+  @path ".anchor/sabotage/in-flight.json"
+
+  @enforce_keys [:file, :mutant_id, :original, :original_sha, :mutated_sha]
+  defstruct @enforce_keys ++ [owner: nil]
+
+  @type t :: %__MODULE__{
+          file: String.t(),
+          mutant_id: String.t(),
+          original: binary(),
+          original_sha: String.t(),
+          mutated_sha: String.t(),
+          owner: owner() | nil
+        }
+
+  @typedoc """
+  The run that wrote the journal: its OS pid and that process's start time
+  (so a reused pid is never taken for it). `nil` when the writer could not
+  tell (no `/proc`).
+  """
+  @type owner :: %{os_pid: pos_integer(), started: String.t()}
+
+  @doc "The journal's path, relative to the project root."
+  @spec path() :: String.t()
+  def path, do: @path
+
+  @doc "The run lock's path, relative to the project root."
+  @spec lock_path() :: String.t()
+  def lock_path, do: @lock_path
+
+  @doc "The run lock's bytes: the holding run's owner (`nil` when it cannot tell)."
+  @spec encode_lock(owner() | nil) :: binary()
+  def encode_lock(owner), do: JSON.encode!(%{"version" => 1, "owner" => owner_json(owner)})
+
+  @doc "The lock's holder; `nil` for bytes that name none (a dead or unknown holder)."
+  @spec decode_lock(binary()) :: owner() | nil
+  def decode_lock(bytes) do
+    with {:ok, %{"version" => 1, "owner" => json}} <- JSON.decode(bytes),
+         {:ok, owner} <- owner_from_json(json) do
+      owner
+    else
+      _unreadable -> nil
+    end
+  end
+
+  @doc "The entry for applying `mutated` over `original` in `file`."
+  @spec entry(String.t(), String.t(), binary(), binary()) :: t()
+  def entry(file, mutant_id, original, mutated) do
+    %__MODULE__{
+      file: file,
+      mutant_id: mutant_id,
+      original: original,
+      original_sha: sha256(original),
+      mutated_sha: sha256(mutated)
+    }
+  end
+
+  @doc "Lowercase hex sha256 of `bytes`."
+  @spec sha256(binary()) :: String.t()
+  def sha256(bytes), do: :sha256 |> :crypto.hash(bytes) |> Base.encode16(case: :lower)
+
+  @spec encode(t()) :: binary()
+  def encode(%__MODULE__{} = entry) do
+    JSON.encode!(%{
+      "version" => 1,
+      "file" => entry.file,
+      "mutant_id" => entry.mutant_id,
+      "original_base64" => Base.encode64(entry.original),
+      "original_sha256" => entry.original_sha,
+      "mutated_sha256" => entry.mutated_sha,
+      "owner" => owner_json(entry.owner)
+    })
+  end
+
+  @doc """
+  The entry, or `{:error, :corrupt_journal}` for bytes this module did not
+  write, or that name a file outside the project root.
+  """
+  @spec decode(binary()) :: {:ok, t()} | {:error, :corrupt_journal}
+  def decode(bytes) do
+    with {:ok, %{"version" => 1} = map} <- JSON.decode(bytes),
+         %{"file" => file, "mutant_id" => id, "original_base64" => b64} <- map,
+         %{"original_sha256" => original_sha, "mutated_sha256" => mutated_sha} <- map,
+         true <- Enum.all?([file, id, b64, original_sha, mutated_sha], &is_binary/1),
+         true <- inside_root?(file),
+         {:ok, owner} <- owner_from_json(Map.get(map, "owner")),
+         {:ok, original} <- Base.decode64(b64),
+         true <- sha256(original) == original_sha do
+      {:ok,
+       %__MODULE__{
+         file: file,
+         mutant_id: id,
+         original: original,
+         original_sha: original_sha,
+         mutated_sha: mutated_sha,
+         owner: owner
+       }}
+    else
+      _corrupt -> {:error, :corrupt_journal}
+    end
+  end
+
+  defp owner_json(nil), do: nil
+  defp owner_json(%{os_pid: pid, started: started}), do: %{"os_pid" => pid, "started" => started}
+
+  defp owner_from_json(nil), do: {:ok, nil}
+
+  defp owner_from_json(%{"os_pid" => pid, "started" => started})
+       when is_integer(pid) and pid > 0 and is_binary(started),
+       do: {:ok, %{os_pid: pid, started: started}}
+
+  defp owner_from_json(_other), do: :error
+
+  # A journal names a file under the project root: relative, no `..`.
+  defp inside_root?(file),
+    do: Path.type(file) == :relative and ".." not in Path.split(file) and file != ""
+
+  @doc """
+  What a leftover journal means, given the sha256 of its file now:
+  `:restore` (the mutant is still there), `:discard` (the original is already
+  back; only the journal is left), or `:changed` (neither: someone edited the
+  file since, so nothing is written).
+  """
+  @spec recovery(t(), String.t()) :: :restore | :discard | :changed
+  def recovery(%__MODULE__{mutated_sha: sha}, sha), do: :restore
+  def recovery(%__MODULE__{original_sha: sha}, sha), do: :discard
+  def recovery(%__MODULE__{}, _current), do: :changed
+end

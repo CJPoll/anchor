@@ -22,3 +22,10 @@ Hammox.defmock(Anchor.ChangeSourceMock, for: Anchor.Adapters.ChangeSource)
 Mox.defmock(Anchor.BeamSourceMock, for: Anchor.Adapters.BeamSource)
 Hammox.defmock(Anchor.SourceSourceMock, for: Anchor.Adapters.SourceSource)
 Hammox.defmock(Anchor.GraphStoreMock, for: Anchor.Adapters.GraphStore)
+
+# DND-5473: the sabotage runner's ports (`Anchor.Managers.Sabotage.run/2`
+# takes them as the `:source_mutation`, `:git_worktree` and `:test_execution`
+# options).
+Hammox.defmock(Anchor.SourceMutationMock, for: Anchor.Adapters.SourceMutation)
+Hammox.defmock(Anchor.GitWorktreeMock, for: Anchor.Adapters.GitWorktree)
+Hammox.defmock(Anchor.TestExecutionMock, for: Anchor.Adapters.TestExecution)
