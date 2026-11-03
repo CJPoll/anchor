@@ -242,6 +242,25 @@ the JSON carries `apply_sites` (`GraphReport.apply_sites/1`). A refused need
 issue per rule, and that rule is not run. A new analysis a rule can need goes
 into `GraphRules`' `@provided_needs` and the Manager's needs wiring.
 
+## Demand (DND-5498)
+
+`Anchor.Domain.Demand.analyze/4` takes the graph and a `%Cfa{}` over it and
+summarises every `def`/`defp`: per parameter, a demand
+(`Anchor.Domain.Demand.Lattice`: `:absent`, `{:used, fields}` or `:all`) saying
+whether it reaches the return value or an effect, and the calls it is passed to
+(`passes`). `Demand.Transfer` is one backward pass over one function's Core;
+`analyze/4` runs it to a fixpoint over the call graph's SCCs, bounded by
+`:max_rounds` (a component that hits it is reported used and imprecise, never
+unused). Effects and escapes are rows in `Anchor.Domain.EffectPrimitives`, pure
+library calls in `Anchor.Domain.PureCalls`; a function that calls an argument
+(`Anchor.Domain.HigherOrder`) uses every argument, precisely; any library call
+in neither table uses its arguments and makes the function `imprecise` (the
+passes run sound and optimistic, and a parameter whose two demands differ is
+imprecise). Inside a `try` or `catch` a raise is observable, so a call there
+uses its arguments. A new Core shape goes into `Transfer` with a row in
+`test/anchor/domain/demand/transfer_test.exs`. A field map may hold the key
+`:__struct__`: read it with `:maps`, never `Enum`.
+
 ## Important Notes
 
 - When running Elixir code, use: `mix run -e "<elixir code>"`
