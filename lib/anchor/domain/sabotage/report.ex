@@ -13,6 +13,11 @@ defmodule Anchor.Domain.Sabotage.Report do
   mutants run by the source that chose their tests (`coverage`, `mirror`,
   `none`; DND-5474).
 
+  A kill that rests on time alone (`timeout`: the run's bound, or every
+  failure an ExUnit per-test timeout; DND-5653) is named on one
+  `sabotage: N kills rest on time alone` line before the summary. It still
+  counts as measured and never changes the exit code.
+
   The sabotage records written (DND-5484) are named before the summary, as
   `sabotage record created: <path>` or `appended`.
 
@@ -105,7 +110,8 @@ defmodule Anchor.Domain.Sabotage.Report do
         skipped(run) ++
         errors(run) ++
         not_run(run) ++
-        sources(run) ++ records(run) ++ [summary(run)] ++ conclusion(verdict(run), run)
+        sources(run) ++
+        records(run) ++ timeout_kills(run) ++ [summary(run)] ++ conclusion(verdict(run), run)
     )
   end
 
@@ -217,6 +223,26 @@ defmodule Anchor.Domain.Sabotage.Report do
       |> Enum.map_join(", ", fn {source, n} -> "#{n} #{source}" end)
 
     ["tests selected by: #{counts}"]
+  end
+
+  # DND-5653: a timeout kill counts as killed, but no assertion failed under
+  # it; it is said on its own line so it is never read as an assertion's kill.
+  defp timeout_kills(run) do
+    case for(%{status: :timeout} = o <- run.outcomes, do: o) do
+      [] ->
+        []
+
+      timed_out ->
+        named =
+          Enum.map_join(timed_out, "; ", fn o ->
+            "#{o.mutant.id} #{mfa(o.mutant)} by #{Enum.map_join(o.killers, ", ", &killer/1)}"
+          end)
+
+        [
+          "sabotage: #{length(timed_out)} kills rest on time alone (no assertion failed; " <>
+            "a hang the mutant caused, or a slow host): " <> named
+        ]
+    end
   end
 
   defp summary(run) do

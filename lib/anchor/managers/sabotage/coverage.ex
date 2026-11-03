@@ -212,14 +212,18 @@ defmodule Anchor.Managers.Sabotage.Coverage do
     end
   end
 
-  defp finished(map, :passed, facts), do: {0, [CoverageMap.summary(map, facts.out)]}
+  # DND-5642: each window-leak warning follows the summary; it never changes
+  # the exit code.
+  defp finished(map, :passed, facts),
+    do: {0, [CoverageMap.summary(map, facts.out) | CoverageMap.leak_warnings(map)]}
 
   defp finished(map, {:failed, message}, facts) do
     {1,
-     [
-       CoverageMap.summary(map, facts.out),
-       "the suite failed (#{message}), so the map (written, suite_exit: 1) describes a " <>
-         "broken suite. Fix: make the suite green first"
-     ]}
+     [CoverageMap.summary(map, facts.out)] ++
+       CoverageMap.leak_warnings(map) ++
+       [
+         "the suite failed (#{message}), so the map (written, suite_exit: 1) describes a " <>
+           "broken suite. Fix: make the suite green first"
+       ]}
   end
 end
