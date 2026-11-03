@@ -48,7 +48,10 @@ rules:
       - YamlElixir
       - Anchor.Adapters.ConfigFile
       - Anchor.Adapters.BeamReader
+      - Anchor.Adapters.GitChangeSource
       - Anchor.Managers.Lint
+      - Anchor.Managers.Sabotage
+      - System
 
   # --- Rule 2: the config parser specifically must not read files ---
   #

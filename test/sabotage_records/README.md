@@ -59,6 +59,11 @@ before coining a synonym.
 - `failures` — `Anchor.Domain.Failures`, the text of every fail-closed report
   (missing or invalid config, unparseable file, a check that crashed on a file).
 - `source` — `Anchor.Check.Source`, the AST/source acquisition edge.
+- `sabotage_scope` — `mix anchor.sabotage scope` (DND-5472): the diff parser
+  (`Anchor.Domain.Sabotage.DiffHunks`), the function spans
+  (`Anchor.Domain.Sabotage.FunctionSpans`), the mapping and its counts
+  (`Anchor.Domain.Sabotage.Scope`), the git adapter
+  (`Anchor.Adapters.GitChangeSource`), the `scope/2` Manager path and the task.
 - `dependency_analyzer` — `Anchor.Domain.DependencyAnalyzer`, the pure AST
   walk behind every dependency fact (module names, references, calls, uses,
   the module graph).
@@ -153,3 +158,13 @@ before coining a synonym.
   `defstruct`, and the foreign-struct `location_violation` that recovers the
   real module name) and the `Anchor.Check.StructGetterConvention` shell that
   delegates to it.
+- `data_flow` — `Anchor.Domain.DataFlow` and its `DataFlow.*` modules
+  (DND-5439): def-use over one clause's source AST, backward slices with
+  control dependence, dead expressions, single-exit regions, the orphan check
+  and the unsliceable forms (`receive`, the process dictionary, `var!`,
+  `binding()`).
+- `graph_algorithms` — `Anchor.Domain.GraphAlgorithms` (DND-5444):
+  dominators and post-dominators from a virtual root/exit, union-find
+  components, Tarjan SCCs, the condensation and cyclic SCCs.
+- `digraph` — `Anchor.Domain.Digraph` (DND-5444), the plain immutable graph
+  value the graph algorithms run over.
