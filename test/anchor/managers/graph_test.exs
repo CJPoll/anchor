@@ -5,6 +5,7 @@ defmodule Anchor.Managers.GraphTest do
   # BeamSource double. QA plan: test/anchor/managers/graph_test.exs.
   #
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5440_graph_runner.md
+  # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5551_graph_hardening.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -152,7 +153,36 @@ defmodule Anchor.Managers.GraphTest do
       report = Graph.run(request(), deps())
 
       assert %GraphReport{exit_code: 0, findings: [], could_not_check: []} = report
-      assert report.counts == %{modules: 2, apps: 1, rules: 1, opaque: 0}
+      assert report.counts == %{modules: 2, apps: 1, rules: 1, opaque: 0, no_core: 0}
+    end
+
+    # DND-5549: a function with no Core body is never silent.
+    test "a public function with no Core body is an issue, and the summary counts it", %{
+      beams: beams
+    } do
+      user = beams[@user]
+
+      defs =
+        Enum.reject(:cerl.module_defs(user.core), fn {fname, _fun} ->
+          :cerl.var_name(fname) == {:name, 1}
+        end)
+
+      core =
+        :cerl.update_c_module(
+          user.core,
+          :cerl.module_name(user.core),
+          :cerl.module_exports(user.core),
+          :cerl.module_attrs(user.core),
+          defs
+        )
+
+      expect_run(config([rule(:stub_ok, "ok")]), [%{user | core: core}, beams[@accounts]])
+
+      report = Graph.run(request(), deps())
+
+      assert report.counts.no_core == 1
+      assert report.exit_code == 1
+      assert Enum.any?(messages(report), &(&1 =~ "has no Core Erlang body for name/1"))
     end
 
     test "a report-only rule's findings print and exit 0", %{beams: beams} do

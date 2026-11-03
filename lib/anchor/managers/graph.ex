@@ -148,7 +148,9 @@ defmodule Anchor.Managers.Graph do
     GraphReport.new(
       fail_closed ++ rule_findings ++ artifact_notes,
       [],
-      counts(request, map_size(graph.modules), length(rules), length(Model.opaque(model)))
+      request
+      |> counts(map_size(graph.modules), length(rules), length(Model.opaque(model)))
+      |> Map.put(:no_core, no_core_count(graph))
     )
   end
 
@@ -285,5 +287,11 @@ defmodule Anchor.Managers.Graph do
   end
 
   defp counts(%Request{apps: apps}, modules, rules, opaque),
-    do: %{modules: modules, apps: length(apps), rules: rules, opaque: opaque}
+    do: %{modules: modules, apps: length(apps), rules: rules, opaque: opaque, no_core: 0}
+
+  # Every function the graph has no Core body for: no call in it was read, so
+  # the summary counts them (DND-5549).
+  defp no_core_count(graph) do
+    graph |> Graph.functions_without_core() |> Map.values() |> Enum.map(&length/1) |> Enum.sum()
+  end
 end

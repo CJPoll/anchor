@@ -16,9 +16,12 @@ defmodule Anchor.Adapters.BeamReader do
 
   plus `Code.Typespec.fetch_specs/1` and `fetch_types/1` on the binary.
 
-  A module compiled with a `parse_transform` or `core_transform` is refused
-  (`{:core_v1_refused, {:transform, ...}}`): lowering it would run the
-  transform. A module's `@behaviour`s are not loaded (pinned by a test with
+  A module's compile options are allowlisted, deny by default (DND-5552):
+  lowering replays them, and some make the compiler run code. A module
+  compiled with a `parse_transform` or `core_transform` is refused as
+  `{:core_v1_refused, {:transform, ...}}`, and one with any other option not
+  known to be safe as `{:core_v1_refused, {:option, option}}`; neither is
+  lowered. A module's `@behaviour`s are not loaded (pinned by a test with
   the behaviour's beam on the code path).
 
   This sits in an adapter, not in Domain, because the backend runs the Erlang
@@ -34,6 +37,13 @@ defmodule Anchor.Adapters.BeamReader do
   alias Anchor.Domain.Graph.Beam
 
   @core_options [:no_copt]
+
+  # Compile options that run no code when the backend lowers a module to Core
+  # (DND-5552). `{:debug_info, _}`, `{:autoload, _}` and `{:inline_size, _}`
+  # are allowed with a boolean or integer value only; `nowarn_*` and `warn_*`
+  # options are allowed by name.
+  @safe_atoms [:debug_info, :inline, :deterministic]
+  @safe_keys [:inline, :no_warn_undefined]
 
   @doc "The options passed to the backend's `debug_info(:core_v1, ...)`."
   @spec core_options() :: [atom()]
@@ -106,7 +116,7 @@ defmodule Anchor.Adapters.BeamReader do
 
   defp decode_debug_info(module, :elixir_erl, data, binary, app, path) do
     with {:ok, elixir} <- view(:elixir_v1, module, data, [], path),
-         :ok <- no_transform(elixir, module, path),
+         :ok <- safe_compile_options(elixir, module, path),
          {:ok, core} <- view(:core_v1, module, data, @core_options, path) do
       %Beam{
         module: module,
@@ -131,18 +141,37 @@ defmodule Anchor.Adapters.BeamReader do
   end
 
   # Lowering to Core runs the Erlang compiler with the module's own compile
-  # options, and a `parse_transform` or `core_transform` among them is code the
-  # compiler would load and run. Anchor runs no project code, so such a module
-  # is refused, naming the transform.
-  defp no_transform(elixir, module, path) do
-    elixir
-    |> Map.get(:compile_opts, [])
-    |> List.wrap()
-    |> Enum.find(&match?({kind, _module} when kind in [:parse_transform, :core_transform], &1))
-    |> case do
-      nil -> :ok
-      transform -> error(path, module, {:core_v1_refused, {:transform, transform}})
+  # options, and some options make it load and run code (a `parse_transform`
+  # or `core_transform`, a plugin). Anchor runs no project code, so the
+  # options are allowlisted, deny by default (DND-5552): every option must be
+  # one known to change only warnings, inlining, determinism or loading, or
+  # the module is refused, naming the option. A transform is named as one.
+  defp safe_compile_options(elixir, module, path) do
+    options = elixir |> Map.get(:compile_opts, []) |> List.wrap()
+
+    case {Enum.find(options, &transform?/1), Enum.reject(options, &safe_option?/1)} do
+      {nil, []} -> :ok
+      {nil, [option | _rest]} -> error(path, module, {:core_v1_refused, {:option, option}})
+      {transform, _unsafe} -> error(path, module, {:core_v1_refused, {:transform, transform}})
     end
+  end
+
+  defp transform?({kind, _module}), do: kind in [:parse_transform, :core_transform]
+  defp transform?(_option), do: false
+
+  defp safe_option?(option) when option in @safe_atoms, do: true
+  defp safe_option?(option) when is_atom(option), do: warning_option?(option)
+  defp safe_option?({:debug_info, enabled}), do: is_boolean(enabled)
+  defp safe_option?({:autoload, enabled}), do: is_boolean(enabled)
+  defp safe_option?({:inline_size, size}), do: is_integer(size)
+  defp safe_option?({key, _value}) when key in @safe_keys, do: true
+  defp safe_option?({key, _value}) when is_atom(key), do: warning_option?(key)
+  defp safe_option?(_option), do: false
+
+  # `nowarn_*` and `warn_*` options switch compiler warnings on or off.
+  defp warning_option?(option) do
+    name = Atom.to_string(option)
+    String.starts_with?(name, "nowarn_") or String.starts_with?(name, "warn_")
   end
 
   defp refused(:elixir_v1), do: :elixir_v1_refused

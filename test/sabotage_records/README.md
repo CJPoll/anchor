@@ -84,6 +84,10 @@ before coining a synonym.
 - `builder` — `Anchor.Domain.Graph.Builder` (DND-5438): the causal graph built
   from decoded beams and source facts (module facts, `generated?`,
   `unreadable`), with the `Anchor.Domain.Graph` queries.
+- `inlines` — `Anchor.Domain.Graph.Inlines` and `Inlines.Derive` (DND-5551):
+  the stdlib calls Elixir inlines before Core, derived from `:elixir_rewrite`,
+  their two spellings in `Graph.calls_to/2`, and the inlined `Map.put` the
+  walker reads from a map update.
 - `graph_runner` — `mix anchor.graph` (DND-5440): the Manager
   (`Anchor.Managers.Graph`), the task, the model (`Anchor.Domain.Model`), the
   rule registry and floors (`Anchor.Domain.GraphRules`), the report
