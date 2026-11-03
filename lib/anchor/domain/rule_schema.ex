@@ -100,11 +100,21 @@ defmodule Anchor.Domain.RuleSchema do
        make a rule check nothing, as a refused row, and a positive row. A test
        fails until every accepted key has a row.
 
-  **To add a rule type**, add an entry to `@keys_by_type` **and** to
-  `@relations_by_type` (`[]` when it has no relation; compilation fails when the
-  two disagree), and give it a table in that test file. The rule types Anchor
-  knows are `rule_types/0`, and a test pins them to the shipped checks'
-  `rule_type/0`s.
+  **To add a rule type**, add an entry to `@keys_by_type`, to
+  `@relations_by_type` (`[]` when it has no relation) **and** to
+  `@engine_by_type` (compilation fails when the three disagree), and give it a
+  table in that test file. The rule types Anchor knows are `rule_types/0`, and a
+  test pins them to the shipped checks' `rule_type/0`s.
+
+  ## The engine is `@engine_by_type`
+
+  Each rule type has exactly one authoritative engine (DND-5437): `:ast` when
+  the property is about the text the author wrote (a Credo check reads the
+  source AST), `:graph` when it is about what the program does (`mix
+  anchor.graph` reads the compiled graph). `engine/1` answers it, and
+  `Anchor.Domain.RuleCoverage.unchecked/3` reads it so Credo never reports a
+  graph rule as unchecked. The README's "Keys each rule type accepts" table has
+  an Engine column, compared with this map by a test.
 
   ## Selectors
 
@@ -118,6 +128,8 @@ defmodule Anchor.Domain.RuleSchema do
   alias Anchor.Domain.AllowedCallers
   alias Anchor.Domain.FunctionRef
   alias Anchor.Domain.GlobPattern
+
+  @type engine :: :ast | :graph
 
   @common_keys ~w(id min_files paths pattern recursive type uses_module)
 
@@ -158,6 +170,26 @@ defmodule Anchor.Domain.RuleSchema do
     struct_getter_convention: []
   }
 
+  # THE engine each type runs on (DND-5437): `:ast` (a Credo check reads the
+  # source AST) or `:graph` (`mix anchor.graph` reads the compiled graph). One
+  # authoritative engine per type; compilation fails when a type has none.
+  @engine_by_type %{
+    alphabetized_functions: :ast,
+    case_on_bare_arg: :ast,
+    max_file_length: :ast,
+    module_pattern_restrictions: :ast,
+    must_use_module: :ast,
+    no_comparison_in_if: :ast,
+    no_direct_dependency: :ast,
+    no_discarding_arrow_in_with: :ast,
+    no_transitive_dependency: :ast,
+    no_tuple_match_in_head: :ast,
+    single_control_flow: :ast,
+    struct_getter_convention: :ast
+  }
+
+  @engines [:ast, :graph]
+
   @relation_descriptions %{
     "forbidden_functions" => ~s(a list of "Module.function" or "Module.function/arity"),
     "forbidden_modules" => "a list of module names",
@@ -182,6 +214,14 @@ defmodule Anchor.Domain.RuleSchema do
           "same rule types; give every type a relation entry ([] for none)"
   end
 
+  if Map.keys(@keys_by_type) != Map.keys(@engine_by_type) or
+       Enum.any?(Map.values(@engine_by_type), &(&1 not in @engines)) do
+    raise CompileError,
+      description:
+        "Anchor.Domain.RuleSchema: @keys_by_type and @engine_by_type must name the same " <>
+          "rule types; give every rule type an engine (:ast or :graph)"
+  end
+
   for {type, keys} <- @relations_by_type, key <- keys do
     unless key in @keys_by_type[type] and Map.has_key?(@relation_descriptions, key) do
       raise CompileError,
@@ -194,6 +234,20 @@ defmodule Anchor.Domain.RuleSchema do
   @doc "The keys every rule type accepts, sorted."
   @spec common_keys() :: [String.t()]
   def common_keys, do: Enum.sort(@common_keys)
+
+  @doc """
+  The engine that runs rules of `type` (DND-5437): `:ast` (a Credo check) or
+  `:graph` (`mix anchor.graph`). Raises `KeyError` for a type that is not one of
+  `rule_types/0`: callers pass parsed types only.
+  """
+  @spec engine(atom()) :: engine()
+  def engine(type), do: Map.fetch!(@engine_by_type, type)
+
+  @doc "The rule types run by `engine`, sorted."
+  @spec rule_types_for_engine(engine()) :: [atom()]
+  def rule_types_for_engine(engine) when engine in @engines do
+    for {type, ^engine} <- Enum.sort(@engine_by_type), do: type
+  end
 
   @doc """
   The keys a rule of `type` accepts: the common keys plus its type's own,

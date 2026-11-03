@@ -82,6 +82,12 @@ before coining a synonym.
 - `function_ref` — `Anchor.Domain.FunctionRef` (DND-1267): the
   `forbidden_functions` token grammar and the comparison of a call (or an
   unresolvable call) with a token.
+- `architecture` — `Anchor.Domain.Architecture` and its `Bucket` and `Selector`
+  (DND-5437): the `architecture:` section of `.anchor.yml`, parsed fail-closed,
+  and a selector matched against a module's facts.
+- `classification` — `Anchor.Domain.Classification` (DND-5437): which bucket a
+  module is in (exactly one, no precedence), its context, and each bucket's
+  count against its `min_modules` floor.
 - `rule_coverage` — `Anchor.Domain.RuleCoverage` (DND-1290): which rules
   checked nothing in a run (below their `min_files` floor, or of a type no
   enabled check reads).

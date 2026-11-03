@@ -125,6 +125,23 @@ Extension rule:
   accepted key has a row, and compilation fails when a type has no
   `@relations_by_type` entry.
 
+Every rule type has exactly one engine, `@engine_by_type` in
+`Anchor.Domain.RuleSchema` (DND-5437): `:ast` (a Credo check) or `:graph`
+(`mix anchor.graph`, DND-5440; no graph type ships yet). A new rule type adds its entry there too (compilation
+fails without it) and to the README table's Engine column (a test compares
+them). Credo never reports a `:graph` rule as unchecked
+(`RuleCoverage.unchecked/3`).
+
+The optional top-level `architecture:` section (DND-5437) is parsed by
+`Anchor.Domain.Architecture.parse/1` into `%Anchor.Config{architecture: ...}`
+(`nil` when absent). Every refusal starts with its key path and carries a
+`Fix:`. A new key goes into its level's key list there (`key_paths/0`) and gets
+a table in `test/anchor/domain/architecture_checks_nothing_test.exs` (a test
+fails until it does). `Anchor.Domain.Classification` classifies a module's facts
+into exactly one bucket, with no precedence between buckets. Until the graph
+runner (DND-5440) lands, the section is parsed and validated only: nothing
+reads it at run time.
+
 ## The causal graph (DND-5438)
 
 The graph engine reads compiled beams, never source alone, so macro output is
