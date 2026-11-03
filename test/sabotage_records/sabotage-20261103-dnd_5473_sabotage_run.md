@@ -149,6 +149,9 @@ strengthened to a warnings-only output and C32 re-run red.
 | C31 | a call with a `do` block keeps its arguments | 1: operators "a call with a do block keeps nothing" | `code:  assert edit.replacement == ""` `left:  "_ = {do\n      x}"` (the text that does not parse, which the review predicted) |
 | C32 | Mix's mtime warning not filtered | 1: Outcome "Mix's mtime-reset warning is never quoted" | `left:  "did not compile: warning: mtime (modified time) for \"lib/x.ex\" was set to the future, resetting to now"` |
 | C33 | `ConfigFile.load_in/1` searches the working directory | 1: ConfigFile `load_in/1` row | `code:  assert {:ok, %Anchor.Config{sabotage: %{max_mutants: 7}, path: path}} = ConfigFile.load_in(root)` |
+| C34 | a live owner's journal read as a leftover (critic round 1) | 1: Manager "a journal whose owner is a live run" | `** (Mox.UnexpectedCallError) no expectation defined for Anchor.SourceMutationMock.sha256_file/1 in process #PID<0.283.0> with args ["/repo/lib/calc.ex"]` (recovery went on to the file) |
+| C35 | `owner_alive?/1` ignores the start time (a reused pid read as live) | 1: SourcePatcher "the journal names this run as its owner" | `Expected false or nil, got true` `code: refute SourcePatcher.owner_alive?(%{owner \| started: started <> "0"})` |
+| C36 | the journal never writes its owner | 2: Journal "the owner round-trips"; SourcePatcher owner row | `code:  assert Journal.decode(Journal.encode(entry)) == {:ok, entry}` `left:  {:ok, %Anchor.Domain.Sabotage.Journal{... owner: nil}}` |
 
 On C14 and C15, TestRunner row 5 (`hang`) also hit the 2000 ms bound, as on
 R8: a bound, not a verdict.

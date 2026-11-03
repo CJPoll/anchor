@@ -5,7 +5,9 @@ defmodule Anchor.Adapters.SourcePatcher do
 
   A file is written to `<path>.anchor-tmp` and renamed over `path`, so a kill
   mid-write never leaves half a file. The journal is created exclusively:
-  `write_journal/2` is `{:error, :eexist}` while another run's journal exists. `touch_ahead/1` sets the mtime to one
+  `write_journal/2` is `{:error, :eexist}` while another run's journal exists.
+  The journal carries its owner (this OS process's pid and start time, from
+  `/proc`); `owner_alive?/1` tells a live run's journal from a dead run's. `touch_ahead/1` sets the mtime to one
   second past the later of now and the file's current mtime: always forward,
   so a restore in the same second as its mutant still recompiles (Mix compares
   the mtime and the size before it reads the content).
@@ -33,7 +35,26 @@ defmodule Anchor.Adapters.SourcePatcher do
     with :ok <- File.mkdir_p(Path.dirname(path)),
          {:ok, io} <- File.open(path, [:write, :exclusive]),
          :ok <- File.close(io) do
-      write_file(path, Journal.encode(entry))
+      write_file(path, Journal.encode(%{entry | owner: owner(System.pid())}))
+    end
+  end
+
+  @impl Anchor.Adapters.SourceMutation
+  def owner_alive?(nil), do: false
+
+  def owner_alive?(%{os_pid: pid, started: started}),
+    do: owner(Integer.to_string(pid)) == %{os_pid: pid, started: started}
+
+  # This OS process and its start time, field 22 of /proc/<pid>/stat (read
+  # after the `)` that ends the command name, which may hold spaces). `nil`
+  # where there is no /proc: a journal with no owner is never taken as live.
+  defp owner(os_pid) do
+    with {:ok, stat} <- File.read("/proc/#{os_pid}/stat"),
+         [_head, tail] <- String.split(stat, ") ", parts: 2),
+         started when is_binary(started) <- tail |> String.split(" ") |> Enum.at(19) do
+      %{os_pid: String.to_integer(os_pid), started: started}
+    else
+      _none -> nil
     end
   end
 

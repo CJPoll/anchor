@@ -671,8 +671,10 @@ How a run goes:
 1. A journal left by a killed run (`.anchor/sabotage/in-flight.json`) is dealt
    with first: the file still holding the mutant is restored (and the run says
    so); a file already back loses only the journal; a file that matches
-   neither is refused and left alone. `mix anchor.sabotage restore` does this
-   step alone.
+   neither is refused and left alone. A journal whose owner (the OS pid and
+   start time of the run that wrote it, read from `/proc`) is still alive
+   belongs to a run still going: the second run refuses, exit 2, and touches
+   nothing. `mix anchor.sabotage restore` does this step alone.
 2. Every target file must be committed: sabotage starts from committed code.
 3. Mutants are ordered by file, function, operator and id; `--only` keeps the
    named ids; the cap keeps the first N and lists the rest `not run (cap)`.
@@ -704,7 +706,7 @@ function with no literal clause is listed as an error, never as killed.
 |---|---|
 | every mutant run killed, timed out or invalid | 0 |
 | a mutant survived or had no test | 1 |
-| a dirty target file; the journal not git-ignored; a leftover journal whose file changed; a restore that did not reproduce the original (the journal is kept); an unknown `--only` id; no `timeout` binary; bad flags | 2, with `Fix:` |
+| a dirty target file; the journal not git-ignored; a journal another live run owns; a leftover journal whose file changed; a restore that did not reproduce the original (the journal is kept); an unknown `--only` id; no `timeout` binary; bad flags | 2, with `Fix:` |
 | no loadable config or no `sabotage:` section; the scope could not be measured; the baseline fails; changed functions whose files cannot be read | 3, `COULD NOT MEASURE` with `Fix:` |
 
 ## Check Types

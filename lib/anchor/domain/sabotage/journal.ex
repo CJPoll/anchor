@@ -7,21 +7,31 @@ defmodule Anchor.Domain.Sabotage.Journal do
   so any bytes round-trip). The file I/O is `Anchor.Adapters.SourcePatcher`'s.
 
   A leftover journal (the BEAM was killed between apply and restore) is read
-  first on the next run: `recovery/2` says what to do with it.
+  first on the next run: `recovery/2` says what to do with it. A journal whose
+  `owner` (the run that wrote it) is still alive is not a leftover: that run
+  is mid-mutant, and the next run refuses rather than touch it.
   """
 
   @path ".anchor/sabotage/in-flight.json"
 
   @enforce_keys [:file, :mutant_id, :original, :original_sha, :mutated_sha]
-  defstruct @enforce_keys
+  defstruct @enforce_keys ++ [owner: nil]
 
   @type t :: %__MODULE__{
           file: String.t(),
           mutant_id: String.t(),
           original: binary(),
           original_sha: String.t(),
-          mutated_sha: String.t()
+          mutated_sha: String.t(),
+          owner: owner() | nil
         }
+
+  @typedoc """
+  The run that wrote the journal: its OS pid and that process's start time
+  (so a reused pid is never taken for it). `nil` when the writer could not
+  tell (no `/proc`).
+  """
+  @type owner :: %{os_pid: pos_integer(), started: String.t()}
 
   @doc "The journal's path, relative to the project root."
   @spec path() :: String.t()
@@ -51,7 +61,8 @@ defmodule Anchor.Domain.Sabotage.Journal do
       "mutant_id" => entry.mutant_id,
       "original_base64" => Base.encode64(entry.original),
       "original_sha256" => entry.original_sha,
-      "mutated_sha256" => entry.mutated_sha
+      "mutated_sha256" => entry.mutated_sha,
+      "owner" => owner_json(entry.owner)
     })
   end
 
@@ -66,6 +77,7 @@ defmodule Anchor.Domain.Sabotage.Journal do
          %{"original_sha256" => original_sha, "mutated_sha256" => mutated_sha} <- map,
          true <- Enum.all?([file, id, b64, original_sha, mutated_sha], &is_binary/1),
          true <- inside_root?(file),
+         {:ok, owner} <- owner_from_json(Map.get(map, "owner")),
          {:ok, original} <- Base.decode64(b64),
          true <- sha256(original) == original_sha do
       {:ok,
@@ -74,12 +86,24 @@ defmodule Anchor.Domain.Sabotage.Journal do
          mutant_id: id,
          original: original,
          original_sha: original_sha,
-         mutated_sha: mutated_sha
+         mutated_sha: mutated_sha,
+         owner: owner
        }}
     else
       _corrupt -> {:error, :corrupt_journal}
     end
   end
+
+  defp owner_json(nil), do: nil
+  defp owner_json(%{os_pid: pid, started: started}), do: %{"os_pid" => pid, "started" => started}
+
+  defp owner_from_json(nil), do: {:ok, nil}
+
+  defp owner_from_json(%{"os_pid" => pid, "started" => started})
+       when is_integer(pid) and pid > 0 and is_binary(started),
+       do: {:ok, %{os_pid: pid, started: started}}
+
+  defp owner_from_json(_other), do: :error
 
   # A journal names a file under the project root: relative, no `..`.
   defp inside_root?(file),

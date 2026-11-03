@@ -27,6 +27,18 @@ defmodule Anchor.Domain.Sabotage.JournalTest do
         do: assert(Journal.decode(bytes) == {:error, :corrupt_journal}, inspect(bytes))
   end
 
+  test "the owner round-trips; a malformed owner is corrupt" do
+    entry = %{
+      Journal.entry("lib/m.ex", "abc123abc123", @original, @mutated)
+      | owner: %{os_pid: 77, started: "12345"}
+    }
+
+    assert Journal.decode(Journal.encode(entry)) == {:ok, entry}
+
+    bad = String.replace(Journal.encode(entry), ~s("os_pid":77), ~s("os_pid":"77"))
+    assert Journal.decode(bad) == {:error, :corrupt_journal}
+  end
+
   test "a journal naming a file outside the project root is corrupt" do
     for file <- ["/etc/passwd", "../outside.ex", "lib/../../outside.ex", ""] do
       entry = Journal.entry(file, "abc123abc123", @original, @mutated)

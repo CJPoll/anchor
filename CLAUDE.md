@@ -174,7 +174,8 @@ run, two test cases by default. It reads the optional top-level `sabotage:`
 section (`Anchor.Domain.Sabotage.Config`; a new key goes into its `@keys`, its
 moduledoc table and the README's `sabotage:` YAML block). The source tree is restored in an `after` block and a
 journal (`.anchor/sabotage/in-flight.json`, which must be git-ignored) covers a
-VM kill; a leftover journal is dealt with before anything else. A mutant that
+VM kill; a leftover journal is dealt with before anything else, unless its
+owner (OS pid and `/proc` start time) is alive: then the run refuses. A mutant that
 does not compile is `invalid`, never killed. Failed tests come from
 `Anchor.Sabotage.ExUnitFormatter`'s frames, never from parsed output; the
 formatter calls no other Anchor module, so it loads alone in a project's test

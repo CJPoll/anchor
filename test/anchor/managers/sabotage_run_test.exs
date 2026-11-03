@@ -62,6 +62,11 @@ defmodule Anchor.Managers.SabotageRunTest do
     end
   end
 
+  defp expect_journal({:ok, _entry} = result) do
+    expect(SourceMutationMock, :read_journal, fn @root -> call(:read_journal, result) end)
+    expect(SourceMutationMock, :owner_alive?, fn _owner -> false end)
+  end
+
   defp expect_journal(result),
     do: expect(SourceMutationMock, :read_journal, fn @root -> call(:read_journal, result) end)
 
@@ -264,6 +269,18 @@ defmodule Anchor.Managers.SabotageRunTest do
 
       assert %{refusal: {2, message}} = Sabotage.run(@facts, @opts)
       assert message =~ "could not delete .anchor/sabotage/in-flight.json (:eacces)"
+    end
+
+    test "a journal whose owner is a live run is not a leftover: exit 2, nothing touched" do
+      entry = %{leftover() | owner: %{os_pid: 4242, started: "777"}}
+
+      expect(SourceMutationMock, :read_journal, fn @root -> {:ok, entry} end)
+
+      expect(SourceMutationMock, :owner_alive?, fn %{os_pid: 4242, started: "777"} -> true end)
+
+      assert %{refusal: {2, message}, notes: []} = Sabotage.run(@facts, @opts)
+      assert message =~ "another sabotage run (OS pid 4242) is applying mutant #{entry.mutant_id}"
+      assert message =~ "nothing was touched. Fix: let that run finish, then rerun"
     end
 
     test "a journal that cannot be decoded refuses the run, exit 2" do

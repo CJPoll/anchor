@@ -8,8 +8,10 @@ defmodule Anchor.Managers.Sabotage.Runner do
   ## run
 
     1. A leftover journal is dealt with before anything else
-       (`Anchor.Domain.Sabotage.Journal.recovery/2`): the mutant still in
-       place is restored and the journal deleted (said in the run's notes);
+       (`Anchor.Domain.Sabotage.Journal.recovery/2`). A journal whose owner
+       is a live process belongs to a run still going: exit 2, nothing
+       touched. Otherwise the mutant still in place is restored and the
+       journal deleted (said in the run's notes);
        a file already back to the original only loses the journal; a file
        that matches neither refuses the run (exit 2) and is not touched.
     2. The config must have a `sabotage:` section (else exit 3).
@@ -134,6 +136,18 @@ defmodule Anchor.Managers.Sabotage.Runner do
   defp recover_entry(run, root, entry, patcher) do
     path = Path.join(root, entry.file)
 
+    if patcher.owner_alive?(entry.owner),
+      do: {:refuse, run, 2, live_owner(entry)},
+      else: recover_file(run, root, path, entry, patcher)
+  end
+
+  defp live_owner(entry) do
+    "another sabotage run (OS pid #{entry.owner.os_pid}) is applying mutant " <>
+      "#{entry.mutant_id} to #{entry.file}; nothing was touched. Fix: let that run finish, " <>
+      "then rerun"
+  end
+
+  defp recover_file(run, root, path, entry, patcher) do
     case patcher.sha256_file(path) do
       {:ok, sha} -> recover_verdict(Journal.recovery(entry, sha), run, root, entry, patcher)
       {:error, posix} -> changed(run, entry, "it cannot be read (#{inspect(posix)})")

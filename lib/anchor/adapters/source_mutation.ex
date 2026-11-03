@@ -10,7 +10,10 @@ defmodule Anchor.Adapters.SourceMutation do
   absolute.
 
     * `read_journal/1` — the entry, `:none`, or `{:error, :corrupt_journal}`;
-    * `write_journal/2`, `delete_journal/1`;
+    * `write_journal/2` (it stamps the journal with this run as its owner),
+      `delete_journal/1`;
+    * `owner_alive?/1` — whether a journal's owner is a live process (never
+      true for `nil`);
     * `write_file/2` — writes `<path>.anchor-tmp`, then renames it over `path`;
     * `touch_ahead/1` — moves the mtime forward, so Mix recompiles the file;
     * `sha256_file/1` — the file's lowercase hex sha256;
@@ -31,4 +34,5 @@ defmodule Anchor.Adapters.SourceMutation do
   @callback sha256_file(path :: String.t()) :: {:ok, String.t()} | {:error, posix()}
   @callback existing(paths :: [String.t()]) :: [String.t()]
   @callback save_run(path :: String.t(), bytes :: binary()) :: :ok | {:error, posix()}
+  @callback owner_alive?(Journal.owner() | nil) :: boolean()
 end

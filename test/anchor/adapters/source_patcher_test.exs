@@ -17,7 +17,8 @@ defmodule Anchor.Adapters.SourcePatcherTest do
     assert SourcePatcher.read_journal(root) == :none
     assert SourcePatcher.write_journal(root, entry) == :ok
     assert File.regular?(Path.join(root, ".anchor/sabotage/in-flight.json"))
-    assert SourcePatcher.read_journal(root) == {:ok, entry}
+    assert {:ok, read} = SourcePatcher.read_journal(root)
+    assert %{read | owner: nil} == entry
     assert SourcePatcher.delete_journal(root) == :ok
     assert SourcePatcher.read_journal(root) == :none
     assert SourcePatcher.delete_journal(root) == :ok
@@ -30,7 +31,22 @@ defmodule Anchor.Adapters.SourcePatcherTest do
 
     assert SourcePatcher.write_journal(root, first) == :ok
     assert SourcePatcher.write_journal(root, second) == {:error, :eexist}
-    assert SourcePatcher.read_journal(root) == {:ok, first}
+    assert {:ok, %Journal{mutant_id: "aaaaaaaaaaaa"}} = SourcePatcher.read_journal(root)
+  end
+
+  test "the journal names this run as its owner, alive; a dead or reused pid is not",
+       %{tmp_dir: root} do
+    entry = Journal.entry("lib/m.ex", "aaaaaaaaaaaa", @original, "one")
+    assert SourcePatcher.write_journal(root, entry) == :ok
+
+    assert {:ok, %Journal{owner: %{os_pid: pid, started: started} = owner}} =
+             SourcePatcher.read_journal(root)
+
+    assert Integer.to_string(pid) == System.pid()
+    assert SourcePatcher.owner_alive?(owner)
+    refute SourcePatcher.owner_alive?(%{owner | started: started <> "0"})
+    refute SourcePatcher.owner_alive?(%{os_pid: 2_147_483_646, started: started})
+    refute SourcePatcher.owner_alive?(nil)
   end
 
   test "2: write_file replaces the content and leaves no .anchor-tmp", %{tmp_dir: root} do
