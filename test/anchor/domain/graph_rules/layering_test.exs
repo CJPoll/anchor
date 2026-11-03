@@ -181,6 +181,17 @@ defmodule Anchor.Domain.GraphRules.LayeringTest do
       assert v.message =~ "calls App.Orders.Store.fetch/1 (adapters, App.Orders)"
     end
 
+    # Regression (critic, e92f4eb): a dynamic call of unknown arity
+    # (`apply(mod, :fetch, args)`) that resolved to a forbidden candidate
+    # printed `fetch/` in its key and message, unlike the unresolved form's `/?`.
+    test "an unknown arity resolved to a forbidden implementation prints /?" do
+      call = [{{App.Web.Page, :show, 1}, {:dynamic, :fetch, nil, :call}, 5}]
+
+      assert [v] = Layering.check(model(call, [@port, @adapter_impl]), @rule)
+      assert v.key == "layering|App.Web.Page.show/1|-> App.Orders.Store.fetch/?"
+      assert v.message =~ "calls App.Orders.Store.fetch/? (adapters, App.Orders)"
+    end
+
     test "only allowed implementations: none" do
       call = [{{App.Web.Page, :show, 1}, {:dynamic, :fetch, 1, :variable}, 5}]
       assert Layering.check(model(call, [@port, @manager_impl]), @rule) == []

@@ -28,8 +28,12 @@ defmodule Anchor.Domain.ViolationKey do
   def rule_name(%{id: id}) when is_binary(id), do: id
   def rule_name(%{type: type}), do: Atom.to_string(type)
 
-  @doc "`Mod.fun/arity` for an mfa, without the `Elixir.` prefix."
-  @spec mfa({module(), atom(), arity()}) :: String.t()
+  @doc """
+  `Mod.fun/arity` for an mfa, without the `Elixir.` prefix. An arity of `nil`
+  (a dynamic call whose argument list is not literal) prints as `?`.
+  """
+  @spec mfa({module(), atom(), arity() | nil}) :: String.t()
+  def mfa({module, name, nil}), do: "#{inspect(module)}.#{name}/?"
   def mfa({module, name, arity}), do: "#{inspect(module)}.#{name}/#{arity}"
 
   defp segment!(segment) when is_binary(segment) do

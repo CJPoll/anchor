@@ -49,5 +49,9 @@ defmodule Anchor.Domain.ViolationKeyTest do
       assert ViolationKey.mfa({MyApp.Repo, :insert, 2}) == "MyApp.Repo.insert/2"
       assert ViolationKey.mfa({:ets, :new, 2}) == ":ets.new/2"
     end
+
+    test "an unknown arity prints as ?" do
+      assert ViolationKey.mfa({MyApp.Repo, :insert, nil}) == "MyApp.Repo.insert/?"
+    end
   end
 end
