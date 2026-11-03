@@ -1,12 +1,17 @@
 # Sabotage record — aggregate declarations (DND-5476)
 
-- **Domain:** aggregates (one combined record for the ticket, as its QA plan directs; the mutations of `Anchor.Config`, `Anchor.Domain.GraphRules`, `Anchor.Domain.Model`, `Anchor.Domain.GraphReport` and `Anchor.Managers.Graph` are off-domain and labelled by their file)
+- **Domain:** aggregates (one combined record for the ticket, as its QA plan directs; the mutations of `Anchor.Config`, `Anchor.Domain.RuleSchema`, `Anchor.Domain.GraphRules`, `Anchor.Domain.Model`, `Anchor.Domain.GraphReport`, `Anchor.Domain.Failures`, `Anchor.Managers.Graph` and the README table are off-domain and labelled by their file)
 - **Branch:** dnd-5476-aggregate-decls
 - **Date:** 2026-11-03
-- **Code under test:** `Anchor.Domain.Aggregates.Config`, `Anchor.Domain.Aggregates.Index` (`build/2`, `table_of/2`, `aggregate_of/2`, `owners/2`), `Anchor.Domain.GraphRules.AggregateDeclarations`, `Anchor.Aggregate` (`__using__/1`), and the wiring in `Anchor.Config`, `Anchor.Domain.Model`, `Anchor.Domain.GraphRules`, `Anchor.Domain.GraphReport` and `Anchor.Managers.Graph`
-- **Suite run:** on 98ee200, a driver applied each mutation to the source, ran `mix test --timeout 2000 --max-cases 2 <its test files>` inside `test-slot`, and restored the source, bumping the file's mtime after each write so Mix recompiled it. After each pass the restored tree ran every file below green (`89 tests, 0 failures`). Every row is red.
-- **Passes:** the first pass (AG-MERGE to MG-COUNT) is the QA plan's sabotage table and more. Four of its mutations were first written so that they also left an unused variable or attribute, which `warnings_as_errors` turned into a compile error; they were re-anchored to the same defect and re-run red (AG-UNK, AG-SKIP, CF-KEYS), or re-anchored after `mix format` moved the line (RL-SCOPE). A `mix test --trace` listing then showed 34 of the 77 tests never red; the second pass (CF-NIL to MC-LITERAL) breaks the branch each of those guards, CF-MODULE re-anchored once for the same compile-error reason. After it, all 77 tests of the five files have been seen red.
-- **Test files:** `test/anchor/domain/aggregates/config_test.exs`, `test/anchor/domain/aggregates/index_test.exs`, `test/anchor/domain/graph_rules/aggregate_declarations_test.exs`, `test/anchor/aggregate_test.exs`, `test/anchor/integration/aggregate_declarations_integration_test.exs`; the RuleSchema registration (`aggregate_declarations: :graph`) is held by `graph_rules_test.exs` (GR-REG) and the README table drift test, and the load of the rule by its rows in `rule_checks_nothing_test.exs` (the shared `graph_common_rows/0`).
+- **Code under test:** `Anchor.Domain.Aggregates.Config`, `Anchor.Domain.Aggregates.Index` (`build/2`, `table_of/2`, `aggregate_of/2`, `owners/2`), `Anchor.Domain.GraphRules.AggregateDeclarations`, `Anchor.Aggregate` (`__using__/1`), `Anchor.Domain.Failures.aggregates_none_declared/3`, the runner's handling of a rule's fail-closed violation (`Anchor.Managers.Graph`), and the wiring in `Anchor.Config`, `Anchor.Domain.RuleSchema`, `Anchor.Domain.Model`, `Anchor.Domain.GraphRules` and `Anchor.Domain.GraphReport`
+- **Suite run:** a driver applied each mutation to the source, ran `mix test --timeout 2000 --max-cases 2 <its test files>` inside `test-slot`, and restored the source, bumping the file's mtime after each write so Mix recompiled it. After each pass the restored tree ran every file it touched green (the last: `176 tests, 0 failures`). Every row is red, by a failed assertion unless its block below shows a raise.
+- **Passes:**
+  1. AG-MERGE to MG-COUNT, on 98ee200: the QA plan's sabotage table and more. AG-UNK, AG-SKIP and CF-KEYS were first written so that they also left an unused variable or attribute, which `warnings_as_errors` turned into a compile error; they were re-anchored to the same defect and re-run red. RL-SCOPE was re-anchored after `mix format` moved its line.
+  2. CF-NIL to MC-LITERAL, on 98ee200: a `mix test --trace` listing showed 34 tests never red; each mutation breaks the branch one of them guards (CF-MODULE re-anchored once for the same compile-error reason).
+  3. MC-TABLES to RS-README, then RL-KEYID, RP-NULL and MG-REPORT, on the review-floor fixes: the ADR review found that some M4 rows, M5, I3 and the catch-all test had gone red only through a crash (MC-ALIAS made every fixture fail to compile; AG-CALL raised `UndefinedFunctionError`), so each guard is now broken on its own and the test goes red on its own assertion. These passes also cover the review fixes' new tests: the JSON counts, the third-aggregate table claim, a second `use`, a repeated key, the fail-closed checks-nothing path through the runner, the Elixir.-prefixed name, and the RuleSchema registration (its keys, its engine, the README row).
+  - Not mutated: `@relations_by_type[:aggregate_declarations]`. A non-empty entry naming a key the type does not accept fails compilation (the guard in `Anchor.Domain.RuleSchema`), which is not a test failure; the relation rows of `rule_checks_nothing_test.exs` for this type are the shared graph common rows, red under RS-KEYS and RS-ENGINE.
+- **Coverage:** a `mix test --trace` listing of the seven new test files (88 tests) against the failing tests named below: every one is red in at least one row.
+- **Test files:** `test/anchor/domain/aggregates/config_test.exs`, `test/anchor/domain/aggregates/index_test.exs`, `test/anchor/domain/graph_rules/aggregate_declarations_test.exs`, `test/anchor/aggregate_test.exs`, `test/anchor/integration/aggregate_declarations_integration_test.exs`, `test/anchor/domain/graph_report_aggregates_test.exs`, `test/anchor/managers/graph_rule_fail_closed_test.exs`; and the rows this ticket adds to `failures_graph_test.exs`, `rule_schema_test.exs` and `rule_checks_nothing_test.exs`.
 
 | # | Mutation | Tests run | Result | Failing tests |
 |---|---|---|---|---|
@@ -69,6 +74,27 @@
 | RL-SHAPETXT | the shape text drifts (`lib/anchor/domain/graph_rules/aggregate_declarations.ex`) | `aggregate_declarations_test.exs` | `7 tests, 3 failures` (red) | check/2 R2: zero aggregates declared is one violation on .anchor.yml: it checks nothing; shape/1 S1: the documented declaration shape; check/2 R1: one violation per issue, at its site, keyed without lines, ending in the shape |
 | MC-NONAME | a missing name is filled in (`lib/anchor/aggregate.ex`) | `aggregate_test.exs` | `13 tests, 1 failure` (red) | __using__/1 M4: no name raises ArgumentError naming the key and the shape |
 | MC-LITERAL | any value is a module name (`lib/anchor/aggregate.ex`) | `aggregate_test.exs` | `13 tests, 3 failures` (red) | __using__/1 M4: a non-literal schema raises ArgumentError naming the key and the shape; __using__/1 M4: a variable name raises ArgumentError naming the key and the shape; __using__/1 M4: an atom name raises ArgumentError naming the key and the shape |
+| MC-TABLES | the macro accepts an empty table (`lib/anchor/aggregate.ex`) | `aggregate_test.exs` | `16 tests, 1 failure` (red) | __using__/1 M4: an empty table raises ArgumentError naming the key and the shape |
+| MC-OWNERANY | the macro accepts any atom as owner (`lib/anchor/aggregate.ex`) | `aggregate_test.exs` | `16 tests, 1 failure` (red) | __using__/1 M4: a non-boolean owner raises ArgumentError naming the key and the shape |
+| MC-SCHEMALIST | the macro wraps a bare schema in a list (`lib/anchor/aggregate.ex`) | `aggregate_test.exs` | `16 tests, 1 failure` (red) | __using__/1 M4: schemas not a list raises ArgumentError naming the key and the shape |
+| MC-DEF | the macro defines a function (`lib/anchor/aggregate.ex`) | `aggregate_test.exs` | `16 tests, 2 failures` (red) | __using__/1 M5: the macro adds no function to the module; __using__/1 M5 positive control: a module with one def lists it |
+| MC-TWICE | a second use is not refused (`lib/anchor/aggregate.ex`) | `aggregate_test.exs` | `16 tests, 1 failure` (red) | __using__/1 M4: a second use in one module raises: a module declares one aggregate |
+| MC-DUPKEY | a key given twice is not refused (`lib/anchor/aggregate.ex`) | `aggregate_test.exs` | `16 tests, 1 failure` (red) | __using__/1 M4: a key given twice raises ArgumentError naming the key and the shape |
+| AG-OWNERFLAG | an owner: false attribute still makes its module an owner (`lib/anchor/domain/aggregates/index.ex`) | `index_test.exs` | `30 tests, 1 failure` (red) | build/2 I3: an owner: false attribute adds its schema and no owner |
+| AG-CATCHALL | a catch-all clause is read as the source (`lib/anchor/domain/aggregates/index.ex`) | `index_test.exs` | `30 tests, 1 failure` (red) | table_of/2 a catch-all clause before :source makes it unknown |
+| AG-COVER | any table a twice-claimed schema reaches is left to the schema (`lib/anchor/domain/aggregates/index.ex`) | `index_test.exs` | `30 tests, 1 failure` (red) | build/2 I5: a table a third aggregate lists, past a schema claimed twice, is claimed by all |
+| RP-JSON | the JSON swaps in the declared count (`lib/anchor/domain/graph_report.ex`) | `graph_report_aggregates_test.exs` | `2 tests, 1 failure` (red) | declared aggregates and their unknown tables are in the summary and the JSON |
+| FL-NONE | the checks-nothing text drifts (`lib/anchor/domain/failures.ex`) | `failures_graph_test.exs`, `aggregate_declarations_test.exs` | `24 tests, 2 failures` (red) | check/2 R2: zero aggregates declared is one fail-closed violation on .anchor.yml, unkeyed; every graph message is fail-closed, on its file, with its subject and a Fix: line |
+| MG-FC | the runner treats a fail-closed violation as a rule finding (`lib/anchor/managers/graph.ex`) | `graph_rule_fail_closed_test.exs` | `3 tests, 1 failure` (red) | a report rule's fail-closed issue is enforced, and its baseline holds only the rule finding |
+| MG-FCKEY | the runner keeps a fail-closed violation's key (`lib/anchor/managers/graph.ex`) | `graph_rule_fail_closed_test.exs` | `3 tests, 2 failures` (red) | --write-baseline writes the rule finding only, and the issue still fails the run; a report rule's fail-closed issue is enforced, and its baseline holds only the rule finding |
+| RL-FC | the checks-nothing violation is a rule finding (`lib/anchor/domain/graph_rules/aggregate_declarations.ex`) | `aggregate_declarations_test.exs` | `8 tests, 2 failures` (red) | check/2 R2: zero aggregates with issues: each issue, then the checks-nothing line; check/2 R2: zero aggregates declared is one fail-closed violation on .anchor.yml, unkeyed |
+| CF-ELIXIR | an Elixir.-prefixed name is accepted (`lib/anchor/domain/aggregates/config.ex`) | `config_test.exs` | `27 tests, 1 failure` (red) | parse/1 C3: refused: an Elixir.-prefixed name |
+| RS-KEYS | aggregate_declarations accepts a stray key (`lib/anchor/domain/rule_schema.ex`) | `rule_schema_test.exs`, `rule_checks_nothing_test.exs` | `60 tests, 5 failures` (red) | every key of every type has a row in that type's table; an unknown key inside a rule a near-miss spelling of every known key is rejected; the positive case every documented key of every type is accepted; the positive case the README lists exactly the keys each rule type accepts, its relation and engine; an unknown key inside a rule a typo'd key fails the rule, for every rule type |
+| RS-ENGINE | aggregate_declarations runs on the ast engine (`lib/anchor/domain/rule_schema.ex`) | `rule_schema_test.exs`, `rule_checks_nothing_test.exs`, `graph_rules_test.exs` | `72 tests, 5 failures` (red) | all/0 every module implements GraphRule, and their types are RuleSchema's graph types; engine/1 every shipped type has an engine; the graph types are the graph rule modules'; aggregate_declarations: every rule that checks nothing is refused, and the positive rows load; the positive case the ast types are exactly the rule types of Anchor.checks/0; the positive case the README lists exactly the keys each rule type accepts, its relation and engine |
+| RS-README | the README table loses the aggregate_declarations row (`README.md`) | `rule_schema_test.exs` | `33 tests, 1 failure` (red) | the positive case the README lists exactly the keys each rule type accepts, its relation and engine |
+| RL-KEYID | a rule with no id is keyed as if it had one (`lib/anchor/domain/graph_rules/aggregate_declarations.ex`) | `aggregate_declarations_test.exs` | `8 tests, 1 failure` (red) | check/2 a rule with no id keys an issue by its type |
+| RP-NULL | the JSON gives an empty object when none is declared (`lib/anchor/domain/graph_report.ex`) | `graph_report_aggregates_test.exs` | `2 tests, 1 failure` (red) | positive control: none declared, the summary says nothing and the JSON is null |
+| MG-REPORT | every rule violation is enforced as fail-closed (`lib/anchor/managers/graph.ex`) | `graph_rule_fail_closed_test.exs` | `3 tests, 1 failure` (red) | positive control: the same rule's finding without a baseline is report-only |
 
 ## AG-MERGE — merge keeps only the first source's schemas
 
@@ -1720,4 +1746,501 @@ warning: mtime (modified time) for "lib/anchor/domain/graph_rules/aggregate_decl
      code: assert_raise ArgumentError, fn ->
      stacktrace:
        test/anchor/aggregate_test.exs:101: (test)
+```
+
+## MC-TABLES — the macro accepts an empty table
+
+`lib/anchor/aggregate.ex`, tests: test/anchor/aggregate_test.exs. First failing test, verbatim:
+
+```
+  1) test __using__/1 M4: an empty table raises ArgumentError naming the key and the shape (Anchor.AggregateTest)
+     test/anchor/aggregate_test.exs:95
+     Expected exception ArgumentError but nothing was raised
+     code: assert_raise ArgumentError, fn ->
+     stacktrace:
+       test/anchor/aggregate_test.exs:102: (test)
+
+..
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+16 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/aggregate.ex" was set to the future, resetting to now
+```
+
+## MC-OWNERANY — the macro accepts any atom as owner
+
+`lib/anchor/aggregate.ex`, tests: test/anchor/aggregate_test.exs. First failing test, verbatim:
+
+```
+  1) test __using__/1 M4: a non-boolean owner raises ArgumentError naming the key and the shape (Anchor.AggregateTest)
+     test/anchor/aggregate_test.exs:95
+     Expected exception ArgumentError but nothing was raised
+     code: assert_raise ArgumentError, fn ->
+     stacktrace:
+       test/anchor/aggregate_test.exs:102: (test)
+
+
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+16 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/aggregate.ex" was set to the future, resetting to now
+```
+
+## MC-SCHEMALIST — the macro wraps a bare schema in a list
+
+`lib/anchor/aggregate.ex`, tests: test/anchor/aggregate_test.exs. First failing test, verbatim:
+
+```
+  1) test __using__/1 M4: schemas not a list raises ArgumentError naming the key and the shape (Anchor.AggregateTest)
+     test/anchor/aggregate_test.exs:95
+     Expected exception ArgumentError but nothing was raised
+     code: assert_raise ArgumentError, fn ->
+     stacktrace:
+       test/anchor/aggregate_test.exs:102: (test)
+
+....
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+16 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/aggregate.ex" was set to the future, resetting to now
+```
+
+## MC-DEF — the macro defines a function
+
+`lib/anchor/aggregate.ex`, tests: test/anchor/aggregate_test.exs. First failing test, verbatim:
+
+```
+  1) test __using__/1 M5: the macro adds no function to the module (Anchor.AggregateTest)
+     test/anchor/aggregate_test.exs:140
+     Assertion with == failed
+     code:  assert beam.elixir.definitions == []
+     left:  [
+              {{:__anchor_aggregate__, 0}, :def,
+               [line: 2, context: Anchor.Aggregate],
+               [{[line: 2, context: Anchor.Aggregate], [], [], :ok}]}
+            ]
+     right: []
+     stacktrace:
+       test/anchor/aggregate_test.exs:148: (test)
+
+.....
+```
+
+## MC-TWICE — a second use is not refused
+
+`lib/anchor/aggregate.ex`, tests: test/anchor/aggregate_test.exs. First failing test, verbatim:
+
+```
+  1) test __using__/1 M4: a second use in one module raises: a module declares one aggregate (Anchor.AggregateTest)
+     test/anchor/aggregate_test.exs:115
+     Expected exception ArgumentError but nothing was raised
+     code: assert_raise ArgumentError, fn ->
+     stacktrace:
+       test/anchor/aggregate_test.exs:117: (test)
+
+........
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+16 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/aggregate.ex" was set to the future, resetting to now
+```
+
+## MC-DUPKEY — a key given twice is not refused
+
+`lib/anchor/aggregate.ex`, tests: test/anchor/aggregate_test.exs. First failing test, verbatim:
+
+```
+  1) test __using__/1 M4: a key given twice raises ArgumentError naming the key and the shape (Anchor.AggregateTest)
+     test/anchor/aggregate_test.exs:95
+     Expected exception ArgumentError but nothing was raised
+     code: assert_raise ArgumentError, fn ->
+     stacktrace:
+       test/anchor/aggregate_test.exs:102: (test)
+
+....
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+16 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/aggregate.ex" was set to the future, resetting to now
+```
+
+## AG-OWNERFLAG — an owner: false attribute still makes its module an owner
+
+`lib/anchor/domain/aggregates/index.ex`, tests: test/anchor/domain/aggregates/index_test.exs. First failing test, verbatim:
+
+```
+  1) test build/2 I3: an owner: false attribute adds its schema and no owner (Anchor.Domain.Aggregates.IndexTest)
+     test/anchor/domain/aggregates/index_test.exs:150
+     Assertion with == failed
+     code:  assert Index.owners(index, "B") == []
+     left:  [AnchorFixtures.Aggregates.IndexTest.S4]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/index_test.exs:158: (test)
+
+...
+Finished in 0.2 seconds (0.2s async, 0.00s sync)
+30 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/aggregate.ex" was set to the future, resetting to now
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/index.ex" was set to the future, resetting to now
+```
+
+## AG-CATCHALL — a catch-all clause is read as the source
+
+`lib/anchor/domain/aggregates/index.ex`, tests: test/anchor/domain/aggregates/index_test.exs. First failing test, verbatim:
+
+```
+  1) test table_of/2 a catch-all clause before :source makes it unknown (Anchor.Domain.Aggregates.IndexTest)
+     test/anchor/domain/aggregates/index_test.exs:415
+     Assertion with == failed
+     code:  assert Index.table_of(graph, module) == :unknown
+     left:  {:ok, "t"}
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/index_test.exs:433: (test)
+
+.........
+Finished in 0.2 seconds (0.2s async, 0.00s sync)
+30 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/index.ex" was set to the future, resetting to now
+```
+
+## AG-COVER — any table a twice-claimed schema reaches is left to the schema
+
+`lib/anchor/domain/aggregates/index.ex`, tests: test/anchor/domain/aggregates/index_test.exs. First failing test, verbatim:
+
+```
+  1) test build/2 I5: a table a third aggregate lists, past a schema claimed twice, is claimed by all (Anchor.Domain.Aggregates.IndexTest)
+     test/anchor/domain/aggregates/index_test.exs:243
+     match (=) failed
+     code:  assert [
+              {:config, ["A", "B", "C"]},
+              {{:attribute, @store, _, _}, ["A", "B", "C"]},
+              {{:attribute, @x, _, _}, ["A", "B", "C"]}
+            ] =
+              for %{subject: "s1"} = issue <- index.issues do
+                {issue.site, issue.aggregates}
+              end
+     left:  [
+              {:config, ["A", "B", "C"]},
+              {{:attribute, AnchorFixtures.Aggregates.IndexTest.Store, _, _}, ["A", "B", "C"]},
+              {{:attribute, AnchorFixtures.Aggregates.IndexTest.X, _, _}, ["A", "B", "C"]}
+            ]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/index_test.exs:253: (test)
+
+.....
+Finished in 0.2 seconds (0.2s async, 0.00s sync)
+30 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/index.ex" was set to the future, resetting to now
+```
+
+## RP-JSON — the JSON swaps in the declared count
+
+`lib/anchor/domain/graph_report.ex`, tests: test/anchor/domain/graph_report_aggregates_test.exs. First failing test, verbatim:
+
+```
+  1) test declared aggregates and their unknown tables are in the summary and the JSON (Anchor.Domain.GraphReportAggregatesTest)
+     test/anchor/domain/graph_report_aggregates_test.exs:20
+     Assertion with == failed
+     code:  assert JSON.decode!(GraphReport.render(report, :json))["aggregates"] == %{
+              "declared" => 3,
+              "tables_unknown" => 1
+            }
+     left:  %{"declared" => 3, "tables_unknown" => 3}
+     right: %{"declared" => 3, "tables_unknown" => 1}
+     stacktrace:
+       test/anchor/domain/graph_report_aggregates_test.exs:28: (test)
+
+.
+Finished in 0.02 seconds (0.02s async, 0.00s sync)
+2 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/index.ex" was set to the future, resetting to now
+warning: mtime (modified time) for "lib/anchor/domain/graph_report.ex" was set to the future, resetting to now
+```
+
+## FL-NONE — the checks-nothing text drifts
+
+`lib/anchor/domain/failures.ex`, tests: test/anchor/domain/failures_graph_test.exs, test/anchor/domain/graph_rules/aggregate_declarations_test.exs. First failing test, verbatim:
+
+```
+  1) test check/2 R2: zero aggregates declared is one fail-closed violation on .anchor.yml, unkeyed (Anchor.Domain.GraphRules.AggregateDeclarationsTest)
+     test/anchor/domain/graph_rules/aggregate_declarations_test.exs:126
+     Assertion with == failed
+     code:  assert v.message ==
+              ~s|rule (id: "aggregates", aggregate_declarations) checks nothing: no aggregate | <>
+                "is declared in .anchor.yml or by an @anchor_aggregate attribute. Fix: declare " <>
+                "one or remove the rule: " <> @shape
+     left:  "rule (id: \"aggregates\", aggregate_declarations) has no aggregates in .anchor.yml or by an @anchor_aggregate attribute. Fix: declare one or remove the rule: aggregates: declare: - name: <Aggregate>, schemas: [<Schema>...], tables: [\"<table>\"...], owners: [<Module>...], or use Anchor.Aggregate, name: <Aggregate>, schemas: [<Schema>...]"
+     right: "rule (id: \"aggregates\", aggregate_declarations) checks nothing: no aggregate is declared in .anchor.yml or by an @anchor_aggregate attribute. Fix: declare one or remove the rule: aggregates: declare: - name: <Aggregate>, schemas: [<Schema>...], tables: [\"<table>\"...], owners: [<Module>...], or use Anchor.Aggregate, name: <Aggregate>, schemas: [<Schema>...]"
+     stacktrace:
+       test/anchor/domain/graph_rules/aggregate_declarations_test.exs:133: (test)
+
+......
+```
+
+## MG-FC — the runner treats a fail-closed violation as a rule finding
+
+`lib/anchor/managers/graph.ex`, tests: test/anchor/managers/graph_rule_fail_closed_test.exs. First failing test, verbatim:
+
+```
+  1) test a report rule's fail-closed issue is enforced, and its baseline holds only the rule finding (Anchor.Managers.GraphRuleFailClosedTest)
+     test/anchor/managers/graph_rule_fail_closed_test.exs:117
+     Assertion with == failed
+     code:  assert report.exit_code == 1
+     left:  0
+     right: 1
+     stacktrace:
+       test/anchor/managers/graph_rule_fail_closed_test.exs:125: (test)
+
+
+Finished in 0.09 seconds (0.09s async, 0.00s sync)
+3 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/failures.ex" was set to the future, resetting to now
+warning: mtime (modified time) for "lib/anchor/managers/graph.ex" was set to the future, resetting to now
+```
+
+## MG-FCKEY — the runner keeps a fail-closed violation's key
+
+`lib/anchor/managers/graph.ex`, tests: test/anchor/managers/graph_rule_fail_closed_test.exs. First failing test, verbatim:
+
+```
+  1) test --write-baseline writes the rule finding only, and the issue still fails the run (Anchor.Managers.GraphRuleFailClosedTest)
+     test/anchor/managers/graph_rule_fail_closed_test.exs:143
+     Refute with =~ failed
+     code:  refute contents =~ "nothing"
+     left:  "# anchor baseline for c; shrink only\nc|found\nc|nothing\n"
+     right: "nothing"
+     stacktrace:
+       test/anchor/managers/graph_rule_fail_closed_test.exs:154: (test)
+```
+
+## RL-FC — the checks-nothing violation is a rule finding
+
+`lib/anchor/domain/graph_rules/aggregate_declarations.ex`, tests: test/anchor/domain/graph_rules/aggregate_declarations_test.exs. First failing test, verbatim:
+
+```
+  1) test check/2 R2: zero aggregates with issues: each issue, then the checks-nothing line (Anchor.Domain.GraphRules.AggregateDeclarationsTest)
+     test/anchor/domain/graph_rules/aggregate_declarations_test.exs:172
+     match (=) failed
+     code:  assert [%{kind: :rule}, %{kind: :fail_closed}] = AggregateDeclarations.check(model([issue], %{}), @rule)
+     left:  [%{kind: :rule}, %{kind: :fail_closed}]
+     right: [
+              %Anchor.Domain.Violation{
+                line: 7,
+                trigger: "App.X",
+                message: "@anchor_aggregate on App.X is not [name: atom, schemas: [atom], tables: [binary], owner: boolean]: it has no name. Fix: write it in this shape: aggregates: declare: - name: <Aggregate>, schemas: [<Schema>...], tables: [\"<table>\"...], owners: [<Module>...], or use Anchor.Aggregate, name: <Aggregate>, schemas: [<Schema>...]",
+                filename: "lib/app/x.ex",
+                kind: :rule,
+                key: "aggregates|App.X|malformed_attribute - App.X",
+                rule_id: "aggregates",
+                enforcement: :enforce
+              },
+              %Anchor.Domain.Violation{
+                line: nil,
+                trigger: nil,
+                message: "rule (id: \"aggregates\", aggregate_declarations) checks nothing: no aggregate is declared in .anchor.yml or by an @anchor_aggregate attribute. Fix: declare one or remove the rule: aggregates: declare: - name: <Aggregate>, schemas: [<Schema>...], tables: [\"<table>\"...], owners: [<Module>...], or use Anchor.Aggregate, name: <Aggregate>, schemas: [<Schema>...]",
+                filename: ".anchor.yml",
+                kind: :rule,
+                key: nil,
+                rule_id: nil,
+                enforcement: :enforce
+              }
+            ]
+     stacktrace:
+       test/anchor/domain/graph_rules/aggregate_declarations_test.exs:180: (test)
+```
+
+## CF-ELIXIR — an Elixir.-prefixed name is accepted
+
+`lib/anchor/domain/aggregates/config.ex`, tests: test/anchor/domain/aggregates/config_test.exs. First failing test, verbatim:
+
+```
+  1) test parse/1 C3: refused: an Elixir.-prefixed name (Anchor.Domain.Aggregates.ConfigTest)
+     test/anchor/domain/aggregates/config_test.exs:113
+     match (=) failed
+     code:  assert {:error, {:invalid_config, message}} = AggregatesConfig.parse(section)
+     left:  {:error, {:invalid_config, message}}
+     right: {:ok,
+             %Anchor.Domain.Aggregates.Config{
+               declare: [
+                 %Anchor.Domain.Aggregates.Declaration{
+                   name: "Elixir.MyApp.S",
+                   schemas: [MyApp.Threads.Thread,
+                    MyApp.Threads.Message],
+                   tables: ["thread_reads"],
+                   owners: [MyApp.Threads.ThreadStore],
+                   sites: [:config]
+                 }
+               ],
+               repos: [],
+               write_functions: [],
+               transaction_functions: []
+             }}
+     stacktrace:
+       test/anchor/domain/aggregates/config_test.exs:142: Anchor.Domain.Aggregates.ConfigTest.assert_refused/2
+       test/anchor/domain/aggregates/config_test.exs:114: (test)
+
+.....................
+Finished in 0.08 seconds (0.08s async, 0.00s sync)
+27 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/graph_rules/aggregate_declarations.ex" was set to the future, resetting to now
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/config.ex" was set to the future, resetting to now
+```
+
+## RS-KEYS — aggregate_declarations accepts a stray key
+
+`lib/anchor/domain/rule_schema.ex`, tests: test/anchor/domain/rule_schema_test.exs, test/anchor/domain/rule_checks_nothing_test.exs. First failing test, verbatim:
+
+```
+  1) test every key of every type has a row in that type's table (Anchor.Domain.RuleChecksNothingTest)
+     test/anchor/domain/rule_checks_nothing_test.exs:56
+     aggregate_declarations: no row in table(:aggregate_declarations) carries "min_module"
+     code: for type <- RuleSchema.rule_types() do
+     stacktrace:
+       (elixir 1.19.4) lib/enum.ex:1688: Enum."-map/2-lists^map/1-1-"/2
+       (elixir 1.19.4) lib/enum.ex:1688: Enum."-map/2-lists^map/1-1-"/2
+       test/anchor/domain/rule_checks_nothing_test.exs:60: anonymous fn/2 in Anchor.Domain.RuleChecksNothingTest."test every key of every type has a row in that type's table"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/rule_checks_nothing_test.exs:57: (test)
+
+.....................
+```
+
+## RS-ENGINE — aggregate_declarations runs on the ast engine
+
+`lib/anchor/domain/rule_schema.ex`, tests: test/anchor/domain/rule_schema_test.exs, test/anchor/domain/rule_checks_nothing_test.exs, test/anchor/domain/graph_rules_test.exs. First failing test, verbatim:
+
+```
+  1) test all/0 every module implements GraphRule, and their types are RuleSchema's graph types (Anchor.Domain.GraphRulesTest)
+     test/anchor/domain/graph_rules_test.exs:61
+     Assertion with == failed
+     code:  assert GraphRules.all() |> Enum.map(& &1.rule_type()) |> Enum.sort() ==
+              RuleSchema.rule_types_for_engine(:graph)
+     left:  [:aggregate_declarations, :context_acyclic, :layering]
+     right: [:context_acyclic, :layering]
+     stacktrace:
+       test/anchor/domain/graph_rules_test.exs:64: (test)
+
+........
+```
+
+## RS-README — the README table loses the aggregate_declarations row
+
+`README.md`, tests: test/anchor/domain/rule_schema_test.exs. First failing test, verbatim:
+
+```
+  1) test the positive case the README lists exactly the keys each rule type accepts, its relation and engine (Anchor.Domain.RuleSchemaTest)
+     test/anchor/domain/rule_schema_test.exs:208
+     Assertion with == failed
+     code:  assert rows |> Enum.map(&elem(&1, 0)) |> Enum.sort() == RuleSchema.rule_types()
+     left:  [:alphabetized_functions, :case_on_bare_arg, :context_acyclic,
+             :layering, :max_file_length,
+             :module_pattern_restrictions, :must_use_module,
+             :no_comparison_in_if, :no_direct_dependency,
+             :no_discarded_pure_expression,
+             :no_discarding_arrow_in_with, :no_forwarding_function,
+             :no_transitive_dependency, :no_tuple_match_in_head,
+             :single_control_flow, :struct_getter_convention,
+             :struct_owned_by_module]
+     right: [:aggregate_declarations, :alphabetized_functions,
+             :case_on_bare_arg, :context_acyclic, :layering,
+             :max_file_length, :module_pattern_restrictions,
+             :must_use_module, :no_comparison_in_if,
+             :no_direct_dependency, :no_discarded_pure_expression,
+             :no_discarding_arrow_in_with, :no_forwarding_function,
+             :no_transitive_dependency, :no_tuple_match_in_head,
+             :single_control_flow, :struct_getter_convention,
+             :struct_owned_by_module]
+     stacktrace:
+       test/anchor/domain/rule_schema_test.exs:215: (test)
+
+..........................
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+33 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/rule_schema.ex" was set to the future, resetting to now
+```
+
+## RL-KEYID — a rule with no id is keyed as if it had one
+
+`lib/anchor/domain/graph_rules/aggregate_declarations.ex`, tests: test/anchor/domain/graph_rules/aggregate_declarations_test.exs. First failing test, verbatim:
+
+```
+  1) test check/2 a rule with no id keys an issue by its type (Anchor.Domain.GraphRules.AggregateDeclarationsTest)
+     test/anchor/domain/graph_rules/aggregate_declarations_test.exs:184
+     Assertion with == failed
+     code:  assert v.key == "aggregate_declarations|.anchor.yml|unknown_schema A Nope"
+     left:  "aggregates|.anchor.yml|unknown_schema A Nope"
+     right: "aggregate_declarations|.anchor.yml|unknown_schema A Nope"
+     stacktrace:
+       test/anchor/domain/graph_rules/aggregate_declarations_test.exs:193: (test)
+
+.......
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+8 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/graph_rules/aggregate_declarations.ex" was set to the future, resetting to now
+```
+
+## RP-NULL — the JSON gives an empty object when none is declared
+
+`lib/anchor/domain/graph_report.ex`, tests: test/anchor/domain/graph_report_aggregates_test.exs. First failing test, verbatim:
+
+```
+  1) test positive control: none declared, the summary says nothing and the JSON is null (Anchor.Domain.GraphReportAggregatesTest)
+     test/anchor/domain/graph_report_aggregates_test.exs:34
+     match (=) failed
+     code:  assert %{"aggregates" => nil} = JSON.decode!(GraphReport.render(report, :json))
+     left:  %{"aggregates" => nil}
+     right: %{
+              "aggregates" => %{},
+              "apply_sites" => nil,
+              "apps" => 2,
+              "could_not_check" => [],
+              "excluded" => 0,
+              "exit_code" => 0,
+              "findings" => [],
+              "held" => [],
+              "modules" => 12,
+              "no_core" => 0,
+              "opaque" => 0,
+              "refused" => [],
+              "rules" => 3
+            }
+     stacktrace:
+       test/anchor/domain/graph_report_aggregates_test.exs:38: (test)
+
+.
+Finished in 0.05 seconds (0.05s async, 0.00s sync)
+2 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/graph_rules/aggregate_declarations.ex" was set to the future, resetting to now
+warning: mtime (modified time) for "lib/anchor/domain/graph_report.ex" was set to the future, resetting to now
+```
+
+## MG-REPORT — every rule violation is enforced as fail-closed
+
+`lib/anchor/managers/graph.ex`, tests: test/anchor/managers/graph_rule_fail_closed_test.exs. First failing test, verbatim:
+
+```
+  1) test positive control: the same rule's finding without a baseline is report-only (Anchor.Managers.GraphRuleFailClosedTest)
+     test/anchor/managers/graph_rule_fail_closed_test.exs:135
+     match (=) failed
+     code:  assert [%{enforcement: :report, key: "c|found"}] =
+              Enum.filter(report.findings, &(&1.message =~ "found."))
+     left:  [%{enforcement: :report, key: "c|found"}]
+     right: [
+              %Anchor.Domain.GraphReport.Finding{
+                rule_id: nil,
+                type: nil,
+                label: "anchor.graph",
+                enforcement: :enforce,
+                key: "c|found",
+                file: "lib/x.ex",
+                line: 1,
+                message: "found. Fix: no."
+              }
+            ]
+     stacktrace:
+       test/anchor/managers/graph_rule_fail_closed_test.exs:139: (test)
+
+
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+3 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/graph_report.ex" was set to the future, resetting to now
+warning: mtime (modified time) for "lib/anchor/managers/graph.ex" was set to the future, resetting to now
 ```

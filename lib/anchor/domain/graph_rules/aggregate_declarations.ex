@@ -14,7 +14,13 @@ defmodule Anchor.Domain.GraphRules.AggregateDeclarations do
   site is `.anchor.yml` or the declaring module: no line numbers.
 
   When no aggregate is declared at all, the rule checks nothing, and says so
-  in one violation on the config (the Anchor fail-closed convention).
+  in one fail-closed violation on the config
+  (`Anchor.Domain.Failures.aggregates_none_declared/3`): the runner never
+  holds it in a baseline and never prints it as report-only, like a rule
+  below its floor.
+
+  A module outside the selector still declares: its declarations count, and
+  only its issues are left out of this rule's report.
 
   Every message ends with `Fix:`, the advice and the declaration shape
   (`shape/1`).
@@ -26,6 +32,7 @@ defmodule Anchor.Domain.GraphRules.AggregateDeclarations do
   alias Anchor.Domain.Aggregates.Config
   alias Anchor.Domain.Aggregates.DeclarationIssue
   alias Anchor.Domain.Aggregates.Index
+  alias Anchor.Domain.Failures
   alias Anchor.Domain.GraphRules
   alias Anchor.Domain.Model
   alias Anchor.Domain.Violation
@@ -59,18 +66,10 @@ defmodule Anchor.Domain.GraphRules.AggregateDeclarations do
   defp in_scope?({:attribute, module, _file, _line}, selected),
     do: MapSet.member?(selected, module)
 
-  defp checks_nothing(model, rule) do
-    %Violation{
-      filename: config_file(model),
-      line: nil,
-      trigger: "aggregate_declarations",
-      rule_id: Map.get(rule, :id),
-      key: ViolationKey.graph_key(rule, @config_file, "checks nothing"),
-      message:
-        "aggregate_declarations checks nothing: no aggregate is declared in .anchor.yml or by " <>
-          "an @anchor_aggregate attribute. Fix: declare one or remove the rule: #{shape(rule)}"
-    }
-  end
+  # Fail-closed (`Failures`): the runner reports it as an issue of the run,
+  # never held by a baseline and never report-only.
+  defp checks_nothing(model, rule),
+    do: Failures.aggregates_none_declared(rule, shape(rule), config_file(model))
 
   defp violation(%DeclarationIssue{} = issue, model, rule) do
     {file, line, site} = site(issue.site, model)

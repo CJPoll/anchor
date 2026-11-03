@@ -79,6 +79,7 @@ defmodule Anchor.AggregateTest do
     @refused [
       {"no name", "schemas: [S]", "the name: option is required"},
       {"an unknown key", "name: Agg, bogus: 1", "unknown option(s) :bogus"},
+      {"a key given twice", "name: Agg, name: Other", "option(s) given twice: :name"},
       {"a variable name", "name: some_var", "name: must be a literal module name, got: some_var"},
       {"an atom name", "name: :agg", "name: must be a literal module name, got: :agg"},
       {"a non-literal schema", "name: Agg, schemas: [mod()]",
@@ -111,6 +112,22 @@ defmodule Anchor.AggregateTest do
       end
     end
 
+    test "M4: a second use in one module raises: a module declares one aggregate" do
+      error =
+        assert_raise ArgumentError, fn ->
+          compile_unloaded("""
+          defmodule #{@ns}.Twice do
+            use Anchor.Aggregate, name: #{@ns}.A
+            use Anchor.Aggregate, name: #{@ns}.B
+          end
+          """)
+        end
+
+      assert error.message =~
+               "use Anchor.Aggregate: AnchorFixtures.AggregateTest.Twice already declares an " <>
+                 "aggregate; a module declares at most one. Write: "
+    end
+
     test "M4 positive control: the same options with a literal name compile" do
       assert {[[name: Agg, schemas: [], tables: [], owner: true]], _chunk, _beam} =
                attribute("""
@@ -129,6 +146,18 @@ defmodule Anchor.AggregateTest do
         """)
 
       assert beam.elixir.definitions == []
+    end
+
+    test "M5 positive control: a module with one def lists it" do
+      {_values, _chunk, beam} =
+        attribute("""
+        defmodule #{@ns}.M5Def do
+          use Anchor.Aggregate, name: #{@ns}.Agg
+          def f, do: 1
+        end
+        """)
+
+      assert [{{:f, 0}, :def, _meta, _clauses}] = beam.elixir.definitions
     end
   end
 end

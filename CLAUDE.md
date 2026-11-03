@@ -141,8 +141,8 @@ Extension rule:
 
 Every rule type has exactly one engine, `@engine_by_type` in
 `Anchor.Domain.RuleSchema` (DND-5437): `:ast` (a Credo check) or `:graph`
-(`mix anchor.graph`, DND-5440; the graph types are `layering`, DND-5442, and
-`context_acyclic`, DND-5445). A new rule type adds its entry there too (compilation
+(`mix anchor.graph`, DND-5440; the graph types are `layering`, DND-5442,
+`context_acyclic`, DND-5445, and `aggregate_declarations`, DND-5476). A new rule type adds its entry there too (compilation
 fails without it) and to the README table's Engine column (a test compares
 them). Credo never reports a `:graph` rule as unchecked
 (`RuleCoverage.unchecked/3`).
@@ -152,7 +152,12 @@ The optional top-level `aggregates:` section (DND-5476) is parsed by
 with every module's persisted `@anchor_aggregate` (`use Anchor.Aggregate`,
 Framework, `lib/anchor/aggregate.ex`, or the attribute by hand) into
 `Model.aggregates`, and the `aggregate_declarations` graph rule reports what
-names nothing or is claimed twice. A schema's table is read from its
+names nothing or is claimed twice. Its canary has its own root,
+`test/fixtures/graph_canary/aggregate_declarations/` (with its own config, so
+the shared canary's counts do not move). A rule's fail-closed violation
+(`kind: :fail_closed`, here "checks nothing") is an issue of the run: the
+runner enforces it under `enforcement: report` and never holds it in a
+baseline. A schema's table is read from its
 `__schema__(:source)` clause in Core, never by calling it.
 
 The optional top-level `architecture:` section (DND-5437) is parsed by

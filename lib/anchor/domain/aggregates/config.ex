@@ -131,7 +131,7 @@ defmodule Anchor.Domain.Aggregates.Config do
     do: refuse("#{path} must be a mapping, got: #{inspect(entry)}", "write #{@shape}")
 
   defp name(%{"name" => name}, path) when is_binary(name) do
-    if FunctionRef.alias_name?(name),
+    if FunctionRef.alias_name?(name) and not String.starts_with?(name, "Elixir."),
       do: {:ok, name},
       else: bad_name(name, path)
   end
@@ -144,7 +144,7 @@ defmodule Anchor.Domain.Aggregates.Config do
   defp bad_name(name, path) do
     refuse(
       "#{path}.name #{inspect(name)} is not a module-name token",
-      "name it like a module (MyApp.Threads.ThreadSpace); #{@shape}"
+      "name it like a module, without Elixir. (MyApp.Threads.ThreadSpace); #{@shape}"
     )
   end
 
@@ -159,7 +159,13 @@ defmodule Anchor.Domain.Aggregates.Config do
 
   defp modules(tokens, path), do: bad_modules(path, "got: #{inspect(tokens)}")
 
-  defp module(token) when is_binary(token), do: AllowedCallers.parse(token)
+  defp module(token) when is_binary(token) do
+    case AllowedCallers.parse(token) do
+      {:ok, module} -> {:ok, module}
+      {:error, _why} -> {:error, "is not an exact Elixir module name (no glob, no Erlang module)"}
+    end
+  end
+
   defp module(_token), do: {:error, "is not a string"}
 
   defp bad_modules(path, why) do

@@ -11,6 +11,7 @@ defmodule Anchor.Domain.FailuresGraphTest do
   #   ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
   # DND-5584 (graph_app_no_modules): ../../sabotage_records/graph_runner-20261103-dnd_5441_graph_rules_a.md
   # DND-5628 (the symlink rows): ../../sabotage_records/baseline_symlink-20261103-dnd_5441_graph_rules_a.md
+  # DND-5476 (aggregate_declarations rows): ../../sabotage_records/aggregates-20261103-dnd_5476_aggregate_decls.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Failures
@@ -218,6 +219,12 @@ defmodule Anchor.Domain.FailuresGraphTest do
        [
          ~s|rule 2 (id: "web", layering) selects 0 modules, below min_modules 1.|,
          "lowering min_modules is the owner's call"
+       ]},
+      {"aggregates_none_declared",
+       Failures.aggregates_none_declared(rule, "<shape>", "proj/.anchor.yml"), "proj/.anchor.yml",
+       [
+         ~s|rule 2 (id: "web", layering) checks nothing: no aggregate is declared in .anchor.yml|,
+         "Fix: declare one or remove the rule: <shape>"
        ]},
       {"rule_crashed", crashed, "proj/.anchor.yml",
        [

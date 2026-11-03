@@ -240,6 +240,26 @@ defmodule Anchor.Domain.Aggregates.IndexTest do
       assert Index.aggregate_of(index, @s1) == {:ok, "B"}
     end
 
+    test "I5: a table a third aggregate lists, past a schema claimed twice, is claimed by all",
+         %{cores: cores} do
+      graph =
+        graph(cores,
+          schemas: [@s1],
+          attributes: [{@x, [name: B, schemas: [@s1]]}, {@store, [name: C, tables: ["s1"]]}]
+        )
+
+      index = Index.build(config([{"A", schemas: [@s1]}]), graph)
+
+      assert [
+               {:config, ["A", "B", "C"]},
+               {{:attribute, @store, _, _}, ["A", "B", "C"]},
+               {{:attribute, @x, _, _}, ["A", "B", "C"]}
+             ] = for(%{subject: "s1"} = issue <- index.issues, do: {issue.site, issue.aggregates})
+
+      # The schema's own conflict is still reported, at its two sites.
+      assert [_config, _x] = for(%{subject: @s1} = issue <- index.issues, do: issue)
+    end
+
     test "I6: a schema naming no project module is unknown_schema", %{cores: cores} do
       index = Index.build(config([{"A", schemas: [Nope]}]), graph(cores, schemas: [@s1]))
 
@@ -339,13 +359,15 @@ defmodule Anchor.Domain.Aggregates.IndexTest do
       assert Index.aggregate_of(index, @s1) == {:ok, "A"}
     end
 
+    # Two `Module.register_attribute` + `@anchor_aggregate` pairs leave two
+    # entries in the beam, both holding the last value.
     test "an attribute set twice is malformed", %{cores: cores} do
       graph = graph(cores, schemas: [@s1], attributes: [{@x, [name: A, schemas: [@s1]]}])
 
       graph =
         update_in(
           graph.modules[@x].attributes,
-          &(&1 ++ [anchor_aggregate: [name: B, schemas: []]])
+          &(&1 ++ [anchor_aggregate: [name: A, schemas: [@s1]]])
         )
 
       assert [%DeclarationIssue{kind: :malformed_attribute, detail: detail}] =

@@ -23,8 +23,9 @@ defmodule Anchor.Aggregate do
   aggregate, DND-5478). Aliases in scope resolve. A schema module that only
   states its membership writes `schemas: [__MODULE__], owner: false`.
 
-  A non-literal option, an unknown key, a missing `name` or a value of the
-  wrong type raises `ArgumentError` at compile time, naming the key and the
+  A module declares at most one aggregate: a second `use` raises too, and so
+  does a non-literal option, an unknown key, a key given twice, a missing
+  `name` or a value of the wrong type. Each raises `ArgumentError` at compile time, naming the key and the
   shape: the earliest point a declaration can fail closed.
 
   `mix anchor.graph` reads the attribute from the beam
@@ -40,6 +41,7 @@ defmodule Anchor.Aggregate do
 
   @doc false
   defmacro __using__(opts) do
+    once!(__CALLER__.module)
     value = opts |> Macro.expand_literals(__CALLER__) |> attribute!()
 
     quote do
@@ -48,6 +50,20 @@ defmodule Anchor.Aggregate do
     end
   end
 
+  # A second `use` would replace the first declaration in the beam: a module
+  # declares at most one aggregate. A module body is expanded before it runs,
+  # so the first `use` marks the module as it expands (a private attribute,
+  # never persisted) and the second sees the mark.
+  defp once!(module) when is_atom(module) and module != nil do
+    if Module.has_attribute?(module, :anchor_aggregate_used) do
+      refuse!("#{inspect(module)} already declares an aggregate; a module declares at most one")
+    end
+
+    Module.put_attribute(module, :anchor_aggregate_used, true)
+  end
+
+  defp once!(_no_module), do: refuse!("use it inside a defmodule")
+
   # The attribute value `opts` (already expanded) declares, or an
   # `ArgumentError` naming the key and the shape.
   defp attribute!(opts) do
@@ -55,9 +71,16 @@ defmodule Anchor.Aggregate do
       refuse!("the options must be a keyword list, got: #{Macro.to_string(opts)}")
     end
 
-    case Keyword.keys(opts) -- @keys do
+    keys = Keyword.keys(opts)
+
+    case Enum.reject(keys, &(&1 in @keys)) do
       [] -> :ok
       unknown -> refuse!("unknown option(s) #{Enum.map_join(unknown, ", ", &inspect/1)}")
+    end
+
+    case keys -- Enum.uniq(keys) do
+      [] -> :ok
+      twice -> refuse!("option(s) given twice: #{Enum.map_join(twice, ", ", &inspect/1)}")
     end
 
     [

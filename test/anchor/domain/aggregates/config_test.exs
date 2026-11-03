@@ -77,6 +77,8 @@ defmodule Anchor.Domain.Aggregates.ConfigTest do
        ~s{aggregates.declare[1]: unknown key(s) "owner"}},
       {"a lower-case name", %{"declare" => [Map.put(@entry, "name", "lower.case")]},
        ~s{aggregates.declare[1].name "lower.case" is not a module-name token}},
+      {"an Elixir.-prefixed name", %{"declare" => [Map.put(@entry, "name", "Elixir.MyApp.S")]},
+       ~s{aggregates.declare[1].name "Elixir.MyApp.S" is not a module-name token}},
       {"a name that is not a string", %{"declare" => [Map.put(@entry, "name", 3)]},
        "aggregates.declare[1].name 3 is not a module-name token"},
       {"schemas a string", %{"declare" => [Map.put(@entry, "schemas", "X")]},

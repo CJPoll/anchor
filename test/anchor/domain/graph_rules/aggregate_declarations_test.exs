@@ -123,16 +123,17 @@ defmodule Anchor.Domain.GraphRules.AggregateDeclarationsTest do
                  "[binary], owner: boolean]: it has no name. Fix: "
     end
 
-    test "R2: zero aggregates declared is one violation on .anchor.yml: it checks nothing" do
+    test "R2: zero aggregates declared is one fail-closed violation on .anchor.yml, unkeyed" do
       assert [v] = AggregateDeclarations.check(model([], %{}), @rule)
 
       assert v.filename == ".anchor.yml"
-      assert v.key == "aggregates|.anchor.yml|checks nothing"
+      assert v.kind == :fail_closed
+      assert v.key == nil
 
       assert v.message ==
-               "aggregate_declarations checks nothing: no aggregate is declared in .anchor.yml " <>
-                 "or by an @anchor_aggregate attribute. Fix: declare one or remove the rule: " <>
-                 @shape
+               ~s|rule (id: "aggregates", aggregate_declarations) checks nothing: no aggregate | <>
+                 "is declared in .anchor.yml or by an @anchor_aggregate attribute. Fix: declare " <>
+                 "one or remove the rule: " <> @shape
     end
 
     test "R2: the config's own path is where a config-site violation sits" do
@@ -168,9 +169,28 @@ defmodule Anchor.Domain.GraphRules.AggregateDeclarationsTest do
       assert AggregateDeclarations.check(model([]), @rule) == []
     end
 
-    test "a rule with no id keys by its type" do
-      assert [v] = AggregateDeclarations.check(model([], %{}), Map.delete(@rule, :id))
-      assert v.key == "aggregate_declarations|.anchor.yml|checks nothing"
+    test "R2: zero aggregates with issues: each issue, then the checks-nothing line" do
+      issue = %DeclarationIssue{
+        kind: :malformed_attribute,
+        subject: App.X,
+        site: @x_site,
+        detail: "it has no name"
+      }
+
+      assert [%{kind: :rule}, %{kind: :fail_closed}] =
+               AggregateDeclarations.check(model([issue], %{}), @rule)
+    end
+
+    test "a rule with no id keys an issue by its type" do
+      issue = %DeclarationIssue{
+        kind: :unknown_schema,
+        subject: Nope,
+        aggregates: ["A"],
+        site: :config
+      }
+
+      assert [v] = AggregateDeclarations.check(model([issue]), Map.delete(@rule, :id))
+      assert v.key == "aggregate_declarations|.anchor.yml|unknown_schema A Nope"
     end
   end
 

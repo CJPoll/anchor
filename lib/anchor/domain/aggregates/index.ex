@@ -30,7 +30,9 @@ defmodule Anchor.Domain.Aggregates.Index do
        unknown, counted in `tables_unknown`, never an issue on its own;
     4. finds every schema or table (explicit, or a schema's table) two
        aggregates claim: one `:claimed_twice` issue per claiming site. A
-       schema's table is not reported again when the schema itself is. The
+       schema's table is not reported again when the schema's own issue says
+       all of it (every claim of the table comes through schemas claimed
+       twice, by the same aggregates). The
        lexically first aggregate keeps the claim in `by_schema` / `by_table`,
        so the index does not depend on input order;
     5. reports an owner naming no project module (`:unknown_owner`) and an
@@ -82,7 +84,7 @@ defmodule Anchor.Domain.Aggregates.Index do
     known = known_modules(graph)
     tables = schema_tables(aggregates, graph, known)
     {by_schema, schema_conflicts} = claims(schema_claims(declarations))
-    twice = MapSet.new(schema_conflicts, & &1.subject)
+    twice = Map.new(schema_conflicts, &{&1.subject, &1.aggregates})
     {by_table, table_conflicts} = table_claims(declarations, tables, twice)
 
     issues =
@@ -165,9 +167,14 @@ defmodule Anchor.Domain.Aggregates.Index do
     site = {:attribute, node.module, node.source_file, node.line}
 
     case Keyword.get_values(node.attributes, @attribute) do
-      [] -> :none
-      [value] -> declaration(node.module, value, site)
-      _many -> malformed(node.module, site, "it is set more than once; set it once")
+      [] ->
+        :none
+
+      [value] ->
+        declaration(node.module, value, site)
+
+      _many ->
+        malformed(node.module, site, "it is set more than once; a module declares one aggregate")
     end
   end
 
@@ -362,27 +369,43 @@ defmodule Anchor.Domain.Aggregates.Index do
         do: {schema, declaration.name, site}
   end
 
-  # Explicit tables, and each schema's derived table; a derived claim whose
-  # schema is itself claimed twice is reported on the schema only.
+  # Explicit tables, and each schema's derived table. A table conflict is
+  # left to the schema's own issue only when every claim of the table comes
+  # through schemas claimed twice and names no aggregate those schemas' claims
+  # do not: then it says nothing the schema issue does not. Any other claimant
+  # (an explicit table, another schema) keeps the table conflict, at every
+  # site.
   defp table_claims(declarations, tables, twice) do
     explicit =
       for declaration <- declarations,
           table <- declaration.tables,
           site <- declaration.sites,
-          do: {table, declaration.name, site}
+          do: {table, declaration.name, site, nil}
 
     derived =
       for declaration <- declarations,
           schema <- declaration.schemas,
           {:ok, table} <- [Map.get(tables, schema)],
           site <- declaration.sites,
-          do: {schema, {table, declaration.name, site}}
+          do: {table, declaration.name, site, schema}
 
-    {by_table, _all} = claims(explicit ++ Enum.map(derived, &elem(&1, 1)))
+    all = explicit ++ derived
 
-    reported = for {schema, claim} <- derived, not MapSet.member?(twice, schema), do: claim
-    {_by_table, conflicts} = claims(explicit ++ reported)
-    {by_table, conflicts}
+    {by_table, conflicts} =
+      claims(Enum.map(all, fn {table, name, site, _via} -> {table, name, site} end))
+
+    covered = covered_tables(all, twice)
+    {by_table, Enum.reject(conflicts, &MapSet.member?(covered, &1.subject))}
+  end
+
+  defp covered_tables(claims, twice) do
+    for {table, group} <- Enum.group_by(claims, &elem(&1, 0)),
+        vias = Enum.map(group, &elem(&1, 3)),
+        Enum.all?(vias, &Map.has_key?(twice, &1)),
+        MapSet.new(group, &elem(&1, 1)) ==
+          MapSet.new(Enum.flat_map(vias, &Map.fetch!(twice, &1))),
+        into: MapSet.new(),
+        do: table
   end
 
   defp claims(claims) do

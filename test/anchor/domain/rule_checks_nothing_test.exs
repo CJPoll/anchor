@@ -29,6 +29,7 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
   #   ../../sabotage_records/rule_schema-20261103-dnd_5451_ast_batch.md
   # The DND-5441 rows (enforcement, ast baseline, the graph common keys):
   #   ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
+  # DND-5476 (aggregate_declarations rows): ../../sabotage_records/aggregates-20261103-dnd_5476_aggregate_decls.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config

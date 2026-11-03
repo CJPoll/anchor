@@ -877,6 +877,22 @@ rules:
   - type: aggregate_declarations
     id: aggregate_declarations
     paths: ["lib/**/*.ex"]
+
+aggregates:
+  declare:
+    - name: MyApp.Threads.ThreadSpace
+      schemas: [MyApp.Threads.Thread]
+
+architecture:
+  contexts:
+    depth: 2
+  buckets:
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/**/*.ex"]
+  calls:
+    domain: [domain]
 ```
 
 The `aggregate_declarations` rule reports every declaration that names
@@ -891,7 +907,7 @@ declaration shape:
 | A schema module that is not an Ecto schema | `MyApp.Plain in aggregate MyApp.A is not an Ecto schema (no __schema__/1). Fix: list the schema module, or list its table under tables:: ...` |
 | An aggregate with no schemas and no tables | `aggregate MyApp.A declares no schemas and no tables. Fix: add schemas: or tables:, or delete the declaration: ...` |
 | An `@anchor_aggregate` of the wrong shape (the module contributes nothing) | `@anchor_aggregate on MyApp.X is not [name: atom, schemas: [atom], tables: [binary], owner: boolean]: it has no name. Fix: write it in this shape: ...` |
-| No aggregate declared at all | `aggregate_declarations checks nothing: no aggregate is declared in .anchor.yml or by an @anchor_aggregate attribute. Fix: declare one or remove the rule: ...` |
+| No aggregate declared at all (fail-closed: never baselined, never report-only) | `rule 1 (id: "aggregate_declarations", aggregate_declarations) checks nothing: no aggregate is declared in .anchor.yml or by an @anchor_aggregate attribute. Fix: declare one or remove the rule: ...` |
 
 An issue of the config section is always reported; one of a module's
 attribute is reported when the rule's selector selects that module. The key
@@ -900,9 +916,13 @@ with no line number. Which schemas a transaction may write together, and who
 may write them, are the later transaction rules' (DND-5477, DND-5478); this
 rule only makes the declarations trustworthy.
 
-Anchor's own `.anchor.yml` runs the rule in report mode: Anchor has no
-database and declares no aggregate, so its one finding is the
-"checks nothing" line, printed on every run.
+A module the selector leaves out still declares: its declarations count
+toward the index and toward "declared", and only its issues are left out of
+the report.
+
+Anchor's own `.anchor.yml` does not run the rule: Anchor has no database and
+declares no aggregate, so the rule could only say it checks nothing, which
+fails the run in either enforcement mode.
 
 ### Graph rows of the fail-closed table
 
@@ -937,7 +957,8 @@ line.
 | An ambiguous module | 1 | its source file, at its `defmodule` line | `MyApp.X is in buckets domain (by paths [...]) and framework (by uses_module GenServer). Fix: narrow one selector; buckets never take precedence.` |
 | A bucket below its `min_modules` | 1 | the config | `architecture bucket domain selects 3 modules, below min_modules 10. Fix: correct the selector; lowering min_modules is the owner's call.` |
 | An `interfaces.exports` entry that names no module | 1 | the config | `architecture interfaces.exports names MyApp.Gone, which is no module of the project ... Fix: ...` |
-| An `aggregates:` section of the wrong shape (DND-5476) | 3 | the config path | `aggregates.declare[1].schemas must be a list of exact module names: "MyApp.*" is a glob, .... Fix: name each module in full, as its defmodule spells it; aggregates: declare: - name: <Aggregate>, ...` |
+| An `aggregates:` section of the wrong shape (DND-5476) | 3 | the config path | `aggregates.declare[1].schemas must be a list of exact module names: "MyApp.*" is not an exact Elixir module name (no glob, no Erlang module). Fix: name each module in full, as its defmodule spells it; aggregates: declare: - name: <Aggregate>, ...` |
+| An `aggregate_declarations` rule with no aggregate declared anywhere (DND-5476) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "aggregate_declarations", aggregate_declarations) checks nothing: no aggregate is declared in .anchor.yml or by an @anchor_aggregate attribute. Fix: declare one or remove the rule: ...` |
 | A schema whose `__schema__(:source)` is not a literal (DND-5476) | 0 | the summary | counted as `; aggregates: <N> declared, <U> tables unknown`, never dropped |
 | A graph rule below its `min_modules` | 1 | the config | `rule 2 (id: "web", layering) selects 0 modules, below min_modules 1. Fix: correct the selector; ...` |
 | A graph rule that raises, throws or exits | 1 | the config | `rule 2 (id: "web", layering) could not run: RuntimeError: ... Fix: this is an Anchor bug; file it with this line.` The other rules still run. |

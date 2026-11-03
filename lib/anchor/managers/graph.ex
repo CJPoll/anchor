@@ -510,8 +510,7 @@ defmodule Anchor.Managers.Graph do
     |> guarded_check(module, model)
     |> case do
       {:ok, violations} ->
-        {:ok,
-         Enum.map(violations, &Finding.from_rule(&1, rule, label, config_path || @config_file))}
+        {:ok, Enum.map(violations, &finding(&1, rule, label, config_path || @config_file))}
 
       {:crashed, kind, reason, stacktrace} ->
         {:crashed,
@@ -520,6 +519,15 @@ defmodule Anchor.Managers.Graph do
          |> Finding.fail_closed(@config_file)}
     end
   end
+
+  # A rule's fail-closed violation (DND-5476: a rule that checks nothing)
+  # is an issue of the run, like a floor: always enforced, and with no key it
+  # is never held by a baseline. Every other violation takes the rule's
+  # enforcement and is judged against its baseline.
+  defp finding(%Violation{kind: :fail_closed} = violation, _rule, _label, file),
+    do: Finding.fail_closed(%{violation | key: nil}, file)
+
+  defp finding(violation, rule, label, file), do: Finding.from_rule(violation, rule, label, file)
 
   # The rule's return is validated inside the guard: a rule that returns
   # anything but a list of violations is reported like one that raised.
