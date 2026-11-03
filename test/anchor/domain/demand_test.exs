@@ -74,6 +74,32 @@ defmodule Anchor.Domain.DemandTest do
       end
     end
 
+    def guarded_helper(a) do
+      try do
+        helper(a)
+      rescue
+        _error -> :error
+      end
+    end
+
+    defp helper(a) do
+      _ = hd(a)
+      :ok
+    end
+
+    def guarded_lambda(a) do
+      f = fn x ->
+        _ = hd(x)
+        :ok
+      end
+
+      try do
+        f.(a)
+      rescue
+        _error -> :error
+      end
+    end
+
     def notify(p) do
       ExtNotifier.push(p)
       :ok
@@ -255,6 +281,14 @@ defmodule Anchor.Domain.DemandTest do
       refute Map.has_key?(demand.imprecise, {A, :notify, 1})
     end
 
+    test "inside try, a project call or a lambda apply that can raise uses its argument",
+         %{demand: demand} do
+      assert demands(demand, {A, :guarded_helper, 1}) == [:all]
+      assert demands(demand, {A, :guarded_lambda, 1}) == [:all]
+      # Positive control: the helper on its own (outside any try) does not use it.
+      assert demands(demand, {A, :helper, 1}) == [:absent]
+    end
+
     test "AC6 a parameter passed to an :any apply: used, and the function is imprecise",
          %{demand: demand} do
       assert demands(demand, {A, :open, 2}) == [:all, :all]
@@ -297,20 +331,22 @@ defmodule Anchor.Domain.DemandTest do
   end
 
   describe "counts" do
-    # 26 functions (A 18, B 7, C 1), 37 parameters; absent: first/2's b,
+    # 29 functions (A 21, B 7, C 1), 40 parameters; absent: first/2's b,
     # chain, g, h, loop's acc, ping's and pong's p, ignored's p, run's p,
-    # received_drop's m, wrong_arity's p, run_wrong's p. 21 components (the
-    # ping/pong cycle is one, and listed/apply_it another: apply_it applies
-    # listed's lambda); 43 rounds, each component's last unchanged.
+    # received_drop's m, wrong_arity's p, run_wrong's p, helper's a. 24
+    # components: five cycles merge two functions each (ping/pong, and each
+    # A function with the B function that applies its lambda: ignored/run,
+    # used_apply/run_used, wrong_arity/run_wrong, listed/apply_it); 48 rounds,
+    # each component's last unchanged.
     test "functions analysed, absent parameters and imprecise functions, exact", %{demand: demand} do
       assert %{
-               functions: 26,
-               parameters: 37,
-               absent: 12,
+               functions: 29,
+               parameters: 40,
+               absent: 13,
                imprecise_parameters: 4,
                imprecise_functions: 4,
-               components: 21,
-               rounds: 43
+               components: 24,
+               rounds: 48
              } == demand.counts
 
       assert demand.imprecise |> Map.keys() |> Enum.sort() == [

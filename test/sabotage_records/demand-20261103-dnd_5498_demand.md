@@ -14,7 +14,8 @@ The two mutations the QA plan names: DEM-A (the SCC loop runs one round only: bo
 
 - A first run on 95e5e07 (27 mutations) was superseded by the review-floor fixes (9a935e9), which changed most of the mutated lines. It had four compile traps under warnings-as-errors (an unused `max_rounds`, `demand`, `index`, and an unused `map_pattern_demand/2`); those mutations were rewritten so the code still compiles.
 - The rows below come from four runs: a9deba8 (the main run, 37 mutations), fd79e2e (DEM-D, DEM-P, DEM-AE, EFF-A rewritten for the final code; DEM-D's first form only skipped clearing a clause's names on entry, which the restore on exit masked, so it reddened nothing: it now removes the scope entirely), c33e8b7 (LAT-*, DEM-AI..AK, EFF-B..D, PURE-B..C, written for the tests no earlier row reached) and 43d2404 (LAT-C and SELF-A again, after the monotonicity row was widened to every ordered pair; LAT-C reddened only the bound rows before).
-- Every one of the 83 tests in the six files is seen failing in at least one row.
+- DEM-AL ran on the critic fix (the commit after ebc5e60), alone.
+- Every one of the 84 tests in the six files is seen failing in at least one row.
 - Not counted: in 13 rows the self test (`Anchor's own code: ...`) also failed by **timing out** at the mutation runs' 2000 ms `--timeout` under a loaded machine; those are not kills and are left out of the "Tests failed" counts. The self test now carries `@moduletag timeout: 60_000` (43d2404). The self test is killed for real (an assertion) by DEM-C, DEM-T and SELF-A.
 - Measured zeros: none in the final runs. DEM-M (a literal-key field read uses the whole value) of the first run targeted a helper the review-floor fix removed; DEM-AH covers the code that replaced it.
 
@@ -68,6 +69,7 @@ The two mutations the QA plan names: DEM-A (the SCC loop runs one round only: bo
 | EFF-A | erlang:send/* is no escape | `effect_primitives.ex` | 4 | effect?/2 default/0 lists every row once with its kind; escape?/1 send, spawn, Task, ETS writes, persistent_term and the process dictionary escape; analyze/4 AC4 a parameter only sent in a message is used (escape), and judged precisely; counts functions analysed, absent parameters and imprecise functions, exact |
 | PURE-A | erlang:+/2 is not pure | `pure_calls.ex` | 4 | stdlib value functions and erlang BIFs are pure; function/2 _ = a + 1; :ok: absent (a pure expression whose result is discarded); more Core shapes a receive loop the summaries lack fails closed as an unknown closure; counts functions analysed, absent parameters and imprecise functions, exact |
 | SELF-A | the default round bound is 1 | `demand.ex` | 19 | analyze/4 a caller of an imprecise function is imprecise through it; analyze/4 an unknown non-project call uses its argument and makes the function imprecise; analyze/4 AC6 a parameter passed to an :any apply: used, and the function is imprecise; analyze/4 a closure of another arity reaching the site uses nothing (the call raises badarity); analyze/4 AC1 def f(a, b), do: a gives [used(all), absent]; analyze/4 an extra effect token makes a library call an effect: used, and precise; analyze/4 an extra module token makes every function of the module an effect; analyze/4 AC5 mutual recursion passing p around without using it: absent; analyze/4 AC4 a parameter only sent in a message is used (escape), and judged precisely; analyze/4 a library capture resolved at a site: an effect uses the argument, precisely; analyze/4 a closure capturing p handed to Task.start/1 uses p (escape); counts functions analysed, absent parameters and imprecise functions, exact; analyze/4 an apply the 0-CFA resolves to a lambda that ignores its argument: absent; analyze/4 apply(f, [x]) with f resolved to a lambda that returns its argument: x used; analyze/4 self recursion loop(n, acc): acc absent, n used; analyze/4 positive control: the same shape with a lambda that returns its argument: used; the round bound a component that does not settle within :max_rounds is used, imprecise and named; analyze/4 AC2 def f(m), do: m.x gives [used(%{x: used(all)})]; Anchor's own code: no bound hit, every function summarised, known demands |
+| DEM-AL | a project call or closure apply inside try takes only its summary (the critic's finding on ebc5e60) | `transfer.ex` | 2 | analyze/4 inside try, a project call or a lambda apply that can raise uses its argument; counts functions analysed, absent parameters and imprecise functions, exact |
 
 ## DEM-A — the SCC loop runs one round only
 
@@ -913,4 +915,19 @@ Run summary: `83 tests, 19 failures`
      right: [via: {AnchorFixtures.DemandTest.A, :open, 2}]
      stacktrace:
        test/anchor/domain/demand_test.exs:267: (test)
+```
+
+## DEM-AL — a project call or closure apply inside try takes only its summary
+
+Run summary: `84 tests, 2 failures`
+
+```
+  1) test analyze/4 inside try, a project call or a lambda apply that can raise uses its argument (Anchor.Domain.DemandTest)
+     test/anchor/domain/demand_test.exs:284
+     Assertion with == failed
+     code:  assert demands(demand, {A, :guarded_helper, 1}) == [:all]
+     left:  [:absent]
+     right: [:all]
+     stacktrace:
+       test/anchor/domain/demand_test.exs:286: (test)
 ```
