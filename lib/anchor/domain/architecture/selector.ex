@@ -62,6 +62,18 @@ defmodule Anchor.Domain.Architecture.Selector do
   def matches?({:exports_function, export}, %{exports: exports}), do: export in exports
 
   @doc """
+  `selector` as `.anchor.yml` writes it, for a message: `paths ["lib/**"]`,
+  `pattern "MyApp.*"`, `uses_module GenServer`, `behaviour :gen_server`,
+  `exports_function "__aggregate__/0"`.
+  """
+  @spec describe(t()) :: String.t()
+  def describe({:paths, globs}), do: "paths #{inspect(globs)}"
+  def describe({:pattern, glob}), do: "pattern #{inspect(glob)}"
+  def describe({:uses_module, module}), do: "uses_module #{inspect(module)}"
+  def describe({:behaviour, module}), do: "behaviour #{inspect(module)}"
+  def describe({:exports_function, {name, arity}}), do: ~s(exports_function "#{name}/#{arity}")
+
+  @doc """
   Parses one decoded selector entry found at `path` (a key path such as
   `architecture.buckets[0].select[1]`). Returns `{:ok, selector}`, or
   `{:error, message}` where the message starts with the key path and ends with

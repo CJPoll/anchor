@@ -6,6 +6,7 @@ defmodule Anchor.Domain.Graph.BuilderTest do
   # gets plain data.
   #
   # Sabotage record: ../../../sabotage_records/builder-20261103-dnd_5438.md
+  # DND-5548 (the per-module walk guard): ../../../sabotage_records/builder-20261103-dnd_5440_graph_runner.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -109,6 +110,8 @@ defmodule Anchor.Domain.Graph.BuilderTest do
                generated?: false
              } = node = Graph.module(graph, Plain)
 
+      # DND-5440: the defmodule line, where an unclassified module is reported.
+      assert node.line == 1
       assert Keyword.get(node.attributes, :tag) == :hello
       assert [{:"::", _, [{:run, _, _}, _]}] = node.specs[{:run, 1}]
       assert {:type, _quoted} = node.types[{:t, 0}]
@@ -211,6 +214,73 @@ defmodule Anchor.Domain.Graph.BuilderTest do
              ]
 
       assert %ModuleNode{} = Graph.module(graph, Plain)
+    end
+  end
+
+  describe "build/2 a module whose walk crashes (DND-5548)" do
+    # A crash while building one module's node or walking its Core is that
+    # module's problem: it lands in `unreadable` as `{:walk_crashed, summary}`,
+    # and every other module is still built (fail closed per module, never a
+    # whole-build abort).
+    test "the crashing module is unreadable with its crash summary; the others are built", %{
+      pair: pair
+    } do
+      [a | _] = Enum.filter(pair, &(&1.module == A))
+
+      broken = %{
+        a
+        | module: AnchorFixtures.BuilderTest.Broken,
+          path: "ebin/broken.beam",
+          core: :not_core
+      }
+
+      graph = Builder.build([broken | pair], %{})
+
+      assert [
+               %{
+                 path: "ebin/broken.beam",
+                 module: AnchorFixtures.BuilderTest.Broken,
+                 reason: reason
+               }
+             ] =
+               graph.unreadable
+
+      assert {:walk_crashed, summary} = reason
+      assert is_binary(summary)
+      assert summary =~ "badrecord"
+      refute Graph.module(graph, AnchorFixtures.BuilderTest.Broken)
+
+      # Positive control: the good modules are built, with their edges.
+      assert %ModuleNode{} = Graph.module(graph, A)
+      assert %ModuleNode{} = Graph.module(graph, B)
+      assert Enum.count(graph.calls, &(&1.from == {A, :f, 1})) == 1
+    end
+
+    test "a crash inside one function's Core walk is the module's, never the build's", %{
+      pair: pair
+    } do
+      [b | _] = Enum.filter(pair, &(&1.module == B))
+      # A Core module whose defs list holds a function that is not a c_fun:
+      # the walk of that one function raises.
+      bad_core =
+        :cerl.update_c_module(
+          b.core,
+          :cerl.module_name(b.core),
+          :cerl.module_exports(b.core),
+          :cerl.module_attrs(b.core),
+          [{:cerl.c_fname(:g, 1), :not_a_fun}]
+        )
+
+      walk_broken = %{b | core: bad_core}
+      others = Enum.reject(pair, &(&1.module == B))
+
+      graph = Builder.build([walk_broken | others], %{})
+
+      assert [%{module: B, reason: {:walk_crashed, summary}}] = graph.unreadable
+      assert is_binary(summary)
+      refute Graph.module(graph, B)
+      refute Enum.any?(graph.calls, &(elem(&1.from, 0) == B))
+      assert %ModuleNode{} = Graph.module(graph, A)
     end
   end
 

@@ -360,11 +360,11 @@ architecture:
 
 A module matched by one bucket is classified into it. There is no precedence
 between buckets, ever: a module two buckets select is **ambiguous** and one no
-bucket selects is **unclassified**. Reporting both, a bucket below its
-`min_modules` and an `interfaces.exports` entry that names no module is the
-graph runner's job (`mix anchor.graph`, DND-5440). Until it lands, Anchor parses
-and validates the section at load (below) and nothing reads it at run time, so
-no module is yet held to it.
+bucket selects is **unclassified**. Anchor parses and validates the section at
+load (below); `mix anchor.graph` (see
+[The graph engine](#the-graph-engine-mix-anchorgraph)) classifies every
+compiled module against it and reports both, a bucket below its `min_modules`
+and an `interfaces.exports` entry that names no module.
 
 An optional key given an empty YAML value (`effects:` with nothing after it)
 reads as absent; a required key, or a bucket key, given one is refused.
@@ -561,6 +561,86 @@ Then run:
 ```bash
 mix credo --strict
 ```
+
+## The graph engine: `mix anchor.graph`
+
+```bash
+mix anchor.graph [--format text|json] [--only RULE_ID]...
+```
+
+Judges the project's compiled code against `.anchor.yml`'s `architecture:`
+section and every enabled graph rule. It compiles the project, reads every
+beam of every app (an umbrella's every `apps/*` app) with `:beam_lib` only, and
+builds the causal graph fresh every run: it never loads or runs a project
+module and never reads a cached verdict. Then it classifies every module into
+exactly one bucket, checks every floor, and runs each graph rule under its own
+guard. It is the command a CI step or a pre-commit gate runs after `mix
+compile`; Anchor's own CI runs it.
+
+Text output is one line per finding, then a summary:
+
+```
+lib/my_app/stray.ex:1: [enforce] anchor.graph MyApp.Stray is in no architecture bucket. Fix: add a selector that matches lib/my_app/stray.ex to the bucket this module belongs in (mix anchor.explain lib/my_app/stray.ex shows the candidates).
+anchor.graph: 214 modules in 1 apps, 0 rules, 1 violations (0 report-only, 0 baselined)
+```
+
+No graph rule type ships yet: the rule tickets (layering, interfaces,
+context_acyclic, ...) add them, with the graph rule keys `bucket`,
+`min_modules` and `enforcement`. Until the first lands, a run classifies every
+module and judges every bucket floor. A finding of a rule with
+`enforcement: report` prints `[report]` and does not fail the run. `--format json` prints `{"modules", "apps", "rules", "opaque",
+"exit_code", "findings": [{rule_id, type, enforcement, key, file, line,
+message, fix}], "could_not_check": [...]}`. `--only RULE_ID` (repeatable) runs
+only the rules with those ids; each rule that runs is still judged against its
+floor (`--only` narrows the rules, never the modules), and an id that names no
+graph rule is COULD NOT MEASURE. `--base` and
+`--write-baseline` arrive with baselines (DND-5441); until then they are
+refused as unknown options.
+
+The only file it writes is `_build/<env>/anchor/graph.etf`, the graph keyed by
+a sha256 of the beams, the config and Anchor's version, for `mix
+anchor.explain` and `place`. The verdict never reads it; a write that fails is
+a `[report]` note.
+
+An Erlang module in the project is classified by its name only (a `pattern:`
+selector): a classified one is an opaque node with no edges, counted in the
+summary as `(<n> opaque)`; an unclassified one is an issue. No setting
+excludes a module silently.
+
+### Graph rows of the fail-closed table
+
+Like the Credo checks, the graph engine fails closed: a run that could not
+check something says so, never reads clean. Each message ends with a `Fix:`
+line.
+
+| Condition | Exit | Where | Example message |
+|---|---|---|---|
+| No `.anchor.yml`, unreadable, invalid YAML, a rejected document | 3 | the config path | the same text as the Credo issue above |
+| `--only` naming no graph rule of the config | 3 | the config path | `COULD NOT MEASURE: --only "typo" names no graph rule of .anchor.yml, so the run would check nothing. Fix: ...` |
+| No `architecture:` section | 3 | the config path | `COULD NOT MEASURE: .anchor.yml has no architecture: section, so mix anchor.graph could classify no module and run no graph rule. Fix: add an architecture: section ...` |
+| `mix compile` fails | mix's own | | |
+| Zero project modules read | 3 | the first ebin | `COULD NOT MEASURE: read 0 modules from _build/dev/lib/my_app/ebin. Fix: run mix compile in this project; ...` |
+| A beam with no `debug_info` (or stripped) | 1 | the beam | `MyApp.X was compiled without debug_info, so Anchor cannot read it. Fix: remove debug_info: false from the project's elixirc_options ...` |
+| The backend refuses `elixir_v1` (`{:elixir_v1_refused, _}`) | 1 | the beam | `MyApp.X the beam's backend could not produce its Elixir debug info (...). Fix: recompile with the project's own Elixir; ...` |
+| The backend refuses `core_v1` (`{:core_v1_refused, _}`) | 1 | the beam | `MyApp.X the beam's backend could not produce Core Erlang (...). Fix: recompile with the project's own Elixir; ...` |
+| A module compiled with a `parse_transform` or `core_transform` (`{:core_v1_refused, {:transform, _}}`) | 1 | the beam | `MyApp.X was compiled with {:parse_transform, :pt}, which lowering to Core Erlang would run, and Anchor runs no project code. Fix: remove the transform ...` |
+| Decoding a beam crashed (`{:decode_crashed, _}`) | 1 | the beam | `MyApp.X could not be decoded: Anchor crashed reading it (...). Fix: this is an Anchor bug; file it with this line.` |
+| Walking a module's Core crashed (`{:walk_crashed, _}`, DND-5548) | 1 | the beam | `MyApp.X could not be added to the graph: Anchor crashed walking it (...). Fix: this is an Anchor bug; ...` |
+| One module in two ebins (`{:duplicate_module, _}`) | 1 | the extra beam | `MyApp.X is in two ebins: ... and ... (kept). Fix: run mix clean to remove a stale beam, or rename one of the two modules.` |
+| A beam or ebin that cannot be read (`{:unreadable, _}`) | 1 | that path | `The beam ... could not be read (:eacces). Fix: make ... readable; ...` |
+| An Erlang module no bucket classifies | 1 | the beam | `:my_erl is Erlang source; the graph engine reads Elixir only, and no architecture bucket classifies it. Fix: move it under a dependency, or classify it with a pattern: selector ...` |
+| A module whose literal `use`s its source cannot show (a non-literal `defmodule` name), when a `uses_module` selector exists | 1 | the source file | `MyApp.X's literal uses cannot be read from lib/x.ex (its defmodule name is not literal there), so a uses_module selector cannot be judged for it. Fix: ...` |
+| A module's source file that cannot be read or parsed | 1 | the source file | `Anchor could not read the source of lib/x.ex (:enoent), so its uses_module selectors and generated? are unknown. Fix: ...` |
+| An unclassified module | 1 | its source file, at its `defmodule` line | `MyApp.X is in no architecture bucket. Fix: add a selector that matches lib/x.ex ...` |
+| An ambiguous module | 1 | its source file, at its `defmodule` line | `MyApp.X is in buckets domain (by paths [...]) and framework (by uses_module GenServer). Fix: narrow one selector; buckets never take precedence.` |
+| A bucket below its `min_modules` | 1 | the config | `architecture bucket domain selects 3 modules, below min_modules 10. Fix: correct the selector; lowering min_modules is the owner's call.` |
+| An `interfaces.exports` entry that names no module | 1 | the config | `architecture interfaces.exports names MyApp.Gone, which is no module of the project ... Fix: ...` |
+| A graph rule below its `min_modules` | 1 | the config | `rule 2 (id: "web", layering) selects 0 modules, below min_modules 1. Fix: correct the selector; ...` |
+| A graph rule that raises, throws or exits | 1 | the config | `rule 2 (id: "web", layering) could not run: RuntimeError: ... Fix: this is an Anchor bug; file it with this line.` The other rules still run. |
+| Findings of a `report` rule | 0 | the finding | printed `[report]` |
+
+Exit 2 is a usage error (an unknown option, `--format` other than `text` or
+`json`, an argument), with a `Fix:` line.
 
 ## Generated sabotage: the functions a change touched
 

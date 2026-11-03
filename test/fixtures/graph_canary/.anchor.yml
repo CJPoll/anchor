@@ -1,0 +1,28 @@
+# The graph runner's canary tree (DND-5440). Every graph rule ticket adds a
+# compliant and a violating module per rule, and its rule here. The
+# integration test compiles lib/ in the test and runs the Manager over it.
+rules: []
+
+architecture:
+  contexts:
+    depth: 2
+  buckets:
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/canary/domain/**/*.ex"]
+      min_modules: 2
+    - name: managers
+      role: managers
+      select:
+        - paths: ["lib/canary/managers/**/*.ex"]
+    - name: adapters
+      role: adapters
+      select:
+        - paths: ["lib/canary/adapters/**/*.ex"]
+  calls:
+    domain: [domain]
+    managers: [managers, adapters, domain]
+    adapters: [adapters, domain]
+  interfaces:
+    buckets: [managers]

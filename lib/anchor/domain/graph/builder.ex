@@ -24,6 +24,7 @@ defmodule Anchor.Domain.Graph.Builder do
   `unreadable` as `{:duplicate_module, kept_path}`.
   """
 
+  alias Anchor.Domain.Failures
   alias Anchor.Domain.Graph
   alias Anchor.Domain.Graph.Beam
   alias Anchor.Domain.Graph.CoreWalker
@@ -41,21 +42,43 @@ defmodule Anchor.Domain.Graph.Builder do
   def build(beams, source_facts) do
     {decoded, errors} = Enum.split_with(beams, &match?(%Beam{}, &1))
     {kept, duplicates} = first_per_module(decoded)
-    nodes = Enum.map(kept, &module_node(&1, source_facts))
-    # Core's `{:file, _}` annotations hold the cwd-relative path, which the
-    # node keeps as `source_file` (`elixir_v1` `:relative_file`).
-    edges = Enum.map(nodes, &module_edges(&1, &1.source_file))
+    {built, crashed} = kept |> Enum.map(&guarded_module(&1, source_facts)) |> split_built()
 
     %Graph{
-      modules: Map.new(nodes, &{&1.module, &1}),
-      calls: Enum.flat_map(edges, &elem(&1, 0)),
-      struct_uses: Enum.flat_map(edges, &elem(&1, 1)),
+      modules: Map.new(built, fn {node, _edges} -> {node.module, node} end),
+      calls: Enum.flat_map(built, fn {_node, {calls, _uses}} -> calls end),
+      struct_uses: Enum.flat_map(built, fn {_node, {_calls, uses}} -> uses end),
       unreadable:
         errors
         |> Enum.map(fn {:error, error} -> error end)
         |> Enum.concat(duplicates)
+        |> Enum.concat(crashed)
         |> Enum.sort_by(& &1.path)
     }
+  end
+
+  # One module's node and edges, built together, so a crash leaves no partial
+  # module behind (DND-5548). A raise, throw or exit while building it is that
+  # module's `{:walk_crashed, summary}` entry in `unreadable`, never the whole
+  # build's: every other module is still built.
+  defp guarded_module(%Beam{} = beam, source_facts) do
+    node = module_node(beam, source_facts)
+    # Core's `{:file, _}` annotations hold the cwd-relative path, which the
+    # node keeps as `source_file` (`elixir_v1` `:relative_file`).
+    {:built, {node, module_edges(node, node.source_file)}}
+  catch
+    kind, reason ->
+      {:crashed,
+       %{
+         path: beam.path,
+         module: beam.module,
+         reason: {:walk_crashed, Failures.crash_summary(kind, reason, __STACKTRACE__)}
+       }}
+  end
+
+  defp split_built(results) do
+    {built, crashed} = Enum.split_with(results, &match?({:built, _}, &1))
+    {Enum.map(built, &elem(&1, 1)), Enum.map(crashed, &elem(&1, 1))}
   end
 
   # One beam per module: the first by path. Every other beam of that module (a
@@ -84,6 +107,7 @@ defmodule Anchor.Domain.Graph.Builder do
       module: module,
       app: beam.app,
       source_file: source_file,
+      line: anno_line(Map.get(elixir, :anno)),
       behaviours: attributes |> Keyword.get_values(:behaviour) |> List.flatten(),
       attributes: attributes,
       specs: specs(beam.specs),
@@ -134,6 +158,11 @@ defmodule Anchor.Domain.Graph.Builder do
   defp core_defs(core) do
     Map.new(:cerl.module_defs(core), fn {fname, fun} -> {:cerl.var_name(fname), fun} end)
   end
+
+  # The `defmodule` line: `elixir_v1`'s `:anno` is `{line, column}` or a line.
+  defp anno_line({line, _column}) when is_integer(line), do: line
+  defp anno_line(line) when is_integer(line), do: line
+  defp anno_line(_anno), do: nil
 
   defp generated(_module, nil), do: :unknown
   defp generated(_module, {:error, :unparseable}), do: :unknown

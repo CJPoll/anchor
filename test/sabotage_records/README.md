@@ -84,6 +84,13 @@ before coining a synonym.
 - `builder` — `Anchor.Domain.Graph.Builder` (DND-5438): the causal graph built
   from decoded beams and source facts (module facts, `generated?`,
   `unreadable`), with the `Anchor.Domain.Graph` queries.
+- `graph_runner` — `mix anchor.graph` (DND-5440): the Manager
+  (`Anchor.Managers.Graph`), the task, the model (`Anchor.Domain.Model`), the
+  rule registry and floors (`Anchor.Domain.GraphRules`), the report
+  (`Anchor.Domain.GraphReport`), the artifact key (`Anchor.Domain.GraphKey`),
+  the `SourceReader` and `GraphArtifact` adapters, and the canary tree. Its
+  changes to modules that have a word of their own are filed under that word
+  (`classification`, `failures`, `rule_coverage`, `architecture`, `builder`).
 - `source_facts` — `Anchor.Domain.Graph.SourceFacts` (DND-5438): the literal
   `defmodule`s and `use`s of a source file.
 - `glob_pattern` — `Anchor.Domain.GlobPattern` (glob / module-name pattern

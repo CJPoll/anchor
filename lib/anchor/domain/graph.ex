@@ -9,8 +9,9 @@ defmodule Anchor.Domain.Graph do
     * `:unreadable` — every beam that could not be decoded, as the error map
       `%{path, module, reason}` (see `t:Anchor.Domain.Graph.Beam.decode_error/0`),
       in path order, and every extra beam of a module two ebins hold
-      (`reason: {:duplicate_module, kept_path}`). The runner reports each;
-      none is dropped.
+      (`reason: {:duplicate_module, kept_path}`), and every module whose
+      node or Core walk crashed (`reason: {:walk_crashed, summary}`,
+      DND-5548). The runner reports each; none is dropped.
 
   `Anchor.Domain.Graph.Builder.build/2` makes one.
   """
