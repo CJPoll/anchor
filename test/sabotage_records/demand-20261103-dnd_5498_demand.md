@@ -17,7 +17,8 @@ The two mutations the QA plan names: DEM-A (the SCC loop runs one round only: bo
 - DEM-AL ran on ada6b84, the critic fix (with DEM-Y again, which still reddens only its pure-call row there). A first DEM-AL run, on the uncommitted fix, is not counted: the driver's `git checkout --` restore then dropped that uncommitted fix (2dea3b9 went out without it; ada6b84 restores it).
 - DEM-AM and DEM-AN ran on efa463f, the critic round 3 fix, with DEM-Y again: DEM-Y there reddens both protection rows (the pure call and the failed match), DEM-AN only the failed-match row, DEM-AM only the apply/2 row.
 - DEM-AO ran on 54a7db7, alone.
-- Every one of the 86 tests in the six files is seen failing in at least one row.
+- Critic rounds 1-4 each found one more path the try protection missed (project calls and closure applies; apply/2 and a failed match; binaries; field reads): one cluster. 9264a40 replaced the per-path patches with one rule at the call choke point, and e17c788 adds one table row per Core construct under try, so a missed construct is a red row. DEM-AP ran on 9264a40; DEM-Y, DEM-AL, DEM-AP and DEM-AQ ran again on e17c788, and each reddens the table row.
+- Every one of the 88 tests in the six files is seen failing in at least one row.
 - Not counted: in 13 rows the self test (`Anchor's own code: ...`) also failed by **timing out** at the mutation runs' 2000 ms `--timeout` under a loaded machine; those are not kills and are left out of the "Tests failed" counts. The self test now carries `@moduletag timeout: 60_000` (43d2404). The self test is killed for real (an assertion) by DEM-C, DEM-T and SELF-A.
 - Measured zeros: none in the final runs. DEM-M (a literal-key field read uses the whole value) of the first run targeted a helper the review-floor fix removed; DEM-AH covers the code that replaced it.
 
@@ -75,6 +76,11 @@ The two mutations the QA plan names: DEM-A (the SCC loop runs one round only: bo
 | DEM-AM | apply(f, list) inside try takes only the closures' summaries (critic round 3) | `transfer.ex` | 2 | analyze/4 inside try, a project call or a lambda apply that can raise uses its argument; counts functions analysed, absent parameters and imprecise functions, exact |
 | DEM-AN | a failed match inside try drops its value (critic round 3) | `transfer.ex` | 1 | more Core shapes inside try, a failed match's value reaches the handler: used |
 | DEM-AO | a binary inside try uses its segments only when it is used (self-review after critic round 3) | `transfer.ex` | 1 | more Core shapes inside try, a binary built from a can raise (badarg): a used |
+| DEM-AP (on 9264a40) | inside try a library call keeps its own rule (a field read uses one field) | `transfer.ex` | 1 | more Core shapes inside try, a field read that can raise puts the whole map in the exception: used |
+| DEM-Y (on e17c788, the table row) | no protection inside try/catch | `transfer.ex` | 3 | more Core shapes inside try, a binary built from a can raise (badarg): a used; more Core shapes inside try, a failed match's value reaches the handler: used; inside try (one row per construct) a construct that can raise uses its value; a tuple or list cell does not |
+| DEM-AL (on e17c788, the table row) | a project call or closure apply inside try takes only its summary | `transfer.ex` | 3 | inside try (one row per construct) a construct that can raise uses its value; a tuple or list cell does not; analyze/4 inside try, a project call or a lambda apply that can raise uses its argument; counts functions analysed, absent parameters and imprecise functions, exact |
+| DEM-AP (on e17c788, the table row) | inside try a library call keeps its own rule (a field read uses one field) | `transfer.ex` | 2 | inside try (one row per construct) a construct that can raise uses its value; a tuple or list cell does not; more Core shapes inside try, a field read that can raise puts the whole map in the exception: used |
+| DEM-AQ (on e17c788, the table row) | a list cell inside try uses its parts (as if it could raise) | `transfer.ex` | 1 | inside try (one row per construct) a construct that can raise uses its value; a tuple or list cell does not |
 
 ## DEM-A — the SCC loop runs one round only
 
@@ -984,4 +990,138 @@ Run summary: `86 tests, 1 failure`
      right: [:all]
      stacktrace:
        test/anchor/domain/demand/transfer_test.exs:314: (test)
+```
+
+## DEM-AP (on 9264a40) — inside try a library call keeps its own rule (a field read uses one field)
+
+Run summary: `87 tests, 1 failure`
+
+```
+  1) test more Core shapes inside try, a field read that can raise puts the whole map in the exception: used (Anchor.Domain.Demand.TransferTest)
+     test/anchor/domain/demand/transfer_test.exs:327
+     Assertion with == failed
+     code:  assert params(context, :guarded_fetch, 1) == [:all]
+     left:  [used: %{k: :all}]
+     right: [:all]
+     stacktrace:
+       test/anchor/domain/demand/transfer_test.exs:329: (test)
+```
+
+## DEM-Y (on e17c788, the table row) — no protection inside try/catch
+
+Run summary: `88 tests, 3 failures`
+
+```
+  1) test more Core shapes inside try, a binary built from a can raise (badarg): a used (Anchor.Domain.Demand.TransferTest)
+     test/anchor/domain/demand/transfer_test.exs:347
+     Assertion with == failed
+     code:  assert params(context, :guarded_bin, 1) == [:all]
+     left:  [:absent]
+     right: [:all]
+     stacktrace:
+       test/anchor/domain/demand/transfer_test.exs:348: (test)
+```
+
+## DEM-AL (on e17c788, the table row) — a project call or closure apply inside try takes only its summary
+
+Run summary: `88 tests, 3 failures`
+
+```
+  1) test inside try (one row per construct) a construct that can raise uses its value; a tuple or list cell does not (Anchor.Domain.Demand.TransferTest)
+     test/anchor/domain/demand/transfer_test.exs:412
+     Assertion with == failed
+     code:  assert actual == @protected_rows
+     left:  [
+              bif: :all,
+              module_call: :all,
+              field_read: :all,
+              element: :all,
+              dot: :all,
+```
+
+## DEM-AP (on e17c788, the table row) — inside try a library call keeps its own rule (a field read uses one field)
+
+Run summary: `88 tests, 2 failures`
+
+```
+  1) test inside try (one row per construct) a construct that can raise uses its value; a tuple or list cell does not (Anchor.Domain.Demand.TransferTest)
+     test/anchor/domain/demand/transfer_test.exs:412
+     Assertion with == failed
+     code:  assert actual == @protected_rows
+     left:  [
+              bif: :all,
+              module_call: :all,
+              field_read: {:used, %{k: :all}},
+              element: {:used, %{0 => :all}},
+              dot: :all,
+```
+
+## DEM-AQ (on e17c788, the table row) — a list cell inside try uses its parts (as if it could raise)
+
+Run summary: `88 tests, 1 failure`
+
+```
+  1) test inside try (one row per construct) a construct that can raise uses its value; a tuple or list cell does not (Anchor.Domain.Demand.TransferTest)
+     test/anchor/domain/demand/transfer_test.exs:412
+     Assertion with == failed
+     code:  assert actual == @protected_rows
+     left:  [
+              bif: :all,
+              module_call: :all,
+              field_read: :all,
+              element: :all,
+              dot: :all,
+```
+
+## The per-construct try table, red on the per-site code
+
+The table row (`inside try (one row per construct)`, e17c788) run against 3cb2b93's `transfer.ex` (the per-site protection, before the one-rule fix), restored afterwards with `git checkout HEAD --`: `39 tests, 2 failures` (the other is the field-read row added in 9264a40).
+
+```
+  1) test inside try (one row per construct) a construct that can raise uses its value; a tuple or list cell does not (Anchor.Domain.Demand.TransferTest)
+     test/anchor/domain/demand/transfer_test.exs:412
+     Assertion with == failed
+     code:  assert actual == @protected_rows
+     left:  [
+              bif: :all,
+              module_call: :all,
+              field_read: {:used, %{k: :all}},
+              element: {:used, %{0 => :all}},
+              dot: :all,
+              local_call: :all,
+              closure: :all,
+              apply2: :all,
+              failed_match: :all,
+              let: :all,
+              seq: :all,
+              letrec: :all,
+              receive_after: :all,
+              binary: :all,
+              map_update: :all,
+              map_build: :all,
+              tuple_build: :absent,
+              cons_build: :all
+            ]
+     right: [
+              bif: :all,
+              module_call: :all,
+              field_read: :all,
+              element: :all,
+              dot: :all,
+              local_call: :all,
+              closure: :all,
+              apply2: :all,
+              failed_match: :all,
+              let: :all,
+              seq: :all,
+              letrec: :all,
+              receive_after: :all,
+              binary: :all,
+              map_update: :all,
+              map_build: :all,
+              tuple_build: :absent,
+              cons_build: :absent
+            ]
+     stacktrace:
+       test/anchor/domain/demand/transfer_test.exs:435: (test)
 ```
