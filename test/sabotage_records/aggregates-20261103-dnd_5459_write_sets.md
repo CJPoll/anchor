@@ -4,13 +4,15 @@
 - **Branch:** dnd-5459-write-sets (a batch: DND-5459, then DND-5659, then the review-floor fixes)
 - **Date:** 2026-11-03
 - **Code under test:** `Anchor.Domain.Aggregates.WriteSource` (trace rules 1-9, `key/2`), `WriteSites` (repos, writes, raw SQL, transactions, Multi tracing, `Multi.run` callbacks), `FunctionWalk`, `Scopes`, `NonTransactional`, `Inference`, `Analysis`, `Persistence`, `Aggregates.Config` (`declare: none`), `Aggregates.Index` (`:persists_under_none`), the graph rules `AggregateWriteSources` and `AggregateDeclarations`, and the wiring in `Anchor.Config`, `RuleSchema`, `GraphRules`, `Model`, `GraphReport`, `Failures` and `Anchor.Managers.Graph`
-- **Suite run:** a driver applied each mutation to the source (one exact, unique anchor), ran `mix test --timeout 2000 --max-cases 2 <its test files>` inside `test-slot`, kept every failure block of the run verbatim, and restored the source, bumping the file's mtime after each write so Mix recompiled it. After the pass `git status` showed only the intended edits. Every mutation below was run on dd5c1b1; every one is red by a failed assertion or a raise in the code under test, and its failure output is copied below as the run printed it.
+- **Suite run:** a driver applied each mutation to the source (one exact, unique anchor), ran `mix test --timeout 2000 --max-cases 2 <its test files>` inside `test-slot`, kept every failure block of the run verbatim, and restored the source, bumping the file's mtime after each write so Mix recompiled it. After the pass `git status` showed only the intended edits. Every mutation below was run on 5a1523d (pass 7's on 3a0d3f3); every one is red by a failed assertion or a raise in the code under test, and its failure output is copied below as the run printed it.
 - **Passes:**
   1. 45 mutations on 5380b87 (DND-5459's QA-plan sabotage table and one per guard). Not measured: WS-SPEC, WS-SCHEMACALL, WS-CAPTURED, WSI-RUNCAPTURE, NT-AIT, IN-ROOT and RL-NONE were compile errors under `warnings_as_errors` (an unused variable or function, or a clause the type checker proves dead), and WS-RETURN survived, because R13's helper was a local `defp`; a remote-helper test (`r15`) was added.
   2. 18 mutations: the re-anchored rows and the wiring. WS-CAPTURED survived (no test had a captured function whose parameter has a caller; `r16` was added); NT-AIT and MD-ROOTS were compile errors again.
   3. 3 mutations: WS-CAPTURED, NT-AIT re-anchored, MD-ROOTS against a new Model-level roots test.
   4. 23 mutations for DND-5659 on e005327. PS-REPOWRITE's first two forms were compile errors; its third form went red.
   5. The full set again on the branch head, to record every failure verbatim (the ADR-review finding that passes 1-4 recorded counts and test names only): the 55 DND-5459 rows (NT-MULTI, NT-AIT and CF-NEEDS re-anchored to the code as it now reads), the 23 DND-5659 rows, 14 new rows for tests that had no recorded red (W1, W2, R2, R11, R14, S1, S9, S12, S13, the counts test, F4, F7 and Z1), and 10 rows for the review-floor fixes' tests (nine red; WS-STRINGARG measured equivalent, see Not mutated).
+  6. Pass 5 left four rows unmeasured. MD-ANALYSIS (`aggregate_analysis: nil` made `Managers.Graph.put_writes/2`'s clause provably dead, and its next form did the same), NT-RUNCAP (dropping the pipe step left a variable and a function unused) and WSI-RAWSQLADAPTER (dropping the module test left an attribute unused) were compile errors; each was re-anchored to the form recorded below, and went red. WS-STRINGARG survived: see Not mutated.
+  7. 3 mutations for the critic's round-2 fix (render_yaml's evidence of persistence, and raw SQL on a Repo in `Persistence`), run on 3a0d3f3: all red.
 - **Not mutated:** the parameter-stack check in `WriteSource.param/3` (`key in ctx.stack`): the 8-hop bound gives the same `"parameter cycle"` answer on every cycle, so removing it is an equivalent mutant. WS-STRINGARG (in `WriteSource.string?/1`, drop the `:cerl.type(node) == :binary` arm, so a string Core holds as a `:binary` node could be read as a table): it survived, 7 tests, 0 failures. Measured as equivalent on every input found: nine source forms of a string argument (a literal, `<>` of two literals, `<<"a", "b">>`, `~s()`, `::binary`, `::utf8`, interpolation of a literal and of a module attribute, and a second argument) all compile to a `:literal` node, never a `:binary` one, so no fixture can reach the arm. It is kept because it mirrors trace's own `:binary` rule (`write_source.ex`, `binary/1`), so a `:binary` prefix can never be a table either. Anchor's own `.anchor.yml` (the `aggregate_declarations` rule, enforced, with `declare: none`): its check is the gate's `MIX_ENV=dev mix anchor.graph` run; the `aggregates_none` canary proves the same config shape fails a module that persists.
 - **Test files:** `test/anchor/domain/aggregates/{config,index,write_source,write_sites,scopes,non_transactional,inference,real_ecto}_test.exs`, `test/anchor/domain/graph_rules/{aggregate_write_sources,aggregate_declarations}_test.exs`, `test/anchor/integration/{aggregate_write_sources,aggregates_none}_integration_test.exs`, and the rows the branch adds to `failures_graph_test.exs`, `graph_report_aggregates_test.exs`, `rule_schema_test.exs` and `rule_checks_nothing_test.exs`.
 
@@ -5579,6 +5581,9 @@ a section without none has a none value (`lib/anchor/domain/aggregates/config.ex
 | IN-UNRESOLVEDNONE | writes found but none resolved renders declare: none (`lib/anchor/domain/aggregates/inference.ex`) | `inference_test.exs` | `12 tests, 1 failure` (red) |
 | IN-NOTE | the unresolved note is not a YAML comment (`lib/anchor/domain/aggregates/inference.ex`) | `inference_test.exs` | `12 tests, 1 failure` (red) |
 | CFG-NONERULE | aggregate_write_sources beside declare: none loads (`lib/anchor/domain/config.ex`) | `aggregate_write_sources_test.exs` | `9 tests, 1 failure` (red) |
+| IN-EVIDENCESCOPES | a transaction with no write site is not evidence (`lib/anchor/domain/aggregates/inference.ex`) | `inference_test.exs` | `14 tests, 1 failure` (red) |
+| IN-EVIDENCEOUTSIDE | an unattributable call outside a transaction is not evidence (`lib/anchor/domain/aggregates/inference.ex`) | `inference_test.exs` | `14 tests, 1 failure` (red) |
+| PS-RAWSQL | raw SQL on a Repo is not a persistence call (`lib/anchor/domain/aggregates/persistence.ex`) | `index_test.exs` | `41 tests, 1 failure` (red) |
 
 ### NT-RUNCB
 
@@ -5895,4 +5900,71 @@ aggregate_write_sources beside declare: none loads (`lib/anchor/domain/config.ex
        test/anchor/domain/graph_rules/aggregate_write_sources_test.exs:173: (test)
 
 .....
+```
+
+### IN-EVIDENCESCOPES
+
+a transaction with no write site is not evidence (`lib/anchor/domain/aggregates/inference.ex`). Result: `14 tests, 1 failure`.
+
+```
+
+  1) test F8: a transaction with no write site, only a gap, is an error, never declare: none (Anchor.Domain.Aggregates.InferenceTest)
+     test/anchor/domain/aggregates/inference_test.exs:114
+     match (=) failed
+     code:  assert {:error, why} = Inference.render_yaml(gap_only)
+     left:  {:error, why}
+     right: {:ok,
+             "aggregates:\n  declare: none\n  reason: \"anchor found no transaction and no write in this project\"\n"}
+     stacktrace:
+       test/anchor/domain/aggregates/inference_test.exs:120: (test)
+
+.
+```
+
+### IN-EVIDENCEOUTSIDE
+
+an unattributable call outside a transaction is not evidence (`lib/anchor/domain/aggregates/inference.ex`). Result: `14 tests, 1 failure`.
+
+```
+
+  1) test F8: a gap outside every transaction is an error, never declare: none (Anchor.Domain.Aggregates.InferenceTest)
+     test/anchor/domain/aggregates/inference_test.exs:124
+     match (=) failed
+     code:  assert {:error, why} = Inference.render_yaml(outside)
+     left:  {:error, why}
+     right: {:ok,
+             "aggregates:\n  declare: none\n  reason: \"anchor found no transaction and no write in this project\"\n"}
+     stacktrace:
+       test/anchor/domain/aggregates/inference_test.exs:130: (test)
+
+............
+```
+
+### PS-RAWSQL
+
+raw SQL on a Repo is not a persistence call (`lib/anchor/domain/aggregates/persistence.ex`). Result: `41 tests, 1 failure`.
+
+```
+
+
+
+  1) test build/2 under declare: none N4: a module making raw SQL on a Repo it does not define persists (Anchor.Domain.Aggregates.IndexTest)
+     test/anchor/domain/aggregates/index_test.exs:506
+     match (=) failed
+     The following variables were pinned:
+       detail = "it calls MyDep.Repo.query!/2 (line 7)"
+     code:  assert [%{subject: @caller, site: {:module, @caller, _file, 1}, detail: ^detail}] =
+              persists(Index.build(none(), graph))
+     left:  [
+              %{
+                subject: AnchorFixtures.Aggregates.IndexTest.Caller,
+                site: {:module, AnchorFixtures.Aggregates.IndexTest.Caller, _file, 1},
+                detail: ^detail
+              }
+            ]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/index_test.exs:512: (test)
+
+........................................
 ```
