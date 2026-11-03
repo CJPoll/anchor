@@ -11,6 +11,8 @@ defmodule Anchor.Integration.DemandSelfTest do
   # pass a short global --timeout (2000 ms) that a loaded machine overruns, so
   # this module keeps ExUnit's default bound.
   @moduletag timeout: 60_000
+  # TEMPORARY (DND-5652 equality run only)
+  @moduletag :dnd5652_skip
 
   alias Anchor.Adapters.BeamReader
   alias Anchor.Domain.Cfa

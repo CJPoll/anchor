@@ -61,7 +61,9 @@ defmodule Anchor.Adapters.CallTracer do
   @first_hit_key {__MODULE__, :first_hit}
 
   @impl Anchor.Adapters.Tracing
-  def start(collector, modules), do: start(collector, modules, :first_hit)
+  # TEMPORARY (DND-5652 equality run): DND5652_EVERY_CALL=1 builds the map the old way.
+  def start(collector, modules),
+    do: start(collector, modules, if(System.get_env("DND5652_EVERY_CALL"), do: :every_call, else: :first_hit))
 
   @doc "`start/2` in a given mode: `:first_hit` (the default) or `:every_call`."
   @spec start(pid(), [module()], :first_hit | :every_call) :: :ok | {:error, :already_tracing}
