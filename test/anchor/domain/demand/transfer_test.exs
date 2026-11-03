@@ -72,6 +72,11 @@ defmodule Anchor.Domain.Demand.TransferTest do
     end
 
     def returned(a), do: a + 1
+
+    def dotted(m) do
+      _ = m.x
+      :ok
+    end
     def put_read(a, b), do: Map.get(Map.put(%{x: b}, :k, a), :k)
     def update_read(m, a), do: %{m | k: a}.j
     def dyn(mod, x), do: mod.run(x)
@@ -211,6 +216,11 @@ defmodule Anchor.Domain.Demand.TransferTest do
   end
 
   describe "more Core shapes" do
+    test "m.x with its result unused still uses field x (m may be a module: m.x() runs)",
+         context do
+      assert params(context, :dotted, 1) == [{:used, %{x: :all}}]
+    end
+
     test "a + 1 returned uses a (the positive control of the discarded row)", context do
       assert params(context, :returned, 1) == [:all]
     end
