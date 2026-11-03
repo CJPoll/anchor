@@ -47,8 +47,10 @@ defmodule Anchor.Domain.Demand.Transfer do
       observable, so a call (and a map update) there uses its arguments even
       when its result is unused; a call of a project function or a closure
       there uses every argument in full (its summary assumes no handler sees
-      a raise). A raise outside any `try` is not a use: a caller's handler is
-      not followed.
+      a raise), and so does `apply(f, list)`; a failed match's value
+      (`primop match_fail`) reaches the handler, so it is used there. A
+      raise outside any `try` is not a use: a caller's handler is not
+      followed.
     * A `fun` whose value is used: its body in full, so what it captures is
       used. A `letrec` definition (a receive or comprehension loop) is
       walked in full.
@@ -501,7 +503,12 @@ defmodule Anchor.Domain.Demand.Transfer do
   end
 
   defp primop(node, st, ctx) do
-    demand = if :cerl.atom_val(:cerl.primop_name(node)) == :match_fail, do: :absent, else: :all
+    # A failed match inside a try reaches the handler with its value.
+    demand =
+      if :cerl.atom_val(:cerl.primop_name(node)) == :match_fail,
+        do: protected(:absent, ctx),
+        else: :all
+
     walk_all(:cerl.primop_args(node), demand, st, ctx)
   end
 
@@ -656,7 +663,7 @@ defmodule Anchor.Domain.Demand.Transfer do
         used? =
           Enum.any?(known, &Enum.any?(Map.fetch!(ctx.summaries, &1), fn d -> d != :absent end))
 
-        walk(list, if(used?, do: :all, else: :absent), st, ctx)
+        walk(list, protected_call(if(used?, do: :all, else: :absent), known, ctx), st, ctx)
 
       :any ->
         unknown_args([list], {:any_apply, site_id}, st, ctx)

@@ -104,6 +104,22 @@ defmodule Anchor.Domain.Demand.TransferTest do
       end
     end
 
+    def guarded_case(a, b) do
+      try do
+        case {a, b} do
+          {:x, _} -> 1
+        end
+      rescue
+        error -> error
+      end
+    end
+
+    def unguarded_case(a, b) do
+      case {a, b} do
+        {:x, _} -> 1
+      end
+    end
+
     def unguarded(a) do
       _ = hd(a)
       :ok
@@ -277,6 +293,12 @@ defmodule Anchor.Domain.Demand.TransferTest do
       assert params(context, :guarded_try, 1) == [:all]
       # Positive control: the same body outside a try.
       assert params(context, :unguarded, 1) == [:absent]
+    end
+
+    test "inside try, a failed match's value reaches the handler: used", context do
+      assert params(context, :guarded_case, 2) == [:all, :all]
+      # Positive control: outside a try the compiler's case_clause payload is no use.
+      assert params(context, :unguarded_case, 2) == [:all, :absent]
     end
 
     test "a pure module's call with its result unused still uses a fn argument", context do

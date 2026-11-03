@@ -100,6 +100,21 @@ defmodule Anchor.Domain.DemandTest do
       end
     end
 
+    def guarded_apply(a) do
+      f = fn x ->
+        _ = hd(x)
+        :ok
+      end
+
+      args = [a]
+
+      try do
+        apply(f, args)
+      rescue
+        _error -> :error
+      end
+    end
+
     def notify(p) do
       ExtNotifier.push(p)
       :ok
@@ -285,6 +300,7 @@ defmodule Anchor.Domain.DemandTest do
          %{demand: demand} do
       assert demands(demand, {A, :guarded_helper, 1}) == [:all]
       assert demands(demand, {A, :guarded_lambda, 1}) == [:all]
+      assert demands(demand, {A, :guarded_apply, 1}) == [:all]
       # Positive control: the helper on its own (outside any try) does not use it.
       assert demands(demand, {A, :helper, 1}) == [:absent]
     end
@@ -331,22 +347,22 @@ defmodule Anchor.Domain.DemandTest do
   end
 
   describe "counts" do
-    # 29 functions (A 21, B 7, C 1), 40 parameters; absent: first/2's b,
+    # 30 functions (A 22, B 7, C 1), 41 parameters; absent: first/2's b,
     # chain, g, h, loop's acc, ping's and pong's p, ignored's p, run's p,
-    # received_drop's m, wrong_arity's p, run_wrong's p, helper's a. 24
+    # received_drop's m, wrong_arity's p, run_wrong's p, helper's a. 25
     # components: five cycles merge two functions each (ping/pong, and each
     # A function with the B function that applies its lambda: ignored/run,
-    # used_apply/run_used, wrong_arity/run_wrong, listed/apply_it); 48 rounds,
+    # used_apply/run_used, wrong_arity/run_wrong, listed/apply_it); 50 rounds,
     # each component's last unchanged.
     test "functions analysed, absent parameters and imprecise functions, exact", %{demand: demand} do
       assert %{
-               functions: 29,
-               parameters: 40,
+               functions: 30,
+               parameters: 41,
                absent: 13,
                imprecise_parameters: 4,
                imprecise_functions: 4,
-               components: 24,
-               rounds: 48
+               components: 25,
+               rounds: 50
              } == demand.counts
 
       assert demand.imprecise |> Map.keys() |> Enum.sort() == [

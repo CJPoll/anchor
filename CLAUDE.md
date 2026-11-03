@@ -184,9 +184,10 @@ whether it reaches the return value or an effect, and the calls it is passed to
 unused). Effects and escapes are rows in `Anchor.Domain.EffectPrimitives`, pure
 library calls in `Anchor.Domain.PureCalls`; a function that calls an argument
 (`Anchor.Domain.HigherOrder`) uses every argument, precisely; any library call
-in neither table uses its arguments and makes the function `imprecise` (the passes run sound and
-optimistic, and a parameter whose two demands differ is imprecise). A new Core
-shape goes into `Transfer` with a row in
+in neither table uses its arguments and makes the function `imprecise` (the
+passes run sound and optimistic, and a parameter whose two demands differ is
+imprecise). Inside a `try` or `catch` a raise is observable, so a call there
+uses its arguments. A new Core shape goes into `Transfer` with a row in
 `test/anchor/domain/demand/transfer_test.exs`. A field map may hold the key
 `:__struct__`: read it with `:maps`, never `Enum`.
 
