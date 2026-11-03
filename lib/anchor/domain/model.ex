@@ -25,7 +25,8 @@ defmodule Anchor.Domain.Model do
     * `aggregate_analysis` — the write analysis
       (`%Anchor.Domain.Aggregates.Analysis{}`, DND-5459): every write, its
       source, every transaction's write set and the writes outside
-      transactions. Built only when the config has an `aggregates:` section,
+      transactions. Built only when the config has an `aggregates:` section
+      that is not `declare: none` (DND-5659),
       else `nil`. Its roots are the public functions of the framework
       bucket's modules (none when no bucket has the framework role);
     * `config` — the `%Anchor.Config{}`;
@@ -139,8 +140,13 @@ defmodule Anchor.Domain.Model do
 
   # DND-5459: the write analysis, only with an `aggregates:` section. Its
   # roots are the framework bucket's public functions; with no framework
-  # bucket, every public function with no project caller is one.
+  # bucket, every public function with no project caller is one. Under
+  # `declare: none` (DND-5659) there is nothing to analyse: the
+  # aggregate_declarations rule reports every module that persists.
   defp analysis(_graph, %Config{aggregates: nil}, _classification), do: nil
+
+  defp analysis(_graph, %Config{aggregates: %{none: reason}}, _classification) when reason != nil,
+    do: nil
 
   defp analysis(graph, %Config{aggregates: aggregates}, classification) do
     Analysis.build(graph, aggregates, roots: roots(graph, classification))

@@ -3,6 +3,7 @@ defmodule Anchor.Domain.Aggregates.InferenceTest do
   # hypergraph; the proposal parses under Aggregates.Config.parse/1.
   #
   # Sabotage record: ../../../sabotage_records/aggregates-20261103-dnd_5459_write_sets.md
+  # Sabotage record: ../../../sabotage_records/aggregates-20261103-dnd_5659_aggregates_none.md (DND-5659)
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Aggregates.Analysis
@@ -93,10 +94,11 @@ defmodule Anchor.Domain.Aggregates.InferenceTest do
              Enum.map(proposals, &{&1.name, &1.schemas, &1.tables})
   end
 
-  test "F5: nothing written renders an empty declare, which parses" do
+  test "F5: nothing written renders declare: none with a reason, which parses (DND-5659)" do
     yaml = Inference.render_yaml([])
     {:ok, %{"aggregates" => section}} = YamlElixir.read_from_string(yaml)
-    assert {:ok, %Config{declare: []}} = Config.parse(section)
+    assert {:ok, %Config{declare: [], none: reason}} = Config.parse(section)
+    assert reason =~ "no transaction"
   end
 
   test "F7: a scope with no resolved key adds no edge and does not crash" do

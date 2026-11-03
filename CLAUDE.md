@@ -159,7 +159,14 @@ the shared canary's counts do not move). A rule's fail-closed violation
 (`kind: :fail_closed`, here "checks nothing") is an issue of the run: the
 runner enforces it under `enforcement: report` and never holds it in a
 baseline. A schema's table is read from its
-`__schema__(:source)` clause in Core, never by calling it.
+`__schema__(:source)` clause in Core, never by calling it. A repo with no
+persistence writes `aggregates: declare: none` with a required `reason:`
+(DND-5659): the index keeps it in `none`, `Anchor.Domain.Aggregates.Persistence`
+finds every module that persists, each a `:persists_under_none` issue at
+`{:module, ...}`, and the rule makes no checks-nothing violation; Model builds no
+write analysis. An explicit `declare: []` is refused. Anchor's own
+`.anchor.yml` runs the rule that way, enforced, no baseline; the canary is
+`test/fixtures/graph_canary/aggregates_none/`.
 
 The optional top-level `architecture:` section (DND-5437) is parsed by
 `Anchor.Domain.Architecture.parse/1` into `%Anchor.Config{architecture: ...}`

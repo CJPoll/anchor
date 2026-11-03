@@ -1,0 +1,24 @@
+# The aggregates: declare: none canary (DND-5659): its own root, so the
+# shared canary tree's counts do not move. The integration test compiles lib/
+# in the test and runs the Manager over it. Compliant: plain.ex persists
+# nothing. Violating: thread.ex, a real Ecto schema in a repo that says it
+# persists nothing.
+rules:
+  - type: aggregate_declarations
+    id: aggregate_declarations
+    paths: ["lib/agg_none/**/*.ex"]
+
+aggregates:
+  declare: none
+  reason: "the canary persists nothing"
+
+architecture:
+  contexts:
+    depth: 2
+  buckets:
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/agg_none/**/*.ex"]
+  calls:
+    domain: [domain]

@@ -4,6 +4,7 @@ defmodule Anchor.Domain.Aggregates.IndexTest do
   # test (`Anchor.Test.BeamFixtures`), so `table_of/2` reads real Core.
   #
   # Sabotage record: ../../../sabotage_records/aggregates-20261103-dnd_5476_aggregate_decls.md
+  # Sabotage record: ../../../sabotage_records/aggregates-20261103-dnd_5659_aggregates_none.md (DND-5659)
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -13,6 +14,7 @@ defmodule Anchor.Domain.Aggregates.IndexTest do
   alias Anchor.Domain.Aggregates.DeclarationIssue
   alias Anchor.Domain.Aggregates.Index
   alias Anchor.Domain.Graph
+  alias Anchor.Domain.Graph.Call
   alias Anchor.Domain.Graph.FunctionNode
   alias Anchor.Domain.Graph.ModuleNode
 
@@ -431,6 +433,110 @@ defmodule Anchor.Domain.Aggregates.IndexTest do
 
       graph = %Graph{modules: %{module => node(module, %{{:__schema__, 1} => function})}}
       assert Index.table_of(graph, module) == :unknown
+    end
+  end
+
+  # DND-5659: under `declare: none` every module that persists is an issue.
+  describe "build/2 under declare: none" do
+    @reason "no database"
+    @caller Module.concat(@ns, Caller)
+    @repo Module.concat(@ns, Repo)
+
+    defp none, do: %Config{none: @reason}
+
+    defp call(from, to, line),
+      do: %Call{from: from, to: to, kind: :remote, line: line, line_source: :call}
+
+    defp persists(index), do: for(%{kind: :persists_under_none} = i <- index.issues, do: i)
+
+    test "N1: none over modules that persist nothing has no issue, and keeps the reason", %{
+      cores: cores
+    } do
+      graph = %{
+        graph(cores, plain: [@plain, @caller])
+        | calls: [
+            call({@caller, :run, 1}, {Map, :put, 3}, 3),
+            call({@caller, :run, 1}, {Module.concat(@ns, Store), :insert, 2}, 4),
+            call({@caller, :run, 1}, {@repo, :get, 2}, 5),
+            call({@caller, :run, 1}, {:dynamic, :insert, 2, :variable}, 6)
+          ]
+      }
+
+      index = Index.build(none(), graph)
+
+      assert index.none == @reason
+      assert index.issues == []
+    end
+
+    test "N2: a module exporting __schema__/1 persists, at its module", %{cores: cores} do
+      index = Index.build(none(), graph(cores, schemas: [@s1], plain: [@plain]))
+
+      assert [
+               %DeclarationIssue{
+                 kind: :persists_under_none,
+                 subject: @s1,
+                 aggregates: [],
+                 site: {:module, @s1, "lib/s1.ex", 1},
+                 detail: "it exports __schema__/1 (an Ecto schema)"
+               }
+             ] = index.issues
+    end
+
+    test "N3: a module declaring @behaviour Ecto.Repo persists", %{cores: cores} do
+      graph = graph(cores, plain: [@repo])
+      graph = put_in(graph.modules[@repo].behaviours, [Ecto.Repo])
+
+      assert [%{subject: @repo, detail: "it declares @behaviour Ecto.Repo"}] =
+               persists(Index.build(none(), graph))
+    end
+
+    @persistence_calls [
+      {"a Repo write", {Module.concat(@ns, Repo), :insert, 2},
+       "it calls AnchorFixtures.Aggregates.IndexTest.Repo.insert/2 (line 7)"},
+      {"an Ecto.Multi step", {Ecto.Multi, :insert, 3}, "it calls Ecto.Multi.insert/3 (line 7)"},
+      {"Ecto.Repo itself", {Ecto.Repo, :all, 2}, "it calls Ecto.Repo.all/2 (line 7)"},
+      {"an Ecto adapter", {Ecto.Adapters.SQL, :query, 3},
+       "it calls Ecto.Adapters.SQL.query/3 (line 7)"}
+    ]
+
+    for {label, to, detail} <- @persistence_calls do
+      @tag to: to, detail: detail
+      test "N4: a module making #{label} persists", %{cores: cores, to: to, detail: detail} do
+        graph = %{
+          graph(cores, plain: [@caller])
+          | calls: [call({@caller, :run, 1}, to, 9), call({@caller, :go, 0}, to, 7)]
+        }
+
+        assert [%{subject: @caller, site: {:module, @caller, _file, 1}, detail: ^detail}] =
+                 persists(Index.build(none(), graph))
+      end
+    end
+
+    test "N5: a module declaring @anchor_aggregate contradicts none", %{cores: cores} do
+      index = Index.build(none(), graph(cores, attributes: [{@x, [name: A, tables: ["t"]]}]))
+
+      assert [%{subject: @x, detail: "it declares @anchor_aggregate"}] = persists(index)
+    end
+
+    test "N6: one issue per module: the schema export wins over a call", %{cores: cores} do
+      graph = %{
+        graph(cores, schemas: [@s1])
+        | calls: [call({@s1, :save, 1}, {Ecto.Multi, :insert, 3}, 4)]
+      }
+
+      assert [%{subject: @s1, detail: "it exports __schema__/1 (an Ecto schema)"}] =
+               persists(Index.build(none(), graph))
+    end
+
+    test "N7: without none, the same modules are not persists_under_none", %{cores: cores} do
+      graph = %{
+        graph(cores, schemas: [@s1], plain: [@caller])
+        | calls: [call({@caller, :run, 1}, {Ecto.Multi, :insert, 3}, 4)]
+      }
+
+      assert persists(Index.build(nil, graph)) == []
+      assert persists(Index.build(%Config{}, graph)) == []
+      assert Index.build(nil, graph).none == nil
     end
   end
 

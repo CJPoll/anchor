@@ -16,7 +16,7 @@ defmodule Anchor.Domain.Aggregates.Inference do
   components whose names collide get the second's name suffixed `2`, `3`, ....
   `render_yaml/1` prints them in the exact `aggregates:` shape of
   `.anchor.yml`, sorted by name, which `Anchor.Domain.Aggregates.Config.parse/1`
-  reads back; with nothing written it prints an empty `declare`.
+  reads back; with nothing written it prints `declare: none` with a reason (DND-5659).
   """
 
   alias Anchor.Domain.Aggregates.Analysis
@@ -64,7 +64,10 @@ defmodule Anchor.Domain.Aggregates.Inference do
 
   @doc "The proposals as `.anchor.yml`'s `aggregates:` section; see the moduledoc."
   @spec render_yaml([proposal()]) :: String.t()
-  def render_yaml([]), do: "aggregates:\n  declare: []\n"
+  def render_yaml([]) do
+    "aggregates:\n  declare: none\n" <>
+      "  reason: \"anchor found no transaction and no write in this project\"\n"
+  end
 
   def render_yaml(proposals) do
     entries =

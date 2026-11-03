@@ -38,6 +38,12 @@ defmodule Anchor.Domain.Aggregates.Index do
     5. reports an owner naming no project module (`:unknown_owner`) and an
        aggregate with no schemas and no tables (`:empty_aggregate`).
 
+  Under `aggregates: declare: none` (DND-5659) the index keeps the reason
+  in `none`, and every module that persists
+  (`Anchor.Domain.Aggregates.Persistence`) is one `:persists_under_none`
+  issue at `{:module, module, source_file, line}`: `none` is checked, never
+  vacuous. Without `none`, `none` is `nil` and no such issue is made.
+
   A module the graph could not build (`Graph.unreadable`) is reported there;
   a schema or owner naming it is not also "no module of the project".
 
@@ -48,6 +54,7 @@ defmodule Anchor.Domain.Aggregates.Index do
   alias Anchor.Domain.Aggregates.Config
   alias Anchor.Domain.Aggregates.Declaration
   alias Anchor.Domain.Aggregates.DeclarationIssue
+  alias Anchor.Domain.Aggregates.Persistence
   alias Anchor.Domain.FunctionRef
   alias Anchor.Domain.Graph
   alias Anchor.Domain.Graph.FunctionNode
@@ -61,6 +68,7 @@ defmodule Anchor.Domain.Aggregates.Index do
             by_table: %{},
             owners: %{},
             tables_unknown: 0,
+            none: nil,
             issues: []
 
   @type t :: %__MODULE__{
@@ -69,6 +77,7 @@ defmodule Anchor.Domain.Aggregates.Index do
           by_table: %{String.t() => String.t()},
           owners: %{module() => [String.t()]},
           tables_unknown: non_neg_integer(),
+          none: String.t() | nil,
           issues: [DeclarationIssue.t()]
         }
 
@@ -92,7 +101,8 @@ defmodule Anchor.Domain.Aggregates.Index do
         schema_conflicts ++
         table_conflicts ++
         schema_issues(declarations, graph, known) ++
-        owner_issues(declarations, known) ++ empty_issues(aggregates)
+        owner_issues(declarations, known) ++
+        empty_issues(aggregates) ++ none_issues(config, graph)
 
     %__MODULE__{
       aggregates: aggregates,
@@ -100,6 +110,7 @@ defmodule Anchor.Domain.Aggregates.Index do
       by_table: by_table,
       owners: owners(aggregates),
       tables_unknown: tables |> Map.values() |> Enum.count(&(&1 == :unknown)),
+      none: none(config),
       issues: issues |> Enum.uniq() |> Enum.sort_by(&issue_order/1)
     }
   end
@@ -368,6 +379,26 @@ defmodule Anchor.Domain.Aggregates.Index do
     end
   end
 
+  # --- declare: none (DND-5659) -------------------------------------------
+
+  defp none(%Config{none: reason}), do: reason
+  defp none(nil), do: nil
+
+  defp none_issues(config, graph) do
+    if none(config) == nil do
+      []
+    else
+      for {node, reason} <- Persistence.modules(graph) do
+        %DeclarationIssue{
+          kind: :persists_under_none,
+          subject: node.module,
+          site: {:module, node.module, node.source_file, node.line},
+          detail: reason
+        }
+      end
+    end
+  end
+
   # --- claims -------------------------------------------------------------
 
   # One claim per (subject, aggregate, site).
@@ -515,4 +546,5 @@ defmodule Anchor.Domain.Aggregates.Index do
 
   defp site_order(:config), do: {0, ""}
   defp site_order({:attribute, module, _file, _line}), do: {1, Atom.to_string(module)}
+  defp site_order({:module, module, _file, _line}), do: {2, Atom.to_string(module)}
 end

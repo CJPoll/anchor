@@ -919,7 +919,8 @@ declaration shape:
 | A schema module that is not an Ecto schema | `MyApp.Plain in aggregate MyApp.A is not an Ecto schema (no __schema__/1). Fix: list the schema module, or list its table under tables:: ...` |
 | An aggregate with no schemas and no tables | `aggregate MyApp.A declares no schemas and no tables. Fix: add schemas: or tables:, or delete the declaration: ...` |
 | An `@anchor_aggregate` of the wrong shape (the module contributes nothing) | `@anchor_aggregate on MyApp.X is not [name: atom, schemas: [atom], tables: [binary], owner: boolean]: it has no name. Fix: write it in this shape: ...` |
-| No aggregate declared at all (fail-closed: never baselined, never report-only) | `rule 1 (id: "aggregate_declarations", aggregate_declarations) checks nothing: no aggregate is declared in .anchor.yml or by an @anchor_aggregate attribute. Fix: declare one or remove the rule: ...` |
+| No aggregate declared at all, and no `declare: none` (fail-closed: never baselined, never report-only) | `rule 1 (id: "aggregate_declarations", aggregate_declarations) checks nothing: no aggregate is declared in .anchor.yml or by an @anchor_aggregate attribute. Fix: declare one or remove the rule: ...` |
+| Under `declare: none`, a module that persists (DND-5659) | `MyApp.Thread persists (it exports __schema__/1 (an Ecto schema)), but .anchor.yml says aggregates: declare: none (no database). Fix: declare the aggregate and remove declare: none: ...` |
 
 An issue of the config section is always reported; one of a module's
 attribute is reported when the rule's selector selects that module. The key
@@ -932,9 +933,54 @@ A module the selector leaves out still declares: its declarations count
 toward the index and toward "declared", and only its issues are left out of
 the report.
 
-Anchor's own `.anchor.yml` does not run the rule: Anchor has no database and
-declares no aggregate, so the rule could only say it checks nothing, which
-fails the run in either enforcement mode.
+#### A repo with no persistence: `declare: none` (DND-5659)
+
+A repo that persists nothing says so on purpose, with a reason, instead of
+leaving the rule out:
+
+```yaml
+rules:
+  - type: aggregate_declarations
+    id: aggregate_declarations
+    paths: ["lib/**/*.ex"]
+
+aggregates:
+  declare: none
+  reason: "this service has no database: it reads files and calls APIs"
+
+architecture:
+  contexts:
+    depth: 2
+  buckets:
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/**/*.ex"]
+  calls:
+    domain: [domain]
+```
+
+Under `none` the rule is not vacuous, and makes no checks-nothing violation:
+it fails every selected module that persists, one violation at its
+`defmodule` line keyed `<id>|<Module>|persists_under_none - <Module>`, whose
+`Fix:` is to declare the aggregate and remove `declare: none`. A module
+persists when it exports `__schema__/1` (`use Ecto.Schema`), declares
+`@behaviour Ecto.Repo`, declares `@anchor_aggregate`, or calls a Repo write
+(a write on a module whose name ends in `Repo`), any function of `Ecto.Repo`
+or `Ecto.Multi`, or an `Ecto.Adapters.*` module; the first of these that holds
+is the reason the message gives. Not seen: a read through a repo the project
+does not define, and a call on a computed module.
+
+The load refuses (exit 3, each with a `Fix:` naming both forms): `none`
+without a `reason:` or with a blank one; a `reason:` without `none`; `none`
+beside `repos`, `write_functions` or `transaction_functions`; a `declare`
+string other than `none`; and an explicit `declare: []`, so "nothing" is
+always said on purpose. A missing `aggregates:` section keeps the fail-closed
+checks-nothing violation above. Under `none` no write analysis is built, so
+the `aggregate_write_sources` rule has nothing to read and reports no repo.
+
+Anchor's own `.anchor.yml` runs the rule this way: `declare: none`, enforced,
+no baseline.
 
 ### Writes and transactions: the `aggregate_write_sources` rule (DND-5459)
 
@@ -1032,6 +1078,7 @@ line.
 | An ambiguous module | 1 | its source file, at its `defmodule` line | `MyApp.X is in buckets domain (by paths [...]) and framework (by uses_module GenServer). Fix: narrow one selector; buckets never take precedence.` |
 | A bucket below its `min_modules` | 1 | the config | `architecture bucket domain selects 3 modules, below min_modules 10. Fix: correct the selector; lowering min_modules is the owner's call.` |
 | An `interfaces.exports` entry that names no module | 1 | the config | `architecture interfaces.exports names MyApp.Gone, which is no module of the project ... Fix: ...` |
+| An `aggregates:` section with `declare: []`, or `declare: none` with no `reason:` (DND-5659) | 3 | the config path | `aggregates.declare is an empty list, which says nothing on purpose. Fix: write declare: none with reason: "<why this repo persists nothing>" and no other key, or list the aggregates: ...` |
 | An `aggregates:` section of the wrong shape (DND-5476) | 3 | the config path | `aggregates.declare[1].schemas must be a list of exact module names: "MyApp.*" is not an exact Elixir module name (no glob, no Erlang module). Fix: name each module in full, as its defmodule spells it; aggregates: declare: - name: <Aggregate>, ...` |
 | An `aggregate_declarations` rule with no aggregate declared anywhere (DND-5476) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "aggregate_declarations", aggregate_declarations) checks nothing: no aggregate is declared in .anchor.yml or by an @anchor_aggregate attribute. Fix: declare one or remove the rule: ...` |
 | A schema whose `__schema__(:source)` is not a literal (DND-5476) | 0 | the summary | counted as `; aggregates: <N> declared, <U> tables unknown`, never dropped |

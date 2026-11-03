@@ -3,6 +3,7 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
   # callees', and the functions only ever called inside a transaction.
   #
   # Sabotage record: ../../../sabotage_records/aggregates-20261103-dnd_5459_write_sets.md
+  # Sabotage record: ../../../sabotage_records/aggregates-20261103-dnd_5659_aggregates_none.md (DND-5659)
   use ExUnit.Case, async: true
 
   import Anchor.Test.WriteFixtures
@@ -125,5 +126,27 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
 
     refute MapSet.member?(analysis.always_in_transaction, {fw, :entry, 0})
     assert MapSet.member?(analysis.always_in_transaction, {@n, :n2g, 0})
+  end
+
+  test "Z5: under declare: none the Model builds no write analysis, and the index keeps none" do
+    graph = graph!("defmodule #{inspect(@n)} do\n  def f, do: :ok\nend\n", "lib/fixture.ex")
+
+    config =
+      Anchor.Config.parse_config(%{
+        "rules" => [],
+        "aggregates" => %{"declare" => "none", "reason" => "no database"},
+        "architecture" => %{
+          "contexts" => %{"depth" => 2},
+          "buckets" => [
+            %{"name" => "rest", "role" => "domain", "select" => [%{"pattern" => inspect(@ns)}]}
+          ],
+          "calls" => %{"rest" => ["rest"]}
+        }
+      })
+
+    assert {%Anchor.Domain.Model{aggregate_analysis: nil, aggregates: index}, _issues} =
+             Anchor.Domain.Model.build(graph, config, %{})
+
+    assert index.none == "no database"
   end
 end

@@ -156,6 +156,14 @@ defmodule Anchor.Domain.EffectPrimitives do
       Enum.any?(extra, &extra_matches?(&1, module, function, arity))
   end
 
+  @doc """
+  Whether a call of `mfa` is a `Repo` write: a write function on a module
+  whose last name segment ends in `Repo` (DND-5659 reads it to find the
+  modules that persist).
+  """
+  @spec repo_write?(mfa()) :: boolean()
+  def repo_write?({module, function, _arity}), do: repo_write?(module, function)
+
   @doc "Whether a call of `mfa` lets its arguments leave the process or outlive the call."
   @spec escape?(mfa()) :: boolean()
   def escape?(mfa), do: listed?(@escapes, mfa)
