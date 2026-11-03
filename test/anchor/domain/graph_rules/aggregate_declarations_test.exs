@@ -3,7 +3,7 @@ defmodule Anchor.Domain.GraphRules.AggregateDeclarationsTest do
   # hand-built models whose index holds the issues.
   #
   # Sabotage record: ../../../sabotage_records/aggregates-20261103-dnd_5476_aggregate_decls.md
-  # Sabotage record: ../../../sabotage_records/aggregates-20261103-dnd_5659_aggregates_none.md (DND-5659)
+  # Sabotage record: ../../../sabotage_records/aggregates-20261103-dnd_5459_write_sets.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config

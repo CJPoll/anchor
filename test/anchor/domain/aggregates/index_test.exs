@@ -4,7 +4,7 @@ defmodule Anchor.Domain.Aggregates.IndexTest do
   # test (`Anchor.Test.BeamFixtures`), so `table_of/2` reads real Core.
   #
   # Sabotage record: ../../../sabotage_records/aggregates-20261103-dnd_5476_aggregate_decls.md
-  # Sabotage record: ../../../sabotage_records/aggregates-20261103-dnd_5659_aggregates_none.md (DND-5659)
+  # Sabotage record: ../../../sabotage_records/aggregates-20261103-dnd_5459_write_sets.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures

@@ -2,7 +2,7 @@ defmodule Anchor.Domain.Aggregates.ConfigTest do
   # DND-5476: the `aggregates:` section of `.anchor.yml`. Pure Domain.
   #
   # Sabotage record: ../../../sabotage_records/aggregates-20261103-dnd_5476_aggregate_decls.md
-  # Sabotage record: ../../../sabotage_records/aggregates-20261103-dnd_5659_aggregates_none.md (DND-5659)
+  # Sabotage record: ../../../sabotage_records/aggregates-20261103-dnd_5459_write_sets.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config

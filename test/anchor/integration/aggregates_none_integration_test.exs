@@ -6,7 +6,7 @@ defmodule Anchor.Integration.AggregatesNoneIntegrationTest do
   # dependency) and fed through the BeamSource port; the artifact store is
   # doubled so nothing is written into the repo.
   #
-  # Sabotage record: ../../sabotage_records/aggregates-20261103-dnd_5659_aggregates_none.md
+  # Sabotage record: ../../sabotage_records/aggregates-20261103-dnd_5459_write_sets.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures

@@ -35,6 +35,11 @@ persists one attribute in the module that uses it, is Framework, beside the
 Credo checks and the Mix tasks; the aggregate declaration modules are Domain.
 The mapping table lists them. Standard unchanged.
 
+Amended 2026-11-03 (DND-5459, DND-5659): the write-analysis modules and
+`Persistence` are Domain, and Ecto is a test-only dependency with none in
+`lib/`. Standard unchanged — see "Amendment (2026-11-03, DND-5459,
+DND-5659)" under "How this maps to Anchor".
+
 ## Context
 
 Anchor is a small library, but the class of problems the five-bucket
@@ -216,11 +221,13 @@ and are dropped rather than adapted:
 - **LiveView/HEEx view/template separation** — Anchor has no Phoenix, no
   LiveView, no HEEx.
 - **Ecto schema modules are Domain; repositories are Side Effects** — Anchor has
-  no Ecto and no schemas. (The underlying idea — that a struct definition is
-  Domain while the thing that loads it is a Side Effect — is already covered by
-  the generic Domain/Side-Effect definitions above; Anchor's `%Anchor.Config{}`
-  struct and its parser are Domain, and `Anchor.Adapters.ConfigFile`'s file reads
-  are the Side Effect.)
+  no Ecto and no schemas in `lib/` (Ecto is a test-only dependency since
+  DND-5459; see "Amendment (2026-11-03, DND-5459, DND-5659)"). (The
+  underlying idea — that a struct definition is Domain while the thing that
+  loads it is a Side Effect — is already covered by the generic
+  Domain/Side-Effect definitions above; Anchor's `%Anchor.Config{}` struct and
+  its parser are Domain, and `Anchor.Adapters.ConfigFile`'s file reads are the
+  Side Effect.)
 - **Oban workers are Framework** — Anchor has no Oban and no background jobs.
 - **The CQRS-machinery exemption** (aggregates, commands, events, projectors,
   process managers follow Commanded's architecture, not the five buckets) —
@@ -241,6 +248,7 @@ and are dropped rather than adapted:
 | Orchestration that loads config then runs analysis | Manager | Coordinates the Side Effect (config load) and Domain (analysis); `Anchor.Managers.Lint` below is that Manager. |
 | `Anchor.Aggregate` (DND-5476) | Framework | A compile-time macro: `use Anchor.Aggregate` persists one `@anchor_aggregate` attribute in the consumer's module and defines nothing else. It calls no Manager, adapter or Domain module at run time. |
 | `Anchor.Domain.Aggregates.*` (`Config`, `Declaration`, `DeclarationIssue`, `Index`) and `Anchor.Domain.GraphRules.AggregateDeclarations` (DND-5476) | Domain | Parse the `aggregates:` section, merge it with the persisted attributes read from the graph, and report what names nothing. Pure; a schema's table is read from Core, never by calling it. |
+| `Anchor.Domain.Aggregates.*` (`Analysis`, `FunctionWalk`, `WriteSites`, `WriteSite`, `WriteSource`, `Scope`, `Scopes`, `NonTransactional`, `Inference`) and `Anchor.Domain.GraphRules.AggregateWriteSources` (DND-5459); `Anchor.Domain.Aggregates.Persistence` (DND-5659) | Domain | Read every database write and transaction from the graph's Core, trace each write to a schema or table, build each transaction's write set, infer aggregates; find the modules that persist under `declare: none`. Pure: Core and the graph in, structs out; nothing is loaded or called. |
 | `Mix.Tasks.Anchor.Sabotage` (and the Mix tasks that follow it) | Framework | The `mix` runner invokes it: it parses argv, makes one Manager call, renders the result and sets the exit code. It calls no adapter itself. |
 | `Anchor.Managers.Lint` | Manager | The lint use case: loads config through the `Anchor.Adapters.ConfigLoader` port, derives the pure facts, selects the rules that apply and calls the check's Domain detection, returning Domain violations. Checks (Framework) go through it. |
 | `Anchor.Managers.Sabotage` | Manager | The sabotage use case (`scope/2`): reads the diff through the `ChangeSource` port, then calls the Domain (`DiffHunks`, `FunctionSpans`, `Scope`). Reaches git and the file system only through the port. |
@@ -324,6 +332,23 @@ the Manager.
 This is an amendment, not a supersession: the five-bucket rule and the
 allowed-calls matrix are unchanged and bind every subject exactly as before.
 Only the classification of subjects the table had not yet listed is added.
+
+#### Amendment (2026-11-03, DND-5459, DND-5659): the write analysis is Domain, and Ecto is test-only
+
+The write analysis reads compiled Core (`:cerl`), the graph and the config,
+and returns structs: it loads no project module and calls nothing outside
+the process, so each of its modules is Domain by the Decision's own test,
+like the declaration index before it. `Persistence` reads the same graph to
+find the modules that persist under `declare: none`.
+
+Ecto entered `mix.exs` as `only: :test`: the tests compile fixtures against
+real Ecto macros so the Core shapes they read are the real ones. `lib/`
+still has no Ecto and no schema, so the dropped refinement above stays
+dropped; Anchor's own `.anchor.yml` now checks that claim with
+`aggregates: declare: none`, enforced.
+
+This is an amendment, not a supersession: the five-bucket rule and the
+allowed-calls matrix are unchanged and bind every subject exactly as before.
 
 ## Examples
 
