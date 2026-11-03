@@ -27,7 +27,10 @@ table and the sections after it are that run. A mutation whose source text the
 fixes changed was re-anchored to the same defect in the new code. A row marked
 "regression" is the unfixed code itself, not a mutation: its block is quoted
 from the run that showed it red before the fix, as the fix commit records it.
-The checkout's absolute path in the output reads `<worktree>`.
+The checkout's absolute path in the output reads `<worktree>`. Each run
+forced compilation (`mix test --force`, and a write never in the same second
+as the last): a first pass of this re-run measured BL-C on BL-B's stale beam,
+which the critic caught from its verbatim output.
 
 The review floor replaced behaviour-based resolution of a dynamic call with
 every module exporting the function, and removed the `@callback` plumbing:
@@ -145,8 +148,6 @@ Run summary: `29 tests, 3 failures`
          %{context: "X.A", bucket: "a"}
 
          # 3
-         %{context: "X.A", bucket: "m"}
-
      ... (block cut at 40 lines)
 
   3) test check/2 static calls a scope the call breaks: the Fix names the row's scope (Anchor.Domain.GraphRules.LayeringTest)
@@ -249,8 +250,6 @@ Run summary: `11 tests, 1 failure`
          %{context: nil, bucket: "a"}
 
          # 3
-         %{context: nil, bucket: "m"}
-
      ... (block cut at 40 lines)
 ```
 
@@ -296,8 +295,6 @@ Run summary: `29 tests, 2 failures`
          %{context: "X.A", bucket: "a"}
 
          # 3
-         %{context: "X.A", bucket: "m"}
-
      ... (block cut at 40 lines)
 
   2) test check/2 static calls a scope the call breaks: the Fix names the row's scope (Anchor.Domain.GraphRules.LayeringTest)
@@ -316,14 +313,14 @@ Run summary: `29 tests, 2 failures`
 Run summary: `29 tests, 6 failures`
 
 ```text
-  1) test route/3 equal-length routes: the first by row order (Anchor.Domain.CallMatrixTest)
-     test/anchor/domain/call_matrix_test.exs:80
+  1) test route/3 framework to adapters through managers (Anchor.Domain.CallMatrixTest)
+     test/anchor/domain/call_matrix_test.exs:70
      Assertion with == failed
-     code:  assert CallMatrix.route(a, "f", "t") == ["f", "y", "t"]
-     left:  ["f", "y"]
-     right: ["f", "y", "t"]
+     code:  assert CallMatrix.route(a, "framework", "adapters") == ["framework", "managers", "adapters"]
+     left:  ["framework", "managers"]
+     right: ["framework", "managers", "adapters"]
      stacktrace:
-       test/anchor/domain/call_matrix_test.exs:82: (test)
+       test/anchor/domain/call_matrix_test.exs:72: (test)
 
   2) test route/3 a scoped entry is an edge for routing (Anchor.Domain.CallMatrixTest)
      test/anchor/domain/call_matrix_test.exs:88
@@ -334,14 +331,14 @@ Run summary: `29 tests, 6 failures`
      stacktrace:
        test/anchor/domain/call_matrix_test.exs:90: (test)
 
-  3) test route/3 framework to adapters through managers (Anchor.Domain.CallMatrixTest)
-     test/anchor/domain/call_matrix_test.exs:70
+  3) test route/3 equal-length routes: the first by row order (Anchor.Domain.CallMatrixTest)
+     test/anchor/domain/call_matrix_test.exs:80
      Assertion with == failed
-     code:  assert CallMatrix.route(a, "framework", "adapters") == ["framework", "managers", "adapters"]
-     left:  ["framework", "managers"]
-     right: ["framework", "managers", "adapters"]
+     code:  assert CallMatrix.route(a, "f", "t") == ["f", "y", "t"]
+     left:  ["f", "y"]
+     right: ["f", "y", "t"]
      stacktrace:
-       test/anchor/domain/call_matrix_test.exs:72: (test)
+       test/anchor/domain/call_matrix_test.exs:82: (test)
 
   4) test route/3 a bucket to itself is searched like any other pair (Anchor.Domain.CallMatrixTest)
      test/anchor/domain/call_matrix_test.exs:96
@@ -352,21 +349,7 @@ Run summary: `29 tests, 6 failures`
      stacktrace:
        test/anchor/domain/call_matrix_test.exs:99: (test)
 
-  5) test check/2 static calls a scope the call breaks: the Fix names the row's scope (Anchor.Domain.GraphRules.LayeringTest)
-     test/anchor/domain/graph_rules/layering_test.exs:126
-     ** (MatchError) no match of right hand side value:
-
-         []
-
-     code: Layering.check(
-     stacktrace:
-       (anchor 0.1.0) lib/anchor/domain/graph_rules/layering.ex:146: Anchor.Domain.GraphRules.Layering.route_text/4
-       (anchor 0.1.0) lib/anchor/domain/graph_rules/layering.ex:125: Anchor.Domain.GraphRules.Layering.message/5
-       (anchor 0.1.0) lib/anchor/domain/graph_rules/layering.ex:109: Anchor.Domain.GraphRules.Layering.violation/3
-       (elixir 1.19.4) lib/enum.ex:1688: Enum."-map/2-lists^map/1-1-"/2
-       test/anchor/domain/graph_rules/layering_test.exs:128: (test)
-
-  6) test check/2 static calls framework -> adapters is one violation naming both buckets, with the route Fix (Anchor.Domain.GraphRules.LayeringTest)
+  5) test check/2 static calls framework -> adapters is one violation naming both buckets, with the route Fix (Anchor.Domain.GraphRules.LayeringTest)
      test/anchor/domain/graph_rules/layering_test.exs:87
      Assertion with == failed
      code:  assert v.message ==
@@ -379,6 +362,20 @@ Run summary: `29 tests, 6 failures`
      right: "App.Web.Page.show/1 (framework, App.Web) calls App.Orders.Store.fetch/0 (adapters, App.Orders); framework may call: framework, managers, domain. Fix: route it through managers: framework -> managers -> adapters (call a managers module of the right context, which calls adapters); framework may not call adapters directly."
      stacktrace:
        test/anchor/domain/graph_rules/layering_test.exs:99: (test)
+
+  6) test check/2 static calls a scope the call breaks: the Fix names the row's scope (Anchor.Domain.GraphRules.LayeringTest)
+     test/anchor/domain/graph_rules/layering_test.exs:126
+     ** (MatchError) no match of right hand side value:
+
+         []
+
+     code: Layering.check(
+     stacktrace:
+       (anchor 0.1.0) lib/anchor/domain/graph_rules/layering.ex:146: Anchor.Domain.GraphRules.Layering.route_text/4
+       (anchor 0.1.0) lib/anchor/domain/graph_rules/layering.ex:125: Anchor.Domain.GraphRules.Layering.message/5
+       (anchor 0.1.0) lib/anchor/domain/graph_rules/layering.ex:109: Anchor.Domain.GraphRules.Layering.violation/3
+       (elixir 1.19.4) lib/enum.ex:1688: Enum."-map/2-lists^map/1-1-"/2
+       test/anchor/domain/graph_rules/layering_test.exs:128: (test)
 ```
 
 ## CM-F — route explores depth-first, not shortest
@@ -610,16 +607,7 @@ Run summary: `47 tests, 5 failures`
      stacktrace:
        test/anchor/integration/graph_canary_test.exs:105: (test)
 
-  4) test layering baseline: written, then held, then STALE once the violation is fixed (Anchor.Integration.GraphCanaryTest)
-     test/anchor/integration/graph_canary_test.exs:122
-     Assertion with == failed
-     code:  assert written.exit_code == 0
-     left:  2
-     right: 0
-     stacktrace:
-       test/anchor/integration/graph_canary_test.exs:142: (test)
-
-  5) test the compliant canary modules give no findings, and the summary counts the tree (Anchor.Integration.GraphCanaryTest)
+  4) test the compliant canary modules give no findings, and the summary counts the tree (Anchor.Integration.GraphCanaryTest)
      test/anchor/integration/graph_canary_test.exs:76
      Assertion with == failed
      code:  assert GraphReport.summary(report) ==
@@ -628,6 +616,15 @@ Run summary: `47 tests, 5 failures`
      right: "anchor.graph: 6 modules in 1 apps, 2 rules, 0 violations (0 report-only, 0 baselined)"
      stacktrace:
        test/anchor/integration/graph_canary_test.exs:83: (test)
+
+  5) test layering baseline: written, then held, then STALE once the violation is fixed (Anchor.Integration.GraphCanaryTest)
+     test/anchor/integration/graph_canary_test.exs:122
+     Assertion with == failed
+     code:  assert written.exit_code == 0
+     left:  2
+     right: 0
+     stacktrace:
+       test/anchor/integration/graph_canary_test.exs:142: (test)
 ```
 
 ## CF-A — Config skips the graph rules' architecture check
@@ -709,16 +706,7 @@ Run summary: `23 tests, 2 failures`
 Run summary: `23 tests, 2 failures`
 
 ```text
-  1) test every project module exporting name/arity, sorted (Anchor.Domain.DynamicCallsTest)
-     test/anchor/domain/dynamic_calls_test.exs:31
-     Assertion with == failed
-     code:  assert DynamicCalls.candidates(g, {:fetch, 1}) == [X, Y]
-     left:  [Y, X]
-     right: [X, Y]
-     stacktrace:
-       test/anchor/domain/dynamic_calls_test.exs:39: (test)
-
-  2) test a module that exports it with no @behaviour is a candidate (Anchor.Domain.DynamicCallsTest)
+  1) test a module that exports it with no @behaviour is a candidate (Anchor.Domain.DynamicCallsTest)
      test/anchor/domain/dynamic_calls_test.exs:46
      Assertion with == failed
      code:  assert DynamicCalls.candidates(g, {:fetch, 1}) == [Declared, Undeclared]
@@ -726,6 +714,15 @@ Run summary: `23 tests, 2 failures`
      right: [Declared, Undeclared]
      stacktrace:
        test/anchor/domain/dynamic_calls_test.exs:54: (test)
+
+  2) test every project module exporting name/arity, sorted (Anchor.Domain.DynamicCallsTest)
+     test/anchor/domain/dynamic_calls_test.exs:31
+     Assertion with == failed
+     code:  assert DynamicCalls.candidates(g, {:fetch, 1}) == [X, Y]
+     left:  [Y, X]
+     right: [X, Y]
+     stacktrace:
+       test/anchor/domain/dynamic_calls_test.exs:39: (test)
 ```
 
 ## DC-H — a module exporting it with no @behaviour is not a candidate
@@ -733,14 +730,14 @@ Run summary: `23 tests, 2 failures`
 Run summary: `23 tests, 6 failures`
 
 ```text
-  1) test every project module exporting name/arity, sorted (Anchor.Domain.DynamicCallsTest)
-     test/anchor/domain/dynamic_calls_test.exs:31
+  1) test a module that exports it with no @behaviour is a candidate (Anchor.Domain.DynamicCallsTest)
+     test/anchor/domain/dynamic_calls_test.exs:46
      Assertion with == failed
-     code:  assert DynamicCalls.candidates(g, {:fetch, 1}) == [X, Y]
+     code:  assert DynamicCalls.candidates(g, {:fetch, 1}) == [Declared, Undeclared]
      left:  []
-     right: [X, Y]
+     right: [Declared, Undeclared]
      stacktrace:
-       test/anchor/domain/dynamic_calls_test.exs:39: (test)
+       test/anchor/domain/dynamic_calls_test.exs:54: (test)
 
   2) test a private function, a macro and another arity are not candidates (Anchor.Domain.DynamicCallsTest)
      test/anchor/domain/dynamic_calls_test.exs:57
@@ -751,14 +748,14 @@ Run summary: `23 tests, 6 failures`
      stacktrace:
        test/anchor/domain/dynamic_calls_test.exs:67: (test)
 
-  3) test a module that exports it with no @behaviour is a candidate (Anchor.Domain.DynamicCallsTest)
-     test/anchor/domain/dynamic_calls_test.exs:46
+  3) test every project module exporting name/arity, sorted (Anchor.Domain.DynamicCallsTest)
+     test/anchor/domain/dynamic_calls_test.exs:31
      Assertion with == failed
-     code:  assert DynamicCalls.candidates(g, {:fetch, 1}) == [Declared, Undeclared]
+     code:  assert DynamicCalls.candidates(g, {:fetch, 1}) == [X, Y]
      left:  []
-     right: [Declared, Undeclared]
+     right: [X, Y]
      stacktrace:
-       test/anchor/domain/dynamic_calls_test.exs:54: (test)
+       test/anchor/domain/dynamic_calls_test.exs:39: (test)
 
   4) test an unknown arity matches the name at any arity (Anchor.Domain.DynamicCallsTest)
      test/anchor/domain/dynamic_calls_test.exs:70
@@ -769,16 +766,7 @@ Run summary: `23 tests, 6 failures`
      stacktrace:
        test/anchor/domain/dynamic_calls_test.exs:72: (test)
 
-  5) test check/2 dynamic calls a forbidden module exporting the function is one violation naming it (Anchor.Domain.GraphRules.LayeringTest)
-     test/anchor/domain/graph_rules/layering_test.exs:208
-     match (=) failed
-     code:  assert [v] = Layering.check(model(call, [@manager_impl, @adapter_impl]), @rule)
-     left:  [v]
-     right: []
-     stacktrace:
-       test/anchor/domain/graph_rules/layering_test.exs:211: (test)
-
-  6) test check/2 dynamic calls an unknown arity resolved to a forbidden implementation prints /? (Anchor.Domain.GraphRules.LayeringTest)
+  5) test check/2 dynamic calls an unknown arity resolved to a forbidden implementation prints /? (Anchor.Domain.GraphRules.LayeringTest)
      test/anchor/domain/graph_rules/layering_test.exs:219
      match (=) failed
      code:  assert [v] = Layering.check(model(call, [@adapter_impl]), @rule)
@@ -786,6 +774,15 @@ Run summary: `23 tests, 6 failures`
      right: []
      stacktrace:
        test/anchor/domain/graph_rules/layering_test.exs:222: (test)
+
+  6) test check/2 dynamic calls a forbidden module exporting the function is one violation naming it (Anchor.Domain.GraphRules.LayeringTest)
+     test/anchor/domain/graph_rules/layering_test.exs:208
+     match (=) failed
+     code:  assert [v] = Layering.check(model(call, [@manager_impl, @adapter_impl]), @rule)
+     left:  [v]
+     right: []
+     stacktrace:
+       test/anchor/domain/graph_rules/layering_test.exs:211: (test)
 ```
 
 ## LA-J — a computed function name is skipped, not unresolved
