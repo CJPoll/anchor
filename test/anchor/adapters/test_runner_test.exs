@@ -1,7 +1,7 @@
 defmodule Anchor.Adapters.TestRunnerTest do
-  # DND-5473: the bounded test run, against a fake test command that writes
-  # the formatter's frames by mode. The time bound is the `timeout` binary's,
-  # never a sleep in the test.
+  # DND-5473: the bounded test run, against a fake test command that has the
+  # real Anchor.Sabotage.ExUnitFormatter write its frames by mode (DND-5572).
+  # The time bound is the `timeout` binary's, never a sleep in the test.
   # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5473_sabotage_run.md
   # Sabotage record (DND-5570): ../../sabotage_records/sabotage-20261103-dnd_5570_sabotage_hardening.md
   use ExUnit.Case, async: true
@@ -34,12 +34,9 @@ defmodule Anchor.Adapters.TestRunnerTest do
   test "2: fail: each failure carries file, line, name and text", %{tmp_dir: dir} do
     assert {:ok, %TestRun{status: :failed, exit_code: 2, failures: [failure]}} = run("fail", dir)
 
-    assert failure == %{
-             file: "test/calc_test.exs",
-             line: 4,
-             name: "test adds",
-             text: "Assertion with == failed"
-           }
+    assert %{file: "test/calc_test.exs", line: 4, name: "test adds", text: text} = failure
+    assert text =~ "** (ExUnit.AssertionError)"
+    assert text =~ "Assertion with == failed"
   end
 
   test "3: none: no test ran", %{tmp_dir: dir} do

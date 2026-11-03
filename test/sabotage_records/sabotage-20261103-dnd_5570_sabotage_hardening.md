@@ -124,3 +124,28 @@ O0 (the same text replaced by itself) was green, as the driver's check.
 | P3 | the Runner refuses with exit 3 | 2 | manager "a host with no /proc refuses the run and the restore, exit 2 ..." `code:  assert %{refusal: {2, message}, notes: []} = run` |
 | P4 | the message loses its `Fix:` | 2 | manager "a host with no /proc ..." `code:  assert message ==` |
 | P5 | the real call reads a `/proc` that does not exist | 3 | adapter "a takeover goes through the takeover lock ..." `code:  assert SourcePatcher.take_lock(root) == :ok` (positive control: every real lock test breaks) |
+
+## DND-5572 — the fixture uses the real formatter's encoder
+
+- **Code under test:** `test/fixtures/sabotage/fake_test_command.exs` (now
+  compiles `lib/anchor/sabotage/ex_unit_formatter.ex` and casts it ExUnit's
+  events) through `Anchor.Adapters.TestRunnerTest`; the sabotaged code is the
+  formatter's encoder, `Anchor.Sabotage.ExUnitFormatter.frame/2` and the
+  `suite_finished` / `test_failed` frames
+- **Suite run:** `mix test test/anchor/adapters/test_runner_test.exs
+  --timeout 2000 --max-cases 2` (12 tests, green after the change)
+- **The bug, shown (U5):** with the OLD fixture and the OLD test file, a
+  changed encoder is invisible. The rows run the old files against the
+  mutated formatter.
+
+| # | Mutation | Tests failed | First failure, verbatim |
+|---|---|---|---|
+| U5a | OLD fixture; the length prefix is 16 bits instead of 32 | 0 | `12 tests, 0 failures` (the stale hand-written format still passes) |
+| U5b | OLD fixture; `suite_finished` reports a total of 0 | 0 | `12 tests, 0 failures` |
+| E1 | NEW fixture; the length prefix is 16 bits instead of 32 | 5 | "the test files and both formatters follow the command ..." `code:  assert {:ok, %TestRun{status: :passed, failures: [], output_head: head}} =` |
+| E2 | NEW fixture; every frame is wrapped in `{:wrapped, term}` | 5 | "8: the output is bounded: head and tail kept, the dropped bytes counted" `code:  assert {:ok, %TestRun{status: :passed, dropped_bytes: dropped, output_head: head}} =` |
+| E3 | NEW fixture; `test_failed` swaps its line and name | 1 | "2: fail: each failure carries file, line, name and text" `code:  assert %{file: "test/calc_test.exs", line: 4, name: "test adds", text: text} = failure` |
+| E4 | NEW fixture; `suite_finished` reports a total of 0 | 4 | "1: pass" `code:  assert {:ok, %TestRun{status: :passed, total: 2, failures: [], exit_code: 0}} = run("pass", dir)` |
+
+The fixture also proves the property the formatter's moduledoc claims: it
+compiles and runs in a bare `elixir` VM that loads no other Anchor module.
