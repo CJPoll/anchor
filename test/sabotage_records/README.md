@@ -188,6 +188,10 @@ before coining a synonym.
 - `cfa` — the 0-CFA (DND-5497): `Anchor.Domain.Cfa`, `Cfa.Eval` and
   `Cfa.Value`, with the Core labels it reads (`Anchor.Domain.Core`) and the
   library invokers table (`Anchor.Domain.HigherOrder`), in one record.
+- `demand` — the demand (absence) analysis (DND-5498): `Anchor.Domain.Demand`,
+  `Demand.Lattice`, `Demand.Transfer` and `Demand.Param`, with the effect and
+  pure-call tables it reads (`Anchor.Domain.EffectPrimitives`,
+  `Anchor.Domain.PureCalls`), in one record.
 - `digraph` — `Anchor.Domain.Digraph` (DND-5444), the plain immutable graph
   value the graph algorithms run over.
 - `dialyzer_boundary` — the DND-5499 spike runner
