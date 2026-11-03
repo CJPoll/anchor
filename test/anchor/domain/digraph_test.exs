@@ -1,6 +1,6 @@
 defmodule Anchor.Domain.DigraphTest do
   # DND-5444: the plain digraph value the graph algorithms run over.
-  # Sabotage record: ../../sabotage_records/graph_algorithms-20261103-dnd_5439.md
+  # Sabotage record: ../../sabotage_records/digraph-20261103-dnd_5439.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Digraph

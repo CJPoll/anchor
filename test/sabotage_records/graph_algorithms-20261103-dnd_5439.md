@@ -3,9 +3,10 @@
 - **Domain:** graph_algorithms
 - **Branch:** dnd-5439 (batch branch for DND-5439 and DND-5444)
 - **Date:** 2026-11-03
-- **Code under test:** `Anchor.Domain.GraphAlgorithms` (rows A-H), `Anchor.Domain.Digraph` (rows I-L)
-- **Suite run:** `mix test test/anchor/domain/graph_algorithms_test.exs` (rows A-H, 26 tests);
-  `mix test test/anchor/domain/digraph_test.exs` (rows I-L, 5 tests). Both green before and after every row.
+- **Code under test:** `Anchor.Domain.GraphAlgorithms` (rows I-L, on `Anchor.Domain.Digraph`, are in `digraph-20261103-dnd_5439.md`)
+- **Suite run:** `mix test test/anchor/domain/graph_algorithms_test.exs` (26 tests, green before and after
+  every row); row C: `mix test test/anchor/domain/graph_algorithms_test.exs --timeout 2000 --max-cases 2`,
+  because that mutation loops (see Traps)
 
 Each mutation was applied alone to the committed code, the suite run, and the
 file restored with `git checkout`. Failure strings are copied from the run.
@@ -20,10 +21,6 @@ file restored with `git checkout`. Failure strings are copied from the run.
 | F | `sccs/1`: drop the final `Enum.reverse/1` (discovery order) | 3: cases 23, 25, 26 | `code: assert GraphAlgorithms.sccs(graph(a: :b, b: :a, b: :c)) == [[:c], [:a, :b]]` `left: [[:a, :b], [:c]]`; `code: assert GraphAlgorithms.sccs(g) == [[:c], [:b], [:a]]` `left: [[:a], [:b], [:c]]` |
 | G | `cyclic_sccs/1`: every singleton is cyclic | 2: cases 24, 25 | `code: assert GraphAlgorithms.cyclic_sccs(g) == [[:a]]` `left: [[:a], [:b]]`; `code: assert GraphAlgorithms.cyclic_sccs(g) == []` `left: [[:c], [:b], [:a]]` |
 | H | `climbs_to?/4`: return false at a node whose idom is the virtual node, before comparing it | 3: cases 6, 13, 19 | `code: assert GraphAlgorithms.dominates?(doms, :r, :c)` `Expected truthy, got false` |
-| I | `Digraph.new/2`: an edge's target does not add a node | 4: cases 1, 2, 3, 4 | `** (KeyError) key :b not found in:`; case 4: `Expected exception ArgumentError but got KeyError` |
-| J | `Digraph.reverse/1` returns the graph unchanged | 1: case 2 | `code: assert Digraph.successors(reversed, :c) == [:b]` `left: []` `right: [:b]` |
-| K | `Digraph.subgraph/2` keeps an edge with one end kept | 1: case 3 | `code: assert Digraph.nodes(sub) == [:a, :b]` `left: [:a, :b, :c]` |
-| L | `Digraph.new/2` refuses no reserved atom | 1: case 4 | `Expected exception ArgumentError but nothing was raised` |
 
 ## Rows that stayed green, and why
 

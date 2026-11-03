@@ -140,8 +140,10 @@ before coining a synonym.
 - `data_flow` — `Anchor.Domain.DataFlow` and its `DataFlow.*` modules
   (DND-5439): def-use over one clause's source AST, backward slices with
   control dependence, dead expressions, single-exit regions, the orphan check
-  and the unsliceable forms (`receive`, the process dictionary, `var!`).
-- `graph_algorithms` — `Anchor.Domain.GraphAlgorithms` and the plain
-  `Anchor.Domain.Digraph` value it runs over (DND-5444): dominators and
-  post-dominators from a virtual root/exit, union-find components, Tarjan
-  SCCs, the condensation and cyclic SCCs.
+  and the unsliceable forms (`receive`, the process dictionary, `var!`,
+  `binding()`).
+- `graph_algorithms` — `Anchor.Domain.GraphAlgorithms` (DND-5444):
+  dominators and post-dominators from a virtual root/exit, union-find
+  components, Tarjan SCCs, the condensation and cyclic SCCs.
+- `digraph` — `Anchor.Domain.Digraph` (DND-5444), the plain immutable graph
+  value the graph algorithms run over.
