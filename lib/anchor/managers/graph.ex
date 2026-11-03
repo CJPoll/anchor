@@ -139,7 +139,9 @@ defmodule Anchor.Managers.Graph do
     {model, class_issues} = Model.build(graph, config, source_facts)
     unreadable_issues = unreadable_issues(graph)
     rule_findings = Enum.flat_map(rules, &run_rule(&1, model, config.path))
-    artifact_notes = write_artifact(deps.graph_store, request, beams, config, graph)
+
+    artifact_notes =
+      write_artifact(deps.graph_store, request, {beams, source_facts}, config, graph)
 
     fail_closed =
       (unreadable_issues ++ source_issues ++ class_issues)
@@ -248,12 +250,17 @@ defmodule Anchor.Managers.Graph do
   defp violations!(other),
     do: raise(ArgumentError, "check/2 returned #{inspect(other, limit: 5)}, not a list")
 
-  defp write_artifact(store, request, beams, config, graph) do
+  # The key covers every input the graph was built from: the beams and each
+  # source file's facts (DND-5586), the config and Anchor's version.
+  defp write_artifact(store, request, {beams, source_facts}, config, graph) do
     dir = Path.join(request.build_path, "anchor")
 
     key =
       GraphKey.key(
         beam_entries(beams),
+        Enum.map(source_facts, fn {file, facts} ->
+          {file, :erlang.term_to_binary(facts, [:deterministic])}
+        end),
         :erlang.term_to_binary(config, [:deterministic]),
         version()
       )

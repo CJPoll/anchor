@@ -137,6 +137,7 @@ defmodule Anchor.Managers.GraphTest do
                                                                      key,
                                                                      %Anchor.Domain.Graph{} ->
       assert key =~ ~r/\A[0-9a-f]{64}\z/
+      send(self(), {:artifact_key, key})
       Keyword.get(opts, :write_result, :ok)
     end)
 
@@ -454,6 +455,32 @@ defmodule Anchor.Managers.GraphTest do
   end
 
   describe "run/2 graph artifact" do
+    # DND-5586: the artifact is built from the beams AND the source facts
+    # (`generated?`, the literal uses), so a source change that leaves the
+    # beams alone must still change its key; a comment, which changes no
+    # fact, need not.
+    test "the key changes with the source facts, not with a comment", %{beams: beams} do
+      key = fn sources ->
+        expect_run(config([rule(:stub_ok, "ok")]), classified(beams), sources: sources)
+        Graph.run(request(), deps())
+        assert_received {:artifact_key, key}
+        key
+      end
+
+      base = key.(@sources)
+
+      commented =
+        Map.put(@sources, @user_file, {:ok, "# a comment\n" <> @user_source})
+
+      # One more literal module in the file: its facts change, its beam
+      # (compiled from @user_source) does not.
+      another_module =
+        Map.put(@sources, @user_file, {:ok, @user_source <> "defmodule Another do\nend\n"})
+
+      assert key.(commented) == base
+      refute key.(another_module) == base
+    end
+
     test "a failed write is a report-only note; the verdict stands", %{beams: beams} do
       expect_run(config([rule(:stub_ok, "ok")]), classified(beams),
         write_result: {:error, :eacces}

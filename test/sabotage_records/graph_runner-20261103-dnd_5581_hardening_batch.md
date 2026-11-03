@@ -116,3 +116,90 @@ Without a mutation the five files (the four above and `failures_graph_test.exs`)
      left:  :ok
      right: {:error, :outside_artifact_dir}
 ```
+
+---
+
+# The artifact key covers the source facts (DND-5586)
+
+- **Code under test:** `Anchor.Domain.GraphKey.key/4` (now beams, sources, config, version) and
+  `Anchor.Managers.Graph` (`write_artifact/5`: the source entries)
+- **Suite run:** per mutation, `mix test --timeout 2000 --max-cases 2 test/anchor/domain/graph_key_test.exs
+  test/anchor/managers/graph_test.exs`, restored byte-for-byte (`cmp`) after each run.
+
+The key hashed the beams, the config and the version. The graph also takes `generated?` and the literal
+`use`s from each source file's `SourceFacts`, which a source edit can change without changing a beam, so the
+artifact could be read for a graph it was not. The source entries are each file's `SourceFacts` in the
+external term format, not the file's bytes: no raw text leaves `SourceReader` (ADR 001), and the facts are
+exactly what the graph reads from a source file. A comment, which changes no fact, leaves the key alone.
+
+## The regression, on the unfixed code
+
+The Manager test runs the same beams with three sets of sources: as compiled, with a leading comment, and
+with one more literal `defmodule` in the user file. Unfixed, the last run's key equalled the first:
+
+```
+  1) test run/2 graph artifact the key changes with the source facts, not with a comment (Anchor.Managers.GraphTest)
+     test/anchor/managers/graph_test.exs:462
+     Refute with == failed, both sides are exactly equal
+     code: refute key.(another_module) == base
+     left: "39f7323e17b100f9f4cda1254a2bd9f1dc7ad1e61e341948fdd7dad9a3f404fc"
+```
+
+`23 tests, 1 failure` (`graph_test.exs`). After: the two files run `31 tests, 0 failures`.
+
+## Mutations
+
+| # | Mutation | Tests that failed | Run |
+|---|---|---|---|
+| A | `write_artifact/5` passes no source entries | the Manager key test | `31 tests, 1 failure` |
+| B | `key/4` hashes an empty source list | "a changed source entry changes the key", the Manager key test | `31 tests, 2 failures` |
+| C | `section/1` drops the list's length prefix | "an entry moved from the beams to the sources changes the key" | `31 tests, 1 failure` |
+| D | the source entries are framed unsorted | "the same sources in another order give the same key" | `31 tests, 1 failure` |
+
+C first survived: the test moved the first beam, whose path sorts first, so the two inputs framed in a
+different order even with no counts. It now moves the last beam, the one case where only the counts tell the
+inputs apart, and C fails it.
+
+## Failure strings (verbatim)
+
+### A
+
+```
+  1) test run/2 graph artifact the key changes with the source facts, not with a comment (Anchor.Managers.GraphTest)
+     test/anchor/managers/graph_test.exs:462
+     Refute with == failed, both sides are exactly equal
+     code: refute key.(another_module) == base
+     left: "82c72b9b1969cbfbe3c173da18b603a6727c1ef050d62a7b6a3502a89e3eceb3"
+```
+
+### B
+
+```
+  1) test sources a changed source entry changes the key; one more or one fewer does too (Anchor.Domain.GraphKeyTest)
+     test/anchor/domain/graph_key_test.exs:45
+     Refute with == failed, both sides are exactly equal
+     code: refute GraphKey.key(@entries, [{"lib/a.ex", "facts A"}, {"lib/b.ex", "facts b"}], "c", "v") == base
+     left: "5ca8004a98abf62affcf25b006a3811a2183e415a5a95834bca44c3a650e1119"
+```
+
+### C
+
+```
+  1) test sources an entry moved from the beams to the sources changes the key (each list is counted) (Anchor.Domain.GraphKeyTest)
+     test/anchor/domain/graph_key_test.exs:60
+     Refute with == failed, both sides are exactly equal
+     code: refute GraphKey.key([first], [last], "c", "v") == GraphKey.key(@entries, [], "c", "v")
+     left: "c6c71cb9c299897693687837a88349db0e0bb7cea3c704a19e142299a6a5d5ca"
+```
+
+### D
+
+```
+  1) test sources the same sources in another order give the same key (sorted by path) (Anchor.Domain.GraphKeyTest)
+     test/anchor/domain/graph_key_test.exs:55
+     Assertion with == failed
+     code:  assert GraphKey.key(@entries, Enum.reverse(@sources), "c", "v") ==
+              GraphKey.key(@entries, @sources, "c", "v")
+     left:  "0b473c57264bd12b2a264870fd33151a81dd2f07cdbf6752c1dbbbd6038c2e7a"
+     right: "dd12bf74e1194542c6fa328ac358c1fe03e9ffcc7196e50aac9ded17eab983c0"
+```

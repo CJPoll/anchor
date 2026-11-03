@@ -599,7 +599,9 @@ refused as unknown options.
 
 The only file it writes is `<build_path>/anchor/graph.etf` (Mix's build path:
 `_build/<env>`, or the directory `MIX_BUILD_PATH` names), the graph keyed by
-a sha256 of the beams, the config and Anchor's version, for `mix
+a sha256 of the beams, each source file's facts (its literal `defmodule`s and
+`use`s, which a source edit can change without changing a beam), the config and
+Anchor's version, for `mix
 anchor.explain` and `place`. The verdict never reads it; a write that fails is
 a `[report]` note.
 
