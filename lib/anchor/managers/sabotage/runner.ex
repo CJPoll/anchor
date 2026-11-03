@@ -817,6 +817,10 @@ defmodule Anchor.Managers.Sabotage.Runner do
   defp recording(%{dry_run: true}, _config, _scope, _run, _plan, _records, _ports),
     do: {:ok, nil}
 
+  # No mutant will run, so nothing is measured and no record is written.
+  defp recording(_facts, _config, _scope, _run, %{planned: []}, _records, _ports),
+    do: {:ok, nil}
+
   defp recording(facts, config, scope, run, plan, records, ports) do
     cfg = config.records
 

@@ -1219,6 +1219,26 @@ defmodule Anchor.Managers.SabotageRunTest do
       assert message =~ "Fix: pass --slot S"
     end
 
+    test "a run with no mutant to run writes no record and needs no branch" do
+      # An empty diff: zero changed functions, so no mutant. No branch is read
+      # (GitWorktreeMock.branch has no expectation) and nothing is created.
+      expect_journal(:none)
+      expect_config()
+      expect_ignored()
+      expect(ChangeSourceMock, :merge_base, fn @root, "origin/main" -> {:ok, "abc"} end)
+      expect(ChangeSourceMock, :diff, fn @root, "abc" -> {:ok, ""} end)
+      expect(ChangeSourceMock, :untracked, fn @root -> {:ok, []} end)
+      stub(GitWorktreeMock, :dirty_paths, fn @root, [] -> {:ok, []} end)
+      stub(SourceMutationMock, :existing, fn [] -> [] end)
+      stub(SourceMutationMock, :save_run, fn _path, _bytes -> :ok end)
+
+      run = Sabotage.run(@rec_facts, @opts)
+
+      assert run.refusal == nil
+      assert run.outcomes == []
+      assert run.records == []
+    end
+
     test "a dry run needs nothing a record needs: a detached HEAD is not refused" do
       expect_until_selection()
 

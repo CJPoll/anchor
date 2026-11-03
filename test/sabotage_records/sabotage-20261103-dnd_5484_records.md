@@ -97,6 +97,20 @@ own before the join, and the field is split before it is unescaped.
 |---|---|---|---|
 | D24 | the `;` escape removed (the unfixed encoding) | 1 of 8: kill_map "a test name holding the separator ` ; ` reads back as one killer" | `code:  assert row.killers == ["t:1 test a ; b", "t:2 test c;d"]` `left:  ["t:1 test a", "b", "t:2 test c;d"]` |
 
+## Merging origin/main (39f55e1)
+
+The final gate found a textual conflict with main (the DND-5570, DND-5617
+and DND-5618 batches). After the merge, main's DND-5617 task test (a changed
+function that yields no mutant) failed: the run asked git for the branch to
+name a record no mutant would fill. A run with no mutant to run now writes no
+record and checks nothing a record needs. The root env for the formatter
+moved into main's rewritten `TestRunner.execute/4`, and its test now reads
+the injected command runner's env.
+
+| # | Mutation | Tests failed | First failure, verbatim |
+|---|---|---|---|
+| D25 | a run with no mutant still checks what a record needs | 2 of 75: run "a run with no mutant to run writes no record and needs no branch"; task "DND-5617: changed functions that yield no mutant print a line each and the count, exit 0" | `** (Mox.UnexpectedCallError) no expectation defined for Anchor.GitWorktreeMock.branch/1 in process #PID<0.284.0> with args ["/repo"]` |
+
 ## The integration run
 
 `test/anchor/integration/sabotage_run_integration_test.exs` runs the whole
