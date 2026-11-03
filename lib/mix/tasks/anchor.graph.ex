@@ -21,7 +21,8 @@ defmodule Mix.Tasks.Anchor.Graph do
   COULD NOT MEASURE.
 
   It reads beams with `:beam_lib` only: no project module is loaded or run.
-  The only file it writes is `_build/<env>/anchor/graph.etf`, the graph for
+  The only file it writes is `<build_path>/anchor/graph.etf` (Mix's build
+  path: `_build/<env>`, or what `MIX_BUILD_PATH` names), the graph for
   `mix anchor.explain` and `place`; the verdict never reads it.
 
   Exit codes: 0 pass (report-only findings print); 1 a violation or a
@@ -68,6 +69,7 @@ defmodule Mix.Tasks.Anchor.Graph do
     request = %Request{
       apps: ebins(),
       root: File.cwd!(),
+      build_path: Mix.Project.build_path(),
       env: Mix.env(),
       opts: %{format: format, only: only}
     }

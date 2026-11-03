@@ -22,8 +22,8 @@ defmodule Anchor.Managers.Graph do
        `catch :exit`, DND-1312's lesson): a rule that crashes is one issue,
        and the other rules still run;
     7. write the graph artifact for `explain`/`place`
-       (`Anchor.Adapters.GraphStore`) under `_build/<env>/anchor`; the
-       verdict never reads it;
+       (`Anchor.Adapters.GraphStore`) under `<build_path>/anchor`, the build
+       path the task gathered from Mix (DND-5585); the verdict never reads it;
     8. return the `%Anchor.Domain.GraphReport{}`.
 
   Every per-module problem is an issue on that module (exit 1), never a
@@ -249,7 +249,7 @@ defmodule Anchor.Managers.Graph do
     do: raise(ArgumentError, "check/2 returned #{inspect(other, limit: 5)}, not a list")
 
   defp write_artifact(store, request, beams, config, graph) do
-    dir = Path.join([request.root, "_build", to_string(request.env), "anchor"])
+    dir = Path.join(request.build_path, "anchor")
 
     key =
       GraphKey.key(

@@ -3,11 +3,13 @@ defmodule Anchor.Adapters.GraphArtifact do
   The graph artifact on disk, `<dir>/graph.etf` — the **Side Effect** adapter
   behind `Anchor.Adapters.GraphStore` (DND-5440).
 
-  It writes only into a directory whose last three path segments (after
-  `Path.expand/1`, so `..` cannot climb out) are `_build/<env>/anchor`: any
-  other `dir` is refused with `{:error, :outside_artifact_dir}`. That is a
-  check of the path's shape, not of its owner: the runner passes
-  `<root>/_build/<env>/anchor`, and a symlink there is followed.
+  It reads and writes only `<build_path>/anchor`: a directory named `anchor`
+  (after `Path.expand/1`, so `..` cannot climb out) whose parent is a Mix
+  build path, which holds the `lib/` every app's ebin is under. Any other
+  `dir` is refused with `{:error, :outside_artifact_dir}`. The runner passes
+  `Mix.Project.build_path/0` joined with `anchor`: `_build/<env>/anchor`, or
+  under the directory `MIX_BUILD_PATH` names (DND-5585). That is a check of
+  the path's shape, not of its owner, and a symlink there is followed.
 
   The file holds `{key, term}` in the external term format. `read/2` answers
   `{:ok, term}` only for the key asked for: a different key is
@@ -52,9 +54,11 @@ defmodule Anchor.Adapters.GraphArtifact do
   end
 
   defp artifact_dir(dir) do
-    case dir |> Path.expand() |> Path.split() |> Enum.take(-3) do
-      ["_build", _env, "anchor"] -> :ok
-      _other -> {:error, :outside_artifact_dir}
-    end
+    expanded = Path.expand(dir)
+
+    if Path.basename(expanded) == "anchor" and
+         File.dir?(Path.join(Path.dirname(expanded), "lib")),
+       do: :ok,
+       else: {:error, :outside_artifact_dir}
   end
 end

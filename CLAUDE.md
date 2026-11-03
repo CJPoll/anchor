@@ -198,7 +198,8 @@ the graph fresh, builds `Anchor.Domain.Model` (classification of every
 module), checks bucket and rule floors (`min_modules`), runs each graph rule
 under a `try`/`rescue`/`catch` guard, and returns
 `Anchor.Domain.GraphReport` (exit 0/1/3). It never reads the artifact
-(`_build/<env>/anchor/graph.etf`) for a verdict.
+(`<build_path>/anchor/graph.etf`, Mix's build path as the task gathers it,
+DND-5585) for a verdict.
 
 A graph rule implements `Anchor.Domain.GraphRule` (`rule_type/0`,
 `check/2` over the model) and is listed in `Anchor.Domain.GraphRules.all/0`;

@@ -6,6 +6,7 @@ defmodule Anchor.Managers.GraphTest do
   #
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5440_graph_runner.md
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5551_graph_hardening.md
+  # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5581_hardening_batch.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -28,7 +29,10 @@ defmodule Anchor.Managers.GraphTest do
 
   @root "/proj"
   @ebin "/proj/_build/test/lib/my_app/ebin"
-  @artifact_dir "/proj/_build/test/anchor"
+  # A build path that is not <root>/_build/<env> (MIX_BUILD_PATH): the
+  # artifact goes under it, never under the root (DND-5585).
+  @build_path "/builds/my_app-test"
+  @artifact_dir "/builds/my_app-test/anchor"
   @user_file "lib/my_app/domain/user.ex"
   @user_source """
   defmodule AnchorFixtures.GraphManagerTest.User do
@@ -96,7 +100,13 @@ defmodule Anchor.Managers.GraphTest do
     do: %Config{rules: rules, architecture: arch, path: ".anchor.yml"}
 
   defp request(opts \\ %{format: :text, only: []}),
-    do: %Request{apps: [{:my_app, @ebin}], root: @root, env: :test, opts: opts}
+    do: %Request{
+      apps: [{:my_app, @ebin}],
+      root: @root,
+      build_path: @build_path,
+      env: :test,
+      opts: opts
+    }
 
   defp deps,
     do: [
