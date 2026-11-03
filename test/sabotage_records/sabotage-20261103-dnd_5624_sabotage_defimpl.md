@@ -1,4 +1,4 @@
-# Sabotage record — defs inside defimpl are mutated (DND-5624)
+# Sabotage record — defs inside defimpl are mutated (DND-5624); the timeout argv contract without a hang (DND-5625)
 
 - **Domain:** sabotage
 - **Branch:** dnd-5624-sabotage-defimpl
@@ -44,3 +44,30 @@ Positive controls: D5 (a plain `defmodule` def beside a same-named impl def:
 each resolves to its own lines) and the existing `mutator_test.exs` rows pass
 on every row but S2, S3 (D5's impl half) and U1. D9 passed on the unfixed code
 too: it guards the new walk, not the old lookup.
+
+## DND-5625 — the coreutils `timeout` argv contract, with nothing that hangs
+
+- **Code under test:** `Anchor.Adapters.TestRunner` (`execute/4`: the argv
+  `--kill-after=<grace> <bound> <command> ...` handed to the real `timeout`
+  binary, and the exit code passed through to `TestRun`). Rows 5 and 7 of
+  `test/anchor/adapters/test_runner_test.exs` (a fake command that hangs, and
+  one that ignores SIGTERM, each waiting about 2.5 s for the real bound, row
+  7's verdict read from the measured wall time) are replaced by C1 and C2: the
+  real binary around `true` and `false`, which exit at once. Each takes about
+  1 ms; no row waits for the bound or reads the clock for its verdict. The
+  fixture's `hang` and `stubborn` modes, used only by those rows, are gone.
+- **Suite run:** `mix test test/anchor/adapters/test_runner_test.exs --timeout
+  2000 --max-cases 2` (17 tests, green after the change and after every row)
+
+| # | Mutation | Tests failed | First failure, verbatim |
+|---|---|---|---|
+| T1 | `--kill-after` dropped from the argv (the ticket's row) | 2 | K2 `code: assert_received {:cmd, _timeout, ["--kill-after=10", "30" \| _rest], _cmd_opts}` (also K1). C1 and C2 stay green: `timeout` accepts the argv without the flag, so the grace period is proven by the injected-runner rows, not the contract rows |
+| T2 | the bound before `--kill-after` | 11 | C1 `code:  assert {:ok, %TestRun{exit_code: 0, output_head: ""}} = contract("true", dir)` `exit_code: 127,` `output_head: "timeout: failed to run command ‘--kill-after=1’: No such file or directory\n",` (also C2, K1, K2, and rows 1-4, 6, 8, 9) |
+| T3 | a bound `timeout` cannot read (`"30x"`) | 11 | C1, same `code:`, `exit_code: 125,` `output_head: "timeout: invalid time interval ‘30x’\nTry '/usr/sbin/timeout --help' for more information.\n",` (also C2, K1, K2, and the fake-command rows) |
+| T4 | the flag misspelt (`--kill-afer=`) | 11 | C1, same `code:`, `exit_code: 125,` `output_head: "/usr/sbin/timeout: unrecognized option '--kill-afer=1'\nTry '/usr/sbin/timeout --help' for more information.\n",` (also C2, K1, K2, and the fake-command rows) |
+| T5 | the exit code not passed through (`code * 0`) | 7 | C2 `code:  assert {:ok, %TestRun{exit_code: 1, output_head: ""}} = contract("false", dir)` `exit_code: 0,` (also rows 2, 4, 6, K3, K4, K5) |
+
+The fake-command rows 1-4, 6, 8 and 9 also run the real `timeout`, so they
+too go red when coreutils refuses the argv (T2-T4); C1 and C2 are the named,
+instant check of that contract, and C2 the only one with a bare non-zero
+exit.

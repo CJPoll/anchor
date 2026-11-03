@@ -1,10 +1,12 @@
 defmodule Anchor.Adapters.TestRunnerTest do
   # DND-5473: the bounded test run, against a fake test command that has the
   # real Anchor.Sabotage.ExUnitFormatter write its frames by mode (DND-5572).
-  # The time bound is the `timeout` binary's, never a sleep in the test.
+  # The time bound is the `timeout` binary's, never a sleep in the test, and
+  # no row waits for it (DND-5625).
   # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5473_sabotage_run.md
   # Sabotage record (DND-5570): ../../sabotage_records/sabotage-20261103-dnd_5570_sabotage_hardening.md
   # Sabotage record (DND-5618): ../../sabotage_records/sabotage-20261103-dnd_5617_sabotage_cfa_batch.md
+  # Sabotage record (DND-5625): ../../sabotage_records/sabotage-20261103-dnd_5624_sabotage_defimpl.md
   use ExUnit.Case, async: true
 
   alias Anchor.Adapters.TestRunner
@@ -51,12 +53,24 @@ defmodule Anchor.Adapters.TestRunnerTest do
     assert head =~ "== Compilation error in file lib/calc.ex =="
   end
 
-  # The hang rows wait for the real `timeout` binary (1 s, plus the grace
-  # period for the stubborn one) beside the VM's start-up: ExUnit's bound
-  # must not be the shorter of the two.
-  @tag timeout: 20_000
-  test "5: a run that hangs is killed by the bound and is a timeout", %{tmp_dir: dir} do
-    assert {:ok, %TestRun{status: :timeout, exit_code: 124}} = run("hang", dir, timeout: 1)
+  # DND-5625: the argv contract with coreutils `timeout`. The real binary
+  # runs the adapter's real argv (`--kill-after=<grace> <bound> <command>
+  # ...`) around a command that exits at once, so nothing hangs and no time is
+  # measured: `timeout` accepts the flag and the bound, runs the command, and
+  # passes its exit code through. An argv `timeout` refuses exits 125 (a bad
+  # flag or bound) or 126/127 (a "command" that is really a flag). The bound
+  # and the KILL themselves are proven by the injected-clock rows K1-K5.
+  defp contract(command, dir),
+    do:
+      TestRunner.run([command], ["test/calc_test.exs"],
+        cd: dir,
+        results_path: Path.join(dir, "out/results.bin"),
+        timeout_seconds: 30,
+        kill_after_seconds: 1
+      )
+
+  test "5: C1: coreutils timeout accepts the argv and passes exit 0 through", %{tmp_dir: dir} do
+    assert {:ok, %TestRun{exit_code: 0, output_head: ""}} = contract("true", dir)
   end
 
   test "6: a run killed by signal 9 inside the bound is crashed: killed by signal 9, not a timeout",
@@ -65,13 +79,8 @@ defmodule Anchor.Adapters.TestRunnerTest do
     assert Outcome.reason(run) == "test run crashed: killed by signal 9 (exit 137)"
   end
 
-  # 8 s: the real run is about 2.5 s; with the default 10 s grace period
-  # (the option not passed on) it would be 11 s and fail here.
-  @tag timeout: 8_000
-  test "7: positive control: a run that ignores the stop signal and needs the KILL is a timeout",
-       %{tmp_dir: dir} do
-    assert {:ok, %TestRun{status: :timeout, exit_code: 137}} =
-             run("stubborn", dir, timeout: 1, kill_after: 1)
+  test "7: C2: coreutils timeout passes a non-zero exit through unchanged", %{tmp_dir: dir} do
+    assert {:ok, %TestRun{exit_code: 1, output_head: ""}} = contract("false", dir)
   end
 
   test "8: the output is bounded: head and tail kept, the dropped bytes counted", %{tmp_dir: dir} do

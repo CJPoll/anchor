@@ -11,16 +11,9 @@
 #   fail           2 tests, 1 failure, exit 2
 #   none           0 tests, exit 0
 #   compile_error  no events, prints a compile error, exit 1
-#   hang           suite started, then blocks until killed
 #   args           prints its arguments, then 1 test passes
 #   flood          prints ~200 KB (lines "line N ...") then 2 tests pass
 #   killed         suite started, then kills itself with signal 9 (exit 137)
-#   stubborn       suite started, ignores SIGTERM and blocks: only the
-#                  `timeout` binary's KILL ends it (exit 137 after the bound)
-
-# Before anything slow: the stubborn run must already ignore the stop signal
-# when the bound is reached.
-if hd(System.argv()) == "stubborn", do: :os.set_signal(:sigterm, :ignore)
 
 Code.require_file(Path.expand("../../../lib/anchor/sabotage/ex_unit_formatter.ex", __DIR__))
 
@@ -83,10 +76,6 @@ case System.argv() do
     IO.write("** (CompileError) lib/calc.ex: cannot compile module Calc" <> "\n")
     System.halt(1)
 
-  ["hang" | _rest] ->
-    events.([{:suite_started, []}])
-    block.()
-
   ["flood" | _rest] ->
     formatter =
       events.([
@@ -101,10 +90,6 @@ case System.argv() do
   ["killed" | _rest] ->
     events.([{:suite_started, []}])
     System.cmd("kill", ["-9", System.pid()])
-    block.()
-
-  ["stubborn" | _rest] ->
-    events.([{:suite_started, []}])
     block.()
 
   ["args" | rest] ->
