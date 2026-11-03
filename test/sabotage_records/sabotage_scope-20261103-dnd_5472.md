@@ -1516,6 +1516,8 @@ code: assert capture_io(fn -> Sabotage.run(["scope"], @opts) end) =~ "1 function
 - **AH (`--submodule=short`).** No test reddens: no test makes a repository with a submodule and
   `diff.submodule=log`. Without the flag that config prints `Submodule ...` lines the parser refuses (exit
   3, never a wrong scope), so the gap fails closed.
+  Closed later (DND-5519): G6 in `git_change_source_test.exs` now fails when the flag is dropped, see
+  `sabotage_scope-20261103-dnd_5519_scope_findings.md`.
 - **AF (only rev-parse exit 1 is "no merge-base").** No test reddens: no test makes rev-parse fail any
   other way. The difference is the text of the `Fix:` line, not a pass or a failure.
 

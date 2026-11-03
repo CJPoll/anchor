@@ -3,9 +3,11 @@ defmodule Anchor.Adapters.GitChangeSourceTest do
   # repository each test makes in its own tmp_dir. The commit identity is argv
   # (`-c user.name=...`), never global config.
   # Sabotage record: ../../sabotage_records/sabotage_scope-20261103-dnd_5472.md
+  # (G6: ../../sabotage_records/sabotage_scope-20261103-dnd_5519_scope_findings.md)
   use ExUnit.Case, async: true
 
   alias Anchor.Adapters.GitChangeSource
+  alias Anchor.Domain.Sabotage.DiffHunks
 
   @identity [
     "-c",
@@ -60,6 +62,54 @@ defmodule Anchor.Adapters.GitChangeSourceTest do
     {:ok, sha} = GitChangeSource.merge_base(root, "HEAD")
     assert {:ok, diff} = GitChangeSource.diff(root, sha)
     assert diff =~ "diff --git a/lib/a.ex b/lib/a.ex"
+  end
+
+  test "G6: a user's diff.submodule=log cannot change the diff format", %{tmp_dir: tmp_dir} do
+    # A submodule whose checked-out commit moved is the case `--submodule=short`
+    # exists for: with `diff.submodule=log` and no flag, git prints a
+    # `Submodule vendor/sub a..b:` line DiffHunks refuses (a false COULD NOT
+    # MEASURE). The submodule is made from a local path, so no network is
+    # touched; `protocol.file.allow=always` lets git clone from it.
+    upstream = Path.join(tmp_dir, "upstream")
+    root = Path.join(tmp_dir, "work")
+    File.mkdir_p!(upstream)
+    File.mkdir_p!(root)
+
+    git!(upstream, ["init", "-q", "-b", "main"])
+    File.write!(Path.join(upstream, "f"), "1\n")
+    git!(upstream, ["add", "."])
+    git!(upstream, ["commit", "-q", "-m", "s1"])
+    File.write!(Path.join(upstream, "f"), "2\n")
+    git!(upstream, ["commit", "-q", "-a", "-m", "s2"])
+
+    repo!(root)
+
+    git!(root, [
+      "-c",
+      "protocol.file.allow=always",
+      "submodule",
+      "add",
+      "-q",
+      upstream,
+      "vendor/sub"
+    ])
+
+    git!(root, ["commit", "-q", "-m", "add the submodule"])
+    git!(root, ["config", "diff.submodule", "log"])
+
+    # The submodule's checkout moves back one commit, and a source file changes.
+    git!(Path.join(root, "vendor/sub"), ["checkout", "-q", "HEAD~1"])
+    File.write!(Path.join(root, "lib/a.ex"), "defmodule A do\n  def f, do: 2\nend\n")
+
+    {:ok, sha} = GitChangeSource.merge_base(root, "HEAD")
+    assert {:ok, diff} = GitChangeSource.diff(root, sha)
+
+    refute diff =~ "Submodule vendor/sub"
+    assert diff =~ "+Subproject commit "
+
+    assert {:ok, files} = DiffHunks.parse(diff)
+    assert files |> Map.keys() |> Enum.sort() == ["lib/a.ex", "vendor/sub"]
+    assert %{status: :modified, hunks: [{2, 1}]} = files["lib/a.ex"]
   end
 
   test "G5: show returns a file as it was at a commit, by a path relative to root", %{
