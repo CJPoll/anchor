@@ -3,6 +3,8 @@ defmodule Anchor.Domain.Sabotage.OperatorsTest do
   # function's source; an edit is checked by the text it leaves behind, and,
   # where the QA plan's row names a "none", by the generator's verdict on it.
   # Sabotage record: ../../../sabotage_records/sabotage-20261103-dnd_5471.md
+  # DND-5564 (drop_effect_call keeps its arguments):
+  # ../../../sabotage_records/sabotage-20261103-dnd_5473_sabotage_run.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Sabotage.Mutator
@@ -58,16 +60,67 @@ defmodule Anchor.Domain.Sabotage.OperatorsTest do
                generated(@effects_body, :delete_statement, {:f, 1}).skipped
     end
 
-    test "2: drop_effect_call removes the Logger line, whole; dropping it leaves y unused, so no mutant" do
+    # DND-5564: the dropped call keeps its arguments evaluated (`_ = {y}`), so
+    # `y` stays used and the mutant compiles; the effect is still gone.
+    test "2: drop_effect_call replaces the Logger call with `_ = {y}`, and that is a mutant" do
       {source, [edit]} = edits(@effects_body, :drop_effect_call, {:f, 1})
 
       assert edit.target == "Logger.info(y)"
-      assert edit.range == {{6, 1}, {7, 1}}
+      assert edit.range == {{6, 5}, {6, 19}}
+      assert edit.replacement == "_ = {y}"
       refute applied(source, edit) =~ "Logger.info"
-      assert applied(source, edit) =~ "    y = g(x)\n    h(x)\n"
+      assert applied(source, edit) =~ "    y = g(x)\n    _ = {y}\n    h(x)\n"
 
-      assert [%{reason: "leaves variable `y` bound at line 5 unused"}] =
-               generated(@effects_body, :drop_effect_call, {:f, 1}).skipped
+      assert %{mutants: [mutant], skipped: []} =
+               generated(@effects_body, :drop_effect_call, {:f, 1})
+
+      assert {mutant.original, mutant.replacement} == {"Logger.info(y)", "_ = {y}"}
+    end
+
+    test "2: every argument is kept, a piped one and a trailing keyword list included" do
+      body =
+        "def f(pid, x) do\n  send(pid, {:value, x})\n  x |> Logger.info(meta: 1)\n  Logger.flush()\n  x\nend"
+
+      {source, edits} = edits(body, :drop_effect_call, {:f, 2})
+
+      assert Enum.map(edits, &{&1.target, &1.replacement}) == [
+               {"send(pid, {:value, x})", "_ = {pid, {:value, x}}"},
+               {"x |> Logger.info(meta: 1)", "_ = {x, meta: 1}"},
+               {"Logger.flush()", ""}
+             ]
+
+      # A call with no argument has nothing to keep: its whole line goes.
+      refute applied(source, List.last(edits)) =~ "Logger.flush"
+      assert applied(source, List.last(edits)) =~ "Logger.info(meta: 1)\n    x\n"
+    end
+
+    test "2: a call with a do block keeps nothing: its whole lines are deleted" do
+      body = "def f(x) do\n  Logger.info do\n    x\n  end\n  x\nend"
+
+      {source, [edit]} = edits(body, :drop_effect_call, {:f, 1})
+
+      assert edit.replacement == ""
+      assert applied(source, edit) =~ "  def f(x) do\n    x\n  end\n"
+    end
+
+    test "2: positive control: a drop that orphans something else is still refused" do
+      bound = "def f(x) do\n  old = Process.put(:k, x)\n  {x, old}\nend"
+
+      assert %{mutants: [], skipped: [%{reason: reason}]} =
+               generated(bound, :drop_effect_call, {:f, 1})
+
+      assert reason =~ "orphans variable `old`"
+
+      aliased = "alias Notifier.Push\n\ndef f(x) do\n  Push.send(x)\n  x\nend"
+
+      {:ok, result} =
+        Mutator.generate(module_source(aliased), "lib/m.ex", {M, :f, 1},
+          operators: [:drop_effect_call],
+          effect_calls: ["Push.send/1"]
+        )
+
+      assert %{mutants: [], skipped: [%{reason: "removes the last use of alias `Push`"}]} =
+               result
     end
 
     test "3: delete_statement removes `validate(x)`, and that is a mutant" do

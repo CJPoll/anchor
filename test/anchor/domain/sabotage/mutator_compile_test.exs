@@ -5,6 +5,8 @@ defmodule Anchor.Domain.Sabotage.MutatorCompileTest do
   # test, not the generator, compiles: each mutant under its own module name,
   # purged afterwards.
   # Sabotage record: ../../../sabotage_records/sabotage-20261103-dnd_5471.md
+  # DND-5564 (drop_effect_call keeps its arguments):
+  # ../../../sabotage_records/sabotage-20261103-dnd_5473_sabotage_run.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Sabotage.Mutator
@@ -28,6 +30,8 @@ defmodule Anchor.Domain.Sabotage.MutatorCompileTest do
     {@canary, :limited, 2},
     {@canary, :counted, 1},
     {@canary, :host, 1},
+    {@canary, :logged, 1},
+    {@canary, :remembered, 1},
     {Module.concat(@canary, Nested), :twice, 1}
   ]
 

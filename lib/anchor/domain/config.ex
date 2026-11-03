@@ -78,12 +78,14 @@ defmodule Anchor.Config do
   alias Anchor.Domain.FunctionRef
   alias Anchor.Domain.RuleCoverage
   alias Anchor.Domain.RuleSchema
+  alias Anchor.Domain.Sabotage.Config, as: SabotageConfig
 
   # `path` is where the config was read from, set by the loader (nil when the
   # config was built in memory). A run-time report about a rule sits on it.
   # `architecture` is the parsed `architecture:` section (DND-5437), or `nil`
-  # when the document has none.
-  defstruct rules: [], path: nil, architecture: nil
+  # when the document has none. `sabotage` is the parsed `sabotage:` section
+  # (DND-5473), or `nil`.
+  defstruct rules: [], path: nil, architecture: nil, sabotage: nil
 
   @matches %{"call" => :call, "reference" => :reference}
 
@@ -94,12 +96,13 @@ defmodule Anchor.Config do
   # `Anchor.checks/0`; the Domain cannot ask the (Framework) checks itself.
   @rule_types Map.new(RuleSchema.rule_types(), &{Atom.to_string(&1), &1})
 
-  @top_level_keys ["architecture", "rules"]
+  @top_level_keys ["architecture", "rules", "sabotage"]
 
   @type t :: %__MODULE__{
           rules: [map()],
           path: String.t() | nil,
-          architecture: Architecture.t() | nil
+          architecture: Architecture.t() | nil,
+          sabotage: SabotageConfig.t() | nil
         }
 
   @doc """
@@ -129,8 +132,9 @@ defmodule Anchor.Config do
     with :ok <- validate_top_level_keys(data),
          {:ok, rules} <- fetch_rules(data),
          {:ok, parsed} <- parse_rules(rules),
-         {:ok, architecture} <- parse_architecture(data) do
-      %__MODULE__{rules: parsed, architecture: architecture}
+         {:ok, architecture} <- parse_architecture(data),
+         {:ok, sabotage} <- parse_sabotage(data) do
+      %__MODULE__{rules: parsed, architecture: architecture, sabotage: sabotage}
     end
   end
 
@@ -180,7 +184,7 @@ defmodule Anchor.Config do
         {:error,
          {:invalid_config,
           "unknown top-level key(s) #{Enum.map_join(unknown, ", ", &inspect/1)}; " <>
-            "Fix: remove or correct it; the top-level keys are `architecture` and `rules`"}}
+            "Fix: remove or correct it; the top-level keys are `architecture`, `rules` and `sabotage`"}}
     end
   end
 
@@ -188,6 +192,11 @@ defmodule Anchor.Config do
   # exactly as before, with `architecture: nil`.
   defp parse_architecture(%{"architecture" => section}), do: Architecture.parse(section)
   defp parse_architecture(_data), do: {:ok, nil}
+
+  # DND-5473: the `sabotage:` section is optional too; `mix anchor.sabotage run`
+  # refuses to run without it.
+  defp parse_sabotage(%{"sabotage" => section}), do: SabotageConfig.parse(section)
+  defp parse_sabotage(_data), do: {:ok, nil}
 
   defp fetch_rules(%{"rules" => rules}) when is_list(rules), do: {:ok, rules}
 

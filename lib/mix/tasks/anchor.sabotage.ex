@@ -1,5 +1,5 @@
 defmodule Mix.Tasks.Anchor.Sabotage do
-  @shortdoc "Generated sabotage: the functions a branch changed (scope)"
+  @shortdoc "Generated sabotage: scope, run and restore"
 
   @moduledoc """
   Generated sabotage for the functions a change touched, the **Framework**
@@ -23,16 +23,42 @@ defmodule Mix.Tasks.Anchor.Sabotage do
   3 `COULD NOT MEASURE` with a `Fix:` line (not a git work tree, `REF`
   unresolvable or no merge-base, git failing, a changed `.ex` file that does
   not parse or cannot be read).
+
+  ## run and restore (DND-5473)
+
+      mix anchor.sabotage run [--base REF] [--max N|all] [--only ID]... [--dry-run]
+      mix anchor.sabotage restore
+
+  `run` applies the mutants of the changed functions one at a time, runs only
+  each one's selected tests (bounded by `timeout_seconds`), restores the file
+  after each, and prints a line per mutant and a summary
+  (`Anchor.Domain.Sabotage.Report`). `--max` overrides the `max_mutants` cap
+  (`--max all` lifts it, for CI); `--only` runs the named mutant ids;
+  `--dry-run` prints the plan and writes nothing. `restore` puts back a file a
+  killed run left mutated (`.anchor/sabotage/in-flight.json`).
+
+  Exit codes: 0 every mutant run was killed (or timed out, or was invalid:
+  listed and counted); 1 a mutant survived or had no test; 2 a refusal or a
+  usage error (a dirty target file, the journal not git-ignored, a journal
+  that cannot be restored safely, bad flags); 3 `COULD NOT MEASURE` (no
+  loadable `sabotage:` config, the baseline tests fail, the changed functions'
+  files cannot be read).
   """
 
   use Mix.Task
 
   alias Anchor.Domain.Failures
+  alias Anchor.Domain.Sabotage.Report
   alias Anchor.Domain.Sabotage.Scope
   alias Anchor.Managers.Sabotage
 
   @default_base "origin/main"
-  @usage "Usage: mix anchor.sabotage scope [--base REF] [--format text|json]"
+  @usage """
+  Usage: mix anchor.sabotage scope [--base REF] [--format text|json]
+         mix anchor.sabotage run [--base REF] [--max N|all] [--only ID]... [--dry-run]
+         mix anchor.sabotage restore
+  Fix: use one of these forms; --max takes a positive integer or `all`\
+  """
 
   @impl Mix.Task
   def run(argv), do: run(argv, [])
@@ -52,7 +78,48 @@ defmodule Mix.Tasks.Anchor.Sabotage do
     end
   end
 
+  def run(["run" | argv], opts) do
+    switches = [base: :string, max: :string, only: :keep, dry_run: :boolean]
+
+    with {parsed, [], []} <- OptionParser.parse(argv, strict: switches),
+         {:ok, max} <- max(parsed[:max]) do
+      facts = %{
+        root: File.cwd!(),
+        env: Mix.env(),
+        base: Keyword.get(parsed, :base, @default_base),
+        max: max,
+        only: Keyword.get_values(parsed, :only),
+        dry_run: Keyword.get(parsed, :dry_run, false)
+      }
+
+      report(Sabotage.run(facts, opts))
+    else
+      _invalid -> usage()
+    end
+  end
+
+  def run(["restore"], opts), do: report(Sabotage.restore(%{root: File.cwd!()}, opts))
+
   def run(_argv, _opts), do: usage()
+
+  defp max(nil), do: {:ok, nil}
+  defp max("all"), do: {:ok, :all}
+
+  defp max(text) do
+    case Integer.parse(text) do
+      {n, ""} when n > 0 -> {:ok, n}
+      _other -> :error
+    end
+  end
+
+  defp report(run) do
+    Mix.shell().info(Report.render(run))
+
+    case Report.exit_code(run) do
+      0 -> :ok
+      code -> exit({:shutdown, code})
+    end
+  end
 
   defp scope(_base, :invalid, _opts), do: usage()
 

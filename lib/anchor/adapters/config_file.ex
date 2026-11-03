@@ -32,8 +32,14 @@ defmodule Anchor.Adapters.ConfigFile do
   `{:error, {:config_not_found, searched}}` naming every path it searched.
   """
   @impl Anchor.Adapters.ConfigLoader
-  def load do
-    cwd = File.cwd!()
+  def load, do: load_in(File.cwd!())
+
+  @doc """
+  `load/0` from `root` instead of the working directory (DND-5473: the sabotage
+  run is told its project root).
+  """
+  @impl Anchor.Adapters.ConfigLoader
+  def load_in(cwd) do
     apps? = File.dir?(Path.join(cwd, "apps"))
     searched = ConfigPaths.candidates(cwd, apps?)
 
