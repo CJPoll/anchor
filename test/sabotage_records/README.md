@@ -158,3 +158,7 @@ before coining a synonym.
   components, Tarjan SCCs, the condensation and cyclic SCCs.
 - `digraph` — `Anchor.Domain.Digraph` (DND-5444), the plain immutable graph
   value the graph algorithms run over.
+- `dialyzer_boundary` — the DND-5499 spike runner
+  `test/fixtures/dialyzer_boundary/run.exs` (not a check: it measures what
+  Dialyzer reports for clause reachability on the fixtures beside it, so F8
+  reports only what Dialyzer misses).
