@@ -37,3 +37,43 @@ mutants not change the exit" and "positive control: changed functions that
 made no mutant do not print the zero line" pass on S1 to S8 (and the manager
 test "a diff that could not be read stays exit 3, never the empty scope" passed
 on U1 already: that rule was not broken, and the test pins it).
+
+## DND-5573 — bounded output, exit 137 is a crash
+
+- **Code under test:** `Anchor.Domain.Sabotage.BoundedOutput` (new),
+  `TestRun.from_frames/4` (`status/5`, `bound_reached?/1`), `Outcome.reason/1`
+  (`crash_text/1`, `dropped_note/1`), `Anchor.Adapters.TestRunner` (`execute/4`)
+- **Suite run:** `mix test test/anchor/domain/sabotage/bounded_output_test.exs
+  test/anchor/domain/sabotage/outcome_test.exs
+  test/anchor/adapters/test_runner_test.exs --timeout 2000 --max-cases 2`
+  (37 tests, green after the fix and after every row)
+- **Design call:** an exit 137 is not always an out-of-memory kill: `timeout
+  --kill-after` exits 137 when it had to KILL a run that ignored its stop
+  signal. So 137 is `:timeout` only when the run's measured time reached its
+  bound, else `:crashed`, killed by signal 9; with no clock reading it is
+  `:crashed`. The adapter test "7: positive control" runs that case for real
+  (a fake command ignoring SIGTERM, 1 s bound, 1 s grace).
+
+| # | Mutation | Tests failed | First failure, verbatim |
+|---|---|---|---|
+| U2 | the unfixed code (old `TestRunner`, `TestRun`, `Outcome`; only the `dropped_bytes` field added so the files compile) | 7 | outcome "killed by signal 9 well inside the bound is crashed, never a timeout"; adapter "6: a run killed by signal 9 inside the bound is crashed ..." `code:  assert {:ok, %TestRun{status: :crashed, exit_code: 137} = run} = run("killed", dir)`; adapter "8: the output is bounded ..." `code:  assert dropped > 150_000` `left:  0` `right: 150000` |
+| M1 | 137 inside the bound is `:timeout` again | 4 | outcome "positive control: 137 after the bound was reached ..." `code:  assert %TestRun{status: :crashed} = TestRun.from_frames(137, [], "", elapsed_ms: 299_999, timeout_seconds: 300)` |
+| M2 | the bound is reached at `>` instead of `>=` | 1 | outcome "positive control: 137 after the bound was reached ..." `code:  assert %TestRun{status: :timeout} = run` |
+| M3 | the clock reading is wrong (elapsed minus twice the start) | 1 | adapter "6: a run killed by signal 9 inside the bound is crashed ..." |
+| M3a | the clock reading is always 0 | 1 | adapter "7: positive control: a run that ignores the stop signal and needs the KILL is a timeout" |
+| M4 | the collector's limits are 1000 times larger | 1 | adapter "8: the output is bounded ..." `code:  assert dropped > 150_000` `left:  0` |
+| M5 | dropped tail bytes are not counted | 4 | bounded_output "what is held never exceeds the limits, whatever is collected" `code:  assert BoundedOutput.dropped(out) == 2000 * 1024 - 250` `left:  0` |
+| M6 | the head never keeps a byte | 5 | bounded_output "output within both limits is kept whole and nothing is dropped" |
+| M7 | the tail keeps the oldest bytes instead of the newest | 1 | bounded_output "output past the limits keeps the first head bytes and the last tail bytes ..." `code:  assert out.tail == "EFGHIJ"` `left:  "456789"` |
+| M8 | a crash does not say how many bytes were dropped | 1 | outcome "a crash says how many bytes of its output were dropped" `left:  "test run crashed (exit 1)"` |
+| M9 | `kill_after_seconds` is not passed on (the grace period stays 10 s) | 1 | adapter "7: positive control ..." `** (ExUnit.TimeoutError) test timed out after 8000ms` (a bound, not a sleep: the real run is about 2.5 s) |
+| M10 | the adapter does not pass the dropped count on | 1 | adapter "8: the output is bounded ..." `left:  0` |
+| M11 | the exit-137 crash reason loses "killed by signal 9" | 2 | outcome "killed by signal 9 well inside the bound ..." `left:  "test run crashed (exit 137)"` |
+
+Positive controls (they pass on every row where the rule is not the one
+broken): adapter "9: output within the bound drops nothing", outcome
+"positive control: 124 is a timeout whatever the clock says".
+
+Bound, not a kill: the adapter hang rows ("5" and "7") carry their own
+`@tag timeout`, because the `timeout` binary's 1 s plus the VM's start-up is
+longer than the load rule's 2000 ms.

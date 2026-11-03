@@ -12,6 +12,10 @@ defmodule Anchor.Adapters.TestExecution do
   stale results file cannot be deleted: its frames are never read.
   `{:error, {:results_dir_not_created, dir, posix}}` when the results file's
   directory cannot be made. These three are the only errors.
+
+  The run's output is bounded (`opts[:output_limits]`, `{head, tail}` bytes;
+  the bytes dropped are `TestRun.dropped_bytes`), and an exit 137 inside the
+  time bound is `:crashed` (killed by signal 9), never a timeout (DND-5573).
   """
 
   alias Anchor.Domain.Sabotage.TestRun

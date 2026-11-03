@@ -42,9 +42,17 @@ defmodule Anchor.Domain.Sabotage.Outcome do
   def reason(%TestRun{status: :compile_error, output_head: output}),
     do: "did not compile: " <> first_error_line(output)
 
-  def reason(%TestRun{status: :crashed, exit_code: code}), do: "test run crashed (exit #{code})"
+  def reason(%TestRun{status: :crashed} = run),
+    do: crash_text(run) <> dropped_note(run.dropped_bytes)
+
   def reason(%TestRun{status: :no_tests}), do: "no test ran"
   def reason(%TestRun{}), do: nil
+
+  defp crash_text(%TestRun{exit_code: 137}), do: "test run crashed: killed by signal 9 (exit 137)"
+  defp crash_text(%TestRun{exit_code: code}), do: "test run crashed (exit #{code})"
+
+  defp dropped_note(0), do: ""
+  defp dropped_note(bytes), do: "; #{bytes} bytes of its output were dropped"
 
   defp first_error_line(output) do
     # Mix's "mtime ... was set to the future" warning follows every touch

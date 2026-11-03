@@ -10,6 +10,10 @@
 #   compile_error  no frames, prints a compile error, exit 1
 #   hang           suite_started, then blocks until killed
 #   args           prints its arguments, then passes
+#   flood          prints ~200 KB (lines "line N ...") then passes
+#   killed         suite_started, then kills itself with signal 9 (exit 137)
+#   stubborn       suite_started, ignores SIGTERM and blocks: only the
+#                  `timeout` binary's KILL ends it (exit 137 after the bound)
 
 path = System.fetch_env!("ANCHOR_SABOTAGE_RESULTS")
 
@@ -40,6 +44,27 @@ case System.argv() do
 
   ["hang" | _rest] ->
     frame.({:suite_started})
+
+    receive do
+      :never_sent -> :ok
+    end
+
+  ["flood" | _rest] ->
+    frame.({:suite_started})
+    for n <- 1..4000, do: IO.write("line #{n} " <> String.duplicate("x", 40) <> "\n")
+    frame.({:suite_finished, 2, 0, 0})
+
+  ["killed" | _rest] ->
+    frame.({:suite_started})
+    System.cmd("kill", ["-9", System.pid()])
+
+    receive do
+      :never_sent -> :ok
+    end
+
+  ["stubborn" | _rest] ->
+    frame.({:suite_started})
+    :os.set_signal(:sigterm, :ignore)
 
     receive do
       :never_sent -> :ok
