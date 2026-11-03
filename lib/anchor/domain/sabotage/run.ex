@@ -17,7 +17,8 @@ defmodule Anchor.Domain.Sabotage.Run do
     * `planned` — the dry run's mutants with their selection;
     * `skipped` — `Anchor.Domain.Sabotage.Skipped`, never applied;
     * `errors` — `{changed_function, reason}` for a function no mutant could
-      be made of (`:not_in_source`, `{:parse_error, line, message}`,
+      be made of (`:not_in_source`, `:defimpl_target_not_literal`,
+      `{:parse_error, line, message}`,
       `{:unreadable, posix}`);
     * `not_run` — the mutants past the cap;
     * `generated` — how many mutants the changed functions yielded (`nil`

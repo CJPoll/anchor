@@ -2,6 +2,7 @@ defmodule Anchor.Domain.Sabotage.NoMutantTest do
   # DND-5617: why a changed function yielded no mutant, read from the real
   # generator's results.
   # Sabotage record: ../../../sabotage_records/sabotage-20261103-dnd_5617_sabotage_cfa_batch.md
+  # DND-5624: ../../../sabotage_records/sabotage-20261103-dnd_5624_sabotage_defimpl.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Sabotage.Mutator
@@ -29,6 +30,14 @@ defmodule Anchor.Domain.Sabotage.NoMutantTest do
   test "N4: nothing to change is `no mutable site`" do
     source = "defmodule Calc do\n  def add(_a, _b) do\n    :ok\n  end\nend\n"
     assert NoMutant.reason(generated(source)) == "no mutable site"
+  end
+
+  test "N6: a defimpl whose for: is not a literal names that, not a macro (DND-5624)" do
+    source = "defimpl String.Chars, for: target do\n  def to_string(c), do: c.a\nend\n"
+
+    assert NoMutant.reason(Mutator.generate(source, "lib/calc.ex", {nil, :to_string, 1})) ==
+             "defimpl target not a literal: its for: is not a module name the source spells, " <>
+               "so the implementation module cannot be named"
   end
 
   test "N5: a file error names itself" do

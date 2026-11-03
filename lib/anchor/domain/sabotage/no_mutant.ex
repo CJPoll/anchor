@@ -8,6 +8,8 @@ defmodule Anchor.Domain.Sabotage.NoMutant do
     * `skipped: <operator>: <why>; ...` when every edit was skipped (each
       distinct operator and reason once, in the generator's order);
     * `macro: ...` when no literal `def`/`defp` clause covers the function;
+    * `defimpl target not a literal: ...` when the function is in a `defimpl`
+      whose `for:` names no module the source spells (DND-5624);
     * `no mutable site` when no operator found anything to change;
     * `does not parse ...` / `could not be read ...` for a file error.
 
@@ -22,7 +24,10 @@ defmodule Anchor.Domain.Sabotage.NoMutant do
   @type generated ::
           {:ok, %{mutants: [Mutant.t()], skipped: [Skipped.t()]}}
           | {:error,
-             :not_in_source | {:parse_error, pos_integer(), String.t()} | {:unreadable, atom()}}
+             :not_in_source
+             | :defimpl_target_not_literal
+             | {:parse_error, pos_integer(), String.t()}
+             | {:unreadable, atom()}}
 
   @spec reason(generated()) :: String.t() | nil
   def reason({:ok, %{mutants: [_mutant | _rest]}}), do: nil
@@ -31,6 +36,11 @@ defmodule Anchor.Domain.Sabotage.NoMutant do
 
   def reason({:error, :not_in_source}),
     do: "macro: no literal def/defp clause in the source (a macro made it)"
+
+  def reason({:error, :defimpl_target_not_literal}),
+    do:
+      "defimpl target not a literal: its for: is not a module name the source spells, " <>
+        "so the implementation module cannot be named"
 
   def reason({:error, {:parse_error, line, message}}),
     do: "does not parse at line #{line}: #{message}"

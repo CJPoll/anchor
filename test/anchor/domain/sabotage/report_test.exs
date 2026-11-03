@@ -3,6 +3,7 @@ defmodule Anchor.Domain.Sabotage.ReportTest do
   # Sabotage record: ../../../sabotage_records/sabotage-20261103-dnd_5473_sabotage_run.md
   # Sabotage record (DND-5570): ../../../sabotage_records/sabotage-20261103-dnd_5570_sabotage_hardening.md
   # Sabotage record (DND-5617): ../../../sabotage_records/sabotage-20261103-dnd_5617_sabotage_cfa_batch.md
+  # Sabotage record (DND-5624): ../../../sabotage_records/sabotage-20261103-dnd_5624_sabotage_defimpl.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Sabotage.ChangedFunction
@@ -110,6 +111,25 @@ defmodule Anchor.Domain.Sabotage.ReportTest do
     assert text =~ "error\tlib/gen.ex\tGen.init/1\tno literal def/defp clause in the source"
     assert text =~ "0 mutants run: 0 killed,"
     assert text =~ "; 1 errors"
+  end
+
+  test "a function in a defimpl whose for: is not a literal is its own error line (DND-5624)" do
+    function = %ChangedFunction{
+      file: "lib/gen.ex",
+      module: nil,
+      name: :to_string,
+      arity: 1,
+      kind: :def,
+      changed_lines: [3]
+    }
+
+    text = Report.render(%Run{errors: [{function, :defimpl_target_not_literal}]})
+
+    assert text =~
+             "error\tlib/gen.ex\tnil.to_string/1\tdefimpl target not a literal (its for: names " <>
+               "no module): no mutant, not killed"
+
+    refute text =~ "a macro made it"
   end
 
   test "an invalid mutant says why, is counted in the summary, and does not fail the run" do

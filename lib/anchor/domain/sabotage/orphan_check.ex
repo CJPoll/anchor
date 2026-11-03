@@ -203,8 +203,8 @@ defmodule Anchor.Domain.Sabotage.OrphanCheck do
          {{line, _column}, _stop} = range <- SourceTree.range(node),
          {:ok, quoted} <- SourceTree.quoted(Patch.slice(source, range), line) do
       acc = %{uses: MapSet.new(), defined: %{}, aliases: MapSet.new(), imports: []}
-      {:defmodule, _meta, [_name, kw]} = Forms.desugar_pipes(quoted)
-      {:ok, refs(Keyword.get(kw, :do), acc)}
+      {_definition, _meta, [_name | lists]} = Forms.desugar_pipes(quoted)
+      {:ok, refs(lists |> Enum.concat() |> Keyword.get(:do), acc)}
     else
       _error -> :error
     end
@@ -292,8 +292,10 @@ defmodule Anchor.Domain.Sabotage.OrphanCheck do
     %{body | uses: MapSet.union(acc.uses, own_calls_dropped(body.uses, def, call))}
   end
 
-  # A nested module is its own module: its definitions and uses are not this one's.
-  defp refs({:defmodule, _meta, _args}, acc), do: acc
+  # A nested module, or a protocol implementation (DND-5624), is its own
+  # module: its definitions and uses are not this one's.
+  defp refs({definition, _meta, _args}, acc) when definition in [:defmodule, :defimpl],
+    do: acc
 
   defp refs({:@, _meta, [{name, _nmeta, context}]}, acc) when is_atom(name) and is_atom(context),
     do: add_use(acc, {:attr, name})

@@ -167,6 +167,9 @@ defmodule Anchor.Domain.Sabotage.Report do
   defp error_text(:not_in_source),
     do: "no literal def/defp clause in the source (a macro made it): no mutant, not killed"
 
+  defp error_text(:defimpl_target_not_literal),
+    do: "defimpl target not a literal (its for: names no module): no mutant, not killed"
+
   defp error_text({:parse_error, line, message}), do: "does not parse at line #{line}: #{message}"
   defp error_text({:unreadable, posix}), do: "could not be read (#{inspect(posix)})"
   defp error_text(other), do: inspect(other)

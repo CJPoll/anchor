@@ -39,42 +39,55 @@ defmodule Anchor.Domain.Sabotage.SourceTree do
 
   @doc """
   Every literal `def`/`defp` clause of `name` covering `arity` in the module
-  `module` (found by `defmodule` nesting), in source order, with a body. A
+  `module` (its node from `module_node/2`), in source order, with a body. A
   clause with default arguments (`\\\\`) covers `required..total`; a bodiless
   head with defaults (`def f(a, b \\\\ 1)`) makes every clause of its total
-  arity cover its shorter arities too. `:not_in_source` when no literal
-  `def`/`defp` head of `name` covers `arity` there (a macro-generated
-  function, a missing module).
+  arity cover its shorter arities too.
+
+  Errors:
+
+    * `:defimpl_target_not_literal` when `module` is `nil` (the name
+      `FunctionSpans` gives an implementation it cannot name) and a `defimpl`
+      whose `for:` (or protocol) is not a literal module name holds such a
+      head (DND-5624);
+    * `:not_in_source` otherwise when no literal `def`/`defp` head of `name`
+      covers `arity` there (a macro-generated function, a missing module).
   """
-  @spec function_clauses(Macro.t(), module(), atom(), arity()) ::
-          {:ok, [clause()]} | {:error, :not_in_source}
+  @spec function_clauses(Macro.t(), module() | nil, atom(), arity()) ::
+          {:ok, [clause()]} | {:error, :not_in_source | :defimpl_target_not_literal}
   def function_clauses(ast, module, name, arity) do
-    with {:ok, body} <- module_body(ast, module) do
-      clauses =
-        body |> statements() |> Enum.flat_map(&def_clause/1) |> Enum.filter(&(&1.name == name))
-
-      header_totals = for c <- clauses, c.body == nil, covers?(c, arity), do: length(c.args)
-
-      matching =
-        Enum.filter(clauses, fn c ->
-          covers?(c, arity) or (c.body != nil and length(c.args) in header_totals)
-        end)
-
-      if matching == [],
-        do: {:error, :not_in_source},
-        else:
-          {:ok, matching |> Enum.filter(&(&1.body != nil)) |> Enum.map(&Map.delete(&1, :name))}
+    case module_node(ast, module) do
+      {:ok, node} -> found(covering(node, name, arity))
+      :error -> missing(unnamed_impl_covers?(ast, module, name, arity))
     end
   end
 
-  @doc "The `defmodule` node of `module`, found by nesting, or `:error`."
-  @spec module_node(Macro.t(), module()) :: {:ok, Macro.t()} | :error
+  @doc """
+  The node that defines `module`, or `:error`: a `defmodule` or
+  `defprotocol` (nested names joined, `Elixir.` and `__MODULE__` read), or a
+  `defimpl` (DND-5624). A `defimpl P, for: T` defines `P.T`; with no `for:`
+  it is `P.<the enclosing module>`; `for: [T1, T2]` defines each `P.Tn` from
+  the one node. Names are read exactly as `Anchor.Domain.Sabotage.FunctionSpans`
+  reads them (the literal spelling; aliases are not resolved), so every
+  function it names is found here. `quote` bodies are not entered. A name the
+  source does not spell literally names nothing, so `nil` is never found.
+  """
+  @spec module_node(Macro.t(), module() | nil) :: {:ok, Macro.t()} | :error
+  def module_node(_ast, nil), do: :error
+
   def module_node(ast, module) do
-    case find_module(statements(ast), [], Module.split(module)) do
+    case Enum.find(definitions(ast), &(&1.name == module)) do
       nil -> :error
-      node -> {:ok, node}
+      %{node: node} -> {:ok, node}
     end
   end
+
+  @doc """
+  The `do` body of a node `module_node/2` returns (`defmodule`,
+  `defprotocol` or `defimpl`, block or keyword form).
+  """
+  @spec definition_body(Macro.t()) :: Macro.t() | nil
+  def definition_body({_kind, _meta, [_name | lists]}), do: lists |> options() |> keyword(:do)
 
   @doc "A keyword key as written: Sourceror wraps it (`{:__block__, _, [:do]}`)."
   @spec key(Macro.t()) :: term()
@@ -238,38 +251,131 @@ defmodule Anchor.Domain.Sabotage.SourceTree do
 
   defp error_message(error), do: inspect(error)
 
-  defp find_module(statements, prefix, wanted),
-    do: Enum.find_value(statements, &module_match(&1, prefix, wanted))
+  # The literal clauses and bodiless heads of `name` covering `arity` among
+  # the statements of a definition's body; [] when none.
+  defp covering(node, name, arity) do
+    clauses =
+      node
+      |> definition_body()
+      |> statements()
+      |> Enum.flat_map(&def_clause/1)
+      |> Enum.filter(&(&1.name == name))
 
-  defp module_body(ast, module) do
-    case module_node(ast, module) do
-      {:ok, {:defmodule, _meta, [_name, kw]}} -> {:ok, keyword(kw, :do)}
-      :error -> {:error, :not_in_source}
+    header_totals = for c <- clauses, c.body == nil, covers?(c, arity), do: length(c.args)
+
+    Enum.filter(clauses, fn c ->
+      covers?(c, arity) or (c.body != nil and length(c.args) in header_totals)
+    end)
+  end
+
+  # Only the clauses with a body are mutated; a function whose covering heads
+  # are all bodiless is in source with nothing to mutate.
+  defp found([]), do: {:error, :not_in_source}
+
+  defp found(matching),
+    do: {:ok, matching |> Enum.filter(&(&1.body != nil)) |> Enum.map(&Map.delete(&1, :name))}
+
+  defp missing(true), do: {:error, :defimpl_target_not_literal}
+  defp missing(false), do: {:error, :not_in_source}
+
+  defp unnamed_impl_covers?(ast, nil, name, arity) do
+    ast
+    |> definitions()
+    |> Enum.any?(
+      &(&1.kind == :defimpl and &1.name == nil and covering(&1.node, name, arity) != [])
+    )
+  end
+
+  defp unnamed_impl_covers?(_ast, _module, _name, _arity), do: false
+
+  # Every definition in the file, outermost first, each `%{kind, name, node}`
+  # with `name` `nil` when the source does not spell it literally. Mirrors
+  # `FunctionSpans`' walk on Sourceror's tree.
+  defp definitions(ast), do: ast |> collect(nil, []) |> Enum.reverse()
+
+  defp collect({:quote, _meta, args}, _parent, acc) when is_list(args), do: acc
+
+  defp collect({kind, _meta, [name, kw]} = node, parent, acc)
+       when kind in [:defmodule, :defprotocol] and is_list(kw) do
+    full = nested_name(name, parent)
+    collect(keyword(kw, :do), full, [%{kind: kind, name: full, node: node} | acc])
+  end
+
+  defp collect({:defimpl, _meta, [protocol | [_ | _] = lists]} = node, parent, acc) do
+    if Enum.all?(lists, &is_list/1),
+      do: collect_impl(protocol, options(lists), node, {parent, acc}),
+      else: collect(lists, parent, collect(protocol, parent, acc))
+  end
+
+  defp collect({call, _meta, args}, parent, acc) when is_list(args),
+    do: collect(args, parent, collect(call, parent, acc))
+
+  defp collect({left, right}, parent, acc), do: collect(right, parent, collect(left, parent, acc))
+
+  defp collect(nodes, parent, acc) when is_list(nodes),
+    do: Enum.reduce(nodes, acc, &collect(&1, parent, &2))
+
+  defp collect(_leaf, _parent, acc), do: acc
+
+  # `for: [T1, T2]` is one definition per target, each with the same body.
+  defp collect_impl(protocol, opts, node, {parent, acc}) do
+    body = keyword(opts, :do)
+
+    opts
+    |> impl_targets()
+    |> Enum.reduce(acc, fn target, acc ->
+      name = impl_name(protocol, target, parent)
+      collect(body, name, [%{kind: :defimpl, name: name, node: node} | acc])
+    end)
+  end
+
+  # A definition's keyword options and do-block, as one keyword list (the
+  # block form has them as two lists, the keyword form as one).
+  defp options(lists), do: Enum.concat(lists)
+
+  # `for:` absent is the enclosing module (`:enclosing`); a list (Sourceror
+  # wraps it in a one-element block) is one target each.
+  defp impl_targets(opts) do
+    case keyword(opts, :for) do
+      nil -> [:enclosing]
+      {:__block__, _meta, [targets]} when is_list(targets) -> targets
+      target -> [target]
     end
   end
 
-  defp module_match(
-         {:defmodule, _meta, [{:__aliases__, _ameta, segments}, kw]} = node,
-         prefix,
-         wanted
-       ) do
-    if Enum.all?(segments, &is_atom/1) do
-      path = prefix ++ Enum.map(segments, &Atom.to_string/1)
+  defp impl_name(protocol, :enclosing, parent), do: concat(literal_name(protocol, parent), parent)
 
-      cond do
-        path == wanted ->
-          node
+  defp impl_name(protocol, target, parent),
+    do: concat(literal_name(protocol, parent), literal_name(target, parent))
 
-        Enum.take(wanted, length(path)) == path ->
-          find_module(statements(keyword(kw, :do)), path, wanted)
+  defp concat(nil, _right), do: nil
+  defp concat(_left, nil), do: nil
+  defp concat(left, right), do: Module.concat(left, right)
 
-        true ->
-          nil
-      end
-    end
+  defp nested_name({:__aliases__, _meta, [:"Elixir" | parts]}, _parent), do: Module.concat(parts)
+
+  defp nested_name({:__aliases__, _meta, [{:__MODULE__, _m, _c} | parts]}, parent),
+    do: Module.concat([parent | parts])
+
+  defp nested_name({:__aliases__, _meta, parts}, parent) do
+    if Enum.all?(parts, &is_atom/1), do: Module.concat([parent | parts]), else: nil
   end
 
-  defp module_match(_node, _prefix, _wanted), do: nil
+  defp nested_name({:__block__, _meta, [name]}, _parent) when is_atom(name), do: name
+  defp nested_name(_built, _parent), do: nil
+
+  defp literal_name({:__aliases__, _meta, [:"Elixir" | parts]}, _parent), do: Module.concat(parts)
+
+  defp literal_name({:__aliases__, _meta, [{:__MODULE__, _m, _c} | parts]}, parent),
+    do: Module.concat([parent | parts])
+
+  defp literal_name({:__aliases__, _meta, parts}, _parent) do
+    if Enum.all?(parts, &is_atom/1), do: Module.concat(parts), else: nil
+  end
+
+  defp literal_name({:__MODULE__, _meta, context}, parent) when is_atom(context), do: parent
+  defp literal_name({:__block__, _meta, [name]}, _parent) when is_atom(name), do: name
+  defp literal_name(_built, _parent), do: nil
 
   defp split_head({:when, _meta, [call, guard]}), do: {call, [guard]}
   defp split_head(call), do: {call, []}
