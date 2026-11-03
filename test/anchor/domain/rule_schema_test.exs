@@ -9,6 +9,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
   # Sabotage record: ../../sabotage_records/rule_schema-20260929-dnd_1286_rule_key_allowlist.md
   # DND-5441 (engine common keys, enforcement, baseline, validate_architecture/3):
   #   ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
+  # DND-5476 (aggregate_declarations rows): ../../sabotage_records/aggregates-20261103-dnd_5476_aggregate_decls.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config
@@ -45,6 +46,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
   # A typo of a key the type really reads, per type. For a type that reads no
   # key of its own, the typo is of the `paths` selector.
   @typos %{
+    aggregate_declarations: "min_module",
     alphabetized_functions: "mdoe",
     case_on_bare_arg: "pahts",
     context_acyclic: "min_module",

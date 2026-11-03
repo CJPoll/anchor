@@ -52,7 +52,9 @@ defmodule Anchor.Managers.Graph do
        (`Anchor.Adapters.GraphStore`) under `<build_path>/anchor`, the build
        path the task gathered from Mix (DND-5585); the verdict never reads it;
     9. return the `%Anchor.Domain.GraphReport{}`, with the apply-site
-       counts (`GraphReport.apply_sites/1`) when the analysis ran.
+       counts (`GraphReport.apply_sites/1`) when the analysis ran, and the
+       declared aggregates' counts (`Anchor.Domain.Aggregates.Index`,
+       DND-5476) when any is declared.
 
   Every per-module problem is an issue on that module (exit 1), never a
   skipped module: a beam it could not decode, a module whose graph walk
@@ -83,6 +85,7 @@ defmodule Anchor.Managers.Graph do
   alias Anchor.Adapters.GraphArtifact
   alias Anchor.Adapters.SourceReader
   alias Anchor.Config
+  alias Anchor.Domain.Aggregates.Index
   alias Anchor.Domain.Baseline
   alias Anchor.Domain.BaselineBase
   alias Anchor.Domain.Cfa
@@ -245,10 +248,23 @@ defmodule Anchor.Managers.Graph do
       |> counts(map_size(graph.modules), length(rules), length(Model.opaque(model)))
       |> Map.put(:no_core, no_core_count(graph))
       |> Map.put(:outside_root, outside_root_count(beams, request))
-      |> Map.put(:apply_sites, GraphReport.apply_sites(model.cfa)),
+      |> Map.put(:apply_sites, GraphReport.apply_sites(model.cfa))
+      |> put_aggregates(model.aggregates),
       held: Enum.flat_map(ran, & &1.held),
       refused: Enum.flat_map(ran, & &1.refused)
     )
+  end
+
+  # DND-5476: the declared aggregates and their unknown tables are counted
+  # in the summary when there are any.
+  defp put_aggregates(counts, index) do
+    case Index.declared(index) do
+      0 ->
+        counts
+
+      declared ->
+        Map.put(counts, :aggregates, %{declared: declared, tables_unknown: index.tables_unknown})
+    end
   end
 
   defp analyze_cfa(graph), do: Cfa.analyze(graph, Cfa.default_seed(graph))
@@ -491,8 +507,7 @@ defmodule Anchor.Managers.Graph do
     |> guarded_check(module, model)
     |> case do
       {:ok, violations} ->
-        {:ok,
-         Enum.map(violations, &Finding.from_rule(&1, rule, label, config_path || @config_file))}
+        {:ok, Enum.map(violations, &finding(&1, rule, label, config_path || @config_file))}
 
       {:crashed, kind, reason, stacktrace} ->
         {:crashed,
@@ -501,6 +516,15 @@ defmodule Anchor.Managers.Graph do
          |> Finding.fail_closed(@config_file)}
     end
   end
+
+  # A rule's fail-closed violation (DND-5476: a rule that checks nothing)
+  # is an issue of the run, like a floor: always enforced, and with no key it
+  # is never held by a baseline. Every other violation takes the rule's
+  # enforcement and is judged against its baseline.
+  defp finding(%Violation{kind: :fail_closed} = violation, _rule, _label, file),
+    do: Finding.fail_closed(%{violation | key: nil}, file)
+
+  defp finding(violation, rule, label, file), do: Finding.from_rule(violation, rule, label, file)
 
   # The rule's return is validated inside the guard: a rule that returns
   # anything but a list of violations is reported like one that raised.

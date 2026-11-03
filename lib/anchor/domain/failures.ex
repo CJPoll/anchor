@@ -420,6 +420,22 @@ defmodule Anchor.Domain.Failures do
   end
 
   @doc """
+  The issue for an `aggregate_declarations` rule when no aggregate is
+  declared at all (DND-5476), on the config: the rule checks nothing. It is
+  fail-closed, so the runner never holds it in a baseline and never prints
+  it as report-only. `shape` is the declaration shape the rule names.
+  """
+  @spec aggregates_none_declared(map(), String.t(), String.t() | nil) :: Violation.t()
+  def aggregates_none_declared(rule, shape, config_path) do
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "#{rule_label(rule)} checks nothing: no aggregate is declared in .anchor.yml or by an " <>
+        "@anchor_aggregate attribute. Fix: declare one or remove the rule: #{shape}"
+    )
+  end
+
+  @doc """
   The issue for a graph rule whose `check/2` raised, threw or exited
   (DND-5440): one issue naming the rule and the reason (at most
   #{@crash_reason_limit} characters, with the frame that raised). The other

@@ -111,6 +111,10 @@ rules:
     required_modules:
       - Anchor.Check.Base
 
+  # (No aggregate_declarations rule, DND-5476: Anchor has no database and
+  # declares no aggregate, so the rule could only say it checks nothing, a
+  # fail-closed issue that fails the run in any enforcement mode.)
+
   # --- Rule: the calls matrix over compiled code (DND-5442) ---
   #
   # `mix anchor.graph` judges every call between two of Anchor's own modules
@@ -175,6 +179,7 @@ architecture:
       select:
         - paths: ["lib/anchor/check/**/*.ex", "lib/mix/tasks/**/*.ex"]
         - pattern: "Anchor"
+        - pattern: "Anchor.Aggregate"
       min_modules: 20
     - name: adapters
       role: adapters
