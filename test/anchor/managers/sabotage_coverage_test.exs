@@ -4,6 +4,7 @@ defmodule Anchor.Managers.SabotageCoverageTest do
   # fails it ("nothing traced" is proven by expecting no `start`). Each double
   # reports its call to the test process, so the order is asserted.
   # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5474_coverage_map.md
+  # Sabotage record (DND-5642): ../../sabotage_records/sabotage-20261103-dnd_5639_sabotage_followups.md
   use ExUnit.Case, async: true
 
   import Hammox
@@ -221,5 +222,50 @@ defmodule Anchor.Managers.SabotageCoverageTest do
 
     assert {2, [message]} = Sabotage.coverage(facts(), @opts)
     assert message =~ "could not write /repo/cov.etf (:eacces). Fix: pass --out a writable path"
+  end
+
+  describe "window leaks (DND-5642)" do
+    @t2 %{file: "/repo/test/b_test.exs", line: 8, name: "test two", module: "BTest"}
+
+    defp leaking_state do
+      leaker = :erlang.list_to_pid(~c"<0.901.0>")
+
+      CoverageMap.attribute(CoverageMap.new(), [
+        {:window_open, 1, @t1},
+        {:call, 2, {A, :f, 0}, leaker},
+        {:window_close, 3, @t1},
+        {:window_open, 4, @t2},
+        {:call, 5, {B, :g, 0}, leaker},
+        {:window_close, 6, @t2}
+      ])
+    end
+
+    @warning "anchor.sabotage coverage: warning: test/b_test.exs: 1 calls from a process an " <>
+               "earlier test started were credited to a later test (selection unchanged): " <>
+               "test/a_test.exs:3 test one -> test/b_test.exs:8 test two (1 calls)"
+
+    test "LM1: a passing suite with a leak: the summary, then the warning; exit 0, the map written whole" do
+      expect_modules()
+      expect_traced(:passed, leaking_state())
+
+      expect(CoverageStoreMock, :write, fn "/repo/cov.etf", map ->
+        send(self(), {:written, map})
+        :ok
+      end)
+
+      assert {0, [summary, @warning]} = Sabotage.coverage(facts(), @opts)
+      assert summary =~ "anchor.sabotage coverage: tests: 2"
+      assert_received {:written, map}
+      assert Map.new(map.tests, &{&1.line, &1.functions}) == %{3 => ["A.f/0"], 8 => ["B.g/0"]}
+    end
+
+    test "LM2: a failing suite with a leak: the summary, the warning, then why it failed; exit 1" do
+      expect_modules()
+      expect_traced({:failed, "mix test failed"}, leaking_state())
+      expect(CoverageStoreMock, :write, fn "/repo/cov.etf", _map -> :ok end)
+
+      assert {1, [_summary, @warning, failed]} = Sabotage.coverage(facts(), @opts)
+      assert failed =~ "the suite failed (mix test failed)"
+    end
   end
 end

@@ -86,3 +86,38 @@ a `:failed` run with no failure frame stays `{:killed, []}`, as before.
 | P7 | `attribute/3` keeps the first target's mutant | 2 | G6 `code:  assert shared == %{` (also T1) |
 | P8 | `attribute/3` keeps the first target's selection | 1 | G6 `code:  assert shared == %{` |
 | P9 | the runner never records a measured run | 1 | T1 `** (Mox.UnexpectedCallError) expected Anchor.SourceMutationMock.write_journal/2 to be called once but it has been called 2 times` |
+
+## DND-5642 — a call from a process an earlier test started is named, never hidden
+
+- **Code under test:** `Anchor.Domain.Sabotage.CoverageMap` (`{:call,
+  stamp, mfa, pid}` events, the first-seen windows per pid, `window_leaks`
+  in the map, `leak_warnings/1`), `Anchor.Sabotage.CoverageCollector` (each
+  call keeps its pid), `Anchor.Managers.Sabotage.Coverage` (the warning lines
+  after the summary)
+- **Suite run:** `mix test test/anchor/domain/sabotage/coverage_map_test.exs
+  test/mix/tasks/anchor/sabotage/coverage_collector_test.exs
+  test/anchor/managers/sabotage_coverage_test.exs
+  test/anchor/adapters/call_tracer_test.exs --timeout 2000 --max-cases 2`
+  (49 tests; green after the fix and after every row). LT1 and LT2 drive
+  real tracing: each call is made by a worker process that answers a
+  message, and the test blocks on its reply, so which window a call lands in
+  never depends on timing.
+
+| # | Mutation | Tests failed | First failure, verbatim |
+|---|---|---|---|
+| U9 | the unfixed code (`coverage_map.ex`, `coverage_collector.ex`, `coverage.ex` at their pre-DND-5642 text; the tests written) | 13 | L1-L7, LM1, LM2, LT1, LT2 and collector tests 1 and 3: the map has no `window_leaks` and a 4-element call event matches no clause |
+| M1 | each call's pid made unique (no process is seen twice) | 6 | collector 3 `code:  assert CoverageMap.finalize(state, @meta).window_leaks == [` `left:  []` (also LM1, LM2, L1, L6, LT1) |
+| M2 | a leak whenever the process was first seen in a window (the disjoint check dropped) | 1 | L4 `code:  assert build(events).window_leaks == []` `left:  [` |
+| M3 | a process first seen outside every window can leak | 1 | L3 `code:  assert map.window_leaks == []` `left:  [` |
+| M4 | the collector drops the pid | 3 | collector 1 `code:  assert CoverageMap.finalize(state, @meta) == CoverageMap.finalize(expected, @meta)` (also collector 3, LT1) |
+| M5 | a passing suite prints no warning | 1 | LM1 `code:  assert {0, [summary, @warning]} = Sabotage.coverage(facts(), @opts)` |
+| M6 | no cap on the pairs a line shows (50) | 1 | L6 `code:  assert b_line =~ "test/a_test.exs:5 test a5 -> test/b_test.exs:7 test two (1 calls); and 3 more"` |
+| M7 | one line per credited test, not per file | 4 | LM2 `code:  assert {1, [_summary, @warning, failed]} = Sabotage.coverage(facts(), @opts)` (also LM1, L1, L6) |
+| M8 | the first-seen windows replaced on every call | 6 | collector 3 `code:  assert CoverageMap.finalize(state, @meta).window_leaks == [` `left:  []` (also LM1, LM2, L1, L6, LT1) |
+| M9 | the credited test's file left absolute | 6 | collector 3 `code:  assert CoverageMap.finalize(state, @meta).window_leaks == [` (also LM1, LM2, L1, L6, LT1) |
+| M10 | each pair counted once, not per call | 1 | L1 `code:  assert map.window_leaks == [%{from: [rel(@t1)], to: rel(@t2), calls: 2}]` `left:` `calls: 1` |
+
+L2 and LT2 are the clean-pair positive controls. L5 and L7 pin behaviour
+that comes from what already existed (the stamp-ordered release; the 3-tuple
+call event and a map written before DND-5642); no mutation of this ticket's
+code reddens them.

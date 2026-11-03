@@ -2,6 +2,7 @@ defmodule Anchor.Domain.Sabotage.CoverageMapTest do
   # DND-5474: per-test coverage, windowed by strict monotonic stamps. The
   # order of events is set by their stamps, never by real time.
   # Sabotage record: ../../../sabotage_records/sabotage-20261103-dnd_5474_coverage_map.md
+  # Sabotage record (DND-5642): ../../../sabotage_records/sabotage-20261103-dnd_5639_sabotage_followups.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Sabotage.CoverageMap
@@ -233,6 +234,155 @@ defmodule Anchor.Domain.Sabotage.CoverageMapTest do
       assert CoverageMap.check(%{map | version: 2}) == {:error, {:version, 2}}
       assert CoverageMap.check(:nope) == {:error, :not_a_map}
       assert CoverageMap.check(%{map | tests: [%{file: 1}]}) == {:error, :not_a_map}
+    end
+  end
+
+  describe "window leaks (DND-5642)" do
+    @p1 :erlang.list_to_pid(~c"<0.901.0>")
+    @p2 :erlang.list_to_pid(~c"<0.902.0>")
+    @t3 %{file: "/proj/test/b_test.exs", line: 11, name: "test three", module: "BTest"}
+
+    defp rel(ref), do: %{ref | file: Path.relative_to(ref.file, "/proj")}
+
+    defp leaking do
+      [
+        {:window_open, 1, @t1},
+        {:call, 2, "A.f/0", @p1},
+        {:window_close, 3, @t1},
+        {:window_open, 4, @t2},
+        {:call, 5, "B.g/0", @p1},
+        {:call, 6, "B.g/0", @p1},
+        {:window_close, 7, @t2}
+      ]
+    end
+
+    test "L1: a process first seen in an earlier window, calling in a later one, is a leak; selection unchanged" do
+      map = build(leaking())
+
+      assert map.window_leaks == [%{from: [rel(@t1)], to: rel(@t2), calls: 2}]
+      assert sets(map) == %{"test one" => ["A.f/0"], "test two" => ["B.g/0"]}
+
+      assert CoverageMap.leak_warnings(map) == [
+               "anchor.sabotage coverage: warning: test/b_test.exs: 2 calls from a process an " <>
+                 "earlier test started were credited to a later test (selection unchanged): " <>
+                 "test/a_test.exs:3 test one -> test/b_test.exs:7 test two (2 calls)"
+             ]
+    end
+
+    test "L2: positive control: a clean pair (each process in its own window) has no leak" do
+      events = [
+        {:window_open, 1, @t1},
+        {:call, 2, "A.f/0", @p1},
+        {:window_close, 3, @t1},
+        {:window_open, 4, @t2},
+        {:call, 5, "B.g/0", @p2},
+        {:window_close, 6, @t2}
+      ]
+
+      map = build(events)
+      assert map.window_leaks == []
+      assert CoverageMap.leak_warnings(map) == []
+      assert sets(map) == %{"test one" => ["A.f/0"], "test two" => ["B.g/0"]}
+    end
+
+    test "L3: a process first seen outside every window is never a leak" do
+      map = build([{:call, 1, "A.f/0", @p1} | tl(tl(leaking()))])
+
+      assert map.window_leaks == []
+      assert map.outside_windows == 1
+    end
+
+    test "L4: a call while the window that first saw the process is still open is no leak" do
+      events = [
+        {:window_open, 1, @t1},
+        {:call, 2, "A.f/0", @p1},
+        {:window_open, 3, @t2},
+        {:call, 4, "B.g/0", @p1},
+        {:window_close, 5, @t1},
+        {:window_close, 6, @t2}
+      ]
+
+      assert build(events).window_leaks == []
+    end
+
+    test "L5: leaks follow stamp order, not arrival order" do
+      [open1, call_a, close1, open2, call_b, call_b2, close2] = leaking()
+      shuffled = [open1, open2, call_b, close1, call_a, call_b2, close2]
+
+      assert build(shuffled).window_leaks == build(leaking()).window_leaks
+    end
+
+    test "L6: one line per credited test file, at most five pairs shown, in file order" do
+      earlier =
+        for i <- 1..7 do
+          %{file: "/proj/test/a_test.exs", line: i, name: "test a#{i}", module: "ATest"}
+        end
+
+      pids = for i <- 1..7, do: :erlang.list_to_pid(~c"<0.#{910 + i}.0>")
+
+      firsts =
+        earlier
+        |> Enum.zip(pids)
+        |> Enum.with_index()
+        |> Enum.flat_map(fn {{ref, pid}, i} ->
+          [
+            {:window_open, i * 3 + 1, ref},
+            {:call, i * 3 + 2, "A.f/0", pid},
+            {:window_close, i * 3 + 3, ref}
+          ]
+        end)
+
+      later =
+        [{:window_open, 100, @t2}] ++
+          Enum.with_index(pids, &{:call, 101 + &2, "B.g/0", &1}) ++
+          [{:window_close, 120, @t2}, {:window_open, 121, @t3}, {:call, 122, "B.g/0", hd(pids)}] ++
+          [{:window_close, 123, @t3}]
+
+      map = build(firsts ++ later, 50)
+      assert [b_line] = CoverageMap.leak_warnings(map)
+
+      assert b_line =~ "warning: test/b_test.exs: 8 calls from a process"
+      assert b_line =~ "test/a_test.exs:1 test a1 -> test/b_test.exs:7 test two (1 calls); "
+
+      assert b_line =~
+               "test/a_test.exs:5 test a5 -> test/b_test.exs:7 test two (1 calls); and 3 more"
+
+      # The three not shown: a6 and a7 into test two, a1 into test three.
+      refute b_line =~ "test three"
+      assert b_line =~ "; and 3 more"
+      assert length(map.window_leaks) == 8
+
+      a_leak = %{file: "/proj/test/a_test.exs", line: 9, name: "test a9", module: "ATest"}
+
+      two_files =
+        build(
+          firsts ++
+            [
+              {:window_open, 200, a_leak},
+              {:call, 201, "B.g/0", hd(pids)},
+              {:window_close, 202, a_leak}
+            ] ++
+            later,
+          50
+        )
+
+      assert [a_line, b_line2] = CoverageMap.leak_warnings(two_files)
+      assert a_line =~ "warning: test/a_test.exs: 1 calls"
+      assert b_line2 =~ "warning: test/b_test.exs: "
+    end
+
+    test "L7: a call with no pid (an older event shape) and a map with no window_leaks warn of nothing" do
+      events = [
+        {:window_open, 1, @t1},
+        {:call, 2, "A.f/0"},
+        {:window_close, 3, @t1},
+        {:window_open, 4, @t2},
+        {:call, 5, "B.g/0"},
+        {:window_close, 6, @t2}
+      ]
+
+      assert build(events).window_leaks == []
+      assert CoverageMap.leak_warnings(Map.delete(build(events), :window_leaks)) == []
     end
   end
 end

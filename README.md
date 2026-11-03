@@ -1111,6 +1111,20 @@ arrived later than the reorder buffer allows (`late_events`). The map records
 the commit it was built at, the Elixir and OTP versions, the number of tests
 and traced modules, and those counts.
 
+A process a test started that keeps running is credited, by time alone, to
+whichever test is running when it next calls project code. Each call keeps
+the pid that made it, so a call from a process first seen in an earlier test's
+window, made while none of those windows is open, is a **window leak**
+(DND-5642). Leaks are listed in the map (`window_leaks`: the earlier tests,
+the credited test, the number of calls), and the run prints one line per
+credited test file after the summary, `anchor.sabotage coverage: warning:
+<file>: N calls from a process an earlier test started were credited to a
+later test (selection unchanged): <earlier test> -> <credited test> (N
+calls)`, at most five pairs to a line. Visibility only: the calls are still
+in the credited test's set and the exit code does not change. A process first
+seen outside every window (an application process, `setup_all`) is never a
+leak, since no test is known to have started it.
+
 It is **CI only by default**: without `CI=true` it refuses, exit 2, and
 traces nothing (`Fix: run it in CI, or pass --local where that load is
 acceptable`). Anchor's own map is built by `.github/workflows/coverage-map.yml`
