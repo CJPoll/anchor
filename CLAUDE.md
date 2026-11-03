@@ -138,9 +138,8 @@ The optional top-level `architecture:` section (DND-5437) is parsed by
 `Fix:`. A new key goes into its level's key list there (`key_paths/0`) and gets
 a table in `test/anchor/domain/architecture_checks_nothing_test.exs` (a test
 fails until it does). `Anchor.Domain.Classification` classifies a module's facts
-into exactly one bucket, with no precedence between buckets. Until the graph
-runner (DND-5440) lands, the section is parsed and validated only: nothing
-reads it at run time.
+into exactly one bucket, with no precedence between buckets; the graph runner
+(below) reads the section at run time.
 
 ## The causal graph (DND-5438)
 
@@ -160,6 +159,29 @@ edges from Core. A new Core shape goes into the walker with a row in
 compiled in the test with `Anchor.Test.BeamFixtures.compile_unloaded/2`, which
 unloads every fixture module and turns `debug_info` on per module (`mix test`
 compiles with it off).
+
+## The graph runner: `mix anchor.graph` (DND-5440)
+
+`Mix.Tasks.Anchor.Graph` (Framework) compiles, gathers `[{app, ebin}]` from
+Mix and makes one `Anchor.Managers.Graph.run/2` call; the Manager reaches
+config, beams, sources and the artifact only through adapters
+(`ConfigLoader`, `BeamSource`, `SourceSource`, `GraphStore`; tests double them
+with Hammox and pass them as options, as `mix anchor.sabotage` does). It builds
+the graph fresh, builds `Anchor.Domain.Model` (classification of every
+module), checks bucket and rule floors (`min_modules`), runs each graph rule
+under a `try`/`rescue`/`catch` guard, and returns
+`Anchor.Domain.GraphReport` (exit 0/1/3). It never reads the artifact
+(`_build/<env>/anchor/graph.etf`) for a verdict.
+
+A graph rule implements `Anchor.Domain.GraphRule` (`rule_type/0`,
+`check/2` over the model) and is listed in `Anchor.Domain.GraphRules.all/0`;
+`graph_rules_test.exs` holds that list's types equal to RuleSchema's `:graph`
+types. Each new fail-closed case gets a `Failures` function, a row in
+`failures_graph_test.exs` and a row in the README's graph fail-closed table.
+The canary tree `test/fixtures/graph_canary/` gets a compliant and a violating
+module per graph rule. Anchor's own `.anchor.yml` has an `architecture:`
+section with floors at today's counts, and CI runs `MIX_ENV=dev mix
+anchor.graph` after credo.
 
 ## Important Notes
 

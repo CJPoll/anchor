@@ -52,5 +52,13 @@ jobs:
       - name: Credo (strict)
         run: mix credo --strict
 
+      # Dogfood (DND-5440): the graph engine judges Anchor's own compiled lib/
+      # against .anchor.yml's architecture: section. Run in the dev env so the
+      # graph is lib/ as it ships (test/support compiles only under test).
+      - name: Graph (mix anchor.graph)
+        env:
+          MIX_ENV: dev
+        run: mix anchor.graph
+
       - name: Test
         run: mix test

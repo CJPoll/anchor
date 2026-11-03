@@ -1,0 +1,162 @@
+defmodule Anchor.Domain.FailuresGraphTest do
+  # DND-5440: the graph runner's fail-closed messages (shared contract
+  # section 7's table). Each is a fail-closed violation on the right file,
+  # names its subject and ends with a Fix: line. Table-driven.
+  #
+  # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5440_graph_runner.md
+  use ExUnit.Case, async: true
+
+  alias Anchor.Domain.Failures
+  alias Anchor.Domain.Violation
+
+  @beam "_build/dev/lib/app/ebin/Elixir.MyApp.X.beam"
+
+  defp unreadable(reason, module \\ MyApp.X),
+    do: Failures.graph_unreadable(%{path: @beam, module: module, reason: reason})
+
+  # {reason, the texts its message must hold}
+  @unreadable_rows [
+    {:no_debug_info,
+     ["MyApp.X was compiled without debug_info", "Fix: remove debug_info: false"]},
+    {:debug_info_stripped,
+     ["MyApp.X was compiled without debug_info", "Fix: remove debug_info: false"]},
+    {{:elixir_v1_refused, :boom},
+     [
+       "could not produce its Elixir debug info (:boom)",
+       "Fix: recompile with the project's own Elixir"
+     ]},
+    {{:core_v1_refused, :boom},
+     ["could not produce Core Erlang (:boom)", "Fix: recompile with the project's own Elixir"]},
+    {{:core_v1_refused, {:transform, {:parse_transform, :my_pt}}},
+     [
+       "was compiled with {:parse_transform, :my_pt}",
+       "Fix: remove the transform from the module's compile options"
+     ]},
+    {{:decode_crashed, "RuntimeError: x"},
+     ["Anchor crashed reading it (RuntimeError: x)", "Fix: this is an Anchor bug"]},
+    {{:walk_crashed, "FunctionClauseError: y"},
+     ["Anchor crashed walking it (FunctionClauseError: y)", "Fix: this is an Anchor bug"]},
+    {{:duplicate_module, "other/ebin/Elixir.MyApp.X.beam"},
+     ["is in two ebins: #{@beam} and other/ebin/Elixir.MyApp.X.beam (kept)", "Fix: run mix clean"]},
+    {{:unreadable, :eacces}, ["could not be read (:eacces)", "Fix: make #{@beam} readable"]},
+    {{:not_elixir, :erl_abstract_code},
+     ["was not compiled from Elixir", "Fix: move it under a dependency"]},
+    {:something_new, ["could not be read (:something_new)", "Fix: this is an Anchor bug"]}
+  ]
+
+  describe "graph_unreadable/1" do
+    for {reason, texts} <- @unreadable_rows do
+      test "#{inspect(reason)}: on the beam path, naming the module, with its Fix:" do
+        assert %Violation{kind: :fail_closed, filename: @beam, line: nil, message: message} =
+                 unreadable(unquote(Macro.escape(reason)))
+
+        for text <- unquote(texts), do: assert(message =~ text)
+      end
+    end
+
+    test "a beam whose module is unknown is named by its path" do
+      assert unreadable({:unreadable, :enoent}, nil).message =~
+               "The beam #{@beam} could not be read"
+    end
+  end
+
+  # {name, violation, its file, the texts its message must hold}
+  defp rows do
+    rule = %{type: :layering, id: "web", index: 2}
+
+    crashed =
+      try do
+        raise "rule blew up"
+      rescue
+        e -> Failures.rule_crashed(rule, :error, e, __STACKTRACE__, "proj/.anchor.yml")
+      end
+
+    [
+      {"graph_no_architecture", Failures.graph_no_architecture("proj/.anchor.yml"),
+       "proj/.anchor.yml",
+       [
+         "COULD NOT MEASURE: proj/.anchor.yml has no architecture: section",
+         "Fix: add an architecture: section"
+       ]},
+      {"graph_no_architecture without a path", Failures.graph_no_architecture(nil), ".anchor.yml",
+       ["COULD NOT MEASURE: .anchor.yml has no architecture: section"]},
+      {"graph_no_modules",
+       Failures.graph_no_modules(["_build/dev/lib/a/ebin", "_build/dev/lib/b/ebin"]),
+       "_build/dev/lib/a/ebin",
+       [
+         "COULD NOT MEASURE: read 0 modules from _build/dev/lib/a/ebin, _build/dev/lib/b/ebin.",
+         "Fix: run mix compile in this project"
+       ]},
+      {"graph_unknown_only", Failures.graph_unknown_only(["nope"], "proj/.anchor.yml"),
+       "proj/.anchor.yml",
+       [
+         ~s(COULD NOT MEASURE: --only "nope" names no graph rule of proj/.anchor.yml),
+         "Fix: pass the id of a graph rule"
+       ]},
+      {"graph_erlang_module", Failures.graph_erlang_module(:my_erl, "ebin/my_erl.beam"),
+       "ebin/my_erl.beam",
+       [
+         ":my_erl is Erlang source",
+         "Fix: move it under a dependency, or classify it with a pattern: selector"
+       ]},
+      {"graph_source_unreadable", Failures.graph_source_unreadable("lib/x.ex", :enoent),
+       "lib/x.ex",
+       ["could not read the source of lib/x.ex (:enoent)", "Fix: make lib/x.ex a readable file"]},
+      {"unclassified",
+       Failures.unclassified(%{module: MyApp.X, source_file: "lib/x.ex", line: 1}), "lib/x.ex",
+       [
+         "MyApp.X is in no architecture bucket.",
+         "Fix: add a selector that matches lib/x.ex",
+         "mix anchor.explain lib/x.ex"
+       ]},
+      {"ambiguous",
+       Failures.ambiguous(
+         %{module: MyApp.X, source_file: "lib/x.ex", line: 1},
+         [{"domain", "paths [\"lib/**\"]"}, {"ui", "pattern \"MyApp.*\""}]
+       ), "lib/x.ex",
+       [
+         ~s|MyApp.X is in buckets domain (by paths ["lib/**"]) and ui (by pattern "MyApp.*")|,
+         "Fix: narrow one selector"
+       ]},
+      {"bucket_below_floor", Failures.bucket_below_floor("domain", 3, 10, "proj/.anchor.yml"),
+       "proj/.anchor.yml",
+       [
+         "architecture bucket domain selects 3 modules, below min_modules 10.",
+         "Fix: correct the selector"
+       ]},
+      {"rule_below_floor", Failures.rule_below_floor(rule, 0, 1, nil), ".anchor.yml",
+       [
+         ~s|rule 2 (id: "web", layering) selects 0 modules, below min_modules 1.|,
+         "lowering min_modules is the owner's call"
+       ]},
+      {"rule_crashed", crashed, "proj/.anchor.yml",
+       [
+         ~s|rule 2 (id: "web", layering) could not run: RuntimeError: rule blew up|,
+         "Fix: this is an Anchor bug; file it with this line."
+       ]},
+      {"interface_export_missing",
+       Failures.interface_export_missing(MyApp.Gone, "proj/.anchor.yml"), "proj/.anchor.yml",
+       [
+         "architecture interfaces.exports names MyApp.Gone, which is no module of the project",
+         "Fix: in proj/.anchor.yml, rename the entry"
+       ]},
+      {"graph_artifact_not_written",
+       Failures.graph_artifact_not_written("_build/dev/anchor", :eacces), "_build/dev/anchor",
+       [
+         "could not write the graph artifact under _build/dev/anchor (:eacces)",
+         "Fix: make _build/dev/anchor writable"
+       ]}
+    ]
+  end
+
+  test "every graph message is fail-closed, on its file, with its subject and a Fix: line" do
+    for {name, violation, file, texts} <- rows() do
+      assert %Violation{kind: :fail_closed, filename: ^file} = violation, name
+      assert violation.message =~ "Fix: ", name
+
+      for text <- texts,
+          do:
+            assert(violation.message =~ text, "#{name}: #{inspect(text)} in #{violation.message}")
+    end
+  end
+end

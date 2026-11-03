@@ -107,6 +107,7 @@ defmodule Anchor.Domain.Graph.Builder do
       module: module,
       app: beam.app,
       source_file: source_file,
+      line: anno_line(Map.get(elixir, :anno)),
       behaviours: attributes |> Keyword.get_values(:behaviour) |> List.flatten(),
       attributes: attributes,
       specs: specs(beam.specs),
@@ -157,6 +158,11 @@ defmodule Anchor.Domain.Graph.Builder do
   defp core_defs(core) do
     Map.new(:cerl.module_defs(core), fn {fname, fun} -> {:cerl.var_name(fname), fun} end)
   end
+
+  # The `defmodule` line: `elixir_v1`'s `:anno` is `{line, column}` or a line.
+  defp anno_line({line, _column}) when is_integer(line), do: line
+  defp anno_line(line) when is_integer(line), do: line
+  defp anno_line(_anno), do: nil
 
   defp generated(_module, nil), do: :unknown
   defp generated(_module, {:error, :unparseable}), do: :unknown

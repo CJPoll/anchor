@@ -110,6 +110,8 @@ defmodule Anchor.Domain.Graph.BuilderTest do
                generated?: false
              } = node = Graph.module(graph, Plain)
 
+      # DND-5440: the defmodule line, where an unclassified module is reported.
+      assert node.line == 1
       assert Keyword.get(node.attributes, :tag) == :hello
       assert [{:"::", _, [{:run, _, _}, _]}] = node.specs[{:run, 1}]
       assert {:type, _quoted} = node.types[{:t, 0}]

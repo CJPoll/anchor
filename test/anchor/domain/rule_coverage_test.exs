@@ -176,4 +176,48 @@ defmodule Anchor.Domain.RuleCoverageTest do
                [%{type: :single_control_flow}]
     end
   end
+
+  # DND-5440 (DND-5437's Pass-2): a graph-engine rule's floor is min_modules,
+  # judged by mix anchor.graph, so Credo's file floor and allowed-caller
+  # reports skip it. The engine lookup is injected, standing in for a
+  # test-only schema with a graph type.
+  # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5440_graph_runner.md
+  describe "below_floor/3 and missing_allowed_callers/3 skip graph rules" do
+    @graph_engines %{g: :graph, must_use_module: :ast, no_direct_dependency: :ast}
+
+    defp graph_engine_of(type), do: Map.fetch!(@graph_engines, type)
+
+    test "a graph rule with a floor it cannot meet is not reported" do
+      graph_rule = %{type: :g, paths: ["nowhere/*.ex"], min_files: 5}
+      assert RuleCoverage.below_floor([graph_rule], [@lib_a], &graph_engine_of/1) == []
+    end
+
+    test "positive control: an AST rule's floor still fires beside it" do
+      graph_rule = %{type: :g, paths: ["nowhere/*.ex"]}
+      ast_rule = paths_rule(["nowhere/*.ex"])
+
+      assert RuleCoverage.below_floor([graph_rule, ast_rule], [@lib_a], &graph_engine_of/1) ==
+               [{ast_rule, 0}]
+    end
+
+    test "a graph rule's allowed callers are not reported; an AST rule's still are" do
+      graph_rule = %{type: :g, paths: ["lib/*.ex"], recursive: false, allowed_callers: [App.Gone]}
+
+      ast_rule = %{
+        type: :no_direct_dependency,
+        paths: ["lib/*.ex"],
+        recursive: false,
+        allowed_callers: [App.Gone]
+      }
+
+      facts = [Map.put(@lib_a, :defined_modules, [App.A])]
+
+      assert RuleCoverage.missing_allowed_callers(
+               [graph_rule, ast_rule],
+               facts,
+               &graph_engine_of/1
+             ) ==
+               [{ast_rule, [App.Gone]}]
+    end
+  end
 end
