@@ -31,13 +31,16 @@ table and the sections after it are that run. A mutation whose source text the
 fixes changed was re-anchored to the same defect in the new code. A row marked
 "regression" is the unfixed code itself, not a mutation: its block is quoted
 from the run that showed it red before the fix, as the fix commit records it.
-The checkout's absolute path in the output reads `<worktree>`.
+The checkout's absolute path in the output reads `<worktree>`. Each run
+forced compilation (`mix test --force`, and a write never in the same second
+as the last): a first pass of this re-run measured BL-C on BL-B's stale beam,
+which the critic caught from its verbatim output.
 
 | # | Mutation | Tests run | Result | Failing tests |
 |---|---|---|---|---|
 | BL-A | comment lines are kept as keys (`lib/anchor/domain/baseline.ex`) | `baseline_test.exs` | `15 tests, 2 failures` (red) | parse/1 keys in file order; comments, blank lines and trailing spaces dropped; render/2 header comment, keys sorted, trailing newline; parse round-trips to the sorted keys |
 | BL-B | invalid UTF-8 is not detected (`lib/anchor/domain/baseline.ex`) | `baseline_test.exs`, `graph_baseline_test.exs` | `32 tests, 2 failures` (red) | parse/1 invalid UTF-8 on line 3 is refused, naming the line; run/2 comparing with a baseline a baseline line that is not UTF-8 is an issue on that line |
-| BL-C | compare is a set, not a multiset: an entry is never consumed (`lib/anchor/domain/baseline.ex`) | `baseline_test.exs`, `enforcement_test.exs` | `23 tests, 1 failure` (red) | parse/1 invalid UTF-8 on line 3 is refused, naming the line |
+| BL-C | compare is a set, not a multiset: an entry is never consumed (`lib/anchor/domain/baseline.ex`) | `baseline_test.exs`, `enforcement_test.exs` | `23 tests, 8 failures` (red) | compare/2 a key found twice and listed once is one new; compare/2 a key listed twice and found once leaves one stale; compare/2 equal multisets: all held, none new or stale; judge/4 a baseline absent at the ref is a report-only first-landing NOTE; judge/4 a covered finding is held; an uncovered one (NEW) stands; judge/4 base entries: what the working file added is GREW, naming the ref; judge/4 positive control for GREW: the same files with nothing added give none; judge/4 two findings with one key and one entry: one held, one stands (multiset) |
 | BL-D | grew never reports growth (`lib/anchor/domain/baseline.ex`) | `baseline_test.exs`, `enforcement_test.exs`, `graph_baseline_test.exs` | `40 tests, 4 failures` (red) | grew/2 a new key is growth; grew/2 one more copy of a key than base is that key once; judge/4 base entries: what the working file added is GREW, naming the ref; run/2 --base REF (GREW) an entry the branch added since REF fails as GREW (exit 1) |
 | BL-E | foreign drops the \| so another id with the same prefix passes (`lib/anchor/domain/baseline.ex`) | `baseline_test.exs` | `15 tests, 1 failure` (red) | foreign/2 entries not starting with the rule id and \| are foreign |
 | BL-F | render does not sort (`lib/anchor/domain/baseline.ex`) | `baseline_test.exs` | `15 tests, 1 failure` (red) | render/2 header comment, keys sorted, trailing newline; parse round-trips to the sorted keys |
@@ -159,17 +162,149 @@ Run summary: `32 tests, 2 failures`
 
 ## BL-C — compare is a set, not a multiset: an entry is never consumed
 
-Run summary: `23 tests, 1 failure`
+Run summary: `23 tests, 8 failures`
 
 ```text
-  1) test parse/1 invalid UTF-8 on line 3 is refused, naming the line (Anchor.Domain.BaselineTest)
-     test/anchor/domain/baseline_test.exs:16
+  1) test compare/2 a key listed twice and found once leaves one stale (Anchor.Domain.BaselineTest)
+     test/anchor/domain/baseline_test.exs:30
      Assertion with == failed
-     code:  assert Baseline.parse("r|A\nr|B\nr|\xFF\n") == {:error, {:line, 3, :invalid_utf8}}
-     left:  {:ok, ["r|A", "r|B", <<114, 124, 255>>]}
-     right: {:error, {:line, 3, :invalid_utf8}}
+     code:  assert Baseline.compare(~w(a), ~w(a a)) == %{new: [], stale: ~w(a), held: ~w(a)}
+     left:  %{new: [], stale: ["a", "a"], held: ["a"]}
+     right: %{new: [], stale: ["a"], held: ["a"]}
      stacktrace:
-       test/anchor/domain/baseline_test.exs:17: (test)
+       test/anchor/domain/baseline_test.exs:31: (test)
+
+  2) test compare/2 a key found twice and listed once is one new (Anchor.Domain.BaselineTest)
+     test/anchor/domain/baseline_test.exs:34
+     Assertion with == failed
+     code:  assert Baseline.compare(~w(a a), ~w(a)) == %{new: ~w(a), stale: [], held: ~w(a)}
+     left:  %{new: [], stale: ["a"], held: ["a", "a"]}
+     right: %{new: ["a"], stale: [], held: ["a"]}
+     stacktrace:
+       test/anchor/domain/baseline_test.exs:35: (test)
+
+  3) test compare/2 equal multisets: all held, none new or stale (Anchor.Domain.BaselineTest)
+     test/anchor/domain/baseline_test.exs:26
+     Assertion with == failed
+     code:  assert Baseline.compare(~w(a b a), ~w(a a b)) == %{new: [], stale: [], held: ~w(a b a)}
+     left:  %{new: [], stale: ["a", "a", "b"], held: ["a", "b", "a"]}
+     right: %{new: [], stale: [], held: ["a", "b", "a"]}
+     stacktrace:
+       test/anchor/domain/baseline_test.exs:27: (test)
+
+  4) test judge/4 a covered finding is held; an uncovered one (NEW) stands (Anchor.Domain.EnforcementTest)
+     test/anchor/domain/enforcement_test.exs:33
+     Assertion with == failed
+     code:  assert Enum.map(standing, & &1.key) == ["r|B|y"]
+     left:  ["r|B|y", "r|A|x"]
+     right: ["r|B|y"]
+     stacktrace:
+       test/anchor/domain/enforcement_test.exs:38: (test)
+
+  5) test judge/4 positive control for GREW: the same files with nothing added give none (Anchor.Domain.EnforcementTest)
+     test/anchor/domain/enforcement_test.exs:82
+     Assertion with == failed
+     code:  assert standing == []
+     left:  [
+              %Anchor.Domain.GraphReport.Finding{
+                rule_id: "r",
+                type: :layering,
+                label: "rule 1 (id: \"r\", layering)",
+                enforcement: :enforce,
+                key: "r|A|x",
+                file: ".anchor/baselines/r.txt",
+                line: nil,
+                message: "r|A|x in .anchor/baselines/r.txt matches no finding (it was fixed). Fix: delete that line from .anchor/baselines/r.txt; a baseline only shrinks."
+              }
+            ]
+     right: []
+     stacktrace:
+       test/anchor/domain/enforcement_test.exs:91: (test)
+
+  6) test judge/4 base entries: what the working file added is GREW, naming the ref (Anchor.Domain.EnforcementTest)
+     test/anchor/domain/enforcement_test.exs:67
+     match (=) failed
+     code:  assert [grew] = Enum.filter(standing, &(&1.file == @path))
+     left:  [grew]
+     right: [
+              %Anchor.Domain.GraphReport.Finding{
+                rule_id: "r",
+                type: :layering,
+                label: "rule 1 (id: \"r\", layering)",
+                enforcement: :enforce,
+                key: "r|A|x",
+                file: ".anchor/baselines/r.txt",
+                line: nil,
+                message: "r|A|x in .anchor/baselines/r.txt matches no finding (it was fixed). Fix: delete that line from .anchor/baselines/r.txt; a baseline only shrinks."
+              },
+              %Anchor.Domain.GraphReport.Finding{
+                rule_id: "r",
+                type: :layering,
+                label: "rule 1 (id: \"r\", layering)",
+                enforcement: :enforce,
+                key: "r|B|y",
+                file: ".anchor/baselines/r.txt",
+                line: nil,
+                message: "r|B|y in .anchor/baselines/r.txt matches no finding (it was fixed). Fix: delete that line from .anchor/baselines/r.txt; a baseline only shrinks."
+              },
+              %Anchor.Domain.GraphReport.Finding{
+                rule_id: "r",
+                type: :layering,
+                label: "rule 1 (id: \"r\", layering)",
+                enforcement: :enforce,
+                key: "r|B|y",
+                file: ".anchor/baselines/r.txt",
+                line: nil,
+                message: "r|B|y was added to .anchor/baselines/r.txt since main. Fix: fix the finding instead; a baseline only shrinks (adding to it is a review decision on the base branch)."
+              }
+            ]
+     ... (block cut at 40 lines)
+
+  7) test judge/4 a baseline absent at the ref is a report-only first-landing NOTE (Anchor.Domain.EnforcementTest)
+     test/anchor/domain/enforcement_test.exs:94
+     ** (MatchError) no match of right hand side value:
+
+         {[
+            %Anchor.Domain.GraphReport.Finding{
+              rule_id: "r",
+              type: :layering,
+              label: "rule 1 (id: \"r\", layering)",
+              enforcement: :enforce,
+              key: "r|A|x",
+              file: ".anchor/baselines/r.txt",
+              line: nil,
+              message: "r|A|x in .anchor/baselines/r.txt matches no finding (it was fixed). Fix: delete that line from .anchor/baselines/r.txt; a baseline only shrinks."
+            },
+            %Anchor.Domain.GraphReport.Finding{
+              rule_id: nil,
+              type: nil,
+              label: "anchor.graph",
+              enforcement: :report,
+              key: nil,
+              file: ".anchor/baselines/r.txt",
+              line: nil,
+              message: "NOTE: first landing of .anchor/baselines/r.txt (absent at main); review is the gate. Fix: review every line of .anchor/baselines/r.txt in this change; from here it only shrinks."
+            }
+          ],
+          [
+            %Anchor.Domain.GraphReport.Finding{
+              rule_id: "r",
+              type: :layering,
+              label: "rule 1 (id: \"r\", layering)",
+              enforcement: :enforce,
+              key: "r|A|x",
+              file: "lib/a.ex",
+              line: 3,
+              message: "r|A|x found. Fix: do not."
+            }
+     ... (block cut at 40 lines)
+
+  8) test judge/4 two findings with one key and one entry: one held, one stands (multiset) (Anchor.Domain.EnforcementTest)
+     test/anchor/domain/enforcement_test.exs:56
+     Expected truthy, got false
+     code: assert length(standing) == 1 and length(held) == 1
+     stacktrace:
+       test/anchor/domain/enforcement_test.exs:60: (test)
 ```
 
 ## BL-D — grew never reports growth
@@ -177,16 +312,7 @@ Run summary: `23 tests, 1 failure`
 Run summary: `40 tests, 4 failures`
 
 ```text
-  1) test grew/2 a new key is growth (Anchor.Domain.BaselineTest)
-     test/anchor/domain/baseline_test.exs:57
-     Assertion with == failed
-     code:  assert Baseline.grew(~w(a c), ~w(a)) == ~w(c)
-     left:  []
-     right: ["c"]
-     stacktrace:
-       test/anchor/domain/baseline_test.exs:58: (test)
-
-  2) test grew/2 one more copy of a key than base is that key once (Anchor.Domain.BaselineTest)
+  1) test grew/2 one more copy of a key than base is that key once (Anchor.Domain.BaselineTest)
      test/anchor/domain/baseline_test.exs:49
      Assertion with == failed
      code:  assert Baseline.grew(~w(a a b), ~w(a b)) == ~w(a)
@@ -194,6 +320,15 @@ Run summary: `40 tests, 4 failures`
      right: ["a"]
      stacktrace:
        test/anchor/domain/baseline_test.exs:50: (test)
+
+  2) test grew/2 a new key is growth (Anchor.Domain.BaselineTest)
+     test/anchor/domain/baseline_test.exs:57
+     Assertion with == failed
+     code:  assert Baseline.grew(~w(a c), ~w(a)) == ~w(c)
+     left:  []
+     right: ["c"]
+     stacktrace:
+       test/anchor/domain/baseline_test.exs:58: (test)
 
   3) test judge/4 base entries: what the working file added is GREW, naming the ref (Anchor.Domain.EnforcementTest)
      test/anchor/domain/enforcement_test.exs:67
@@ -293,7 +428,7 @@ Run summary: `32 tests, 3 failures`
 
   3) test an unknown flag, a bad format, an argument or a --base ref git must not see is usage: exit 2 with Fix: (Mix.Tasks.Anchor.GraphTest)
      test/mix/tasks/anchor_graph_test.exs:135
-     ** (Mox.UnexpectedCallError) no expectation defined for Anchor.ConfigLoaderMock.load/0 in process #PID<0.337.0> with args []
+     ** (Mox.UnexpectedCallError) no expectation defined for Anchor.ConfigLoaderMock.load/0 in process #PID<0.1110.0> with args []
      code: for argv <- [
      stacktrace:
        (mox 1.2.0) lib/mox.ex:903: Mox.__dispatch__/4
@@ -344,14 +479,12 @@ Run summary: `6 tests, 4 failures`
      stacktrace:
        test/anchor/domain/violation_key_test.exs:50: (test)
 
-  2) test graph_key/3 <id>|<subject>|<detail>, the id when the rule has one, else its type (Anchor.Domain.ViolationKeyTest)
-     test/anchor/domain/violation_key_test.exs:11
-     Assertion with == failed
-     code:  assert ViolationKey.graph_key(%{type: :layering, id: "web"}, "A.f/1", "-> B.g/0") == "web|A.f/1|-> B.g/0"
-     left:  "layering|A.f/1|-> B.g/0"
-     right: "web|A.f/1|-> B.g/0"
+  2) test graph_key/3 a newline in any segment raises (Anchor.Domain.ViolationKeyTest)
+     test/anchor/domain/violation_key_test.exs:19
+     Expected exception ArgumentError but nothing was raised
+     code: assert_raise ArgumentError, fn ->
      stacktrace:
-       test/anchor/domain/violation_key_test.exs:12: (test)
+       test/anchor/domain/violation_key_test.exs:26: (test)
 
   3) test graph_key/3 two violations differing only in line give the same key (no line in a key) (Anchor.Domain.ViolationKeyTest)
      test/anchor/domain/violation_key_test.exs:31
@@ -364,12 +497,14 @@ Run summary: `6 tests, 4 failures`
        (elixir 1.19.4) lib/enum.ex:1688: Enum."-map/2-lists^map/1-1-"/2
        test/anchor/domain/violation_key_test.exs:34: (test)
 
-  4) test graph_key/3 a newline in any segment raises (Anchor.Domain.ViolationKeyTest)
-     test/anchor/domain/violation_key_test.exs:19
-     Expected exception ArgumentError but nothing was raised
-     code: assert_raise ArgumentError, fn ->
+  4) test graph_key/3 <id>|<subject>|<detail>, the id when the rule has one, else its type (Anchor.Domain.ViolationKeyTest)
+     test/anchor/domain/violation_key_test.exs:11
+     Assertion with == failed
+     code:  assert ViolationKey.graph_key(%{type: :layering, id: "web"}, "A.f/1", "-> B.g/0") == "web|A.f/1|-> B.g/0"
+     left:  "layering|A.f/1|-> B.g/0"
+     right: "web|A.f/1|-> B.g/0"
      stacktrace:
-       test/anchor/domain/violation_key_test.exs:26: (test)
+       test/anchor/domain/violation_key_test.exs:12: (test)
 ```
 
 ## RS-A — any enforcement token is accepted
@@ -377,128 +512,128 @@ Run summary: `6 tests, 4 failures`
 Run summary: `26 tests, 18 failures`
 
 ```text
-  1) test alphabetized_functions: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
-     test/anchor/domain/rule_checks_nothing_test.exs:46
-     alphabetized_functions / enforcement: warn (neither): RAISED: key "warn" not found in:
-     code: assert failures == [], Enum.join(failures, "\n")
-     stacktrace:
-       test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
-
-  2) test graph common keys: every rule that checks nothing is refused, the positive rows load (Anchor.Domain.RuleChecksNothingTest)
-     test/anchor/domain/rule_checks_nothing_test.exs:182
-     enforcement: warn: :ok
-     code: assert failures == [], Enum.join(failures, "\n")
-     stacktrace:
-       test/anchor/domain/rule_checks_nothing_test.exs:201: (test)
-
-  3) test struct_owned_by_module: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
-     test/anchor/domain/rule_checks_nothing_test.exs:46
-     struct_owned_by_module / enforcement: warn (neither): RAISED: key "warn" not found in:
-     code: assert failures == [], Enum.join(failures, "\n")
-     stacktrace:
-       test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
-
-  4) test no_discarded_pure_expression: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
-     test/anchor/domain/rule_checks_nothing_test.exs:46
-     no_discarded_pure_expression / enforcement: warn (neither): RAISED: key "warn" not found in:
-     code: assert failures == [], Enum.join(failures, "\n")
-     stacktrace:
-       test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
-
-  5) test no_direct_dependency: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
-     test/anchor/domain/rule_checks_nothing_test.exs:46
-     no_direct_dependency / enforcement: warn (neither): RAISED: key "warn" not found in:
-     code: assert failures == [], Enum.join(failures, "\n")
-     stacktrace:
-       test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
-
-  6) test no_tuple_match_in_head: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
-     test/anchor/domain/rule_checks_nothing_test.exs:46
-     no_tuple_match_in_head / enforcement: warn (neither): RAISED: key "warn" not found in:
-     code: assert failures == [], Enum.join(failures, "\n")
-     stacktrace:
-       test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
-
-  7) test context_acyclic: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
-     test/anchor/domain/rule_checks_nothing_test.exs:46
-     context_acyclic / enforcement: warn: RAISED: key "warn" not found in:
-     code: assert failures == [], Enum.join(failures, "\n")
-     stacktrace:
-       test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
-
-  8) test must_use_module: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
-     test/anchor/domain/rule_checks_nothing_test.exs:46
-     must_use_module / enforcement: warn (neither): RAISED: key "warn" not found in:
-     code: assert failures == [], Enum.join(failures, "\n")
-     stacktrace:
-       test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
-
-  9) test case_on_bare_arg: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
-     test/anchor/domain/rule_checks_nothing_test.exs:46
-     case_on_bare_arg / enforcement: warn (neither): RAISED: key "warn" not found in:
-     code: assert failures == [], Enum.join(failures, "\n")
-     stacktrace:
-       test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
-
- 10) test no_forwarding_function: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+  1) test no_forwarding_function: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
      test/anchor/domain/rule_checks_nothing_test.exs:46
      no_forwarding_function / enforcement: warn (neither): RAISED: key "warn" not found in:
      code: assert failures == [], Enum.join(failures, "\n")
      stacktrace:
        test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
 
- 11) test single_control_flow: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+  2) test must_use_module: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
      test/anchor/domain/rule_checks_nothing_test.exs:46
-     single_control_flow / enforcement: warn (neither): RAISED: key "warn" not found in:
+     must_use_module / enforcement: warn (neither): RAISED: key "warn" not found in:
      code: assert failures == [], Enum.join(failures, "\n")
      stacktrace:
        test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
 
- 12) test max_file_length: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+  3) test max_file_length: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
      test/anchor/domain/rule_checks_nothing_test.exs:46
      max_file_length / enforcement: warn (neither): RAISED: key "warn" not found in:
      code: assert failures == [], Enum.join(failures, "\n")
      stacktrace:
        test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
 
- 13) test module_pattern_restrictions: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+  4) test alphabetized_functions: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
      test/anchor/domain/rule_checks_nothing_test.exs:46
-     module_pattern_restrictions / enforcement: warn (neither): RAISED: key "warn" not found in:
+     alphabetized_functions / enforcement: warn (neither): RAISED: key "warn" not found in:
      code: assert failures == [], Enum.join(failures, "\n")
      stacktrace:
        test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
 
- 14) test layering: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
-     test/anchor/domain/rule_checks_nothing_test.exs:46
-     layering / enforcement: warn: RAISED: key "warn" not found in:
-     code: assert failures == [], Enum.join(failures, "\n")
-     stacktrace:
-       test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
-
- 15) test no_comparison_in_if: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
-     test/anchor/domain/rule_checks_nothing_test.exs:46
-     no_comparison_in_if / enforcement: warn (neither): RAISED: key "warn" not found in:
-     code: assert failures == [], Enum.join(failures, "\n")
-     stacktrace:
-       test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
-
- 16) test no_discarding_arrow_in_with: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+  5) test no_discarding_arrow_in_with: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
      test/anchor/domain/rule_checks_nothing_test.exs:46
      no_discarding_arrow_in_with / enforcement: warn (neither): RAISED: key "warn" not found in:
      code: assert failures == [], Enum.join(failures, "\n")
      stacktrace:
        test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
 
- 17) test struct_getter_convention: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+  6) test no_direct_dependency: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+     test/anchor/domain/rule_checks_nothing_test.exs:46
+     no_direct_dependency / enforcement: warn (neither): RAISED: key "warn" not found in:
+     code: assert failures == [], Enum.join(failures, "\n")
+     stacktrace:
+       test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
+
+  7) test layering: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+     test/anchor/domain/rule_checks_nothing_test.exs:46
+     layering / enforcement: warn: RAISED: key "warn" not found in:
+     code: assert failures == [], Enum.join(failures, "\n")
+     stacktrace:
+       test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
+
+  8) test case_on_bare_arg: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+     test/anchor/domain/rule_checks_nothing_test.exs:46
+     case_on_bare_arg / enforcement: warn (neither): RAISED: key "warn" not found in:
+     code: assert failures == [], Enum.join(failures, "\n")
+     stacktrace:
+       test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
+
+  9) test single_control_flow: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+     test/anchor/domain/rule_checks_nothing_test.exs:46
+     single_control_flow / enforcement: warn (neither): RAISED: key "warn" not found in:
+     code: assert failures == [], Enum.join(failures, "\n")
+     stacktrace:
+       test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
+
+ 10) test struct_getter_convention: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
      test/anchor/domain/rule_checks_nothing_test.exs:46
      struct_getter_convention / enforcement: warn (neither): RAISED: key "warn" not found in:
      code: assert failures == [], Enum.join(failures, "\n")
      stacktrace:
        test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
 
- 18) test no_transitive_dependency: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+ 11) test no_tuple_match_in_head: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+     test/anchor/domain/rule_checks_nothing_test.exs:46
+     no_tuple_match_in_head / enforcement: warn (neither): RAISED: key "warn" not found in:
+     code: assert failures == [], Enum.join(failures, "\n")
+     stacktrace:
+       test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
+
+ 12) test module_pattern_restrictions: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+     test/anchor/domain/rule_checks_nothing_test.exs:46
+     module_pattern_restrictions / enforcement: warn (neither): RAISED: key "warn" not found in:
+     code: assert failures == [], Enum.join(failures, "\n")
+     stacktrace:
+       test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
+
+ 13) test no_comparison_in_if: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+     test/anchor/domain/rule_checks_nothing_test.exs:46
+     no_comparison_in_if / enforcement: warn (neither): RAISED: key "warn" not found in:
+     code: assert failures == [], Enum.join(failures, "\n")
+     stacktrace:
+       test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
+
+ 14) test struct_owned_by_module: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+     test/anchor/domain/rule_checks_nothing_test.exs:46
+     struct_owned_by_module / enforcement: warn (neither): RAISED: key "warn" not found in:
+     code: assert failures == [], Enum.join(failures, "\n")
+     stacktrace:
+       test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
+
+ 15) test no_discarded_pure_expression: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+     test/anchor/domain/rule_checks_nothing_test.exs:46
+     no_discarded_pure_expression / enforcement: warn (neither): RAISED: key "warn" not found in:
+     code: assert failures == [], Enum.join(failures, "\n")
+     stacktrace:
+       test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
+
+ 16) test graph common keys: every rule that checks nothing is refused, the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+     test/anchor/domain/rule_checks_nothing_test.exs:182
+     enforcement: warn: :ok
+     code: assert failures == [], Enum.join(failures, "\n")
+     stacktrace:
+       test/anchor/domain/rule_checks_nothing_test.exs:201: (test)
+
+ 17) test no_transitive_dependency: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
      test/anchor/domain/rule_checks_nothing_test.exs:46
      no_transitive_dependency / enforcement: warn (neither): RAISED: key "warn" not found in:
+     code: assert failures == [], Enum.join(failures, "\n")
+     stacktrace:
+       test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
+
+ 18) test context_acyclic: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+     test/anchor/domain/rule_checks_nothing_test.exs:46
+     context_acyclic / enforcement: warn: RAISED: key "warn" not found in:
      code: assert failures == [], Enum.join(failures, "\n")
      stacktrace:
        test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
@@ -509,9 +644,9 @@ Run summary: `26 tests, 18 failures`
 Run summary: `26 tests, 3 failures`
 
 ```text
-  1) test context_acyclic: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+  1) test layering: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
      test/anchor/domain/rule_checks_nothing_test.exs:46
-     context_acyclic / baseline without id (entries start with it): LOADED: %Anchor.Config{rules: [%{id: nil, index: 1, ...}], ...}
+     layering / baseline without id (entries start with it): LOADED: %Anchor.Config{rules: [%{id: nil, index: 1, ...}], ...}
      code: assert failures == [], Enum.join(failures, "\n")
      stacktrace:
        test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
@@ -523,9 +658,9 @@ Run summary: `26 tests, 3 failures`
      stacktrace:
        test/anchor/domain/rule_checks_nothing_test.exs:201: (test)
 
-  3) test layering: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+  3) test context_acyclic: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
      test/anchor/domain/rule_checks_nothing_test.exs:46
-     layering / baseline without id (entries start with it): LOADED: %Anchor.Config{rules: [%{id: nil, index: 1, ...}], ...}
+     context_acyclic / baseline without id (entries start with it): LOADED: %Anchor.Config{rules: [%{id: nil, index: 1, ...}], ...}
      code: assert failures == [], Enum.join(failures, "\n")
      stacktrace:
        test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
@@ -573,65 +708,65 @@ Run summary: `26 tests, 15 failures`
      stacktrace:
        test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
 
-  2) test no_comparison_in_if: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
-     test/anchor/domain/rule_checks_nothing_test.exs:46
-     no_comparison_in_if / baseline on an ast rule (nothing reads it): wrong reason (want "`baseline` is read by graph rules only"): rule 1: unknown key "baseline" in a no_comparison_in_if rule (`baseline` applies to graph rules only); known keys for no_comparison_in_if: enforcement, id, min_files, paths, pattern, recursive, type, uses_module
-     code: assert failures == [], Enum.join(failures, "\n")
-     stacktrace:
-       test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
-
-  3) test struct_owned_by_module: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
-     test/anchor/domain/rule_checks_nothing_test.exs:46
-     struct_owned_by_module / baseline on an ast rule (nothing reads it): wrong reason (want "`baseline` is read by graph rules only"): rule 1: unknown key "baseline" in a struct_owned_by_module rule (`baseline` applies to graph rules only); known keys for struct_owned_by_module: enforcement, id, min_files, owned_namespaces, paths, pattern, recursive, type, uses_module
-     code: assert failures == [], Enum.join(failures, "\n")
-     stacktrace:
-       test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
-
-  4) test struct_getter_convention: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
-     test/anchor/domain/rule_checks_nothing_test.exs:46
-     struct_getter_convention / baseline on an ast rule (nothing reads it): wrong reason (want "`baseline` is read by graph rules only"): rule 1: unknown key "baseline" in a struct_getter_convention rule (`baseline` applies to graph rules only); known keys for struct_getter_convention: enforcement, id, min_files, paths, pattern, recursive, type, uses_module
-     code: assert failures == [], Enum.join(failures, "\n")
-     stacktrace:
-       test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
-
-  5) test no_forwarding_function: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
-     test/anchor/domain/rule_checks_nothing_test.exs:46
-     no_forwarding_function / baseline on an ast rule (nothing reads it): wrong reason (want "`baseline` is read by graph rules only"): rule 1: unknown key "baseline" in a no_forwarding_function rule (`baseline` applies to graph rules only); known keys for no_forwarding_function: enforcement, id, min_files, paths, pattern, recursive, type, uses_module
-     code: assert failures == [], Enum.join(failures, "\n")
-     stacktrace:
-       test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
-
-  6) test no_discarded_pure_expression: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
-     test/anchor/domain/rule_checks_nothing_test.exs:46
-     no_discarded_pure_expression / baseline on an ast rule (nothing reads it): wrong reason (want "`baseline` is read by graph rules only"): rule 1: unknown key "baseline" in a no_discarded_pure_expression rule (`baseline` applies to graph rules only); known keys for no_discarded_pure_expression: enforcement, id, min_files, paths, pattern, pure_patterns, recursive, type, uses_module
-     code: assert failures == [], Enum.join(failures, "\n")
-     stacktrace:
-       test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
-
-  7) test no_direct_dependency: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
-     test/anchor/domain/rule_checks_nothing_test.exs:46
-     no_direct_dependency / baseline on an ast rule (nothing reads it): wrong reason (want "`baseline` is read by graph rules only"): rule 1: unknown key "baseline" in a no_direct_dependency rule (`baseline` applies to graph rules only); known keys for no_direct_dependency: allowed_callers, context_depth, enforcement, forbidden_functions, forbidden_modules, forbidden_patterns, id, match, min_files, paths, pattern, recursive, same_context, type, uses_module
-     code: assert failures == [], Enum.join(failures, "\n")
-     stacktrace:
-       test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
-
-  8) test single_control_flow: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+  2) test single_control_flow: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
      test/anchor/domain/rule_checks_nothing_test.exs:46
      single_control_flow / baseline on an ast rule (nothing reads it): wrong reason (want "`baseline` is read by graph rules only"): rule 1: unknown key "baseline" in a single_control_flow rule (`baseline` applies to graph rules only); known keys for single_control_flow: enforcement, id, min_files, paths, pattern, recursive, type, uses_module
      code: assert failures == [], Enum.join(failures, "\n")
      stacktrace:
        test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
 
-  9) test alphabetized_functions: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+  3) test struct_getter_convention: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+     test/anchor/domain/rule_checks_nothing_test.exs:46
+     struct_getter_convention / baseline on an ast rule (nothing reads it): wrong reason (want "`baseline` is read by graph rules only"): rule 1: unknown key "baseline" in a struct_getter_convention rule (`baseline` applies to graph rules only); known keys for struct_getter_convention: enforcement, id, min_files, paths, pattern, recursive, type, uses_module
+     code: assert failures == [], Enum.join(failures, "\n")
+     stacktrace:
+       test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
+
+  4) test no_discarded_pure_expression: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+     test/anchor/domain/rule_checks_nothing_test.exs:46
+     no_discarded_pure_expression / baseline on an ast rule (nothing reads it): wrong reason (want "`baseline` is read by graph rules only"): rule 1: unknown key "baseline" in a no_discarded_pure_expression rule (`baseline` applies to graph rules only); known keys for no_discarded_pure_expression: enforcement, id, min_files, paths, pattern, pure_patterns, recursive, type, uses_module
+     code: assert failures == [], Enum.join(failures, "\n")
+     stacktrace:
+       test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
+
+  5) test alphabetized_functions: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
      test/anchor/domain/rule_checks_nothing_test.exs:46
      alphabetized_functions / baseline on an ast rule (nothing reads it): wrong reason (want "`baseline` is read by graph rules only"): rule 1: unknown key "baseline" in a alphabetized_functions rule (`baseline` applies to graph rules only); known keys for alphabetized_functions: enforcement, id, min_files, mode, paths, pattern, recursive, type, uses_module
      code: assert failures == [], Enum.join(failures, "\n")
      stacktrace:
        test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
 
- 10) test module_pattern_restrictions: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+  6) test no_forwarding_function: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
      test/anchor/domain/rule_checks_nothing_test.exs:46
-     module_pattern_restrictions / baseline on an ast rule (nothing reads it): wrong reason (want "`baseline` is read by graph rules only"): rule 1: unknown key "baseline" in a module_pattern_restrictions rule (`baseline` applies to graph rules only); known keys for module_pattern_restrictions: allowed_functions, enforcement, id, min_files, paths, pattern, recursive, type, uses_module
+     no_forwarding_function / baseline on an ast rule (nothing reads it): wrong reason (want "`baseline` is read by graph rules only"): rule 1: unknown key "baseline" in a no_forwarding_function rule (`baseline` applies to graph rules only); known keys for no_forwarding_function: enforcement, id, min_files, paths, pattern, recursive, type, uses_module
+     code: assert failures == [], Enum.join(failures, "\n")
+     stacktrace:
+       test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
+
+  7) test max_file_length: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+     test/anchor/domain/rule_checks_nothing_test.exs:46
+     max_file_length / baseline on an ast rule (nothing reads it): wrong reason (want "`baseline` is read by graph rules only"): rule 1: unknown key "baseline" in a max_file_length rule (`baseline` applies to graph rules only); known keys for max_file_length: enforcement, id, max_lines, min_files, paths, pattern, recursive, type, uses_module
+     code: assert failures == [], Enum.join(failures, "\n")
+     stacktrace:
+       test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
+
+  8) test no_comparison_in_if: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+     test/anchor/domain/rule_checks_nothing_test.exs:46
+     no_comparison_in_if / baseline on an ast rule (nothing reads it): wrong reason (want "`baseline` is read by graph rules only"): rule 1: unknown key "baseline" in a no_comparison_in_if rule (`baseline` applies to graph rules only); known keys for no_comparison_in_if: enforcement, id, min_files, paths, pattern, recursive, type, uses_module
+     code: assert failures == [], Enum.join(failures, "\n")
+     stacktrace:
+       test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
+
+  9) test no_transitive_dependency: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+     test/anchor/domain/rule_checks_nothing_test.exs:46
+     no_transitive_dependency / baseline on an ast rule (nothing reads it): wrong reason (want "`baseline` is read by graph rules only"): rule 1: unknown key "baseline" in a no_transitive_dependency rule (`baseline` applies to graph rules only); known keys for no_transitive_dependency: enforcement, forbidden_modules, forbidden_patterns, id, min_files, paths, pattern, recursive, type, uses_module
+     code: assert failures == [], Enum.join(failures, "\n")
+     stacktrace:
+       test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
+
+ 10) test must_use_module: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+     test/anchor/domain/rule_checks_nothing_test.exs:46
+     must_use_module / baseline on an ast rule (nothing reads it): wrong reason (want "`baseline` is read by graph rules only"): rule 1: unknown key "baseline" in a must_use_module rule (`baseline` applies to graph rules only); known keys for must_use_module: enforcement, id, min_files, paths, pattern, recursive, required_modules, type, uses_module
      code: assert failures == [], Enum.join(failures, "\n")
      stacktrace:
        test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
@@ -643,30 +778,30 @@ Run summary: `26 tests, 15 failures`
      stacktrace:
        test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
 
- 12) test must_use_module: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+ 12) test module_pattern_restrictions: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
      test/anchor/domain/rule_checks_nothing_test.exs:46
-     must_use_module / baseline on an ast rule (nothing reads it): wrong reason (want "`baseline` is read by graph rules only"): rule 1: unknown key "baseline" in a must_use_module rule (`baseline` applies to graph rules only); known keys for must_use_module: enforcement, id, min_files, paths, pattern, recursive, required_modules, type, uses_module
+     module_pattern_restrictions / baseline on an ast rule (nothing reads it): wrong reason (want "`baseline` is read by graph rules only"): rule 1: unknown key "baseline" in a module_pattern_restrictions rule (`baseline` applies to graph rules only); known keys for module_pattern_restrictions: allowed_functions, enforcement, id, min_files, paths, pattern, recursive, type, uses_module
      code: assert failures == [], Enum.join(failures, "\n")
      stacktrace:
        test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
 
- 13) test no_discarding_arrow_in_with: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+ 13) test no_direct_dependency: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+     test/anchor/domain/rule_checks_nothing_test.exs:46
+     no_direct_dependency / baseline on an ast rule (nothing reads it): wrong reason (want "`baseline` is read by graph rules only"): rule 1: unknown key "baseline" in a no_direct_dependency rule (`baseline` applies to graph rules only); known keys for no_direct_dependency: allowed_callers, context_depth, enforcement, forbidden_functions, forbidden_modules, forbidden_patterns, id, match, min_files, paths, pattern, recursive, same_context, type, uses_module
+     code: assert failures == [], Enum.join(failures, "\n")
+     stacktrace:
+       test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
+
+ 14) test no_discarding_arrow_in_with: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
      test/anchor/domain/rule_checks_nothing_test.exs:46
      no_discarding_arrow_in_with / baseline on an ast rule (nothing reads it): wrong reason (want "`baseline` is read by graph rules only"): rule 1: unknown key "baseline" in a no_discarding_arrow_in_with rule (`baseline` applies to graph rules only); known keys for no_discarding_arrow_in_with: enforcement, id, min_files, paths, pattern, recursive, type, uses_module
      code: assert failures == [], Enum.join(failures, "\n")
      stacktrace:
        test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
 
- 14) test max_file_length: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+ 15) test struct_owned_by_module: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
      test/anchor/domain/rule_checks_nothing_test.exs:46
-     max_file_length / baseline on an ast rule (nothing reads it): wrong reason (want "`baseline` is read by graph rules only"): rule 1: unknown key "baseline" in a max_file_length rule (`baseline` applies to graph rules only); known keys for max_file_length: enforcement, id, max_lines, min_files, paths, pattern, recursive, type, uses_module
-     code: assert failures == [], Enum.join(failures, "\n")
-     stacktrace:
-       test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
-
- 15) test no_transitive_dependency: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
-     test/anchor/domain/rule_checks_nothing_test.exs:46
-     no_transitive_dependency / baseline on an ast rule (nothing reads it): wrong reason (want "`baseline` is read by graph rules only"): rule 1: unknown key "baseline" in a no_transitive_dependency rule (`baseline` applies to graph rules only); known keys for no_transitive_dependency: enforcement, forbidden_modules, forbidden_patterns, id, min_files, paths, pattern, recursive, type, uses_module
+     struct_owned_by_module / baseline on an ast rule (nothing reads it): wrong reason (want "`baseline` is read by graph rules only"): rule 1: unknown key "baseline" in a struct_owned_by_module rule (`baseline` applies to graph rules only); known keys for struct_owned_by_module: enforcement, id, min_files, owned_namespaces, paths, pattern, recursive, type, uses_module
      code: assert failures == [], Enum.join(failures, "\n")
      stacktrace:
        test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
@@ -677,26 +812,26 @@ Run summary: `26 tests, 15 failures`
 Run summary: `26 tests, 3 failures`
 
 ```text
-  1) test graph common keys: every rule that checks nothing is refused, the positive rows load (Anchor.Domain.RuleChecksNothingTest)
-     test/anchor/domain/rule_checks_nothing_test.exs:182
-     min_modules: 0 (no floor): :ok
-     code: assert failures == [], Enum.join(failures, "\n")
-     stacktrace:
-       test/anchor/domain/rule_checks_nothing_test.exs:201: (test)
-
-  2) test layering: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+  1) test layering: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
      test/anchor/domain/rule_checks_nothing_test.exs:46
      layering / min_modules: 0 (no floor): LOADED: %Anchor.Config{rules: [%{id: nil, index: 1, ...}], ...}
      code: assert failures == [], Enum.join(failures, "\n")
      stacktrace:
        test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
 
-  3) test context_acyclic: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+  2) test context_acyclic: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
      test/anchor/domain/rule_checks_nothing_test.exs:46
      context_acyclic / min_modules: 0 (no floor): LOADED: %Anchor.Config{rules: [%{id: nil, index: 1, ...}], ...}
      code: assert failures == [], Enum.join(failures, "\n")
      stacktrace:
        test/anchor/domain/rule_checks_nothing_test.exs:52: (test)
+
+  3) test graph common keys: every rule that checks nothing is refused, the positive rows load (Anchor.Domain.RuleChecksNothingTest)
+     test/anchor/domain/rule_checks_nothing_test.exs:182
+     min_modules: 0 (no floor): :ok
+     code: assert failures == [], Enum.join(failures, "\n")
+     stacktrace:
+       test/anchor/domain/rule_checks_nothing_test.exs:201: (test)
 ```
 
 ## RS-F — a bucket naming no architecture bucket is accepted
@@ -822,24 +957,24 @@ Run summary: `33 tests, 1 failure`
               mode: nil,
               pattern: nil,
               recursive: false,
-              min_files: 1,
+              paths: ["lib/**/*.ex"],
+              enforcement: :enforce,
+              context_depth: 2,
+              same_context: false,
               bucket: nil,
               min_modules: nil,
-              enforcement: :enforce,
-              baseline: nil,
-              paths: ["lib/**/*.ex"],
               uses_module: nil,
+              max_lines: nil,
+              allowed_functions: [],
+              required_modules: [],
               forbidden_modules: [],
+              forbidden_patterns: [],
               forbidden_functions: [],
               allowed_callers: [],
-              required_modules: [],
-              forbidden_patterns: [],
-              allowed_functions: [],
               pure_patterns: [],
               owned_namespaces: nil,
-              max_lines: nil,
-              same_context: false,
-              context_depth: 2
+              min_files: 1,
+              baseline: nil
             }
      stacktrace:
        test/anchor/domain/rule_schema_test.exs:401: (test)
@@ -892,34 +1027,16 @@ Run summary: `28 tests, 1 failure`
 Run summary: `25 tests, 10 failures`
 
 ```text
-  1) test judge/4 two findings with one key and one entry: one held, one stands (multiset) (Anchor.Domain.EnforcementTest)
-     test/anchor/domain/enforcement_test.exs:56
-     Expected truthy, got false
-     code: assert length(standing) == 1 and length(held) == 1
-     stacktrace:
-       test/anchor/domain/enforcement_test.exs:60: (test)
-
-  2) test judge/4 positive control for GREW: the same files with nothing added give none (Anchor.Domain.EnforcementTest)
-     test/anchor/domain/enforcement_test.exs:82
+  1) test judge/4 a covered finding is held; an uncovered one (NEW) stands (Anchor.Domain.EnforcementTest)
+     test/anchor/domain/enforcement_test.exs:33
      Assertion with == failed
-     code:  assert standing == []
-     left:  [
-              %Anchor.Domain.GraphReport.Finding{
-                rule_id: "r",
-                type: :layering,
-                label: "rule 1 (id: \"r\", layering)",
-                enforcement: :enforce,
-                key: "r|A|x",
-                file: "lib/a.ex",
-                line: 3,
-                message: "r|A|x found. Fix: do not."
-              }
-            ]
-     right: []
+     code:  assert Enum.map(standing, & &1.key) == ["r|B|y"]
+     left:  ["r|B|y", "r|A|x"]
+     right: ["r|B|y"]
      stacktrace:
-       test/anchor/domain/enforcement_test.exs:91: (test)
+       test/anchor/domain/enforcement_test.exs:38: (test)
 
-  3) test judge/4 a baseline absent at the ref is a report-only first-landing NOTE (Anchor.Domain.EnforcementTest)
+  2) test judge/4 a baseline absent at the ref is a report-only first-landing NOTE (Anchor.Domain.EnforcementTest)
      test/anchor/domain/enforcement_test.exs:94
      ** (MatchError) no match of right hand side value:
 
@@ -960,59 +1077,38 @@ Run summary: `25 tests, 10 failures`
 
      ... (block cut at 40 lines)
 
-  4) test judge/4 a covered finding is held; an uncovered one (NEW) stands (Anchor.Domain.EnforcementTest)
-     test/anchor/domain/enforcement_test.exs:33
+  3) test judge/4 positive control for GREW: the same files with nothing added give none (Anchor.Domain.EnforcementTest)
+     test/anchor/domain/enforcement_test.exs:82
      Assertion with == failed
-     code:  assert Enum.map(standing, & &1.key) == ["r|B|y"]
-     left:  ["r|B|y", "r|A|x"]
-     right: ["r|B|y"]
-     stacktrace:
-       test/anchor/domain/enforcement_test.exs:38: (test)
-
-  5) test run/2 comparing with a baseline a report rule's STALE entry is reported, never failing (exit 0) (Anchor.Managers.GraphBaselineTest)
-     test/anchor/managers/graph_baseline_test.exs:151
-     match (=) failed
-     code:  assert [%{enforcement: :report, message: message}] = report.findings
-     left:  [%{enforcement: :report, message: message}]
-     right: [
+     code:  assert standing == []
+     left:  [
               %Anchor.Domain.GraphReport.Finding{
-                rule_id: "f",
-                type: :stub_finds,
-                label: "rule 1 (id: \"f\", stub_finds)",
-                enforcement: :report,
-                key: "f|AnchorFixtures.GraphBaselineTest.User|found",
-                file: "lib/my_app/domain/user.ex",
-                line: 2,
-                message: "AnchorFixtures.GraphBaselineTest.User was found. Fix: do not be found."
-              },
-              %Anchor.Domain.GraphReport.Finding{
-                rule_id: "f",
-                type: :stub_finds,
-                label: "rule 1 (id: \"f\", stub_finds)",
-                enforcement: :report,
-                key: "f|Gone|found",
-                file: ".anchor/baselines/f.txt",
-                line: nil,
-                message: "f|Gone|found in .anchor/baselines/f.txt matches no finding (it was fixed). Fix: delete that line from .anchor/baselines/f.txt; a baseline only shrinks."
+                rule_id: "r",
+                type: :layering,
+                label: "rule 1 (id: \"r\", layering)",
+                enforcement: :enforce,
+                key: "r|A|x",
+                file: "lib/a.ex",
+                line: 3,
+                message: "r|A|x found. Fix: do not."
               }
             ]
+     right: []
      stacktrace:
-       test/anchor/managers/graph_baseline_test.exs:158: (test)
+       test/anchor/domain/enforcement_test.exs:91: (test)
 
-  6) test run/2 --base REF (GREW) a baseline absent at REF is a first landing: a NOTE, exit 0 (Anchor.Managers.GraphBaselineTest)
-     test/anchor/managers/graph_baseline_test.exs:242
-     Assertion with == failed
-     code:  assert report.exit_code == 0
-     left:  1
-     right: 0
+  4) test judge/4 two findings with one key and one entry: one held, one stands (multiset) (Anchor.Domain.EnforcementTest)
+     test/anchor/domain/enforcement_test.exs:56
+     Expected truthy, got false
+     code: assert length(standing) == 1 and length(held) == 1
      stacktrace:
-       test/anchor/managers/graph_baseline_test.exs:249: (test)
+       test/anchor/domain/enforcement_test.exs:60: (test)
 
-  7) test run/2 --base REF (GREW) a baseline that only shrank since REF is not growth (Anchor.Managers.GraphBaselineTest)
-     test/anchor/managers/graph_baseline_test.exs:231
+  5) test run/2 comparing with a baseline a baseline holding exactly the finding's key: exit 0, held, counted (Anchor.Managers.GraphBaselineTest)
+     test/anchor/managers/graph_baseline_test.exs:114
      match (=) failed
-     code:  assert %{exit_code: 0, findings: []} = Graph.run(request(%{base: "main"}), deps())
-     left:  %{exit_code: 0, findings: []}
+     code:  assert %GraphReport{exit_code: 0, findings: [], held: [held]} = report
+     left:  %Anchor.Domain.GraphReport{exit_code: 0, findings: [], held: [held]}
      right: %Anchor.Domain.GraphReport{
               findings: [
                 %Anchor.Domain.GraphReport.Finding{
@@ -1044,9 +1140,9 @@ Run summary: `25 tests, 10 failures`
               exit_code: 1
             }
      stacktrace:
-       test/anchor/managers/graph_baseline_test.exs:239: (test)
+       test/anchor/managers/graph_baseline_test.exs:120: (test)
 
-  8) test run/2 comparing with a baseline an entry no finding consumes is STALE, on the baseline path (exit 1) (Anchor.Managers.GraphBaselineTest)
+  6) test run/2 comparing with a baseline an entry no finding consumes is STALE, on the baseline path (exit 1) (Anchor.Managers.GraphBaselineTest)
      test/anchor/managers/graph_baseline_test.exs:136
      match (=) failed
      code:  assert [stale] = report.findings
@@ -1076,7 +1172,7 @@ Run summary: `25 tests, 10 failures`
      stacktrace:
        test/anchor/managers/graph_baseline_test.exs:143: (test)
 
-  9) test run/2 --base REF (GREW) without --base, git is never asked (Anchor.Managers.GraphBaselineTest)
+  7) test run/2 --base REF (GREW) without --base, git is never asked (Anchor.Managers.GraphBaselineTest)
      test/anchor/managers/graph_baseline_test.exs:267
      match (=) failed
      code:  assert %{exit_code: 0} = Graph.run(request(), deps())
@@ -1114,11 +1210,11 @@ Run summary: `25 tests, 10 failures`
      stacktrace:
        test/anchor/managers/graph_baseline_test.exs:272: (test)
 
- 10) test run/2 comparing with a baseline a baseline holding exactly the finding's key: exit 0, held, counted (Anchor.Managers.GraphBaselineTest)
-     test/anchor/managers/graph_baseline_test.exs:114
+  8) test run/2 --base REF (GREW) a baseline that only shrank since REF is not growth (Anchor.Managers.GraphBaselineTest)
+     test/anchor/managers/graph_baseline_test.exs:231
      match (=) failed
-     code:  assert %GraphReport{exit_code: 0, findings: [], held: [held]} = report
-     left:  %Anchor.Domain.GraphReport{exit_code: 0, findings: [], held: [held]}
+     code:  assert %{exit_code: 0, findings: []} = Graph.run(request(%{base: "main"}), deps())
+     left:  %{exit_code: 0, findings: []}
      right: %Anchor.Domain.GraphReport{
               findings: [
                 %Anchor.Domain.GraphReport.Finding{
@@ -1150,8 +1246,46 @@ Run summary: `25 tests, 10 failures`
               exit_code: 1
             }
      stacktrace:
-       test/anchor/managers/graph_baseline_test.exs:120: (test)
-     ... (block cut at 40 lines)
+       test/anchor/managers/graph_baseline_test.exs:239: (test)
+
+  9) test run/2 --base REF (GREW) a baseline absent at REF is a first landing: a NOTE, exit 0 (Anchor.Managers.GraphBaselineTest)
+     test/anchor/managers/graph_baseline_test.exs:242
+     Assertion with == failed
+     code:  assert report.exit_code == 0
+     left:  1
+     right: 0
+     stacktrace:
+       test/anchor/managers/graph_baseline_test.exs:249: (test)
+
+ 10) test run/2 comparing with a baseline a report rule's STALE entry is reported, never failing (exit 0) (Anchor.Managers.GraphBaselineTest)
+     test/anchor/managers/graph_baseline_test.exs:151
+     match (=) failed
+     code:  assert [%{enforcement: :report, message: message}] = report.findings
+     left:  [%{enforcement: :report, message: message}]
+     right: [
+              %Anchor.Domain.GraphReport.Finding{
+                rule_id: "f",
+                type: :stub_finds,
+                label: "rule 1 (id: \"f\", stub_finds)",
+                enforcement: :report,
+                key: "f|AnchorFixtures.GraphBaselineTest.User|found",
+                file: "lib/my_app/domain/user.ex",
+                line: 2,
+                message: "AnchorFixtures.GraphBaselineTest.User was found. Fix: do not be found."
+              },
+              %Anchor.Domain.GraphReport.Finding{
+                rule_id: "f",
+                type: :stub_finds,
+                label: "rule 1 (id: \"f\", stub_finds)",
+                enforcement: :report,
+                key: "f|Gone|found",
+                file: ".anchor/baselines/f.txt",
+                line: nil,
+                message: "f|Gone|found in .anchor/baselines/f.txt matches no finding (it was fixed). Fix: delete that line from .anchor/baselines/f.txt; a baseline only shrinks."
+              }
+            ]
+     stacktrace:
+       test/anchor/managers/graph_baseline_test.exs:158: (test)
 ```
 
 ## EN-B — STALE entries are dropped
@@ -1159,17 +1293,7 @@ Run summary: `25 tests, 10 failures`
 Run summary: `25 tests, 4 failures`
 
 ```text
-  1) test judge/4 a report rule's STALE entry is :report (Anchor.Domain.EnforcementTest)
-     test/anchor/domain/enforcement_test.exs:51
-     ** (MatchError) no match of right hand side value:
-
-         {[], []}
-
-     code: {[stale], []} = Enforcement.judge([], ["r|Gone|x"], nil, context(rule(:report)))
-     stacktrace:
-       test/anchor/domain/enforcement_test.exs:52: (test)
-
-  2) test judge/4 an entry no finding consumes is a STALE finding on the baseline path (Anchor.Domain.EnforcementTest)
+  1) test judge/4 an entry no finding consumes is a STALE finding on the baseline path (Anchor.Domain.EnforcementTest)
      test/anchor/domain/enforcement_test.exs:41
      ** (MatchError) no match of right hand side value:
 
@@ -1178,6 +1302,16 @@ Run summary: `25 tests, 4 failures`
      code: {[stale], []} = Enforcement.judge([], ["r|Gone|x"], nil, context())
      stacktrace:
        test/anchor/domain/enforcement_test.exs:42: (test)
+
+  2) test judge/4 a report rule's STALE entry is :report (Anchor.Domain.EnforcementTest)
+     test/anchor/domain/enforcement_test.exs:51
+     ** (MatchError) no match of right hand side value:
+
+         {[], []}
+
+     code: {[stale], []} = Enforcement.judge([], ["r|Gone|x"], nil, context(rule(:report)))
+     stacktrace:
+       test/anchor/domain/enforcement_test.exs:52: (test)
 
   3) test run/2 comparing with a baseline an entry no finding consumes is STALE, on the baseline path (exit 1) (Anchor.Managers.GraphBaselineTest)
      test/anchor/managers/graph_baseline_test.exs:136
@@ -1292,7 +1426,22 @@ Run summary: `17 tests, 4 failures`
      stacktrace:
        test/anchor/managers/graph_baseline_test.exs:184: (test)
 
-  2) test run/2 comparing with a baseline a missing baseline is an issue on its path; the finding stands (exit 1) (Anchor.Managers.GraphBaselineTest)
+  2) test run/2 comparing with a baseline a baseline holding another rule's entry is an issue; nothing is held (Anchor.Managers.GraphBaselineTest)
+     test/anchor/managers/graph_baseline_test.exs:188
+     Expected truthy, got false
+     code: assert Enum.any?(messages(report), &(&1 =~ ~s(holds "other|X|found", an entry of another)))
+     arguments:
+
+         # 1
+         ["AnchorFixtures.GraphBaselineTest.User was found. Fix: do not be found."]
+
+         # 2
+         #Function<19.102768249/1 in Anchor.Managers.GraphBaselineTest."test run/2 comparing with a baseline a baseline holding another rule's entry is an issue; nothing is held"/1>
+
+     stacktrace:
+       test/anchor/managers/graph_baseline_test.exs:196: (test)
+
+  3) test run/2 comparing with a baseline a missing baseline is an issue on its path; the finding stands (exit 1) (Anchor.Managers.GraphBaselineTest)
      test/anchor/managers/graph_baseline_test.exs:162
      match (=) failed
      code:  assert [finding, issue] = report.findings
@@ -1311,21 +1460,6 @@ Run summary: `17 tests, 4 failures`
             ]
      stacktrace:
        test/anchor/managers/graph_baseline_test.exs:169: (test)
-
-  3) test run/2 comparing with a baseline a baseline holding another rule's entry is an issue; nothing is held (Anchor.Managers.GraphBaselineTest)
-     test/anchor/managers/graph_baseline_test.exs:188
-     Expected truthy, got false
-     code: assert Enum.any?(messages(report), &(&1 =~ ~s(holds "other|X|found", an entry of another)))
-     arguments:
-
-         # 1
-         ["AnchorFixtures.GraphBaselineTest.User was found. Fix: do not be found."]
-
-         # 2
-         #Function<19.102768249/1 in Anchor.Managers.GraphBaselineTest."test run/2 comparing with a baseline a baseline holding another rule's entry is an issue; nothing is held"/1>
-
-     stacktrace:
-       test/anchor/managers/graph_baseline_test.exs:196: (test)
 
   4) test run/2 --base REF (GREW) a failed read at REF is an issue naming the ref, never no growth (exit 1) (Anchor.Managers.GraphBaselineTest)
      test/anchor/managers/graph_baseline_test.exs:254
@@ -1350,7 +1484,7 @@ Run summary: `17 tests, 1 failure`
 ```text
   1) test run/2 --write-baseline RULE_ID an id naming no rule with a baseline is refused (exit 2) before any beam is read (Anchor.Managers.GraphBaselineTest)
      test/anchor/managers/graph_baseline_test.exs:307
-     ** (Mox.UnexpectedCallError) expected Anchor.BeamSourceMock.read_ebins/1 to be called 0 times but it has been called once in process #PID<0.295.0>
+     ** (Mox.UnexpectedCallError) expected Anchor.BeamSourceMock.read_ebins/1 to be called 0 times but it has been called once in process #PID<0.1051.0>
      code: report = Graph.run(request(%{write_baseline: "f"}), deps())
      stacktrace:
        (mox 1.2.0) lib/mox.ex:909: Mox.__dispatch__/4
@@ -1364,36 +1498,16 @@ Run summary: `17 tests, 1 failure`
 Run summary: `25 tests, 18 failures`
 
 ```text
-  1) test run/2 comparing with a baseline a missing baseline is an issue on its path; the finding stands (exit 1) (Anchor.Managers.GraphBaselineTest)
-     test/anchor/managers/graph_baseline_test.exs:162
-     match (=) failed
-     code:  assert [finding, issue] = report.findings
-     left:  [finding, issue]
-     right: [
-              %Anchor.Domain.GraphReport.Finding{
-                rule_id: "f",
-                type: :stub_finds,
-                label: "rule 1 (id: \"f\", stub_finds)",
-                enforcement: :enforce,
-                key: "f|AnchorFixtures.GraphBaselineTest.User|found",
-                file: "lib/my_app/domain/user.ex",
-                line: 2,
-                message: "AnchorFixtures.GraphBaselineTest.User was found. Fix: do not be found."
-              }
-            ]
-     stacktrace:
-       test/anchor/managers/graph_baseline_test.exs:169: (test)
-
-  2) test run/2 --write-baseline RULE_ID creates the rule's baseline from its keys, sorted under the header; held, exit 0 (Anchor.Managers.GraphBaselineTest)
-     test/anchor/managers/graph_baseline_test.exs:277
+  1) test run/2 comparing with a baseline an entry no finding consumes is STALE, on the baseline path (exit 1) (Anchor.Managers.GraphBaselineTest)
+     test/anchor/managers/graph_baseline_test.exs:136
      Assertion with == failed
-     code:  assert report.exit_code == 0
-     left:  1
-     right: 0
+     code:  assert stale.file == @path
+     left:  "lib/my_app/domain/user.ex"
+     right: ".anchor/baselines/f.txt"
      stacktrace:
-       test/anchor/managers/graph_baseline_test.exs:290: (test)
+       test/anchor/managers/graph_baseline_test.exs:144: (test)
 
-  3) test run/2 comparing with a baseline a report rule's STALE entry is reported, never failing (exit 0) (Anchor.Managers.GraphBaselineTest)
+  2) test run/2 comparing with a baseline a report rule's STALE entry is reported, never failing (exit 0) (Anchor.Managers.GraphBaselineTest)
      test/anchor/managers/graph_baseline_test.exs:151
      Assertion with =~ failed
      code:  assert message =~ "Fix: delete that line"
@@ -1401,6 +1515,15 @@ Run summary: `25 tests, 18 failures`
      right: "Fix: delete that line"
      stacktrace:
        test/anchor/managers/graph_baseline_test.exs:159: (test)
+
+  3) test run/2 --base REF (GREW) an entry the branch added since REF fails as GREW (exit 1) (Anchor.Managers.GraphBaselineTest)
+     test/anchor/managers/graph_baseline_test.exs:218
+     match (=) failed
+     code:  assert [%{file: @path, key: "f|Added|found", enforcement: :enforce}] = grew
+     left:  [%{file: ".anchor/baselines/f.txt", key: "f|Added|found", enforcement: :enforce}]
+     right: []
+     stacktrace:
+       test/anchor/managers/graph_baseline_test.exs:227: (test)
 
   4) test run/2 --base REF (GREW) a failed read at REF is an issue naming the ref, never no growth (exit 1) (Anchor.Managers.GraphBaselineTest)
      test/anchor/managers/graph_baseline_test.exs:254
@@ -1417,66 +1540,7 @@ Run summary: `25 tests, 18 failures`
      stacktrace:
        test/anchor/managers/graph_baseline_test.exs:264: (test)
 
-  5) test run/2 --base REF (GREW) a baseline absent at REF is a first landing: a NOTE, exit 0 (Anchor.Managers.GraphBaselineTest)
-     test/anchor/managers/graph_baseline_test.exs:242
-     Assertion with == failed
-     code:  assert report.exit_code == 0
-     left:  1
-     right: 0
-     stacktrace:
-       test/anchor/managers/graph_baseline_test.exs:249: (test)
-
-  6) test run/2 comparing with a baseline an entry no finding consumes is STALE, on the baseline path (exit 1) (Anchor.Managers.GraphBaselineTest)
-     test/anchor/managers/graph_baseline_test.exs:136
-     Assertion with == failed
-     code:  assert stale.file == @path
-     left:  "lib/my_app/domain/user.ex"
-     right: ".anchor/baselines/f.txt"
-     stacktrace:
-       test/anchor/managers/graph_baseline_test.exs:144: (test)
-
-  7) test run/2 --base REF (GREW) an entry the branch added since REF fails as GREW (exit 1) (Anchor.Managers.GraphBaselineTest)
-     test/anchor/managers/graph_baseline_test.exs:218
-     match (=) failed
-     code:  assert [%{file: @path, key: "f|Added|found", enforcement: :enforce}] = grew
-     left:  [%{file: ".anchor/baselines/f.txt", key: "f|Added|found", enforcement: :enforce}]
-     right: []
-     stacktrace:
-       test/anchor/managers/graph_baseline_test.exs:227: (test)
-
-  8) test run/2 comparing with a baseline a baseline line that is not UTF-8 is an issue on that line (Anchor.Managers.GraphBaselineTest)
-     test/anchor/managers/graph_baseline_test.exs:177
-     match (=) failed
-     code:  assert [%{key: @key}, %{file: @path, line: 2, message: message}] = report.findings
-     left:  [
-              %{key: "f|AnchorFixtures.GraphBaselineTest.User|found"},
-              %{file: ".anchor/baselines/f.txt", line: 2, message: message}
-            ]
-     right: [
-              %Anchor.Domain.GraphReport.Finding{
-                rule_id: "f",
-                type: :stub_finds,
-                label: "rule 1 (id: \"f\", stub_finds)",
-                enforcement: :enforce,
-                key: "f|AnchorFixtures.GraphBaselineTest.User|found",
-                file: "lib/my_app/domain/user.ex",
-                line: 2,
-                message: "AnchorFixtures.GraphBaselineTest.User was found. Fix: do not be found."
-              }
-            ]
-     stacktrace:
-       test/anchor/managers/graph_baseline_test.exs:184: (test)
-
-  9) test run/2 --write-baseline RULE_ID an existing file is refused (exit 2), and the findings stand (Anchor.Managers.GraphBaselineTest)
-     test/anchor/managers/graph_baseline_test.exs:295
-     Assertion with == failed
-     code:  assert report.exit_code == 2
-     left:  1
-     right: 2
-     stacktrace:
-       test/anchor/managers/graph_baseline_test.exs:301: (test)
-
- 10) test run/2 --base REF (GREW) a baseline that only shrank since REF is not growth (Anchor.Managers.GraphBaselineTest)
+  5) test run/2 --base REF (GREW) a baseline that only shrank since REF is not growth (Anchor.Managers.GraphBaselineTest)
      test/anchor/managers/graph_baseline_test.exs:231
      match (=) failed
      code:  assert %{exit_code: 0, findings: []} = Graph.run(request(%{base: "main"}), deps())
@@ -1503,20 +1567,52 @@ Run summary: `25 tests, 18 failures`
      stacktrace:
        test/anchor/managers/graph_baseline_test.exs:239: (test)
 
- 11) test run/2 comparing with a baseline a rule with no baseline never reads one (Anchor.Managers.GraphBaselineTest)
-     test/anchor/managers/graph_baseline_test.exs:199
-     ** (Mox.UnexpectedCallError) expected Anchor.BaselineStoreMock.read/2 to be called 0 times but it has been called once in process #PID<0.305.0>
-     code: assert %{exit_code: 1, held: []} = Graph.run(request(), deps())
+  6) test run/2 --base REF (GREW) without --base, git is never asked (Anchor.Managers.GraphBaselineTest)
+     test/anchor/managers/graph_baseline_test.exs:267
+     match (=) failed
+     code:  assert %{exit_code: 0} = Graph.run(request(), deps())
+     left:  %{exit_code: 0}
+     right: %Anchor.Domain.GraphReport{
+              findings: [
+                %Anchor.Domain.GraphReport.Finding{
+                  rule_id: "f",
+                  type: :stub_finds,
+                  label: "rule 1 (id: \"f\", stub_finds)",
+                  enforcement: :enforce,
+                  key: "f|AnchorFixtures.GraphBaselineTest.User|found",
+                  file: "lib/my_app/domain/user.ex",
+                  line: 2,
+                  message: "AnchorFixtures.GraphBaselineTest.User was found. Fix: do not be found."
+                }
+              ],
+              could_not_check: [],
+              held: [],
+              refused: [],
+              counts: %{modules: 1, opaque: 0, apps: 1, rules: 1},
+              exit_code: 1
+            }
      stacktrace:
-       (mox 1.2.0) lib/mox.ex:909: Mox.__dispatch__/4
-       (anchor 0.1.0) lib/anchor/managers/graph.ex:288: Anchor.Managers.Graph.read_entries/4
-       (anchor 0.1.0) lib/anchor/managers/graph.ex:275: Anchor.Managers.Graph.compare_baseline/5
-       (anchor 0.1.0) lib/anchor/managers/graph.ex:253: Anchor.Managers.Graph.run_rule/5
-       (elixir 1.19.4) lib/enum.ex:1688: Enum."-map/2-lists^map/1-1-"/2
-       (anchor 0.1.0) lib/anchor/managers/graph.ex:181: Anchor.Managers.Graph.measured/5
-       test/anchor/managers/graph_baseline_test.exs:203: (test)
+       test/anchor/managers/graph_baseline_test.exs:272: (test)
 
- 12) test run/2 comparing with a baseline a baseline holding another rule's entry is an issue; nothing is held (Anchor.Managers.GraphBaselineTest)
+  7) test run/2 --base REF (GREW) a baseline absent at REF is a first landing: a NOTE, exit 0 (Anchor.Managers.GraphBaselineTest)
+     test/anchor/managers/graph_baseline_test.exs:242
+     Assertion with == failed
+     code:  assert report.exit_code == 0
+     left:  1
+     right: 0
+     stacktrace:
+       test/anchor/managers/graph_baseline_test.exs:249: (test)
+
+  8) test run/2 --write-baseline RULE_ID an existing file is refused (exit 2), and the findings stand (Anchor.Managers.GraphBaselineTest)
+     test/anchor/managers/graph_baseline_test.exs:295
+     Assertion with == failed
+     code:  assert report.exit_code == 2
+     left:  1
+     right: 2
+     stacktrace:
+       test/anchor/managers/graph_baseline_test.exs:301: (test)
+
+  9) test run/2 comparing with a baseline a baseline holding another rule's entry is an issue; nothing is held (Anchor.Managers.GraphBaselineTest)
      test/anchor/managers/graph_baseline_test.exs:188
      Expected truthy, got false
      code: assert Enum.any?(messages(report), &(&1 =~ ~s(holds "other|X|found", an entry of another)))
@@ -1530,6 +1626,62 @@ Run summary: `25 tests, 18 failures`
 
      stacktrace:
        test/anchor/managers/graph_baseline_test.exs:196: (test)
+
+ 10) test run/2 comparing with a baseline a missing baseline is an issue on its path; the finding stands (exit 1) (Anchor.Managers.GraphBaselineTest)
+     test/anchor/managers/graph_baseline_test.exs:162
+     match (=) failed
+     code:  assert [finding, issue] = report.findings
+     left:  [finding, issue]
+     right: [
+              %Anchor.Domain.GraphReport.Finding{
+                rule_id: "f",
+                type: :stub_finds,
+                label: "rule 1 (id: \"f\", stub_finds)",
+                enforcement: :enforce,
+                key: "f|AnchorFixtures.GraphBaselineTest.User|found",
+                file: "lib/my_app/domain/user.ex",
+                line: 2,
+                message: "AnchorFixtures.GraphBaselineTest.User was found. Fix: do not be found."
+              }
+            ]
+     stacktrace:
+       test/anchor/managers/graph_baseline_test.exs:169: (test)
+
+ 11) test run/2 comparing with a baseline a rule with no baseline never reads one (Anchor.Managers.GraphBaselineTest)
+     test/anchor/managers/graph_baseline_test.exs:199
+     ** (Mox.UnexpectedCallError) expected Anchor.BaselineStoreMock.read/2 to be called 0 times but it has been called once in process #PID<0.1068.0>
+     code: assert %{exit_code: 1, held: []} = Graph.run(request(), deps())
+     stacktrace:
+       (mox 1.2.0) lib/mox.ex:909: Mox.__dispatch__/4
+       (anchor 0.1.0) lib/anchor/managers/graph.ex:288: Anchor.Managers.Graph.read_entries/4
+       (anchor 0.1.0) lib/anchor/managers/graph.ex:275: Anchor.Managers.Graph.compare_baseline/5
+       (anchor 0.1.0) lib/anchor/managers/graph.ex:253: Anchor.Managers.Graph.run_rule/5
+       (elixir 1.19.4) lib/enum.ex:1688: Enum."-map/2-lists^map/1-1-"/2
+       (anchor 0.1.0) lib/anchor/managers/graph.ex:181: Anchor.Managers.Graph.measured/5
+       test/anchor/managers/graph_baseline_test.exs:203: (test)
+
+ 12) test run/2 comparing with a baseline a baseline line that is not UTF-8 is an issue on that line (Anchor.Managers.GraphBaselineTest)
+     test/anchor/managers/graph_baseline_test.exs:177
+     match (=) failed
+     code:  assert [%{key: @key}, %{file: @path, line: 2, message: message}] = report.findings
+     left:  [
+              %{key: "f|AnchorFixtures.GraphBaselineTest.User|found"},
+              %{file: ".anchor/baselines/f.txt", line: 2, message: message}
+            ]
+     right: [
+              %Anchor.Domain.GraphReport.Finding{
+                rule_id: "f",
+                type: :stub_finds,
+                label: "rule 1 (id: \"f\", stub_finds)",
+                enforcement: :enforce,
+                key: "f|AnchorFixtures.GraphBaselineTest.User|found",
+                file: "lib/my_app/domain/user.ex",
+                line: 2,
+                message: "AnchorFixtures.GraphBaselineTest.User was found. Fix: do not be found."
+              }
+            ]
+     stacktrace:
+       test/anchor/managers/graph_baseline_test.exs:184: (test)
 
  13) test run/2 comparing with a baseline a baseline holding exactly the finding's key: exit 0, held, counted (Anchor.Managers.GraphBaselineTest)
      test/anchor/managers/graph_baseline_test.exs:114
@@ -1558,36 +1710,18 @@ Run summary: `25 tests, 18 failures`
      stacktrace:
        test/anchor/managers/graph_baseline_test.exs:120: (test)
 
- 14) test run/2 --base REF (GREW) without --base, git is never asked (Anchor.Managers.GraphBaselineTest)
-     test/anchor/managers/graph_baseline_test.exs:267
-     match (=) failed
-     code:  assert %{exit_code: 0} = Graph.run(request(), deps())
-     left:  %{exit_code: 0}
-     right: %Anchor.Domain.GraphReport{
-              findings: [
-                %Anchor.Domain.GraphReport.Finding{
-                  rule_id: "f",
-                  type: :stub_finds,
-                  label: "rule 1 (id: \"f\", stub_finds)",
-                  enforcement: :enforce,
-                  key: "f|AnchorFixtures.GraphBaselineTest.User|found",
-                  file: "lib/my_app/domain/user.ex",
-                  line: 2,
-                  message: "AnchorFixtures.GraphBaselineTest.User was found. Fix: do not be found."
-                }
-              ],
-              could_not_check: [],
-              held: [],
-              refused: [],
-              counts: %{modules: 1, opaque: 0, apps: 1, rules: 1},
-              exit_code: 1
-            }
+ 14) test run/2 --write-baseline RULE_ID creates the rule's baseline from its keys, sorted under the header; held, exit 0 (Anchor.Managers.GraphBaselineTest)
+     test/anchor/managers/graph_baseline_test.exs:277
+     Assertion with == failed
+     code:  assert report.exit_code == 0
+     left:  1
+     right: 0
      stacktrace:
-       test/anchor/managers/graph_baseline_test.exs:272: (test)
+       test/anchor/managers/graph_baseline_test.exs:290: (test)
 
  15) test run/2 comparing with a baseline a finding no entry covers is NEW: it stands and fails (exit 1) (Anchor.Managers.GraphBaselineTest)
      test/anchor/managers/graph_baseline_test.exs:125
-     ** (Mox.VerificationError) error while verifying mocks for #PID<0.318.0>:
+     ** (Mox.VerificationError) error while verifying mocks for #PID<0.1086.0>:
 
        * expected Anchor.BaselineStoreMock.read/2 to be invoked once but it was invoked 0 times
      stacktrace:
@@ -1596,14 +1730,17 @@ Run summary: `25 tests, 18 failures`
        (ex_unit 1.19.4) lib/ex_unit/on_exit_handler.ex:140: ExUnit.OnExitHandler.exec_callback/1
        (ex_unit 1.19.4) lib/ex_unit/on_exit_handler.ex:126: ExUnit.OnExitHandler.on_exit_runner_loop/0
 
- 16) test baseline flags --base REF reads the baseline at REF; a growth fails with GREW (Mix.Tasks.Anchor.GraphTest)
-     test/mix/tasks/anchor_graph_test.exs:161
-     Assertion with =~ failed
-     code:  assert output =~ "a|Extra|x was added to .anchor/baselines/a.txt since origin/main."
-     left:  "lib/app/domain/thing.ex:2: [enforce] rule 1 (id: \"a\", stub_finds) AnchorFixtures.AnchorGraphTaskTest.Thing was found. Fix: do not be found.\nanchor.graph: 1 modules in 1 apps, 1 rules, 1 violations (0 report-only, 0 baselined)\n"
-     right: "a|Extra|x was added to .anchor/baselines/a.txt since origin/main."
+ 16) test baseline flags --write-baseline RULE_ID creates the file; held findings print with --verbose (Mix.Tasks.Anchor.GraphTest)
+     test/mix/tasks/anchor_graph_test.exs:180
+     ** (exit) shutdown: 1
+     code: capture_io(fn ->
      stacktrace:
-       test/mix/tasks/anchor_graph_test.exs:177: (test)
+       (anchor 0.1.0) lib/mix/tasks/anchor.graph.ex:140: Mix.Tasks.Anchor.Graph.finish/1
+       test/mix/tasks/anchor_graph_test.exs:192: anonymous fn/0 in Mix.Tasks.Anchor.GraphTest."test baseline flags --write-baseline RULE_ID creates the file; held findings print with --verbose"/1
+       (ex_unit 1.19.4) lib/ex_unit/capture_io.ex:325: ExUnit.CaptureIO.do_capture_gl/2
+       (ex_unit 1.19.4) lib/ex_unit/capture_io.ex:283: ExUnit.CaptureIO.do_with_io/3
+       (ex_unit 1.19.4) lib/ex_unit/capture_io.ex:152: ExUnit.CaptureIO.capture_io/1
+       test/mix/tasks/anchor_graph_test.exs:191: (test)
 
  17) test baseline flags --write-baseline over an existing file exits 2 (Mix.Tasks.Anchor.GraphTest)
      test/mix/tasks/anchor_graph_test.exs:200
@@ -1617,17 +1754,14 @@ Run summary: `25 tests, 18 failures`
        (ex_unit 1.19.4) lib/ex_unit/capture_io.ex:152: ExUnit.CaptureIO.capture_io/1
        test/mix/tasks/anchor_graph_test.exs:208: (test)
 
- 18) test baseline flags --write-baseline RULE_ID creates the file; held findings print with --verbose (Mix.Tasks.Anchor.GraphTest)
-     test/mix/tasks/anchor_graph_test.exs:180
-     ** (exit) shutdown: 1
-     code: capture_io(fn ->
+ 18) test baseline flags --base REF reads the baseline at REF; a growth fails with GREW (Mix.Tasks.Anchor.GraphTest)
+     test/mix/tasks/anchor_graph_test.exs:161
+     Assertion with =~ failed
+     code:  assert output =~ "a|Extra|x was added to .anchor/baselines/a.txt since origin/main."
+     left:  "lib/app/domain/thing.ex:2: [enforce] rule 1 (id: \"a\", stub_finds) AnchorFixtures.AnchorGraphTaskTest.Thing was found. Fix: do not be found.\nanchor.graph: 1 modules in 1 apps, 1 rules, 1 violations (0 report-only, 0 baselined)\n"
+     right: "a|Extra|x was added to .anchor/baselines/a.txt since origin/main."
      stacktrace:
-       (anchor 0.1.0) lib/mix/tasks/anchor.graph.ex:140: Mix.Tasks.Anchor.Graph.finish/1
-       test/mix/tasks/anchor_graph_test.exs:192: anonymous fn/0 in Mix.Tasks.Anchor.GraphTest."test baseline flags --write-baseline RULE_ID creates the file; held findings print with --verbose"/1
-       (ex_unit 1.19.4) lib/ex_unit/capture_io.ex:325: ExUnit.CaptureIO.do_capture_gl/2
-       (ex_unit 1.19.4) lib/ex_unit/capture_io.ex:283: ExUnit.CaptureIO.do_with_io/3
-       (ex_unit 1.19.4) lib/ex_unit/capture_io.ex:152: ExUnit.CaptureIO.capture_io/1
-       test/mix/tasks/anchor_graph_test.exs:191: (test)
+       test/mix/tasks/anchor_graph_test.exs:177: (test)
 ```
 
 ## MG-F — another rule's entries are accepted
@@ -1711,16 +1845,7 @@ Run summary: `39 tests, 5 failures`
             }
      ... (block cut at 40 lines)
 
-  3) test run/2 --write-baseline RULE_ID an existing file is refused (exit 2), and the findings stand (Anchor.Managers.GraphBaselineTest)
-     test/anchor/managers/graph_baseline_test.exs:295
-     Assertion with == failed
-     code:  assert report.exit_code == 2
-     left:  1
-     right: 2
-     stacktrace:
-       test/anchor/managers/graph_baseline_test.exs:301: (test)
-
-  4) test run/2 --write-baseline RULE_ID an id naming no rule with a baseline is refused (exit 2) before any beam is read (Anchor.Managers.GraphBaselineTest)
+  3) test run/2 --write-baseline RULE_ID an id naming no rule with a baseline is refused (exit 2) before any beam is read (Anchor.Managers.GraphBaselineTest)
      test/anchor/managers/graph_baseline_test.exs:307
      Assertion with == failed
      code:  assert report.exit_code == 2
@@ -1728,6 +1853,15 @@ Run summary: `39 tests, 5 failures`
      right: 2
      stacktrace:
        test/anchor/managers/graph_baseline_test.exs:314: (test)
+
+  4) test run/2 --write-baseline RULE_ID an existing file is refused (exit 2), and the findings stand (Anchor.Managers.GraphBaselineTest)
+     test/anchor/managers/graph_baseline_test.exs:295
+     Assertion with == failed
+     code:  assert report.exit_code == 2
+     left:  1
+     right: 2
+     stacktrace:
+       test/anchor/managers/graph_baseline_test.exs:301: (test)
 
   5) test baseline flags --write-baseline over an existing file exits 2 (Mix.Tasks.Anchor.GraphTest)
      test/mix/tasks/anchor_graph_test.exs:200
@@ -1857,16 +1991,7 @@ Run summary: `9 tests, 1 failure`
 Run summary: `9 tests, 2 failures`
 
 ```text
-  1) test an absolute path or a .. segment never reaches git (Anchor.Adapters.GitShowTest)
-     test/anchor/adapters/git_show_test.exs:112
-     match (=) failed
-     code:  assert {:ok, ["r|A|x"]} = GitShow.show(root, "main", ".anchor/baselines/r.txt")
-     left:  {:ok, ["r|A|x"]}
-     right: {:ok, ["r|A|x", "r|B|y"]}
-     stacktrace:
-       test/anchor/adapters/git_show_test.exs:116: (test)
-
-  2) test a committed file returns its bytes at the ref, not the working copy (Anchor.Adapters.GitShowTest)
+  1) test a committed file returns its bytes at the ref, not the working copy (Anchor.Adapters.GitShowTest)
      test/anchor/adapters/git_show_test.exs:42
      Assertion with == failed
      code:  assert GitShow.show(root, "main", ".anchor/baselines/r.txt") == {:ok, ["r|A|x"]}
@@ -1874,6 +1999,15 @@ Run summary: `9 tests, 2 failures`
      right: {:ok, ["r|A|x"]}
      stacktrace:
        test/anchor/adapters/git_show_test.exs:44: (test)
+
+  2) test an absolute path or a .. segment never reaches git (Anchor.Adapters.GitShowTest)
+     test/anchor/adapters/git_show_test.exs:112
+     match (=) failed
+     code:  assert {:ok, ["r|A|x"]} = GitShow.show(root, "main", ".anchor/baselines/r.txt")
+     left:  {:ok, ["r|A|x"]}
+     right: {:ok, ["r|A|x", "r|B|y"]}
+     stacktrace:
+       test/anchor/adapters/git_show_test.exs:116: (test)
 ```
 
 ## TK-A — --base never reaches the Manager
@@ -1898,7 +2032,7 @@ Run summary: `8 tests, 1 failure`
 ```text
   1) test an unknown flag, a bad format, an argument or a --base ref git must not see is usage: exit 2 with Fix: (Mix.Tasks.Anchor.GraphTest)
      test/mix/tasks/anchor_graph_test.exs:135
-     ** (Mox.UnexpectedCallError) no expectation defined for Anchor.ConfigLoaderMock.load/0 in process #PID<0.270.0> with args []
+     ** (Mox.UnexpectedCallError) no expectation defined for Anchor.ConfigLoaderMock.load/0 in process #PID<0.1048.0> with args []
      code: for argv <- [
      stacktrace:
        (mox 1.2.0) lib/mox.ex:903: Mox.__dispatch__/4
@@ -1966,14 +2100,14 @@ Run summary: `9 tests, 1 failure`
 Run summary: `9 tests, 3 failures`
 
 ```text
-  1) test a line that is not UTF-8 at the ref is its error, naming the line (Anchor.Adapters.GitShowTest)
-     test/anchor/adapters/git_show_test.exs:119
-     Assertion with == failed
-     code:  assert GitShow.show(root, "main", ".anchor/baselines/bad.txt") == {:error, {:line, 2, :invalid_utf8}}
-     left:  {:ok, [<<114, 124, 65, 124, 120, 10, 255, 10>>]}
-     right: {:error, {:line, 2, :invalid_utf8}}
+  1) test an absolute path or a .. segment never reaches git (Anchor.Adapters.GitShowTest)
+     test/anchor/adapters/git_show_test.exs:112
+     match (=) failed
+     code:  assert {:ok, ["r|A|x"]} = GitShow.show(root, "main", ".anchor/baselines/r.txt")
+     left:  {:ok, ["r|A|x"]}
+     right: {:ok, ["r|A|x\n"]}
      stacktrace:
-       test/anchor/adapters/git_show_test.exs:125: (test)
+       test/anchor/adapters/git_show_test.exs:116: (test)
 
   2) test a committed file returns its bytes at the ref, not the working copy (Anchor.Adapters.GitShowTest)
      test/anchor/adapters/git_show_test.exs:42
@@ -1984,14 +2118,14 @@ Run summary: `9 tests, 3 failures`
      stacktrace:
        test/anchor/adapters/git_show_test.exs:44: (test)
 
-  3) test an absolute path or a .. segment never reaches git (Anchor.Adapters.GitShowTest)
-     test/anchor/adapters/git_show_test.exs:112
-     match (=) failed
-     code:  assert {:ok, ["r|A|x"]} = GitShow.show(root, "main", ".anchor/baselines/r.txt")
-     left:  {:ok, ["r|A|x"]}
-     right: {:ok, ["r|A|x\n"]}
+  3) test a line that is not UTF-8 at the ref is its error, naming the line (Anchor.Adapters.GitShowTest)
+     test/anchor/adapters/git_show_test.exs:119
+     Assertion with == failed
+     code:  assert GitShow.show(root, "main", ".anchor/baselines/bad.txt") == {:error, {:line, 2, :invalid_utf8}}
+     left:  {:ok, [<<114, 124, 65, 124, 120, 10, 255, 10>>]}
+     right: {:error, {:line, 2, :invalid_utf8}}
      stacktrace:
-       test/anchor/adapters/git_show_test.exs:116: (test)
+       test/anchor/adapters/git_show_test.exs:125: (test)
 ```
 
 ## AD-K — BaselineFile does not refuse a line that is not UTF-8
