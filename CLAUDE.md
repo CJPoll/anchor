@@ -233,7 +233,9 @@ Every rule takes `enforcement: report | enforce`. A report finding is
 `Violation.enforcement: :report`: `Anchor.Managers.Lint.detect_file/5`
 detects report rules apart from enforced ones (one call as before when there
 are none), and `Anchor.Check.Base` gives their issues exit status 0 and low
-priority. Graph rules also take `baseline:`: `Anchor.Managers.Graph` reads it
+priority. A violation both passes found (a check's once-per-file report, such
+as an unresolvable `alias`) is kept once, enforced, naming both modes
+(`Anchor.Domain.EnforcementPasses.merge/2`, DND-5631). Graph rules also take `baseline:`: `Anchor.Managers.Graph` reads it
 through `Anchor.Adapters.BaselineStore` (`BaselineFile`; `create/3` opens
 `:exclusive`, never overwriting), and under `--base REF` its copy at `REF`
 through `Anchor.Adapters.GitBase` (`GitShow`: argv only, the ref checked by

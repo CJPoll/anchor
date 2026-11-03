@@ -671,6 +671,21 @@ defmodule Anchor.Domain.Failures do
     )
   end
 
+  @doc """
+  `message`, naming the two modes a finding came from (DND-5631): a violation
+  both the enforced and the report detection pass found is printed once, and
+  says so before its `Fix:` (or at its end when it has none).
+  """
+  @spec both_enforcement_modes(String.t()) :: String.t()
+  def both_enforcement_modes(message) do
+    note = "(Found under rules in enforcement: enforce and report; reported once, enforced.)"
+
+    case String.split(message, " Fix: ", parts: 2) do
+      [text, fix] -> "#{text} #{note} Fix: #{fix}"
+      [text] -> "#{text} #{note}"
+    end
+  end
+
   @doc "The issue for a baseline `--write-baseline` could not create (DND-5441)."
   @spec baseline_not_written(String.t(), term()) :: Violation.t()
   def baseline_not_written(path, {:symlink, link}) do

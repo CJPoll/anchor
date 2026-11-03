@@ -61,12 +61,27 @@ defmodule Anchor.Managers.LintTest do
   # DND-5441: a rule in `enforcement: report` is detected apart from the
   # enforced ones; its findings are marked :report (printed, never failing).
   # Sabotage record: ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
+  # DND-5631 (one copy across the passes): ../../sabotage_records/lint-20261103-dnd_5648_graph_followups.md
   describe "run/4 enforcement: report" do
     @thing """
     defmodule MyApp.Thing do
       use Ecto.Schema
     end
     """
+
+    @unresolved """
+    defmodule MyApp.Thing do
+      alias @target, as: T
+      def run, do: T.go()
+    end
+    """
+
+    defp no_dep(forbidden, extra),
+      do:
+        Map.merge(
+          %{type: :no_direct_dependency, pattern: "MyApp.*", forbidden_modules: [forbidden]},
+          extra
+        )
 
     defp must_use(required, extra),
       do:
@@ -90,6 +105,55 @@ defmodule Anchor.Managers.LintTest do
 
       assert violations |> Enum.map(&{&1.trigger, &1.enforcement}) |> Enum.sort() ==
                [{"MyApp.Enforced", :enforce}, {"MyApp.Reported", :report}]
+    end
+
+    # DND-5631: an unresolvable directive is reported once per file. Under a
+    # report rule and an enforced rule it came once from each pass: twice.
+    test "an unresolvable directive under a report and an enforced rule is one violation" do
+      source_file = SourceFile.parse(@unresolved, "lib/thing.ex")
+
+      rules = [
+        no_dep(MyApp.Reported, %{enforcement: :report}),
+        no_dep(MyApp.Enforced, %{})
+      ]
+
+      expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: rules}} end)
+
+      assert {:ok, [{_file, violations}]} =
+               Lint.run(NoDependency, [source_file], [], config_loader: ConfigLoaderMock)
+
+      assert [unresolved] = Enum.filter(violations, &(&1.message =~ "cannot statically resolve"))
+      assert unresolved.enforcement == :enforce
+      assert unresolved.line == 2
+      assert unresolved.message =~ "rules in enforcement: enforce and report"
+    end
+
+    test "positive control: under report rules alone it is one :report violation" do
+      source_file = SourceFile.parse(@unresolved, "lib/thing.ex")
+      rules = [no_dep(MyApp.A, %{enforcement: :report}), no_dep(MyApp.B, %{enforcement: :report})]
+      expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: rules}} end)
+
+      assert {:ok, [{_file, violations}]} =
+               Lint.run(NoDependency, [source_file], [], config_loader: ConfigLoaderMock)
+
+      assert [%Violation{enforcement: :report, message: message}] =
+               Enum.filter(violations, &(&1.message =~ "cannot statically resolve"))
+
+      refute message =~ "rules in enforcement"
+    end
+
+    test "the same finding from a report and an enforced rule is one, enforced" do
+      source_file = SourceFile.parse(@thing, "lib/thing.ex")
+
+      rules = [
+        must_use(MyApp.Same, %{enforcement: :report}),
+        must_use(MyApp.Same, %{})
+      ]
+
+      expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: rules}} end)
+
+      assert {:ok, [{_file, [%Violation{trigger: "MyApp.Same", enforcement: :enforce}]}]} =
+               Lint.run(MustUseModule, [source_file], [], config_loader: ConfigLoaderMock)
     end
 
     test "positive control: with no report rule every finding is :enforce" do

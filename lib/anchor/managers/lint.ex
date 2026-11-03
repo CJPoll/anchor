@@ -75,6 +75,7 @@ defmodule Anchor.Managers.Lint do
   alias Anchor.Check.Source
   alias Anchor.Config
   alias Anchor.Domain.DependencyAnalyzer
+  alias Anchor.Domain.EnforcementPasses
   alias Anchor.Domain.Failures
   alias Anchor.Domain.RuleCoverage
   alias Anchor.Domain.RuleMatching
@@ -273,7 +274,10 @@ defmodule Anchor.Managers.Lint do
   @doc """
   Runs `check_module`'s detection on one parsed file with the rules already
   selected for it, and returns the violations. The findings of rules in
-  `enforcement: report` are marked `:report` (DND-5441).
+  `enforcement: report` are marked `:report` (DND-5441). A violation both
+  passes found (one a check makes once per file, such as an unresolvable
+  `alias`) is returned once, enforced, naming both modes
+  (`Anchor.Domain.EnforcementPasses.merge/2`, DND-5631).
 
   A raise, throw or exit in the detection becomes one `:fail_closed` violation
   on that file, naming the check and the reason (DND-1310,
@@ -289,10 +293,12 @@ defmodule Anchor.Managers.Lint do
         detect_group(check_module, source_file, ast, rules, context)
 
       {report, enforce} ->
-        detect_some(check_module, source_file, ast, enforce, context) ++
-          (check_module
-           |> detect_group(source_file, ast, report, context)
-           |> Enum.map(&report_only/1))
+        EnforcementPasses.merge(
+          detect_some(check_module, source_file, ast, enforce, context),
+          check_module
+          |> detect_group(source_file, ast, report, context)
+          |> Enum.map(&report_only/1)
+        )
     end
   end
 
