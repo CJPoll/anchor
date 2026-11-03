@@ -152,11 +152,11 @@ process, so it holds no leak and asserts so.
 | Q1 | the table placed after the `Mutants` heading | 3 | S4 `code:  assert entry.content =~ "## Summary\n\nNone.\n\n## Mutants\n"` (also S1 and the golden record) |
 | Q2 | the last mutant's row dropped | 4 | S1 `code:  assert rows == [` (also S2, S3 and the golden record) |
 | Q3 | every row's status written `killed` | 3 | S1 `code:  assert rows == [` (also S2 and the golden record) |
-| Q4 | every killer count 0 | 3 | S3 `left:  ["\| eee555 \| ``Anchor.Domain.Sabotage.Calc.add/2`` \| force_condition [a \\\| b c] \| killed \| 0 \|"]` (also S1 and the golden record) |
-| Q5 | a pipe in a cell not escaped | 1 | S3 `left:  ["\| eee555 \| ``Anchor.Domain.Sabotage.Calc.add/2`` \| force_condition [a \| b c] \| killed \| 1 \|"]` |
+| Q4 | every killer count 0 | 3 | S3 `` left:  ["\| eee555 \| `Anchor.Domain.Sabotage.Calc.add/2` \| force_condition [a \\\| b c] \| killed \| 0 \|"] `` (also S1 and the golden record) |
+| Q5 | a pipe in a cell not escaped | 1 | S3 `` left:  ["\| eee555 \| `Anchor.Domain.Sabotage.Calc.add/2` \| force_condition [a \| b c] \| killed \| 1 \|"] `` |
 | Q6 | a run with no mutant prints an empty table, not `None.` | 1 | S4 `code:  assert entry.content =~ "## Summary\n\nNone.\n\n## Mutants\n"` |
 | Q7 | the mutation cell without its variant | 3 | S1 `code:  assert rows == [` (also S3 and the golden record) |
-| Q8 | a newline in a cell kept | 1 | S3 `left:  ["\| eee555 \| ``Anchor.Domain.Sabotage.Calc.add/2`` \| force_condition [a \\\| b"]` (the row ends at the newline) |
+| Q8 | a newline in a cell kept | 1 | S3 `` left:  ["\| eee555 \| `Anchor.Domain.Sabotage.Calc.add/2` \| force_condition [a \\\| b"] `` (the row ends at the newline) |
 
 Pipes inside this table's own cells are written `\|`, so the quoted failure
 strings above show `\|` where the output had `|`.
