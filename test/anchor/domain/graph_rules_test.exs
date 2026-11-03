@@ -41,20 +41,19 @@ defmodule Anchor.Domain.GraphRulesTest do
       assert GraphRules.needs(Stubs.NeedsCfa) == [:cfa]
     end
 
-    test "a need the runner does not compute raises, naming it, with a Fix:" do
+    test "a need the runner does not compute raises, naming it and what it computes" do
       error = assert_raise ArgumentError, fn -> GraphRules.needs(Stubs.NeedsUnknown) end
 
       assert error.message ==
                "Anchor.Test.GraphRuleStubs.NeedsUnknown.needs/0 names [:nope], which the " <>
-                 "graph runner does not compute. Fix: declare only [:cfa]."
+                 "graph runner does not compute (it computes [:cfa])"
     end
 
-    test "a needs/0 that is not a list raises, with a Fix:" do
+    test "a needs/0 that is not a list raises" do
       error = assert_raise ArgumentError, fn -> GraphRules.needs(Stubs.NeedsNonList) end
 
       assert error.message ==
-               "Anchor.Test.GraphRuleStubs.NeedsNonList.needs/0 returned :cfa, not a list. " <>
-                 "Fix: return a list of [:cfa]."
+               "Anchor.Test.GraphRuleStubs.NeedsNonList.needs/0 returned :cfa, not a list of [:cfa]"
     end
   end
 

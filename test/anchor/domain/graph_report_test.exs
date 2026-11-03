@@ -9,7 +9,7 @@ defmodule Anchor.Domain.GraphReportTest do
   alias Anchor.Domain.GraphReport
   alias Anchor.Domain.GraphReport.Finding
 
-  @counts %{modules: 12, apps: 2, rules: 3, opaque: 0}
+  @counts %{modules: 12, apps: 2, rules: 3, opaque: 0, apply_sites: nil}
 
   defp finding(enforcement, overrides \\ %{}) do
     struct!(

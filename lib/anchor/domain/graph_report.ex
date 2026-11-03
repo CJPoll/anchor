@@ -60,7 +60,7 @@ defmodule Anchor.Domain.GraphReport do
           required(:apps) => non_neg_integer(),
           required(:rules) => non_neg_integer(),
           required(:opaque) => non_neg_integer(),
-          optional(:apply_sites) => apply_sites() | nil
+          required(:apply_sites) => apply_sites() | nil
         }
 
   @type t :: %__MODULE__{
@@ -119,7 +119,7 @@ defmodule Anchor.Domain.GraphReport do
       "apps" => report.counts.apps,
       "rules" => report.counts.rules,
       "opaque" => report.counts.opaque,
-      "apply_sites" => apply_sites_json(Map.get(report.counts, :apply_sites)),
+      "apply_sites" => apply_sites_json(report.counts.apply_sites),
       "exit_code" => report.exit_code,
       "findings" => Enum.map(report.findings, &Finding.to_json/1),
       "could_not_check" => Enum.map(report.could_not_check, &Finding.to_json/1)
@@ -140,7 +140,7 @@ defmodule Anchor.Domain.GraphReport do
     "anchor.graph: #{counts.modules} modules#{opaque(counts.opaque)} in #{counts.apps} apps, " <>
       "#{counts.rules} rules, #{violations} violations " <>
       "(#{length(report_only)} report-only, 0 baselined)" <>
-      apply_sites_note(Map.get(counts, :apply_sites))
+      apply_sites_note(counts.apply_sites)
   end
 
   defp apply_sites_json(nil), do: nil

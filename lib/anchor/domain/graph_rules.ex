@@ -29,7 +29,10 @@ defmodule Anchor.Domain.GraphRules do
   (`Anchor.Domain.GraphRule`): what the runner must compute before the rule's
   `check/2`. A need the runner does not compute, or a return that is not a
   list, raises, so a rule asking for something it would never get is reported
-  (the runner reads it under the rule's guard), never run without it.
+  (the runner reads it under the rule's guard), never run without it. It
+  loads the module first (`Code.ensure_loaded?/1`), the one code-server call
+  in this module: `function_exported?/3` is false for a module not yet
+  loaded, which would read as needing nothing.
   """
 
   alias Anchor.Domain.GlobPattern
@@ -58,7 +61,7 @@ defmodule Anchor.Domain.GraphRules do
 
   @doc """
   The analyses `module` needs (its `needs/0`, or `[]` when it has none),
-  without duplicates. Raises `ArgumentError` with a `Fix:` when it names one
+  without duplicates. Raises `ArgumentError` when it names one
   the runner does not compute (#{inspect(@provided_needs)}) or is not a list.
   """
   @spec needs(module()) :: [:cfa]
@@ -104,14 +107,14 @@ defmodule Anchor.Domain.GraphRules do
       unknown ->
         raise ArgumentError,
               "#{inspect(module)}.needs/0 names #{inspect(unknown)}, which the graph runner " <>
-                "does not compute. Fix: declare only #{inspect(@provided_needs)}."
+                "does not compute (it computes #{inspect(@provided_needs)})"
     end
   end
 
   defp provided_needs!(other, module) do
     raise ArgumentError,
-          "#{inspect(module)}.needs/0 returned #{inspect(other, limit: 5)}, not a list. " <>
-            "Fix: return a list of #{inspect(@provided_needs)}."
+          "#{inspect(module)}.needs/0 returned #{inspect(other, limit: 5)}, not a list of " <>
+            inspect(@provided_needs)
   end
 
   defp selects?(%{bucket: bucket}, classified) when is_binary(bucket),

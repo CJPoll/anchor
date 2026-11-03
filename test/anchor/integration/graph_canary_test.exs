@@ -20,6 +20,7 @@ defmodule Anchor.Integration.GraphCanaryTest do
   alias Anchor.BeamSourceMock
   alias Anchor.ConfigLoaderMock
   alias Anchor.Domain.GraphReport
+  alias Anchor.Domain.GraphRules
   alias Anchor.GraphStoreMock
   alias Anchor.Managers.Graph
   alias Anchor.Managers.Graph.Request
@@ -71,7 +72,7 @@ defmodule Anchor.Integration.GraphCanaryTest do
       beam_source: BeamSourceMock,
       source_source: SourceReader,
       graph_store: GraphStoreMock,
-      graph_rules: GraphRuleStubs.all()
+      graph_rules: GraphRules.all() ++ [GraphRuleStubs.NeedsCfa]
     )
   end
 

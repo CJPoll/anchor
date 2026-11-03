@@ -183,6 +183,7 @@ defmodule Anchor.Managers.GraphCfaTest do
   describe "fail closed" do
     for {kind, crash, text} <- [
           {"raises", quote(do: raise("cfa blew up")), "RuntimeError: cfa blew up"},
+          {"throws", quote(do: throw(:nope)), "throw: :nope"},
           {"exits", quote(do: exit(:gone)), "exit: :gone"},
           {"returns no %Cfa{}", quote(do: :oops),
            "ArgumentError: the analysis returned :oops, not a %Cfa{}"}
@@ -234,6 +235,12 @@ defmodule Anchor.Managers.GraphCfaTest do
                  "Anchor.Test.GraphRuleStubs.NeedsNonList.needs/0 returned :cfa, not a list"
 
       assert probe.message == "probe saw cfa: nil. Fix: none, a probe."
+
+      # One Fix: per message, so the JSON's fix is the rule_crashed one.
+      for finding <- [unknown, nonlist] do
+        assert length(String.split(finding.message, "Fix: ")) == 2
+        assert finding.message =~ "Fix: this is an Anchor bug"
+      end
     end
   end
 end

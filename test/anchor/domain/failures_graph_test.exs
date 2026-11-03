@@ -4,7 +4,7 @@ defmodule Anchor.Domain.FailuresGraphTest do
   # names its subject and ends with a Fix: line. Table-driven.
   #
   # Sabotage record: ../../sabotage_records/failures-20261103-dnd_5440_graph_runner.md
-  # (rule_cfa_crashed, DND-5574: ../../sabotage_records/graph_runner-20261103-dnd_5574_cfa_wiring.md)
+  # (rule_cfa_crashed, DND-5574: ../../sabotage_records/failures-20261103-dnd_5574_cfa_wiring.md)
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Failures
