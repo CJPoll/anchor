@@ -45,7 +45,10 @@ defmodule Anchor.Domain.Demand.Transfer do
       a parameter.
     * Inside a `try`'s protected expression or a `catch`, a raise is
       observable, so a call (and a map update) there uses its arguments even
-      when its result is unused.
+      when its result is unused; a call of a project function or a closure
+      there uses every argument in full (its summary assumes no handler sees
+      a raise). A raise outside any `try` is not a use: a caller's handler is
+      not followed.
     * A `fun` whose value is used: its body in full, so what it captures is
       used. A `letrec` definition (a receive or comprehension loop) is
       walked in full.
@@ -575,10 +578,13 @@ defmodule Anchor.Domain.Demand.Transfer do
     args
     |> Enum.with_index()
     |> Enum.reduce(st, fn {arg, index}, st ->
+      # A summary assumes no handler sees a raise; inside a try or a catch
+      # one does, so the callee's every argument is used there.
       demand =
         known
         |> Enum.map(&param_demand(Map.fetch!(ctx.summaries, &1), index, arity))
         |> Lattice.joins()
+        |> protected_call(known, ctx)
 
       st = Enum.reduce(known, st, &record_pass(&2, arg, &1, index))
       walk(arg, demand, st, ctx)
@@ -625,6 +631,9 @@ defmodule Anchor.Domain.Demand.Transfer do
   # its result is not used: it is demanded in full there.
   defp protected(:absent, %{protected?: true}), do: :all
   defp protected(demand, _ctx), do: demand
+
+  defp protected_call(_demand, [_closure | _rest], %{protected?: true}), do: :all
+  defp protected_call(demand, _closures, _ctx), do: demand
 
   # `apply(f, list)`: an apply site whose arguments are the list's elements.
   # The list is used when any closure the site resolves to uses a parameter.
