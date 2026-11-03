@@ -165,3 +165,54 @@ Without a mutation the file runs `11 tests, 0 failures`. Rows that stayed green:
      left:  "diff --git a/lib/a.ex b/lib/a.ex\nindex 2576990..ca674d3 100644\n--- a/lib/a.ex\n+++ b/lib/a.ex\n@@ -2 +2 @@ defmodule A do\n-  def f, do: 1\n+  def f, do: 2\n"
      right: "+++ b/vendor/sub\n"
 ```
+
+---
+
+# git's expected stderr is captured and asserted, not printed (DND-5589)
+
+- **Code under test:** `Anchor.Adapters.GitChangeSource` (`git/2`'s stderr handling), through G4 and G5
+- **Suite run:** `mix test --timeout 2000 --max-cases 2 test/anchor/adapters/git_change_source_test.exs`,
+  restored byte-for-byte (`cmp`) after the run.
+
+Before: the green suite printed two git messages from expected failures, G4's probe of a directory that is
+not a repository and G5's `show` of a missing path (the full suite at `ee07f1f`, `1587 tests, 0 failures`):
+
+```
+fatal: not a git repository (or any of the parent directories): .git
+fatal: path 'lib/none.ex' does not exist in '85077c5dd8360b4662652c0ad7482df4d0d6cce0'
+```
+
+git writes them to the BEAM's own stderr (fd 2), which `capture_io` cannot read, so those two calls now run
+in a child VM (`in_child_vm/1`, Anchor's ebin only), and the test asserts git's message on stderr and the
+result on stdout. After: the file runs `11 tests, 0 failures` and prints nothing.
+
+## Mutations
+
+| # | Mutation | Tests that failed | Run |
+|---|---|---|---|
+| A | `GitChangeSource.git/2` runs with `stderr_to_stdout: true` (git's message no longer on stderr) | G4, G5 | `11 tests, 2 failures` |
+
+## Failure strings (verbatim)
+
+### A
+
+```
+  1) test G4: a root that is not a git repository, or does not exist, is :not_a_work_tree (Anchor.Adapters.GitChangeSourceTest)
+     test/anchor/adapters/git_change_source_test.exs:216
+     match (=) failed
+     code:  assert [message, "{:error, :not_a_work_tree}"] =
+              in_child_vm("Anchor.Adapters.GitChangeSource.merge_base(" <> inspect(outside) <> ~s|, "main")|)
+     left:  [message, "{:error, :not_a_work_tree}"]
+     right: ["{:error, :not_a_work_tree}"]
+
+  2) test G5: show returns a file as it was at a commit, by a path relative to root (Anchor.Adapters.GitChangeSourceTest)
+     test/anchor/adapters/git_change_source_test.exs:163
+     match (=) failed
+     code:  assert [message, result] =
+              in_child_vm(
+                "Anchor.Adapters.GitChangeSource.show(" <>
+                  Enum.map_join([root, sha, "lib/none.ex"], ", ", &inspect/1) <> ")"
+              )
+     left:  [message, result]
+     right: ["{:error, {:git_failed, [\"show\", \"7d05258519bcbc87378750945ab0687ef655613c:./lib/none.ex\"], 128, \"fatal: path 'lib/none.ex' does not exist in '7d05258519bcbc87378750945ab0687ef655613c'\\n\"}}"]
+```

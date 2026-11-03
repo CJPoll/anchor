@@ -4,7 +4,8 @@ defmodule Anchor.Adapters.GitChangeSourceTest do
   # (`-c user.name=...`), never global config.
   # Sabotage record: ../../sabotage_records/sabotage_scope-20261103-dnd_5472.md
   # (G6: ../../sabotage_records/sabotage_scope-20261103-dnd_5519_scope_findings.md;
-  # G7: ../../sabotage_records/sabotage_scope-20261103-dnd_5581_hardening_batch.md)
+  # G7, and G4/G5's captured stderr:
+  # ../../sabotage_records/sabotage_scope-20261103-dnd_5581_hardening_batch.md)
   use ExUnit.Case, async: true
 
   alias Anchor.Adapters.GitChangeSource
@@ -27,6 +28,23 @@ defmodule Anchor.Adapters.GitChangeSourceTest do
     env = Enum.map(@hook_env, &{&1, nil})
     {out, 0} = System.cmd("git", @identity ++ args, cd: root, stderr_to_stdout: true, env: env)
     out
+  end
+
+  # Evaluates `call` (an expression over the adapter) in a child VM that loads
+  # only Anchor's ebin, and returns what it printed: git's message, on stderr,
+  # then the result, inspected on stdout. A failing git command writes to the
+  # BEAM's own stderr (fd 2), which no `capture_io` in this VM can read, so a
+  # case whose stderr is expected runs here: the suite stays quiet, and the
+  # message is asserted (DND-5589).
+  defp in_child_vm(call) do
+    {out, 0} =
+      System.cmd(
+        System.find_executable("elixir"),
+        ["-pa", Mix.Project.compile_path(), "-e", "IO.inspect(" <> call <> ", width: :infinity)"],
+        stderr_to_stdout: true
+      )
+
+    String.split(out, "\n", trim: true)
   end
 
   defp repo!(root) do
@@ -157,8 +175,15 @@ defmodule Anchor.Adapters.GitChangeSourceTest do
     assert GitChangeSource.show(Path.join(root, "lib"), sha, "a.ex") ==
              {:ok, "defmodule A do\n  def f, do: 1\nend\n"}
 
-    assert {:error, {:git_failed, ["show", _spec], _status, _out}} =
-             GitChangeSource.show(root, sha, "lib/none.ex")
+    # git says why on stderr; the error carries the command and its status.
+    assert [message, result] =
+             in_child_vm(
+               "Anchor.Adapters.GitChangeSource.show(" <>
+                 Enum.map_join([root, sha, "lib/none.ex"], ", ", &inspect/1) <> ")"
+             )
+
+    assert message =~ "fatal: path 'lib/none.ex' does not exist"
+    assert result =~ ~s|{:error, {:git_failed, ["show", "#{sha}:./lib/none.ex"], 128, ""}}|
   end
 
   test "G2: untracked returns only untracked .ex files", %{tmp_dir: root} do
@@ -200,7 +225,13 @@ defmodule Anchor.Adapters.GitChangeSourceTest do
     File.mkdir_p!(outside)
     on_exit(fn -> File.rm_rf!(outside) end)
 
-    assert GitChangeSource.merge_base(outside, "main") == {:error, :not_a_work_tree}
+    # git's own answer to the probe is on stderr, which the child VM captures.
+    assert [message, "{:error, :not_a_work_tree}"] =
+             in_child_vm(
+               "Anchor.Adapters.GitChangeSource.merge_base(" <> inspect(outside) <> ~s|, "main")|
+             )
+
+    assert message =~ "fatal: not a git repository"
 
     assert GitChangeSource.merge_base(Path.join(root, "missing"), "main") ==
              {:error, :not_a_work_tree}
