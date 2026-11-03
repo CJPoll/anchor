@@ -14,9 +14,12 @@ defmodule Anchor.Domain.Aggregates.Inference do
   complete scopes (ties: alphabetical), and its name the root schema's module
   name, or a table root camelized (`"audit_log"` is `AuditLog`). Two
   components whose names collide get the second's name suffixed `2`, `3`, ....
-  `render_yaml/1` prints them in the exact `aggregates:` shape of
-  `.anchor.yml`, sorted by name, which `Anchor.Domain.Aggregates.Config.parse/1`
-  reads back; with nothing written it prints `declare: none` with a reason (DND-5659).
+  `render_yaml/1` prints an analysis's proposals in the exact `aggregates:`
+  shape of `.anchor.yml`, sorted by name, which
+  `Anchor.Domain.Aggregates.Config.parse/1` reads back, with a leading comment
+  when some writes are unresolved. With no write at all it prints
+  `declare: none` with a reason (DND-5659); with no repo, or writes none of
+  which resolved, it is an error, never `none`.
   """
 
   alias Anchor.Domain.Aggregates.Analysis
@@ -62,14 +65,43 @@ defmodule Anchor.Domain.Aggregates.Inference do
     |> Enum.sort_by(& &1.name)
   end
 
-  @doc "The proposals as `.anchor.yml`'s `aggregates:` section; see the moduledoc."
-  @spec render_yaml([proposal()]) :: String.t()
-  def render_yaml([]) do
-    "aggregates:\n  declare: none\n" <>
-      "  reason: \"anchor found no transaction and no write in this project\"\n"
+  @doc """
+  The analysis's proposals as `.anchor.yml`'s `aggregates:` section; see the
+  moduledoc. `{:error, why}` when the analysis cannot support a proposal: no
+  repo, or writes found but none traced to a schema or table. "Nothing
+  resolved" is never rendered as `declare: none`.
+  """
+  @spec render_yaml(Analysis.t()) :: {:ok, String.t()} | {:error, String.t()}
+  def render_yaml(%Analysis{no_repo?: true}) do
+    {:error,
+     "no Ecto repo found, so there is nothing to propose. Fix: list the repo under " <>
+       "aggregates.repos, or declare: none if the project persists nothing"}
   end
 
-  def render_yaml(proposals) do
+  def render_yaml(%Analysis{counts: counts} = analysis) do
+    case {proposed_declarations(analysis), counts.writes} do
+      {[], 0} ->
+        {:ok,
+         "aggregates:\n  declare: none\n" <>
+           "  reason: \"anchor found no transaction and no write in this project\"\n"}
+
+      {[], writes} ->
+        {:error,
+         "#{writes} write(s) found, #{counts.unresolved} unresolved, and none traced to a " <>
+           "schema or table, so there is nothing to propose. Fix: resolve the writes " <>
+           "(aggregate_write_sources lists them) and propose again"}
+
+      {proposals, _writes} ->
+        {:ok, unresolved_note(counts) <> declarations_yaml(proposals)}
+    end
+  end
+
+  defp unresolved_note(%{unresolved: 0}), do: ""
+
+  defp unresolved_note(%{unresolved: unresolved, writes: writes}),
+    do: "# #{unresolved} of #{writes} write(s) unresolved: this proposal may miss tables\n"
+
+  defp declarations_yaml(proposals) do
     entries =
       proposals
       |> Enum.sort_by(& &1.name)

@@ -77,15 +77,14 @@ defmodule Anchor.Domain.Aggregates.InferenceTest do
     reversed = %{f1() | scopes: Enum.reverse(f1().scopes)}
     assert Inference.proposed_declarations(reversed) == Inference.proposed_declarations(f1())
 
-    assert Inference.render_yaml(Inference.proposed_declarations(reversed)) ==
-             Inference.render_yaml(Inference.proposed_declarations(f1()))
+    assert Inference.render_yaml(reversed) == Inference.render_yaml(f1())
   end
 
   test "F5: render_yaml parses under Aggregates.Config.parse/1 to the proposal" do
-    proposals =
-      Inference.proposed_declarations(analysis([scope(1, schema: App.S, table: "audit_log")], []))
+    analysis = analysis([scope(1, schema: App.S, table: "audit_log")], [])
+    proposals = Inference.proposed_declarations(analysis)
 
-    yaml = Inference.render_yaml(proposals)
+    assert {:ok, yaml} = Inference.render_yaml(analysis)
 
     {:ok, %{"aggregates" => section}} = YamlElixir.read_from_string(yaml)
     assert {:ok, %Config{declare: declare}} = Config.parse(section)
@@ -95,11 +94,40 @@ defmodule Anchor.Domain.Aggregates.InferenceTest do
   end
 
   test "F5: nothing written renders declare: none with a reason, which parses (DND-5659)" do
-    yaml = Inference.render_yaml([])
+    assert {:ok, yaml} = Inference.render_yaml(analysis([], []))
     {:ok, %{"aggregates" => section}} = YamlElixir.read_from_string(yaml)
     assert {:ok, %Config{declare: [], none: reason}} = Config.parse(section)
     assert reason =~ "no transaction"
   end
+
+  # Code-review finding: "nothing resolved" must never render as "nothing
+  # persists".
+  test "F8: writes found but none resolved is an error, never declare: none" do
+    unresolved = %{analysis([], []) | counts: %{counts() | writes: 2, unresolved: 2}}
+
+    assert {:error, why} = Inference.render_yaml(unresolved)
+    assert why =~ "2 write(s) found, 2 unresolved"
+    assert why =~ "Fix: "
+  end
+
+  test "F8: no repo is an error, never declare: none" do
+    assert {:error, why} = Inference.render_yaml(%Analysis{no_repo?: true})
+    assert why =~ "no Ecto repo"
+  end
+
+  test "F8: a proposal with unresolved writes beside it says so in the YAML" do
+    some = %{
+      analysis([scope(1, schema: App.S)], [])
+      | counts: %{counts() | writes: 3, unresolved: 1}
+    }
+
+    assert {:ok, yaml} = Inference.render_yaml(some)
+    assert yaml =~ "# 1 of 3 write(s) unresolved: this proposal may miss tables"
+    {:ok, %{"aggregates" => section}} = YamlElixir.read_from_string(yaml)
+    assert {:ok, %Config{declare: [_one]}} = Config.parse(section)
+  end
+
+  defp counts, do: %Analysis{}.counts
 
   test "F7: a scope with no resolved key adds no edge and does not crash" do
     analysis = analysis([scope(1, [], false), scope(2, schema: App.S)], [])
