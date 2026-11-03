@@ -138,7 +138,8 @@ defmodule Anchor.Managers.SabotageScopeTest do
       expect(ChangeSourceMock, :show, fn @root, @sha, "lib/m.ex" -> {:ok, base} end)
 
       assert {:ok, scope} = Sabotage.scope(@args, @opts)
-      assert [%{module: M, name: :f, arity: 1, changed_lines: [3]}] = scope.functions
+      # Recorded at f/1's remaining clause (line 2), not at g's line (3).
+      assert [%{module: M, name: :f, arity: 1, changed_lines: [2]}] = scope.functions
       assert scope.counts.outside_hunks == 0
     end
 

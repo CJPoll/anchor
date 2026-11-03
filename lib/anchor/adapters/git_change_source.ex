@@ -22,9 +22,10 @@ defmodule Anchor.Adapters.GitChangeSource do
     * `git show <sha>:./<path>` (`./`: the path is relative to `root`, as the
       diff's are).
 
-  `diff` and `ls-files` keep git's stderr out of their output, so a warning
-  can never read as diff text; on a failure git's own message is on stderr and
-  the error carries the command, its exit status and its stdout.
+  Every command keeps git's stderr out of the output it reads, so a warning
+  can never read as diff text or as part of a commit id; on a failure git's
+  own message is on stderr and the error carries the command, its exit status
+  and its stdout.
   """
 
   @behaviour Anchor.Adapters.ChangeSource
@@ -36,7 +37,7 @@ defmodule Anchor.Adapters.GitChangeSource do
   def merge_base(root, ref) do
     with :ok <- work_tree(root),
          {:ok, sha} <- resolve(root, ref) do
-      case git(root, ["merge-base", sha, "HEAD"], true) do
+      case git(root, ["merge-base", sha, "HEAD"]) do
         {out, 0} -> {:ok, String.trim(out)}
         {_out, 1} -> {:error, {:no_merge_base, ref}}
         {out, status} -> {:error, {:git_failed, ["merge-base", sha, "HEAD"], status, out}}
@@ -48,7 +49,7 @@ defmodule Anchor.Adapters.GitChangeSource do
   def diff(root, sha) do
     args = @diff_args ++ [sha, "--"]
 
-    case git(root, args, false) do
+    case git(root, args) do
       {out, 0} -> {:ok, out}
       {out, status} -> {:error, {:git_failed, args, status, out}}
     end
@@ -58,7 +59,7 @@ defmodule Anchor.Adapters.GitChangeSource do
   def untracked(root) do
     args = ["ls-files", "-z", "--others", "--exclude-standard", "--", "*.ex"]
 
-    case git(root, args, false) do
+    case git(root, args) do
       {out, 0} -> {:ok, String.split(out, <<0>>, trim: true)}
       {out, status} -> {:error, {:git_failed, args, status, out}}
     end
@@ -68,7 +69,7 @@ defmodule Anchor.Adapters.GitChangeSource do
   def show(root, sha, path) do
     args = ["show", sha <> ":./" <> path]
 
-    case git(root, args, false) do
+    case git(root, args) do
       {out, 0} -> {:ok, out}
       {out, status} -> {:error, {:git_failed, args, status, out}}
     end
@@ -79,7 +80,7 @@ defmodule Anchor.Adapters.GitChangeSource do
 
   defp work_tree(root) do
     with true <- File.dir?(root),
-         {"true\n", 0} <- git(root, ["rev-parse", "--is-inside-work-tree"], true) do
+         {"true\n", 0} <- git(root, ["rev-parse", "--is-inside-work-tree"]) do
       :ok
     else
       _not_a_work_tree -> {:error, :not_a_work_tree}
@@ -91,18 +92,14 @@ defmodule Anchor.Adapters.GitChangeSource do
 
     # `--verify --quiet` exits 1, silently, for a ref that does not resolve;
     # any other failure is git's, and says so.
-    case git(root, args, true) do
+    case git(root, args) do
       {out, 0} -> {:ok, String.trim(out)}
       {"", 1} -> {:error, {:no_merge_base, ref}}
       {out, status} -> {:error, {:git_failed, args, status, out}}
     end
   end
 
-  defp git(root, args, merge_stderr?) do
-    System.cmd("git", args,
-      cd: root,
-      stderr_to_stdout: merge_stderr?,
-      env: [{"GIT_OPTIONAL_LOCKS", "0"}]
-    )
+  defp git(root, args) do
+    System.cmd("git", args, cd: root, stderr_to_stdout: false, env: [{"GIT_OPTIONAL_LOCKS", "0"}])
   end
 end

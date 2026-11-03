@@ -236,8 +236,8 @@ defmodule Anchor.Domain.Failures do
     "COULD NOT MEASURE: #{capped(inspect(reason))}. Fix: this is a defect in Anchor; report it with this text."
   end
 
-  # `diff` and `ls-files` keep git's stderr out of their output, so a failure
-  # there usually quotes nothing: git's own message is on stderr.
+  # The git adapter keeps git's stderr out of the output it reads, so a
+  # failure usually quotes nothing: git's own message is on stderr.
   defp git_output(""), do: "(git's message is printed above, on stderr)"
   defp git_output(output), do: capped(output)
 

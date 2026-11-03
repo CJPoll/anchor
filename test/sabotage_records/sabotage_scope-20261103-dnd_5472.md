@@ -13,39 +13,42 @@ Off-domain mutations in this record: `failures` (rows N, AG, BC, CI, `Anchor.Dom
 plan names this one record for the whole change, so it is filed under its primary domain (see the
 records README, "one combined record").
 
-Every one of the 72 tests this change adds failed under at least one mutation below. Rows CA-CJ
+Every one of the 73 tests this change adds failed under at least one mutation below. Rows CA-CL
 cover the base-side mapping that keeps a multi-clause function in scope when a whole clause of it is
-deleted (the critic's round-2 finding).
+deleted (the critic's round-2 finding), and record it at a line of its own clauses (round 3).
 
 ## Mutations
 
 | # | Mutation | Test file | Tests that failed | Run |
 |---|---|---|---|---|
-| A | `Scope.map_hunk/4` maps a deletion point to nothing and counts nothing | `scope_test.exs` | S14, S3, S4 | `18 tests, 3 failures` |
-| B | `Scope.kind/1` drops the `test` path-segment rule (only `_test.exs` is a test file) | `scope_test.exs` | S6 | `18 tests, 1 failure` |
-| BH | `Scope.kind/1` drops the `deps` and `_build` segment rule | `scope_test.exs` | S7 | `18 tests, 1 failure` |
-| C | `Scope.add_line/4` keeps the first clause's lines (clause union dropped) | `scope_test.exs` | R1, R2, S11, S2, S9 | `18 tests, 5 failures` |
-| AX | `Scope.add_line/4` keys a function by `{identity, first line}` (identity carries a line) | `scope_test.exs` | R1, R2, S11, S2, S9 | `18 tests, 5 failures` |
-| O | a changed line in no span no longer counts its hunk as outside a function | `scope_test.exs` | R1, R2, S12, S14, S4, S5 | `18 tests, 6 failures` |
-| AA | a changed line held only by a macro no longer counts its hunk as a macro | `scope_test.exs` | S10, S12, S9 | `18 tests, 3 failures` |
-| M | an added file's one all-lines hunk is dropped | `scope_test.exs` | S9 | `18 tests, 1 failure` |
-| AE | an added file's own lines outside its functions count as a hunk outside a function | `scope_test.exs` | S9 | `18 tests, 1 failure` |
-| CA | `Scope.map_removed/4` finds the surviving functions but records none | `scope_test.exs` | S13 | `18 tests, 1 failure` |
+| A | `Scope.map_hunk/4` maps a deletion point to nothing and counts nothing | `scope_test.exs` | S14, S3, S4 | `19 tests, 3 failures` |
+| B | `Scope.kind/1` drops the `test` path-segment rule (only `_test.exs` is a test file) | `scope_test.exs` | S6 | `19 tests, 1 failure` |
+| BH | `Scope.kind/1` drops the `deps` and `_build` segment rule | `scope_test.exs` | S7 | `19 tests, 1 failure` |
+| C | `Scope.add_line/4` keeps the first clause's lines (clause union dropped) | `scope_test.exs` | R1, R2, S11, S2, S9 | `19 tests, 5 failures` |
+| AX | `Scope.add_line/4` keys a function by `{identity, first line}` (identity carries a line) | `scope_test.exs` | R1, R2, S11, S2, S9 | `19 tests, 5 failures` |
+| O | a changed line in no span no longer counts its hunk as outside a function | `scope_test.exs` | R1, R2, S12, S14, S16, S4, S5 | `19 tests, 7 failures` |
+| AA | a changed line held only by a macro no longer counts its hunk as a macro | `scope_test.exs` | S10, S12, S9 | `19 tests, 3 failures` |
+| M | an added file's one all-lines hunk is dropped | `scope_test.exs` | S9 | `19 tests, 1 failure` |
+| AE | an added file's own lines outside its functions count as a hunk outside a function | `scope_test.exs` | S9 | `19 tests, 1 failure` |
+| CA | `Scope.map_removed/4` finds the surviving functions but records none | `scope_test.exs` | S13, S16 | `19 tests, 2 failures` |
 | CA2 | as CA, run against the Manager tests | `sabotage_scope_test.exs` | M8 | `15 tests, 1 failure` |
-| CB | a hunk whose removed lines found a surviving function still counts as outside a function | `scope_test.exs` | S13 | `18 tests, 1 failure` |
-| CG | every function in the file survives once any removed line is in a function | `scope_test.exs` | S13, S14 | `18 tests, 2 failures` |
-| CC | `Scope.old_source_files/1` names no file | `scope_test.exs` | S15 | `18 tests, 1 failure` |
+| CB | a pure deletion whose removed text was in a surviving function still counts as outside a function | `scope_test.exs` | S13 | `19 tests, 1 failure` |
+| CL | a hunk with new lines outside every function stops counting once its removed text found a function | `scope_test.exs` | S16 | `19 tests, 1 failure` |
+| CK | a removal is recorded at the raw point after it, not clamped to the function's own clauses | `scope_test.exs` | S13, S16 | `19 tests, 2 failures` |
+| CK2 | as CK, run against the Manager tests | `sabotage_scope_test.exs` | M8 | `15 tests, 1 failure` |
+| CG | every function in the file survives once any removed line is in a function | `scope_test.exs` | S13, S14 | `19 tests, 2 failures` |
+| CC | `Scope.old_source_files/1` names no file | `scope_test.exs` | S15 | `19 tests, 1 failure` |
 | CC2 | as CC, run against the Manager tests (the base copy is never read) | `sabotage_scope_test.exs` | M1, M10, M8, M9 | `15 tests, 4 failures` |
 | CH | `DiffHunks` records the new-side range as the base-side range | `diff_hunks_test.exs` | H1, H2, H4, H6, H8 | `11 tests, 5 failures` |
 | CD | a base copy that does not parse is reported as the working copy not parsing | `sabotage_scope_test.exs` | M10 | `15 tests, 1 failure` |
 | CJ | an untracked file is recorded as modified, not added | `sabotage_scope_test.exs` | M2 | `15 tests, 1 failure` |
 | CE | `GitChangeSource.show/3` asks for `<sha>:<path>`, not `<sha>:./<path>` | `git_change_source_test.exs` | G5 | `8 tests, 1 failure` |
 | CI | the base-copy-does-not-parse `Fix:` text changed | `scope_failures_test.exs` | scope_could_not_measure/1 each known reason has its exact text | `2 tests, 1 failure` |
-| AW | functions within a file are ordered by last line first | `scope_test.exs` | S12, S9 | `18 tests, 2 failures` |
-| AY | `Scope.map_hunk/4` reads `start + 1..start + count` (off by one) | `scope_test.exs` | R1, R2, S1, S11, S12, S2, S5, S8 | `18 tests, 8 failures` |
+| AW | functions within a file are ordered by last line first | `scope_test.exs` | S12, S9 | `19 tests, 2 failures` |
+| AY | `Scope.map_hunk/4` reads `start + 1..start + count` (off by one) | `scope_test.exs` | R1, R2, S1, S11, S12, S2, S5, S8 | `19 tests, 8 failures` |
 | AY2 | as AY, run against the Manager tests | `sabotage_scope_test.exs` | M1, M11 | `15 tests, 2 failures` |
 | AY3 | as AY, run against the task tests | `anchor_sabotage_scope_test.exs` | F1, F2 | `5 tests, 2 failures` |
-| AZ | the summary says `function(s) in` | `scope_test.exs` | R1, R3 | `18 tests, 2 failures` |
+| AZ | the summary says `function(s) in` | `scope_test.exs` | R1, R3 | `19 tests, 2 failures` |
 | D | `FunctionSpans.last_line/2` uses the def's own line when there is no `end` (keyword-def end from `line` only) | `function_spans_test.exs` | P3 | `13 tests, 1 failure` |
 | G | `FunctionSpans.walk/3` does not mark defs inside `quote` | `function_spans_test.exs` | P8 | `13 tests, 1 failure` |
 | Z | a def whose name `unquote` builds is not marked `excluded_macro` | `function_spans_test.exs` | P12 | `13 tests, 1 failure` |
@@ -100,10 +103,10 @@ deleted (the critic's round-2 finding).
 
 ### A
 
-`test build/2 S4: a deletion point between two functions is outside every function (Anchor.Domain.Sabotage.ScopeTest)`
+`test build/2 S14: a function deleted whole is not scoped, and its hunk is outside a function (Anchor.Domain.Sabotage.ScopeTest)`
 
 ```
-test/anchor/domain/sabotage/scope_test.exs:87
+test/anchor/domain/sabotage/scope_test.exs:213
 Assertion with == failed
 code:  assert scope.counts == %{@zero | outside_hunks: 1}
 left:  %{
@@ -161,10 +164,49 @@ code: assert Scope.build(files, %{}).counts == %{@zero | non_source_files: 4}
 
 ### C
 
+`test build/2 S2: changed lines in two clauses of f/1 are one entry with the union of lines (Anchor.Domain.Sabotage.ScopeTest)`
+
+```
+test/anchor/domain/sabotage/scope_test.exs:66
+match (=) failed
+code:  assert [
+         %ChangedFunction{
+           file: "lib/m.ex",
+           module: M,
+           name: :f,
+           arity: 1,
+           kind: :def,
+           changed_lines: [4, 8]
+         }
+       ] = scope.functions
+left:  [
+         %Anchor.Domain.Sabotage.ChangedFunction{
+           file: "lib/m.ex",
+           module: M,
+           name: :f,
+           arity: 1,
+           kind: :def,
+           changed_lines: [4, 8]
+         }
+       ]
+right: [
+         %Anchor.Domain.Sabotage.ChangedFunction{
+           file: "lib/m.ex",
+           module: M,
+           name: :f,
+           arity: 1,
+           kind: :def,
+           changed_lines: [4]
+         }
+       ]
+```
+
+### AX
+
 `test render/2 R2: json decodes to the functions and the counts, the same values as text (Anchor.Domain.Sabotage.ScopeTest)`
 
 ```
-test/anchor/domain/sabotage/scope_test.exs:256
+test/anchor/domain/sabotage/scope_test.exs:267
 Assertion with == failed
 code:  assert JSON.decode!(Scope.render(scope, :json)) == %{
          "functions" => [
@@ -198,12 +240,22 @@ left:  %{
            "test_files" => 1
          },
          "file_count" => 1,
-         "function_count" => 1,
+         "function_count" => 2,
          "functions" => [
            %{
              "arity" => 1,
-             "changed_line_ranges" => "3",
-             "changed_lines" => [3],
+             "changed_line_ranges" => "3-5",
+             "changed_lines" => [3, 4, 5],
+             "file" => "lib/m.ex",
+             "function" => "f/1",
+             "kind" => "def",
+             "module" => "M",
+             "name" => "f"
+           },
+           %{
+             "arity" => 1,
+             "changed_line_ranges" => "8",
+             "changed_lines" => ~c"\b",
              "file" => "lib/m.ex",
              "function" => "f/1",
              "kind" => "def",
@@ -237,48 +289,28 @@ right: %{
        }
 ```
 
-### AX
-
-`test build/2 S11: identity does not depend on line numbers (Anchor.Domain.Sabotage.ScopeTest)`
-
-```
-test/anchor/domain/sabotage/scope_test.exs:164
-match (=) failed
-code:  assert [%ChangedFunction{changed_lines: [4, 8]} = was] = before.functions
-left:  [%Anchor.Domain.Sabotage.ChangedFunction{changed_lines: [4, 8]} = was]
-right: [
-         %Anchor.Domain.Sabotage.ChangedFunction{
-           file: "lib/m.ex",
-           module: M,
-           name: :f,
-           arity: 1,
-           kind: :def,
-           changed_lines: [4]
-         },
-         %Anchor.Domain.Sabotage.ChangedFunction{
-           file: "lib/m.ex",
-           module: M,
-           name: :f,
-           arity: 1,
-           kind: :def,
-           changed_lines: ~c"\b"
-         }
-       ]
-```
-
 ### O
 
-`test render/2 R1: text is a TSV line per function, then the summary with every count (Anchor.Domain.Sabotage.ScopeTest)`
+`test build/2 S5: a change on the @spec line above f is outside a function, and f is not in scope (Anchor.Domain.Sabotage.ScopeTest)`
 
 ```
-test/anchor/domain/sabotage/scope_test.exs:249
+test/anchor/domain/sabotage/scope_test.exs:94
 Assertion with == failed
-code:  assert Scope.render(scope, :text) ==
-         "lib/m.ex\tM\tf/1\tdef\t3-5,8\n" <>
-           "anchor.sabotage scope: 1 functions in 1 files; excluded: 1 test files, " <>
-           "1 non-source files, 0 deleted files, 1 hunks outside a function, 0 macros"
-left:  "lib/m.ex\tM\tf/1\tdef\t3-5,8\nanchor.sabotage scope: 1 functions in 1 files; excluded: 1 test files, 1 non-source files, 0 deleted files, 0 hunks outside a function, 0 macros"
-right: "lib/m.ex\tM\tf/1\tdef\t3-5,8\nanchor.sabotage scope: 1 functions in 1 files; excluded: 1 test files, 1 non-source files, 0 deleted files, 1 hunks outside a function, 0 macros"
+code:  assert scope.counts == %{@zero | outside_hunks: 1}
+left:  %{
+         macros: 0,
+         test_files: 0,
+         non_source_files: 0,
+         deleted_files: 0,
+         outside_hunks: 0
+       }
+right: %{
+         macros: 0,
+         test_files: 0,
+         non_source_files: 0,
+         deleted_files: 0,
+         outside_hunks: 1
+       }
 ```
 
 ### AA
@@ -286,7 +318,7 @@ right: "lib/m.ex\tM\tf/1\tdef\t3-5,8\nanchor.sabotage scope: 1 functions in 1 fi
 `test build/2 S12: one hunk over two functions scopes both, in file then line order (Anchor.Domain.Sabotage.ScopeTest)`
 
 ```
-test/anchor/domain/sabotage/scope_test.exs:218
+test/anchor/domain/sabotage/scope_test.exs:229
 Assertion with == failed
 code:  assert scope.counts == %{@zero | outside_hunks: 1, macros: 1}
 left:  %{
@@ -346,8 +378,8 @@ code: for {deleted, new_hunk, old_hunk, at} <- [
 ```
 test/anchor/managers/sabotage_scope_test.exs:129
 match (=) failed
-code:  assert [%{module: M, name: :f, arity: 1, changed_lines: [3]}] = scope.functions
-left:  [%{module: M, name: :f, arity: 1, changed_lines: [3]}]
+code:  assert [%{module: M, name: :f, arity: 1, changed_lines: [2]}] = scope.functions
+left:  [%{module: M, name: :f, arity: 1, changed_lines: [2]}]
 right: []
 ```
 
@@ -361,33 +393,69 @@ deleted line 3
 code: for {deleted, new_hunk, old_hunk, at} <- [
 ```
 
-### CG
+### CL
 
-`test build/2 S14: a function deleted whole is not scoped, and its hunk is outside a function (Anchor.Domain.Sabotage.ScopeTest)`
+`test build/2 S16: a clause replaced by text outside any function scopes f/1 and counts the new text (Anchor.Domain.Sabotage.ScopeTest)`
 
 ```
-test/anchor/domain/sabotage/scope_test.exs:202
+test/anchor/domain/sabotage/scope_test.exs:204
 Assertion with == failed
-code:  assert scope.functions == []
-left:  [
+code:  assert scope.counts == %{@zero | outside_hunks: 1}
+left:  %{
+         macros: 0,
+         test_files: 0,
+         non_source_files: 0,
+         deleted_files: 0,
+         outside_hunks: 0
+       }
+right: %{
+         macros: 0,
+         test_files: 0,
+         non_source_files: 0,
+         deleted_files: 0,
+         outside_hunks: 1
+       }
+```
+
+### CK
+
+`test build/2 S13: a whole clause deleted first, in the middle or last keeps f/1 in scope (Anchor.Domain.Sabotage.ScopeTest)`
+
+```
+test/anchor/domain/sabotage/scope_test.exs:176
+deleted line 5
+code: for {deleted, new_hunk, old_hunk, at} <- [
+```
+
+### CK2
+
+`test scope/2 M8: a clause deleted last maps through the base side to its function (Anchor.Managers.SabotageScopeTest)`
+
+```
+test/anchor/managers/sabotage_scope_test.exs:129
+match (=) failed
+code:  assert [%{module: M, name: :f, arity: 1, changed_lines: [2]}] = scope.functions
+left:  [%{module: M, name: :f, arity: 1, changed_lines: [2]}]
+right: [
          %Anchor.Domain.Sabotage.ChangedFunction{
            file: "lib/m.ex",
            module: M,
-           name: :e,
-           arity: 0,
-           kind: :def,
-           changed_lines: [3]
-         },
-         %Anchor.Domain.Sabotage.ChangedFunction{
-           file: "lib/m.ex",
-           module: M,
-           name: :g,
-           arity: 0,
+           name: :f,
+           arity: 1,
            kind: :def,
            changed_lines: [3]
          }
        ]
-right: []
+```
+
+### CG
+
+`test build/2 S13: a whole clause deleted first, in the middle or last keeps f/1 in scope (Anchor.Domain.Sabotage.ScopeTest)`
+
+```
+test/anchor/domain/sabotage/scope_test.exs:176
+deleted line 3
+code: for {deleted, new_hunk, old_hunk, at} <- [
 ```
 
 ### CC
@@ -404,58 +472,64 @@ right: ["lib/a.ex"]
 
 ### CC2
 
-`test scope/2 M9: the base copy cannot be read: the git error is returned (Anchor.Managers.SabotageScopeTest)`
+`test scope/2 M8: a clause deleted last maps through the base side to its function (Anchor.Managers.SabotageScopeTest)`
 
 ```
-test/anchor/managers/sabotage_scope_test.exs:145
-Assertion with == failed
-code:  assert Sabotage.scope(@args, @opts) == {:error, failure}
-left:  {:ok,
-        %Anchor.Domain.Sabotage.Scope{
-          functions: [
-            %Anchor.Domain.Sabotage.ChangedFunction{
-              file: "lib/m.ex",
-              module: M,
-              name: :f,
-              arity: 1,
-              kind: :def,
-              changed_lines: [3]
-            }
-          ],
-          counts: %{
-            macros: 0,
-            test_files: 0,
-            outside_hunks: 0,
-            deleted_files: 0,
-            non_source_files: 0
-          }
-        }}
-right: {:error, {:git_failed, ["show", "abc123:./lib/m.ex"], 128, ""}}
+test/anchor/managers/sabotage_scope_test.exs:129
+match (=) failed
+code:  assert [%{module: M, name: :f, arity: 1, changed_lines: [2]}] = scope.functions
+left:  [%{module: M, name: :f, arity: 1, changed_lines: [2]}]
+right: []
 ```
 
 ### CH
 
-`test parse/1 H2: a zero-count hunk (a pure deletion) is kept with count 0 (Anchor.Domain.Sabotage.DiffHunksTest)`
+`test parse/1 H6: three files, paths with spaces and quoted paths, all keyed by the b/ path (Anchor.Domain.Sabotage.DiffHunksTest)`
 
 ```
-test/anchor/domain/sabotage/diff_hunks_test.exs:30
+test/anchor/domain/sabotage/diff_hunks_test.exs:92
 Assertion with == failed
 code:  assert DiffHunks.parse(diff) ==
-         {:ok, %{"lib/a.ex" => %{status: :modified, hunks: [{4, 0}], old_hunks: [{5, 2}]}}}
+         {:ok,
+          %{
+            "lib/my file.ex" => %{status: :modified, hunks: [{2, 1}], old_hunks: [{2, 1}]},
+            "lib/q\"é.ex" => %{status: :modified, hunks: [{1, 1}], old_hunks: [{1, 1}]},
+            "README.md" => %{status: :modified, hunks: [{2, 3}], old_hunks: [{1, 0}]}
+          }}
 left:  {:ok,
         %{
-          "lib/a.ex" => %{
+          "README.md" => %{
             status: :modified,
-            hunks: [{4, 0}],
-            old_hunks: [{4, 0}]
+            hunks: [{2, 3}],
+            old_hunks: [{2, 3}]
+          },
+          "lib/my file.ex" => %{
+            status: :modified,
+            hunks: [{2, 1}],
+            old_hunks: [{2, 1}]
+          },
+          "lib/q\"é.ex" => %{
+            status: :modified,
+            hunks: [{1, 1}],
+            old_hunks: [{1, 1}]
           }
         }}
 right: {:ok,
         %{
-          "lib/a.ex" => %{
+          "README.md" => %{
             status: :modified,
-            hunks: [{4, 0}],
-            old_hunks: [{5, 2}]
+            hunks: [{2, 3}],
+            old_hunks: [{1, 0}]
+          },
+          "lib/my file.ex" => %{
+            status: :modified,
+            hunks: [{2, 1}],
+            old_hunks: [{2, 1}]
+          },
+          "lib/q\"é.ex" => %{
+            status: :modified,
+            hunks: [{1, 1}],
+            old_hunks: [{1, 1}]
           }
         }}
 ```
@@ -465,7 +539,7 @@ right: {:ok,
 `test scope/2 M10: the base copy does not parse: named with the merge-base (Anchor.Managers.SabotageScopeTest)`
 
 ```
-test/anchor/managers/sabotage_scope_test.exs:154
+test/anchor/managers/sabotage_scope_test.exs:155
 match (=) failed
 code:  assert {:error, {:unparseable_base, "lib/m.ex", @sha, 2, reason}} = Sabotage.scope(@args, @opts)
 left:  {:error, {:unparseable_base, "lib/m.ex", "abc123", 2, reason}}
@@ -498,7 +572,7 @@ code:  assert GitChangeSource.show(Path.join(root, "lib"), sha, "a.ex") ==
 left:  {:error,
         {:git_failed,
          ["show",
-          "344c04c7d1da4eac675b01b3951edec5e07509aa:a.ex"],
+          "5301b896c6cc618174f6cea18fde05633bb3adc0:a.ex"],
          128, ""}}
 right: {:ok, "defmodule A do\n  def f, do: 1\nend\n"}
 ```
@@ -517,18 +591,14 @@ right: "COULD NOT MEASURE: lib/a.ex:4 at the merge-base abc does not parse (synt
 
 ### AW
 
-`test build/2 S12: one hunk over two functions scopes both, in file then line order (Anchor.Domain.Sabotage.ScopeTest)`
+`test build/2 S9: an added file puts every function in scope, whatever its hunks say (Anchor.Domain.Sabotage.ScopeTest)`
 
 ```
-test/anchor/domain/sabotage/scope_test.exs:218
+test/anchor/domain/sabotage/scope_test.exs:148
 Assertion with == failed
-code:  assert Enum.map(scope.functions, &{&1.file, &1.name}) == [
-         {"lib/a.ex", :a},
-         {"lib/m.ex", :g},
-         {"lib/m.ex", :h}
-       ]
-left:  [{"lib/a.ex", :a}, {"lib/m.ex", :h}, {"lib/m.ex", :g}]
-right: [{"lib/a.ex", :a}, {"lib/m.ex", :g}, {"lib/m.ex", :h}]
+code:  assert Enum.map(scope.functions, &{&1.name, &1.arity}) == [f: 1, g: 1, h: 1]
+left:  [h: 1, g: 1, f: 1]
+right: [f: 1, g: 1, h: 1]
 ```
 
 ### AY
@@ -608,16 +678,17 @@ right: "lib/m.ex\tM\tf/1\tdef\t3\nanchor.sabotage scope: 1 functions in 1 files;
 
 ### AZ
 
-`test render/2 R3: zero functions still prints the summary with every count (Anchor.Domain.Sabotage.ScopeTest)`
+`test render/2 R1: text is a TSV line per function, then the summary with every count (Anchor.Domain.Sabotage.ScopeTest)`
 
 ```
-test/anchor/domain/sabotage/scope_test.exs:284
+test/anchor/domain/sabotage/scope_test.exs:260
 Assertion with == failed
 code:  assert Scope.render(scope, :text) ==
-         "anchor.sabotage scope: 0 functions in 0 files; excluded: 0 test files, " <>
-           "1 non-source files, 0 deleted files, 0 hunks outside a function, 0 macros"
-left:  "anchor.sabotage scope: 0 function(s) in 0 files; excluded: 0 test files, 1 non-source files, 0 deleted files, 0 hunks outside a function, 0 macros"
-right: "anchor.sabotage scope: 0 functions in 0 files; excluded: 0 test files, 1 non-source files, 0 deleted files, 0 hunks outside a function, 0 macros"
+         "lib/m.ex\tM\tf/1\tdef\t3-5,8\n" <>
+           "anchor.sabotage scope: 1 functions in 1 files; excluded: 1 test files, " <>
+           "1 non-source files, 0 deleted files, 1 hunks outside a function, 0 macros"
+left:  "lib/m.ex\tM\tf/1\tdef\t3-5,8\nanchor.sabotage scope: 1 function(s) in 1 files; excluded: 1 test files, 1 non-source files, 0 deleted files, 1 hunks outside a function, 0 macros"
+right: "lib/m.ex\tM\tf/1\tdef\t3-5,8\nanchor.sabotage scope: 1 functions in 1 files; excluded: 1 test files, 1 non-source files, 0 deleted files, 1 hunks outside a function, 0 macros"
 ```
 
 ### D
@@ -722,28 +793,22 @@ right: [
 
 ### AI
 
-`test spans/2 P8: macros and functions defined inside quote are marked excluded_macro (Anchor.Domain.Sabotage.FunctionSpansTest)`
+`test spans/2 P13: defimpl for: a list of types gives a span per type (Anchor.Domain.Sabotage.FunctionSpansTest)`
 
 ```
-test/anchor/domain/sabotage/function_spans_test.exs:141
+test/anchor/domain/sabotage/function_spans_test.exs:196
 Assertion with == failed
 code:  assert summary(spans!(source)) == [
-         {M, :m, 1, :defmacro, 2..6, true},
-         {M, :generated, 1, :def, 4..4, true},
-         {M, :p, 0, :defmacrop, 8..8, true},
-         {M, :real, 0, :def, 10..10, false}
+         {String.Chars.A, :to_string, 1, :def, 2..2, false},
+         {String.Chars.B, :to_string, 1, :def, 2..2, false}
        ]
 left:  [
-         {M, :m, 2, :defmacro, 2..6, true},
-         {M, :generated, 2, :def, 4..4, true},
-         {M, :p, 0, :defmacrop, 8..8, true},
-         {M, :real, 0, :def, 10..10, false}
+         {String.Chars.A, :to_string, 2, :def, 2..2, false},
+         {String.Chars.B, :to_string, 2, :def, 2..2, false}
        ]
 right: [
-         {M, :m, 1, :defmacro, 2..6, true},
-         {M, :generated, 1, :def, 4..4, true},
-         {M, :p, 0, :defmacrop, 8..8, true},
-         {M, :real, 0, :def, 10..10, false}
+         {String.Chars.A, :to_string, 1, :def, 2..2, false},
+         {String.Chars.B, :to_string, 1, :def, 2..2, false}
        ]
 ```
 
@@ -812,15 +877,15 @@ right: 2
 
 ### AL2
 
-`test scope/2 M10: the base copy does not parse: named with the merge-base (Anchor.Managers.SabotageScopeTest)`
+`test scope/2 M6: a changed file that does not parse names the file and line (Anchor.Managers.SabotageScopeTest)`
 
 ```
-test/anchor/managers/sabotage_scope_test.exs:154
+test/anchor/managers/sabotage_scope_test.exs:107
 match (=) failed
-code:  assert {:error, {:unparseable_base, "lib/m.ex", @sha, 2, reason}} = Sabotage.scope(@args, @opts)
-left:  {:error, {:unparseable_base, "lib/m.ex", "abc123", 2, reason}}
+code:  assert {:error, {:unparseable, "lib/m.ex", 2, reason}} = Sabotage.scope(@args, @opts)
+left:  {:error, {:unparseable, "lib/m.ex", 2, reason}}
 right: {:error,
-        {:unparseable_base, "lib/m.ex", "abc123", nil,
+        {:unparseable, "lib/m.ex", nil,
          "unexpected reserved word: end"}}
 ```
 
@@ -998,20 +1063,21 @@ right: {:ok,
 
 ### AM
 
-`test parse/1 H11: a '\ No newline at end of file' marker inside a hunk is skipped (Anchor.Domain.Sabotage.DiffHunksTest)`
+`test parse/1 H8: a removed line that reads like a header is body, not a new file (Anchor.Domain.Sabotage.DiffHunksTest)`
 
 ```
-test/anchor/domain/sabotage/diff_hunks_test.exs:195
+test/anchor/domain/sabotage/diff_hunks_test.exs:131
 Assertion with == failed
 code:  assert DiffHunks.parse(diff) ==
-         {:ok, %{"lib/a.ex" => %{status: :modified, hunks: [{4, 1}], old_hunks: [{4, 1}]}}}
-left:  {:error, {:unrecognised_diff_line, 6, "-end"}}
+         {:ok,
+          %{"lib/a.ex" => %{status: :modified, hunks: [{3, 1}, {8, 2}], old_hunks: [{3, 2}, {9, 1}]}}}
+left:  {:error, {:unrecognised_diff_line, 10, "-x"}}
 right: {:ok,
         %{
           "lib/a.ex" => %{
             status: :modified,
-            hunks: [{4, 1}],
-            old_hunks: [{4, 1}]
+            hunks: [{3, 1}, {8, 2}],
+            old_hunks: [{3, 2}, {9, 1}]
           }
         }}
 ```
@@ -1083,28 +1149,27 @@ right: {:ok,
 
 ### BF
 
-`test parse/1 H8: a removed line that reads like a header is body, not a new file (Anchor.Domain.Sabotage.DiffHunksTest)`
+`test parse/1 H2: a zero-count hunk (a pure deletion) is kept with count 0 (Anchor.Domain.Sabotage.DiffHunksTest)`
 
 ```
-test/anchor/domain/sabotage/diff_hunks_test.exs:131
+test/anchor/domain/sabotage/diff_hunks_test.exs:30
 Assertion with == failed
 code:  assert DiffHunks.parse(diff) ==
-         {:ok,
-          %{"lib/a.ex" => %{status: :modified, hunks: [{3, 1}, {8, 2}], old_hunks: [{3, 2}, {9, 1}]}}}
+         {:ok, %{"lib/a.ex" => %{status: :modified, hunks: [{4, 0}], old_hunks: [{5, 2}]}}}
 left:  {:ok,
         %{
           "lib/a.ex" => %{
             status: :modified,
-            hunks: [{3, 2}, {8, 1}],
-            old_hunks: [{3, 1}, {9, 2}]
+            hunks: [{4, 2}],
+            old_hunks: [{5, 0}]
           }
         }}
 right: {:ok,
         %{
           "lib/a.ex" => %{
             status: :modified,
-            hunks: [{3, 1}, {8, 2}],
-            old_hunks: [{3, 2}, {9, 1}]
+            hunks: [{4, 0}],
+            old_hunks: [{5, 2}]
           }
         }}
 ```
@@ -1225,7 +1290,7 @@ code: assert Sabotage.scope(@args, @opts) == {:error, failure}
 
 ```
 test/anchor/managers/sabotage_scope_test.exs:83
-** (Mox.UnexpectedCallError) no expectation defined for Anchor.ChangeSourceMock.untracked/1 in process #PID<0.241.0> with args ["/repo"]
+** (Mox.UnexpectedCallError) no expectation defined for Anchor.ChangeSourceMock.untracked/1 in process #PID<0.257.0> with args ["/repo"]
 code: Sabotage.scope(@args, @opts)
 ```
 
@@ -1253,14 +1318,14 @@ right: {:error, {:git_failed, ["ls-files"], 128, "fatal"}}
 
 ### AB
 
-`test scope/2 M7: only test files changed: zero functions, counted, and no file is read (Anchor.Managers.SabotageScopeTest)`
+`test scope/2 M2: an untracked .ex file is wholly added (Anchor.Managers.SabotageScopeTest)`
 
 ```
-test/anchor/managers/sabotage_scope_test.exs:118
-Assertion with == failed
-code:  assert scope.counts.test_files == 3
-left:  2
-right: 3
+test/anchor/managers/sabotage_scope_test.exs:51
+match (=) failed
+code:  assert [%{file: "lib/new.ex", name: :f, changed_lines: [2, 3, 4]}] = scope.functions
+left:  [%{file: "lib/new.ex", name: :f, changed_lines: [2, 3, 4]}]
+right: []
 ```
 
 ### T
@@ -1269,7 +1334,7 @@ right: 3
 
 ```
 test/anchor/managers/sabotage_scope_test.exs:100
-** (Mox.UnexpectedCallError) no expectation defined for Anchor.ChangeSourceMock.show/3 in process #PID<0.239.0> with args ["/repo", "abc123", "lib/m.ex"]
+** (Mox.UnexpectedCallError) no expectation defined for Anchor.ChangeSourceMock.show/3 in process #PID<0.235.0> with args ["/repo", "abc123", "lib/m.ex"]
 code: assert Sabotage.scope(@args, @opts) == {:error, {:unreadable, "lib/m.ex", :eacces}}
 ```
 
@@ -1279,7 +1344,7 @@ code: assert Sabotage.scope(@args, @opts) == {:error, {:unreadable, "lib/m.ex", 
 
 ```
 test/anchor/managers/sabotage_scope_test.exs:107
-** (Mox.UnexpectedCallError) no expectation defined for Anchor.ChangeSourceMock.show/3 in process #PID<0.259.0> with args ["/repo", "abc123", "lib/m.ex"]
+** (Mox.UnexpectedCallError) no expectation defined for Anchor.ChangeSourceMock.show/3 in process #PID<0.235.0> with args ["/repo", "abc123", "lib/m.ex"]
 code: assert {:error, {:unparseable, "lib/m.ex", 2, reason}} = Sabotage.scope(@args, @opts)
 ```
 
@@ -1288,7 +1353,7 @@ code: assert {:error, {:unparseable, "lib/m.ex", 2, reason}} = Sabotage.scope(@a
 `test scope/2 a clean diff is ok with zero functions (Anchor.Managers.SabotageScopeTest)`
 
 ```
-test/anchor/managers/sabotage_scope_test.exs:182
+test/anchor/managers/sabotage_scope_test.exs:183
 match (=) failed
 code:  assert {:ok, %{functions: [], counts: counts}} = Sabotage.scope(@args, @opts)
 left:  {:ok, %{functions: [], counts: counts}}
@@ -1342,25 +1407,20 @@ code:  assert GitChangeSource.merge_base(outside, "main") == {:error, :not_a_wor
 left:  {:error,
         {:git_failed,
          ["rev-parse", "--verify", "--quiet",
-          "--end-of-options", "main^{commit}"], 128,
-         "fatal: not a git repository (or any of the parent directories): .git\n"}}
+          "--end-of-options", "main^{commit}"], 128, ""}}
 right: {:error, :not_a_work_tree}
 ```
 
 ### BA
 
-`test G5: show returns a file as it was at a commit, by a path relative to root (Anchor.Adapters.GitChangeSourceTest)`
+`test G1: merge_base returns a sha, and diff holds the working tree's hunk (Anchor.Adapters.GitChangeSourceTest)`
 
 ```
-test/anchor/adapters/git_change_source_test.exs:65
+test/anchor/adapters/git_change_source_test.exs:40
 Assertion with == failed
-code:  assert GitChangeSource.show(root, sha, "lib/a.ex") == {:ok, "defmodule A do\n  def f, do: 1\nend\n"}
-left:  {:error,
-        {:git_failed,
-         ["show",
-          "2e565b839700875b1f14581148b422d222edce84\n:./lib/a.ex"],
-         128, ""}}
-right: {:ok, "defmodule A do\n  def f, do: 1\nend\n"}
+code:  assert sha == String.trim(git!(root, ["rev-parse", "main"]))
+left:  "32367d278e47abe5e67272d236acd5473be9cef5\n"
+right: "32367d278e47abe5e67272d236acd5473be9cef5"
 ```
 
 ### BB
@@ -1386,14 +1446,14 @@ code: assert GitChangeSource.read(root, "lib/a.ex") ==
 
 ### BE
 
-`test G3: an unresolvable ref, or one spelled like an option, is no merge-base (Anchor.Adapters.GitChangeSourceTest)`
+`test G3b: a ref with no history in common with HEAD is no merge-base (Anchor.Adapters.GitChangeSourceTest)`
 
 ```
-test/anchor/adapters/git_change_source_test.exs:91
+test/anchor/adapters/git_change_source_test.exs:103
 Assertion with == failed
-code:  assert GitChangeSource.merge_base(root, "no-such-ref") == {:error, {:no_merge_base, "no-such-ref"}}
-left:  {:ok, "8786b73cad5965d0acda25a2d05f398411562189"}
-right: {:error, {:no_merge_base, "no-such-ref"}}
+code:  assert GitChangeSource.merge_base(root, "main") == {:error, {:no_merge_base, "main"}}
+left:  {:ok, "e47a6c7e2a3bf70121159f57c91ba79e1d62190f"}
+right: {:error, {:no_merge_base, "main"}}
 ```
 
 ### K
@@ -1412,7 +1472,7 @@ code: capture_io(:stderr, fn ->
 
 ```
 test/mix/tasks/anchor_sabotage_scope_test.exs:75
-** (Mox.UnexpectedCallError) no expectation defined for Anchor.ChangeSourceMock.merge_base/2 in process #PID<0.248.0> with args ["/home/cjpoll/.local/worktrees/anchor/dnd-5472", "origin/main"]
+** (Mox.UnexpectedCallError) no expectation defined for Anchor.ChangeSourceMock.merge_base/2 in process #PID<0.242.0> with args ["/home/cjpoll/.local/worktrees/anchor/dnd-5472", "origin/main"]
 code: for argv <- [
 ```
 

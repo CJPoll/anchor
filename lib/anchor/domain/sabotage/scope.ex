@@ -24,10 +24,11 @@ defmodule Anchor.Domain.Sabotage.Scope do
 
   A hunk's removed lines (its `old_hunks` range) map onto the base side's
   spans: a function a removed line was in that still exists in the file is in
-  scope, recorded at the new-side line where the removed text was. This is
+  scope, recorded at the line of its own clauses nearest where the removed
+  text was. This is
   what keeps a multi-clause function in scope when a whole clause of it is
-  deleted (first, middle or last), and such a hunk is not counted as outside
-  a function. A function deleted whole no longer exists, so it is not scoped.
+  deleted (first, middle or last); such a pure deletion is not counted as
+  outside a function. A function deleted whole no longer exists, so it is not scoped.
 
   ## What is counted, never dropped
 
@@ -85,7 +86,7 @@ defmodule Anchor.Domain.Sabotage.Scope do
 
   @doc """
   The paths of the changed source files that still exist: the files whose
-  source must be read and given to `build/2`, sorted.
+  source must be read and given to `build/3`, sorted.
   """
   @spec source_files(DiffHunks.t()) :: [String.t()]
   def source_files(files) do
@@ -222,12 +223,20 @@ defmodule Anchor.Domain.Sabotage.Scope do
     Enum.reduce(hunks, acc, fn {hunk, old_hunk}, {functions, counts} ->
       {functions, flags} = map_hunk(hunk, file.path, file.spans, functions)
       {functions, survivors} = map_removed(old_hunk, hunk, file, functions)
-      flags = if survivors == [], do: flags, else: Enum.reject(flags, &(&1 == :outside))
+      flags = deletion_flags(flags, hunk, survivors)
 
       {functions,
        counts |> bump_if(:outside_hunks, :outside in flags) |> bump_if(:macros, :macro in flags)}
     end)
   end
+
+  # A pure deletion (no new lines) whose removed text was in a function that
+  # still exists is about that function, not outside one. A hunk with new
+  # lines keeps the flags those lines earned.
+  defp deletion_flags(flags, {_start, 0}, [_survivor | _more]),
+    do: Enum.reject(flags, &(&1 == :outside))
+
+  defp deletion_flags(flags, _hunk, _survivors), do: flags
 
   # A deletion point inside one clause belongs to it.
   defp map_hunk({start, 0}, path, spans, functions) do
@@ -243,7 +252,9 @@ defmodule Anchor.Domain.Sabotage.Scope do
   end
 
   # The removed lines' base-side functions that still exist in the file. Each
-  # is recorded at the new-side line where the removed text was.
+  # is recorded at the line of its own clauses nearest the new-side point
+  # where the removed text was (a deleted last clause is recorded at the end
+  # of the clause before it, never at the next function's line).
   defp map_removed({_old_start, 0}, _hunk, _file, functions), do: {functions, []}
 
   defp map_removed({old_start, old_count}, {new_start, new_count}, file, functions) do
@@ -255,14 +266,24 @@ defmodule Anchor.Domain.Sabotage.Scope do
       |> Enum.filter(&(&1.first <= old_last and old_start <= &1.last))
       |> MapSet.new(&identity/1)
 
+    point = if new_count == 0, do: new_start + 1, else: new_start
+
     survivors =
       file.spans
       |> Enum.reject(& &1.excluded_macro)
       |> Enum.filter(&MapSet.member?(removed_from, identity(&1)))
-      |> Enum.uniq_by(&identity/1)
+      |> Enum.group_by(&identity/1)
+      |> Enum.map(fn {_identity, clauses} -> nearest(clauses, point) end)
 
-    line = if new_count == 0, do: new_start + 1, else: new_start
-    {Enum.reduce(survivors, functions, &add_line(&2, &1, file.path, line)), survivors}
+    {Enum.reduce(survivors, functions, fn {span, line}, acc ->
+       add_line(acc, span, file.path, line)
+     end), survivors}
+  end
+
+  defp nearest(clauses, point) do
+    clauses
+    |> Enum.map(fn span -> {span, point |> max(span.first) |> min(span.last)} end)
+    |> Enum.min_by(fn {_span, line} -> abs(line - point) end)
   end
 
   defp identity(span), do: {span.module, span.name, span.arity}

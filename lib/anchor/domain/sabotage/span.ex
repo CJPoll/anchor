@@ -7,7 +7,8 @@ defmodule Anchor.Domain.Sabotage.Span do
       one span per clause, all with the same identity. `name` is `nil` when the
       source builds it (`def unquote(name)()`), and such a span is always
       `excluded_macro`.
-    * `kind` is the defining macro.
+    * `kind` is the defining macro: `def`, `defp`, `defmacro`, `defmacrop`,
+      `defguard` or `defguardp`.
     * `first..last` are the clause's lines, both inclusive.
     * `excluded_macro` is true for a macro, a guard macro, and any function
       defined inside `quote`: generated sabotage does not mutate them.

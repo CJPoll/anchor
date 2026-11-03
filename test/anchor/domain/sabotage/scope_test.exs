@@ -185,11 +185,13 @@ defmodule Anchor.Domain.Sabotage.ScopeTest do
       """
 
       # Each row: the source without one line of `base`, the hunk git prints
-      # for it (new side, then base side), and the line now where it was.
+      # for it (new side, then base side), and the line recorded: the line of
+      # f/1's own clauses nearest where the text was. A deleted last clause is
+      # recorded at the clause before it (4), never at g's line (5).
       for {deleted, new_hunk, old_hunk, at} <- [
             {3, {2, 0}, {3, 1}, 3},
             {4, {3, 0}, {4, 1}, 4},
-            {5, {4, 0}, {5, 1}, 5}
+            {5, {4, 0}, {5, 1}, 4}
           ] do
         source = base |> String.split("\n") |> List.delete_at(deleted - 1) |> Enum.join("\n")
         scope = build_with_base([new_hunk], [old_hunk], source, base)
@@ -197,6 +199,15 @@ defmodule Anchor.Domain.Sabotage.ScopeTest do
         assert identities(scope) == [{M, :f, 1, [at]}], "deleted line #{deleted}"
         assert scope.counts == @zero, "deleted line #{deleted}"
       end
+    end
+
+    test "S16: a clause replaced by text outside any function scopes f/1 and counts the new text" do
+      base = "defmodule M do\n  def f(1), do: 1\n  def f(2), do: 2\nend\n"
+      source = "defmodule M do\n  def f(1), do: 1\n  @x 1\nend\n"
+      scope = build_with_base([{3, 1}], [{3, 1}], source, base)
+
+      assert identities(scope) == [{M, :f, 1, [2]}]
+      assert scope.counts == %{@zero | outside_hunks: 1}
     end
 
     test "S14: a function deleted whole is not scoped, and its hunk is outside a function" do
