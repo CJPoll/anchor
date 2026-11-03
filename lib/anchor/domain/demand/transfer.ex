@@ -286,8 +286,12 @@ defmodule Anchor.Domain.Demand.Transfer do
       :values ->
         walk_all(:cerl.values_es(node), demand, st, ctx)
 
-      # A cons, a binary, and any node this walk has no rule for: its parts
-      # are used in full when it is used, or inside a try (a binary can raise).
+      # A list cell cannot raise: its parts are used in full when it is used.
+      :cons ->
+        walk_all([:cerl.cons_hd(node), :cerl.cons_tl(node)], spread(demand), st, ctx)
+
+      # A binary, and any node this walk has no rule for: its parts are used
+      # in full when it is used, or inside a try (a binary can raise).
       _other ->
         walk_all(
           node |> :cerl.subtrees() |> List.flatten(),

@@ -16,10 +16,34 @@ defmodule Anchor.Domain.Demand.TransferTest do
   alias Anchor.Domain.Graph
   alias Anchor.Domain.Graph.Builder
   alias AnchorFixtures.TransferTest.F
+  alias AnchorFixtures.TransferTest.P
 
   @source """
   defmodule AnchorFixtures.TransferTest.S do
     defstruct [:name, :age]
+  end
+
+  defmodule AnchorFixtures.TransferTest.P do
+    # One construct per function, inside try, its result unused.
+    def bif(a), do: try(do: (_ = hd(a); :ok), rescue: (_e -> :error))
+    def module_call(a), do: try(do: (_ = String.upcase(a); :ok), rescue: (_e -> :error))
+    def field_read(a), do: try(do: (_ = Map.fetch!(a, :k); :ok), rescue: (_e -> :error))
+    def element(a), do: try(do: (_ = elem(a, 0); :ok), rescue: (_e -> :error))
+    def dot(a), do: try(do: (_ = a.k; :ok), rescue: (_e -> :error))
+    def local_call(a), do: try(do: (_ = helper(a); :ok), rescue: (_e -> :error))
+    def closure(a), do: (f = fn x -> (_ = hd(x); :ok) end; try(do: (_ = f.(a); :ok), rescue: (_e -> :error)))
+    def apply2(a), do: (f = fn x -> (_ = hd(x); :ok) end; args = [a]; try(do: (_ = apply(f, args); :ok), rescue: (_e -> :error)))
+    def failed_match(a), do: try(do: (case {a, 1} do {_, 2} -> 1 end; :ok), rescue: (_e -> :error))
+    def let(a), do: try(do: (_x = hd(a); :ok), rescue: (_e -> :error))
+    def seq(a), do: try(do: (hd(a); :ok), rescue: (_e -> :error))
+    def letrec(a), do: try(do: (_ = for(<<c <- a>>, do: c); :ok), rescue: (_e -> :error))
+    def receive_after(a), do: try(do: (receive do _m -> :ok after a -> :ok end), rescue: (_e -> :error))
+    def binary(a), do: try(do: (_ = <<a::binary>>; :ok), rescue: (_e -> :error))
+    def map_update(a), do: try(do: (_ = %{a | k: 1}; :ok), rescue: (_e -> :error))
+    def map_build(a), do: try(do: (_ = %{k: a}; :ok), rescue: (_e -> :error))
+    def tuple_build(a), do: try(do: (_ = {a}; :ok), rescue: (_e -> :error))
+    def cons_build(a), do: try(do: (_ = [a]; :ok), rescue: (_e -> :error))
+    defp helper(x), do: (_ = hd(x); :ok)
   end
 
   defmodule AnchorFixtures.TransferTest.F do
@@ -355,6 +379,64 @@ defmodule Anchor.Domain.Demand.TransferTest do
       assert params(context, :comprehension, 2) == [:all, :all]
     end
   end
+
+  # One row per Core construct the walk handles, each inside a try with its
+  # result unused: a construct that can raise uses `a` (its raise reaches the
+  # handler); one that cannot (a tuple, a list cell) does not. A map literal
+  # cannot raise but reads as used: the rule over-approximates there. `catch`
+  # (Core's Erlang `catch E`) has no Elixir spelling, so it has no row.
+  # Callee summaries say each callee uses nothing, so a row is red unless the
+  # protection rule itself makes the argument used.
+  @protected_rows [
+    {:bif, :all},
+    {:module_call, :all},
+    {:field_read, :all},
+    {:element, :all},
+    {:dot, :all},
+    {:local_call, :all},
+    {:closure, :all},
+    {:apply2, :all},
+    {:failed_match, :all},
+    {:let, :all},
+    {:seq, :all},
+    {:letrec, :all},
+    {:receive_after, :all},
+    {:binary, :all},
+    {:map_update, :all},
+    {:map_build, :all},
+    {:tuple_build, :absent},
+    {:cons_build, :absent}
+  ]
+
+  describe "inside try (one row per construct)" do
+    test "a construct that can raise uses its value; a tuple or list cell does not", context do
+      actual =
+        for {name, _expected} <- @protected_rows do
+          mfa = {P, name, 1}
+          core = context.graph |> Graph.function(mfa) |> Map.fetch!(:core) |> Core.label()
+
+          lambdas =
+            core
+            |> Core.lambdas()
+            |> Enum.map(fn {ordinal, fun} -> {{mfa, ordinal}, nothing(fun)} end)
+
+          result =
+            Transfer.function(core, %{
+              mfa: mfa,
+              mode: :sound,
+              summaries: Map.new([{{P, :helper, 1}, [:absent]} | lambdas]),
+              cfa: context.cfa,
+              effects: []
+            })
+
+          {name, hd(result.params)}
+        end
+
+      assert actual == @protected_rows
+    end
+  end
+
+  defp nothing(fun), do: Enum.map(:cerl.fun_vars(fun), fn _var -> :absent end)
 
   describe "modes" do
     test "an unknown call uses its arguments and names the reason (sound)", context do
