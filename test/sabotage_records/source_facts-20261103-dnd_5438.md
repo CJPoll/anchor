@@ -247,3 +247,45 @@ Run summary: `10 tests, 1 failure`
 ## Traps
 
 - A first run of BR-B, BR-C, CW-H and SF-B failed to compile under `warnings_as_errors` (an unreachable clause, an unused alias, unused variables) and printed no ExUnit summary; the driver records `NO SUMMARY` for such a run, and each mutation was rewritten to compile and re-run. Read a sabotage run's test count, never its exit code alone.
+
+## SF-K — `Elixir.X` and atom names were qualified by the enclosing module (critic round 2 on 3b52976)
+
+The unfixed code, not a mutation: `literal_name/1` kept a leading `Elixir` part and `qualify/2` nested every name, so `defmodule Elixir.InnerAbs` inside `TopAbs` read as `Elixir.TopAbs.Elixir.InnerAbs`, while Kernel names it `InnerAbs` (and an atom name nests nowhere). The module was then missing from `defmodules`, and the builder answered `generated?: true`. Run on 3b52976 with the new row: `11 tests, 1 failure`.
+
+```
+  1) test from_source/2 an Elixir.-prefixed or atom name is absolute, never qualified by the enclosing module (Anchor.Domain.Graph.SourceFactsTest)
+     test/anchor/domain/graph/source_facts_test.exs:88
+     Assertion with == failed
+     code:  assert SourceFacts.from_source("a.ex", text) == %{
+              defmodules: ["TopAbs", "InnerAbs", "inner_atom", "TopAbs.Rel"],
+              uses: %{"TopAbs" => ["GenServer"], "InnerAbs" => [], "inner_atom" => [], "TopAbs.Rel" => []},
+              nonliteral_defmodule?: false
+            }
+     left:  %{
+              uses: %{
+                "Elixir.TopAbs" => ["Elixir.GenServer"],
+                "Elixir.TopAbs.Elixir.InnerAbs" => [],
+                "Elixir.TopAbs.Rel" => [],
+                "Elixir.TopAbs.inner_atom" => []
+              },
+              defmodules: ["Elixir.TopAbs",
+               "Elixir.TopAbs.Elixir.InnerAbs",
+               "Elixir.TopAbs.inner_atom", "Elixir.TopAbs.Rel"],
+              nonliteral_defmodule?: false
+            }
+     right: %{
+              uses: %{
+                "InnerAbs" => [],
+                "TopAbs" => ["GenServer"],
+                "TopAbs.Rel" => [],
+                "inner_atom" => []
+              },
+              defmodules: ["TopAbs", "InnerAbs", "inner_atom",
+               "TopAbs.Rel"],
+              nonliteral_defmodule?: false
+            }
+     stacktrace:
+       test/anchor/domain/graph/source_facts_test.exs:104: (test)
+```
+
+After the fix (`literal_name/1` returns `:absolute` for `Elixir.X` and atoms): `mix test test/anchor/domain/graph` gives `47 tests, 0 failures`.

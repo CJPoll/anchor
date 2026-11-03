@@ -83,6 +83,36 @@ defmodule Anchor.Domain.Graph.SourceFactsTest do
                SourceFacts.from_source("a.ex", "defmodule :erl_style do\nend\n")
     end
 
+    # Kernel names `Elixir.X` and an atom absolutely, nested or not (checked:
+    # compiling this text gives InnerAbs, :inner_atom, TopAbs.Rel, TopAbs).
+    test "an Elixir.-prefixed or atom name is absolute, never qualified by the enclosing module" do
+      text = """
+      defmodule Elixir.TopAbs do
+        use Elixir.GenServer
+
+        defmodule Elixir.InnerAbs do
+        end
+
+        defmodule :inner_atom do
+        end
+
+        defmodule Rel do
+        end
+      end
+      """
+
+      assert SourceFacts.from_source("a.ex", text) == %{
+               defmodules: ["TopAbs", "InnerAbs", "inner_atom", "TopAbs.Rel"],
+               uses: %{
+                 "TopAbs" => ["GenServer"],
+                 "InnerAbs" => [],
+                 "inner_atom" => [],
+                 "TopAbs.Rel" => []
+               },
+               nonliteral_defmodule?: false
+             }
+    end
+
     test "__MODULE__ at the head of a nested name resolves to the enclosing module" do
       text = """
       defmodule A do

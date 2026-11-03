@@ -22,8 +22,10 @@ defmodule Anchor.Domain.Graph.SourceFacts do
       module of this file missing from `defmodules` may then be hand-written,
       and the builder answers `:unknown` for it, never `true`.
 
-  Names are strings as written, without the `Elixir.` prefix; `__MODULE__` at
-  the head of a nested module's name resolves to the enclosing module.
+  Names are strings without the `Elixir.` prefix, as the beam names the module:
+  an alias nests under the enclosing module, `Elixir.X` and an atom name do
+  not (Kernel's rule), and `__MODULE__` at the head of a nested module's name
+  resolves to the enclosing module.
   Reading the file is the caller's job (the runner, DND-5440): this function
   takes the text.
   """
@@ -73,7 +75,7 @@ defmodule Anchor.Domain.Graph.SourceFacts do
 
   defp walk({:use, _meta, [target | _opts]}, current, acc) when is_binary(current) do
     case literal_name(target) do
-      {:ok, name} -> add_use(acc, current, name)
+      {:ok, name, _scope} -> add_use(acc, current, name)
       :error -> acc
     end
   end
@@ -98,14 +100,24 @@ defmodule Anchor.Domain.Graph.SourceFacts do
     end)
   end
 
+  # A literal module name, as the beam names it (no `Elixir.` prefix), and
+  # whether Kernel nests it under the enclosing module: an alias is
+  # `:relative`; `Elixir.X` and an atom are `:absolute`.
+  defp literal_name({:__aliases__, _meta, [:"Elixir" | parts]}) when parts != [] do
+    case literal_name({:__aliases__, [], parts}) do
+      {:ok, name, _scope} -> {:ok, name, :absolute}
+      :error -> :error
+    end
+  end
+
   defp literal_name({:__aliases__, _meta, parts}) do
     if Enum.all?(parts, &is_atom/1),
-      do: {:ok, parts |> Enum.map(&Atom.to_string/1) |> Enum.join(".")},
+      do: {:ok, parts |> Enum.map(&Atom.to_string/1) |> Enum.join("."), :relative},
       else: :error
   end
 
   defp literal_name(atom) when is_atom(atom) and not is_nil(atom) and not is_boolean(atom),
-    do: {:ok, atom |> Atom.to_string() |> String.replace_prefix("Elixir.", "")}
+    do: {:ok, atom |> Atom.to_string() |> String.replace_prefix("Elixir.", ""), :absolute}
 
   defp literal_name(_other), do: :error
 
@@ -117,14 +129,16 @@ defmodule Anchor.Domain.Graph.SourceFacts do
   defp module_name({:__aliases__, meta, [{:__MODULE__, _, context} | rest]}, current)
        when is_binary(current) and is_atom(context) and rest != [] do
     case literal_name({:__aliases__, meta, rest}) do
-      {:ok, name} -> {:ok, current <> "." <> name}
+      {:ok, name, :relative} -> {:ok, current <> "." <> name}
+      {:ok, name, :absolute} -> {:ok, name}
       :error -> :error
     end
   end
 
   defp module_name(name_ast, current) do
     case literal_name(name_ast) do
-      {:ok, name} -> {:ok, qualify(current, name)}
+      {:ok, name, :relative} -> {:ok, qualify(current, name)}
+      {:ok, name, :absolute} -> {:ok, name}
       :error -> :error
     end
   end
