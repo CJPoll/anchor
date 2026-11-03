@@ -123,6 +123,16 @@ defmodule Anchor.Domain.Demand.TransferTest do
       end
     end
 
+    def guarded_fetch(m) do
+      try do
+        Map.fetch!(m, :k)
+      rescue
+        error -> error
+      end
+    end
+
+    def unguarded_fetch(m), do: Map.fetch!(m, :k)
+
     def unguarded_case(a, b) do
       case {a, b} do
         {:x, _} -> 1
@@ -312,6 +322,13 @@ defmodule Anchor.Domain.Demand.TransferTest do
 
     test "inside try, a binary built from a can raise (badarg): a used", context do
       assert params(context, :guarded_bin, 1) == [:all]
+    end
+
+    test "inside try, a field read that can raise puts the whole map in the exception: used",
+         context do
+      assert params(context, :guarded_fetch, 1) == [:all]
+      # Positive control: outside a try only the field is used.
+      assert params(context, :unguarded_fetch, 1) == [{:used, %{k: :all}}]
     end
 
     test "a pure module's call with its result unused still uses a fn argument", context do

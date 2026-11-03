@@ -43,14 +43,14 @@ defmodule Anchor.Domain.Demand.Transfer do
       is recorded as a reason the function may be imprecise. `apply(f,
       list)` is an apply site: the list is used when a resolved closure uses
       a parameter.
-    * Inside a `try`'s protected expression or a `catch`, a raise is
-      observable, so a call (and a map update) there uses its arguments even
-      when its result is unused; a call of a project function or a closure
-      there uses every argument in full (its summary assumes no handler sees
-      a raise), and so does `apply(f, list)`; a failed match's value
-      (`primop match_fail`) reaches the handler, so it is used there. A
-      raise outside any `try` is not a use: a caller's handler is not
-      followed.
+    * Inside a `try`'s protected expression or a `catch` a raise is
+      observable: whatever a call, a map update, a binary or a failed match
+      raises carries its values to the handler. So there every call (of a
+      library, of a project function, of a closure, `apply(f, list)`) uses
+      every argument in full, and a map, a binary and a `match_fail` payload
+      use their parts in full. A raise outside any `try` is not a use: a
+      caller's handler is not followed, and a caller's call inside its own
+      `try` uses every argument by this rule.
     * A `fun` whose value is used: its body in full, so what it captures is
       used. A `letrec` definition (a receive or comprehension loop) is
       walked in full.
@@ -668,13 +668,25 @@ defmodule Anchor.Domain.Demand.Transfer do
         apply_list(node, args, st, ctx)
 
       mfa ->
-        call_mfa(mfa, args, demand, st, ctx)
+        protected_mfa(mfa, args, demand, st, ctx)
     end
   end
 
+  # Inside a try every call uses every argument in full: whatever it raises
+  # (a KeyError holding the map, a badarg holding its arguments) reaches the
+  # handler. A project call keeps its passes (`call_closures/4` applies the
+  # same rule through `protected_call/3`).
+  defp protected_mfa(mfa, args, _demand, st, %{protected?: true} = ctx) do
+    if Map.has_key?(ctx.summaries, mfa),
+      do: call_closures([mfa], args, st, ctx),
+      else: walk_all(args, :all, st, ctx)
+  end
+
+  defp protected_mfa(mfa, args, demand, st, ctx), do: call_mfa(mfa, args, demand, st, ctx)
+
   # Inside a `try` or a `catch` a call that can raise is observable even when
   # its result is not used: it is demanded in full there.
-  defp protected(:absent, %{protected?: true}), do: :all
+  defp protected(_demand, %{protected?: true}), do: :all
   defp protected(demand, _ctx), do: demand
 
   defp protected_call(_demand, [_closure | _rest], %{protected?: true}), do: :all
