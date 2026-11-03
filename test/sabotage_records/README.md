@@ -141,3 +141,7 @@ before coining a synonym.
   (DND-5439): def-use over one clause's source AST, backward slices with
   control dependence, dead expressions, single-exit regions, the orphan check
   and the unsliceable forms (`receive`, the process dictionary, `var!`).
+- `graph_algorithms` — `Anchor.Domain.GraphAlgorithms` and the plain
+  `Anchor.Domain.Digraph` value it runs over (DND-5444): dominators and
+  post-dominators from a virtual root/exit, union-find components, Tarjan
+  SCCs, the condensation and cyclic SCCs.
