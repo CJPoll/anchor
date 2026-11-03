@@ -9,14 +9,21 @@
 # verdict line per claim. No Mix project, no network, no Dialyzer internals.
 #
 # Load rules (DND-5499 design): Dialyzer is never pointed at a whole repo and
-# no OTP or Elixir PLT is built here. If Dialyzer refuses to run without a PLT,
-# the runner builds one from `erts` only, inside the temporary directory, under
-# a 60 s cap; past the cap it stops (run it in CI instead).
+# no OTP or Elixir PLT is built here. Dialyzer needs a PLT: `plts: []` does not
+# mean "none", it falls back to the user's default PLT file ($DIALYZER_PLT or
+# the user cache), which may be a full OTP PLT this run would load uncapped and
+# misreport. So the runner always builds its own PLT from `erts` only, inside
+# the temporary directory, under a 60 s cap; past the cap it stops (run it in CI
+# instead).
 #
-# Exit status: 0 when the analysis ran (whatever the verdicts), 1 when it could
-# not measure: no fixture, a compile failure, zero beams, a Dialyzer error, the
-# PLT cap, or a fixture module with no line in the output. An empty run never
-# reads as "no warnings anywhere".
+# Exit status: 0 when every claim got a verdict (CONFIRMED or REFUTED), 1 when
+# anything could not be measured: a missing fixture, a compile failure, zero
+# beams, a compiled module with no source span, a Dialyzer error, the PLT cap,
+# or a claim that reads COULD NOT MEASURE (its positive control was not
+# reported, or a Dialyzer warning could not be attributed to a fixture module).
+# An empty run never reads as "no warnings anywhere".
+#
+# Sabotage record: test/sabotage_records/dialyzer_boundary-20261103-dnd_5499.md
 defmodule AnchorSpike.Runner do
   @fixture_files ["exported.ex", "private.ex", "widened.ex", "dropped.ex"]
   @plt_cap_ms 60_000
@@ -27,10 +34,11 @@ defmodule AnchorSpike.Runner do
   @widened_generated Enum.to_list(3..19)
 
   def main(dir) do
-    tmp =
-      Path.join(System.tmp_dir!(), "anchor-dialyzer-spike-#{System.unique_integer([:positive])}")
-
-    File.mkdir_p!(tmp)
+    # Random suffix and mkdir!/1 (not mkdir_p!/1): two concurrent runs never
+    # share, or delete, one directory; a collision fails loudly.
+    suffix = Base.encode16(:crypto.strong_rand_bytes(6), case: :lower)
+    tmp = Path.join(System.tmp_dir!(), "anchor-dialyzer-spike-#{suffix}")
+    File.mkdir!(tmp)
     say("tmp dir: #{tmp}")
 
     result =
@@ -67,18 +75,6 @@ defmodule AnchorSpike.Runner do
 
   defp analyse(beams, tmp) do
     opts = [analysis_type: :succ_typings, from: :byte_code, files: beams, warnings: []]
-
-    case dialyze(opts ++ [plts: []]) do
-      {:ok, warnings} ->
-        {:ok, warnings, "plts: [] (no PLT)"}
-
-      {:error, reason} ->
-        say("preferred route (plts: []) refused: #{reason}")
-        analyse_with_erts_plt(opts, tmp)
-    end
-  end
-
-  defp analyse_with_erts_plt(opts, tmp) do
     plt = Path.join(tmp, "erts.plt")
     erts_ebin = Path.join(to_string(:code.lib_dir(:erts)), "ebin")
 
@@ -113,16 +109,26 @@ defmodule AnchorSpike.Runner do
     Enum.group_by(warnings, &owner(&1, spans), &format/1)
   end
 
+  # A Dialyzer warning no fixture module owns could be any claim's evidence
+  # (say, a lost "can never match" for AnchorSpike.Exported), so no claim gets
+  # a verdict while one exists.
+  defp claim_lines(%{unattributed: [_ | _]}, _widened_ns) do
+    Enum.map(
+      1..4,
+      &"Claim #{&1}: COULD NOT MEASURE (a Dialyzer warning owned by no fixture module)"
+    )
+  end
+
   defp claim_lines(reports, widened_ns) do
     private_reported = never_match?(reports, AnchorSpike.Private)
     widened_reported = Map.new(widened_ns, &{&1, never_match?(reports, widened_module(&1))})
-    control = private_reported and widened_reported[hd(widened_ns)]
+    widened_control = widened_reported[hd(widened_ns)]
 
     [
       claim1(reports, private_reported),
-      claim2(private_reported),
+      claim2(private_reported, widened_control),
       claim3(widened_reported, widened_ns),
-      claim4(reports, control)
+      claim4(reports, private_reported and widened_control)
     ]
   end
 
@@ -135,8 +141,17 @@ defmodule AnchorSpike.Runner do
       else: "Claim 1: CONFIRMED (no 'can never match' for AnchorSpike.Exported; control reported)"
   end
 
-  defp claim2(true), do: "Claim 2: CONFIRMED (AnchorSpike.Private kind(:c) reported)"
-  defp claim2(false), do: "Claim 2: REFUTED (AnchorSpike.Private kind(:c) not reported)"
+  # Claim 2's warning is its own evidence; its control is that the run reports
+  # an unreachable private clause at all (Widened at the sweep's first N), so a
+  # dead run reads COULD NOT MEASURE, never REFUTED.
+  defp claim2(true, _control), do: "Claim 2: CONFIRMED (AnchorSpike.Private kind(:c) reported)"
+
+  defp claim2(false, true),
+    do: "Claim 2: REFUTED (AnchorSpike.Private kind(:c) not reported; Widened control reported)"
+
+  defp claim2(false, _control),
+    do:
+      "Claim 2: COULD NOT MEASURE (neither AnchorSpike.Private nor the Widened control reported)"
 
   defp claim3(reported, ns) do
     per_n =
@@ -333,8 +348,13 @@ defmodule AnchorSpike.Runner do
     print_versions(route)
 
     widened_ns = Enum.sort([@widened_committed | @widened_generated])
-    Enum.each(claim_lines(reports, widened_ns), &say/1)
-    :ok
+    lines = claim_lines(reports, widened_ns)
+    Enum.each(lines, &say/1)
+
+    case Enum.count(lines, &String.contains?(&1, "COULD NOT MEASURE")) do
+      0 -> :ok
+      n -> {:error, "#{n} of #{length(lines)} claims could not be measured"}
+    end
   end
 
   defp run(dir, tmp) do
@@ -370,6 +390,9 @@ defmodule AnchorSpike.Runner do
     System.halt(1)
   end
 
+  # This is a command-line script whose output is its result, so it writes to
+  # stdout directly; IO.puts/1 would do the same (Credo's IoPuts check is aimed
+  # at library code).
   defp say(line), do: IO.write([line, "\n"])
 
   defp widened_module(n), do: Module.concat(AnchorSpike, "Widened#{n}")

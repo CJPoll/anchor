@@ -13,18 +13,24 @@ elixir test/fixtures/dialyzer_boundary/run.exs
 No Mix project, no network, about 1.5 s. The runner compiles only these
 fixtures (plus the generated `Widened<N>` modules) into a fresh temporary
 directory, runs Dialyzer on only those beams through the public
-`:dialyzer.run/1`, and removes the directory. Dialyzer refuses to run without a
-PLT (`plts: []` falls back to the default PLT file), so the runner builds one
-from `erts` only, inside the temporary directory, capped at 60 s (it took
-under 1 s). It never builds an OTP or Elixir PLT and never analyses a whole
-repo.
+`:dialyzer.run/1`, and removes the directory. Dialyzer needs a PLT, and
+`plts: []` does not mean "none": it falls back to the user's default PLT file
+(`$DIALYZER_PLT` or the user cache), refused here with `Could not find the
+PLT`, and on a machine that has one it would load that PLT uncapped. So the
+runner always builds its own PLT from `erts` only, inside the temporary
+directory, capped at 60 s (it took under 1 s). It never builds an OTP or Elixir
+PLT and never analyses a whole repo.
 
 It prints Dialyzer's warnings verbatim per module ("no warnings" for a module
 with none), the Elixir compiler's warnings per module, the versions and the PLT
-route, and one verdict line per claim. It exits 1 when it could not measure
-(a missing fixture, a compile failure, zero beams, a Dialyzer error, the PLT
-cap): an empty run never reads as "no warnings anywhere". A claim whose
-positive control is missing reads COULD NOT MEASURE, never CONFIRMED.
+route, and one verdict line per claim. A claim whose positive control is
+missing, or any Dialyzer warning no fixture module owns, reads COULD NOT
+MEASURE, never CONFIRMED or REFUTED. It exits 1 when anything could not be
+measured (a missing fixture, a compile failure, zero beams, a Dialyzer error,
+the PLT cap, or a COULD NOT MEASURE claim): an empty run never reads as "no
+warnings anywhere".
+
+Sabotage record: `test/sabotage_records/dialyzer_boundary-20261103-dnd_5499.md`.
 
 ## Fixtures
 
