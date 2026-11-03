@@ -24,6 +24,10 @@ defmodule Anchor.Domain.Sabotage.MutatorCompileTest do
     {@canary, :pick, 2},
     {@canary, :scaled, 1},
     {@canary, :scaled, 2},
+    {@canary, :bits, 2},
+    {@canary, :limited, 2},
+    {@canary, :counted, 1},
+    {@canary, :host, 1},
     {Module.concat(@canary, Nested), :twice, 1}
   ]
 

@@ -19,7 +19,7 @@ defmodule Anchor.Domain.Sabotage.MutatorTest do
      {[{:drop_effect_call, nil, "Logger.info(\"doubled\")"}],
       [
         {:delete_statement, nil, "removes the last use of function `validate/1`"},
-        {:delete_statement, nil, "orphans variable `y` bound at line 15 and used at line 17"},
+        {:delete_statement, nil, "orphans variable `y` bound at line 17 and used at line 19"},
         {:return_input, 0, "removes the last use of function `double/1`"}
       ]}},
     {{@canary, :checked, 1},
@@ -29,7 +29,7 @@ defmodule Anchor.Domain.Sabotage.MutatorTest do
         {:drop_effect_call, nil, "Logger.debug(\"sent\")"},
         {:return_input, 0, "effects(pid, x)"},
         {:return_input, 1, "effects(pid, x)"}
-      ], [{:drop_effect_call, nil, "leaves variable `pid` bound at line 25 unused"}]}},
+      ], [{:drop_effect_call, nil, "leaves variable `pid` bound at line 27 unused"}]}},
     {{@canary, :classify, 1},
      {[
         {:narrow_clause, nil, "classify(:small)"},
@@ -85,9 +85,23 @@ defmodule Anchor.Domain.Sabotage.MutatorTest do
         {:return_input, 0, "scaled(x, factor \\\\ 2)"},
         {:return_input, 1, "scaled(x, factor \\\\ 2)"}
       ], []}},
+    {{@canary, :bits, 2},
+     {[{:return_input, 1, "bits(<<head::binary-size(1), _rest::binary>>, y)"}], []}},
+    {{@canary, :limited, 2}, {[{:return_input, 1, "limited(@limit, y)"}], []}},
+    {{@canary, :counted, 1},
+     {[],
+      [
+        {:delete_statement, nil, "removes the last use of function `loop/1`"},
+        {:return_input, 0, "removes the last use of function `loop/1`"}
+      ]}},
+    {{@canary, :host, 1},
+     {[
+        {:delete_statement, nil, "_ = Link.to_string(link)"},
+        {:return_input, 0, "host(%Link{} = link)"}
+      ], []}},
     {{@nested, :twice, 1},
      {[{:drop_effect_call, nil, "send(self(), :twice)"}, {:return_input, 0, "twice(x)"}],
-      [{:delete_statement, nil, "orphans variable `y` bound at line 83 and used at line 85"}]}}
+      [{:delete_statement, nil, "orphans variable `y` bound at line 102 and used at line 104"}]}}
   ]
 
   setup_all do
@@ -287,6 +301,36 @@ defmodule Anchor.Domain.Sabotage.MutatorTest do
 
       assert Enum.map(result.mutants, & &1.operator) == List.duplicate(:narrow_clause, 3)
       assert result.skipped == []
+    end
+
+    test "a nested module's use of a same-named private function does not count for the outer one" do
+      source =
+        module_source("""
+          def f(x) do
+            g(x)
+            x
+          end
+
+          defp g(x), do: x
+
+          defmodule Inner do
+            def h(x), do: g(x)
+            defp g(x), do: x
+          end
+        """)
+
+      assert %{mutants: [], skipped: [%{reason: "removes the last use of function `g/1`"}]} =
+               generate!(source, {M, :f, 1}, operators: [:delete_statement])
+    end
+
+    test "a misspelt effect token is refused even with no statement to classify" do
+      assert_raise ArgumentError,
+                   ~r/sabotage effect_calls: "Notifier" is not a function reference/,
+                   fn ->
+                     Mutator.generate(module_source("  def f, do: :ok"), "m.ex", {M, :f, 0},
+                       effect_calls: ["Notifier"]
+                     )
+                   end
     end
 
     test "an unknown operator is refused" do

@@ -8,6 +8,8 @@ defmodule AnchorFixtures.Sabotage.Canary do
 
   require Logger
 
+  alias URI, as: Link
+
   @limit 10
 
   def statements(x) do
@@ -71,7 +73,24 @@ defmodule AnchorFixtures.Sabotage.Canary do
     x * factor
   end
 
+  def bits(<<head::binary-size(1), _rest::binary>>, y), do: {head, y}
+
+  def limited(@limit, y), do: y + 1
+
+  def counted(x) do
+    loop(x)
+    x
+  end
+
+  def host(%Link{} = link) do
+    _ = Link.to_string(link)
+    link.host
+  end
+
   defp double(x), do: x * 2
+
+  defp loop(0), do: :done
+  defp loop(n), do: loop(n - 1)
 
   defp validate(x) when is_integer(x), do: :ok
   defp validate(_x), do: :error

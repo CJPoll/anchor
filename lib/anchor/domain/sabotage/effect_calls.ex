@@ -51,6 +51,16 @@ defmodule Anchor.Domain.Sabotage.EffectCalls do
     [:ets] => [:insert, :insert_new, :delete, :delete_object, :update_counter]
   }
 
+  @doc """
+  Checks every extra token parses, raising `ArgumentError` with the grammar's
+  message for the first that does not. The generator calls it once, up front,
+  so a misspelt token is refused even when no statement reaches `effect?/2`.
+  """
+  @spec validate!([String.t()]) :: :ok
+  def validate!(extra_tokens) when is_list(extra_tokens) do
+    Enum.each(extra_tokens, &parse_token!/1)
+  end
+
   @spec effect?(Macro.t(), [String.t()]) :: boolean()
   def effect?(call_ast, extra_tokens) when is_list(extra_tokens) do
     refs = Enum.map(extra_tokens, &parse_token!/1)

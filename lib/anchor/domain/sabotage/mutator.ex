@@ -21,6 +21,14 @@ defmodule Anchor.Domain.Sabotage.Mutator do
   function (skipped edits counted too, so an id never depends on another
   edit's fate). No line, column or path enters it.
 
+  The compile promise covers what the source shows: bindings and references.
+  A warning only Elixir's type checker can raise (deleting
+  `x = Integer.to_string(x)` before `String.upcase(x)`) is not foreseen; the
+  runner (DND-5473) classifies such a mutant `invalid`, never killed.
+
+  Ids are stable for one Elixir version: the normalized target is printed by
+  `Macro.to_string/1`, whose output an Elixir upgrade may change.
+
   Results:
 
     * `{:ok, %{mutants: [...], skipped: [...]}}`; both empty for a function
@@ -30,6 +38,7 @@ defmodule Anchor.Domain.Sabotage.Mutator do
     * `{:error, {:parse_error, line, message}}` when the source does not parse.
   """
 
+  alias Anchor.Domain.Sabotage.EffectCalls
   alias Anchor.Domain.Sabotage.Mutant
   alias Anchor.Domain.Sabotage.MutantId
   alias Anchor.Domain.Sabotage.Operators
@@ -47,6 +56,7 @@ defmodule Anchor.Domain.Sabotage.Mutator do
              is_integer(arity) do
     operators = operators!(opts)
     tokens = Keyword.get(opts, :effect_calls, [])
+    EffectCalls.validate!(tokens)
 
     with {:ok, ast} <- SourceTree.parse(source),
          {:ok, clauses} <- SourceTree.function_clauses(ast, module, name, arity) do

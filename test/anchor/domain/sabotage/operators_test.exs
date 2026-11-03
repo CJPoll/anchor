@@ -134,6 +134,13 @@ defmodule Anchor.Domain.Sabotage.OperatorsTest do
       assert applied(source, first) =~ "def f(x) when (is_integer(x)) and #{@never}, do: x"
     end
 
+    test "a head with two `when`s is not narrowed" do
+      body = "def f(x) when is_atom(x) when is_nil(x), do: x\ndef f(y), do: y"
+
+      assert {_s, [%{skip: "the head has more than one `when`"}, %{skip: nil}]} =
+               edits(body, :narrow_clause, {:f, 1})
+    end
+
     test "a function with one clause is not narrowed" do
       assert {_s, []} = edits("def f(x) when is_integer(x), do: x", :narrow_clause, {:f, 1})
     end

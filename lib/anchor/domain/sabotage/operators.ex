@@ -179,21 +179,10 @@ defmodule Anchor.Domain.Sabotage.Operators do
     end
   end
 
-  # The variable nodes of a head's parameters, in source order: not a pin's
-  # variable, not a default value, not an underscored one.
-  defp head_vars(args) do
-    args
-    |> Enum.map(fn
-      {:\\, _meta, [pattern, _default]} -> pattern
-      pattern -> pattern
-    end)
-    |> SourceTree.nodes()
-    |> Enum.reject(&match?({:^, _meta, _args}, &1))
-    |> then(fn nodes ->
-      pinned = for {:^, _meta, [var]} <- nodes, do: var
-      Enum.filter(nodes, &(variable?(&1) and &1 not in pinned))
-    end)
-  end
+  # The variable nodes a head's parameters bind, in source order: not a pin,
+  # a default value, a binary segment's type specifier, a module attribute or
+  # an underscored variable.
+  defp head_vars(args), do: Enum.flat_map(args, &pattern_vars/1)
 
   # The line text around `range` holds nothing else (whitespace, or a comment
   # after it).
@@ -212,6 +201,13 @@ defmodule Anchor.Domain.Sabotage.Operators do
     edit(:narrow_clause, nil, target, range, Patch.slice(source, range) <> " when " <> @never)
   end
 
+  # `def f(x) when a when b`: `(a when b) and ...` is not a guard.
+  defp narrow(source, head, _call, {:when, _meta, _args} = guard) do
+    range = SourceTree.range(guard)
+    target = Patch.slice(source, SourceTree.range(head))
+    edit(:narrow_clause, nil, target, range, "", "the head has more than one `when`")
+  end
+
   defp narrow(source, head, _call, guard) do
     range = SourceTree.range(guard)
     target = Patch.slice(source, SourceTree.range(head))
@@ -224,6 +220,20 @@ defmodule Anchor.Domain.Sabotage.Operators do
       "(" <> Patch.slice(source, range) <> ") and " <> @never
     )
   end
+
+  defp pattern_vars({:\\, _meta, [pattern, _default]}), do: pattern_vars(pattern)
+  defp pattern_vars({:"::", _meta, [pattern, _spec]}), do: pattern_vars(pattern)
+  defp pattern_vars({form, _meta, _args}) when form in [:^, :@], do: []
+
+  defp pattern_vars({name, _meta, context} = var) when is_atom(name) and is_atom(context),
+    do: if(variable?(var), do: [var], else: [])
+
+  defp pattern_vars({_form, _meta, args}) when is_list(args),
+    do: Enum.flat_map(args, &pattern_vars/1)
+
+  defp pattern_vars({left, right}), do: pattern_vars(left) ++ pattern_vars(right)
+  defp pattern_vars(list) when is_list(list), do: Enum.flat_map(list, &pattern_vars/1)
+  defp pattern_vars(_literal), do: []
 
   defp param_var({:\\, _meta, [pattern, _default]}), do: param_var(pattern)
 

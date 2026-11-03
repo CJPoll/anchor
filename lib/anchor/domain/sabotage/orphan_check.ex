@@ -196,7 +196,8 @@ defmodule Anchor.Domain.Sabotage.OrphanCheck do
          {{line, _column}, _stop} = range <- SourceTree.range(node),
          {:ok, quoted} <- SourceTree.quoted(Patch.slice(source, range), line) do
       acc = %{uses: MapSet.new(), defined: %{}, aliases: MapSet.new(), imports: []}
-      {:ok, refs(Forms.desugar_pipes(quoted), acc)}
+      {:defmodule, _meta, [_name, kw]} = Forms.desugar_pipes(quoted)
+      {:ok, refs(Keyword.get(kw, :do), acc)}
     else
       _error -> :error
     end
@@ -242,9 +243,16 @@ defmodule Anchor.Domain.Sabotage.OrphanCheck do
         call -> {call, []}
       end
 
-    acc = define(acc, def, call)
-    refs(rest, refs(guards, refs(head_defaults(call), acc)))
+    acc = acc |> define(def, call) |> then(&refs(guards, refs(head_args(call), &1)))
+
+    # A private function's call to itself is not a use: the compiler still
+    # reports it unused when nothing else calls it.
+    body = refs(rest, %{acc | uses: MapSet.new()})
+    %{body | uses: MapSet.union(acc.uses, own_calls_dropped(body.uses, def, call))}
   end
+
+  # A nested module is its own module: its definitions and uses are not this one's.
+  defp refs({:defmodule, _meta, _args}, acc), do: acc
 
   defp refs({:@, _meta, [{name, _nmeta, context}]}, acc) when is_atom(name) and is_atom(context),
     do: add_use(acc, {:attr, name})
@@ -307,11 +315,23 @@ defmodule Anchor.Domain.Sabotage.OrphanCheck do
 
   defp define(acc, _def, _call), do: acc
 
-  defp head_defaults({_name, _meta, args}) when is_list(args) do
-    for {:\\, _dmeta, [_pattern, default]} <- args, do: default
+  # A head's parameter patterns (and their defaults): an alias or attribute
+  # there is a use.
+  defp head_args({_name, _meta, args}) when is_list(args), do: args
+  defp head_args(_call), do: []
+
+  defp own_calls_dropped(uses, def, {name, _meta, args}) when def in [:defp, :defmacrop] do
+    args = if is_list(args), do: args, else: []
+    defaults = Enum.count(args, &match?({:\\, _dmeta, [_pattern, _default]}, &1))
+    arities = (length(args) - defaults)..length(args)//1
+
+    MapSet.reject(uses, fn
+      {:call, ^name, arity} -> arity in arities
+      _other -> false
+    end)
   end
 
-  defp head_defaults(_call), do: []
+  defp own_calls_dropped(uses, _def, _call), do: uses
 
   defp add_use(acc, ref), do: %{acc | uses: MapSet.put(acc.uses, ref)}
 end
