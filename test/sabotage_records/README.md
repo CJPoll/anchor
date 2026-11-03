@@ -137,3 +137,7 @@ before coining a synonym.
   `defstruct`, and the foreign-struct `location_violation` that recovers the
   real module name) and the `Anchor.Check.StructGetterConvention` shell that
   delegates to it.
+- `dialyzer_boundary` — the DND-5499 spike runner
+  `test/fixtures/dialyzer_boundary/run.exs` (not a check: it measures what
+  Dialyzer reports for clause reachability on the fixtures beside it, so F8
+  reports only what Dialyzer misses).
