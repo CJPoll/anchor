@@ -143,6 +143,54 @@ defmodule Anchor.Domain.Graph.BuilderTest do
     end
   end
 
+  describe "build/2 macro specs (DND-5550)" do
+    test "a macro's spec is keyed by the macro's own name and arity, without the caller" do
+      module = AnchorFixtures.BuilderTest.MacroSpecs
+
+      graph =
+        """
+        defmodule AnchorFixtures.BuilderTest.MacroSpecs do
+          @spec mac(Macro.t()) :: Macro.t()
+          defmacro mac(x), do: x
+
+          @spec bounded(a) :: a when a: Macro.t()
+          defmacro bounded(x), do: x
+
+          @spec run(integer()) :: integer()
+          def run(x), do: x
+
+          @spec unquote(:"MACRO-fake")(atom(), integer()) :: integer()
+          def unquote(:"MACRO-fake")(_env, x), do: x
+        end
+        """
+        |> compile_unloaded("lib/macro_specs.ex")
+        |> decode!()
+        |> Builder.build(%{})
+
+      specs = Graph.module(graph, module).specs
+
+      assert Enum.sort(Map.keys(specs)) == [
+               {:"MACRO-fake", 2},
+               {:bounded, 1},
+               {:mac, 1},
+               {:run, 1}
+             ]
+
+      assert Enum.map(specs[{:mac, 1}], &Macro.to_string/1) == ["mac(Macro.t()) :: Macro.t()"]
+
+      assert Enum.map(specs[{:bounded, 1}], &Macro.to_string/1) ==
+               ["bounded(a) :: a when a: Macro.t()"]
+
+      assert %FunctionNode{kind: :defmacro} = Graph.function(graph, {module, :mac, 1})
+      # A function whose name only looks like a macro's keeps its key and spec.
+      assert Enum.map(specs[{:"MACRO-fake", 2}], &Macro.to_string/1) ==
+               ["MACRO-fake(atom(), integer()) :: integer()"]
+
+      # Positive control: a function's spec is keyed as before.
+      assert Enum.map(specs[{:run, 1}], &Macro.to_string/1) == ["run(integer()) :: integer()"]
+    end
+  end
+
   describe "build/2 generated? (AC3)" do
     # Row 33
     test "a module a macro emits is a module node, generated?: true, with its calls", %{

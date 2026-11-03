@@ -107,3 +107,93 @@ Run summary: `15 tests, 1 failure`
 ....
 ```
 
+
+## Second run (DND-5550) — a macro's spec is keyed by the macro's own name and arity
+
+- **Domain:** builder
+- **Branch:** dnd-5551-graph-hardening
+- **Date:** 2026-11-03
+- **Code under test:** `Anchor.Domain.Graph.Builder` (`specs/2`, `macro_spec/3`, `without_caller/1`)
+- **Suite run:** `mix test --timeout 2000 --max-cases 2 test/anchor/domain/graph/builder_test.exs`
+
+Each mutation replaced one exact text in the named file, the suite ran, and the file was restored from its saved copy. Every mutation failed the one test "a macro's spec is keyed by the macro's own name and arity, without the caller", each on a different assertion (quoted below).
+
+| # | Mutation | Tests failed | Failing test |
+|---|---|---|---|
+| MS-A | a macro's spec stays under MACRO-name/arity+1 (`lib/anchor/domain/graph/builder.ex`) | 1 | build/2 macro specs (DND-5550) a macro's spec is keyed by the macro's own name and arity, without the caller |
+| MS-B | the caller argument is kept in a macro's spec (`lib/anchor/domain/graph/builder.ex`) | 1 | build/2 macro specs (DND-5550) a macro's spec is keyed by the macro's own name and arity, without the caller |
+| MS-C | any MACRO- name is read as a macro, unchecked against the module's macros (`lib/anchor/domain/graph/builder.ex`) | 1 | build/2 macro specs (DND-5550) a macro's spec is keyed by the macro's own name and arity, without the caller |
+| MS-D | a when-bounded spec keeps its caller argument (`lib/anchor/domain/graph/builder.ex`) | 1 | build/2 macro specs (DND-5550) a macro's spec is keyed by the macro's own name and arity, without the caller |
+
+### MS-A — a macro's spec stays under MACRO-name/arity+1
+
+Run summary: `16 tests, 1 failure`
+
+```
+
+  1) test build/2 macro specs (DND-5550) a macro's spec is keyed by the macro's own name and arity, without the caller (Anchor.Domain.Graph.BuilderTest)
+     test/anchor/domain/graph/builder_test.exs:147
+     Assertion with == failed
+     code:  assert Enum.sort(Map.keys(specs)) == ["MACRO-fake": 2, bounded: 1, mac: 1, run: 1]
+     left:  ["MACRO-bounded": 2, "MACRO-fake": 2, "MACRO-mac": 2, run: 1]
+     right: ["MACRO-fake": 2, bounded: 1, mac: 1, run: 1]
+     stacktrace:
+       test/anchor/domain/graph/builder_test.exs:172: (test)
+
+.......
+```
+
+### MS-B — the caller argument is kept in a macro's spec
+
+Run summary: `16 tests, 1 failure`
+
+```
+
+  1) test build/2 macro specs (DND-5550) a macro's spec is keyed by the macro's own name and arity, without the caller (Anchor.Domain.Graph.BuilderTest)
+     test/anchor/domain/graph/builder_test.exs:147
+     Assertion with == failed
+     code:  assert Enum.map(specs[{:mac, 1}], &Macro.to_string/1) == ["mac(Macro.t()) :: Macro.t()"]
+     left:  ["mac(term(), Macro.t()) :: Macro.t()"]
+     right: ["mac(Macro.t()) :: Macro.t()"]
+     stacktrace:
+       test/anchor/domain/graph/builder_test.exs:179: (test)
+
+......
+```
+
+### MS-C — any MACRO- name is read as a macro, unchecked against the module's macros
+
+Run summary: `16 tests, 1 failure`
+
+```
+
+  1) test build/2 macro specs (DND-5550) a macro's spec is keyed by the macro's own name and arity, without the caller (Anchor.Domain.Graph.BuilderTest)
+     test/anchor/domain/graph/builder_test.exs:147
+     Assertion with == failed
+     code:  assert Enum.sort(Map.keys(specs)) == ["MACRO-fake": 2, bounded: 1, mac: 1, run: 1]
+     left:  [bounded: 1, fake: 1, mac: 1, run: 1]
+     right: ["MACRO-fake": 2, bounded: 1, mac: 1, run: 1]
+     stacktrace:
+       test/anchor/domain/graph/builder_test.exs:172: (test)
+```
+
+### MS-D — a when-bounded spec keeps its caller argument
+
+Run summary: `16 tests, 1 failure`
+
+```
+
+
+
+  1) test build/2 macro specs (DND-5550) a macro's spec is keyed by the macro's own name and arity, without the caller (Anchor.Domain.Graph.BuilderTest)
+     test/anchor/domain/graph/builder_test.exs:147
+     Assertion with == failed
+     code:  assert Enum.map(specs[{:bounded, 1}], &Macro.to_string/1) == ["bounded(a) :: a when a: Macro.t()"]
+     left:  ["bounded(term(), a) :: a when a: Macro.t()"]
+     right: ["bounded(a) :: a when a: Macro.t()"]
+     stacktrace:
+       test/anchor/domain/graph/builder_test.exs:181: (test)
+
+...............
+```
+

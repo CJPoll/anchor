@@ -107,7 +107,7 @@ defmodule Anchor.Domain.Graph.Builder do
       source_file: source_file,
       behaviours: attributes |> Keyword.get_values(:behaviour) |> List.flatten(),
       attributes: attributes,
-      specs: specs(beam.specs),
+      specs: specs(beam.specs, macros(Map.get(elixir, :definitions, []))),
       types: types(beam.types),
       struct_fields: struct_fields(Map.get(elixir, :struct)),
       functions:
@@ -172,11 +172,48 @@ defmodule Anchor.Domain.Graph.Builder do
   defp struct_fields(nil), do: nil
   defp struct_fields(fields), do: Enum.map(fields, & &1.field)
 
-  defp specs(specs) do
+  defp specs(specs, macros) do
     Map.new(specs, fn {{name, arity}, forms} ->
-      {{name, arity}, Enum.map(forms, &Code.Typespec.spec_to_quoted(name, &1))}
+      case macro_spec(name, arity, macros) do
+        nil ->
+          {{name, arity}, Enum.map(forms, &Code.Typespec.spec_to_quoted(name, &1))}
+
+        macro ->
+          forms = Enum.map(forms, &without_caller/1)
+          {macro, Enum.map(forms, &Code.Typespec.spec_to_quoted(elem(macro, 0), &1))}
+      end
     end)
   end
+
+  defp macros(definitions) do
+    for {name_arity, kind, _meta, _clauses} <- definitions,
+        kind in [:defmacro, :defmacrop],
+        do: name_arity
+  end
+
+  # A macro's spec is compiled under `MACRO-name/arity+1`, its first argument
+  # the caller's env. It is keyed under the macro's own name and arity, the
+  # key its FunctionNode has (kind `:defmacro`), checked against the module's
+  # macros: a name that only looks like one keeps its key (DND-5550).
+  defp macro_spec(name, arity, macros) do
+    case Atom.to_string(name) do
+      "MACRO-" <> macro ->
+        Enum.find(macros, fn {macro_name, macro_arity} ->
+          macro_arity == arity - 1 and Atom.to_string(macro_name) == macro
+        end)
+
+      _function ->
+        nil
+    end
+  end
+
+  defp without_caller({:type, line, :bounded_fun, [fun, constraints]}),
+    do: {:type, line, :bounded_fun, [without_caller(fun), constraints]}
+
+  defp without_caller(
+         {:type, line, :fun, [{:type, product_line, :product, [_caller | args]}, result]}
+       ),
+       do: {:type, line, :fun, [{:type, product_line, :product, args}, result]}
 
   defp types(types) do
     Map.new(types, fn {kind, {name, _body, args} = type} ->
