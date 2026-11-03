@@ -56,7 +56,8 @@ defmodule Mix.Tasks.Anchor.Sabotage do
   crashed or had no test, beside a measured one; 2 a refusal or a usage error
   (a dirty target file, the journal not git-ignored, a journal that cannot be
   restored safely, a host with no `/proc`, bad flags, a sabotage record that cannot be
-  written); 3 `COULD NOT MEASURE` (no loadable `sabotage:`
+  written when every measured mutant passed: a survivor stays 1 and an
+  unmeasured run 3, DND-5641); 3 `COULD NOT MEASURE` (no loadable `sabotage:`
   config, the baseline tests fail, the changed functions' files cannot be
   read, or mutants were run and none was measured: all invalid, crashed or
   without a test).

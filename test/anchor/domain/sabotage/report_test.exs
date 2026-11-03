@@ -365,4 +365,47 @@ defmodule Anchor.Domain.Sabotage.ReportTest do
       refute text =~ "no mutants generated"
     end
   end
+
+  describe "a record that could not be written (DND-5641)" do
+    # Sabotage record: ../../../sabotage_records/sabotage-20261103-dnd_5641_record_error_exit.md
+    @record_error "could not write the sabotage record test/sabotage_records/x.md (:eacces); " <>
+                    "nothing was overwritten. Fix: check test/sabotage_records is writable, then rerun"
+
+    defp failed_record(statuses) do
+      outcomes =
+        statuses
+        |> Enum.with_index()
+        |> Enum.map(fn {status, i} ->
+          killers = if status == :killed, do: [@killer], else: []
+          outcome("m#{i}", status, killers, "why")
+        end)
+
+      %Run{base: "origin/main", outcomes: outcomes, record_error: @record_error}
+    end
+
+    test "a survivor keeps exit 1; the record failure is said loudly" do
+      run = failed_record([:killed, :survived])
+
+      assert Report.exit_code(run) == 1
+      assert Report.render(run) =~ "sabotage: record not written: #{@record_error}\n"
+    end
+
+    test "nothing measured keeps exit 3, COULD NOT MEASURE; the record failure is said loudly" do
+      run = failed_record([:invalid, :crashed])
+
+      assert Report.exit_code(run) == 3
+      assert Report.render(run) =~ "sabotage: record not written: #{@record_error}\n"
+    end
+
+    test "only a passing verdict becomes exit 2" do
+      run = failed_record([:killed, :timeout])
+
+      assert Report.exit_code(run) == 2
+      assert Report.render(run) =~ "sabotage: record not written: #{@record_error}\n"
+    end
+
+    test "a written record is no failure: the pass stays exit 0" do
+      assert Report.exit_code(%{failed_record([:killed]) | record_error: nil}) == 0
+    end
+  end
 end

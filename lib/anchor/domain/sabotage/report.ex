@@ -22,8 +22,7 @@ defmodule Anchor.Domain.Sabotage.Report do
   functions: nothing was measured` (DND-5617); the exit code stays 0.
 
   Exit codes (DND-5570, the epic's amended invariant 6): the refusal's own
-  code; a dry run 0; 2 when a sabotage record could not be written (DND-5484;
-  the outcomes still stand); else
+  code; a dry run 0; else
 
     * 0 when no mutant was run (zero changed functions from a good diff read
       is a legitimate empty scope, said loudly:
@@ -37,6 +36,10 @@ defmodule Anchor.Domain.Sabotage.Report do
       counted and, beside a measured mutant, never changes the code.
 
   A mutant is measured when it was killed, survived or timed out.
+
+  A sabotage record that could not be written (DND-5484) is said loudly,
+  `sabotage: record not written: <why>`, and changes only a passing verdict:
+  0 becomes 2. A survivor stays 1 and an unmeasured run stays 3 (DND-5641).
   """
 
   alias Anchor.Domain.Sabotage.Run
@@ -48,8 +51,12 @@ defmodule Anchor.Domain.Sabotage.Report do
   @spec exit_code(Run.t()) :: 0 | 1 | pos_integer()
   def exit_code(%Run{refusal: {code, _message}}), do: code
   def exit_code(%Run{dry_run: true}), do: 0
-  def exit_code(%Run{record_error: message}) when is_binary(message), do: 2
-  def exit_code(%Run{} = run), do: run |> verdict() |> verdict_code()
+  def exit_code(%Run{} = run), do: run |> verdict() |> verdict_code() |> with_record(run)
+
+  # DND-5641: the measured verdict wins; a record that could not be written
+  # turns only a pass into a failure (exit 2).
+  defp with_record(0, %Run{record_error: message}) when is_binary(message), do: 2
+  defp with_record(code, _run), do: code
 
   defp verdict_code(:pass), do: 0
   defp verdict_code(:violation), do: 1
@@ -192,7 +199,9 @@ defmodule Anchor.Domain.Sabotage.Report do
         {:append, path} -> "sabotage record appended: #{path}"
       end)
 
-    if run.record_error, do: written ++ [run.record_error], else: written
+    if run.record_error,
+      do: written ++ ["sabotage: record not written: " <> run.record_error],
+      else: written
   end
 
   defp sources(%Run{outcomes: []}), do: []

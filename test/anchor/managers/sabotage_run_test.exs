@@ -1123,7 +1123,7 @@ defmodule Anchor.Managers.SabotageRunTest do
       assert Sabotage.run(@rec_facts, @opts).records == [{:create, second}]
     end
 
-    test "domain_date_slot: a record that appeared meanwhile is never overwritten: exit 2" do
+    test "domain_date_slot: a record that appeared meanwhile is never overwritten, said loudly" do
       expect_full_run()
       expect_git_for_record()
 
@@ -1133,7 +1133,12 @@ defmodule Anchor.Managers.SabotageRunTest do
 
       run = Sabotage.run(@rec_facts, @opts)
 
-      assert Report.exit_code(run) == 2
+      # Two mutants, one survives: the measured verdict (1) wins (DND-5641).
+      assert Report.exit_code(run) == 1
+
+      assert Report.render(run) =~
+               "sabotage: record not written: could not write the sabotage record"
+
       assert run.records == []
 
       assert run.record_error =~
@@ -1148,7 +1153,7 @@ defmodule Anchor.Managers.SabotageRunTest do
       assert run.records == []
     end
 
-    test "a record that cannot be written is exit 2, after the outcomes" do
+    test "a record that cannot be written is said loudly; the survivor keeps exit 1 (DND-5641)" do
       expect_full_run()
       expect_git_for_record()
 
@@ -1158,7 +1163,12 @@ defmodule Anchor.Managers.SabotageRunTest do
 
       run = Sabotage.run(@rec_facts, @opts)
 
-      assert Report.exit_code(run) == 2
+      # Two mutants, one survives: the measured verdict (1) wins (DND-5641).
+      assert Report.exit_code(run) == 1
+
+      assert Report.render(run) =~
+               "sabotage: record not written: could not write the sabotage record"
+
       assert [_, _] = run.outcomes
       assert run.record_error =~ "could not write the sabotage record #{@record_path} (:eacces)"
     end
