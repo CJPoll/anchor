@@ -264,7 +264,9 @@ scratch worktree and runs its `mix anchor.graph --project <pull request>`. So a
 change to `Enforcement`, `Baseline`, `BaselineBase`, a rule's `check/2` or
 `narrows?/2` lands only after the landed judge passes it. A change the landed
 judge refuses (a new rule type or config key it cannot load, a narrowed rule) is
-landed by the owner. Self-test: `bin/tests/base-judge-test.sh`.
+landed by the owner. A pull request that edits `.github/workflows/ci.yml` or
+`bin/ci/judge-with-base.sh` is not caught (GitHub runs its workflow): review is
+the gate there. Self-test: `bin/tests/base-judge-test.sh`.
 
 ## The layering rule (DND-5442)
 

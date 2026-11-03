@@ -5,9 +5,12 @@
 #   bin/ci/judge-with-base.sh REF
 #
 # It runs bin/ci/base-judge.sh AS IT IS ON REF, never this checkout's copy, so
-# a pull request cannot change the code that judges it (the judge, and the
-# script that builds and runs it). This file is the pull request's own: keep
-# it to finding and starting the landed copy.
+# a change to the judge's code in lib/ (or to the script that builds and runs
+# it) is judged by the landed code, not by itself. This file and
+# .github/workflows/ci.yml are the pull request's own (GitHub runs the pull
+# request's workflow), so a pull request that edits them is not caught here:
+# review is the gate for those. Keep this file to finding and starting the
+# landed copy.
 #
 # Bootstrap: a REF that has no bin/ci/base-judge.sh predates the separated
 # judge (the pull request that adds it is the only one). That prints a

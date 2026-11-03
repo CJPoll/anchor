@@ -158,28 +158,36 @@ defmodule Mix.Tasks.Anchor.Graph do
 
     cond do
       request_opts.write_baseline != nil ->
-        refuse_project("--write-baseline writes the judged tree; run it in #{project} itself")
+        refuse_project(
+          "--write-baseline writes the judged tree",
+          "run mix anchor.graph --write-baseline in #{project} itself"
+        )
 
       not File.dir?(root) ->
-        refuse_project("#{project} is not a directory")
+        refuse_project(
+          "#{project} is not a directory",
+          "pass --project the root of a compiled checkout"
+        )
 
       apps_paths != nil ->
-        refuse_project("judging another checkout from an umbrella is not supported")
+        refuse_project(
+          "judging another checkout from an umbrella is not supported",
+          "run the judge from a single-project checkout"
+        )
 
       Path.type(compile_path) != :relative ->
-        refuse_project("the compile path #{compile_path} is outside this checkout")
+        refuse_project(
+          "the compile path #{compile_path} is outside this checkout",
+          "unset MIX_BUILD_PATH, so the judge's build is under its own root"
+        )
 
       true ->
         %{root: root, apps: [{Mix.Project.config()[:app], Path.join(root, compile_path)}]}
     end
   end
 
-  defp refuse_project(reason) do
-    Mix.shell().error(
-      "anchor.graph: --project refused: #{reason}. Fix: pass --project the root of a " <>
-        "compiled single-project checkout, from a checkout whose build path is under its " <>
-        "own root (unset MIX_BUILD_PATH)."
-    )
+  defp refuse_project(reason, fix) do
+    Mix.shell().error("anchor.graph: --project refused: #{reason}. Fix: #{fix}.")
 
     exit({:shutdown, 2})
   end

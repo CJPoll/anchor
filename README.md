@@ -662,7 +662,11 @@ it is the product under test. A base with no `bin/ci/base-judge.sh` prints
 `BOOTSTRAP` and exits 0; only the pull request that adds the script meets
 one. Self-test: `bin/tests/base-judge-test.sh` (CI job `Base judge
 self-test`). Not caught: a pull request that edits `.github/workflows/ci.yml`
-or `bin/ci/judge-with-base.sh` itself; review is the gate for those.
+or `bin/ci/judge-with-base.sh` itself (GitHub runs the pull request's
+workflow), and build-time code a deliberately hostile pull request runs
+earlier in the same CI job; review is the gate for those. This guards the
+judge against a change to `lib/`, not against an attacker who controls the
+job.
 
 A baseline file holds one key per line; `#` comments and blank lines are
 ignored and the entries are a multiset (a key listed twice holds two

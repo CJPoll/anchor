@@ -21,8 +21,13 @@
 #      the landed judge.
 #   T7 a pull request whose .anchor.yml the landed judge cannot load (a rule
 #      type it does not know): exit 3, COULD NOT MEASURE (the owner lands it).
+#   T8 a pull request that does not compile: exit 3, before any judge is built.
+#   T9 stale beams: a pull request built once (as a restored CI cache holds
+#      _build), then renaming its app so its compile writes elsewhere: the
+#      old beams are deleted first, so the judge reads none and the run is not
+#      a pass.
 #
-# T4-T7 build anchor from scratch in throwaway worktrees (several minutes).
+# T4-T9 build anchor from scratch in throwaway worktrees (several minutes).
 # BASE_JUDGE_TEST_ONLY="T2 T5" runs only those cases (sabotage runs); CI runs
 # every case. Exit 0 when every case it ran holds, 1 otherwise.
 #
@@ -35,7 +40,14 @@ trap 'rm -rf "$work"' EXIT
 
 failures=0
 only=${BASE_JUDGE_TEST_ONLY:-}
-want() { [ -z "$only" ] || [[ " $only " == *" $1 "* ]]; }
+ran=0
+want() {
+  if [ -z "$only" ] || [[ " $only " == *" $1 "* ]]; then
+    ran=$((ran + 1))
+    return 0
+  fi
+  return 1
+}
 pass() { echo "ok   $1"; }
 fail() {
   echo "FAIL $1" >&2
@@ -162,8 +174,42 @@ if want T7; then
     "COULD NOT MEASURE: the judge exited 3" $? "$work/t7.out"
 fi
 
+if want T8; then
+  pr=$(pull_request t8 main)
+  printf 'defmodule Broken do\n  def x, do:\nend\n' >"$pr/lib/broken.ex"
+  (cd "$pr" && git add -A && git commit -qm "a pull request that does not compile")
+  entry "$pr" main "$work/t8.out"
+  expect "T8 a pull request that does not compile is COULD NOT MEASURE" 3 \
+    "does not compile under MIX_ENV=dev" $? "$work/t8.out"
+  if grep -qF "judging $pr" "$work/t8.out"; then fail "T8 built the judge first"; fi
+fi
+
+if want T9; then
+  pr=$(pull_request t9 main)
+  (cd "$pr" && MIX_ENV=dev mix compile) >"$work/t9-build.out" 2>&1 ||
+    fail "T9 setup: the pull request did not build at main"
+  if [ ! -d "$pr/_build/dev/lib/anchor/ebin" ]; then fail "T9 setup: no prebuilt ebin"; fi
+  perl -0pi -e 's/app: :anchor,/app: :anchor_renamed,/' "$pr/mix.exs"
+  if ! grep -qF "app: :anchor_renamed," "$pr/mix.exs"; then fail "T9 setup: app not renamed"; fi
+  (cd "$pr" && git commit -qam "the compile writes elsewhere")
+  entry "$pr" main "$work/t9.out"
+  status=$?
+  if [ "$status" -eq 0 ]; then
+    fail "T9 the judge passed on stale beams; output:"
+    sed 's/^/    /' "$work/t9.out" >&2
+  else
+    expect "T9 stale beams are never read: the judge measures nothing" 3 \
+      "COULD NOT MEASURE" "$status" "$work/t9.out"
+  fi
+fi
+
+if [ "$ran" -eq 0 ]; then
+  echo "base-judge-test: COULD NOT MEASURE: BASE_JUDGE_TEST_ONLY=\"$only\" names no case" >&2
+  exit 3
+fi
+
 if [ "$failures" -ne 0 ]; then
   echo "base-judge-test: $failures case(s) failed" >&2
   exit 1
 fi
-echo "base-judge-test: every case run passed${only:+ (only: $only)}"
+echo "base-judge-test: $ran case(s) passed${only:+ (only: $only)}"

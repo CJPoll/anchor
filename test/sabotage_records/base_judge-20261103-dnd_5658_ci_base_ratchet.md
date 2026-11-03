@@ -4,7 +4,7 @@
 - **Branch:** dnd-5658-ci-base-ratchet
 - **Date:** 2026-11-03
 - **Code under test:** `bin/ci/judge-with-base.sh` (CI's entry, which runs the base's copy of the judge) and `bin/ci/base-judge.sh` (the landed judge: builds the base and runs its `mix anchor.graph --project`)
-- **Suite run:** `bin/tests/base-judge-test.sh`, through `test-slot`. The unmutated run passed every case (T1-T7) in 166 s. Each mutation then ran only the cases named, with `BASE_JUDGE_TEST_ONLY`.
+- **Suite run:** `bin/tests/base-judge-test.sh`, through `test-slot`. The first unmutated run passed T1-T7 in 166 s. After the review fixes (T8, T9, the build order, the stale-beam delete), it passed T1-T9 in 267 s. Each mutation then ran only the cases named, with `BASE_JUDGE_TEST_ONLY`.
 
 Each mutation edited the working-tree copy, which the self-test copies into its throwaway repo as the base. The runner restored the file with `git checkout -- <file>` after each run, and `git status` was clean at the end. The first S7 mutation came out malformed: perl interpolated `$(`, so the script failed with a syntax error and exit 2. That run does not count. S7 was re-run with an exact text replacement made in Python, and that run is the one below.
 
@@ -19,5 +19,8 @@ The T5 premise is itself a recorded sabotage. The pull request in T5 edits `Anch
 | S5 | no mode check on the landed script (`*) ;;`), so a symlink's target text is run | T3 | `FAIL T3 a symlinked landed judge is COULD NOT MEASURE: exit 127, wanted 3` |
 | S6 | no bootstrap branch (`if false; then`) | T2 | `FAIL T2 a base with no landed judge is BOOTSTRAP: exit 3, wanted 0` |
 | S7 | a ref that does not resolve exits 0 | T1 | `FAIL T1 an unresolvable ref is COULD NOT MEASURE: exit 0, wanted 3` |
+| S8 | the old anchor beams are not deleted before the pull request compiles (`true \|\|` in place of the `rm -rf`) | T9 | `FAIL T9 the judge passed on stale beams; output:`: the judge read the beams a build at main left and passed a pull request whose compile wrote elsewhere (the review finding was real) |
+| S9 | the judge is built before the pull request is compiled | T8 | `FAIL T8 built the judge first` |
+| Z | `BASE_JUDGE_TEST_ONLY="T99"`, a filter that names no case | - | exit 3, `base-judge-test: COULD NOT MEASURE: BASE_JUDGE_TEST_ONLY="T99" names no case` (never a zero-case green) |
 
 T6 (an honest pull request passes) is the positive control for T5. It passed in the unmutated run.

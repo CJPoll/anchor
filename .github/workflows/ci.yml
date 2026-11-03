@@ -79,7 +79,9 @@ jobs:
       # base branch, built in a scratch worktree, through the base's own copy
       # of bin/ci/base-judge.sh. A judge that cannot be built or run is exit 3
       # (COULD NOT MEASURE), never a pass. A base that predates the script
-      # prints BOOTSTRAP (only the pull request that adds it).
+      # prints BOOTSTRAP (only the pull request that adds it). This guards
+      # a change to lib/; a pull request that edits this workflow or
+      # bin/ci/judge-with-base.sh is not caught here (review is the gate).
       - name: Graph judged by the base branch's anchor (pull request)
         if: github.event_name == 'pull_request'
         env:

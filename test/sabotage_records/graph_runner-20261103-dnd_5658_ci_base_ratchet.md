@@ -10,7 +10,7 @@ Each mutation was one `perl -0pi` substitution in the named file. The suite ran,
 
 | # | Mutation | Tests failed | Failing test (failure) |
 |---|---|---|---|
-| G1 | `--project` keeps the working directory as root (`%{root: File.cwd!(), apps: ...}`) | 1 of 14 | `--project DIR reads DIR's config, beams, sources, baselines and git; the artifact stays the judge's` (`FunctionClauseError` in the `load_in` expectation pinned `^dir`) |
+| G1 | `--project` keeps the working directory as root (`%{root: File.cwd!(), apps: ...}`) | 1 of 14 | `--project DIR reads DIR's config, beams, sources, baselines and git; the artifact stays the judge's` (`** (FunctionClauseError) no function clause matching in anonymous fn/1 in Mix.Tasks.Anchor.GraphTest."test --project DIR reads DIR's config, beams, sources, baselines and git; the artifact stays the judge's"/1`: the `load_in` expectation pins `^dir`) |
 | G2 | the judged ebin is read under the working directory, not DIR | 1 of 14 | same test: `assert ebin == Path.join(dir, "_build/test/lib/anchor/ebin")`, left `.../dnd-5658-ci-base-ratchet/_build/test/lib/anchor/ebin`, right `/tmp/anchor-project-197/_build/test/lib/anchor/ebin` |
 | G3 | `--write-baseline` with `--project` is not refused | 1 of 14 | `--project DIR a DIR that is not a directory, --write-baseline and an umbrella judge exit 2 with Fix:` (`Mox.UnexpectedCallError ... ConfigLoaderMock.load_in/1 ... with args ["/tmp/anchor-project-201"]`: the run went on) |
 | G4 | a DIR that is not a directory is not refused | 1 of 14 | same test (`... load_in/1 ... with args ["/tmp/anchor-project-520/missing"]`) |

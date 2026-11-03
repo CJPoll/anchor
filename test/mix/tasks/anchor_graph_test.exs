@@ -418,9 +418,12 @@ defmodule Mix.Tasks.Anchor.GraphTest do
     test "a DIR that is not a directory, --write-baseline and an umbrella judge exit 2 with Fix:",
          %{dir: dir} do
       for {argv, extra, reason} <- [
-            {["--project", Path.join(dir, "missing")], [], "is not a directory"},
-            {["--project", dir, "--write-baseline", "a"], [], "--write-baseline writes"},
-            {["--project", dir], [apps_paths: %{web: "apps/web"}], "from an umbrella"}
+            {["--project", Path.join(dir, "missing")], [],
+             "is not a directory. Fix: pass --project the root of a compiled checkout."},
+            {["--project", dir, "--write-baseline", "a"], [],
+             "writes the judged tree. Fix: run mix anchor.graph --write-baseline in #{dir}"},
+            {["--project", dir], [apps_paths: %{web: "apps/web"}],
+             "from an umbrella is not supported. Fix: run the judge from a single-project"}
           ] do
         stderr =
           capture_io(:stderr, fn ->
@@ -429,7 +432,6 @@ defmodule Mix.Tasks.Anchor.GraphTest do
 
         assert stderr =~ "--project refused: "
         assert stderr =~ reason
-        assert stderr =~ "Fix: "
         refute_received :compiled
       end
     end
@@ -451,7 +453,7 @@ defmodule Mix.Tasks.Anchor.GraphTest do
           assert catch_exit(Graph.run(["--project", dir], opts())) == {:shutdown, 2}
         end)
 
-      assert stderr =~ "is outside this checkout"
+      assert stderr =~ "is outside this checkout. Fix: unset MIX_BUILD_PATH"
       refute_received :compiled
     end
   end
