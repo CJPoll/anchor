@@ -1,8 +1,12 @@
 defmodule Anchor.Managers.Sabotage do
   @moduledoc """
   Orchestrates generated sabotage, the **Manager** (ADR 001) for
-  `mix anchor.sabotage`. It calls the change-source adapter and Domain only
-  (never a Framework module: DND-1288).
+  `mix anchor.sabotage`. It calls adapters and Domain only (never a Framework
+  module: DND-1288).
+
+  ## run/2 and restore/2 (DND-5473)
+
+  Delegated to `Anchor.Managers.Sabotage.Runner`, the same Manager bucket.
 
   ## scope/2 (DND-5472)
 
@@ -30,7 +34,21 @@ defmodule Anchor.Managers.Sabotage do
   alias Anchor.Adapters.GitChangeSource
   alias Anchor.Domain.Sabotage.DiffHunks
   alias Anchor.Domain.Sabotage.FunctionSpans
+  alias Anchor.Domain.Sabotage.Run
   alias Anchor.Domain.Sabotage.Scope
+  alias Anchor.Managers.Sabotage.Runner
+
+  @doc """
+  Applies the mutants of the functions `root` changed against `base`, one at
+  a time, and says what killed each (DND-5473). See
+  `Anchor.Managers.Sabotage.Runner`, which holds the flow.
+  """
+  @spec run(map(), keyword()) :: Run.t()
+  def run(facts, opts \\ []), do: Runner.run(facts, opts)
+
+  @doc "Restores a leftover journal's file, if any (`mix anchor.sabotage restore`)."
+  @spec restore(%{root: String.t()}, keyword()) :: Run.t()
+  def restore(facts, opts \\ []), do: Runner.restore(facts, opts)
 
   @doc """
   Scopes the diff of `root` against the merge-base of `base` and `HEAD`.

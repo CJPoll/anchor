@@ -25,10 +25,13 @@ defmodule Anchor.Domain.Violation do
       `:fail_closed` for a report that Anchor could not check something (a
       missing or invalid config, an unparseable file). See
       `Anchor.Domain.Failures`.
+    * `:key` — a graph rule's stable baseline key (DND-5440, DND-5441): no
+      line numbers and no message text that moves; `nil` otherwise.
+    * `:rule_id` — the `id` of the rule a graph violation belongs to, or `nil`.
   """
 
   @enforce_keys [:message]
-  defstruct [:line, :trigger, :message, filename: nil, kind: :rule]
+  defstruct [:line, :trigger, :message, filename: nil, kind: :rule, key: nil, rule_id: nil]
 
   @type kind :: :rule | :fail_closed
 
@@ -37,6 +40,8 @@ defmodule Anchor.Domain.Violation do
           trigger: String.t() | nil,
           message: String.t(),
           filename: String.t() | nil,
-          kind: kind()
+          kind: kind(),
+          key: String.t() | nil,
+          rule_id: String.t() | nil
         }
 end

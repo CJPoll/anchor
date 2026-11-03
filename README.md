@@ -131,8 +131,9 @@ failed, and ends with a `Fix:` line.
 The load rejects, rather than silently ignoring:
 
 - a document that is empty, has no `rules:` list, has a top-level key other than
-  `rules` and `architecture` (for example `anchors:`), or whose `rules` is not a
-  list. An explicit `rules: []` is a deliberate empty config and loads;
+  `rules`, `architecture` and `sabotage` (for example `anchors:`; `sabotage:` is
+  described in [Sabotage: running the mutants](#sabotage-running-the-mutants)),
+  or whose `rules` is not a list. An explicit `rules: []` is a deliberate empty config and loads;
 - an `architecture:` section that could check nothing, or less than it says
   (see [The `architecture:` section](#the-architecture-section));
 - a rule that is not a mapping, or has no `type`, or a `type` that no Anchor
@@ -359,11 +360,11 @@ architecture:
 
 A module matched by one bucket is classified into it. There is no precedence
 between buckets, ever: a module two buckets select is **ambiguous** and one no
-bucket selects is **unclassified**. Reporting both, a bucket below its
-`min_modules` and an `interfaces.exports` entry that names no module is the
-graph runner's job (`mix anchor.graph`, DND-5440). Until it lands, Anchor parses
-and validates the section at load (below) and nothing reads it at run time, so
-no module is yet held to it.
+bucket selects is **unclassified**. Anchor parses and validates the section at
+load (below); `mix anchor.graph` (see
+[The graph engine](#the-graph-engine-mix-anchorgraph)) classifies every
+compiled module against it and reports both, a bucket below its `min_modules`
+and an `interfaces.exports` entry that names no module.
 
 An optional key given an empty YAML value (`effects:` with nothing after it)
 reads as absent; a required key, or a bucket key, given one is refused.
@@ -561,6 +562,86 @@ Then run:
 mix credo --strict
 ```
 
+## The graph engine: `mix anchor.graph`
+
+```bash
+mix anchor.graph [--format text|json] [--only RULE_ID]...
+```
+
+Judges the project's compiled code against `.anchor.yml`'s `architecture:`
+section and every enabled graph rule. It compiles the project, reads every
+beam of every app (an umbrella's every `apps/*` app) with `:beam_lib` only, and
+builds the causal graph fresh every run: it never loads or runs a project
+module and never reads a cached verdict. Then it classifies every module into
+exactly one bucket, checks every floor, and runs each graph rule under its own
+guard. It is the command a CI step or a pre-commit gate runs after `mix
+compile`; Anchor's own CI runs it.
+
+Text output is one line per finding, then a summary:
+
+```
+lib/my_app/stray.ex:1: [enforce] anchor.graph MyApp.Stray is in no architecture bucket. Fix: add a selector that matches lib/my_app/stray.ex to the bucket this module belongs in (mix anchor.explain lib/my_app/stray.ex shows the candidates).
+anchor.graph: 214 modules in 1 apps, 0 rules, 1 violations (0 report-only, 0 baselined)
+```
+
+No graph rule type ships yet: the rule tickets (layering, interfaces,
+context_acyclic, ...) add them, with the graph rule keys `bucket`,
+`min_modules` and `enforcement`. Until the first lands, a run classifies every
+module and judges every bucket floor. A finding of a rule with
+`enforcement: report` prints `[report]` and does not fail the run. `--format json` prints `{"modules", "apps", "rules", "opaque",
+"exit_code", "findings": [{rule_id, type, enforcement, key, file, line,
+message, fix}], "could_not_check": [...]}`. `--only RULE_ID` (repeatable) runs
+only the rules with those ids; each rule that runs is still judged against its
+floor (`--only` narrows the rules, never the modules), and an id that names no
+graph rule is COULD NOT MEASURE. `--base` and
+`--write-baseline` arrive with baselines (DND-5441); until then they are
+refused as unknown options.
+
+The only file it writes is `_build/<env>/anchor/graph.etf`, the graph keyed by
+a sha256 of the beams, the config and Anchor's version, for `mix
+anchor.explain` and `place`. The verdict never reads it; a write that fails is
+a `[report]` note.
+
+An Erlang module in the project is classified by its name only (a `pattern:`
+selector): a classified one is an opaque node with no edges, counted in the
+summary as `(<n> opaque)`; an unclassified one is an issue. No setting
+excludes a module silently.
+
+### Graph rows of the fail-closed table
+
+Like the Credo checks, the graph engine fails closed: a run that could not
+check something says so, never reads clean. Each message ends with a `Fix:`
+line.
+
+| Condition | Exit | Where | Example message |
+|---|---|---|---|
+| No `.anchor.yml`, unreadable, invalid YAML, a rejected document | 3 | the config path | the same text as the Credo issue above |
+| `--only` naming no graph rule of the config | 3 | the config path | `COULD NOT MEASURE: --only "typo" names no graph rule of .anchor.yml, so the run would check nothing. Fix: ...` |
+| No `architecture:` section | 3 | the config path | `COULD NOT MEASURE: .anchor.yml has no architecture: section, so mix anchor.graph could classify no module and run no graph rule. Fix: add an architecture: section ...` |
+| `mix compile` fails | mix's own | | |
+| Zero project modules read | 3 | the first ebin | `COULD NOT MEASURE: read 0 modules from _build/dev/lib/my_app/ebin. Fix: run mix compile in this project; ...` |
+| A beam with no `debug_info` (or stripped) | 1 | the beam | `MyApp.X was compiled without debug_info, so Anchor cannot read it. Fix: remove debug_info: false from the project's elixirc_options ...` |
+| The backend refuses `elixir_v1` (`{:elixir_v1_refused, _}`) | 1 | the beam | `MyApp.X the beam's backend could not produce its Elixir debug info (...). Fix: recompile with the project's own Elixir; ...` |
+| The backend refuses `core_v1` (`{:core_v1_refused, _}`) | 1 | the beam | `MyApp.X the beam's backend could not produce Core Erlang (...). Fix: recompile with the project's own Elixir; ...` |
+| A module compiled with a `parse_transform` or `core_transform` (`{:core_v1_refused, {:transform, _}}`) | 1 | the beam | `MyApp.X was compiled with {:parse_transform, :pt}, which lowering to Core Erlang would run, and Anchor runs no project code. Fix: remove the transform ...` |
+| Decoding a beam crashed (`{:decode_crashed, _}`) | 1 | the beam | `MyApp.X could not be decoded: Anchor crashed reading it (...). Fix: this is an Anchor bug; file it with this line.` |
+| Walking a module's Core crashed (`{:walk_crashed, _}`, DND-5548) | 1 | the beam | `MyApp.X could not be added to the graph: Anchor crashed walking it (...). Fix: this is an Anchor bug; ...` |
+| One module in two ebins (`{:duplicate_module, _}`) | 1 | the extra beam | `MyApp.X is in two ebins: ... and ... (kept). Fix: run mix clean to remove a stale beam, or rename one of the two modules.` |
+| A beam or ebin that cannot be read (`{:unreadable, _}`) | 1 | that path | `The beam ... could not be read (:eacces). Fix: make ... readable; ...` |
+| An Erlang module no bucket classifies | 1 | the beam | `:my_erl is Erlang source; the graph engine reads Elixir only, and no architecture bucket classifies it. Fix: move it under a dependency, or classify it with a pattern: selector ...` |
+| A module whose literal `use`s its source cannot show (a non-literal `defmodule` name), when a `uses_module` selector exists | 1 | the source file | `MyApp.X's literal uses cannot be read from lib/x.ex (its defmodule name is not literal there), so a uses_module selector cannot be judged for it. Fix: ...` |
+| A module's source file that cannot be read or parsed | 1 | the source file | `Anchor could not read the source of lib/x.ex (:enoent), so its uses_module selectors and generated? are unknown. Fix: ...` |
+| An unclassified module | 1 | its source file, at its `defmodule` line | `MyApp.X is in no architecture bucket. Fix: add a selector that matches lib/x.ex ...` |
+| An ambiguous module | 1 | its source file, at its `defmodule` line | `MyApp.X is in buckets domain (by paths [...]) and framework (by uses_module GenServer). Fix: narrow one selector; buckets never take precedence.` |
+| A bucket below its `min_modules` | 1 | the config | `architecture bucket domain selects 3 modules, below min_modules 10. Fix: correct the selector; lowering min_modules is the owner's call.` |
+| An `interfaces.exports` entry that names no module | 1 | the config | `architecture interfaces.exports names MyApp.Gone, which is no module of the project ... Fix: ...` |
+| A graph rule below its `min_modules` | 1 | the config | `rule 2 (id: "web", layering) selects 0 modules, below min_modules 1. Fix: correct the selector; ...` |
+| A graph rule that raises, throws or exits | 1 | the config | `rule 2 (id: "web", layering) could not run: RuntimeError: ... Fix: this is an Anchor bug; file it with this line.` The other rules still run. |
+| Findings of a `report` rule | 0 | the finding | printed `[report]` |
+
+Exit 2 is a usage error (an unknown option, `--format` other than `text` or
+`json`, an argument), with a `Fix:` line.
+
 ## Generated sabotage: the functions a change touched
 
 ```bash
@@ -576,8 +657,8 @@ removed line maps to the function it was in at the merge-base (read with
 `git show`), so deleting lines or a whole clause of a function that still
 exists keeps it in scope; a function deleted whole is gone, and counted as a
 hunk outside a function. It reads git and source files only: nothing
-is compiled and no project code runs. Generated sabotage (the runner, later)
-mutates only these functions.
+is compiled and no project code runs. Generated sabotage (`mix anchor.sabotage
+run`, below) mutates only these functions.
 
 Text output is one TSV line per function (`file, module, name/arity, kind,
 changed line ranges`), then a summary that counts what was left out:
@@ -605,12 +686,12 @@ outside any function (attributes, docs, a deleted function), and macros
 opts)` (DND-5471) returns every mutant of one function's literal `def`/`defp`
 clauses. It only parses the source (with Sourceror, so each edit replaces
 exactly its range and nothing else is reformatted); it compiles nothing and
-writes nothing. The runner (`mix anchor.sabotage run`, later) applies them.
+writes nothing. The runner (`mix anchor.sabotage run`, below) applies them.
 
 | Operator | The mutant |
 |---|---|
 | `delete_statement` | a non-final statement that is not an effect call is deleted (its whole lines) |
-| `drop_effect_call` | a non-final statement that is an effect call (a Repo write, `send`, `GenServer.call/cast`, a `Logger` call, a `File`/`System`/`IO` write, ...; extra calls by `effect_calls:`) is deleted |
+| `drop_effect_call` | a non-final statement that is an effect call (a Repo write, `send`, `GenServer.call/cast`, a `Logger` call, a `File`/`System`/`IO` write, ...; extra calls by `effect_calls:`) is replaced by `_ = {arg1, ..., argN}`, which keeps its arguments evaluated (so a variable only the call read stays used) and removes the effect; a call with no argument is deleted (DND-5564) |
 | `narrow_clause` | one clause of a function or `case` with two or more clauses never matches (`when node() == :__anchor_sabotage_never__`) |
 | `with_passthrough` | one `pat <- expr` step of a `with` stops checking (its literals become `_`, `%Mod{}` becomes `%{}`, its guard goes) |
 | `force_condition` | an `if`/`unless`/`cond` condition is forced true, and separately false |
@@ -623,6 +704,98 @@ edit that would not compile under `--warnings-as-errors` (a variable left
 unbound or unused; the last use of a private function, module attribute, alias
 or import removed) is returned as skipped, with the reason, never as a mutant.
 A function no literal `def`/`defp` defines is `{:error, :not_in_source}`.
+
+### Sabotage: running the mutants
+
+```bash
+mix anchor.sabotage run [--base REF] [--max N|all] [--only ID]... [--dry-run]
+mix anchor.sabotage restore
+```
+
+`run` (DND-5473) takes the functions `scope` finds, makes their mutants, and
+applies them **one at a time**: it writes the mutant, runs only the tests
+selected for it, puts the original back, and says what happened. It is built
+to be safe on a desktop: sequential, capped (30 mutants by default; `--max all`
+lifts the cap, for CI), targeted tests only, two test cases at once, every
+test run bounded by `timeout_seconds`, and the source tree always restored.
+
+It needs a `sabotage:` section in `.anchor.yml` (every key optional; the
+defaults are shown) and the journal path in `.gitignore`:
+
+```yaml
+sabotage:
+  test_command: ["mix", "test", "--max-cases", "2"]  # argv prefix, no shell
+  max_mutants: 30                    # --max N overrides; --max all lifts it
+  timeout_seconds: 300               # per test run, then `timeout --kill-after=10`
+  operators: [delete_statement, drop_effect_call, narrow_clause, with_passthrough, force_condition, return_input]
+  effect_calls: []                   # extra effect calls, "Module.fun" or "Module.fun/arity"
+  test_mirror:                       # lib file -> test file; the first matching `from` wins
+    - from: "apps/*/lib/**/*.ex"     # one `*` segment binds {app}; `**/*.ex` binds {rest}
+      to: "apps/{app}/test/{rest}_test.exs"
+    - from: "lib/**/*.ex"
+      to: "test/{rest}_test.exs"
+```
+
+```gitignore
+/.anchor/sabotage/in-flight.json
+*.anchor-tmp
+```
+
+(`*.anchor-tmp` is a file mid-write, left only if the VM is killed during
+the write.)
+
+An unknown key or a bad value fails the load, naming the key, with a `Fix:`.
+
+How a run goes:
+
+0. The run takes the run lock (`_build/anchor-sabotage.lock`, the holder's OS
+   pid and `/proc` start time) for its whole length, `restore` included: while
+   a live run holds it a second run refuses, exit 2, and touches nothing, so
+   two runs never share the journal, the results file or `_build`. A killed
+   run's lock is taken over, one run at a time (under
+   `_build/anchor-sabotage.lock.takeover`; a run killed in that step leaves it,
+   and the next run refuses, exit 2, naming it to delete). Linux only: with no `/proc` the lock and the
+   journal's owner name no process, and protect nothing.
+1. A journal left by a killed run (`.anchor/sabotage/in-flight.json`) is dealt
+   with first: the file still holding the mutant is restored (and the run says
+   so); a file already back loses only the journal; a file that matches
+   neither is refused and left alone. A journal whose owner (the OS pid and
+   start time of the run that wrote it, read from `/proc`) is still alive
+   belongs to a run still going: the second run refuses, exit 2, and touches
+   nothing. `mix anchor.sabotage restore` does this step alone.
+2. Every target file must be committed: sabotage starts from committed code.
+3. Mutants are ordered by file, function, operator and id; `--only` keeps the
+   named ids; the cap keeps the first N and lists the rest `not run (cap)`.
+   `--dry-run` prints this plan and writes nothing.
+4. Each mutant's tests are its mirror test file (`test_mirror`), if it exists.
+5. The union of the selected tests runs once with no mutant (the baseline). If
+   it fails, nothing can be judged: exit 3.
+6. Per mutant: the journal is written (the file, the original bytes, both
+   sha256s), then the mutant; its mtime is moved forward so Mix recompiles it;
+   its tests run with Anchor's ExUnit formatter
+   (`Anchor.Sabotage.ExUnitFormatter`, which writes each failed test to a
+   results file; output is never parsed); then, in an `after` block, the
+   original is written back, touched, its sha256 checked, and only then the
+   journal deleted.
+7. The run is saved to `_build/<env>/anchor/sabotage/last-run.etf`.
+
+| Status | Meaning |
+|---|---|
+| `killed` | a selected test failed; those tests are the killers |
+| `survived` | the selected tests ran and passed (`Fix: add a test that fails under this mutant`) |
+| `timeout` | the time bound killed the run; counts as killed, killer `(timeout)` |
+| `invalid` | the mutant did not compile (any reason, a type-checker warning under warnings-as-errors included: the compiler's first error line is shown), the test run crashed, or no test ran. Never killed, never survived; counted in the summary |
+| `no_tests` | no test was selected (the line names the mirror path looked for) |
+
+Skipped mutants are listed with their reason and never applied; a changed
+function with no literal clause is listed as an error, never as killed.
+
+| Condition | Exit |
+|---|---|
+| every mutant run killed, timed out or invalid | 0 |
+| a mutant survived or had no test | 1 |
+| a dirty target file; the journal not git-ignored; the run lock or a journal another live run holds; a leftover journal whose file changed; a restore that did not reproduce the original (the journal is kept); an unknown `--only` id; no `timeout` binary; bad flags | 2, with `Fix:` |
+| no loadable config or no `sabotage:` section; the scope could not be measured; the baseline fails; changed functions whose files cannot be read | 3, `COULD NOT MEASURE` with `Fix:` |
 
 ## Check Types
 

@@ -170,6 +170,19 @@ defmodule Anchor.Adapters.ConfigFileTest do
     "rules:\n" <> (block |> String.split("\n") |> Enum.map_join("\n", &("  " <> &1)))
   end
 
+  describe "load_in/1 (DND-5473)" do
+    @tag :tmp_dir
+    test "loads the config under the given root, not the working directory", %{tmp_dir: root} do
+      File.write!(Path.join(root, ".anchor.yml"), "rules: []\nsabotage:\n  max_mutants: 7\n")
+
+      assert {:ok, %Anchor.Config{sabotage: %{max_mutants: 7}, path: path}} =
+               ConfigFile.load_in(root)
+
+      assert path == Path.join(root, ".anchor.yml")
+      refute File.cwd!() == root
+    end
+  end
+
   describe "load/0 (test-matrix: config.ex -> load/0 and load_from_path/1)" do
     # Row 5 (DND-1265, A6): no candidate is a failure naming every path
     # searched, never an empty config that reads green.

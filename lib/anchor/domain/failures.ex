@@ -25,6 +25,12 @@ defmodule Anchor.Domain.Failures do
     * **An allowed caller no selected file defines** (DND-1269) —
       `missing_allowed_callers_violation/3`, on the config the rule came from.
 
+  The graph runner's (`mix anchor.graph`, DND-5440) are the `graph_*`,
+  `unclassified/1`, `ambiguous/2`, `bucket_below_floor/4`,
+  `rule_below_floor/4` and `rule_crashed/5` functions: one per row of the
+  README's graph fail-closed table, each a fail-closed violation on its file
+  (a beam, a source file, or the config) ending with a `Fix:` line.
+
   A rule is named as `rule_label/1` names it: its position and, when it has
   one, its `id` (`rule 2 (id: "web", no_direct_dependency)`).
 
@@ -187,6 +193,312 @@ defmodule Anchor.Domain.Failures do
         "#{rule.type} rules, so it checked nothing. Fix: enable #{check_name(check, rule)} " <>
         "in .credo.exs, or remove the rule from #{config}."
     )
+  end
+
+  @doc """
+  The issue for a run that has no `architecture:` section (DND-5440): with
+  no buckets nothing can be classified and no graph rule can run, so `mix
+  anchor.graph` cannot measure (exit 3). It sits on the config.
+  """
+  @spec graph_no_architecture(String.t() | nil) :: Violation.t()
+  def graph_no_architecture(config_path) do
+    config = config_path || @config_filename
+
+    graph_issue(
+      config,
+      nil,
+      "COULD NOT MEASURE: #{config} has no architecture: section, so mix anchor.graph could " <>
+        "classify no module and run no graph rule. Fix: add an architecture: section to " <>
+        "#{config} (the README section \"The `architecture:` section\")."
+    )
+  end
+
+  @doc """
+  The issue for `--only` ids that name no graph rule of the config
+  (DND-5440): the narrowed run would check nothing and read clean, so it is
+  COULD NOT MEASURE (exit 3), on the config.
+  """
+  @spec graph_unknown_only([String.t()], String.t() | nil) :: Violation.t()
+  def graph_unknown_only(ids, config_path) do
+    config = config_path || @config_filename
+
+    graph_issue(
+      config,
+      nil,
+      "COULD NOT MEASURE: --only #{Enum.map_join(ids, ", ", &inspect/1)} names no graph rule " <>
+        "of #{config}, so the run would check nothing. Fix: pass the id of a graph rule " <>
+        "(its id: key), or drop --only."
+    )
+  end
+
+  @doc """
+  The issue for a run that read zero modules from `ebins` (the ebin
+  directories it was given): COULD NOT MEASURE, exit 3.
+  """
+  @spec graph_no_modules([String.t()]) :: Violation.t()
+  def graph_no_modules(ebins) do
+    graph_issue(
+      List.first(ebins) || ".",
+      nil,
+      "COULD NOT MEASURE: read 0 modules from #{Enum.join(ebins, ", ")}. Fix: run mix " <>
+        "compile in this project; check that the ebin dirs above are the project's."
+    )
+  end
+
+  @doc """
+  The per-module issue for an entry of `graph.unreadable`
+  (`Anchor.Domain.Graph`): a beam Anchor could not decode, a second beam of
+  one module, or a module whose graph walk crashed. It sits on the beam's
+  path and names the module when it is known. Each reason has its own `Fix:`;
+  a reason of any other shape is still reported.
+
+  An Erlang module (`{:not_elixir, backend}`) has its own issue,
+  `graph_erlang_module/2`, raised only when no bucket classifies it.
+  """
+  @spec graph_unreadable(%{path: String.t(), module: module() | nil, reason: term()}) ::
+          Violation.t()
+  def graph_unreadable(%{path: path, module: module, reason: reason}) do
+    graph_issue(path, nil, "#{beam_name(module, path)} #{unreadable_text(reason, path)}")
+  end
+
+  @doc """
+  The issue for an Erlang module in the project that no bucket classifies by
+  its name (DND-5440). The graph engine reads Elixir only: a classified Erlang
+  module is an opaque node (counted, no edges); an unclassified one is this
+  issue. No setting excludes it silently.
+  """
+  @spec graph_erlang_module(module(), String.t()) :: Violation.t()
+  def graph_erlang_module(module, path) do
+    graph_issue(
+      path,
+      nil,
+      "#{inspect(module)} is Erlang source; the graph engine reads Elixir only, and no " <>
+        "architecture bucket classifies it. Fix: move it under a dependency, or classify it " <>
+        "with a pattern: selector so its calls are checked as a black box."
+    )
+  end
+
+  @doc """
+  The issue for a module's source file that could not be read or parsed
+  (DND-5440): its literal `use`s are unknown (a `uses_module` selector cannot
+  match it) and whether it is hand-written is `:unknown`.
+  """
+  @spec graph_source_unreadable(String.t(), term()) :: Violation.t()
+  def graph_source_unreadable(file, reason) do
+    graph_issue(
+      file,
+      nil,
+      "Anchor could not read the source of #{file} (#{capped(inspect(reason))}), so its " <>
+        "uses_module selectors and generated? are unknown. Fix: make #{file} a readable file " <>
+        "that parses (mix compile reports a syntax error), or run from the project root."
+    )
+  end
+
+  @doc """
+  The issue for a module whose literal `use`s its source does not show (its
+  file has a non-literal `defmodule`, or a relative name after a file-level
+  `alias`) while the architecture has a `uses_module` selector (DND-5440):
+  read as "no uses", that selector could silently miss it.
+  """
+  @spec graph_uses_unknown(module(), String.t()) :: Violation.t()
+  def graph_uses_unknown(module, file) do
+    graph_issue(
+      file,
+      nil,
+      "#{inspect(module)}'s literal uses cannot be read from #{file} (its defmodule name is " <>
+        "not literal there), so a uses_module selector cannot be judged for it. Fix: give it " <>
+        "a literal defmodule name (no file-level alias before a relative name), or select its " <>
+        "bucket with a paths: or pattern: selector instead of uses_module."
+    )
+  end
+
+  @doc """
+  The issue for a module that no `architecture:` bucket selects (DND-5440),
+  on its source file at its `defmodule` line. An Erlang module (facts with a
+  `beam_path`) gets `graph_erlang_module/2`.
+  """
+  @spec unclassified(map()) :: Violation.t()
+  def unclassified(%{module: module, beam_path: path}), do: graph_erlang_module(module, path)
+
+  def unclassified(%{module: module} = facts) do
+    file = Map.get(facts, :source_file) || "(no source file)"
+
+    graph_issue(
+      file,
+      Map.get(facts, :line),
+      "#{inspect(module)} is in no architecture bucket. Fix: add a selector that matches " <>
+        "#{file} to the bucket this module belongs in (mix anchor.explain #{file} shows the " <>
+        "candidates)."
+    )
+  end
+
+  @doc """
+  The issue for a module that two or more buckets select (DND-5440), naming
+  each bucket and the selector that matched in it. Buckets never take
+  precedence, so the module is in none.
+  """
+  @spec ambiguous(map(), [{String.t(), String.t()}]) :: Violation.t()
+  def ambiguous(%{module: module} = facts, matches) do
+    file = Map.get(facts, :source_file) || Map.get(facts, :beam_path) || "(no source file)"
+
+    named =
+      Enum.map_join(matches, " and ", fn {bucket, selector} -> "#{bucket} (by #{selector})" end)
+
+    graph_issue(
+      file,
+      Map.get(facts, :line),
+      "#{inspect(module)} is in buckets #{named}. Fix: narrow one selector; buckets never " <>
+        "take precedence."
+    )
+  end
+
+  @doc """
+  The issue for an `architecture:` bucket that selects fewer modules than its
+  `min_modules` (DND-5440), on the config.
+  """
+  @spec bucket_below_floor(String.t(), non_neg_integer(), pos_integer(), String.t() | nil) ::
+          Violation.t()
+  def bucket_below_floor(bucket, selected, min, config_path) do
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "architecture bucket #{bucket} #{below_floor_text(selected, min)}"
+    )
+  end
+
+  @doc """
+  The issue for an `interfaces.exports` entry that names no module of the
+  project (DND-5440), on the config. It exports nothing today, and would
+  silently export whatever module is given that name later.
+  """
+  @spec interface_export_missing(module(), String.t() | nil) :: Violation.t()
+  def interface_export_missing(module, config_path) do
+    config = config_path || @config_filename
+
+    graph_issue(
+      config,
+      nil,
+      "architecture interfaces.exports names #{inspect(module)}, which is no module of the " <>
+        "project, so it exports nothing today and would export any module later given that " <>
+        "name. Fix: in #{config}, rename the entry to the module that is the interface, or " <>
+        "remove it."
+    )
+  end
+
+  @doc """
+  The issue for a graph rule that selects fewer modules than its
+  `min_modules` (DND-5440), on the config.
+  """
+  @spec rule_below_floor(map(), non_neg_integer(), pos_integer(), String.t() | nil) ::
+          Violation.t()
+  def rule_below_floor(rule, selected, min, config_path) do
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "#{rule_label(rule)} #{below_floor_text(selected, min)}"
+    )
+  end
+
+  @doc """
+  The issue for a graph rule whose `check/2` raised, threw or exited
+  (DND-5440): one issue naming the rule and the reason (at most
+  #{@crash_reason_limit} characters, with the frame that raised). The other
+  rules still run.
+  """
+  @spec rule_crashed(
+          map(),
+          :error | :exit | :throw,
+          term(),
+          Exception.stacktrace(),
+          String.t() | nil
+        ) ::
+          Violation.t()
+  def rule_crashed(rule, kind, reason, stacktrace, config_path) do
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "#{rule_label(rule)} could not run: #{crash_summary(kind, reason, stacktrace)}, so it " <>
+        "checked nothing. Fix: this is an Anchor bug; file it with this line."
+    )
+  end
+
+  @doc """
+  The note for a graph artifact that could not be written (DND-5440). The
+  verdict never reads the artifact, so this does not fail the run; `mix
+  anchor.explain` and `place` rebuild the graph instead.
+  """
+  @spec graph_artifact_not_written(String.t(), term()) :: Violation.t()
+  def graph_artifact_not_written(dir, reason) do
+    graph_issue(
+      dir,
+      nil,
+      "Anchor could not write the graph artifact under #{dir} (#{capped(inspect(reason))}); " <>
+        "the verdict does not read it. Fix: make #{dir} writable, under _build/<env>/anchor."
+    )
+  end
+
+  defp below_floor_text(selected, min) do
+    "selects #{selected} modules, below min_modules #{min}. Fix: correct the selector; " <>
+      "lowering min_modules is the owner's call."
+  end
+
+  defp beam_name(nil, path), do: "The beam #{path}"
+  defp beam_name(module, _path), do: inspect(module)
+
+  defp unreadable_text(reason, _path) when reason in [:no_debug_info, :debug_info_stripped] do
+    "was compiled without debug_info, so Anchor cannot read it. Fix: remove debug_info: false " <>
+      "from the project's elixirc_options (Elixir keeps debug_info by default)."
+  end
+
+  defp unreadable_text({:not_elixir, backend}, _path) do
+    "was not compiled from Elixir (its debug info is #{inspect(backend)}'s), so the graph " <>
+      "engine cannot read it. Fix: move it under a dependency, or classify it with a pattern: " <>
+      "selector so its calls are checked as a black box."
+  end
+
+  defp unreadable_text({:core_v1_refused, {:transform, transform}}, _path) do
+    "was compiled with #{capped(inspect(transform))}, which lowering to Core Erlang would " <>
+      "run, and Anchor runs no project code. Fix: remove the transform from the module's " <>
+      "compile options, or move the module into a dependency."
+  end
+
+  defp unreadable_text({:core_v1_refused, reason}, _path) do
+    "the beam's backend could not produce Core Erlang (#{capped(inspect(reason))}). Fix: " <>
+      "recompile with the project's own Elixir; report the reason if it persists."
+  end
+
+  defp unreadable_text({:elixir_v1_refused, reason}, _path) do
+    "the beam's backend could not produce its Elixir debug info (#{capped(inspect(reason))}). " <>
+      "Fix: recompile with the project's own Elixir; report the reason if it persists."
+  end
+
+  defp unreadable_text({:decode_crashed, summary}, _path) do
+    "could not be decoded: Anchor crashed reading it (#{summary}). Fix: this is an Anchor " <>
+      "bug; file it with this line."
+  end
+
+  defp unreadable_text({:walk_crashed, summary}, _path) do
+    "could not be added to the graph: Anchor crashed walking it (#{summary}). Fix: this is an " <>
+      "Anchor bug; file it with this line."
+  end
+
+  defp unreadable_text({:duplicate_module, kept}, path) do
+    "is in two ebins: #{path} and #{kept} (kept). Fix: run mix clean to remove a stale beam, " <>
+      "or rename one of the two modules."
+  end
+
+  defp unreadable_text({:unreadable, reason}, path) do
+    "could not be read (#{capped(inspect(reason))}). Fix: make #{path} readable; run mix " <>
+      "compile so every ebin holds the project's beams."
+  end
+
+  defp unreadable_text(reason, _path) do
+    "could not be read (#{capped(inspect(reason))}). Fix: this is an Anchor bug; file it " <>
+      "with this line."
+  end
+
+  defp graph_issue(file, line, message) do
+    %Violation{filename: file, line: line, trigger: nil, kind: :fail_closed, message: message}
   end
 
   @doc """

@@ -181,4 +181,83 @@ defmodule Anchor.Domain.ClassificationTest do
   end
 
   defp names_and_counts(counts), do: Enum.map(counts, fn {bucket, n} -> {bucket.name, n} end)
+
+  # DND-5440: the runner classifies every module at once and reports each
+  # module no bucket, or two buckets, select, and each bucket below its floor.
+  # Sabotage record: ../../sabotage_records/classification-20261103-dnd_5440_graph_runner.md
+  describe "classify_all/3" do
+    test "classified modules are keyed by module; no issues when every module classifies" do
+      arch = architecture([@domain, @managers])
+      user = facts(MyApp.Accounts.User, "lib/my_app/domain/accounts/user.ex")
+      manager = facts(MyApp.Accounts.Manager, "lib/my_app/managers/accounts.ex")
+
+      assert {%{
+                MyApp.Accounts.User => %Classification{bucket: "domain"},
+                MyApp.Accounts.Manager => %Classification{bucket: "managers"}
+              } = map, []} =
+               Classification.classify_all([user, manager], arch, ".anchor.yml")
+
+      assert map_size(map) == 2
+    end
+
+    test "an unclassified module is one issue on its file and defmodule line, with Fix: and explain" do
+      arch = architecture([@domain, @managers])
+      user = facts(MyApp.Accounts.User, "lib/my_app/domain/accounts/user.ex")
+      manager = facts(MyApp.Accounts.Manager, "lib/my_app/managers/accounts.ex")
+      stray = facts(MyApp.Stray, "lib/my_app/stray.ex", %{line: 1})
+
+      assert {map, [issue]} =
+               Classification.classify_all([user, manager, stray], arch, ".anchor.yml")
+
+      refute Map.has_key?(map, MyApp.Stray)
+      assert issue.filename == "lib/my_app/stray.ex"
+      assert issue.line == 1
+      assert issue.kind == :fail_closed
+      assert issue.message =~ "MyApp.Stray is in no architecture bucket."
+      assert issue.message =~ "Fix: add a selector that matches lib/my_app/stray.ex"
+      assert issue.message =~ "mix anchor.explain lib/my_app/stray.ex"
+    end
+
+    test "an ambiguous module is one issue naming both buckets and both selectors, and is in neither" do
+      arch = architecture([@domain, @framework, @managers])
+
+      both =
+        facts(MyApp.Accounts.Worker, "lib/my_app/domain/accounts/worker.ex", %{
+          uses: [GenServer],
+          line: 3
+        })
+
+      manager = facts(MyApp.Accounts.Manager, "lib/my_app/managers/accounts.ex")
+
+      assert {map, [issue]} = Classification.classify_all([both, manager], arch, ".anchor.yml")
+      refute Map.has_key?(map, MyApp.Accounts.Worker)
+      assert issue.filename == "lib/my_app/domain/accounts/worker.ex"
+      assert issue.line == 3
+
+      assert issue.message =~
+               ~s|MyApp.Accounts.Worker is in buckets domain (by paths ["lib/**/domain/**/*.ex"]) and framework (by uses_module GenServer).|
+
+      assert issue.message =~ "Fix: narrow one selector; buckets never take precedence."
+    end
+
+    test "a bucket below min_modules is one issue on the config; at the floor, none" do
+      domain = Map.put(@domain, "min_modules", 2)
+      arch = architecture([domain, @managers])
+      user = facts(MyApp.Accounts.User, "lib/my_app/domain/accounts/user.ex")
+      order = facts(MyApp.Accounts.Order, "lib/my_app/domain/accounts/order.ex")
+      manager = facts(MyApp.Accounts.Manager, "lib/my_app/managers/accounts.ex")
+
+      assert {_map, [issue]} =
+               Classification.classify_all([user, manager], arch, "conf/.anchor.yml")
+
+      assert issue.filename == "conf/.anchor.yml"
+
+      assert issue.message ==
+               "architecture bucket domain selects 1 modules, below min_modules 2. Fix: correct " <>
+                 "the selector; lowering min_modules is the owner's call."
+
+      assert {_map, []} =
+               Classification.classify_all([user, order, manager], arch, "conf/.anchor.yml")
+    end
+  end
 end

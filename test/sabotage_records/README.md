@@ -67,8 +67,12 @@ before coining a synonym.
 - `sabotage` — the causal sabotage generator (DND-5471): every
   `Anchor.Domain.Sabotage.*` module that makes mutants (`Mutator`,
   `Operators`, `OrphanCheck`, `SourceTree`, `Patch`, `MutantId`,
-  `EffectCalls`, `Mutant`, `Skipped`). `sabotage_scope` stays the word for
-  the diff scope.
+  `EffectCalls`, `Mutant`, `Skipped`), and the runner (DND-5473):
+  `mix anchor.sabotage run`/`restore`, its Domain (`Config`, `TestMirror`,
+  `TestSelection`, `Plan`, `TestRun`, `Outcome`, `Journal`, `Run`, `Report`),
+  `Anchor.Managers.Sabotage.Runner`, the adapters `SourcePatcher`,
+  `GitStatus` and `TestRunner`, and `Anchor.Sabotage.ExUnitFormatter`.
+  `sabotage_scope` stays the word for the diff scope.
 - `dependency_analyzer` — `Anchor.Domain.DependencyAnalyzer`, the pure AST
   walk behind every dependency fact (module names, references, calls, uses,
   the module graph).
@@ -84,6 +88,13 @@ before coining a synonym.
   the stdlib calls Elixir inlines before Core, derived from `:elixir_rewrite`,
   their two spellings in `Graph.calls_to/2`, and the inlined `Map.put` the
   walker reads from a map update.
+- `graph_runner` — `mix anchor.graph` (DND-5440): the Manager
+  (`Anchor.Managers.Graph`), the task, the model (`Anchor.Domain.Model`), the
+  rule registry and floors (`Anchor.Domain.GraphRules`), the report
+  (`Anchor.Domain.GraphReport`), the artifact key (`Anchor.Domain.GraphKey`),
+  the `SourceReader` and `GraphArtifact` adapters, and the canary tree. Its
+  changes to modules that have a word of their own are filed under that word
+  (`classification`, `failures`, `rule_coverage`, `architecture`, `builder`).
 - `source_facts` — `Anchor.Domain.Graph.SourceFacts` (DND-5438): the literal
   `defmodule`s and `use`s of a source file.
 - `glob_pattern` — `Anchor.Domain.GlobPattern` (glob / module-name pattern
@@ -189,6 +200,9 @@ before coining a synonym.
 - `graph_algorithms` — `Anchor.Domain.GraphAlgorithms` (DND-5444):
   dominators and post-dominators from a virtual root/exit, union-find
   components, Tarjan SCCs, the condensation and cyclic SCCs.
+- `cfa` — the 0-CFA (DND-5497): `Anchor.Domain.Cfa`, `Cfa.Eval` and
+  `Cfa.Value`, with the Core labels it reads (`Anchor.Domain.Core`) and the
+  library invokers table (`Anchor.Domain.HigherOrder`), in one record.
 - `digraph` — `Anchor.Domain.Digraph` (DND-5444), the plain immutable graph
   value the graph algorithms run over.
 - `dialyzer_boundary` — the DND-5499 spike runner

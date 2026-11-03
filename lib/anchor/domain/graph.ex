@@ -10,9 +10,10 @@ defmodule Anchor.Domain.Graph do
       `%{path, module, reason}` (see `t:Anchor.Domain.Graph.Beam.decode_error/0`),
       in path order, and every extra beam of a module two ebins hold
       (`reason: {:duplicate_module, kept_path}`), and every module whose
-      public function or macro has no Core body
-      (`reason: {:no_core, [{name, arity}]}`, DND-5549; the module is still
-      built). The runner reports each; none is dropped.
+      node or Core walk crashed (`reason: {:walk_crashed, summary}`,
+      DND-5548), and every module whose public function or macro has no Core
+      body (`reason: {:no_core, [{name, arity}]}`, DND-5549; the module is
+      still built). The runner reports each; none is dropped.
 
   `Anchor.Domain.Graph.Builder.build/2` makes one.
   """

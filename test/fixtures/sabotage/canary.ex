@@ -87,6 +87,17 @@ defmodule AnchorFixtures.Sabotage.Canary do
     link.host
   end
 
+  def logged(x) do
+    y = x + 1
+    Logger.info(y)
+    x
+  end
+
+  def remembered(x) do
+    previous = Process.put(:anchor_canary, x)
+    {x, previous}
+  end
+
   defp double(x), do: x * 2
 
   defp loop(0), do: :done

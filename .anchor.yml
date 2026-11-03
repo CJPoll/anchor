@@ -49,8 +49,15 @@ rules:
       - Anchor.Adapters.ConfigFile
       - Anchor.Adapters.BeamReader
       - Anchor.Adapters.GitChangeSource
+      - Anchor.Adapters.GraphArtifact
+      - Anchor.Adapters.SourceReader
+      - Anchor.Managers.Graph
+      - Anchor.Adapters.SourcePatcher
+      - Anchor.Adapters.GitStatus
+      - Anchor.Adapters.TestRunner
       - Anchor.Managers.Lint
       - Anchor.Managers.Sabotage
+      - Anchor.Managers.Sabotage.Runner
       - System
 
   # --- Rule 2: the config parser specifically must not read files ---
@@ -93,3 +100,43 @@ rules:
       - "lib/anchor/check/struct_owned_by_module.ex"
     required_modules:
       - Anchor.Check.Base
+
+# The ADR-001 five buckets over Anchor's compiled code, judged by
+# `mix anchor.graph` (DND-5440) in Anchor's own CI (run in the dev env, so the
+# graph is lib/ as it ships: test/support is compiled only under MIX_ENV=test).
+# Every module of lib/ lands in exactly one bucket. Each floor is the bucket's
+# module count when the runner landed: a moved directory that empties a
+# bucket fails the run instead of passing it. Lowering a floor is the owner's
+# call. The layering rule over `calls` arrives with DND-5442.
+architecture:
+  contexts:
+    depth: 2
+  buckets:
+    - name: framework
+      role: framework
+      select:
+        - paths: ["lib/anchor/check/**/*.ex", "lib/mix/tasks/**/*.ex"]
+        - pattern: "Anchor"
+      min_modules: 20
+    - name: adapters
+      role: adapters
+      select:
+        - paths: ["lib/anchor/adapters/**/*.ex", "lib/anchor/sabotage/**/*.ex"]
+      min_modules: 10
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/anchor/domain/**/*.ex"]
+      min_modules: 59
+    - name: managers
+      role: managers
+      select:
+        - paths: ["lib/anchor/managers/**/*.ex"]
+      min_modules: 4
+  calls:
+    framework: [framework, managers, domain]
+    adapters: [adapters, domain]
+    domain: [domain]
+    managers: [managers, adapters, domain]
+  interfaces:
+    buckets: [managers]

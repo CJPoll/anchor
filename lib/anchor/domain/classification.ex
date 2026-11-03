@@ -18,7 +18,7 @@ defmodule Anchor.Domain.Classification do
 
   There is no precedence between buckets, ever: an order in the config would
   decide silently which rule a module is held to. The graph runner
-  (DND-5440) is to report both errors.
+  (DND-5440) reports both through `classify_all/3`.
 
   ## Context
 
@@ -30,6 +30,8 @@ defmodule Anchor.Domain.Classification do
   alias Anchor.Domain.Architecture
   alias Anchor.Domain.Architecture.Bucket
   alias Anchor.Domain.Architecture.Selector
+  alias Anchor.Domain.Failures
+  alias Anchor.Domain.Violation
 
   @enforce_keys [:module, :bucket, :role]
   defstruct [:module, :bucket, :role, :context, :app, :source_file, interface?: false]
@@ -70,6 +72,31 @@ defmodule Anchor.Domain.Classification do
     Enum.map(buckets, fn bucket -> {bucket, Enum.count(facts, &selects?(bucket, &1))} end)
   end
 
+  @doc """
+  Classifies every module of `facts` (DND-5440) and reports what the run
+  found: each unclassified module (`Failures.unclassified/1`, on its source
+  file at its `defmodule` line), each ambiguous one (`Failures.ambiguous/2`,
+  naming every matching bucket and the first selector that matched in it),
+  then each bucket that selects fewer modules than its `min_modules`
+  (`Failures.bucket_below_floor/4`, on `config_path`). Returns the classified
+  modules keyed by module, and the issues in that order.
+  """
+  @spec classify_all([facts()], Architecture.t(), String.t() | nil) ::
+          {%{module() => t()}, [Violation.t()]}
+  def classify_all(facts, %Architecture{} = architecture, config_path) do
+    {classified, issues} =
+      Enum.reduce(facts, {%{}, []}, fn module_facts, acc ->
+        add_classified(acc, module_facts, architecture)
+      end)
+
+    floors =
+      for {bucket, count} <- bucket_counts(facts, architecture),
+          count < bucket.min_modules,
+          do: Failures.bucket_below_floor(bucket.name, count, bucket.min_modules, config_path)
+
+    {classified, Enum.reverse(issues) ++ floors}
+  end
+
   @doc "Classifies the module `facts` describes into exactly one bucket."
   @spec classify(facts(), Architecture.t()) ::
           {:ok, t()}
@@ -92,6 +119,33 @@ defmodule Anchor.Domain.Classification do
     case Atom.to_string(module) do
       "Elixir." <> name -> leading_segments(String.split(name, "."), depth)
       _erlang -> nil
+    end
+  end
+
+  @doc """
+  Each bucket that selects the module `facts` describes, in config order, with
+  the first of its selectors that matched, described
+  (`Anchor.Domain.Architecture.Selector.describe/1`).
+  """
+  @spec matching_selectors(facts(), Architecture.t()) :: [{String.t(), String.t()}]
+  def matching_selectors(facts, %Architecture{buckets: buckets}) do
+    for %Bucket{name: name, selectors: selectors} <- buckets,
+        selector = Enum.find(selectors, &Selector.matches?(&1, facts)),
+        selector != nil,
+        do: {name, Selector.describe(selector)}
+  end
+
+  defp add_classified({classified, issues}, facts, architecture) do
+    case classify(facts, architecture) do
+      {:ok, %__MODULE__{} = one} ->
+        {Map.put(classified, one.module, one), issues}
+
+      {:error, {:unclassified, _module}} ->
+        {classified, [Failures.unclassified(facts) | issues]}
+
+      {:error, {:ambiguous, _module, _names}} ->
+        {classified,
+         [Failures.ambiguous(facts, matching_selectors(facts, architecture)) | issues]}
     end
   end
 
