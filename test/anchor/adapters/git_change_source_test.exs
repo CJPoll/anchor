@@ -37,13 +37,17 @@ defmodule Anchor.Adapters.GitChangeSourceTest do
   # case whose stderr is expected runs here: the suite stays quiet, and the
   # message is asserted (DND-5589).
   defp in_child_vm(call) do
-    {out, 0} =
+    elixir = System.find_executable("elixir")
+    assert elixir, "no elixir executable on PATH to run the child VM"
+
+    {out, status} =
       System.cmd(
-        System.find_executable("elixir"),
+        elixir,
         ["-pa", Mix.Project.compile_path(), "-e", "IO.inspect(" <> call <> ", width: :infinity)"],
         stderr_to_stdout: true
       )
 
+    assert status == 0, "the child VM exited #{status}:\n#{out}"
     String.split(out, "\n", trim: true)
   end
 
