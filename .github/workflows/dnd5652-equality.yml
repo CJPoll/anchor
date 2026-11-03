@@ -42,10 +42,13 @@ jobs:
       - name: Compile (warnings as errors)
         run: mix compile --warnings-as-errors
 
-      - name: Build the maps (first-hit, every-call, first-hit, every-call)
+      - name: Build the maps with a fixed seed (first-hit x2, every-call x2)
         run: |
           for round in 1 2; do
-            mix anchor.sabotage coverage --out fh$round.etf -- --exclude global_tracing --exclude dnd5652_skip 2>&1 | grep -E "Finished in|tests, |first-hit gate|anchor.sabotage coverage: tests"
-            DND5652_EVERY_CALL=1 mix anchor.sabotage coverage --out ec$round.etf -- --exclude global_tracing --exclude dnd5652_skip 2>&1 | grep -E "Finished in|tests, |anchor.sabotage coverage: tests"
-            mix run --no-start profile/dnd5652_compare.exs fh$round.etf ec$round.etf
+            mix anchor.sabotage coverage --out fh$round.etf -- --exclude global_tracing --exclude dnd5652_skip --seed 0 2>&1 | grep -E "Finished in|first-hit gate|anchor.sabotage coverage: tests"
+            DND5652_EVERY_CALL=1 mix anchor.sabotage coverage --out ec$round.etf -- --exclude global_tracing --exclude dnd5652_skip --seed 0 2>&1 | grep -E "Finished in|anchor.sabotage coverage: tests"
           done
+          echo "=== first-hit 1 against every-call 1"; mix run --no-start profile/dnd5652_compare.exs fh1.etf ec1.etf
+          echo "=== first-hit 2 against every-call 2"; mix run --no-start profile/dnd5652_compare.exs fh2.etf ec2.etf
+          echo "=== every-call 1 against every-call 2 (baseline: the tracer against itself)"; mix run --no-start profile/dnd5652_compare.exs ec1.etf ec2.etf
+          echo "=== first-hit 1 against first-hit 2"; mix run --no-start profile/dnd5652_compare.exs fh1.etf fh2.etf
