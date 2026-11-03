@@ -29,7 +29,10 @@ defmodule Anchor.Managers.Sabotage.Runner do
        from committed code.
     6. Mutants per changed function (`Mutator.generate/4`); a function no
        mutant can be made of is an error, listed. Every function an error of
-       `:parse_error` or `:unreadable` is exit 3.
+       `:parse_error` or `:unreadable` is exit 3. Each function that yielded
+       no mutant is kept with its reason (`NoMutant.reason/1`), and the
+       count generated is set, so the report can say a run that measured
+       nothing (DND-5617).
     7. `Plan.build/2` (order, `--only`, cap), then `TestSelection.select/2`
        per mutant. `--dry-run` stops here: it writes no mutant (step 1 may
        still have restored a leftover one).
@@ -68,6 +71,7 @@ defmodule Anchor.Managers.Sabotage.Runner do
   alias Anchor.Domain.Sabotage.Journal
   alias Anchor.Domain.Sabotage.Mutant
   alias Anchor.Domain.Sabotage.Mutator
+  alias Anchor.Domain.Sabotage.NoMutant
   alias Anchor.Domain.Sabotage.Outcome
   alias Anchor.Domain.Sabotage.Patch
   alias Anchor.Domain.Sabotage.Plan
@@ -365,17 +369,20 @@ defmodule Anchor.Managers.Sabotage.Runner do
 
     errors = for {function, {:error, reason}} <- results, do: {function, reason}
     oks = for {_function, {:ok, result}} <- results, do: result
+    mutants = Enum.flat_map(oks, & &1.mutants)
 
     run = %{
       run
       | changed_functions: length(scope.functions),
         errors: errors,
-        skipped: Enum.flat_map(oks, & &1.skipped)
+        skipped: Enum.flat_map(oks, & &1.skipped),
+        generated: length(mutants),
+        no_mutant: no_mutant(results)
     }
 
     if results != [] and oks == [] and Enum.all?(errors, &unmeasured?/1),
       do: {:refuse, run, 3, could_not_read(errors)},
-      else: {:ok, run, sources, Enum.flat_map(oks, & &1.mutants)}
+      else: {:ok, run, sources, mutants}
   end
 
   defp source(sources, root, file, change) do
@@ -399,6 +406,13 @@ defmodule Anchor.Managers.Sabotage.Runner do
       )
 
   defp generated({:error, posix}, _function, _opts), do: {:error, {:unreadable, posix}}
+
+  defp no_mutant(results) do
+    for {function, result} <- results,
+        reason = NoMutant.reason(result),
+        reason != nil,
+        do: {function, reason}
+  end
 
   defp unmeasured?({_function, {:parse_error, _line, _message}}), do: true
   defp unmeasured?({_function, {:unreadable, _posix}}), do: true

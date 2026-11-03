@@ -22,6 +22,13 @@ defmodule Anchor.Adapters.TestRunner do
   a mutant that prints without end cannot grow the VM, and the bytes dropped
   are on the `TestRun`. `opts[:kill_after_seconds]` (default 10) is the
   grace period.
+
+  Two seams let the time bound be tested without a wall clock (DND-5618):
+  `opts[:clock]`, a 0-arity function returning milliseconds (default
+  `System.monotonic_time(:millisecond)`), read before and after the run; and
+  `opts[:command_runner]`, a function with `System.cmd/3`'s arguments and
+  result (default `System.cmd/3`), given the `timeout` path, the full argv
+  and the command options.
   The frames are read with `:erlang.binary_to_term(bin, [:safe])`; a frame cut
   short by a kill ends the read.
   """
@@ -63,10 +70,12 @@ defmodule Anchor.Adapters.TestRunner do
     full =
       ["--kill-after=#{grace}", Integer.to_string(seconds)] ++ argv ++ test_args ++ @formatters
 
-    started = System.monotonic_time(:millisecond)
+    clock = Keyword.get(opts, :clock, &monotonic_ms/0)
+    command_runner = Keyword.get(opts, :command_runner, &System.cmd/3)
+    started = clock.()
 
     {output, code} =
-      System.cmd(timeout, full,
+      command_runner.(timeout, full,
         cd: Keyword.fetch!(opts, :cd),
         env: [{"MIX_ENV", "test"}, {"ANCHOR_SABOTAGE_RESULTS", results}],
         stderr_to_stdout: true,
@@ -74,11 +83,13 @@ defmodule Anchor.Adapters.TestRunner do
       )
 
     TestRun.from_frames(code, frames(results), BoundedOutput.text(output),
-      elapsed_ms: System.monotonic_time(:millisecond) - started,
+      elapsed_ms: clock.() - started,
       timeout_seconds: seconds,
       dropped_bytes: BoundedOutput.dropped(output)
     )
   end
+
+  defp monotonic_ms, do: System.monotonic_time(:millisecond)
 
   # A results file left by an earlier run must be gone: its frames would be
   # read as this run's.

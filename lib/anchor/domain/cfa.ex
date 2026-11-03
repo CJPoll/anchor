@@ -92,6 +92,12 @@ defmodule Anchor.Domain.Cfa do
   bound is not a result: every site and return is reported `:any` and
   `bound_hit?` is true, so a lost run never reads as resolved.
 
+  A `letrec` name (`apply 'lc$^0'/1(...)`, or the name used as a value) is
+  keyed per scope, the letrec node, never per function (DND-5575): it reaches
+  the definition of the innermost enclosing letrec that binds it, so two
+  letrecs of one function that reuse a name never merge their reaching sets.
+  A name no letrec in scope binds is a call of the module's own function.
+
   Macros (`defmacro`) are compile-time code and are not analysed. Two Core
   variables of one function with the same name (two `fn`s that each bind
   `x@1`) share one abstract value, which over-approximates.
@@ -213,7 +219,10 @@ defmodule Anchor.Domain.Cfa do
               {id, closure_info(mfa, fun, {:lret, id})}
             end)
         ),
-      letrecs: Map.new(functions, fn {mfa, fun} -> {mfa, letrec_names(mfa, fun)} end),
+      letrec_scopes:
+        functions
+        |> Enum.map(fn {mfa, fun} -> letrec_scopes(:cerl.fun_body(fun), mfa, %{}, %{}) end)
+        |> Enum.reduce(%{}, &Map.merge/2),
       sites: Map.new(functions, fn {mfa, fun} -> {mfa, Core.apply_sites(mfa, fun)} end),
       functions: Enum.map(functions, &elem(&1, 0)),
       roots: roots,
@@ -235,26 +244,34 @@ defmodule Anchor.Domain.Cfa do
     %{params: Enum.map(:cerl.fun_vars(fun), &var_node(mfa, &1)), ret: ret}
   end
 
-  defp letrec_names(mfa, fun) do
-    :cerl_trees.fold(
-      fn node, acc ->
-        if :cerl.is_c_letrec(node), do: letrec_defs(mfa, node, acc), else: acc
-      end,
-      %{},
-      fun
-    )
+  # The letrec names in scope where each lambda is defined, `%{lambda =>
+  # %{fname => [closure]}}`, walked lexically (DND-5575): a letrec's names
+  # reach its body and its definitions' bodies, shadowing an outer binding of
+  # the same name, and nothing outside it. A function body starts empty.
+  defp letrec_scopes(node, mfa, scope, acc) do
+    case :cerl.type(node) do
+      :letrec ->
+        inner = Map.merge(scope, Core.letrec_bindings(mfa, node))
+
+        node
+        |> :cerl.letrec_defs()
+        |> Enum.reduce(acc, fn {_fname, fun}, acc -> letrec_scopes(fun, mfa, inner, acc) end)
+        |> then(&letrec_scopes(:cerl.letrec_body(node), mfa, inner, &1))
+
+      :fun ->
+        acc = lambda_scope(Core.lambda_ordinal(node), mfa, scope, acc)
+        letrec_scopes(:cerl.fun_body(node), mfa, scope, acc)
+
+      _other ->
+        node
+        |> :cerl.subtrees()
+        |> List.flatten()
+        |> Enum.reduce(acc, &letrec_scopes(&1, mfa, scope, &2))
+    end
   end
 
-  defp letrec_defs(mfa, node, acc) do
-    Enum.reduce(:cerl.letrec_defs(node), acc, fn {fname, fun}, acc ->
-      Map.update(
-        acc,
-        :cerl.var_name(fname),
-        [{mfa, Core.lambda_ordinal(fun)}],
-        &[{mfa, Core.lambda_ordinal(fun)} | &1]
-      )
-    end)
-  end
+  defp lambda_scope(nil, _mfa, _scope, acc), do: acc
+  defp lambda_scope(ordinal, mfa, scope, acc), do: Map.put(acc, {mfa, ordinal}, scope)
 
   defp var_node(mfa, var), do: {:var, mfa, :cerl.var_name(var)}
 

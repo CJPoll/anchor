@@ -2,6 +2,7 @@ defmodule Anchor.Domain.Sabotage.ReportTest do
   # DND-5473: the run's text and exit code.
   # Sabotage record: ../../../sabotage_records/sabotage-20261103-dnd_5473_sabotage_run.md
   # Sabotage record (DND-5570): ../../../sabotage_records/sabotage-20261103-dnd_5570_sabotage_hardening.md
+  # Sabotage record (DND-5617): ../../../sabotage_records/sabotage-20261103-dnd_5617_sabotage_cfa_batch.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Sabotage.ChangedFunction
@@ -252,5 +253,101 @@ defmodule Anchor.Domain.Sabotage.ReportTest do
                "anchor.sabotage run --dry-run: 1 mutants planned; nothing applied"
 
     assert Report.exit_code(run) == 0
+  end
+
+  describe "changed functions that yield no mutant (DND-5617)" do
+    defp changed(name, file \\ "lib/gen.ex"),
+      do: %ChangedFunction{
+        file: file,
+        module: Gen,
+        name: name,
+        arity: 1,
+        kind: :def,
+        changed_lines: [3]
+      }
+
+    @summary "sabotage: no mutants generated from 2 changed functions: nothing was measured"
+
+    test "Z1: only macros: exit 0, one loud line per function naming it and why, then the count" do
+      run = %Run{
+        base: "origin/main",
+        changed_functions: 2,
+        generated: 0,
+        errors: [{changed(:init), :not_in_source}, {changed(:stop), :not_in_source}],
+        no_mutant: [
+          {changed(:init), "macro: no literal def/defp clause in the source (a macro made it)"},
+          {changed(:stop), "macro: no literal def/defp clause in the source (a macro made it)"}
+        ]
+      }
+
+      assert Report.exit_code(run) == 0
+      text = Report.render(run)
+
+      assert text =~
+               "sabotage: no mutant from Gen.init/1 (lib/gen.ex): macro: no literal def/defp " <>
+                 "clause in the source (a macro made it)\n"
+
+      assert text =~ "sabotage: no mutant from Gen.stop/1 (lib/gen.ex): macro:"
+      assert text =~ @summary
+    end
+
+    test "Z2: only skipped functions: exit 0, each line names the skip rule, then the count" do
+      run = %Run{
+        changed_functions: 2,
+        generated: 0,
+        no_mutant: [
+          {changed(:init), "skipped: delete_statement: orphans variable `x`"},
+          {changed(:stop, "lib/stop.ex"), "no mutable site"}
+        ]
+      }
+
+      assert Report.exit_code(run) == 0
+      text = Report.render(run)
+
+      assert text =~
+               "sabotage: no mutant from Gen.init/1 (lib/gen.ex): skipped: delete_statement: " <>
+                 "orphans variable `x`"
+
+      assert text =~ "sabotage: no mutant from Gen.stop/1 (lib/stop.ex): no mutable site"
+      assert text =~ @summary
+    end
+
+    test "Z3: the dry run says it too" do
+      run = %Run{
+        dry_run: true,
+        changed_functions: 1,
+        generated: 0,
+        no_mutant: [{changed(:init), "no mutable site"}]
+      }
+
+      assert Report.exit_code(run) == 0
+
+      assert Report.render(run) =~
+               "sabotage: no mutant from Gen.init/1 (lib/gen.ex): no mutable site"
+
+      assert Report.render(run) =~ "no mutants generated from 1 changed functions"
+    end
+
+    test "Z4: positive control: one mutant generated prints no such line" do
+      run = %Run{
+        changed_functions: 2,
+        generated: 1,
+        no_mutant: [{changed(:stop), "no mutable site"}],
+        outcomes: [outcome("aaa", :killed, [@killer])]
+      }
+
+      assert Report.exit_code(run) == 0
+      text = Report.render(run)
+      refute text =~ "no mutants generated"
+      refute text =~ "sabotage: no mutant from"
+    end
+
+    test "Z5: zero changed functions keeps its own line and never this one" do
+      run = %Run{base: "origin/main", changed_functions: 0, generated: 0}
+
+      text = Report.render(run)
+      assert text =~ "sabotage: 0 changed functions in origin/main..HEAD"
+      refute text =~ "no mutants generated"
+    end
   end
 end

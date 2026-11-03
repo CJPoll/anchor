@@ -16,6 +16,8 @@ defmodule Anchor.Adapters.TestExecution do
   The run's output is bounded (`opts[:output_limits]`, `{head, tail}` bytes;
   the bytes dropped are `TestRun.dropped_bytes`), and an exit 137 inside the
   time bound is `:crashed` (killed by signal 9), never a timeout (DND-5573).
+  The implementation's `:clock` and `:command_runner` options are test seams
+  for that rule (DND-5618); the Manager passes neither.
   """
 
   alias Anchor.Domain.Sabotage.TestRun

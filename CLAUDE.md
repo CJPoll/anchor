@@ -225,7 +225,11 @@ Lambdas, sites and container allocation sites are numbered by
 the open world: every exported function's parameters are `any`). The worklist
 is bounded by `:max_steps`; a run that hits it reports every site `:any`. A
 library function that calls an argument gets a row in `HigherOrder`'s table;
-a missing row costs precision (its arguments escape), never soundness.
+a missing row costs precision (its arguments escape), never soundness. A
+`letrec` name is keyed per scope, the letrec node (DND-5575): an apply of it
+reaches the innermost enclosing letrec that binds it (`Cfa` keeps each
+lambda's lexical scope; `Eval` adds a letrec's names at the node), never a
+same-named letrec elsewhere in the function.
 
 The runner wires it lazily (DND-5574): a graph rule that reads it declares
 `needs: [:cfa]` (`GraphRule`'s optional `needs/0`, read and checked by
@@ -261,7 +265,9 @@ its last (a dead holder's lock is taken over); a host with no `/proc` refuses
 does not compile is `invalid`, never killed, and (beside a measured mutant) never changes the exit code. A
 mutant whose run crashed or had no test is unmeasured: with no measured mutant
 the run is exit 3, beside one it fails like a survivor (exit 1)
-(`Anchor.Domain.Sabotage.Report`). Failed tests come from
+(`Anchor.Domain.Sabotage.Report`). Changed functions that yield no mutant
+at all exit 0 but are never silent: a line per function with its reason
+(`Anchor.Domain.Sabotage.NoMutant`) and a count (DND-5617). Failed tests come from
 `Anchor.Sabotage.ExUnitFormatter`'s frames, never from parsed output; the
 formatter calls no other Anchor module, so it loads alone in a project's test
 VM. The flow is in `Anchor.Managers.Sabotage.Runner`'s moduledoc.

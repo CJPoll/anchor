@@ -19,7 +19,12 @@ defmodule Anchor.Domain.Sabotage.Run do
     * `errors` — `{changed_function, reason}` for a function no mutant could
       be made of (`:not_in_source`, `{:parse_error, line, message}`,
       `{:unreadable, posix}`);
-    * `not_run` — the mutants past the cap.
+    * `not_run` — the mutants past the cap;
+    * `generated` — how many mutants the changed functions yielded (`nil`
+      when the run stopped before generating); `0` beside one or more changed
+      functions is said loudly by the report (DND-5617);
+    * `no_mutant` — `{changed_function, reason}` for each changed function
+      that yielded no mutant (`Anchor.Domain.Sabotage.NoMutant.reason/1`).
   """
 
   alias Anchor.Domain.Sabotage.Mutant
@@ -37,7 +42,9 @@ defmodule Anchor.Domain.Sabotage.Run do
             planned: [],
             skipped: [],
             errors: [],
-            not_run: []
+            not_run: [],
+            generated: nil,
+            no_mutant: []
 
   @type selection :: {atom(), [String.t()]}
   @type outcome :: %{
@@ -59,6 +66,8 @@ defmodule Anchor.Domain.Sabotage.Run do
           planned: [{Mutant.t(), selection()}],
           skipped: [Skipped.t()],
           errors: [{map(), term()}],
-          not_run: [Mutant.t()]
+          not_run: [Mutant.t()],
+          generated: nil | non_neg_integer(),
+          no_mutant: [{map(), String.t()}]
         }
 end

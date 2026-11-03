@@ -6,6 +6,7 @@ defmodule Anchor.Domain.CfaTest do
   # {mfa, lambda ordinal} for lambdas and {m, f, a} for captures.
   #
   # Sabotage record: ../../sabotage_records/cfa-20261103-dnd_5497_zero_cfa.md
+  # Sabotage record (DND-5575): ../../sabotage_records/cfa-20261103-dnd_5617_sabotage_cfa_batch.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -441,6 +442,104 @@ defmodule Anchor.Domain.CfaTest do
     test "the default bound is not hit on the fixture", %{closed: cfa} do
       refute cfa.bound_hit?
       assert cfa.steps > 1
+    end
+  end
+
+  describe "letrec names are keyed per scope (DND-5575)" do
+    # Elixir's compiler names each letrec of a function apart (`lc$^0`,
+    # `lc$^1`), but Core lets a name be bound again in another scope. The
+    # fixture's two comprehensions get the first one's name, so two
+    # letrecs of one function share it: each apply of the name must reach only
+    # the letrec in scope, never the other one.
+    @letrec_source """
+    defmodule AnchorFixtures.CfaTest.Letrec do
+      def two(b) do
+        x = for <<c <- b>>, do: fn -> c end
+        y = for <<c <- b>>, do: fn -> c + 1 end
+        [h1, h2 | _] = x
+        [k1, k2 | _] = y
+        {h1.(), h2.(), k1.(), k2.()}
+      end
+
+      def nested(b) do
+        [row | _] = for <<c <- b>>, do: for(<<d <- b>>, do: fn -> c + d end)
+        [h1, h2 | _] = row
+        {h1.(), h2.()}
+      end
+    end
+    """
+
+    @two {AnchorFixtures.CfaTest.Letrec, :two, 1}
+    @nested {AnchorFixtures.CfaTest.Letrec, :nested, 1}
+
+    # The graph with every letrec of `{_m, name, arity}` renamed to the first
+    # one's name.
+    defp same_named_letrecs({module, name, arity}) do
+      graph = graph!(@letrec_source)
+      node = graph.modules[module].functions[{name, arity}]
+      [first | rest] = letrec_names(node.core)
+
+      renamed =
+        :cerl_trees.map(
+          fn n ->
+            if :cerl.is_c_var(n) and :cerl.var_name(n) in rest,
+              do: :cerl.update_c_fname(n, elem(first, 0), elem(first, 1)),
+              else: n
+          end,
+          node.core
+        )
+
+      assert [_one, _two] = letrec_names(renamed)
+      assert Enum.uniq(letrec_names(renamed)) == [first]
+      put_in(graph.modules[module].functions[{name, arity}].core, renamed)
+    end
+
+    defp letrec_names(core) do
+      :cerl_trees.fold(
+        fn n, acc ->
+          if :cerl.is_c_letrec(n),
+            do: acc ++ Enum.map(:cerl.letrec_defs(n), fn {f, _fun} -> :cerl.var_name(f) end),
+            else: acc
+        end,
+        [],
+        core
+      )
+    end
+
+    defp sites(cfa, mfa, ordinals), do: Enum.map(ordinals, &Cfa.closures_at(cfa, site(mfa, &1)))
+
+    # Sites 0 and 1 read x's first and second element (the second through the
+    # letrec's own recursive call), 2 and 3 read y's.
+    @two_sites [
+      {:ok, MapSet.new([{@two, 1}])},
+      {:ok, MapSet.new([{@two, 1}])},
+      {:ok, MapSet.new([{@two, 3}])},
+      {:ok, MapSet.new([{@two, 3}])}
+    ]
+
+    test "L1: two sibling letrecs of one name do not merge their reaching sets" do
+      cfa = Cfa.analyze(same_named_letrecs(@two), %{@two => :any})
+      assert sites(cfa, @two, 0..3) == @two_sites
+    end
+
+    # Site 0 reads the inner list's head; site 1 its second element, which the
+    # inner letrec's own recursive call returns: it must reach the inner
+    # letrec, never the outer one of the same name.
+    test "L2: a letrec nested in one of the same name: the inner apply reaches the inner one" do
+      cfa = Cfa.analyze(same_named_letrecs(@nested), %{@nested => :any})
+
+      assert sites(cfa, @nested, 0..1) ==
+               [set([lambda(@nested, 2)]), set([lambda(@nested, 2)])]
+    end
+
+    test "L3: positive control: the compiler's own distinct names resolve the same way" do
+      graph = graph!(@letrec_source)
+      cfa = Cfa.analyze(graph, %{@two => :any, @nested => :any})
+
+      assert sites(cfa, @two, 0..3) == @two_sites
+
+      assert sites(cfa, @nested, 0..1) ==
+               [set([lambda(@nested, 2)]), set([lambda(@nested, 2)])]
     end
   end
 end

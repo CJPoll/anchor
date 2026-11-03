@@ -11,6 +11,11 @@ defmodule Anchor.Domain.Sabotage.Report do
   functions no mutant could be made of, the cap, and a summary that counts
   every status, `invalid` included.
 
+  Changed functions that yielded no mutant at all (every edit skipped, a
+  macro, no mutable site) print one `sabotage: no mutant from M.f/a (file):
+  <reason>` line each and `sabotage: no mutants generated from N changed
+  functions: nothing was measured` (DND-5617); the exit code stays 0.
+
   Exit codes (DND-5570, the epic's amended invariant 6): the refusal's own
   code; a dry run 0; else
 
@@ -68,6 +73,7 @@ defmodule Anchor.Domain.Sabotage.Report do
     lines(
       run.notes ++
         zero_scope(run) ++
+        no_mutants(run) ++
         planned ++
         skipped(run) ++
         errors(run) ++
@@ -80,6 +86,7 @@ defmodule Anchor.Domain.Sabotage.Report do
     lines(
       run.notes ++
         zero_scope(run) ++
+        no_mutants(run) ++
         Enum.map(run.outcomes, &outcome/1) ++
         skipped(run) ++
         errors(run) ++ not_run(run) ++ [summary(run)] ++ conclusion(verdict(run), run)
@@ -92,6 +99,22 @@ defmodule Anchor.Domain.Sabotage.Report do
     do: ["sabotage: 0 changed functions in #{base}..HEAD"]
 
   defp zero_scope(_run), do: []
+
+  # Changed functions that yielded no mutant at all: nothing was measured.
+  # Still exit 0 (nothing to measure is not a failure), but never silent: one
+  # line per function with its reason, then the count (DND-5617).
+  defp no_mutants(%Run{changed_functions: n, generated: 0, no_mutant: functions})
+       when is_integer(n) and n > 0 do
+    Enum.map(functions, fn {function, reason} ->
+      "sabotage: no mutant from #{mfa(function)} (#{function.file}): #{reason}"
+    end) ++
+      [
+        "sabotage: no mutants generated from #{n} changed functions: nothing was measured " <>
+          "(exit 0; see the lines above for why)"
+      ]
+  end
+
+  defp no_mutants(_run), do: []
 
   defp conclusion(:unmeasured, run),
     do: [
