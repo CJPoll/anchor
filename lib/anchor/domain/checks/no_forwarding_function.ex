@@ -216,24 +216,26 @@ defmodule Anchor.Domain.Checks.NoForwardingFunction do
 
   defp target(_entry), do: :error
 
-  # The head's variable names, when every argument is a distinct bare
-  # variable that does not start with `_`.
+  # The head's variables as `{:var, name}`, when every argument is a distinct
+  # bare variable that does not start with `_`. Tagged, so no variable name
+  # can collide with the "not a variable" marker.
   defp head_variables(args) do
-    names = Enum.map(args, &variable_name/1)
+    vars = Enum.map(args, &variable_name/1)
 
-    if Enum.all?(names, &is_atom/1) and length(Enum.uniq(names)) == length(names),
-      do: {:ok, names},
+    if :not_a_variable not in vars and length(Enum.uniq(vars)) == length(vars),
+      do: {:ok, vars},
       else: :error
   end
 
   defp variable_name({name, _meta, ctx}) when is_atom(name) and is_atom(ctx) do
-    if String.starts_with?(Atom.to_string(name), "_"), do: :error, else: name
+    if String.starts_with?(Atom.to_string(name), "_"), do: :not_a_variable, else: {:var, name}
   end
 
-  defp variable_name(_pattern), do: :error
+  defp variable_name(_pattern), do: :not_a_variable
 
-  # A bare variable reference, compared by name only (metadata differs).
-  defp variable_ref({name, _meta, ctx}) when is_atom(name) and is_atom(ctx), do: name
+  # A bare variable reference as `{:var, name}`, compared by name only
+  # (metadata differs); anything else is `:not_a_variable`.
+  defp variable_ref({name, _meta, ctx}) when is_atom(name) and is_atom(ctx), do: {:var, name}
   defp variable_ref(_arg), do: :not_a_variable
 
   # `x |> g(y)` is `g(x, y)`, recursively on the left.

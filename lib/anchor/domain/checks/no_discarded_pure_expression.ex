@@ -47,7 +47,8 @@ defmodule Anchor.Domain.Checks.NoDiscardedPureExpression do
        over pure arguments, bare or as `Kernel.f`;
     8. an `fn` whose every clause body is pure, a capture `&(...)` of a pure
        expression, and a capture `&M.f/n` or `&f/n` whose target is pure by 5,
-       6 or 7.
+       6 or 7 (a stdlib target also calling none of its arguments:
+       `&Enum.each/2` is not pure).
 
   Anything else is not pure: an unknown call, a dynamic call (`mod.f()`,
   `apply/3`, `fun.()`), `send`, `raise`, `throw`, `exit`, `spawn`, a bang
@@ -392,10 +393,10 @@ defmodule Anchor.Domain.Checks.NoDiscardedPureExpression do
   defp body_pure?({:__block__, _meta, exprs}, ctx), do: Enum.all?(exprs, &pure?(&1, ctx))
   defp body_pure?(body, ctx), do: pure?(body, ctx)
 
-  defp capture_target_pure?({{:., _dmeta, [receiver, fun]}, _meta, []}, _arity, ctx)
+  defp capture_target_pure?({{:., _dmeta, [receiver, fun]}, _meta, []}, arity, ctx)
        when is_atom(fun) do
     case module_of(receiver, ctx) do
-      {:ok, module} -> pure_function?(module, fun, ctx)
+      {:ok, module} -> pure_function?(module, fun, ctx) and calls_no_argument?(module, fun, arity)
       _not_a_module -> false
     end
   end
@@ -409,6 +410,13 @@ defmodule Anchor.Domain.Checks.NoDiscardedPureExpression do
        do: local_pure?(name, arity, ctx)
 
   defp capture_target_pure?(_target, _arity, _ctx), do: false
+
+  # A captured stdlib function is called later with arguments nobody here
+  # sees, so it is pure only when it calls none of them (`&Enum.each/2` calls
+  # its second). A `pure_patterns` function is trusted, as for its calls.
+  defp calls_no_argument?(module, fun, arity) do
+    module not in @stdlib_pure or Map.get(@callable_positions, {module, fun, arity}, :all) == []
+  end
 
   # A stdlib function calls the arguments its spec types as a function (or a
   # `Collectable.t()`): there only an `fn` or a capture literal, judged pure,

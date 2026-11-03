@@ -124,3 +124,20 @@ Mutations of the fix (same suite run):
 
 N3 shows the spec fallback's direction: a module without specs has every
 argument judged callable, so its calls are missed, never falsely reported.
+
+## Whole-MR critic (on a1b22c4): a captured stdlib function that calls an argument
+
+`&Enum.each/2` in a callable position was judged pure by its target alone,
+but it calls its own second argument. A captured stdlib function is now pure
+only when `@callable_positions` gives it none. Run against a1b22c4's detector
+first (`mix test test/anchor/domain/checks/no_discarded_pure_expression_test.exs`):
+
+```
+1) test detect_violations/2 D9: a stdlib call that calls a function held in a value is not reported
+   expression Enum.zip_with(xs, callbacks, &Enum.each/2)
+   code: for expr <- [
+```
+
+| # | Mutation | Failed | Failure |
+|---|---|---|---|
+| P3 | `calls_no_argument?/3` always true (`!= :never`) | D9 (value) | `expression Enum.zip_with(xs, callbacks, &Enum.each/2)` `code: for expr <- [` |

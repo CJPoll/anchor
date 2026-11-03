@@ -181,7 +181,12 @@ defmodule Anchor.Domain.Checks.NoDiscardedPureExpressionTest do
             # function, or a module whose compare/2 is called.
             "Enum.map(xs, &Enum.each(s, &1))",
             "Enum.sort(xs, {:asc, MyApp.Effectful})",
-            "Enum.sort(xs, :lists)"
+            "Enum.sort(xs, :lists)",
+            # Whole-MR critic on a1b22c4: a captured stdlib function that
+            # itself calls an argument (here a callback in xs or fun).
+            "Enum.zip_with(xs, callbacks, &Enum.each/2)",
+            "Enum.reduce(xs, fun, &Enum.each/2)",
+            "Enum.map(xss, &Enum.map(&1, fun))"
           ] do
         assert detect(discarded(expr)) == [], "expression #{expr}"
       end
@@ -192,7 +197,8 @@ defmodule Anchor.Domain.Checks.NoDiscardedPureExpressionTest do
             "Enum.reduce(xs, a, &+/2)",
             "Enum.sort(xs, :desc)",
             "Map.update(m, :a, 1, &(&1 + 1))",
-            "Enum.into(xs, %{})"
+            "Enum.into(xs, %{})",
+            "Enum.map(xs, &Integer.to_string/1)"
           ] do
         assert [_one] = detect(discarded(expr)), "expression #{expr}"
       end

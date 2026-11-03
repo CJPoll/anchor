@@ -54,3 +54,29 @@ restored. Failure text is verbatim.
 - The `defimpl` skip was removed from the walk rather than tested: a `defimpl`
   is never a module body here, so the clause guarded nothing, and it also
   hid modules nested in a `defimpl`.
+
+## Whole-MR critic (on a1b22c4): the "not a variable" marker collided with a name
+
+`variable_name/1` marked a pattern, default or `_name` head as the atom
+`:error`, and `variable_ref/1` marked a non-variable argument as
+`:not_a_variable`: a variable of either name matched the marker, so
+`def f(%{} = error), do: g(error)` and `def f(not_a_variable), do:
+g(not_a_variable + 1)` were reported. Variables are now tagged `{:var, name}`.
+Run against a1b22c4's detector first
+(`mix test test/anchor/domain/checks/no_forwarding_function_test.exs`):
+
+```
+1) test detect_violations/2 D7: a pattern, an underscore name, a repeated name, a default or a guard is not flagged
+   f(%{} = error)
+   code: for {head, call} <- [
+2) test detect_violations/2 D7: a non-variable call argument never matches a head variable of any name
+   code:  assert triggers(module("def f(not_a_variable), do: g(not_a_variable + 1)\n  defp g(a), do: a")) == []
+   left:  ["f/1"]
+```
+
+Mutations of the fix (same suite run):
+
+| # | Mutation | Failed | Failure |
+|---|---|---|---|
+| P1 | A pattern head is `{:var, :error}` | D7 (heads) | `f(%{} = error)` `code: for {head, call} <- [` |
+| P2 | A non-variable argument is `{:var, :not_a_variable}` | D7 (non-variable argument) | `code:  assert triggers(module("def f(not_a_variable), do: g(not_a_variable + 1)\n  defp g(a), do: a")) == []` `left:  ["f/1"]` `right: []` |

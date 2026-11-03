@@ -87,10 +87,26 @@ defmodule Anchor.Domain.Checks.NoForwardingFunctionTest do
             {"f(a, _b)", "g(a, _b)"},
             {"f(a, a)", "g(a, a)"},
             {"f(a, b \\\\ 1)", "g(a, b)"},
-            {"f(a, b) when is_integer(a)", "g(a, b)"}
+            {"f(a, b) when is_integer(a)", "g(a, b)"},
+            # Whole-MR critic on a1b22c4: a head named like the detector's own
+            # "not a variable" marker is still a pattern or a default.
+            {"f(%{} = error)", "g(error)"},
+            {"f(error \\\\ nil)", "g(error)"}
           ] do
         assert triggers(module("def #{head}, do: #{call}")) == [], head
       end
+    end
+
+    # Whole-MR critic on a1b22c4: a call argument that is not a variable
+    # never matches a head variable, whatever that variable is named.
+    test "D7: a non-variable call argument never matches a head variable of any name" do
+      assert triggers(
+               module("def f(not_a_variable), do: g(not_a_variable + 1)\n  defp g(a), do: a")
+             ) ==
+               []
+
+      assert triggers(module("def f(error), do: g(error)\n  defp g(a), do: a")) == ["f/1"],
+             "positive control: a variable named error still forwards"
     end
 
     test "D8: a body of two expressions is not flagged" do
