@@ -206,9 +206,9 @@ before coining a synonym.
   report-mode detection in `Managers.Lint` and `Check.Base`, the ratchet in
   `Managers.Graph`, `BaselineFile`, `GitShow` and the task's baseline flags.
 - `layering` — the `layering` graph rule (DND-5442):
-  `Anchor.Domain.GraphRules.Layering`, `CallMatrix`, `DynamicCalls`, the
-  `@callback` reading in `BeamReader` and `Builder`, its registration and
-  Config's architecture check of graph rules.
+  `Anchor.Domain.GraphRules.Layering`, `CallMatrix`, `DynamicCalls`,
+  `ViolationKey.mfa/1`, its registration and Config's architecture check of
+  graph rules and known types.
 - `context_acyclic` — the `context_acyclic` graph rule (DND-5445):
   `Anchor.Domain.ContextGraph`, `GraphRules.ContextAcyclic`,
   `ViolationKey.graph_key/2` and its registration.
