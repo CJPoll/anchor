@@ -9,8 +9,10 @@ defmodule Anchor.Adapters.GitShow do
 
     1. `git rev-parse --verify --quiet --end-of-options <ref>^{commit}`: a ref
        that does not resolve is an error, never an absent file;
-    2. `git cat-file -e <sha>:./<path>`: a non-zero exit is an absent file
-       (the commit resolved, so the path is what is missing);
+    2. `git rev-parse --verify --quiet --end-of-options <sha>:./<path>`: a
+       non-zero exit is an absent file (the commit resolved, so the path is
+       what is missing). `--quiet` keeps git silent: `cat-file -e` printed a
+       `fatal:` line to the terminal on every first landing;
     3. `git cat-file blob <sha>:./<path>`: the bytes.
 
   Git's stderr is kept out of the output it reads.
@@ -29,7 +31,7 @@ defmodule Anchor.Adapters.GitShow do
     with {:ok, sha} <- resolve(root, ref) do
       object = sha <> ":./" <> path
 
-      case git(root, ["cat-file", "-e", object]) do
+      case git(root, ["rev-parse", "--verify", "--quiet", "--end-of-options", object]) do
         {_out, 0} -> blob(root, object)
         {_out, _status} -> {:error, :absent}
       end

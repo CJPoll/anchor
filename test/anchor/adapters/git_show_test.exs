@@ -49,6 +49,27 @@ defmodule Anchor.Adapters.GitShowTest do
     assert GitShow.show(root, "main", ".anchor/baselines/other.txt") == {:error, :absent}
   end
 
+  # Regression: the existence probe (`git cat-file -e`) wrote "fatal: path
+  # ... does not exist in <sha>" to the terminal on every first landing. Git's
+  # stderr is the OS process's, not the test's group leader, so the read runs
+  # in a child VM with its stderr merged into the output this test reads.
+  test "an absent file prints nothing: git's stderr never reaches the terminal", %{
+    tmp_dir: root
+  } do
+    repo!(root)
+    ebin = Path.dirname(:code.which(GitShow))
+
+    for path <- [".anchor/baselines/other.txt", ".anchor/baselines/untracked.txt"] do
+      File.write!(Path.join(root, ".anchor/baselines/untracked.txt"), "x\n")
+
+      code =
+        "IO.inspect(Anchor.Adapters.GitShow.show(#{inspect(root)}, \"main\", #{inspect(path)}))"
+
+      assert System.cmd("elixir", ["-pa", ebin, "-e", code], stderr_to_stdout: true) ==
+               {"{:error, :absent}\n", 0}
+    end
+  end
+
   test "a ref that does not resolve is a git error, never :absent", %{tmp_dir: root} do
     repo!(root)
 
