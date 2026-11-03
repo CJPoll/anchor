@@ -71,7 +71,8 @@ before coining a synonym.
   `Operators`, `OrphanCheck`, `SourceTree`, `Patch`, `MutantId`,
   `EffectCalls`, `Mutant`, `Skipped`), and the runner (DND-5473):
   `mix anchor.sabotage run`/`restore`, its Domain (`Config`, `TestMirror`,
-  `TestSelection`, `Plan`, `TestRun`, `Outcome`, `Journal`, `Run`, `Report`),
+  `TestSelection`, `Plan`, `TestRun`, `Outcome`, `Journal`, `Run`, `Report`,
+  `BoundedOutput`, `NoMutant`),
   `Anchor.Managers.Sabotage.Runner`, the adapters `SourcePatcher`,
   `GitStatus` and `TestRunner`, and `Anchor.Sabotage.ExUnitFormatter`.
   `sabotage_scope` stays the word for the diff scope.

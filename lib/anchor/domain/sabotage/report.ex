@@ -4,26 +4,60 @@ defmodule Anchor.Domain.Sabotage.Report do
 
   One tab-separated line per mutant: id, `Module.name/arity`, operator,
   status, killers, how its tests were selected. A survivor's line ends with a
-  `Fix:`; a `no_tests` mutant names the mirror path it looked for; an
-  `invalid` one says why. Then the skipped mutants (with their reason), the
+  `Fix:`; a `no_tests` mutant names the mirror path it looked for (or, when
+  its tests ran none, says so); a `crashed` one says why, with a `Fix:`; an
+  `invalid` one says why. A run that measured nothing ends with a
+  `COULD NOT MEASURE` line. Then the skipped mutants (with their reason), the
   functions no mutant could be made of, the cap, and a summary that counts
   every status, `invalid` included.
 
-  Exit codes: the refusal's own code; else 1 when a mutant survived or had no
-  test; else 0 (every mutant run was killed, timed out or was invalid).
+  Changed functions that yielded no mutant at all (every edit skipped, a
+  macro, no mutable site) print one `sabotage: no mutant from M.f/a (file):
+  <reason>` line each and `sabotage: no mutants generated from N changed
+  functions: nothing was measured` (DND-5617); the exit code stays 0.
+
+  Exit codes (DND-5570, the epic's amended invariant 6): the refusal's own
+  code; a dry run 0; else
+
+    * 0 when no mutant was run (zero changed functions from a good diff read
+      is a legitimate empty scope, said loudly:
+      `sabotage: 0 changed functions in <base>..HEAD`);
+    * 3, `COULD NOT MEASURE`, when mutants were run and none was measured
+      (every one invalid, crashed or without a test);
+    * 1 when a mutant survived, or crashed, or had no test (an unmeasured
+      mutant in a measured run fails like a survivor; DND-5483's survivors
+      list will be where one gets a reason instead);
+    * 0 otherwise. A mutant that did not compile (`invalid`) is listed and
+      counted and, beside a measured mutant, never changes the code.
+
+  A mutant is measured when it was killed, survived or timed out.
   """
 
   alias Anchor.Domain.Sabotage.Run
 
-  @statuses [:killed, :survived, :timeout, :invalid, :no_tests]
+  @statuses [:killed, :survived, :timeout, :invalid, :crashed, :no_tests]
+  @measured [:killed, :survived, :timeout]
+  @failing [:survived, :crashed, :no_tests]
 
   @spec exit_code(Run.t()) :: 0 | 1 | pos_integer()
   def exit_code(%Run{refusal: {code, _message}}), do: code
   def exit_code(%Run{dry_run: true}), do: 0
+  def exit_code(%Run{} = run), do: run |> verdict() |> verdict_code()
 
-  def exit_code(%Run{outcomes: outcomes}) do
-    if Enum.any?(outcomes, &(&1.status in [:survived, :no_tests])), do: 1, else: 0
+  defp verdict_code(:pass), do: 0
+  defp verdict_code(:violation), do: 1
+  defp verdict_code(:unmeasured), do: 3
+
+  defp verdict(%Run{outcomes: []}), do: :pass
+
+  defp verdict(%Run{outcomes: outcomes}) do
+    statuses = Enum.map(outcomes, & &1.status)
+    verdict(Enum.any?(statuses, &(&1 in @measured)), Enum.any?(statuses, &(&1 in @failing)))
   end
+
+  defp verdict(false, _failing), do: :unmeasured
+  defp verdict(true, true), do: :violation
+  defp verdict(true, false), do: :pass
 
   @spec render(Run.t()) :: String.t()
   def render(%Run{refusal: {_code, message}} = run), do: lines(run.notes ++ [message])
@@ -38,6 +72,8 @@ defmodule Anchor.Domain.Sabotage.Report do
 
     lines(
       run.notes ++
+        zero_scope(run) ++
+        no_mutants(run) ++
         planned ++
         skipped(run) ++
         errors(run) ++
@@ -49,10 +85,45 @@ defmodule Anchor.Domain.Sabotage.Report do
   def render(%Run{} = run) do
     lines(
       run.notes ++
+        zero_scope(run) ++
+        no_mutants(run) ++
         Enum.map(run.outcomes, &outcome/1) ++
-        skipped(run) ++ errors(run) ++ not_run(run) ++ [summary(run)]
+        skipped(run) ++
+        errors(run) ++ not_run(run) ++ [summary(run)] ++ conclusion(verdict(run), run)
     )
   end
+
+  # A diff that was read and holds no changed function is a clean scope; it is
+  # never allowed to read like a run that measured something.
+  defp zero_scope(%Run{changed_functions: 0, base: base}),
+    do: ["sabotage: 0 changed functions in #{base}..HEAD"]
+
+  defp zero_scope(_run), do: []
+
+  # Changed functions that yielded no mutant at all: nothing was measured.
+  # Still exit 0 (nothing to measure is not a failure), but never silent: one
+  # line per function with its reason, then the count (DND-5617).
+  defp no_mutants(%Run{changed_functions: n, generated: 0, no_mutant: functions})
+       when is_integer(n) and n > 0 do
+    Enum.map(functions, fn {function, reason} ->
+      "sabotage: no mutant from #{mfa(function)} (#{function.file}): #{reason}"
+    end) ++
+      [
+        "sabotage: no mutants generated from #{n} changed functions: nothing was measured " <>
+          "(exit 0; see the lines above for why)"
+      ]
+  end
+
+  defp no_mutants(_run), do: []
+
+  defp conclusion(:unmeasured, run),
+    do: [
+      "COULD NOT MEASURE: #{length(run.outcomes)} mutants were run and none was measured " <>
+        "(every one was invalid, crashed or had no test). Fix: make the mutants compile, " <>
+        "the selected tests run, or add tests for the changed files; see the lines above"
+    ]
+
+  defp conclusion(_verdict, _run), do: []
 
   defp outcome(%{mutant: mutant, status: status} = outcome) do
     base = [mutant.id, mfa(mutant), mutant.operator, status, killers(outcome.killers)]
@@ -61,8 +132,14 @@ defmodule Anchor.Domain.Sabotage.Report do
 
   defp tail(:survived, _outcome), do: ["Fix: add a test that fails under this mutant"]
 
-  defp tail(:no_tests, %{reason: looked}),
+  defp tail(:no_tests, %{selection: {:none, _tests}, reason: looked}),
     do: ["Fix: add #{looked}, or a test_mirror rule that finds this file's tests"]
+
+  defp tail(:no_tests, %{reason: reason}),
+    do: [reason, "Fix: make the selected tests run at least one test under this mutant"]
+
+  defp tail(:crashed, %{reason: reason}),
+    do: [reason, "Fix: run the selected tests to see why the run crashed, then fix that"]
 
   defp tail(:invalid, %{reason: reason}), do: [reason]
   defp tail(_status, _outcome), do: []

@@ -18,7 +18,11 @@ defmodule Anchor.Domain.Model do
     * `classification` — `%{module => %Classification{}}`, the modules that
       classified into exactly one bucket;
     * `aggregates` — the aggregate declarations (DND-5476; `[]` until then);
-    * `config` — the `%Anchor.Config{}`.
+    * `config` — the `%Anchor.Config{}`;
+    * `cfa` — the higher-order flow analysis (`%Anchor.Domain.Cfa{}`,
+      DND-5574), set by the runner only when a rule that runs declares
+      `needs: [:cfa]` (`Anchor.Domain.GraphRule`); `nil` otherwise. `build/3`
+      never computes it.
 
   An Erlang module of the project (`{:not_elixir, _}` in the graph's
   `unreadable`) is classified by its name only; a classified one is an opaque
@@ -32,6 +36,7 @@ defmodule Anchor.Domain.Model do
 
   alias Anchor.Config
   alias Anchor.Domain.Architecture
+  alias Anchor.Domain.Cfa
   alias Anchor.Domain.Classification
   alias Anchor.Domain.Failures
   alias Anchor.Domain.Graph
@@ -39,14 +44,15 @@ defmodule Anchor.Domain.Model do
   alias Anchor.Domain.Violation
 
   @enforce_keys [:graph, :architecture, :classification, :config]
-  defstruct [:graph, :architecture, :classification, :config, aggregates: []]
+  defstruct [:graph, :architecture, :classification, :config, aggregates: [], cfa: nil]
 
   @type t :: %__MODULE__{
           graph: Graph.t(),
           architecture: Architecture.t(),
           classification: %{module() => Classification.t()},
           aggregates: list(),
-          config: Config.t()
+          config: Config.t(),
+          cfa: Cfa.t() | nil
         }
 
   @doc """

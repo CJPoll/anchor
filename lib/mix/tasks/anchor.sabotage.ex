@@ -37,12 +37,16 @@ defmodule Mix.Tasks.Anchor.Sabotage do
   `--dry-run` prints the plan and writes nothing. `restore` puts back a file a
   killed run left mutated (`.anchor/sabotage/in-flight.json`).
 
-  Exit codes: 0 every mutant run was killed (or timed out, or was invalid:
-  listed and counted); 1 a mutant survived or had no test; 2 a refusal or a
-  usage error (a dirty target file, the journal not git-ignored, a journal
-  that cannot be restored safely, bad flags); 3 `COULD NOT MEASURE` (no
-  loadable `sabotage:` config, the baseline tests fail, the changed functions'
-  files cannot be read).
+  Exit codes (DND-5570): 0 every measured mutant was killed or timed out (an
+  invalid one, which did not compile, is listed and counted and changes
+  nothing), or there was no changed function (a good diff read that found none
+  prints `sabotage: 0 changed functions in REF..HEAD`); 1 a mutant survived,
+  crashed or had no test, beside a measured one; 2 a refusal or a usage error
+  (a dirty target file, the journal not git-ignored, a journal that cannot be
+  restored safely, a host with no `/proc`, bad flags); 3 `COULD NOT MEASURE` (no loadable `sabotage:`
+  config, the baseline tests fail, the changed functions' files cannot be
+  read, or mutants were run and none was measured: all invalid, crashed or
+  without a test).
   """
 
   use Mix.Task

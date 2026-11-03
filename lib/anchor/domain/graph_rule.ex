@@ -15,6 +15,15 @@ defmodule Anchor.Domain.GraphRule do
   test holds them equal). The runner (`Anchor.Managers.Graph`) calls `check/2`
   under a guard: a raise, throw or exit is one issue naming the rule, and the
   other rules still run.
+
+  ## Needs (DND-5574)
+
+  A rule that reads an analysis the runner computes lazily declares it in the
+  optional `needs/0`: `[:cfa]` asks for the higher-order flow analysis
+  (`Anchor.Domain.Cfa`), which the runner then runs once per run and stores
+  on `Model.cfa`. A rule with no `needs/0` needs nothing, and when no rule
+  that runs needs `:cfa`, the analysis is not run and `Model.cfa` is `nil`.
+  `Anchor.Domain.GraphRules.needs/1` reads and checks it.
   """
 
   @doc "The rule type this module checks (a key of RuleSchema's `@engine_by_type`, engine `:graph`)."
@@ -22,4 +31,9 @@ defmodule Anchor.Domain.GraphRule do
 
   @doc "The violations of `rule` (a parsed rule map) in `model`."
   @callback check(Anchor.Domain.Model.t(), rule :: map()) :: [Anchor.Domain.Violation.t()]
+
+  @doc "The analyses this rule reads from the model (`:cfa`, `Model.cfa`); `[]` when absent."
+  @callback needs() :: [:cfa]
+
+  @optional_callbacks needs: 0
 end

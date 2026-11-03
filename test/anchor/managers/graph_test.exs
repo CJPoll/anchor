@@ -190,7 +190,8 @@ defmodule Anchor.Managers.GraphTest do
                rules: 1,
                opaque: 0,
                no_core: 0,
-               excluded: 0
+               excluded: 0,
+               apply_sites: nil
              }
     end
 
