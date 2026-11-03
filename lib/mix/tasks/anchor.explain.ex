@@ -20,8 +20,10 @@ defmodule Mix.Tasks.Anchor.Explain do
       buckets it must not call;
     * every rule of either engine that selects it, with its enforcement and
       its conforming shape (the text its findings' `Fix:` lines end with);
-    * its findings in the last `mix anchor.graph` run's graph, used only when
-      that graph's key matches this build (else `not computed`).
+    * the graph rules' findings on its source file, run over the last `mix
+      anchor.graph` run's graph, used only when that graph's key matches
+      this build (else `not computed`). They are the raw findings: one a
+      baseline holds is shown, so `mix anchor.graph` stays the verdict.
 
   A path that does not exist yet is classified by its path and the module
   name it implies; the facts only a beam has (behaviours, `use`s, exported
@@ -54,7 +56,8 @@ defmodule Mix.Tasks.Anchor.Explain do
 
   @doc """
   Runs the task. `opts` may hold `:compile` (a zero-arity function returning
-  whether the project compiled, default `Mix.Task.run("compile", [])`) and
+  whether the project compiled; by default `run_task.("compile",
+  ["--return-errors"])`, where `:run_task` defaults to `Mix.Task.run/2`) and
   the Manager's adapter options, which tests inject here.
   """
   @spec run([String.t()], keyword()) :: :ok
@@ -68,7 +71,8 @@ defmodule Mix.Tasks.Anchor.Explain do
   defp run_parsed(_subject, :invalid, _opts), do: usage()
 
   defp run_parsed(subject, format, opts) do
-    {compile, deps} = Keyword.pop(opts, :compile, &compile/0)
+    {run_task, opts} = Keyword.pop(opts, :run_task, &Mix.Task.run/2)
+    {compile, deps} = Keyword.pop(opts, :compile, fn -> compile(run_task) end)
     compiled? = compile.()
 
     request = %{
@@ -101,14 +105,18 @@ defmodule Mix.Tasks.Anchor.Explain do
   end
 
   # A compile that fails still gets an answer from the config and the paths;
-  # the Manager reads no beam then.
-  defp compile do
-    case Mix.Task.run("compile", []) do
+  # the Manager reads no beam then. --return-errors makes Mix return
+  # {:error, diagnostics} instead of exiting {:shutdown, 1} on an error; an
+  # exit or raise from a compiler is a failed compile too.
+  defp compile(run_task) do
+    case run_task.("compile", ["--return-errors"]) do
       {:error, _diagnostics} -> false
       _ok_or_noop -> true
     end
   rescue
     _compile_error -> false
+  catch
+    :exit, _reason -> false
   end
 
   defp format(nil), do: :text

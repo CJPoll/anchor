@@ -22,6 +22,12 @@ also caught a raise. The guard now catches only `:throw` and `:exit` after the
 rescue, as `Managers.Graph`'s does, and a test for a throwing rule was added
 (MX-I). The MX-F to MX-I rows are from the re-run on that code.
 
+Critic round 3 found the task's default compile ran without
+`--return-errors`, so a compile error exited the task before it could answer.
+The regression test, written first, failed on that code (`7 tests, 1 failure`:
+the real compile ran and beams were read); TK-D and TK-E are from the run on
+the fixed code.
+
 | # | Mutation | Tests run | Result | Failing tests |
 |---|---|---|---|---|
 | SU-A | an absolute path outside the root is accepted (`lib/anchor/domain/subject.ex`) | `subject_test.exs` | `8 tests, 1 failure` (red) | parse/2 a path that leaves the root is refused |
@@ -50,6 +56,8 @@ rescue, as `Managers.Graph`'s does, and a test for a throwing rule was added
 | MX-G | a fail-closed finding (a crashed rule) is filtered out (`lib/anchor/managers/explain.ex`) | `explain_test.exs` | `9 tests, 1 failure` (red) | explain/2 a rule that raises or throws is named among the findings, never dropped |
 | MX-H | a rule that raises is not rescued (`lib/anchor/managers/explain.ex`) | `explain_test.exs` | `9 tests, 1 failure` (red) | explain/2 a rule that raises or throws is named among the findings, never dropped |
 | MX-I | a rule that throws is not caught (`lib/anchor/managers/explain.ex`) | `explain_test.exs` | `9 tests, 1 failure` (red) | explain/2 a rule that raises or throws is named among the findings, never dropped |
+| TK-D | compile runs without --return-errors (a compile error exits the task) (`lib/mix/tasks/anchor.explain.ex`) | `anchor_explain_test.exs` | `8 tests, 1 failure` (red) | a project with a compile error still gets an answer: compile runs with --return-errors |
+| TK-E | a compiler's exit is not caught (`lib/mix/tasks/anchor.explain.ex`) | `anchor_explain_test.exs` | `8 tests, 1 failure` (red) | a compiler that exits anyway is a failed compile, not the task's exit |
 
 ## SU-A — an absolute path outside the root is accepted
 
@@ -981,4 +989,45 @@ Run summary: `9 tests, 1 failure`
        test/anchor/managers/explain_test.exs:250: (test)
 
 .....
+```
+
+## TK-D — compile runs without --return-errors (a compile error exits the task)
+
+Run summary: `8 tests, 1 failure`
+
+```text
+  1) test a project with a compile error still gets an answer: compile runs with --return-errors (Mix.Tasks.Anchor.ExplainTest)
+     test/mix/tasks/anchor_explain_test.exs:99
+     Assertion failed, no matching message after 0ms
+     Showing 1 of 1 message in the mailbox
+     code: assert_received {:compile_args, ["--return-errors"]}
+     mailbox:
+       pattern: {:compile_args, ["--return-errors"]}
+       value:   {:compile_args, []}
+     stacktrace:
+       test/mix/tasks/anchor_explain_test.exs:116: (test)
+
+..
+```
+
+## TK-E — a compiler's exit is not caught
+
+Run summary: `8 tests, 1 failure`
+
+```text
+  1) test a compiler that exits anyway is a failed compile, not the task's exit (Mix.Tasks.Anchor.ExplainTest)
+     test/mix/tasks/anchor_explain_test.exs:120
+     ** (exit) shutdown: 1
+     code: capture_io(fn ->
+     stacktrace:
+       test/mix/tasks/anchor_explain_test.exs:122: anonymous fn/2 in Mix.Tasks.Anchor.ExplainTest."test a compiler that exits anyway is a failed compile, not the task's exit"/1
+       (anchor 0.1.0) lib/mix/tasks/anchor.explain.ex:110: Mix.Tasks.Anchor.Explain.compile/1
+       (anchor 0.1.0) lib/mix/tasks/anchor.explain.ex:74: Mix.Tasks.Anchor.Explain.run_parsed/3
+       test/mix/tasks/anchor_explain_test.exs:126: anonymous fn/1 in Mix.Tasks.Anchor.ExplainTest."test a compiler that exits anyway is a failed compile, not the task's exit"/1
+       (ex_unit 1.19.4) lib/ex_unit/capture_io.ex:325: ExUnit.CaptureIO.do_capture_gl/2
+       (ex_unit 1.19.4) lib/ex_unit/capture_io.ex:283: ExUnit.CaptureIO.do_with_io/3
+       (ex_unit 1.19.4) lib/ex_unit/capture_io.ex:152: ExUnit.CaptureIO.capture_io/1
+       test/mix/tasks/anchor_explain_test.exs:125: (test)
+
+....
 ```

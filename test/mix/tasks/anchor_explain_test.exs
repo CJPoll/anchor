@@ -93,6 +93,46 @@ defmodule Mix.Tasks.Anchor.ExplainTest do
     assert output =~ "findings: not computed (run mix anchor.graph)"
   end
 
+  # The default compile step (no :compile injected), with Mix.Task.run/2
+  # doubled as Mix 1.19's compile behaves: without --return-errors a compile
+  # error exits {:shutdown, 1}; with it, it returns {:error, diagnostics}.
+  test "a project with a compile error still gets an answer: compile runs with --return-errors" do
+    expect_uncompiled_explain()
+
+    run_task = fn "compile", args ->
+      send(self(), {:compile_args, args})
+      if "--return-errors" in args, do: {:error, []}, else: exit({:shutdown, 1})
+    end
+
+    output =
+      capture_io(fn ->
+        assert Explain.run(
+                 [@subject],
+                 Keyword.delete(opts(true), :compile) ++ [run_task: run_task]
+               ) ==
+                 :ok
+      end)
+
+    assert_received {:compile_args, ["--return-errors"]}
+    assert output =~ "compile failed; beam facts unknown"
+  end
+
+  test "a compiler that exits anyway is a failed compile, not the task's exit" do
+    expect_uncompiled_explain()
+    run_task = fn "compile", _args -> exit({:shutdown, 1}) end
+
+    output =
+      capture_io(fn ->
+        assert Explain.run(
+                 [@subject],
+                 Keyword.delete(opts(true), :compile) ++ [run_task: run_task]
+               ) ==
+                 :ok
+      end)
+
+    assert output =~ "compile failed; beam facts unknown"
+  end
+
   test "--format json prints the JSON answer" do
     expect_uncompiled_explain()
 

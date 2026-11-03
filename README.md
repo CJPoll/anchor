@@ -937,9 +937,12 @@ prints, from `.anchor.yml` and the compiled graph only:
 - **rules**: every rule of either engine (Credo or graph) that selects it,
   with its enforcement and its *shape*, the sentence its findings' `Fix:`
   ends with.
-- **findings**: its findings in the graph the last `mix anchor.graph` run
-  wrote, used only when that graph's key matches this build. Otherwise it
-  prints `not computed (run mix anchor.graph)`; a stale graph is never used.
+- **findings**: what the graph rules find on its source file, run over the
+  graph the last `mix anchor.graph` run wrote, used only when that graph's key
+  matches this build. Otherwise it prints `not computed (run mix anchor.graph)`;
+  a stale graph is never used. These are the rules' raw findings: a finding a
+  baseline holds is shown too, and a finding on the config file (an interface
+  width) is not, so `mix anchor.graph` stays the verdict.
 
 A path that does not exist yet is classified by its path and the module name
 Elixir's file naming implies (`lib/my_app/domain/new_thing.ex` is
