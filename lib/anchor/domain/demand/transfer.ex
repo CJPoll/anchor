@@ -52,8 +52,10 @@ defmodule Anchor.Domain.Demand.Transfer do
       caller's handler is not followed, and a caller's call inside its own
       `try` uses every argument by this rule.
     * A `fun` whose value is used: its body in full, so what it captures is
-      used. A `letrec` definition (a receive or comprehension loop) is
-      walked in full.
+      used, and as if inside a `try` (it may be applied in one anywhere it
+      flows). A `letrec` definition (a receive or comprehension loop) runs
+      in place: it is walked in full with the protection of where it is
+      written.
     * A map key (`%{^k => v}`) or a bitstring size (`size(n)`) inside a
       pattern is read in full.
     * A tuple, list or map built with demand `d`: each component gets `d`'s
@@ -312,11 +314,16 @@ defmodule Anchor.Domain.Demand.Transfer do
     end
   end
 
-  defp lambda(node, demand, st, ctx) do
+  # A `fn` may be applied inside some handler's `try` anywhere it flows, so
+  # its body, walked here for what it captures, treats a raise as observable
+  # (over-approximating use). A `letrec` definition runs in place, so it keeps
+  # the protection of where it is written.
+  defp lambda(node, demand, st, ctx), do: fun_body(node, demand, st, %{ctx | protected?: true})
+
+  defp fun_body(node, demand, st, ctx) do
     if Lattice.used?(demand) do
       names = Enum.map(:cerl.fun_vars(node), &:cerl.var_name/1)
-      body_ctx = %{ctx | protected?: false}
-      {:ok, st} = scoped(st, names, &{:ok, walk(:cerl.fun_body(node), :all, &1, body_ctx)})
+      {:ok, st} = scoped(st, names, &{:ok, walk(:cerl.fun_body(node), :all, &1, ctx)})
       st
     else
       st
@@ -387,7 +394,7 @@ defmodule Anchor.Domain.Demand.Transfer do
     st = walk(:cerl.letrec_body(node), demand, st, ctx)
 
     Enum.reduce(:cerl.letrec_defs(node), st, fn {_fname, fun}, st ->
-      lambda(fun, :all, st, ctx)
+      fun_body(fun, :all, st, ctx)
     end)
   end
 

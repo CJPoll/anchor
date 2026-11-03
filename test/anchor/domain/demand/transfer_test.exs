@@ -43,6 +43,10 @@ defmodule Anchor.Domain.Demand.TransferTest do
     def map_build(a), do: try(do: (_ = %{k: a}; :ok), rescue: (_e -> :error))
     def tuple_build(a), do: try(do: (_ = {a}; :ok), rescue: (_e -> :error))
     def cons_build(a), do: try(do: (_ = [a]; :ok), rescue: (_e -> :error))
+    # Captured, not passed: the raise happens in a body run inside the try.
+    def captured_closure(a), do: (f = fn -> (_ = hd(a); :ok) end; try(do: (_ = f.(); :ok), rescue: (_e -> :error)))
+    def captured_receive(a), do: try(do: (receive do _m -> (_ = hd(a); :ok) end), rescue: (_e -> :error))
+    def captured_letrec(a), do: try(do: (_ = for(<<c <- "ab">>, do: (_ = hd(a); c)); :ok), rescue: (_e -> :error))
     defp helper(x), do: (_ = hd(x); :ok)
   end
 
@@ -404,6 +408,9 @@ defmodule Anchor.Domain.Demand.TransferTest do
     {:binary, :all},
     {:map_update, :all},
     {:map_build, :all},
+    {:captured_closure, :all},
+    {:captured_receive, :all},
+    {:captured_letrec, :all},
     {:tuple_build, :absent},
     {:cons_build, :absent}
   ]
@@ -437,6 +444,33 @@ defmodule Anchor.Domain.Demand.TransferTest do
   end
 
   defp nothing(fun), do: Enum.map(:cerl.fun_vars(fun), fn _var -> :absent end)
+
+  describe "fail closed" do
+    test "an apply site in unlabelled Core resolves to nothing: every argument used, reason named",
+         context do
+      mfa = {F, :ap2, 2}
+      core = context.graph |> Graph.function({P, :closure, 1}) |> Map.fetch!(:core)
+
+      result =
+        Transfer.function(core, %{
+          mfa: mfa,
+          mode: :sound,
+          summaries: %{},
+          cfa: context.cfa,
+          effects: []
+        })
+
+      assert result.params == [:all]
+      assert {:any_apply, {mfa, nil}} in result.reasons
+    end
+
+    test "a case with no clauses uses its argument in full" do
+      var = :cerl.c_var(:x)
+      fun = :cerl.c_fun([var], :cerl.c_case(var, []))
+      env = %{mfa: {F, :none, 1}, mode: :sound, summaries: %{}, cfa: nil, effects: []}
+      assert Transfer.function(fun, env).params == [:all]
+    end
+  end
 
   describe "modes" do
     test "an unknown call uses its arguments and names the reason (sound)", context do

@@ -339,6 +339,17 @@ defmodule Anchor.Domain.DemandTest do
       end
     end
 
+    test "param/3 raises for a negative or out-of-range index, never reading from the end",
+         %{demand: demand} do
+      assert_raise ArgumentError, ~r/was not analysed/, fn ->
+        Demand.param(demand, {A, :first, 2}, -1)
+      end
+
+      assert_raise ArgumentError, ~r/was not analysed/, fn ->
+        Demand.param(demand, {A, :first, 2}, 2)
+      end
+    end
+
     test "param/3 raises for a function the analysis did not cover", %{demand: demand} do
       assert_raise ArgumentError, ~r/was not analysed/, fn ->
         Demand.param(demand, {A, :missing, 1}, 0)
