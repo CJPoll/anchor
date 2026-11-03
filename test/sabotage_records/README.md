@@ -235,6 +235,8 @@ before coining a synonym.
 - `explain` — `mix anchor.explain` (DND-5446): `Anchor.Domain.Subject`,
   `Classification.classify_planned/3`, `Anchor.Domain.Explain`,
   `Anchor.Managers.Explain` and the Mix task.
+- `module_map` — ADR 001's module map and its canary (DND-5620): every `lib/`
+  module has a row, under the bucket `.anchor.yml` gives it.
 - `dialyzer_boundary` — the DND-5499 spike runner
   `test/fixtures/dialyzer_boundary/run.exs` (not a check: it measures what
   Dialyzer reports for clause reachability on the fixtures beside it, so F8

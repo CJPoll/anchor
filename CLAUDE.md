@@ -41,10 +41,15 @@ never an adapter.
 
 | Bucket | Modules |
 |---|---|
-| Framework | `Anchor.Check.*` (Credo checks, `Anchor.Check.Base`, `Anchor.Check.Source`), `Mix.Tasks.Anchor.*` (`lib/mix/tasks/`; `Mix.Tasks.Anchor.Sabotage`), `Anchor.Sabotage.CoverageCollector` (an OTP process, in `lib/mix/tasks/anchor/sabotage/` so `mix anchor.graph` buckets it as Framework) |
-| Managers | `Anchor.Managers.Lint`, `Anchor.Managers.Sabotage` (`.Runner`, `.Coverage`) |
-| Side Effects | ports: `Anchor.Adapters.ConfigLoader`, `ChangeSource`, `BeamSource`, `Tracing`, `InProcessTests`, `ProjectModuleSource`, `CoverageStore`, `BaselineStore`, `GitBase`; adapters: `ConfigFile`, `GitChangeSource`, `BeamReader`, `CallTracer`, `SuiteRunner`, `ProjectModules`, `CoverageFile`, `RecordFile` (port `RecordStore`), `BaselineFile`, `GitShow` (`lib/anchor/adapters/`); `GitEnv`, the environment the git adapters run git with (DND-5581) |
-| Domain | everything under `lib/anchor/domain/`, including `Anchor.Domain.Sabotage.*` (`Mutator`, `Operators`, `DiffHunks`, `FunctionSpans`, `Scope`, `CoverageMap`, `Record`, `RecordNaming`, `KillMap`, `ChangedTests`, `TestPath`: the one rule for a path handed to `mix test`, DND-5640) and `Anchor.Domain.Graph.*` |
+| Framework | `Anchor.Check.*` (Credo checks, `Anchor.Check.Base`, `Anchor.Check.Source`), `Mix.Tasks.Anchor.*` (`lib/mix/tasks/`; `Mix.Tasks.Anchor.Sabotage`, `.Graph`, `.Explain`), the `Anchor` module (by name), `Anchor.Sabotage.CoverageCollector` (an OTP process, in `lib/mix/tasks/anchor/sabotage/` so `mix anchor.graph` buckets it as Framework) |
+| Managers | `Anchor.Managers.Lint`, `Anchor.Managers.Sabotage` (`.Runner`, `.Coverage`), `Anchor.Managers.Graph` (`.Request`), `Anchor.Managers.Explain` |
+| Side Effects | ports: `Anchor.Adapters.ConfigLoader`, `ChangeSource`, `BeamSource`, `Tracing`, `InProcessTests`, `ProjectModuleSource`, `CoverageStore`, `BaselineStore`, `GitBase`, `SourceSource`, `GraphStore`, `TestExecution`, `SourceMutation`; adapters: `ConfigFile`, `GitChangeSource`, `BeamReader`, `CallTracer`, `SuiteRunner`, `ProjectModules`, `CoverageFile`, `RecordFile` (port `RecordStore`), `BaselineFile`, `GitShow`, `SourceReader`, `GraphArtifact`, `TestRunner`, `SourcePatcher`, `GitStatus`, `GitWorktree` (`lib/anchor/adapters/`); `GitEnv`, the environment the git adapters run git with (DND-5581); `Anchor.Sabotage.ExUnitFormatter` (`lib/anchor/sabotage/`) |
+| Domain | everything under `lib/anchor/domain/`, including `Anchor.Domain.Sabotage.*` (`Mutator`, `Operators`, `DiffHunks`, `FunctionSpans`, `Scope`, `CoverageMap`, `Record`, `RecordNaming`, `KillMap`, `ChangedTests`, `TestPath`: the one rule for a path handed to `mix test`, DND-5640) and `Anchor.Domain.Graph.*`, the graph rules (`GraphRules.*`), `Model`, `Classification`, `Interfaces`, `Explain`, `Subject`, `RuleShapes` |
+
+ADR 001's module map (*How this maps to Anchor*) lists every `lib/` module
+with its bucket; `test/anchor/adr_module_map_test.exs` fails on a module with
+no row, or a row whose bucket disagrees with `.anchor.yml` (DND-5620). A new
+module gets its row in the same change.
 
 ### Key Architectural Decisions
 
