@@ -17,8 +17,8 @@ defmodule Anchor.Domain.Classification do
       bucket's name, sorted.
 
   There is no precedence between buckets, ever: an order in the config would
-  decide silently which rule a module is held to. The runner reports both
-  errors.
+  decide silently which rule a module is held to. The graph runner
+  (DND-5440) is to report both errors.
 
   ## Context
 

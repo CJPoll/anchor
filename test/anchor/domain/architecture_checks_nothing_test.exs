@@ -384,7 +384,8 @@ defmodule Anchor.Domain.ArchitectureChecksNothingTest do
     [
       {"positive: absent (default 1)", doc(@minimal), :accepted},
       {"positive: 178", with_floor.(178), :accepted},
-      {"0", with_floor.(0), {:refused, "architecture.buckets[0].min_modules is 0"}},
+      {"0", with_floor.(0),
+       {:refused, "architecture.buckets[0].min_modules must be a positive integer, got: 0"}},
       {"-3", with_floor.(-3), {:refused, "architecture.buckets[0].min_modules"}},
       {~s("5"), with_floor.("5"), {:refused, "architecture.buckets[0].min_modules"}},
       {"null", with_floor.(nil), {:refused, "architecture.buckets[0].min_modules"}}
@@ -543,7 +544,11 @@ defmodule Anchor.Domain.ArchitectureChecksNothingTest do
       {"[]", place.(%{"paths" => []}), {:refused, ".paths"}},
       {~s([""]), place.(%{"paths" => [""]}), {:refused, ".paths"}},
       {"a string, not a list", place.(%{"paths" => "lib/a.ex"}), {:refused, ".paths"}},
-      {"a non-string entry", place.(%{"paths" => ["lib/a.ex", 1]}), {:refused, ".paths"}}
+      {"a non-string entry", place.(%{"paths" => ["lib/a.ex", 1]}), {:refused, ".paths"}},
+      {~s(a match-all ["**"]), place.(%{"paths" => ["**"]}), {:refused, ".paths"}},
+      {"a match-all **/* beside a real glob", place.(%{"paths" => ["lib/a.ex", "**/*"]}),
+       {:refused, ".paths"}},
+      {"a match-all *", place.(%{"paths" => ["*"]}), {:refused, ".paths"}}
     ]
   end
 
@@ -552,6 +557,7 @@ defmodule Anchor.Domain.ArchitectureChecksNothingTest do
       {"positive: a module glob", place.(%{"pattern" => "MyApp.Domain.*"}), :accepted},
       {"a match-all *", place.(%{"pattern" => "*"}), {:refused, ".pattern"}},
       {"a match-all **", place.(%{"pattern" => "**"}), {:refused, ".pattern"}},
+      {"a match-all *.*", place.(%{"pattern" => "*.*"}), {:refused, ".pattern"}},
       {"blank", place.(%{"pattern" => ""}), {:refused, ".pattern"}},
       {"not a string", place.(%{"pattern" => ["A.*"]}), {:refused, ".pattern"}}
     ]

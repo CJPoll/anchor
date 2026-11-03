@@ -301,6 +301,32 @@ defmodule Anchor.Domain.GlobPatternTest do
     end
   end
 
+  # DND-5437: a bucket or root selector with no literal selects everything.
+  # Sabotage record: ../../sabotage_records/glob_pattern-20261103-dnd_5437.md
+  describe "literal_free?/2 (DND-5437)" do
+    test "a path glob of only wildcards and slashes has no literal" do
+      for glob <- ["*", "**", "**/*", "*/**", "**/**/*"],
+          do: assert(GlobPattern.literal_free?(glob, "/"), glob)
+    end
+
+    test "a module glob of only wildcards and dots has no literal" do
+      for glob <- ["*", "*.*", "**.*.*"], do: assert(GlobPattern.literal_free?(glob, "."), glob)
+    end
+
+    test "a glob with any literal character has one" do
+      for glob <- ["lib/**", "**/*.ex", "a", "", "/"],
+          do: refute(GlobPattern.literal_free?(glob, "/"), glob)
+
+      for glob <- ["MyApp.*", "*.Web.*", "*?", ""],
+          do: refute(GlobPattern.literal_free?(glob, "."), glob)
+    end
+
+    test "the separator is a literal for the other flavour" do
+      refute GlobPattern.literal_free?("*.*", "/")
+      refute GlobPattern.literal_free?("**/*", ".")
+    end
+  end
+
   describe "wildcard_only?/1 (DND-1292)" do
     test "a glob of only wildcards matches every name" do
       for glob <- ["*", "**", "***"], do: assert(GlobPattern.wildcard_only?(glob), glob)

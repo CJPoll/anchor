@@ -24,7 +24,7 @@ defmodule Anchor.Domain.Architecture.SelectorTest do
       assert Selector.matches?({:paths, ["lib/**/domain/**/*.ex"]}, @facts)
     end
 
-    test "positive control: a file outside the glob does not match" do
+    test "a file outside the glob does not match" do
       refute Selector.matches?({:paths, ["lib/**/web/**/*.ex"]}, @facts)
     end
 

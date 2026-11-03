@@ -8,10 +8,13 @@ defmodule Anchor.Domain.Architecture.Selector do
 
     * `paths: ["apps/*/lib/**/domain/**/*.ex"]` — source-path globs, `**`
       always recursive (`Anchor.Domain.GlobPattern.matches_recursive_pattern?/2`).
-      A module with no known source file matches no `paths` selector;
+      A module with no known source file matches no `paths` selector. A glob
+      with no literal character (`**`, `**/*`) is refused: it puts every file
+      in the bucket;
     * `pattern: "Mix.Tasks.*"` — a module-name glob
-      (`Anchor.Domain.GlobPattern.matches_module_pattern?/2`). A match-all glob
-      (`*`) is refused: it puts every module in the bucket;
+      (`Anchor.Domain.GlobPattern.matches_module_pattern?/2`). A glob with no
+      literal character (`*`, `*.*`) is refused: it puts every module in the
+      bucket;
     * `uses_module: GenServer` — a literal `use` in the module's own
       `defmodule` body, named exactly (an Elixir module name);
     * `behaviour: Supervisor` — a behaviour the module declares, named exactly
@@ -21,7 +24,7 @@ defmodule Anchor.Domain.Architecture.Selector do
       function; the arity is required.
 
   Module and function names go through `Anchor.Domain.FunctionRef`'s grammar,
-  so no arbitrary text becomes an atom, and globs go through
+  so only grammar-valid names become atoms, and globs go through
   `Anchor.Domain.GlobPattern` only.
   """
 
@@ -99,14 +102,24 @@ defmodule Anchor.Domain.Architecture.Selector do
   end
 
   defp parse_value("paths", globs, path) do
-    if is_list(globs) and globs != [] and Enum.all?(globs, &non_blank?/1),
-      do: {:ok, {:paths, globs}},
-      else:
+    cond do
+      not (is_list(globs) and globs != [] and Enum.all?(globs, &non_blank?/1)) ->
         refuse(
           path,
           "must be a non-empty list of non-empty path globs, got: #{inspect(globs)}",
           "list the source-path globs the bucket holds, e.g. [\"lib/**/domain/**/*.ex\"]"
         )
+
+      glob = Enum.find(globs, &GlobPattern.literal_free?(&1, "/")) ->
+        refuse(
+          path,
+          "#{inspect(glob)} matches every source file",
+          "give each glob a literal directory or name, e.g. \"lib/**/domain/**/*.ex\""
+        )
+
+      true ->
+        {:ok, {:paths, globs}}
+    end
   end
 
   defp parse_value("pattern", glob, path) do
@@ -114,7 +127,7 @@ defmodule Anchor.Domain.Architecture.Selector do
       not non_blank?(glob) ->
         refuse(path, "must be a non-empty module-name glob, got: #{inspect(glob)}", pattern_fix())
 
-      GlobPattern.wildcard_only?(glob) ->
+      GlobPattern.literal_free?(glob, ".") ->
         refuse(path, "#{inspect(glob)} matches every module", pattern_fix())
 
       true ->

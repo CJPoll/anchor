@@ -127,7 +127,7 @@ Extension rule:
 
 Every rule type has exactly one engine, `@engine_by_type` in
 `Anchor.Domain.RuleSchema` (DND-5437): `:ast` (a Credo check) or `:graph`
-(`mix anchor.graph`). A new rule type adds its entry there too (compilation
+(`mix anchor.graph`, DND-5440; no graph type ships yet). A new rule type adds its entry there too (compilation
 fails without it) and to the README table's Engine column (a test compares
 them). Credo never reports a `:graph` rule as unchecked
 (`RuleCoverage.unchecked/3`).
@@ -138,7 +138,9 @@ The optional top-level `architecture:` section (DND-5437) is parsed by
 `Fix:`. A new key goes into its level's key list there (`key_paths/0`) and gets
 a table in `test/anchor/domain/architecture_checks_nothing_test.exs` (a test
 fails until it does). `Anchor.Domain.Classification` classifies a module's facts
-into exactly one bucket, with no precedence between buckets.
+into exactly one bucket, with no precedence between buckets. Until the graph
+runner (DND-5440) lands, the section is parsed and validated only: nothing
+reads it at run time.
 
 ## Important Notes
 

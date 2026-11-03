@@ -43,10 +43,14 @@ defmodule Anchor.Domain.Architecture do
   The calls matrix denies by default: a bucket needs a row (`[]` for "calls
   nothing"), and an absent row is refused rather than read as "allow all".
 
+  An optional key given an empty YAML value (`effects:`, a null) reads as
+  absent; a required key or a bucket key given one is refused.
+
   What load time cannot decide (a bucket below its `min_modules`, a module no
-  bucket or two buckets select, an `exports` entry naming no module) is decided
-  at run time by the graph runner (DND-5440) through
-  `Anchor.Domain.Classification`.
+  bucket or two buckets select, an `exports` entry naming no module) is for the
+  graph runner, `mix anchor.graph` (DND-5440), through
+  `Anchor.Domain.Classification`. Until it lands, the section is parsed and
+  validated only: nothing reads `%Config{architecture: ...}` at run time.
 
   ## Extending it
 
@@ -290,7 +294,7 @@ defmodule Anchor.Domain.Architecture do
       {:ok, floor} ->
         refuse(
           path,
-          "is #{inspect(floor)}, not a positive integer",
+          present("must be a positive integer", floor),
           "a floor is a positive integer; omit it for the default 1"
         )
     end
@@ -298,9 +302,18 @@ defmodule Anchor.Domain.Architecture do
 
   defp parse_infer(bucket, path) do
     case Map.fetch(bucket, "infer") do
-      :error -> {:ok, true}
-      {:ok, infer} when is_boolean(infer) -> {:ok, infer}
-      {:ok, infer} -> refuse(path, "is #{inspect(infer)}", "set it to true or false, or omit it")
+      :error ->
+        {:ok, true}
+
+      {:ok, infer} when is_boolean(infer) ->
+        {:ok, infer}
+
+      {:ok, infer} ->
+        refuse(
+          path,
+          present("must be true or false", infer),
+          "set it to true or false, or omit it"
+        )
     end
   end
 

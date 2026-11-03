@@ -299,8 +299,8 @@ match-all, and `lib/(old/*.ex` crashed the check.)
 
 `.anchor.yml` may carry an `architecture:` key beside `rules:` (`rules:` stays
 required; a repo with no rules yet writes `rules: []`). It is the one model of
-the codebase's architecture that the graph engine (`mix anchor.graph`) and its
-placement answers read: every project module lands in exactly one bucket, and
+the codebase's architecture that the graph engine (`mix anchor.graph`, DND-5440)
+and its placement answers are to read: every project module lands in exactly one bucket, and
 the calls matrix says which buckets each bucket may call. A config with no
 `architecture:` loads exactly as before.
 
@@ -355,9 +355,14 @@ architecture:
 
 A module matched by one bucket is classified into it. There is no precedence
 between buckets, ever: a module two buckets select is **ambiguous** and one no
-bucket selects is **unclassified**, and the graph runner reports both, as it
-reports a bucket below its `min_modules` and an `interfaces.exports` entry that
-names no module.
+bucket selects is **unclassified**. Reporting both, a bucket below its
+`min_modules` and an `interfaces.exports` entry that names no module is the
+graph runner's job (`mix anchor.graph`, DND-5440). Until it lands, Anchor parses
+and validates the section at load (below) and nothing reads it at run time, so
+no module is yet held to it.
+
+An optional key given an empty YAML value (`effects:` with nothing after it)
+reads as absent; a required key, or a bucket key, given one is refused.
 
 The load refuses, each with a message that starts with the key path
 (`architecture.buckets[1].select[0]`, 0-based indexes) and carries a `Fix:`:
@@ -367,8 +372,8 @@ The load refuses, each with a message that starts with the key path
 - a missing `contexts.depth`, or one that is not a positive integer;
 - no buckets; a duplicate bucket name or one that is not `[a-z_]+`; an unknown
   `role`; a bucket with no `select` or an empty one; a selector entry with zero
-  or two selector keys, an empty `paths` (or an empty glob in it), a match-all
-  `pattern` (`*`), a `uses_module` or `behaviour` that is not one module named
+  or two selector keys, an empty `paths` (or an empty glob in it), a `paths`
+  glob or `pattern` with no literal character (`**`, `**/*`, `*`, `*.*`), a `uses_module` or `behaviour` that is not one module named
   exactly, an `exports_function` without an arity;
 - a `min_modules` that is not a positive integer, an `infer` that is not a
   boolean;
@@ -420,7 +425,8 @@ another type (`match` on a `no_transitive_dependency` rule) is unknown too.
 
 The Engine column is the one engine that runs the type: `ast` rules run as
 Credo checks over source, `graph` rules run under `mix anchor.graph` over the
-compiled code. Credo never reports a `graph` rule as unchecked.
+compiled code (DND-5440; no `graph` type ships yet). Credo never reports a
+`graph` rule as unchecked.
 
 | Rule type | Keys beyond the common ones | Relation (needs one, non-empty) | Engine |
 |---|---|---|---|
