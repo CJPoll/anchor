@@ -221,6 +221,32 @@ defmodule Anchor.Domain.Sabotage.RecordTest do
              {:error, {:no_ticket, "lib/anchor/domain/sabotage/calc.ex"}}
   end
 
+  test "a crashed mutant (DND-5570) is listed as unmeasured and its kill-map row reads back" do
+    crashed = %{
+      mutant: mutant("ddd444", operator: :force_condition, variant: false),
+      status: :crashed,
+      killers: [],
+      selection: {:mirror, ["test/anchor/domain/sabotage/calc_test.exs"]},
+      reason: "test run crashed: killed by signal 9 (exit 137)",
+      test_run: %TestRun{
+        status: :crashed,
+        total: 0,
+        failures: [],
+        exit_code: 137,
+        output_head: ""
+      }
+    }
+
+    run = %{run() | outcomes: run().outcomes ++ [crashed]}
+    {:ok, [entry]} = Record.render(run, ctx())
+
+    assert entry.content =~
+             "- ddd444 Anchor.Domain.Sabotage.Calc.add/2 force_condition [false]: crashed " <>
+               "(test run crashed: killed by signal 9 (exit 137))\n"
+
+    assert KillMap.parse(entry.content) == {:ok, KillMap.rows(run.outcomes)}
+  end
+
   test "6: changed tests [T1, T2] with T1 a killer: only T2 lacks a red" do
     {:ok, [entry]} = Record.render(run(), ctx())
 

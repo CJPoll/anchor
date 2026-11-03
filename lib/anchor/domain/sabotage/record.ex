@@ -290,7 +290,7 @@ defmodule Anchor.Domain.Sabotage.Record do
 
   defp not_measured(items, outcomes) do
     lines =
-      for(%{status: s} = o <- outcomes, s in [:invalid, :no_tests], do: unmeasured(o)) ++
+      for(%{status: s} = o <- outcomes, s in [:invalid, :no_tests, :crashed], do: unmeasured(o)) ++
         for(
           {:skipped, s} <- items,
           do: "- skipped #{mfa(s)} #{operator(s)} `#{s.target}`: #{s.reason}"
@@ -306,6 +306,9 @@ defmodule Anchor.Domain.Sabotage.Record do
 
   defp unmeasured(%{mutant: m, status: :no_tests} = o),
     do: "- #{m.id} #{mfa(m)} #{operator(m)}: no_tests (no test selected; looked for #{o.reason})"
+
+  defp unmeasured(%{mutant: m, status: :crashed} = o),
+    do: "- #{m.id} #{mfa(m)} #{operator(m)}: crashed (#{o.reason})"
 
   defp unmeasured(%{mutant: m} = o),
     do: "- #{m.id} #{mfa(m)} #{operator(m)}: invalid (#{o.reason})"

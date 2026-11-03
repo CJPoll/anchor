@@ -2,7 +2,9 @@ defmodule Anchor.Sabotage.CoverageCollector do
   @moduledoc """
   The process that receives call trace messages while
   `mix anchor.sabotage coverage` runs the suite (DND-5474). An OTP process
-  module, so **Framework** (ADR 001): it turns each trace message into a
+  module, so **Framework** (ADR 001), and it lives under `lib/mix/tasks/`, a
+  Framework path in `.anchor.yml`'s `architecture:` buckets (the
+  `Mix.Tasks.Anchor.Sabotage` task starts it). It turns each trace message into a
   `Anchor.Domain.Sabotage.CoverageMap` event and hands them to
   `CoverageMap.attribute/2` in batches.
 

@@ -111,6 +111,21 @@ the injected command runner's env.
 |---|---|---|---|
 | D25 | a run with no mutant still checks what a record needs | 2 of 75: run "a run with no mutant to run writes no record and needs no branch"; task "DND-5617: changed functions that yield no mutant print a line each and the count, exit 0" | `** (Mox.UnexpectedCallError) no expectation defined for Anchor.GitWorktreeMock.branch/1 in process #PID<0.284.0> with args ["/repo"]` |
 
+## Whole-MR critic on the merged head
+
+The critic found that main's DND-5570 `:crashed` status was unknown to the
+kill-map reader, so a record holding a crashed mutant could never be read
+back (selection skipped the file), and the record did not list a crashed
+mutant as unmeasured. Both are fixed. It also found the coverage collector
+documented as Framework but sitting in `lib/anchor/sabotage/`, which main's
+`architecture:` buckets read as adapters; it moved to
+`lib/mix/tasks/anchor/sabotage/`, a Framework path.
+
+| # | Mutation | Tests failed | First failure, verbatim |
+|---|---|---|---|
+| D26 | `crashed` dropped from the kill map's statuses (the unfixed reader) | 1 of 17: record "a crashed mutant (DND-5570) is listed as unmeasured and its kill-map row reads back" | `code:  assert KillMap.parse(entry.content) == {:ok, KillMap.rows(run.outcomes)}` `left:  {:error, {87, "unknown status \"crashed\""}}` |
+| D27 | a crashed mutant left out of the unmeasured list | 1 of 9: the same test | `code:  assert entry.content =~ "- ddd444 Anchor.Domain.Sabotage.Calc.add/2 force_condition [false]: crashed " <> ...` |
+
 ## The integration run
 
 `test/anchor/integration/sabotage_run_integration_test.exs` runs the whole

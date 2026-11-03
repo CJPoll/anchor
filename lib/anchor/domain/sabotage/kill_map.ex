@@ -8,7 +8,8 @@ defmodule Anchor.Domain.Sabotage.KillMap do
 
       id  file  Module.fun/arity  operator  status  killers
 
-  `status` is `killed`, `timeout`, `survived`, `no_tests` or `invalid`;
+  `status` is `killed`, `timeout`, `survived`, `no_tests`, `invalid` or
+  `crashed` (DND-5570);
   `killers` are `file:line name`, each escaped, then joined by ` ; ` (empty
   when none). In every field a backslash, a tab, a newline and a `;` are
   written `\\\\`, `\\t`, `\\n` and `\\;`, so an escaped killer never holds the
@@ -23,7 +24,7 @@ defmodule Anchor.Domain.Sabotage.KillMap do
   @fence "```"
   @info "anchor-kills"
   @header "# id\tfile\tmfa\toperator\tstatus\tkillers"
-  @statuses ~w(killed timeout survived no_tests invalid)
+  @statuses ~w(killed timeout survived no_tests invalid crashed)
   @separator " ; "
 
   @type row :: %{
