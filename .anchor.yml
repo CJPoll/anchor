@@ -121,7 +121,7 @@ architecture:
     - name: adapters
       role: adapters
       select:
-        - paths: ["lib/anchor/adapters/**/*.ex"]
+        - paths: ["lib/anchor/adapters/**/*.ex", "lib/anchor/sabotage/**/*.ex"]
       min_modules: 10
     - name: domain
       role: domain
