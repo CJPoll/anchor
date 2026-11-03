@@ -4,12 +4,13 @@ defmodule Anchor.Domain.GraphReportTest do
   #
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5440_graph_runner.md
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5551_graph_hardening.md
+  # (apply sites, DND-5574: ../../sabotage_records/graph_runner-20261103-dnd_5574_cfa_wiring.md)
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.GraphReport
   alias Anchor.Domain.GraphReport.Finding
 
-  @counts %{modules: 12, apps: 2, rules: 3, opaque: 0, no_core: 0}
+  @counts %{modules: 12, apps: 2, rules: 3, opaque: 0, no_core: 0, apply_sites: nil}
 
   defp finding(enforcement, overrides \\ %{}) do
     struct!(
@@ -86,6 +87,60 @@ defmodule Anchor.Domain.GraphReportTest do
 
       assert GraphReport.render(report, :text) ==
                "anchor.graph: 12 modules (2 opaque) in 2 apps, 3 rules, 0 violations (0 report-only, 0 baselined)"
+    end
+  end
+
+  describe "apply sites (DND-5574, R6)" do
+    alias Anchor.Domain.Cfa
+
+    @sites %{
+      total: 3,
+      resolved: 2,
+      any: 1,
+      bound_hit?: false,
+      by_function: %{{MyApp.X, :run, 1} => %{total: 3, resolved: 2, any: 1}}
+    }
+
+    test "apply_sites/1 takes the counts and the bound from the analysis; nil for none" do
+      cfa = %Cfa{counts: Map.delete(@sites, :bound_hit?), bound_hit?: true}
+
+      assert GraphReport.apply_sites(cfa) == %{@sites | bound_hit?: true}
+      assert GraphReport.apply_sites(nil) == nil
+    end
+
+    test "the summary ends with the resolved and any counts when the analysis ran" do
+      report = GraphReport.new([], [], Map.put(@counts, :apply_sites, @sites))
+
+      assert GraphReport.summary(report) ==
+               "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations " <>
+                 "(0 report-only, 0 baselined); apply sites: 2 resolved, 1 any"
+    end
+
+    test "a bound hit is said, never read as a result" do
+      sites = %{@sites | resolved: 0, any: 3, bound_hit?: true}
+      report = GraphReport.new([], [], Map.put(@counts, :apply_sites, sites))
+
+      assert GraphReport.summary(report) =~
+               "; apply sites: 0 resolved, 3 any (step bound hit: every site reads any)"
+    end
+
+    test "no analysis: the summary says nothing of apply sites, and the JSON is null" do
+      report = GraphReport.new([], [], Map.put(@counts, :apply_sites, nil))
+
+      refute GraphReport.summary(report) =~ "apply sites"
+      assert %{"apply_sites" => nil} = JSON.decode!(GraphReport.render(report, :json))
+    end
+
+    test "the JSON carries the same counts, per function too" do
+      report = GraphReport.new([], [], Map.put(@counts, :apply_sites, @sites))
+
+      assert JSON.decode!(GraphReport.render(report, :json))["apply_sites"] == %{
+               "total" => 3,
+               "resolved" => 2,
+               "any" => 1,
+               "bound_hit" => false,
+               "by_function" => %{"MyApp.X.run/1" => %{"total" => 3, "resolved" => 2, "any" => 1}}
+             }
     end
   end
 

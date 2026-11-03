@@ -5,6 +5,7 @@ defmodule Anchor.Domain.FailuresGraphTest do
   #
   # Sabotage record: ../../sabotage_records/failures-20261103-dnd_5440_graph_runner.md
   # Sabotage record: ../../sabotage_records/failures-20261103-dnd_5551_graph_hardening.md
+  # (rule_cfa_crashed, DND-5574: ../../sabotage_records/failures-20261103-dnd_5574_cfa_wiring.md)
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Failures
@@ -83,6 +84,13 @@ defmodule Anchor.Domain.FailuresGraphTest do
         e -> Failures.rule_crashed(rule, :error, e, __STACKTRACE__, "proj/.anchor.yml")
       end
 
+    cfa_crashed =
+      try do
+        raise "cfa blew up"
+      rescue
+        e -> Failures.rule_cfa_crashed(rule, :error, e, __STACKTRACE__, nil)
+      end
+
     [
       {"graph_no_architecture", Failures.graph_no_architecture("proj/.anchor.yml"),
        "proj/.anchor.yml",
@@ -155,6 +163,12 @@ defmodule Anchor.Domain.FailuresGraphTest do
        [
          ~s|rule 2 (id: "web", layering) could not run: RuntimeError: rule blew up|,
          "Fix: this is an Anchor bug; file it with this line."
+       ]},
+      {"rule_cfa_crashed", cfa_crashed, ".anchor.yml",
+       [
+         ~s|rule 2 (id: "web", layering) could not run: the higher-order flow analysis it | <>
+           "needs (Anchor.Domain.Cfa) crashed: RuntimeError: cfa blew up",
+         "so it checked nothing. Fix: this is an Anchor bug; file it with this line."
        ]},
       {"interface_export_missing",
        Failures.interface_export_missing(MyApp.Gone, "proj/.anchor.yml"), "proj/.anchor.yml",

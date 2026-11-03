@@ -153,7 +153,15 @@ defmodule Anchor.Managers.GraphTest do
       report = Graph.run(request(), deps())
 
       assert %GraphReport{exit_code: 0, findings: [], could_not_check: []} = report
-      assert report.counts == %{modules: 2, apps: 1, rules: 1, opaque: 0, no_core: 0}
+
+      assert report.counts == %{
+               modules: 2,
+               apps: 1,
+               rules: 1,
+               opaque: 0,
+               no_core: 0,
+               apply_sites: nil
+             }
     end
 
     # DND-5549: a function with no Core body is never silent.
