@@ -97,6 +97,15 @@ own before the join, and the field is split before it is unescaped.
 |---|---|---|---|
 | D24 | the `;` escape removed (the unfixed encoding) | 1 of 8: kill_map "a test name holding the separator ` ; ` reads back as one killer" | `code:  assert row.killers == ["t:1 test a ; b", "t:2 test c;d"]` `left:  ["t:1 test a", "b", "t:2 test c;d"]` |
 
+After the round-1 and review-floor fixes (2b9c6d8), every row restored: `mix test
+--max-cases 2 test/anchor/sabotage/ex_unit_formatter_test.exs
+test/anchor/adapters/test_runner_test.exs
+test/anchor/domain/sabotage/test_selection_test.exs
+test/anchor/domain/sabotage/config_test.exs
+test/anchor/managers/sabotage_run_test.exs
+test/anchor/domain/sabotage/record_naming_test.exs` on 0db274e: `129 tests, 0
+failures`. The full suite on 2b9c6d8: `1595 tests, 0 failures`.
+
 ## Merging origin/main (39f55e1)
 
 The final gate found a textual conflict with main (the DND-5570, DND-5617
@@ -125,6 +134,10 @@ documented as Framework but sitting in `lib/anchor/sabotage/`, which main's
 |---|---|---|---|
 | D26 | `crashed` dropped from the kill map's statuses (the unfixed reader) | 1 of 17: record "a crashed mutant (DND-5570) is listed as unmeasured and its kill-map row reads back" | `code:  assert KillMap.parse(entry.content) == {:ok, KillMap.rows(run.outcomes)}` `left:  {:error, {87, "unknown status \"crashed\""}}` |
 | D27 | a crashed mutant left out of the unmeasured list | 1 of 9: the same test | `code:  assert entry.content =~ "- ddd444 Anchor.Domain.Sabotage.Calc.add/2 force_condition [false]: crashed " <> ...` |
+
+After the fix (0db274e), both rows restored: `mix test --max-cases 2
+test/anchor/domain/sabotage/record_test.exs
+test/anchor/domain/sabotage/kill_map_test.exs`: `17 tests, 0 failures`.
 
 ## The integration run
 
