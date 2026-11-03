@@ -16,8 +16,9 @@ defmodule Mix.Tasks.Anchor.Graph do
   `path:line: [enforce|report] <rule label> <message> Fix: <shape>`, then the
   summary `anchor.graph: <M> modules in <A> apps, <R> rules, <V> violations
   (<P> report-only, <H> baselined)`. `--format json` prints the JSON document
-  instead. `--only RULE_ID` (repeatable) runs only the rules with those ids,
-  and then floors are not judged.
+  instead. `--only RULE_ID` (repeatable) runs only the rules with those ids
+  (each still judged against its floor); an id that names no graph rule is
+  COULD NOT MEASURE.
 
   It reads beams with `:beam_lib` only: no project module is loaded or run.
   The only file it writes is `_build/<env>/anchor/graph.etf`, the graph for

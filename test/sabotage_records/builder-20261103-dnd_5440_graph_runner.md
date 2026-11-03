@@ -89,3 +89,34 @@ Finished in 0.4 seconds (0.4s async, 0.00s sync)
 ```
 
 After the fix: `mix test test/anchor/domain/graph/` gives `51 tests, 0 failures`.
+
+## DND-5440 rows
+
+Each mutation ran `mix test --timeout 2000 --max-cases 2 <its test files>` inside one `test-slot`, by a driver that applied it, ran the files and restored the source; `git status` after the run showed only this branch's own uncommitted work, unchanged. Every row is red: a non-zero ExUnit result naming the test the mutation is meant to break.
+
+| # | Mutation | Tests run | Result | Failing tests |
+|---|---|---|---|---|
+| BL-A | the defmodule line read from the column (`lib/anchor/domain/graph/builder.ex`) | `builder_test.exs`, `graph_test.exs`, `graph_canary_test.exs` | `36 tests, 1 failure` | positive control: the deliberately unclassified module gives exactly one issue |
+
+BL-A survived an earlier pass: the builder and Manager fixtures put
+`defmodule` at line 1, column 1, so reading the column for the line changed
+nothing. The row also runs the canary test, whose unclassified module's
+`defmodule` is at line 3; it is red there.
+
+## BL-A — the defmodule line read from the column
+
+Run summary: `36 tests, 1 failure`
+
+```
+
+  1) test positive control: the deliberately unclassified module gives exactly one issue (Anchor.Integration.GraphCanaryTest)
+     test/anchor/integration/graph_canary_test.exs:84
+     Assertion with == failed
+     code:  assert finding.line == 3
+     left:  1
+     right: 3
+     stacktrace:
+       test/anchor/integration/graph_canary_test.exs:92: (test)
+
+..................................
+```

@@ -5,9 +5,10 @@ defmodule Anchor.Domain.Model do
 
   `build/3` classifies every module of the graph into exactly one bucket of
   the config's `architecture:` section (`Anchor.Domain.Classification`) and
-  returns the model with the issues classification found: an unclassified or
-  ambiguous module, a bucket below its `min_modules`, and an
-  `interfaces.exports` entry that names no module of the graph. Every graph rule
+  returns the model with the issues classification found: a module whose
+  literal `use`s the source cannot show while a `uses_module` selector exists,
+  an unclassified or ambiguous module, a bucket below its `min_modules`, and
+  an `interfaces.exports` entry that names no module of the project. Every graph rule
   reads the model, and so do `explain` and `place` (DND-5446, DND-5449), so
   what a rule checks and what the generation side proposes come from one
   struct.
@@ -69,9 +70,14 @@ defmodule Anchor.Domain.Model do
     {classification, issues} =
       Classification.classify_all(facts ++ opaque_facts(graph), architecture, config.path)
 
+    # A module the graph could not build is reported as unreadable already;
+    # an export naming it is not also "no module of the project".
+    unbuilt = MapSet.new(graph.unreadable, & &1.module)
+
     export_issues =
       for module <- architecture.interface_exports,
           not Map.has_key?(graph.modules, module),
+          module not in unbuilt,
           do: Failures.interface_export_missing(module, config.path)
 
     model = %__MODULE__{
@@ -81,7 +87,7 @@ defmodule Anchor.Domain.Model do
       config: config
     }
 
-    {model, issues ++ export_issues}
+    {model, uses_unknown(facts, architecture, source_facts) ++ issues ++ export_issues}
   end
 
   @doc """
@@ -128,6 +134,28 @@ defmodule Anchor.Domain.Model do
         beam_path: path
       }
     end
+  end
+
+  # A module of a file with a non-literal `defmodule` (or a relative name after
+  # a file-level alias) that the file's literal `defmodule`s do not name has
+  # `use`s the text does not show: SourceFacts files them nowhere. Read as
+  # "no uses", a `uses_module` selector could silently miss it, so when the
+  # architecture has one, the module is an issue.
+  defp uses_unknown(facts, architecture, source_facts) do
+    if uses_module_selector?(architecture) do
+      for %{module: module, source_file: file} <- facts,
+          match?(%{nonliteral_defmodule?: true}, Map.get(source_facts, file)),
+          module_name(module) not in Map.get(source_facts, file).defmodules,
+          do: Failures.graph_uses_unknown(module, file)
+    else
+      []
+    end
+  end
+
+  defp uses_module_selector?(%Architecture{buckets: buckets}) do
+    Enum.any?(buckets, fn bucket ->
+      Enum.any?(bucket.selectors, &match?({:uses_module, _}, &1))
+    end)
   end
 
   defp exports(%ModuleNode{functions: functions}) do

@@ -184,7 +184,7 @@ defmodule Anchor.Domain.ClassificationTest do
 
   # DND-5440: the runner classifies every module at once and reports each
   # module no bucket, or two buckets, select, and each bucket below its floor.
-  # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5440_graph_runner.md
+  # Sabotage record: ../../sabotage_records/classification-20261103-dnd_5440_graph_runner.md
   describe "classify_all/3" do
     test "classified modules are keyed by module; no issues when every module classifies" do
       arch = architecture([@domain, @managers])

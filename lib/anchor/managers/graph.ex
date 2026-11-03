@@ -11,14 +11,14 @@ defmodule Anchor.Managers.Graph do
        `architecture:` section: nothing could be classified;
     2. read every beam of the project's ebins (`Anchor.Adapters.BeamSource`);
        zero modules read is COULD NOT MEASURE (exit 3);
-    3. read each module's source file (`Anchor.Adapters.SourceSource`) for its
-       literal `defmodule`s and `use`s (`Anchor.Domain.Graph.SourceFacts`);
+    3. read each module's source file's facts (`Anchor.Adapters.SourceSource`):
+       its literal `defmodule`s and `use`s (`Anchor.Domain.Graph.SourceFacts`);
     4. build the graph fresh (`Anchor.Domain.Graph.Builder`): never a cached
        one, and never a cached verdict;
     5. build the model (`Anchor.Domain.Model`): classify every module into
        exactly one bucket, and check the bucket floors;
-    6. for each enabled graph rule: its floor (`min_modules`), then its
-       `check/2` under a guard (`try` with `rescue`, `catch :throw` and
+    6. for each enabled graph rule (narrowed by `--only`): its floor
+       (`min_modules`), then its `check/2` under a guard (`try` with `rescue`, `catch :throw` and
        `catch :exit`, DND-1312's lesson): a rule that crashes is one issue,
        and the other rules still run;
     7. write the graph artifact for `explain`/`place`
@@ -51,12 +51,12 @@ defmodule Anchor.Managers.Graph do
   alias Anchor.Domain.Graph
   alias Anchor.Domain.Graph.Beam
   alias Anchor.Domain.Graph.Builder
-  alias Anchor.Domain.Graph.SourceFacts
   alias Anchor.Domain.GraphKey
   alias Anchor.Domain.GraphReport
   alias Anchor.Domain.GraphReport.Finding
   alias Anchor.Domain.GraphRules
   alias Anchor.Domain.Model
+  alias Anchor.Domain.Violation
   alias Anchor.Managers.Graph.Request
 
   @config_file ".anchor.yml"
@@ -138,9 +138,7 @@ defmodule Anchor.Managers.Graph do
     graph = Builder.build(beams, source_facts)
     {model, class_issues} = Model.build(graph, config, source_facts)
     unreadable_issues = unreadable_issues(graph)
-    narrowed? = Map.get(request.opts, :only, []) != []
-
-    rule_findings = Enum.flat_map(rules, &run_rule(&1, model, config.path, narrowed?))
+    rule_findings = Enum.flat_map(rules, &run_rule(&1, model, config.path))
     artifact_notes = write_artifact(deps.graph_store, request, beams, config, graph)
 
     fail_closed =
@@ -170,19 +168,19 @@ defmodule Anchor.Managers.Graph do
     |> then(fn {facts, issues} -> {facts, Enum.reverse(issues)} end)
   end
 
-  defp source_fact({file, {:ok, text}}, {facts, issues}) do
-    case SourceFacts.from_source(file, text) do
-      {:error, :unparseable} = error ->
-        {Map.put(facts, file, error),
-         [Failures.graph_source_unreadable(file, :unparseable) | issues]}
-
-      parsed ->
-        {Map.put(facts, file, parsed), issues}
-    end
-  end
+  # The adapter already turned each file into `SourceFacts` (ADR 001: no raw
+  # text past the adapter); an error entry is reported, and an unparseable
+  # file's `{:error, :unparseable}` is kept so the builder says `:unknown`.
+  defp source_fact({file, {:error, :unparseable} = error}, {facts, issues}),
+    do:
+      {Map.put(facts, file, error),
+       [Failures.graph_source_unreadable(file, :unparseable) | issues]}
 
   defp source_fact({file, {:error, reason}}, {facts, issues}),
     do: {facts, [Failures.graph_source_unreadable(file, reason) | issues]}
+
+  defp source_fact({file, %{defmodules: _} = parsed}, {facts, issues}),
+    do: {Map.put(facts, file, parsed), issues}
 
   # Every `unreadable` entry is an issue, except an Erlang module with a
   # known name: the model classifies those (an unclassified one is its issue).
@@ -195,16 +193,14 @@ defmodule Anchor.Managers.Graph do
 
   defp erlang_module?(_entry), do: false
 
-  defp run_rule({rule, module}, model, config_path, narrowed?) do
-    floor = floor_findings(rule, model, config_path, narrowed?)
-    floor ++ check(rule, module, model, config_path)
+  # A rule's floor is judged whenever it runs, `--only` or not: `--only`
+  # narrows the rules, never the modules, so a rule selecting nothing must not
+  # read as a pass.
+  defp run_rule({rule, module}, model, config_path) do
+    floor_findings(rule, model, config_path) ++ check(rule, module, model, config_path)
   end
 
-  # `--only` narrows the run, so floors are not judged (as with Credo's
-  # narrowed runs).
-  defp floor_findings(_rule, _model, _config_path, true), do: []
-
-  defp floor_findings(rule, model, config_path, false) do
+  defp floor_findings(rule, model, config_path) do
     for {^rule, selected} <- GraphRules.below_floor(model, [rule]) do
       rule
       |> Failures.rule_below_floor(selected, GraphRules.min_modules(rule), config_path)
@@ -230,14 +226,25 @@ defmodule Anchor.Managers.Graph do
     end
   end
 
+  # The rule's return is validated inside the guard: a rule that returns
+  # anything but a list of violations is reported like one that raised.
   defp guarded_check(rule, module, model) do
-    {:ok, module.check(model, rule)}
+    {:ok, violations!(module.check(model, rule))}
   rescue
     exception -> {:crashed, :error, exception, __STACKTRACE__}
   catch
     :throw, reason -> {:crashed, :throw, reason, __STACKTRACE__}
     :exit, reason -> {:crashed, :exit, reason, __STACKTRACE__}
   end
+
+  defp violations!(violations) when is_list(violations) do
+    if Enum.all?(violations, &match?(%Violation{}, &1)),
+      do: violations,
+      else: raise(ArgumentError, "check/2 returned a list holding a non-Violation")
+  end
+
+  defp violations!(other),
+    do: raise(ArgumentError, "check/2 returned #{inspect(other, limit: 5)}, not a list")
 
   defp write_artifact(store, request, beams, config, graph) do
     dir = Path.join([request.root, "_build", to_string(request.env), "anchor"])

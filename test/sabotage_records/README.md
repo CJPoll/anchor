@@ -76,13 +76,12 @@ before coining a synonym.
   from decoded beams and source facts (module facts, `generated?`,
   `unreadable`), with the `Anchor.Domain.Graph` queries.
 - `graph_runner` — `mix anchor.graph` (DND-5440): the Manager
-  (`Anchor.Managers.Graph`), the task, the model and classification of a
-  whole graph (`Anchor.Domain.Model`, `Classification.classify_all/3`), the
+  (`Anchor.Managers.Graph`), the task, the model (`Anchor.Domain.Model`), the
   rule registry and floors (`Anchor.Domain.GraphRules`), the report
   (`Anchor.Domain.GraphReport`), the artifact key (`Anchor.Domain.GraphKey`),
-  the graph fail-closed messages in `Anchor.Domain.Failures`, the
-  `SourceReader` and `GraphArtifact` adapters, the canary tree, and the
-  RuleCoverage skip of graph-engine rules.
+  the `SourceReader` and `GraphArtifact` adapters, and the canary tree. Its
+  changes to modules that have a word of their own are filed under that word
+  (`classification`, `failures`, `rule_coverage`, `architecture`, `builder`).
 - `source_facts` — `Anchor.Domain.Graph.SourceFacts` (DND-5438): the literal
   `defmodule`s and `use`s of a source file.
 - `glob_pattern` — `Anchor.Domain.GlobPattern` (glob / module-name pattern

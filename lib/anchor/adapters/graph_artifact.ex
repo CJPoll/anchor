@@ -3,15 +3,18 @@ defmodule Anchor.Adapters.GraphArtifact do
   The graph artifact on disk, `<dir>/graph.etf` — the **Side Effect** adapter
   behind `Anchor.Adapters.GraphStore` (DND-5440).
 
-  It writes only under a `_build/<env>/anchor` directory: any other `dir` is
-  refused with `{:error, :outside_artifact_dir}`, so a wrong path can never
-  make `mix anchor.graph` write elsewhere in the checkout.
+  It writes only into a directory whose last three path segments (after
+  `Path.expand/1`, so `..` cannot climb out) are `_build/<env>/anchor`: any
+  other `dir` is refused with `{:error, :outside_artifact_dir}`. That is a
+  check of the path's shape, not of its owner: the runner passes
+  `<root>/_build/<env>/anchor`, and a symlink there is followed.
 
   The file holds `{key, term}` in the external term format. `read/2` answers
   `{:ok, term}` only for the key asked for: a different key is
   `{:error, :stale}`, a missing file `{:error, :enoent}`, and bytes that do
   not decode (or decode to another shape) `{:error, :unreadable}`. Decoding
-  uses `:safe`, so a crafted file cannot create atoms or funs.
+  uses `:safe`, so a crafted file cannot create new atoms or external fun
+  references; a reader must still never apply a term it decoded.
   """
 
   @behaviour Anchor.Adapters.GraphStore

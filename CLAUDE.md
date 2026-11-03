@@ -166,7 +166,10 @@ compiles with it off).
 Mix and makes one `Anchor.Managers.Graph.run/2` call; the Manager reaches
 config, beams, sources and the artifact only through adapters
 (`ConfigLoader`, `BeamSource`, `SourceSource`, `GraphStore`; tests double them
-with Hammox and pass them as options, as `mix anchor.sabotage` does). It builds
+with Hammox, BeamSource with plain Mox because Hammox cannot match its
+`:cerl` record type (see `test/test_helper.exs`), and pass them as options,
+as `mix anchor.sabotage` does). `SourceSource` returns each file's
+`SourceFacts`, never its text. It builds
 the graph fresh, builds `Anchor.Domain.Model` (classification of every
 module), checks bucket and rule floors (`min_modules`), runs each graph rule
 under a `try`/`rescue`/`catch` guard, and returns
@@ -176,7 +179,11 @@ under a `try`/`rescue`/`catch` guard, and returns
 A graph rule implements `Anchor.Domain.GraphRule` (`rule_type/0`,
 `check/2` over the model) and is listed in `Anchor.Domain.GraphRules.all/0`;
 `graph_rules_test.exs` holds that list's types equal to RuleSchema's `:graph`
-types. Each new fail-closed case gets a `Failures` function, a row in
+types. No graph type ships with the runner: the first rule ticket also adds
+the graph common keys (`bucket`, `min_modules`, `enforcement`) to RuleSchema,
+their rows to `rule_checks_nothing_test.exs` and the README keys table, and
+decides what `uses_module` means for a graph rule (`GraphRules.select/2` reads
+`bucket`, `paths` and `pattern` only). Each new fail-closed case gets a `Failures` function, a row in
 `failures_graph_test.exs` and a row in the README's graph fail-closed table.
 The canary tree `test/fixtures/graph_canary/` gets a compliant and a violating
 module per graph rule. Anchor's own `.anchor.yml` has an `architecture:`

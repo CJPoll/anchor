@@ -55,5 +55,13 @@ defmodule Anchor.Test.GraphRuleStubs do
     def check(_model, _rule), do: exit(:gone)
   end
 
-  def all, do: [Ok, Finds, Raises, Throws, Exits]
+  defmodule Malformed do
+    @moduledoc false
+    @behaviour Anchor.Domain.GraphRule
+    def rule_type, do: :stub_malformed
+    # Not a list of violations: the runner must report it, not crash.
+    def check(_model, _rule), do: :oops
+  end
+
+  def all, do: [Ok, Finds, Raises, Throws, Exits, Malformed]
 end

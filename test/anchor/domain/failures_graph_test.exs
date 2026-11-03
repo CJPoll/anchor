@@ -3,7 +3,7 @@ defmodule Anchor.Domain.FailuresGraphTest do
   # section 7's table). Each is a fail-closed violation on the right file,
   # names its subject and ends with a Fix: line. Table-driven.
   #
-  # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5440_graph_runner.md
+  # Sabotage record: ../../sabotage_records/failures-20261103-dnd_5440_graph_runner.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Failures
@@ -93,6 +93,16 @@ defmodule Anchor.Domain.FailuresGraphTest do
          ~s(COULD NOT MEASURE: --only "nope" names no graph rule of proj/.anchor.yml),
          "Fix: pass the id of a graph rule"
        ]},
+      {"graph_uses_unknown", Failures.graph_uses_unknown(MyApp.X, "lib/x.ex"), "lib/x.ex",
+       [
+         "MyApp.X's literal uses cannot be read from lib/x.ex",
+         "Fix: give it a literal defmodule name"
+       ]},
+      {"ambiguous Erlang module, on its beam",
+       Failures.ambiguous(
+         %{module: :my_erl, source_file: nil, beam_path: "ebin/my_erl.beam", line: nil},
+         [{"a", "pattern \"my_erl\""}, {"b", "pattern \"my_*\""}]
+       ), "ebin/my_erl.beam", [":my_erl is in buckets a (by pattern \"my_erl\") and b"]},
       {"graph_erlang_module", Failures.graph_erlang_module(:my_erl, "ebin/my_erl.beam"),
        "ebin/my_erl.beam",
        [

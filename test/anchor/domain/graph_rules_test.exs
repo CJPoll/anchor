@@ -31,17 +31,28 @@ defmodule Anchor.Domain.GraphRulesTest do
 
   describe "all/0" do
     test "every module implements GraphRule, and their types are RuleSchema's graph types" do
-      for module <- GraphRules.all() do
-        assert (Anchor.Domain.GraphRule in Keyword.get_values(
-                  module.__info__(:attributes),
-                  :behaviour
-                ))
-               |> List.flatten()
-      end
+      for module <- GraphRules.all(), do: assert(graph_rule?(module), inspect(module))
 
       assert GraphRules.all() |> Enum.map(& &1.rule_type()) |> Enum.sort() ==
                RuleSchema.rule_types_for_engine(:graph)
     end
+  end
+
+  # Positive control for the registry check above: `all/0` is empty until the
+  # first rule type lands, so the behaviour check is shown on modules that do
+  # implement it (the test stubs), and on one that does not.
+  test "graph_rule?/1 tells a GraphRule module from another module" do
+    for module <- Anchor.Test.GraphRuleStubs.all(), do: assert(graph_rule?(module))
+    refute graph_rule?(Anchor.Domain.GraphRules)
+  end
+
+  defp graph_rule?(module) do
+    behaviours =
+      module.__info__(:attributes)
+      |> Keyword.get_values(:behaviour)
+      |> List.flatten()
+
+    Anchor.Domain.GraphRule in behaviours
   end
 
   describe "select/2" do

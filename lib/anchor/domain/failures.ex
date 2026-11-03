@@ -295,6 +295,24 @@ defmodule Anchor.Domain.Failures do
   end
 
   @doc """
+  The issue for a module whose literal `use`s its source does not show (its
+  file has a non-literal `defmodule`, or a relative name after a file-level
+  `alias`) while the architecture has a `uses_module` selector (DND-5440):
+  read as "no uses", that selector could silently miss it.
+  """
+  @spec graph_uses_unknown(module(), String.t()) :: Violation.t()
+  def graph_uses_unknown(module, file) do
+    graph_issue(
+      file,
+      nil,
+      "#{inspect(module)}'s literal uses cannot be read from #{file} (its defmodule name is " <>
+        "not literal there), so a uses_module selector cannot be judged for it. Fix: give it " <>
+        "a literal defmodule name (no file-level alias before a relative name), or select its " <>
+        "bucket with a paths: or pattern: selector instead of uses_module."
+    )
+  end
+
+  @doc """
   The issue for a module that no `architecture:` bucket selects (DND-5440),
   on its source file at its `defmodule` line. An Erlang module (facts with a
   `beam_path`) gets `graph_erlang_module/2`.
@@ -321,7 +339,7 @@ defmodule Anchor.Domain.Failures do
   """
   @spec ambiguous(map(), [{String.t(), String.t()}]) :: Violation.t()
   def ambiguous(%{module: module} = facts, matches) do
-    file = Map.get(facts, :source_file) || "(no source file)"
+    file = Map.get(facts, :source_file) || Map.get(facts, :beam_path) || "(no source file)"
 
     named =
       Enum.map_join(matches, " and ", fn {bucket, selector} -> "#{bucket} (by #{selector})" end)

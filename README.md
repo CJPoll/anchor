@@ -583,11 +583,16 @@ lib/my_app/stray.ex:1: [enforce] anchor.graph MyApp.Stray is in no architecture 
 anchor.graph: 214 modules in 1 apps, 0 rules, 1 violations (0 report-only, 0 baselined)
 ```
 
-A finding of a rule with `enforcement: report` prints `[report]` and does not
-fail the run. `--format json` prints `{"modules", "apps", "rules", "opaque",
+No graph rule type ships yet: the rule tickets (layering, interfaces,
+context_acyclic, ...) add them, with the graph rule keys `bucket`,
+`min_modules` and `enforcement`. Until the first lands, a run classifies every
+module and judges every bucket floor. A finding of a rule with
+`enforcement: report` prints `[report]` and does not fail the run. `--format json` prints `{"modules", "apps", "rules", "opaque",
 "exit_code", "findings": [{rule_id, type, enforcement, key, file, line,
 message, fix}], "could_not_check": [...]}`. `--only RULE_ID` (repeatable) runs
-only the rules with those ids, and then no floor is judged. `--base` and
+only the rules with those ids; each rule that runs is still judged against its
+floor (`--only` narrows the rules, never the modules), and an id that names no
+graph rule is COULD NOT MEASURE. `--base` and
 `--write-baseline` arrive with baselines (DND-5441); until then they are
 refused as unknown options.
 
@@ -623,6 +628,7 @@ line.
 | One module in two ebins (`{:duplicate_module, _}`) | 1 | the extra beam | `MyApp.X is in two ebins: ... and ... (kept). Fix: run mix clean to remove a stale beam, or rename one of the two modules.` |
 | A beam or ebin that cannot be read (`{:unreadable, _}`) | 1 | that path | `The beam ... could not be read (:eacces). Fix: make ... readable; ...` |
 | An Erlang module no bucket classifies | 1 | the beam | `:my_erl is Erlang source; the graph engine reads Elixir only, and no architecture bucket classifies it. Fix: move it under a dependency, or classify it with a pattern: selector ...` |
+| A module whose literal `use`s its source cannot show (a non-literal `defmodule` name), when a `uses_module` selector exists | 1 | the source file | `MyApp.X's literal uses cannot be read from lib/x.ex (its defmodule name is not literal there), so a uses_module selector cannot be judged for it. Fix: ...` |
 | A module's source file that cannot be read or parsed | 1 | the source file | `Anchor could not read the source of lib/x.ex (:enoent), so its uses_module selectors and generated? are unknown. Fix: ...` |
 | An unclassified module | 1 | its source file, at its `defmodule` line | `MyApp.X is in no architecture bucket. Fix: add a selector that matches lib/x.ex ...` |
 | An ambiguous module | 1 | its source file, at its `defmodule` line | `MyApp.X is in buckets domain (by paths [...]) and framework (by uses_module GenServer). Fix: narrow one selector; buckets never take precedence.` |

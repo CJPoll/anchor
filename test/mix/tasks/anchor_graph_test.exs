@@ -18,6 +18,7 @@ defmodule Mix.Tasks.Anchor.GraphTest do
   alias Anchor.Config
   alias Anchor.ConfigLoaderMock
   alias Anchor.Domain.Architecture
+  alias Anchor.Domain.Graph.SourceFacts
   alias Anchor.GraphStoreMock
   alias Anchor.Test.GraphRuleStubs, as: Rules
   alias Anchor.SourceSourceMock
@@ -76,7 +77,9 @@ defmodule Mix.Tasks.Anchor.GraphTest do
       [beam]
     end)
 
-    expect(SourceSourceMock, :read, fn _root, [@file_path] -> %{@file_path => {:ok, @source}} end)
+    expect(SourceSourceMock, :read, fn _root, [@file_path] ->
+      %{@file_path => SourceFacts.from_source(@file_path, @source)}
+    end)
 
     expect(GraphStoreMock, :write, fn dir, _key, _graph ->
       assert String.ends_with?(dir, "_build/test/anchor")

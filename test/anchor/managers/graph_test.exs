@@ -15,6 +15,7 @@ defmodule Anchor.Managers.GraphTest do
   alias Anchor.Config
   alias Anchor.ConfigLoaderMock
   alias Anchor.Domain.Architecture
+  alias Anchor.Domain.Graph.SourceFacts
   alias Anchor.Domain.GraphReport
   alias Anchor.GraphStoreMock
   alias Anchor.Managers.Graph
@@ -115,8 +116,10 @@ defmodule Anchor.Managers.GraphTest do
     expect(ConfigLoaderMock, :load, fn -> {:ok, config} end)
     Mox.expect(BeamSourceMock, :read_ebins, fn [{:my_app, @ebin}] -> beams end)
 
+    sources = Keyword.get(opts, :sources, @sources)
+
     expect(SourceSourceMock, :read, fn @root, files ->
-      Map.new(files, &{&1, Map.get(Keyword.get(opts, :sources, @sources), &1, {:error, :enoent})})
+      Map.new(files, &{&1, source_facts(&1, Map.get(sources, &1, {:error, :enoent}))})
     end)
 
     expect(GraphStoreMock, :write, Keyword.get(opts, :writes, 1), fn @artifact_dir,
@@ -129,6 +132,10 @@ defmodule Anchor.Managers.GraphTest do
     # P2: the verdict never reads the artifact.
     expect(GraphStoreMock, :read, 0, fn _dir, _key -> {:error, :enoent} end)
   end
+
+  # What the SourceSource port returns: each file's facts, never its text.
+  defp source_facts(file, {:ok, text}), do: SourceFacts.from_source(file, text)
+  defp source_facts(_file, error), do: error
 
   defp classified(beams), do: [beams[@user], beams[@accounts]]
 
@@ -240,8 +247,7 @@ defmodule Anchor.Managers.GraphTest do
       assert report.exit_code == 1
       assert [%{message: message}] = report.findings
 
-      assert message =~ "R: the beam's backend could not produce Core Erlang (:boom)" or
-               message =~ "R the beam's backend could not produce Core Erlang (:boom)"
+      assert message =~ "R the beam's backend could not produce Core Erlang (:boom)"
     end
 
     test "an unclassified module is one issue on its source file", %{beams: beams} do
@@ -345,7 +351,8 @@ defmodule Anchor.Managers.GraphTest do
     for {type, kind_text} <- [
           stub_raises: "RuntimeError: rule blew up",
           stub_throws: "throw: :thrown",
-          stub_exits: "exit: :gone"
+          stub_exits: "exit: :gone",
+          stub_malformed: "ArgumentError: check/2 returned :oops, not a list"
         ] do
       test "#{type}: one issue naming the rule and reason; a second rule's finding still prints",
            %{beams: beams} do
@@ -368,7 +375,7 @@ defmodule Anchor.Managers.GraphTest do
   end
 
   describe "run/2 --only" do
-    test "narrows to the named rules and skips floor judgement", %{beams: beams} do
+    test "narrows to the named rules; a running rule's floor is still judged", %{beams: beams} do
       rules = [
         rule(:stub_finds, "a"),
         rule(:stub_raises, "b", %{index: 2}),
@@ -379,9 +386,16 @@ defmodule Anchor.Managers.GraphTest do
 
       report = Graph.run(request(%{format: :text, only: ["a", "c"]}), deps())
 
-      assert Enum.map(report.findings, & &1.rule_id) == ["a"]
+      assert Enum.map(report.findings, & &1.rule_id) == ["a", nil]
+
       assert report.counts.rules == 2
-      refute Enum.any?(messages(report), &(&1 =~ "min_modules"))
+      # The narrowed-away rule b (it raises) never ran.
+      refute Enum.any?(messages(report), &(&1 =~ "could not run"))
+      # Rule c runs, so its floor is judged (positive control for the refute).
+      assert Enum.any?(
+               messages(report),
+               &(&1 =~ ~s|(id: "c", stub_ok) selects 1 modules, below min_modules 99|)
+             )
     end
   end
 

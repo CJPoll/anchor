@@ -181,7 +181,7 @@ defmodule Anchor.Domain.RuleCoverageTest do
   # judged by mix anchor.graph, so Credo's file floor and allowed-caller
   # reports skip it. The engine lookup is injected, standing in for a
   # test-only schema with a graph type.
-  # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5440_graph_runner.md
+  # Sabotage record: ../../sabotage_records/rule_coverage-20261103-dnd_5440_graph_runner.md
   describe "below_floor/3 and missing_allowed_callers/3 skip graph rules" do
     @graph_engines %{g: :graph, must_use_module: :ast, no_direct_dependency: :ast}
 
