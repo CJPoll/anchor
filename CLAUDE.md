@@ -181,7 +181,8 @@ matches the same set through `Anchor.Domain.FunctionRef.names/1` (DND-5613). A
 rewrite that adds a literal tag (`Process.monitor/1` is `:erlang.monitor(:process,
 _)`) is read back into its Elixir name by the walker, and a tagged name's
 spellings leave out a sibling with another tag; an inline no tag tells apart
-stays ambiguous, and a finding names every candidate (`Inlines.describe/1`). A function with no Core
+stays ambiguous; `Inlines.describe/1` names every candidate, for the rule that
+renders such a call edge in a finding. A function with no Core
 body (`core: nil`: a `defmacrop`, a `defp` nothing calls) has no edges read
 from it; `Graph.functions_without_core/1` counts them per module for the
 runner's summary, and a public one is also an `unreadable` entry

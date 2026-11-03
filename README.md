@@ -1229,12 +1229,15 @@ either: `":maps.put/3"` matches a source `Map.put(m, k, v)`, and `"Map.put/3"`
 matches `:maps.put(k, v, m)`. Two Elixir names the compiled call tells apart by
 a literal tag stay apart: `"Process.monitor/1"` never matches
 `Port.monitor(p)`. Two it cannot tell apart (`Bitwise.band/2` and
-`Bitwise.&&&/2`) match each other, and a graph finding on such a call names
-every candidate. Residuals: a `Map.put` onto a literal map folds into the
-literal when compiled, so the graph sees no call (the AST rule still does); and
-a source call written in Erlang spelling with a tag (`:erlang.monitor(:port,
-p)`) matches every Elixir name of that Erlang function in the AST rule, which
-does not read arguments.
+`Bitwise.&&&/2`) match each other; `Inlines.describe/1` names every candidate
+of such a call, for a graph rule that renders one (no rule on main does yet).
+Residuals: a `Map.put` onto a literal map folds into the literal when compiled,
+so the graph sees no call (the AST rule still does); and a source call written
+in Erlang spelling with a tag (`:erlang.monitor(:port, p)`) matches every Elixir
+name of that Erlang function in the AST rule, which does not read arguments. A
+token in `architecture.effects` is matched the same way, so the demand analysis
+reads a token `Process.monitor/1` against a Core `:erlang.monitor(:port, p)`
+too: a false positive there, never a miss.
 
 Each function reached is reported once per rule, at its first line. Where the
 source does not show an arity (`apply(M, :f, args)`), the call matches every
