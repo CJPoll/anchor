@@ -9,7 +9,7 @@ defmodule Anchor.Domain.Sabotage.CoverageMapTest do
   @t1 %{file: "/proj/test/a_test.exs", line: 3, name: "test one", module: "ATest"}
   @t2 %{file: "/proj/test/b_test.exs", line: 7, name: "test two", module: "BTest"}
   @meta %{
-    commit: "abc123",
+    commit: "abababababababababababababababababababab",
     elixir: "1.19.4",
     otp: "28",
     modules_traced: 2,
@@ -134,7 +134,13 @@ defmodule Anchor.Domain.Sabotage.CoverageMapTest do
     test "the map records commit, versions, module count and suite exit" do
       map = build(row1())
 
-      assert %{version: 1, commit: "abc123", elixir: "1.19.4", otp: "28"} = map
+      assert %{
+               version: 1,
+               commit: "abababababababababababababababababababab",
+               elixir: "1.19.4",
+               otp: "28"
+             } = map
+
       assert map.modules_traced == 2
       assert map.suite_exit == 0
     end
@@ -174,6 +180,40 @@ defmodule Anchor.Domain.Sabotage.CoverageMapTest do
                "A.f/0" => ["test/a_test.exs:3"],
                "B.g/0" => ["test/b_test.exs:7"]
              }
+    end
+  end
+
+  describe "check/1: every field that reaches a command line is checked" do
+    defp with_test(map, file, line \\ 3),
+      do: %{
+        map
+        | tests: [%{file: file, line: line, name: "t", module: "M", functions: ["A.f/0"]}]
+      }
+
+    test "commit is nil or a 40-character lowercase hex sha" do
+      map = build(row1())
+      sha = String.duplicate("a1", 20)
+
+      assert {:ok, _map} = CoverageMap.check(%{map | commit: sha})
+      assert {:ok, _map} = CoverageMap.check(%{map | commit: nil})
+      assert CoverageMap.check(%{map | commit: "--output=x"}) == {:error, {:commit, "--output=x"}}
+      assert CoverageMap.check(%{map | commit: 1}) == {:error, {:commit, 1}}
+
+      assert CoverageMap.check(%{map | commit: String.upcase(sha)}) ==
+               {:error, {:commit, String.upcase(sha)}}
+    end
+
+    test "a test file is a relative path inside the project that is not an option" do
+      map = build(row1())
+
+      assert {:ok, _map} = CoverageMap.check(with_test(map, "test/a_test.exs"))
+
+      for file <- ["-x", "--include=slow", "/etc/x_test.exs", "test/../../x.exs", ""] do
+        assert CoverageMap.check(with_test(map, file)) == {:error, {:test_file, file}},
+               inspect(file)
+      end
+
+      assert CoverageMap.check(with_test(map, "test/a_test.exs", 0)) == {:error, :not_a_map}
     end
   end
 

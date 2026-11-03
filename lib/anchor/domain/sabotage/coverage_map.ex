@@ -144,11 +144,26 @@ defmodule Anchor.Domain.Sabotage.CoverageMap do
 
   @doc """
   A map read back from a file: `{:ok, map}` when it is a version-1 map with
-  every field this module reads, else `{:error, reason}`.
+  every field this module reads, else `{:error, reason}`. The map comes from
+  an artifact, so each field that reaches a command line is checked: `commit`
+  (passed to git) is `nil` or a 40-character lowercase hex sha, else
+  `{:error, {:commit, value}}`; each test `file` (passed to `mix test`) is a
+  relative path inside the project that does not start with `-`, else
+  `{:error, {:test_file, file}}`.
   """
-  @spec check(term()) :: {:ok, t()} | {:error, :not_a_map | {:version, term()}}
-  def check(%{version: @version, commit: _, tests: tests} = map) when is_list(tests) do
-    if Enum.all?(tests, &test_shape?/1), do: {:ok, map}, else: {:error, :not_a_map}
+  @spec check(term()) ::
+          {:ok, t()}
+          | {:error, :not_a_map | {:version, term()} | {:commit, term()} | {:test_file, term()}}
+  def check(%{version: @version, commit: commit, tests: tests} = map) when is_list(tests) do
+    with {:commit, true} <- {:commit, sha?(commit)},
+         {:shape, true} <- {:shape, Enum.all?(tests, &test_shape?/1)},
+         nil <- Enum.find(tests, &(not safe_file?(&1.file))) do
+      {:ok, map}
+    else
+      {:commit, false} -> {:error, {:commit, commit}}
+      {:shape, false} -> {:error, :not_a_map}
+      %{file: file} -> {:error, {:test_file, file}}
+    end
   end
 
   def check(%{version: version}), do: {:error, {:version, version}}
@@ -186,10 +201,25 @@ defmodule Anchor.Domain.Sabotage.CoverageMap do
       "built at #{map.commit || "(no commit)"}; wrote #{path}"
   end
 
-  defp test_shape?(%{file: f, line: l, functions: fs}) when is_binary(f) and is_integer(l),
-    do: is_list(fs) and Enum.all?(fs, &is_binary/1)
+  defp test_shape?(%{file: f, line: l, functions: fs})
+       when is_binary(f) and is_integer(l) and l > 0,
+       do: is_list(fs) and Enum.all?(fs, &is_binary/1)
 
   defp test_shape?(_test), do: false
+
+  defp sha?(nil), do: true
+
+  defp sha?(commit) when is_binary(commit) and byte_size(commit) == 40,
+    do: commit |> String.to_charlist() |> Enum.all?(&(&1 in ?0..?9 or &1 in ?a..?f))
+
+  defp sha?(_commit), do: false
+
+  defp safe_file?(file) do
+    segments = String.split(file, "/")
+
+    file != "" and not String.starts_with?(file, ["-", "/"]) and ".." not in segments and
+      "" not in segments
+  end
 
   defp arrive(event, state) do
     stamp = elem(event, 1)

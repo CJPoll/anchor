@@ -703,7 +703,7 @@ defmodule Anchor.Managers.SabotageRunTest do
     # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5474_coverage_map.md
     @cov_opts @opts ++ [coverage_store: Anchor.CoverageStoreMock]
 
-    defp coverage_map(commit \\ "c0ffee") do
+    defp coverage_map(commit \\ "c0ffee0000000000000000000000000000000000") do
       %{
         version: 1,
         commit: commit,
@@ -751,8 +751,15 @@ defmodule Anchor.Managers.SabotageRunTest do
 
     defp expect_ancestor(answer, changed \\ {:ok, ["lib/calc.ex"]}) do
       expect(GitWorktreeMock, :head_sha, fn @root -> {:ok, "headsha"} end)
-      expect(GitWorktreeMock, :ancestor?, fn @root, "c0ffee" -> {:ok, answer} end)
-      expect(GitWorktreeMock, :changed_since, fn @root, "c0ffee" -> changed end)
+
+      expect(GitWorktreeMock, :ancestor?, fn @root, "c0ffee0000000000000000000000000000000000" ->
+        {:ok, answer}
+      end)
+
+      expect(GitWorktreeMock, :changed_since, fn @root,
+                                                 "c0ffee0000000000000000000000000000000000" ->
+        changed
+      end)
     end
 
     test "a selected test file changed since the map's commit runs whole, the mirror too" do
@@ -777,7 +784,9 @@ defmodule Anchor.Managers.SabotageRunTest do
       run = Sabotage.run(%{@facts | dry_run: true} |> Map.put(:coverage, "cov.etf"), @cov_opts)
 
       assert [note] = run.notes
-      assert note =~ "could not tell which files changed since the coverage map's commit c0ffee"
+
+      assert note =~
+               "could not tell which files changed since the coverage map's commit c0ffee0000000000000000000000000000000000"
 
       assert Enum.all?(run.planned, fn {_m, selection} ->
                selection == {:coverage, ["test/calc_test.exs", "test/other_test.exs"]}
@@ -859,7 +868,7 @@ defmodule Anchor.Managers.SabotageRunTest do
       run = Sabotage.run(%{@facts | dry_run: true} |> Map.put(:coverage, "cov.etf"), @cov_opts)
 
       assert run.notes == [
-               "coverage map built at c0ffee is not an ancestor of HEAD headsha; " <>
+               "coverage map built at c0ffee0000000000000000000000000000000000 is not an ancestor of HEAD headsha; " <>
                  "selections from it may miss new tests"
              ]
 
@@ -888,6 +897,17 @@ defmodule Anchor.Managers.SabotageRunTest do
       assert message =~ "Fix: download the anchor-coverage artifact again"
     end
 
+    test "a map whose commit is not a sha is exit 2: it never reaches git" do
+      expect_until_plan()
+      expect_map({:ok, %{coverage_map() | commit: "--output=/tmp/x"}})
+
+      run = Sabotage.run(%{@facts | dry_run: true} |> Map.put(:coverage, "cov.etf"), @cov_opts)
+
+      assert {2, message} = run.refusal
+      assert message =~ ~s|({:commit, "--output=/tmp/x"})|
+      assert message =~ "Fix: download the anchor-coverage artifact again"
+    end
+
     test "a map of another version is exit 2 with a Fix:" do
       expect_until_plan()
       expect_map({:ok, %{coverage_map() | version: 2}})
@@ -895,7 +915,7 @@ defmodule Anchor.Managers.SabotageRunTest do
       run = Sabotage.run(%{@facts | dry_run: true} |> Map.put(:coverage, "cov.etf"), @cov_opts)
 
       assert {2, message} = run.refusal
-      assert message =~ "is not a version-1 coverage map ({:version, 2})"
+      assert message =~ "is not a usable version-1 coverage map ({:version, 2})"
       assert message =~ "Fix: download the anchor-coverage artifact again"
     end
   end

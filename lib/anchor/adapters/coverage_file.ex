@@ -3,7 +3,9 @@ defmodule Anchor.Adapters.CoverageFile do
   The coverage map file (DND-5474), the **Side Effect** adapter (ADR 001)
   behind `Anchor.Adapters.CoverageStore`: `:erlang.term_to_binary/1` on write,
   `:erlang.binary_to_term(bin, [:safe])` on read, so a file from an artifact
-  can never create an atom or a function.
+  can never create a new atom or an external function reference (it can
+  still hold a local fun, which nothing here calls). The shape of what it
+  holds is checked by `Anchor.Domain.Sabotage.CoverageMap.check/1`.
   """
 
   @behaviour Anchor.Adapters.CoverageStore

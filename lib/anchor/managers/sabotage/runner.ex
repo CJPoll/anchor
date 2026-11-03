@@ -442,7 +442,7 @@ defmodule Anchor.Managers.Sabotage.Runner do
 
       {:check, {:error, reason}} ->
         {:refuse, 2,
-         "#{path} is not a version-1 coverage map (#{inspect(reason)}). " <>
+         "#{path} is not a usable version-1 coverage map (#{inspect(reason)}). " <>
            "Fix: download the anchor-coverage artifact again"}
     end
   end
