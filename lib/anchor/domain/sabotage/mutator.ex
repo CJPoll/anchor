@@ -6,6 +6,13 @@ defmodule Anchor.Domain.Sabotage.Mutator do
   data. No file, process, clock or code-loading access: nothing is compiled or
   evaluated, the text is only parsed.
 
+  The function's module is found as `Anchor.Domain.Sabotage.FunctionSpans`
+  names it (`SourceTree.module_node/2`): a `defmodule`, or a `defimpl`
+  (DND-5624). `defimpl P, for: T` is `P.T`; one with no `for:` inside
+  `defmodule T` is `P.T`; `for: [T1, T2]` makes each `P.Tn` resolve to the
+  one block, so each target gets the same edits under its own ids (the module
+  enters the id), and each is measured against the tests its file selects.
+
   For each literal `def`/`defp` clause of the function (in source order) and
   each operator (in `Operators.all/0` order) it takes the operator's edits in
   source order, applies each to the source text by its range, and checks the
@@ -35,6 +42,9 @@ defmodule Anchor.Domain.Sabotage.Mutator do
       with no mutation target (`def f, do: :ok`);
     * `{:error, :not_in_source}` when no literal `def`/`defp` head covers the
       function (a macro-generated function);
+    * `{:error, :defimpl_target_not_literal}` when the function is `nil.name`
+      (`FunctionSpans` could not name its module) and a `defimpl` whose `for:`
+      is not a literal module name holds it (DND-5624);
     * `{:error, {:parse_error, line, message}}` when the source does not parse.
   """
 
@@ -47,9 +57,9 @@ defmodule Anchor.Domain.Sabotage.Mutator do
   alias Anchor.Domain.Sabotage.Skipped
   alias Anchor.Domain.Sabotage.SourceTree
 
-  @spec generate(String.t(), String.t(), {module(), atom(), arity()}, keyword()) ::
+  @spec generate(String.t(), String.t(), {module() | nil, atom(), arity()}, keyword()) ::
           {:ok, %{mutants: [Mutant.t()], skipped: [Skipped.t()]}}
-          | {:error, :not_in_source}
+          | {:error, :not_in_source | :defimpl_target_not_literal}
           | {:error, {:parse_error, pos_integer(), String.t()}}
   def generate(source, path, {module, name, arity} = mfa, opts \\ [])
       when is_binary(source) and is_binary(path) and is_atom(module) and is_atom(name) and

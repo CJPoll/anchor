@@ -7,6 +7,7 @@ defmodule Anchor.Managers.SabotageRunTest do
   # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5473_sabotage_run.md
   # Sabotage record (DND-5570): ../../sabotage_records/sabotage-20261103-dnd_5570_sabotage_hardening.md
   # Sabotage record (DND-5617): ../../sabotage_records/sabotage-20261103-dnd_5617_sabotage_cfa_batch.md
+  # Sabotage record (DND-5624): ../../sabotage_records/sabotage-20261103-dnd_5624_sabotage_defimpl.md
   use ExUnit.Case, async: true
 
   import Hammox
@@ -817,9 +818,9 @@ defmodule Anchor.Managers.SabotageRunTest do
       expect_save()
     end
 
-    test "M1: only a function no literal clause covers (a defimpl): exit 0, its line and the count" do
+    test "M1: only a function in a defimpl whose for: is not a literal: exit 0, its own reason and the count" do
       source =
-        "defimpl String.Chars, for: Calc do\n  def to_string(c) do\n    c.a\n  end\nend\n"
+        "defimpl String.Chars, for: target do\n  def to_string(c) do\n    c.a\n  end\nend\n"
 
       expect_barren_run(source)
 
@@ -831,8 +832,10 @@ defmodule Anchor.Managers.SabotageRunTest do
       text = Report.render(run)
 
       assert text =~
-               "sabotage: no mutant from String.Chars.Calc.to_string/1 (lib/calc.ex): macro: " <>
-                 "no literal def/defp clause in the source (a macro made it)"
+               "sabotage: no mutant from nil.to_string/1 (lib/calc.ex): defimpl target not a " <>
+                 "literal: the source does not spell its module name"
+
+      refute text =~ "a macro made it"
 
       assert text =~
                "sabotage: no mutants generated from 1 changed functions: nothing was measured"
@@ -854,6 +857,37 @@ defmodule Anchor.Managers.SabotageRunTest do
 
       assert text =~
                "sabotage: no mutants generated from 1 changed functions: nothing was measured"
+    end
+
+    test "M4: a function inside defimpl P, for: T yields mutants (DND-5624): planned, no reason line" do
+      source =
+        "defimpl String.Chars, for: Calc do\n  def to_string(c) do\n    c.a\n  end\nend\n"
+
+      expect_journal(:none)
+      expect_config()
+      expect_ignored()
+      expect(ChangeSourceMock, :merge_base, fn @root, "origin/main" -> {:ok, "abc"} end)
+      expect(ChangeSourceMock, :diff, fn @root, "abc" -> {:ok, @diff} end)
+      expect(ChangeSourceMock, :untracked, fn @root -> {:ok, []} end)
+      expect(ChangeSourceMock, :read, 2, fn @root, "lib/calc.ex" -> {:ok, source} end)
+      expect(ChangeSourceMock, :show, fn @root, "abc", "lib/calc.ex" -> {:ok, source} end)
+      expect_clean()
+      expect_tests_exist(true)
+
+      run = Sabotage.run(%{@facts | dry_run: true}, @opts)
+
+      assert {run.changed_functions, run.generated, run.no_mutant, run.errors} == {1, 1, [], []}
+
+      assert [
+               {%{module: String.Chars.Calc, function: {:to_string, 1}, range: {{2, _}, _}},
+                selection}
+             ] =
+               run.planned
+
+      assert selection == {:mirror, ["test/calc_test.exs"]}
+      text = Report.render(run)
+      refute text =~ "sabotage: no mutant from"
+      assert text =~ "1 mutants planned; nothing applied"
     end
 
     test "M3: positive control: a function with mutants prints no such line" do
