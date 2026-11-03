@@ -255,6 +255,26 @@ defmodule Anchor.Managers.AstBaselineTest do
       assert [{@path, :report, "NOTE: first landing of " <> _rest}] = messages(report)
     end
 
+    # Whole-MR critic (2026-11-03): `gone` was given only the ast rules with a
+    # baseline, so a graph rule still in the config (layering, with its own
+    # baseline) read as one the config no longer has.
+    test "a new rule's note names only the baselined rules gone from the whole config" do
+      layering = %{type: :layering, id: "layering", baseline: ".anchor/baselines/layering.txt"}
+      renamed = %{@rule | id: "old-pure", baseline: ".anchor/baselines/old-pure.txt"}
+      config([@rule, layering])
+      expect(BaselineStoreMock, :read, fn @root, @path -> {:ok, ~w(pure|lib/a.ex|File)} end)
+
+      expect(GitBaseMock, :rules, fn @root, "main", ".anchor.yml" ->
+        {:ok, [layering, renamed]}
+      end)
+
+      report = AstBaseline.grew(%{root: @root, ref: "main"}, @deps)
+      assert report.exit_code == 0
+      assert [{@path, :report, message}] = messages(report)
+      assert message =~ ~s(this config no longer has: "old-pure".)
+      refute message =~ "layering"
+    end
+
     test "a base copy git cannot read is an issue, never no growth (exit 1)" do
       config([@rule])
       expect(BaselineStoreMock, :read, fn @root, @path -> {:ok, ~w(pure|lib/a.ex|File)} end)

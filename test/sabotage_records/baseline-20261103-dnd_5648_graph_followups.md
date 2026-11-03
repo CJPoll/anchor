@@ -1615,3 +1615,33 @@ Run summary: `39 tests, 1 failure`
 
 ...................................
 ```
+
+## Whole-MR critic (DND-5632): a new rule's note names only rules gone from the whole config
+
+**Code under test:** `Anchor.Managers.AstBaseline.grew/2`, the `:new_rule` note's list from `Anchor.Domain.BaselineBase.gone/2`.
+
+**Found by:** the whole-MR critic on f4b18ff: `gone/2` was given only the ast rules with a baseline, so a graph rule still in the config (Anchor's own `layering`, `context_acyclic`) read as "no longer in this config". The graph Manager already passes every rule (`now: config.rules`); this Manager now does too. Class check: `grep -rn 'BaselineBase.gone' lib` shows two callers, both passing every rule of the config.
+
+**Suite run:** GN-R is the new test on the unfixed code (`mix test --timeout 2000 --max-cases 2 test/anchor/managers/ast_baseline_test.exs` in `test-slot`). After the fix: `25 tests, 0 failures` over the Manager, task and integration tests.
+
+| ID | Mutation | Tests | Result | Failing tests |
+|---|---|---|---|---|
+| GN-R | regression: the unfixed Manager (gone/2 given the ast baselined rules only), with the new test (`lib/anchor/managers/ast_baseline.ex`) | `ast_baseline_test.exs` | `19 tests, 1 failure` (red) | grew/2 a new rule's note names only the baselined rules gone from the whole config |
+
+### GN-R: regression: the unfixed Manager (gone/2 given the ast baselined rules only), with the new test
+
+Run summary: `19 tests, 1 failure`
+
+```text
+  1) test grew/2 a new rule's note names only the baselined rules gone from the whole config (Anchor.Managers.AstBaselineTest)
+     test/anchor/managers/ast_baseline_test.exs:261
+     Assertion with =~ failed
+     code:  assert message =~ ~s(this config no longer has: "old-pure".)
+     left:  "NOTE: first landing of rule \"pure\": no rule with that id had a baseline at main; rules with a baseline at main that this config no longer has: \"layering\", \"old-pure\". Fix: review every line of .anchor/baselines/pure.txt in this change; from here it only shrinks."
+     right: "this config no longer has: \"old-pure\"."
+     stacktrace:
+       test/anchor/managers/ast_baseline_test.exs:274: (test)
+
+...
+```
+

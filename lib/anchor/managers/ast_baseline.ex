@@ -139,7 +139,9 @@ defmodule Anchor.Managers.AstBaseline do
 
     {violations, unjudged} =
       Enum.reduce(rules, {[], []}, fn rule, {violations, unjudged} ->
-        case rule_grew(rule, base, rules, root, ref, deps) do
+        # Every rule of the config, graph rules too: a rule "gone" since the
+        # ref is one no rule of this config has the id of.
+        case rule_grew(rule, base, config.rules, root, ref, deps) do
           :unjudged -> {violations, unjudged ++ [rule.id]}
           found -> {violations ++ found, unjudged}
         end
@@ -161,20 +163,28 @@ defmodule Anchor.Managers.AstBaseline do
   defp base_config_issue({:unreadable, reason}, config_file, ref, ids),
     do: [Failures.baseline_base_config_unreadable(config_file, ref, reason, ids)]
 
-  defp rule_grew(%{baseline: path} = rule, base, rules, root, ref, deps) do
+  defp rule_grew(%{baseline: path} = rule, base, config_rules, root, ref, deps) do
     case deps.baseline_store.read(root, path) do
-      {:ok, entries} -> compare(rule, entries, base, rules, root, ref, deps)
+      {:ok, entries} -> compare(rule, entries, base, config_rules, root, ref, deps)
       {:error, reason} -> [Failures.ast_baseline_unreadable(rule, path, reason)]
     end
   end
 
-  defp compare(_rule, _entries, {:unreadable, _reason}, _rules, _root, _ref, _deps),
+  defp compare(_rule, _entries, {:unreadable, _reason}, _config_rules, _root, _ref, _deps),
     do: :unjudged
 
-  defp compare(%{id: id, baseline: path} = rule, entries, {:ok, base}, rules, root, ref, deps) do
+  defp compare(
+         %{id: id, baseline: path} = rule,
+         entries,
+         {:ok, base},
+         config_rules,
+         root,
+         ref,
+         deps
+       ) do
     case BaselineBase.locate(base, id) do
       :new_rule ->
-        [note(Failures.baseline_new_rule(path, ref, id, BaselineBase.gone(base, rules)))]
+        [note(Failures.baseline_new_rule(path, ref, id, BaselineBase.gone(base, config_rules)))]
 
       :no_baseline ->
         grew_entries(rule, entries, [], ref)
