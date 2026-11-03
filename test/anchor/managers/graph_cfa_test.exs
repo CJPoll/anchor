@@ -69,6 +69,7 @@ defmodule Anchor.Managers.GraphCfaTest do
     do: %Request{
       apps: [{:my_app, @ebin}],
       root: @root,
+      build_path: "/proj/_build/test",
       env: :test,
       opts: %{format: :text, only: only}
     }

@@ -33,7 +33,8 @@ defmodule Mix.Tasks.Anchor.Graph do
   the file exists.
 
   It reads beams with `:beam_lib` only: no project module is loaded or run.
-  The only file it writes is `_build/<env>/anchor/graph.etf`, the graph for
+  The only file it writes is `<build_path>/anchor/graph.etf` (Mix's build
+  path: `_build/<env>`, or what `MIX_BUILD_PATH` names), the graph for
   `mix anchor.explain` and `place`; the verdict never reads it.
   `--write-baseline` also creates the one baseline file it names.
 
@@ -108,6 +109,7 @@ defmodule Mix.Tasks.Anchor.Graph do
     request = %Request{
       apps: ebins(),
       root: File.cwd!(),
+      build_path: Mix.Project.build_path(),
       env: Mix.env(),
       opts: request_opts
     }

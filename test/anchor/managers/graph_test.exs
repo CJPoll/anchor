@@ -6,6 +6,7 @@ defmodule Anchor.Managers.GraphTest do
   #
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5440_graph_runner.md
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5551_graph_hardening.md
+  # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5581_hardening_batch.md
   # DND-5584 (per-app): ../../sabotage_records/graph_runner-20261103-dnd_5441_graph_rules_a.md
   use ExUnit.Case, async: true
 
@@ -29,7 +30,10 @@ defmodule Anchor.Managers.GraphTest do
 
   @root "/proj"
   @ebin "/proj/_build/test/lib/my_app/ebin"
-  @artifact_dir "/proj/_build/test/anchor"
+  # A build path that is not <root>/_build/<env> (MIX_BUILD_PATH): the
+  # artifact goes under it, never under the root (DND-5585).
+  @build_path "/builds/my_app-test"
+  @artifact_dir "/builds/my_app-test/anchor"
   @user_file "lib/my_app/domain/user.ex"
   @user_source """
   defmodule AnchorFixtures.GraphManagerTest.User do
@@ -49,6 +53,23 @@ defmodule Anchor.Managers.GraphTest do
   end
   """
 
+  # DND-5588: compiled from absolute paths outside this test's cwd, so each
+  # beam's relative_file is absolute: one inside the root, one outside it (as
+  # an `elixirc_paths: ["lib", "../shared"]` entry would compile it).
+  @inside_path "/proj/lib/my_app/domain/inside.ex"
+  @inside_file "lib/my_app/domain/inside.ex"
+  @inside_source """
+  defmodule AnchorFixtures.GraphManagerTest.Inside do
+    def i(x), do: x
+  end
+  """
+  @outside_path "/shared/lib/shared.ex"
+  @outside_source """
+  defmodule AnchorFixtures.GraphManagerTest.Shared do
+    def t(x), do: x
+  end
+  """
+
   @user AnchorFixtures.GraphManagerTest.User
   @accounts AnchorFixtures.GraphManagerTest.Accounts
   @stray AnchorFixtures.GraphManagerTest.Stray
@@ -58,7 +79,9 @@ defmodule Anchor.Managers.GraphTest do
       [
         {@user_source, @user_file},
         {@accounts_source, @accounts_file},
-        {@stray_source, @stray_file}
+        {@stray_source, @stray_file},
+        {@inside_source, @inside_path},
+        {@outside_source, @outside_path}
       ]
       |> compile_all_unloaded()
       |> Map.new(fn {module, binary} ->
@@ -97,7 +120,13 @@ defmodule Anchor.Managers.GraphTest do
     do: %Config{rules: rules, architecture: arch, path: ".anchor.yml"}
 
   defp request(opts \\ %{format: :text, only: []}),
-    do: %Request{apps: [{:my_app, @ebin}], root: @root, env: :test, opts: opts}
+    do: %Request{
+      apps: [{:my_app, @ebin}],
+      root: @root,
+      build_path: @build_path,
+      env: :test,
+      opts: opts
+    }
 
   defp deps,
     do: [
@@ -128,6 +157,7 @@ defmodule Anchor.Managers.GraphTest do
                                                                      key,
                                                                      %Anchor.Domain.Graph{} ->
       assert key =~ ~r/\A[0-9a-f]{64}\z/
+      send(self(), {:artifact_key, key})
       Keyword.get(opts, :write_result, :ok)
     end)
 
@@ -161,6 +191,7 @@ defmodule Anchor.Managers.GraphTest do
                rules: 1,
                opaque: 0,
                no_core: 0,
+               excluded: 0,
                apply_sites: nil
              }
     end
@@ -293,6 +324,7 @@ defmodule Anchor.Managers.GraphTest do
                rules: 1,
                opaque: 0,
                no_core: 0,
+               excluded: 0,
                apply_sites: nil
              }
     end
@@ -501,7 +533,92 @@ defmodule Anchor.Managers.GraphTest do
     end
   end
 
+  describe "run/2 source paths outside the project root (DND-5588)" do
+    @inside AnchorFixtures.GraphManagerTest.Inside
+    @outside AnchorFixtures.GraphManagerTest.Shared
+
+    test "an absolute path inside the root is a project module, read and classified by its relative path",
+         %{beams: beams} do
+      assert beams[@inside].elixir.relative_file == @inside_path
+
+      expect_run(config([rule(:stub_ok, "ok")]), classified(beams) ++ [beams[@inside]],
+        sources: Map.put(@sources, @inside_file, {:ok, @inside_source})
+      )
+
+      report = Graph.run(request(), deps())
+
+      assert %GraphReport{exit_code: 0, findings: [], could_not_check: []} = report
+      assert %{modules: 3, excluded: 0} = report.counts
+    end
+
+    test "an absolute path outside the root is left out, counted and named, never read",
+         %{beams: beams} do
+      assert beams[@outside].elixir.relative_file == @outside_path
+
+      # The source double answers only the files inside the root: a read of
+      # the outside one would be an unreadable-source issue.
+      expect_run(config([rule(:stub_ok, "ok")]), classified(beams) ++ [beams[@outside]])
+
+      report = Graph.run(request(), deps())
+
+      # Report-only: the verdict stands, and the module is named, not dropped.
+      assert %GraphReport{exit_code: 0, could_not_check: []} = report
+
+      assert [%{enforcement: :report, file: @outside_path, message: message}] = report.findings
+
+      assert message =~
+               "AnchorFixtures.GraphManagerTest.Shared was compiled from #{@outside_path}"
+
+      assert message =~ "outside the project root #{@root}"
+      assert message =~ "Fix: "
+
+      assert %{modules: 2, excluded: 1} = report.counts
+      assert GraphReport.summary(report) =~ "2 modules (1 outside the root, excluded) in 1 apps"
+    end
+
+    test "only modules outside the root read is COULD NOT MEASURE, never an empty pass", %{
+      beams: beams
+    } do
+      expect(ConfigLoaderMock, :load, fn -> {:ok, config([rule(:stub_ok, "ok")])} end)
+      Mox.expect(BeamSourceMock, :read_ebins, fn [{:my_app, @ebin}] -> [beams[@outside]] end)
+      expect(GraphStoreMock, :write, 0, fn _dir, _key, _term -> :ok end)
+
+      report = Graph.run(request(), deps())
+
+      assert report.exit_code == 3
+      assert [%{message: message}] = report.could_not_check
+      assert message =~ "read 1 modules from #{@ebin}, and every one has a source file outside"
+      assert message =~ "Fix: run mix anchor.graph from the project root"
+    end
+  end
+
   describe "run/2 graph artifact" do
+    # DND-5586: the artifact is built from the beams AND the source facts
+    # (`generated?`, the literal uses), so a source change that leaves the
+    # beams alone must still change its key; a comment, which changes no
+    # fact, need not.
+    test "the key changes with the source facts, not with a comment", %{beams: beams} do
+      key = fn sources ->
+        expect_run(config([rule(:stub_ok, "ok")]), classified(beams), sources: sources)
+        Graph.run(request(), deps())
+        assert_received {:artifact_key, key}
+        key
+      end
+
+      base = key.(@sources)
+
+      commented =
+        Map.put(@sources, @user_file, {:ok, "# a comment\n" <> @user_source})
+
+      # One more literal module in the file: its facts change, its beam
+      # (compiled from @user_source) does not.
+      another_module =
+        Map.put(@sources, @user_file, {:ok, @user_source <> "defmodule Another do\nend\n"})
+
+      assert key.(commented) == base
+      refute key.(another_module) == base
+    end
+
     test "a failed write is a report-only note; the verdict stands", %{beams: beams} do
       expect_run(config([rule(:stub_ok, "ok")]), classified(beams),
         write_result: {:error, :eacces}

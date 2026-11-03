@@ -51,6 +51,7 @@ rules:
       - Anchor.Adapters.BeamReader
       - Anchor.Adapters.GitShow
       - Anchor.Adapters.GitChangeSource
+      - Anchor.Adapters.GitEnv
       - Anchor.Adapters.GraphArtifact
       - Anchor.Adapters.SourceReader
       - Anchor.Managers.Graph

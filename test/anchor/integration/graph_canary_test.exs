@@ -70,6 +70,7 @@ defmodule Anchor.Integration.GraphCanaryTest do
       %Request{
         apps: [{:canary, @ebin}],
         root: root,
+        build_path: Path.join(root, "_build/test"),
         env: :test,
         opts: Map.merge(%{format: :text, only: []}, opts)
       },

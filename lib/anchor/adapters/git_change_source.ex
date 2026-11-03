@@ -6,7 +6,11 @@ defmodule Anchor.Adapters.GitChangeSource do
   Git runs with `System.cmd/3`: argv only, never a shell, so a `--base` value
   is never interpolated into a command line, and a ref is passed after
   `--end-of-options` so it cannot be read as an option. It only reads:
-  `GIT_OPTIONAL_LOCKS=0` stops `git diff` refreshing the index.
+  `GIT_OPTIONAL_LOCKS=0` stops `git diff` refreshing the index. The
+  environment comes from `Anchor.Adapters.GitEnv.env/0`, which unsets every
+  repository-locating variable (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`,
+  ...), so a run inside a git hook still reads the repository at `root`
+  (DND-5581).
 
   Commands, each run in `root`:
 
@@ -14,10 +18,14 @@ defmodule Anchor.Adapters.GitChangeSource do
     * `git rev-parse --verify --quiet --end-of-options <ref>^{commit}`, then
       `git merge-base <sha> HEAD`;
     * `git diff --unified=0 --no-color --no-ext-diff --no-textconv --no-renames
-      --relative --submodule=short --src-prefix=a/ --dst-prefix=b/ <sha> --`
+      --relative --submodule=short --ignore-submodules=none --src-prefix=a/
+      --dst-prefix=b/ <sha> --`
       (`--relative`: paths relative to `root`, the same base `ls-files` uses;
       the submodule format and the prefixes are set so a user's
-      `diff.submodule` or `diff.noprefix` cannot change the text);
+      `diff.submodule` or `diff.noprefix` cannot change the text, and
+      `--ignore-submodules=none` so a user's `diff.ignoreSubmodules` or
+      `submodule.<name>.ignore` cannot drop a moved submodule from it,
+      DND-5582);
     * `git ls-files -z --others --exclude-standard -- *.ex`;
     * `git show <sha>:./<path>` (`./`: the path is relative to `root`, as the
       diff's are).
@@ -30,8 +38,10 @@ defmodule Anchor.Adapters.GitChangeSource do
 
   @behaviour Anchor.Adapters.ChangeSource
 
+  alias Anchor.Adapters.GitEnv
+
   @diff_args ~w(diff --unified=0 --no-color --no-ext-diff --no-textconv --no-renames --relative
-                --submodule=short --src-prefix=a/ --dst-prefix=b/)
+                --submodule=short --ignore-submodules=none --src-prefix=a/ --dst-prefix=b/)
 
   @impl Anchor.Adapters.ChangeSource
   def merge_base(root, ref) do
@@ -100,6 +110,6 @@ defmodule Anchor.Adapters.GitChangeSource do
   end
 
   defp git(root, args) do
-    System.cmd("git", args, cd: root, stderr_to_stdout: false, env: [{"GIT_OPTIONAL_LOCKS", "0"}])
+    System.cmd("git", args, cd: root, stderr_to_stdout: false, env: GitEnv.env())
   end
 end

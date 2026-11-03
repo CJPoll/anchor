@@ -8,6 +8,7 @@ defmodule Anchor.Domain.Graph.BuilderTest do
   # Sabotage record: ../../../sabotage_records/builder-20261103-dnd_5438.md
   # Sabotage record: ../../../sabotage_records/builder-20261103-dnd_5551_graph_hardening.md
   # Sabotage record: ../../../sabotage_records/inlines-20261103-dnd_5551_graph_hardening.md
+  # Sabotage record: ../../../sabotage_records/builder-20261103-dnd_5581_hardening_batch.md (DND-5587, DND-5588)
   # DND-5548 (the per-module walk guard): ../../../sabotage_records/builder-20261103-dnd_5440_graph_runner.md
   use ExUnit.Case, async: true
 
@@ -401,6 +402,54 @@ defmodule Anchor.Domain.Graph.BuilderTest do
     end
   end
 
+  # DND-5587: the guard catches every kind, not only a raise. A module's
+  # struct fields are enumerated while its node is built, so a lazy stream
+  # there throws or exits inside the walk, from data alone.
+  describe "build/2 a module whose walk throws or exits (DND-5587)" do
+    for kind <- [:throw, :exit] do
+      @tag crash: kind
+      test "#{kind} in a module's walk is its {:walk_crashed, _}; the others are built", %{
+        pair: pair,
+        crash: kind
+      } do
+        [a | _] = Enum.filter(pair, &(&1.module == A))
+
+        crashing =
+          Stream.map([:field], fn _field ->
+            case kind do
+              :throw -> throw(:walk_boom)
+              :exit -> exit(:walk_boom)
+            end
+          end)
+
+        broken = %{
+          a
+          | module: AnchorFixtures.BuilderTest.Broken,
+            path: "ebin/broken.beam",
+            elixir: Map.put(a.elixir, :struct, crashing)
+        }
+
+        graph = Builder.build([broken | pair], %{})
+
+        assert [
+                 %{
+                   path: "ebin/broken.beam",
+                   module: AnchorFixtures.BuilderTest.Broken,
+                   reason: {:walk_crashed, summary}
+                 }
+               ] = graph.unreadable
+
+        assert summary =~ "#{kind}: :walk_boom"
+        refute Graph.module(graph, AnchorFixtures.BuilderTest.Broken)
+
+        # Positive control: the good modules are built, with their edges.
+        assert %ModuleNode{} = Graph.module(graph, A)
+        assert %ModuleNode{} = Graph.module(graph, B)
+        assert Enum.count(graph.calls, &(&1.from == {A, :f, 1})) == 1
+      end
+    end
+  end
+
   describe "build/2 duplicate modules" do
     test "a second beam of one module is reported, naming the kept one; its edges are not built",
          %{
@@ -486,6 +535,37 @@ defmodule Anchor.Domain.Graph.BuilderTest do
 
       assert [%Call{to: {Enum, :count, 1}, line: 2, line_source: :call}] =
                Graph.calls_from(graph, {AnchorFixtures.BuilderTest.Absolute, :f, 1})
+    end
+  end
+
+  # DND-5588: a module compiled from outside the directory the compiler ran in
+  # has an absolute relative_file. Inside the project root it is the project's,
+  # relativised; Core's annotations keep the absolute path, so lines still read.
+  describe "build/3 with a root: a source path inside the root" do
+    test "is relativised for the node and the source facts; edges keep their own lines" do
+      root = "/anchor-builder-root"
+      file = Path.join(root, "lib/far.ex")
+
+      source = """
+      defmodule AnchorFixtures.BuilderTest.Far do
+        def f(x), do: Enum.count(x)
+      end
+      """
+
+      [beam] = decode!(compile_unloaded(source, file))
+      assert beam.elixir.relative_file == file
+
+      graph = Builder.build([beam], facts("lib/far.ex", source), root: root)
+
+      assert %ModuleNode{source_file: "lib/far.ex", generated?: false} =
+               graph.modules[AnchorFixtures.BuilderTest.Far]
+
+      assert [%Call{to: {Enum, :count, 1}, line: 2, line_source: :call}] =
+               Graph.calls_from(graph, {AnchorFixtures.BuilderTest.Far, :f, 1})
+
+      # Without a root the path stands as the beam names it.
+      assert Builder.build([beam], %{}).modules[AnchorFixtures.BuilderTest.Far].source_file ==
+               file
     end
   end
 

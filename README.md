@@ -762,8 +762,11 @@ Anchor's own `.anchor.yml` runs it over `lib/`, with a baseline holding what
 it found when it landed: one cycle through the dynamic calls of
 `Anchor.Managers.Lint` on the check modules, and `Mutator`'s `apply/3`.
 
-The only file it writes is `_build/<env>/anchor/graph.etf`, the graph keyed by
-a sha256 of the beams, the config and Anchor's version, for `mix
+The only file it writes is `<build_path>/anchor/graph.etf` (Mix's build path:
+`_build/<env>`, or the directory `MIX_BUILD_PATH` names), the graph keyed by
+a sha256 of the beams, each source file's facts (its literal `defmodule`s and
+`use`s, which a source edit can change without changing a beam), the config and
+Anchor's version, for `mix
 anchor.explain` and `place`. The verdict never reads it; a write that fails is
 a `[report]` note.
 
@@ -785,7 +788,12 @@ summary as `(<n> opaque)`; an unclassified one is an issue. No setting
 excludes a module silently. A function whose Core body the graph lacks (a
 `defmacrop`, a `defp` nothing calls) has no edges read from it, so the summary
 counts those too, as `(<n> functions with no Core body)`, and the JSON as
-`no_core`.
+`no_core`. A module compiled from an absolute source path outside the project
+root (an `elixirc_paths` entry such as `../shared`, a generated file) is left out
+of the graph: counted as `(<n> outside the root, excluded)`, `excluded` in the
+JSON, and named with its path in a `[report]` note (DND-5588). An absolute path
+inside the root is made relative to it, so `paths:` selectors match it as they
+match every other file.
 
 ### Graph rows of the fail-closed table
 
@@ -801,6 +809,8 @@ line.
 | `mix compile` fails | mix's own | | |
 | Zero project modules read | 3 | the first ebin | `COULD NOT MEASURE: read 0 modules from _build/dev/lib/my_app/ebin. Fix: run mix compile in this project; ...` |
 | One app of the project read no module while another did (an umbrella app not compiled, under another build path, or renamed; DND-5584) | 1 | that app's ebin | `read 0 modules for app :other from _build/dev/lib/other/ebin, so none of its code was checked. Fix: run mix compile for :other; ...` |
+| Every module read has its source outside the project root (DND-5588) | 3 | the first ebin | `COULD NOT MEASURE: read 3 modules from _build/dev/lib/my_app/ebin, and every one has a source file outside the project root /proj, so none was judged. Fix: run mix anchor.graph from the project root (the directory holding mix.exs).` |
+| A module compiled from a source outside the project root (DND-5588) | 0 (`[report]`) | its source path | `MyApp.Shared was compiled from /shared/lib/shared.ex, outside the project root /proj, so it is left out of the graph and no rule judged it. Fix: move its source under /proj, or run mix anchor.graph from the root that holds it.` |
 | A beam with no `debug_info` (or stripped) | 1 | the beam | `MyApp.X was compiled without debug_info, so Anchor cannot read it. Fix: remove debug_info: false from the project's elixirc_options ...` |
 | The backend refuses `elixir_v1` (`{:elixir_v1_refused, _}`) | 1 | the beam | `MyApp.X the beam's backend could not produce its Elixir debug info (...). Fix: recompile with the project's own Elixir; ...` |
 | The backend refuses `core_v1` (`{:core_v1_refused, _}`) | 1 | the beam | `MyApp.X the beam's backend could not produce Core Erlang (...). Fix: recompile with the project's own Elixir; ...` |

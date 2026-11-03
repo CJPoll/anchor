@@ -43,7 +43,7 @@ never an adapter.
 |---|---|
 | Framework | `Anchor.Check.*` (Credo checks, `Anchor.Check.Base`, `Anchor.Check.Source`), `Mix.Tasks.Anchor.*` (`lib/mix/tasks/`; `Mix.Tasks.Anchor.Sabotage`) |
 | Managers | `Anchor.Managers.Lint`, `Anchor.Managers.Sabotage` |
-| Side Effects | ports: `Anchor.Adapters.ConfigLoader`, `ChangeSource`, `BeamSource`, `BaselineStore`, `GitBase`; adapters: `ConfigFile`, `GitChangeSource`, `BeamReader`, `BaselineFile`, `GitShow` (`lib/anchor/adapters/`) |
+| Side Effects | ports: `Anchor.Adapters.ConfigLoader`, `ChangeSource`, `BeamSource`, `BaselineStore`, `GitBase`; adapters: `ConfigFile`, `GitChangeSource`, `BeamReader`, `BaselineFile`, `GitShow` (`lib/anchor/adapters/`); `GitEnv`, the environment the git adapters run git with (DND-5581) |
 | Domain | everything under `lib/anchor/domain/`, including `Anchor.Domain.Sabotage.*` (`Mutator`, `Operators`, `DiffHunks`, `FunctionSpans`, `Scope`) and `Anchor.Domain.Graph.*` |
 
 ### Key Architectural Decisions
@@ -194,12 +194,16 @@ config, beams, sources and the artifact only through adapters
 with Hammox, BeamSource with plain Mox because Hammox cannot match its
 `:cerl` record type (see `test/test_helper.exs`), and pass them as options,
 as `mix anchor.sabotage` does). `SourceSource` returns each file's
-`SourceFacts`, never its text. It builds
+`SourceFacts`, never its text. A module whose source path is absolute and
+outside the root is left out, counted and named in a `[report]` note; one
+inside the root is made relative (`Anchor.Domain.Graph.ProjectFile`,
+DND-5588). It builds
 the graph fresh, builds `Anchor.Domain.Model` (classification of every
 module), checks bucket and rule floors (`min_modules`), runs each graph rule
 under a `try`/`rescue`/`catch` guard, and returns
 `Anchor.Domain.GraphReport` (exit 0/1/3). It never reads the artifact
-(`_build/<env>/anchor/graph.etf`) for a verdict.
+(`<build_path>/anchor/graph.etf`, Mix's build path as the task gathers it,
+DND-5585) for a verdict.
 
 A graph rule implements `Anchor.Domain.GraphRule` (`rule_type/0`,
 `check/2` over the model) and is listed in `Anchor.Domain.GraphRules.all/0`;
@@ -302,6 +306,25 @@ the JSON carries `apply_sites` (`GraphReport.apply_sites/1`). A refused need
 (`rule_crashed`) or a crashed analysis (`Failures.rule_cfa_crashed/5`) is one
 issue per rule, and that rule is not run. A new analysis a rule can need goes
 into `GraphRules`' `@provided_needs` and the Manager's needs wiring.
+
+## Demand (DND-5498)
+
+`Anchor.Domain.Demand.analyze/4` takes the graph and a `%Cfa{}` over it and
+summarises every `def`/`defp`: per parameter, a demand
+(`Anchor.Domain.Demand.Lattice`: `:absent`, `{:used, fields}` or `:all`) saying
+whether it reaches the return value or an effect, and the calls it is passed to
+(`passes`). `Demand.Transfer` is one backward pass over one function's Core;
+`analyze/4` runs it to a fixpoint over the call graph's SCCs, bounded by
+`:max_rounds` (a component that hits it is reported used and imprecise, never
+unused). Effects and escapes are rows in `Anchor.Domain.EffectPrimitives`, pure
+library calls in `Anchor.Domain.PureCalls`; a function that calls an argument
+(`Anchor.Domain.HigherOrder`) uses every argument, precisely; any library call
+in neither table uses its arguments and makes the function `imprecise` (the
+passes run sound and optimistic, and a parameter whose two demands differ is
+imprecise). Inside a `try` or `catch` a raise is observable, so a call there
+uses its arguments. A new Core shape goes into `Transfer` with a row in
+`test/anchor/domain/demand/transfer_test.exs`. A field map may hold the key
+`:__struct__`: read it with `:maps`, never `Enum`.
 
 ## Important Notes
 

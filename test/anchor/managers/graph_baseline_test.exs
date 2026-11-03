@@ -73,6 +73,7 @@ defmodule Anchor.Managers.GraphBaselineTest do
     do: %Request{
       apps: [{:my_app, @ebin}],
       root: @root,
+      build_path: Path.join(@root, "_build/test"),
       env: :test,
       opts: Map.merge(%{format: :text, only: []}, opts)
     }

@@ -3,7 +3,9 @@ defmodule Anchor.Adapters.GitChangeSourceTest do
   # repository each test makes in its own tmp_dir. The commit identity is argv
   # (`-c user.name=...`), never global config.
   # Sabotage record: ../../sabotage_records/sabotage_scope-20261103-dnd_5472.md
-  # (G6: ../../sabotage_records/sabotage_scope-20261103-dnd_5519_scope_findings.md)
+  # (G6: ../../sabotage_records/sabotage_scope-20261103-dnd_5519_scope_findings.md;
+  # G7, and G4/G5's captured stderr:
+  # ../../sabotage_records/sabotage_scope-20261103-dnd_5581_hardening_batch.md)
   use ExUnit.Case, async: true
 
   alias Anchor.Adapters.GitChangeSource
@@ -26,6 +28,27 @@ defmodule Anchor.Adapters.GitChangeSourceTest do
     env = Enum.map(@hook_env, &{&1, nil})
     {out, 0} = System.cmd("git", @identity ++ args, cd: root, stderr_to_stdout: true, env: env)
     out
+  end
+
+  # Evaluates `call` (an expression over the adapter) in a child VM that loads
+  # only Anchor's ebin, and returns what it printed: git's message, on stderr,
+  # then the result, inspected on stdout. A failing git command writes to the
+  # BEAM's own stderr (fd 2), which no `capture_io` in this VM can read, so a
+  # case whose stderr is expected runs here: the suite stays quiet, and the
+  # message is asserted (DND-5589).
+  defp in_child_vm(call) do
+    elixir = System.find_executable("elixir")
+    assert elixir, "no elixir executable on PATH to run the child VM"
+
+    {out, status} =
+      System.cmd(
+        elixir,
+        ["-pa", Mix.Project.compile_path(), "-e", "IO.inspect(" <> call <> ", width: :infinity)"],
+        stderr_to_stdout: true
+      )
+
+    assert status == 0, "the child VM exited #{status}:\n#{out}"
+    String.split(out, "\n", trim: true)
   end
 
   defp repo!(root) do
@@ -64,12 +87,11 @@ defmodule Anchor.Adapters.GitChangeSourceTest do
     assert diff =~ "diff --git a/lib/a.ex b/lib/a.ex"
   end
 
-  test "G6: a user's diff.submodule=log cannot change the diff format", %{tmp_dir: tmp_dir} do
-    # A submodule whose checked-out commit moved is the case `--submodule=short`
-    # exists for: with `diff.submodule=log` and no flag, git prints a
-    # `Submodule vendor/sub a..b:` line DiffHunks refuses (a false COULD NOT
-    # MEASURE). The submodule is made from a local path, so no network is
-    # touched; `protocol.file.allow=always` lets git clone from it.
+  # A repository at tmp_dir/work with a submodule at vendor/sub whose checkout
+  # moved back one commit, and a changed lib/a.ex. The submodule is made from
+  # a local path, so no network is touched; `protocol.file.allow=always` lets
+  # git clone from it.
+  defp repo_with_moved_submodule!(tmp_dir) do
     upstream = Path.join(tmp_dir, "upstream")
     root = Path.join(tmp_dir, "work")
     File.mkdir_p!(upstream)
@@ -95,11 +117,20 @@ defmodule Anchor.Adapters.GitChangeSourceTest do
     ])
 
     git!(root, ["commit", "-q", "-m", "add the submodule"])
-    git!(root, ["config", "diff.submodule", "log"])
 
     # The submodule's checkout moves back one commit, and a source file changes.
     git!(Path.join(root, "vendor/sub"), ["checkout", "-q", "HEAD~1"])
     File.write!(Path.join(root, "lib/a.ex"), "defmodule A do\n  def f, do: 2\nend\n")
+    root
+  end
+
+  test "G6: a user's diff.submodule=log cannot change the diff format", %{tmp_dir: tmp_dir} do
+    # A submodule whose checked-out commit moved is the case `--submodule=short`
+    # exists for: with `diff.submodule=log` and no flag, git prints a
+    # `Submodule vendor/sub a..b:` line DiffHunks refuses (a false COULD NOT
+    # MEASURE).
+    root = repo_with_moved_submodule!(tmp_dir)
+    git!(root, ["config", "diff.submodule", "log"])
 
     {:ok, sha} = GitChangeSource.merge_base(root, "HEAD")
     assert {:ok, diff} = GitChangeSource.diff(root, sha)
@@ -110,6 +141,28 @@ defmodule Anchor.Adapters.GitChangeSourceTest do
     assert {:ok, files} = DiffHunks.parse(diff)
     assert files |> Map.keys() |> Enum.sort() == ["lib/a.ex", "vendor/sub"]
     assert %{status: :modified, hunks: [{2, 1}]} = files["lib/a.ex"]
+  end
+
+  # DND-5582: either setting drops the submodule from a plain `git diff`
+  # without an error; `--ignore-submodules=none` overrides both.
+  for {key, value} <- [{"diff.ignoreSubmodules", "all"}, {"submodule.vendor/sub.ignore", "all"}] do
+    @tag config: {key, value}
+    test "G7: a user's #{key}=#{value} cannot hide a moved submodule", %{
+      tmp_dir: tmp_dir,
+      config: {key, value}
+    } do
+      root = repo_with_moved_submodule!(tmp_dir)
+      {:ok, sha} = GitChangeSource.merge_base(root, "HEAD")
+      git!(root, ["config", key, value])
+
+      # Positive control: the setting does hide the submodule from a plain diff.
+      refute git!(root, ["diff", "--submodule=short", sha, "--"]) =~ "vendor/sub"
+
+      assert {:ok, diff} = GitChangeSource.diff(root, sha)
+      assert diff =~ "+++ b/vendor/sub\n"
+      assert {:ok, files} = DiffHunks.parse(diff)
+      assert files |> Map.keys() |> Enum.sort() == ["lib/a.ex", "vendor/sub"]
+    end
   end
 
   test "G5: show returns a file as it was at a commit, by a path relative to root", %{
@@ -126,8 +179,15 @@ defmodule Anchor.Adapters.GitChangeSourceTest do
     assert GitChangeSource.show(Path.join(root, "lib"), sha, "a.ex") ==
              {:ok, "defmodule A do\n  def f, do: 1\nend\n"}
 
-    assert {:error, {:git_failed, ["show", _spec], _status, _out}} =
-             GitChangeSource.show(root, sha, "lib/none.ex")
+    # git says why on stderr; the error carries the command and its status.
+    assert [message, result] =
+             in_child_vm(
+               "Anchor.Adapters.GitChangeSource.show(" <>
+                 Enum.map_join([root, sha, "lib/none.ex"], ", ", &inspect/1) <> ")"
+             )
+
+    assert message =~ "fatal: path 'lib/none.ex' does not exist"
+    assert result =~ ~s|{:error, {:git_failed, ["show", "#{sha}:./lib/none.ex"], 128, ""}}|
   end
 
   test "G2: untracked returns only untracked .ex files", %{tmp_dir: root} do
@@ -169,7 +229,13 @@ defmodule Anchor.Adapters.GitChangeSourceTest do
     File.mkdir_p!(outside)
     on_exit(fn -> File.rm_rf!(outside) end)
 
-    assert GitChangeSource.merge_base(outside, "main") == {:error, :not_a_work_tree}
+    # git's own answer to the probe is on stderr, which the child VM captures.
+    assert [message, "{:error, :not_a_work_tree}"] =
+             in_child_vm(
+               "Anchor.Adapters.GitChangeSource.merge_base(" <> inspect(outside) <> ~s|, "main")|
+             )
+
+    assert message =~ "fatal: not a git repository"
 
     assert GitChangeSource.merge_base(Path.join(root, "missing"), "main") ==
              {:error, :not_a_work_tree}
