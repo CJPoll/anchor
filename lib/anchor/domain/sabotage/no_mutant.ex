@@ -9,7 +9,9 @@ defmodule Anchor.Domain.Sabotage.NoMutant do
       distinct operator and reason once, in the generator's order);
     * `macro: ...` when no literal `def`/`defp` clause covers the function;
     * `defimpl target not a literal: ...` when the function is in a `defimpl`
-      whose `for:` names no module the source spells (DND-5624);
+      whose module name the source does not spell: its `for:` is not a module
+      name, or it has no `for:` and its enclosing module is unnamed
+      (DND-5624);
     * `no mutable site` when no operator found anything to change;
     * `does not parse ...` / `could not be read ...` for a file error.
 
@@ -39,8 +41,8 @@ defmodule Anchor.Domain.Sabotage.NoMutant do
 
   def reason({:error, :defimpl_target_not_literal}),
     do:
-      "defimpl target not a literal: its for: is not a module name the source spells, " <>
-        "so the implementation module cannot be named"
+      "defimpl target not a literal: the source does not spell its module name " <>
+        "(a for: that is not a module name, or an unnamed enclosing module)"
 
   def reason({:error, {:parse_error, line, message}}),
     do: "does not parse at line #{line}: #{message}"

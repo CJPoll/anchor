@@ -126,8 +126,8 @@ defmodule Anchor.Domain.Sabotage.ReportTest do
     text = Report.render(%Run{errors: [{function, :defimpl_target_not_literal}]})
 
     assert text =~
-             "error\tlib/gen.ex\tnil.to_string/1\tdefimpl target not a literal (its for: names " <>
-               "no module): no mutant, not killed"
+             "error\tlib/gen.ex\tnil.to_string/1\tdefimpl target not a literal (its module " <>
+               "cannot be named): no mutant, not killed"
 
     refute text =~ "a macro made it"
   end

@@ -2,7 +2,7 @@ defmodule Anchor.Domain.Sabotage.NoMutantTest do
   # DND-5617: why a changed function yielded no mutant, read from the real
   # generator's results.
   # Sabotage record: ../../../sabotage_records/sabotage-20261103-dnd_5617_sabotage_cfa_batch.md
-  # DND-5624: ../../../sabotage_records/sabotage-20261103-dnd_5624_sabotage_defimpl.md
+  # Sabotage record (DND-5624): ../../../sabotage_records/sabotage-20261103-dnd_5624_sabotage_defimpl.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Sabotage.Mutator
@@ -32,18 +32,18 @@ defmodule Anchor.Domain.Sabotage.NoMutantTest do
     assert NoMutant.reason(generated(source)) == "no mutable site"
   end
 
-  test "N6: a defimpl whose for: is not a literal names that, not a macro (DND-5624)" do
-    source = "defimpl String.Chars, for: target do\n  def to_string(c), do: c.a\nend\n"
-
-    assert NoMutant.reason(Mutator.generate(source, "lib/calc.ex", {nil, :to_string, 1})) ==
-             "defimpl target not a literal: its for: is not a module name the source spells, " <>
-               "so the implementation module cannot be named"
-  end
-
   test "N5: a file error names itself" do
     assert NoMutant.reason({:error, {:parse_error, 3, "missing end"}}) ==
              "does not parse at line 3: missing end"
 
     assert NoMutant.reason({:error, {:unreadable, :enoent}}) == "could not be read (:enoent)"
+  end
+
+  test "N6: a defimpl whose for: is not a literal names that, not a macro (DND-5624)" do
+    source = "defimpl String.Chars, for: target do\n  def to_string(c), do: c.a\nend\n"
+
+    assert NoMutant.reason(Mutator.generate(source, "lib/calc.ex", {nil, :to_string, 1})) ==
+             "defimpl target not a literal: the source does not spell its module name " <>
+               "(a for: that is not a module name, or an unnamed enclosing module)"
   end
 end

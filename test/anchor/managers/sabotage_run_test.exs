@@ -833,7 +833,7 @@ defmodule Anchor.Managers.SabotageRunTest do
 
       assert text =~
                "sabotage: no mutant from nil.to_string/1 (lib/calc.ex): defimpl target not a " <>
-                 "literal: its for: is not a module name the source spells"
+                 "literal: the source does not spell its module name"
 
       refute text =~ "a macro made it"
 

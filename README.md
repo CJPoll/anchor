@@ -728,9 +728,14 @@ A protocol implementation's function is found as `scope` names it (DND-5624):
 `defimpl P, for: T` is `P.T`; a `defimpl P` with no `for:` inside
 `defmodule T` is `P.T`; `for: [T1, T2]` makes each `P.Tn` resolve to the one
 block, so each target gets the same edits under its own ids. A `defimpl` whose
-`for:` is not a literal module name (a variable, an attribute) has no module
-name to give, so its functions are `{:error, :defimpl_target_not_literal}`,
-reported as `defimpl target not a literal`, never as a macro.
+`for:` is not a literal module name (a variable, an attribute), or that has no
+`for:` inside an unnamed module, has no module name to give, so its functions
+are `{:error, :defimpl_target_not_literal}`, reported as `defimpl target not a
+literal`, never as a macro. A `for: nil` or `for: []` is the enclosing module,
+as `scope` reads it. A module nested in a `defprotocol` or a `defimpl` is
+found by its joined name (`P.Helpers`, `P.T.Helpers`); a `defprotocol`'s own
+declarations (`def area(shape)`) have no body, so they yield no mutant (`no
+mutable site`).
 
 ### Sabotage: running the mutants
 
@@ -832,7 +837,7 @@ function with no literal clause is listed as an error, never as killed.
 |---|---|
 | every measured mutant killed or timed out (an `invalid` one beside them changes nothing) | 0 |
 | zero changed functions from a good diff read (an empty scope: `sabotage: 0 changed functions in <base>..HEAD`) | 0 |
-| changed functions that yielded no mutant at all (every edit skipped, no literal clause, no mutable site): one `sabotage: no mutant from M.f/a (file): <reason>` line per function, then `sabotage: no mutants generated from N changed functions: nothing was measured` (DND-5617) | 0 |
+| changed functions that yielded no mutant at all (every edit skipped, no literal clause, a `defimpl` target not a literal, no mutable site): one `sabotage: no mutant from M.f/a (file): <reason>` line per function, then `sabotage: no mutants generated from N changed functions: nothing was measured` (DND-5617) | 0 |
 | a mutant survived, crashed or had no test, beside a measured one (a survivors list that gives one a reason will exempt it: DND-5483) | 1 |
 | mutants were run and none was measured (all `invalid`, `crashed` or without a test) | 3, `COULD NOT MEASURE` with `Fix:` |
 | a dirty target file; the journal not git-ignored; the run lock or a journal another live run holds; a host with no `/proc`; a leftover journal whose file changed; a restore that did not reproduce the original (the journal is kept); an unknown `--only` id; no `timeout` binary; bad flags | 2, with `Fix:` |

@@ -54,6 +54,30 @@ defmodule Anchor.Domain.Sabotage.MutatorDefimplTest do
   end
   """
 
+  @protocol """
+  defprotocol Shape do
+    def area(shape)
+
+    defmodule Helpers do
+      def twice(x) do
+        Logger.info("twice")
+        x * 2
+      end
+    end
+  end
+
+  defimpl Shape, for: Calc do
+    def area(c), do: c.w * c.h
+
+    defmodule Helpers do
+      def half(x) do
+        Logger.info("half")
+        x / 2
+      end
+    end
+  end
+  """
+
   # `{operator, target}` of every mutant the impl's def yields.
   @impl_mutants [
     {:drop_effect_call, "Logger.info(\"rendering\")"},
@@ -131,9 +155,28 @@ defmodule Anchor.Domain.Sabotage.MutatorDefimplTest do
       defimpl List.Chars, for: Calc, do: (def to_charlist(c), do: Logger.info(c))
       """
 
-      assert [_drop, _return] = generate!(source, {Inspect.Calc, :inspect, 2})
-      assert [_drop, _r0, _r1] = generate!(source, {Jason.Encoder.Calc, :encode, 2})
-      assert [_return] = generate!(source, {List.Chars.Calc, :to_charlist, 1})
+      inspect = generate!(source, {Inspect.Calc, :inspect, 2})
+
+      assert summary(inspect) == [
+               {:drop_effect_call, "Logger.info(\"inspecting\")"},
+               {:return_input, "inspect(c, _opts)"}
+             ]
+
+      assert within?(inspect, 3..6)
+
+      encode = generate!(source, {Jason.Encoder.Calc, :encode, 2})
+
+      assert summary(encode) == [
+               {:drop_effect_call, "Logger.info(\"encoding\")"},
+               {:return_input, "encode(c, opts)"},
+               {:return_input, "encode(c, opts)"}
+             ]
+
+      assert within?(encode, 11..14)
+
+      charlist = generate!(source, {List.Chars.Calc, :to_charlist, 1})
+      assert summary(charlist) == [{:return_input, "to_charlist(c)"}]
+      assert within?(charlist, 19..19)
     end
 
     test "D5: positive control: a plain defmodule def is still found, beside a same-named impl def" do
@@ -172,8 +215,8 @@ defmodule Anchor.Domain.Sabotage.MutatorDefimplTest do
                {:error, :defimpl_target_not_literal}
 
       assert NoMutant.reason(Mutator.generate(@not_literal, @path, {nil, :to_string, 1})) ==
-               "defimpl target not a literal: its for: is not a module name the source spells, " <>
-                 "so the implementation module cannot be named"
+               "defimpl target not a literal: the source does not spell its module name " <>
+                 "(a for: that is not a module name, or an unnamed enclosing module)"
 
       # A function no module can be named for, outside any defimpl, is still
       # not in source.
@@ -248,14 +291,58 @@ defmodule Anchor.Domain.Sabotage.MutatorDefimplTest do
                {:error, :not_in_source}
     end
 
+    test "D11: a defprotocol's declarations are in source with nothing to mutate; modules nested in a defprotocol or a defimpl resolve" do
+      assert Mutator.generate(@protocol, @path, {Shape, :area, 1}) ==
+               {:ok, %{mutants: [], skipped: []}}
+
+      assert NoMutant.reason(Mutator.generate(@protocol, @path, {Shape, :area, 1})) ==
+               "no mutable site"
+
+      in_protocol = generate!(@protocol, {Shape.Helpers, :twice, 1})
+
+      assert summary(in_protocol) == [
+               {:drop_effect_call, "Logger.info(\"twice\")"},
+               {:return_input, "twice(x)"}
+             ]
+
+      assert within?(in_protocol, 5..8)
+
+      in_impl = generate!(@protocol, {Shape.Calc.Helpers, :half, 1})
+
+      assert summary(in_impl) == [
+               {:drop_effect_call, "Logger.info(\"half\")"},
+               {:return_input, "half(x)"}
+             ]
+
+      assert within?(in_impl, 16..19)
+    end
+
+    test "D12: for: nil and for: [] are the enclosing module, as FunctionSpans reads them" do
+      for target <- ["nil", "[]"] do
+        source = """
+        defmodule Calc do
+          defimpl String.Chars, for: #{target} do
+            def to_string(c) do
+              Logger.info("rendering")
+              c.name
+            end
+          end
+        end
+        """
+
+        assert {:ok, [%{module: String.Chars.Calc}]} = FunctionSpans.spans(source, @path)
+        assert summary(generate!(source, {String.Chars.Calc, :to_string, 1})) == @impl_mutants
+      end
+    end
+
     test "D10: every function FunctionSpans names in these sources the generator resolves" do
-      sources = [@top_level, @nested, @listed]
+      sources = [@top_level, @nested, @listed, @protocol]
 
       for source <- sources,
           {:ok, spans} = FunctionSpans.spans(source, @path),
           span <- spans,
           not span.excluded_macro do
-        assert {:ok, %{mutants: [_ | _]}} =
+        assert {:ok, %{mutants: _mutants}} =
                  Mutator.generate(source, @path, {span.module, span.name, span.arity}),
                "#{inspect(span.module)}.#{span.name}/#{span.arity} was not resolved"
       end

@@ -333,11 +333,14 @@ defmodule Anchor.Domain.Sabotage.SourceTree do
   # block form has them as two lists, the keyword form as one).
   defp options(lists), do: Enum.concat(lists)
 
-  # `for:` absent is the enclosing module (`:enclosing`); a list (Sourceror
-  # wraps it in a one-element block) is one target each.
+  # `for:` absent, `nil` or `[]` is the enclosing module (`:enclosing`), as
+  # `FunctionSpans`' `List.wrap/1` reads it; a list (Sourceror wraps it in a
+  # one-element block) is one target each.
   defp impl_targets(opts) do
     case keyword(opts, :for) do
       nil -> [:enclosing]
+      {:__block__, _meta, [nil]} -> [:enclosing]
+      {:__block__, _meta, [[]]} -> [:enclosing]
       {:__block__, _meta, [targets]} when is_list(targets) -> targets
       target -> [target]
     end
