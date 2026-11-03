@@ -102,3 +102,25 @@ longer than the load rule's 2000 ms.
 | O8 | a call counts as reaching an import when the module has none | 1 | "7: no import at all: a call to a name a `use` brought in ..." `code:  assert targets(result.mutants) == ["brought_in(x)"]` `left:  []` |
 
 O0 (the same text replaced by itself) was green, as the driver's check.
+
+## DND-5571 — no /proc: the run lock refuses
+
+- **Code under test:** `Anchor.Adapters.SourcePatcher.take_lock/2` (`own_owner/1`),
+  `Anchor.Managers.Sabotage.Runner` (`locked/4`, `no_proc/0`), through
+  `mix anchor.sabotage run` and `restore`
+- **Suite run:** `mix test test/anchor/adapters/source_patcher_test.exs
+  test/anchor/managers/sabotage_run_test.exs
+  test/mix/tasks/anchor_sabotage_run_test.exs --timeout 2000 --max-cases 2`
+  (55 tests, green after the fix and after every row)
+- **Seam:** `take_lock/2` takes the directory to read this process's identity
+  from (`/proc`), so the adapter test simulates a host without one with a
+  path that does not exist. No `Application.put_env`, no process spawned.
+
+| # | Mutation | Tests failed | First failure, verbatim |
+|---|---|---|---|
+| U4 | the unfixed code (the tests against the old adapter and Runner) | 3 | adapter `** (UndefinedFunctionError) function Anchor.Adapters.SourcePatcher.take_lock/2 is undefined or private`; manager `left:  "could not take the run lock _build/anchor-sabotage.lock (:no_proc); nothing was touched. Fix: make _build/ writable"`; task `code: assert output =~ "this host has no /proc"` |
+| P1 | no `/proc` yields a made-up owner instead of `{:error, :no_proc}` | 1 | adapter "with no /proc the lock is refused ..." `code:  assert SourcePatcher.take_lock(root, no_proc) == {:error, :no_proc}` |
+| P2 | the lock directory is made before the owner is read | 1 | adapter "with no /proc the lock is refused ..." `Expected false or nil, got true` `code: refute File.exists?(Path.join(root, "_build"))` |
+| P3 | the Runner refuses with exit 3 | 2 | manager "a host with no /proc refuses the run and the restore, exit 2 ..." `code:  assert %{refusal: {2, message}, notes: []} = run` |
+| P4 | the message loses its `Fix:` | 2 | manager "a host with no /proc ..." `code:  assert message ==` |
+| P5 | the real call reads a `/proc` that does not exist | 3 | adapter "a takeover goes through the takeover lock ..." `code:  assert SourcePatcher.take_lock(root) == :ok` (positive control: every real lock test breaks) |

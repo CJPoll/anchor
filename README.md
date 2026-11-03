@@ -674,8 +674,10 @@ How a run goes:
    two runs never share the journal, the results file or `_build`. A killed
    run's lock is taken over, one run at a time (under
    `_build/anchor-sabotage.lock.takeover`; a run killed in that step leaves it,
-   and the next run refuses, exit 2, naming it to delete). Linux only: with no `/proc` the lock and the
-   journal's owner name no process, and protect nothing.
+   and the next run refuses, exit 2, naming it to delete). Linux only: the lock and the journal's owner are
+   read from `/proc`, so on a host without one (macOS) `run` and `restore`
+   refuse, exit 2, with `Fix: run mix anchor.sabotage on Linux (a dev machine
+   or CI)`, and touch nothing (DND-5571).
 1. A journal left by a killed run (`.anchor/sabotage/in-flight.json`) is dealt
    with first: the file still holding the mutant is restored (and the run says
    so); a file already back loses only the journal; a file that matches
@@ -725,7 +727,7 @@ function with no literal clause is listed as an error, never as killed.
 | zero changed functions from a good diff read (an empty scope: `sabotage: 0 changed functions in <base>..HEAD`) | 0 |
 | a mutant survived, crashed or had no test, beside a measured one (a survivors list that gives one a reason will exempt it: DND-5483) | 1 |
 | mutants were run and none was measured (all `invalid`, `crashed` or without a test) | 3, `COULD NOT MEASURE` with `Fix:` |
-| a dirty target file; the journal not git-ignored; the run lock or a journal another live run holds; a leftover journal whose file changed; a restore that did not reproduce the original (the journal is kept); an unknown `--only` id; no `timeout` binary; bad flags | 2, with `Fix:` |
+| a dirty target file; the journal not git-ignored; the run lock or a journal another live run holds; a host with no `/proc`; a leftover journal whose file changed; a restore that did not reproduce the original (the journal is kept); an unknown `--only` id; no `timeout` binary; bad flags | 2, with `Fix:` |
 | no loadable config or no `sabotage:` section; the scope could not be measured; the baseline fails; changed functions whose files cannot be read | 3, `COULD NOT MEASURE` with `Fix:` |
 
 ## Check Types

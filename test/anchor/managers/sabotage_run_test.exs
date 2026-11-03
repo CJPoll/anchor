@@ -717,6 +717,22 @@ defmodule Anchor.Managers.SabotageRunTest do
                  "touched. Fix: make _build/ writable"
     end
 
+    test "a host with no /proc refuses the run and the restore, exit 2, with a Fix:: nothing touched" do
+      expect(SourceMutationMock, :take_lock, 2, fn @root -> {:error, :no_proc} end)
+      expect(SourceMutationMock, :release_lock, 0, fn @root -> :ok end)
+
+      for run <- [Sabotage.run(@facts, @opts), Sabotage.restore(%{root: @root}, @opts)] do
+        assert %{refusal: {2, message}, notes: []} = run
+
+        assert message ==
+                 "this host has no /proc, so the run lock cannot tell a live sabotage run from " <>
+                   "a dead one and would protect nothing; nothing was touched. " <>
+                   "Fix: run mix anchor.sabotage on Linux (a dev machine or CI)"
+
+        assert Report.exit_code(run) == 2
+      end
+    end
+
     test "a lock that cannot be released is said in the notes" do
       expect_journal(:none)
       expect(SourceMutationMock, :release_lock, fn @root -> {:error, :eacces} end)
