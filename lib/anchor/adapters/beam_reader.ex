@@ -16,6 +16,11 @@ defmodule Anchor.Adapters.BeamReader do
 
   plus `Code.Typespec.fetch_specs/1` and `fetch_types/1` on the binary.
 
+  A module compiled with a `parse_transform` or `core_transform` is refused
+  (`{:core_v1_refused, {:transform, ...}}`): lowering it would run the
+  transform. A module's `@behaviour`s are not loaded (pinned by a test with
+  the behaviour's beam on the code path).
+
   This sits in an adapter, not in Domain, because the backend runs the Erlang
   compiler, which can raise on malformed input. Every outcome is turned into
   plain data here: a `%Beam{}`, or a `t:Anchor.Domain.Graph.Beam.decode_error/0`
@@ -101,6 +106,7 @@ defmodule Anchor.Adapters.BeamReader do
 
   defp decode_debug_info(module, :elixir_erl, data, binary, app, path) do
     with {:ok, elixir} <- view(:elixir_v1, module, data, [], path),
+         :ok <- no_transform(elixir, module, path),
          {:ok, core} <- view(:core_v1, module, data, @core_options, path) do
       %Beam{
         module: module,
@@ -124,9 +130,28 @@ defmodule Anchor.Adapters.BeamReader do
     end
   end
 
+  # Lowering to Core runs the Erlang compiler with the module's own compile
+  # options, and a `parse_transform` or `core_transform` among them is code the
+  # compiler would load and run. Anchor runs no project code, so such a module
+  # is refused, naming the transform.
+  defp no_transform(elixir, module, path) do
+    elixir
+    |> Map.get(:compile_opts, [])
+    |> List.wrap()
+    |> Enum.find(&match?({kind, _module} when kind in [:parse_transform, :core_transform], &1))
+    |> case do
+      nil -> :ok
+      transform -> error(path, module, {:core_v1_refused, {:transform, transform}})
+    end
+  end
+
   defp refused(:elixir_v1), do: :elixir_v1_refused
   defp refused(:core_v1), do: :core_v1_refused
 
+  # `Code.Typespec` answers `{:ok, []}` for a module with no specs or types.
+  # `:error` means it could not read the chunk itself, which cannot happen once
+  # `elixir_v1` has decoded the same chunk; it is stored as `[]` (the design's
+  # rule, DND-5438) rather than failing a beam whose facts were all read.
   defp typespecs({:ok, specs}), do: specs
   defp typespecs(:error), do: []
 

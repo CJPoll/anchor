@@ -41,7 +41,9 @@ defmodule Anchor.Domain.Graph.Beam do
     * `{:not_elixir, backend}` — another language's backend wrote it (an Erlang
       module's is `:erl_abstract_code`).
     * `{:elixir_v1_refused, reason}` / `{:core_v1_refused, reason}` — the
-      backend returned an error for that format.
+      backend returned an error for that format; `{:core_v1_refused,
+      {:transform, {kind, module}}}` when the module was compiled with a
+      `parse_transform` or `core_transform`, which lowering would run.
     * `{:unreadable, reason}` — the file (or ebin directory) could not be read,
       or the bytes are not a beam.
     * `{:decode_crashed, message}` — decoding raised, threw or exited.

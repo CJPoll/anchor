@@ -4,17 +4,19 @@ defmodule Anchor.Domain.Graph.CoreWalker do
   pure (DND-5438). `:cerl` is a pure accessor library over Core tuples.
 
   Core is a small lambda calculus: every multi-clause head, `with`, `if`,
-  `cond`, `case`, `try`, `receive` and anonymous function is already a `case`,
-  `try`, `receive`, `fun` or `letrec` in it, so one walk over every node reaches
-  every call site. The shapes, as `Anchor.Adapters.BeamReader` produces them
+  `cond` and `case` is already a `case` in it, `try` a `try`, an anonymous
+  function a `fun`, and `receive` (in OTP 28's Core) a `letrec` loop over
+  `recv_peek_message` primops; a `for` over a variable is a call to
+  `Enum.reduce/3` with a `fun`. One walk over every node reaches every call
+  site. The shapes, as `Anchor.Adapters.BeamReader` produces them
   (`core_v1` with `:no_copt`, Elixir 1.19 / OTP 28):
 
     * `call 'M':'f'(...)` with literal module and name — `:remote` to
       `{M, f, arity}`. A call through `@mod` is one too: the attribute is a
       literal in Core.
     * `apply 'f'/a(...)` — `:local` to `{module, f, a}`. A `letrec`-bound name
-      (the loop Core makes of a comprehension or a `receive`) is part of this
-      function's body, not a call.
+      (the loop Core makes of a `receive`, or of a comprehension over a binary
+      or a literal) is part of this function's body, not a call.
     * `call 'erlang':'make_fun'(M, F, A)`, or a literal external fun — `:capture`
       to `{M, F, A}`; a module function name used as a value (`&f/a`) —
       `:capture` to `{module, f, a}`.
@@ -260,7 +262,8 @@ defmodule Anchor.Domain.Graph.CoreWalker do
          true <- :cerl.is_c_tuple(tuple),
          [tag, struct, _subject] <- :cerl.tuple_es(tuple),
          {:ok, :badstruct} <- literal(tag),
-         {:ok, module} when is_atom(module) <- literal(struct) do
+         {:ok, module} when is_atom(module) and module not in [nil, true, false] <-
+           literal(struct) do
       module
     else
       _not_a_badstruct_raise -> nil
@@ -285,7 +288,8 @@ defmodule Anchor.Domain.Graph.CoreWalker do
   defp map_struct(node) do
     Enum.find_value(:cerl.map_es(node), fn pair ->
       with {:ok, :__struct__} <- literal(:cerl.map_pair_key(pair)),
-           {:ok, module} when is_atom(module) <- literal(:cerl.map_pair_val(pair)) do
+           {:ok, module} when is_atom(module) and module not in [nil, true, false] <-
+             literal(:cerl.map_pair_val(pair)) do
         module
       else
         _other -> nil
@@ -308,6 +312,7 @@ defmodule Anchor.Domain.Graph.CoreWalker do
     acc =
       value
       |> literal_structs([])
+      |> Enum.reverse()
       |> Enum.reduce(acc, &add_struct_use(&2, node, &1, op, ctx))
 
     case external_fun(value) do
@@ -316,9 +321,11 @@ defmodule Anchor.Domain.Graph.CoreWalker do
     end
   end
 
-  # Struct modules of every struct map inside a literal term, in term order.
-  defp literal_structs(%{__struct__: module} = map, found) when is_atom(module),
-    do: map |> Map.delete(:__struct__) |> Map.values() |> literal_structs([module | found])
+  # Struct modules of every struct map inside a literal term, newest first
+  # (the caller reverses them into term order).
+  defp literal_structs(%{__struct__: module} = map, found)
+       when is_atom(module) and module not in [nil, true, false],
+       do: map |> Map.delete(:__struct__) |> Map.values() |> literal_structs([module | found])
 
   defp literal_structs(map, found) when is_map(map),
     do: map |> Map.to_list() |> literal_structs(found)

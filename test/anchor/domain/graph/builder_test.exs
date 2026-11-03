@@ -71,6 +71,7 @@ defmodule Anchor.Domain.Graph.BuilderTest do
 
   defmodule AnchorFixtures.BuilderTest.B do
     def g(x), do: AnchorFixtures.BuilderTest.A.f(x)
+    def h(mod), do: mod.g(1)
   end
   """
 
@@ -151,10 +152,10 @@ defmodule Anchor.Domain.Graph.BuilderTest do
           Map.merge(facts(@mac_file, @mac_source), facts(@user_file, @user_source))
         )
 
-      assert %ModuleNode{generated?: true, source_file: @user_file} =
-               Graph.module(graph, Generated)
+      assert Graph.module(graph, Generated).generated? == true
+      assert Graph.module(graph, Generated).source_file == @user_file
 
-      assert %ModuleNode{generated?: false} = Graph.module(graph, User)
+      assert Graph.module(graph, User).generated? == false
 
       # Macro output carries the macro call site's line: the `use` in the
       # user's file (shared contract section 12's assumption, seen here).
@@ -175,11 +176,24 @@ defmodule Anchor.Domain.Graph.BuilderTest do
       macro_and_user: beams
     } do
       graph = Builder.build(beams, %{})
-      assert %ModuleNode{generated?: :unknown} = Graph.module(graph, Generated)
-      assert %ModuleNode{generated?: :unknown} = Graph.module(graph, User)
+      assert Graph.module(graph, Generated).generated? == :unknown
+      assert Graph.module(graph, User).generated? == :unknown
 
       graph = Builder.build(beams, %{@user_file => {:error, :unparseable}})
-      assert %ModuleNode{generated?: :unknown} = Graph.module(graph, User)
+      assert Graph.module(graph, User).generated? == :unknown
+    end
+
+    test "a module missing from a file that has a non-literal defmodule is :unknown, not true", %{
+      macro_and_user: beams
+    } do
+      facts = %{
+        @user_file => %{defmodules: [inspect(User)], uses: %{}, nonliteral_defmodule?: true}
+      }
+
+      graph = Builder.build(beams, facts)
+
+      assert Graph.module(graph, Generated).generated? == :unknown
+      assert Graph.module(graph, User).generated? == false
     end
   end
 
@@ -208,10 +222,19 @@ defmodule Anchor.Domain.Graph.BuilderTest do
       a_to_b = %Call{from: {A, :f, 1}, to: {B, :g, 1}, kind: :remote, line: 2, line_source: :call}
       b_to_a = %Call{from: {B, :g, 1}, to: {A, :f, 1}, kind: :remote, line: 6, line_source: :call}
 
-      assert Enum.sort(graph.calls) == Enum.sort([a_to_b, b_to_a])
+      dynamic = %Call{
+        from: {B, :h, 1},
+        to: {:dynamic, :g, 1, :variable},
+        kind: :remote,
+        line: 7,
+        line_source: :call
+      }
+
+      assert Enum.sort(graph.calls) == Enum.sort([a_to_b, b_to_a, dynamic])
       assert Graph.calls_from(graph, {A, :f, 1}) == [a_to_b]
-      assert Graph.calls_from(graph, B) == [b_to_a]
+      assert Graph.calls_from(graph, B) == [b_to_a, dynamic]
       assert Graph.calls_to(graph, {A, :f, 1}) == [b_to_a]
+      # The dynamic call could reach B.g/1, but names no callee.
       assert Graph.calls_to(graph, B) == [a_to_b]
       assert Graph.calls_to(graph, {A, :nope, 0}) == []
     end

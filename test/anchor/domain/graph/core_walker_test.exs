@@ -37,6 +37,7 @@ defmodule Anchor.Domain.Graph.CoreWalkerTest do
     def app2(fun, x), do: apply(fun, [x]) # app2
     def varmod(mod, x), do: mod.f(x) # varmod
     def computed(x), do: Module.concat([A, B]).f(x) # computed
+    def dyncap(mod), do: &mod.f/1 # dyncap
 
     def lowered(x, y) when is_map(x) do # lowered head
       with {:ok, a} <- Other.c1(x),
@@ -87,7 +88,7 @@ defmodule Anchor.Domain.Graph.CoreWalkerTest do
 
     def match(%S{} = s), do: s # match
 
-    def plain(m), do: [%{a: 1}, %{m | a: 1}, Other.f(m)] # plain
+    def plain(m), do: [%{a: :x}, %{m | a: :y}, Other.f(m)] # plain
 
     defp helper(x), do: x
   end
@@ -171,6 +172,61 @@ defmodule Anchor.Domain.Graph.CoreWalkerTest do
                call({M, :computed, 1}, {Module, :concat, 1}, :remote, "# computed"),
                call({M, :computed, 1}, {:dynamic, :f, 1, :call}, :remote, "# computed")
              ]
+    end
+  end
+
+  describe "walk/3 dynamic captures and shapes Core builds by hand" do
+    test "a capture through a variable module is a dynamic :capture", %{binary: binary} do
+      assert calls(binary, {:dyncap, 1}) ==
+               [call({M, :dyncap, 1}, {:dynamic, :f, 1, :variable}, :capture, "# dyncap")]
+    end
+
+    # Hand-built Core, because Elixir 1.19 (with :no_copt) emits these shapes
+    # only after Core optimisation; the walker must read them all the same.
+    test "a variable let-bound to a literal module resolves to a :remote call" do
+      var = :cerl.c_var(:mod)
+      body = :cerl.c_let([var], :cerl.c_atom(Other), :cerl.c_call(var, :cerl.c_atom(:f), []))
+
+      assert {[%Call{to: {Other, :f, 0}, kind: :remote}], []} =
+               CoreWalker.walk(M, {:g, 0}, :cerl.c_fun([], body), 1)
+    end
+
+    test "a literal external fun is a :capture" do
+      body = :cerl.abstract(&Enum.count/1)
+
+      assert {[%Call{to: {Enum, :count, 1}, kind: :capture}], []} =
+               CoreWalker.walk(M, {:g, 0}, :cerl.c_fun([], body), 1)
+    end
+
+    test "a struct inside a literal term is a :build of that struct" do
+      body = :cerl.abstract([{:ok, %{__struct__: S, a: 1}}])
+
+      assert {[], [%StructUse{struct: S, op: :build, line: 1, line_source: :def}]} =
+               CoreWalker.walk(M, {:g, 0}, :cerl.c_fun([], body), 1)
+    end
+
+    test "a struct map built on a variable (not on %{}) is an :update" do
+      s = :cerl.c_var(:s)
+      pair = :cerl.c_map_pair(:cerl.c_atom(:__struct__), :cerl.c_atom(S))
+      body = :cerl.ann_c_map([{3, 1}], s, [pair])
+
+      assert {[], [%StructUse{struct: S, op: :update, line: 3, line_source: :call}]} =
+               CoreWalker.walk(M, {:g, 1}, :cerl.c_fun([s], body), 1)
+    end
+
+    test "structs inside one literal come out in term order" do
+      body = :cerl.abstract([%{__struct__: S}, %{__struct__: Other}])
+
+      assert {[], [%StructUse{struct: S}, %StructUse{struct: Other}]} =
+               CoreWalker.walk(M, {:g, 0}, :cerl.c_fun([], body), 1)
+    end
+
+    test "applying an expression that is not a variable is :apply through :call" do
+      x = :cerl.c_var(:x)
+      body = :cerl.c_apply(:cerl.c_fun([x], x), [:cerl.c_int(1)])
+
+      assert {[%Call{to: {:dynamic, nil, 1, :call}, kind: :apply}], []} =
+               CoreWalker.walk(M, {:g, 0}, :cerl.c_fun([], body), 1)
     end
   end
 

@@ -23,6 +23,8 @@ defmodule Anchor.Adapters.BeamReaderTest do
     def run(x), do: helper(x)
 
     defp helper(x), do: x + 1
+
+    def dyn(m, x), do: apply(m, :f, [x])
   end
   """
 
@@ -43,8 +45,31 @@ defmodule Anchor.Adapters.BeamReaderTest do
       assert [{{:run, 1}, [_spec]}] = beam.specs
     end
 
-    test "decodes Core with no Core optimisation, so source calls are not folded away" do
-      assert BeamReader.core_options() == [:no_copt]
+    # Core is read with :no_copt: the optimiser would turn apply(m, :f, [x])
+    # into a plain call m:f(x), and the :apply edge would be lost.
+    test "decodes Core unoptimised, so apply/3 is still a call to erlang:apply", %{binary: binary} do
+      assert %Beam{core: core} = BeamReader.decode(binary, app: :demo, path: "x.beam")
+
+      {_fname, dyn} =
+        Enum.find(:cerl.module_defs(core), fn {fname, _fun} ->
+          :cerl.var_name(fname) == {:dyn, 2}
+        end)
+
+      calls =
+        :cerl_trees.fold(
+          fn node, acc ->
+            if :cerl.is_c_call(node) and :cerl.is_literal(:cerl.call_module(node)),
+              do: [
+                {:cerl.concrete(:cerl.call_module(node)), :cerl.concrete(:cerl.call_name(node))}
+                | acc
+              ],
+              else: acc
+          end,
+          [],
+          dyn
+        )
+
+      assert {:erlang, :apply} in calls
     end
 
     # Row 7 (AC5)
@@ -52,6 +77,57 @@ defmodule Anchor.Adapters.BeamReaderTest do
       assert :code.is_loaded(Plain) == false
       assert %Beam{} = BeamReader.decode(binary, app: :demo, path: "x.beam")
       assert :code.is_loaded(Plain) == false
+    end
+
+    # Row 7b (AC5, integrity): lowering to Core must not load the modules a
+    # beam names either. The behaviour's beam is on the code path here, so a
+    # decoder that loaded it would succeed; the positive control at the end
+    # shows the probe sees a load.
+    @tag :tmp_dir
+    test "never loads a behaviour the decoded module names, even when it is on the code path", %{
+      tmp_dir: dir
+    } do
+      behaviour = AnchorFixtures.BeamReaderTest.Behaviour
+      user = AnchorFixtures.BeamReaderTest.BehaviourUser
+
+      modules =
+        compile_all_unloaded([
+          {"defmodule #{inspect(behaviour)} do\n  @callback x() :: :ok\nend\n",
+           "lib/behaviour.ex"},
+          {"defmodule #{inspect(user)} do\n  @behaviour #{inspect(behaviour)}\n  def x, do: :ok\nend\n",
+           "lib/user.ex"}
+        ])
+
+      File.write!(Path.join(dir, "#{behaviour}.beam"), binary!(modules, behaviour))
+      true = Code.append_path(dir)
+
+      on_exit(fn ->
+        Code.delete_path(dir)
+        :code.purge(behaviour)
+        :code.delete(behaviour)
+      end)
+
+      assert %Beam{module: ^user} =
+               BeamReader.decode(binary!(modules, user), app: :demo, path: "x.beam")
+
+      assert :code.is_loaded(behaviour) == false
+
+      assert {:module, ^behaviour} = :code.ensure_loaded(behaviour)
+      assert {:file, _path} = :code.is_loaded(behaviour)
+    end
+
+    # A parse_transform or core_transform in the module's compile options is
+    # code lowering would run: refused, naming it, and never called.
+    test "a module compiled with a transform is refused, naming it", %{binary: binary} do
+      {:ok, {Plain, [debug_info: {:debug_info_v1, :elixir_erl, {:elixir_v1, map, specs}}]}} =
+        :beam_lib.chunks(binary, [:debug_info])
+
+      transform = {:parse_transform, :anchor_fixtures_no_such_transform}
+      map = Map.put(map, :compile_opts, [transform])
+      rebuilt = with_debug_info(binary, {:debug_info_v1, :elixir_erl, {:elixir_v1, map, specs}})
+
+      assert {:error, %{reason: {:core_v1_refused, {:transform, ^transform}}, module: Plain}} =
+               BeamReader.decode(rebuilt, app: :demo, path: "x.beam")
     end
 
     # Row 8

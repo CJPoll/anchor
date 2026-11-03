@@ -13,8 +13,10 @@ defmodule Anchor.Domain.Graph.Builder do
 
   `generated?` compares the module's name with the literal `defmodule`s of its
   source file (`Anchor.Domain.Graph.SourceFacts`): absent there, the module is
-  macro output. With no facts for the file, or facts that are
-  `{:error, :unparseable}`, it is `:unknown`, never `false`.
+  macro output. With no facts for the file, facts that are
+  `{:error, :unparseable}`, or a file that also has a `defmodule` with a
+  non-literal name (which may be this module), it is `:unknown`, never `false`
+  and never a guessed `true`.
 
   A decode error is carried into `graph.unreadable` (in path order), never
   dropped; the good beams beside it are all built.
@@ -73,9 +75,8 @@ defmodule Anchor.Domain.Graph.Builder do
     functions
     |> Enum.sort_by(fn {name_arity, _node} -> name_arity end)
     |> Enum.map(fn {name_arity, node} -> function_edges(module, name_arity, node) end)
-    |> Enum.reduce({[], []}, fn {calls, uses}, {all_calls, all_uses} ->
-      {all_calls ++ calls, all_uses ++ uses}
-    end)
+    |> Enum.unzip()
+    |> then(fn {calls, uses} -> {List.flatten(calls), List.flatten(uses)} end)
   end
 
   defp function_edges(_module, _name_arity, %FunctionNode{core: nil}), do: {[], []}
@@ -98,7 +99,7 @@ defmodule Anchor.Domain.Graph.Builder do
   end
 
   defp core_name(kind, name, arity) when kind in [:defmacro, :defmacrop],
-    do: {String.to_atom("MACRO-" <> Atom.to_string(name)), arity + 1}
+    do: {:"MACRO-#{name}", arity + 1}
 
   defp core_name(_kind, name, arity), do: {name, arity}
 
@@ -111,8 +112,13 @@ defmodule Anchor.Domain.Graph.Builder do
   defp generated(_module, nil), do: :unknown
   defp generated(_module, {:error, :unparseable}), do: :unknown
 
-  defp generated(module, %{defmodules: names}),
-    do: module_name(module) not in names
+  defp generated(module, %{defmodules: names, nonliteral_defmodule?: nonliteral?}) do
+    cond do
+      module_name(module) in names -> false
+      nonliteral? -> :unknown
+      true -> true
+    end
+  end
 
   defp module_name(module), do: module |> Atom.to_string() |> String.replace_prefix("Elixir.", "")
 

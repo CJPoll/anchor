@@ -6,6 +6,11 @@ defmodule Anchor.Domain.Graph.SourceFactsTest do
 
   alias Anchor.Domain.Graph.SourceFacts
 
+  # The DND-1310 table every AST walker runs over (CLAUDE.md).
+  @variable_names "test/fixtures/special_variable_names.txt"
+                  |> File.read!()
+                  |> String.split()
+
   describe "from_source/2" do
     # Row 1
     test "a top-level module is a literal defmodule" do
@@ -73,18 +78,67 @@ defmodule Anchor.Domain.Graph.SourceFactsTest do
       assert %{defmodules: ["Mac"], uses: %{"Mac" => []}} = SourceFacts.from_source("a.ex", text)
     end
 
-    test "a module named by an atom keeps its name; a computed name is skipped" do
-      text = """
-      defmodule :erl_style do
-      end
+    test "a module named by an atom keeps its name" do
+      assert %{defmodules: ["erl_style"], nonliteral_defmodule?: false} =
+               SourceFacts.from_source("a.ex", "defmodule :erl_style do\nend\n")
+    end
 
-      defmodule unquote(name) do
-        defmodule Inner do
+    test "__MODULE__ at the head of a nested name resolves to the enclosing module" do
+      text = """
+      defmodule A do
+        defmodule __MODULE__.Child do
+          use Agent
         end
       end
       """
 
-      assert %{defmodules: ["erl_style", "Inner"]} = SourceFacts.from_source("a.ex", text)
+      assert SourceFacts.from_source("a.ex", text) ==
+               %{
+                 defmodules: ["A", "A.Child"],
+                 uses: %{"A" => [], "A.Child" => ["Agent"]},
+                 nonliteral_defmodule?: false
+               }
+    end
+
+    test "a computed name, and every module inside it, is not collected; the file says so" do
+      text = """
+      defmodule A do
+        defmodule unquote(name) do
+          use Agent
+
+          defmodule Inner do
+          end
+        end
+      end
+      """
+
+      assert SourceFacts.from_source("a.ex", text) ==
+               %{defmodules: ["A"], uses: %{"A" => []}, nonliteral_defmodule?: true}
+    end
+
+    # DND-1310's table: a variable named like a special form (`quote`,
+    # `defmodule`, `use`, ...) is a variable, never the form.
+    test "a variable named like a special form is read as a variable" do
+      for name <- @variable_names do
+        text = """
+        defmodule Sample.VarUser do
+          use Plain.Base
+
+          def run(#{name}) do
+            #{name} = Bar.call(#{name})
+            #{name}
+          end
+        end
+        """
+
+        assert SourceFacts.from_source("a.ex", text) ==
+                 %{
+                   defmodules: ["Sample.VarUser"],
+                   uses: %{"Sample.VarUser" => ["Plain.Base"]},
+                   nonliteral_defmodule?: false
+                 },
+               "variable #{name}"
+      end
     end
 
     # Row 5

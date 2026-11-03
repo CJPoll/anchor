@@ -15,13 +15,24 @@ defmodule Anchor.Domain.Graph.SourceFacts do
     * `uses` — for each of those modules, the literal `use` targets in its own
       body (not in a nested module's, and not inside a `quote`).
 
-  Names are strings as written, without the `Elixir.` prefix. A `defmodule`
-  whose name is not a literal alias or atom (`defmodule unquote(name)`) names
-  nothing literally and is skipped. Reading the file is the caller's job (the
-  runner, DND-5440): this function takes the text.
+    * `nonliteral_defmodule?` — whether the file has a `defmodule` whose name
+      is not literal (`defmodule unquote(name)`, `defmodule Module.concat(...)`).
+      Such a module, and every module nested in it, has a name the text does
+      not show, so it is not collected and its `use`s are filed nowhere. A
+      module of this file missing from `defmodules` may then be hand-written,
+      and the builder answers `:unknown` for it, never `true`.
+
+  Names are strings as written, without the `Elixir.` prefix; `__MODULE__` at
+  the head of a nested module's name resolves to the enclosing module.
+  Reading the file is the caller's job (the runner, DND-5440): this function
+  takes the text.
   """
 
-  @type t :: %{defmodules: [String.t()], uses: %{String.t() => [String.t()]}}
+  @type t :: %{
+          defmodules: [String.t()],
+          uses: %{String.t() => [String.t()]},
+          nonliteral_defmodule?: boolean()
+        }
 
   @doc """
   Parses `text` (the contents of `path`) and returns its facts, or
@@ -37,24 +48,26 @@ defmodule Anchor.Domain.Graph.SourceFacts do
   end
 
   defp collect(ast) do
-    modules = walk(ast, nil, [])
-    names = modules |> Enum.reverse() |> Enum.map(&elem(&1, 0))
+    entries = ast |> walk(nil, []) |> Enum.reverse()
+    modules = Enum.reject(entries, &(&1 == :nonliteral))
     uses = Map.new(modules, fn {name, uses} -> {name, Enum.reverse(uses)} end)
-    %{defmodules: names, uses: uses}
+
+    %{
+      defmodules: Enum.map(modules, &elem(&1, 0)),
+      uses: uses,
+      nonliteral_defmodule?: :nonliteral in entries
+    }
   end
 
-  # `acc` is a list of `{module_name, uses}` (newest first). `current` is the
-  # name of the module whose body is being walked, or nil at the top level.
+  # `acc` is a list of `{module_name, uses}` and `:nonliteral` entries, newest
+  # first. `current` is the name of the module whose body is being walked, nil
+  # at the top level, or `:nonliteral` inside a module whose name is not literal.
   defp walk({:quote, _meta, args}, _current, acc) when is_list(args), do: acc
 
   defp walk({:defmodule, _meta, [name_ast, body]}, current, acc) do
-    case literal_name(name_ast) do
-      {:ok, name} ->
-        full = qualify(current, name)
-        walk(body, full, [{full, []} | acc])
-
-      :error ->
-        walk(body, current, acc)
+    case module_name(name_ast, current) do
+      {:ok, full} -> walk(body, full, [{full, []} | acc])
+      :error -> walk(body, :nonliteral, [:nonliteral | acc])
     end
   end
 
@@ -79,6 +92,7 @@ defmodule Anchor.Domain.Graph.SourceFacts do
 
   defp add_use(acc, current, name) do
     Enum.map(acc, fn
+      :nonliteral -> :nonliteral
       {^current, uses} -> {current, [name | uses]}
       other -> other
     end)
@@ -94,6 +108,26 @@ defmodule Anchor.Domain.Graph.SourceFacts do
     do: {:ok, atom |> Atom.to_string() |> String.replace_prefix("Elixir.", "")}
 
   defp literal_name(_other), do: :error
+
+  # The full name of a `defmodule`: its literal name qualified by the enclosing
+  # module, `__MODULE__.Child` resolved against it. Inside a module whose name is
+  # not literal, no name is.
+  defp module_name(_name_ast, :nonliteral), do: :error
+
+  defp module_name({:__aliases__, meta, [{:__MODULE__, _, context} | rest]}, current)
+       when is_binary(current) and is_atom(context) and rest != [] do
+    case literal_name({:__aliases__, meta, rest}) do
+      {:ok, name} -> {:ok, current <> "." <> name}
+      :error -> :error
+    end
+  end
+
+  defp module_name(name_ast, current) do
+    case literal_name(name_ast) do
+      {:ok, name} -> {:ok, qualify(current, name)}
+      :error -> :error
+    end
+  end
 
   defp qualify(nil, name), do: name
   defp qualify(parent, name), do: parent <> "." <> name
