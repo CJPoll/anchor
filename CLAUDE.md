@@ -32,6 +32,20 @@ All checks inherit from `Anchor.Check.Base` and are located in `lib/anchor/check
 - `SingleControlFlow` - Ensures function clauses contain at most one control-flow structure
 - `NoTupleMatchInHead` - Prevents pattern matching on :ok/:error tuples in function heads
 
+### Buckets (ADR 001)
+
+Every module is in one bucket; the full table, with why, is in
+`adrs/001-five-bucket-architecture.md` ("How this maps to Anchor"). Framework
+is the Credo checks **and the Mix tasks**: Framework calls Managers and Domain,
+never an adapter.
+
+| Bucket | Modules |
+|---|---|
+| Framework | `Anchor.Check.*` (Credo checks, `Anchor.Check.Base`, `Anchor.Check.Source`), `Mix.Tasks.Anchor.*` (`lib/mix/tasks/`; `Mix.Tasks.Anchor.Sabotage`) |
+| Managers | `Anchor.Managers.Lint`, `Anchor.Managers.Sabotage` |
+| Side Effects | ports: `Anchor.Adapters.ConfigLoader`, `ChangeSource`, `BeamSource`; adapters: `ConfigFile`, `GitChangeSource`, `BeamReader` (`lib/anchor/adapters/`) |
+| Domain | everything under `lib/anchor/domain/`, including `Anchor.Domain.Sabotage.*` (`Mutator`, `Operators`, `DiffHunks`, `FunctionSpans`, `Scope`) and `Anchor.Domain.Graph.*` |
+
 ### Key Architectural Decisions
 
 1. **Configuration via YAML**: All rules are defined in `.anchor.yml` files, making them easily maintainable and version-controlled
