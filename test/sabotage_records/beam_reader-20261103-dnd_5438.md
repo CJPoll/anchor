@@ -854,3 +854,51 @@ Run summary: `16 tests, 1 failure`
 ## Traps
 
 - A first run of BR-B, BR-C, CW-H and SF-B failed to compile under `warnings_as_errors` (an unreachable clause, an unused alias, unused variables) and printed no ExUnit summary; the driver records `NO SUMMARY` for such a run, and each mutation was rewritten to compile and re-run. Read a sabotage run's test count, never its exit code alone.
+
+## Added after critic round 4 (merged head 6c9e06c): two error branches with no red
+
+### BR-Q — a core_v1 refusal is reported as an elixir_v1 refusal
+
+Run summary: `18 tests, 1 failure`
+
+```
+  1) test decode/2 a backend that refuses core_v1 is {:core_v1_refused, reason} (Anchor.Adapters.BeamReaderTest)
+     test/anchor/adapters/beam_reader_test.exs:123
+     match (=) failed
+     code:  assert {:error, %{reason: {:core_v1_refused, :failed_conversion}, module: Plain}} =
+              BeamReader.decode(rebuilt, app: :demo, path: "x.beam")
+     left:  {:error,
+             %{reason: {:core_v1_refused, :failed_conversion}, module: AnchorFixtures.BeamReaderTest.Plain}}
+     right: {:error,
+             %{
+               module: AnchorFixtures.BeamReaderTest.Plain,
+               reason: {:elixir_v1_refused, :failed_conversion},
+               path: "x.beam"
+             }}
+     stacktrace:
+       test/anchor/adapters/beam_reader_test.exs:133: (test)
+```
+
+### BR-R — an unreadable beam file gets another reason
+
+Run summary: `18 tests, 1 failure`
+
+```
+  1) test read_ebins/1 an unreadable beam file is {:unreadable, posix} naming it (Anchor.Adapters.BeamReaderTest)
+     test/anchor/adapters/beam_reader_test.exs:288
+     match (=) failed
+     The following variables were pinned:
+       path = "/home/cjpoll/.local/worktrees/anchor/dnd-5438/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-an-unreadable-beam-file-is---unreadable,-posix--naming-it-1b1cdd76/Elixir.Plain.beam"
+     code:  assert [error: %{path: ^path, module: nil, reason: {:unreadable, :eacces}}] =
+              BeamReader.read_ebins(demo: dir)
+     left:  [error: %{path: ^path, module: nil, reason: {:unreadable, :eacces}}]
+     right: [
+              error: %{
+                module: nil,
+                reason: :no_debug_info,
+                path: "/home/cjpoll/.local/worktrees/anchor/dnd-5438/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-an-unreadable-beam-file-is---unreadable,-posix--naming-it-1b1cdd76/Elixir.Plain.beam"
+              }
+            ]
+     stacktrace:
+       test/anchor/adapters/beam_reader_test.exs:301: (test)
+```

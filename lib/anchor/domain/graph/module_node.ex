@@ -12,8 +12,11 @@ defmodule Anchor.Domain.Graph.ModuleNode do
     * `:functions` — `%{{name, arity} => %FunctionNode{}}`.
     * `:generated?` — `true` when the module's source file has no literal
       `defmodule` naming it (macro or DSL output), `false` when it has, and
-      `:unknown` when the source facts for the file are missing or the file
-      did not parse. `:unknown` is never read as hand-written.
+      `:unknown` when the source facts for the file are missing, the file
+      did not parse, or the file has a `defmodule` whose name is not literal
+      (which may be this module). `:unknown` is never read as hand-written.
+      A module a DSL makes (a hand-written `defprotocol`, say) has no literal
+      `defmodule`, so it is `true` by this definition.
   """
 
   @enforce_keys [:module, :app]

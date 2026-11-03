@@ -117,6 +117,23 @@ defmodule Anchor.Adapters.BeamReaderTest do
       assert {:file, _path} = :code.is_loaded(behaviour)
     end
 
+    # The backend lowers elixir_v1 metadata to Core with the Erlang compiler; a
+    # definition calling a local function that does not exist fails that
+    # compile, and the backend answers {:error, :failed_conversion}.
+    test "a backend that refuses core_v1 is {:core_v1_refused, reason}", %{binary: binary} do
+      {:ok, {Plain, [debug_info: {:debug_info_v1, :elixir_erl, {:elixir_v1, map, specs}}]}} =
+        :beam_lib.chunks(binary, [:debug_info])
+
+      broken =
+        {{:broken, 0}, :def, [line: 1], [{[line: 1], [], [], {:no_such_local, [line: 1], []}}]}
+
+      map = Map.update!(map, :definitions, &[broken | &1])
+      rebuilt = with_debug_info(binary, {:debug_info_v1, :elixir_erl, {:elixir_v1, map, specs}})
+
+      assert {:error, %{reason: {:core_v1_refused, :failed_conversion}, module: Plain}} =
+               BeamReader.decode(rebuilt, app: :demo, path: "x.beam")
+    end
+
     # A parse_transform or core_transform in the module's compile options is
     # code lowering would run: refused, naming it, and never called.
     test "a module compiled with a transform is refused, naming it", %{binary: binary} do
@@ -264,6 +281,25 @@ defmodule Anchor.Adapters.BeamReaderTest do
 
       assert [{:error, %{path: ^missing, module: nil, reason: {:unreadable, :enoent}}}] =
                BeamReader.read_ebins([{:demo, missing}])
+    end
+
+    # A beam file that exists but cannot be read is an error naming it.
+    @tag :tmp_dir
+    test "an unreadable beam file is {:unreadable, posix} naming it", %{
+      tmp_dir: dir,
+      binary: binary
+    } do
+      path = Path.join(dir, "Elixir.Plain.beam")
+      File.write!(path, binary)
+      File.chmod!(path, 0o000)
+      on_exit(fn -> File.chmod(path, 0o644) end)
+
+      # Positive control for the environment: a process that can read any file
+      # (root) would make this row meaningless.
+      assert {:error, :eacces} = File.read(path)
+
+      assert [{:error, %{path: ^path, module: nil, reason: {:unreadable, :eacces}}}] =
+               BeamReader.read_ebins([{:demo, dir}])
     end
 
     # Row 16
