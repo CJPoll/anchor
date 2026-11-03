@@ -59,4 +59,17 @@ defmodule Anchor.Domain.Graph.Beam do
 
   @type decode_error ::
           {:error, %{path: String.t(), module: module() | nil, reason: reason()}}
+
+  @doc """
+  Each `{app, ebin}` of `apps` that no `%Beam{}` of `beams` belongs to, in
+  `apps` order (DND-5584): an app whose ebin gave no module. A decode error
+  belongs to no app, so an app whose every beam failed to decode is listed
+  too (beside its per-beam issues).
+  """
+  @spec apps_without_modules([{atom(), String.t()}], [t() | decode_error()]) ::
+          [{atom(), String.t()}]
+  def apps_without_modules(apps, beams) do
+    read = for %__MODULE__{app: app} <- beams, into: MapSet.new(), do: app
+    Enum.reject(apps, fn {app, _ebin} -> MapSet.member?(read, app) end)
+  end
 end

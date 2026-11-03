@@ -10,7 +10,9 @@ defmodule Anchor.Managers.Graph do
        invalid config is COULD NOT MEASURE (exit 3), and so is a config with no
        `architecture:` section: nothing could be classified;
     2. read every beam of the project's ebins (`Anchor.Adapters.BeamSource`);
-       zero modules read is COULD NOT MEASURE (exit 3);
+       zero modules read is COULD NOT MEASURE (exit 3), and an app whose
+       ebin gave no module while another's did is an issue on that ebin
+       (exit 1, DND-5584);
     3. read each module's source file's facts (`Anchor.Adapters.SourceSource`):
        its literal `defmodule`s and `use`s (`Anchor.Domain.Graph.SourceFacts`);
     4. build the graph fresh (`Anchor.Domain.Graph.Builder`): never a cached
@@ -137,7 +139,7 @@ defmodule Anchor.Managers.Graph do
     {source_facts, source_issues} = source_facts(deps.source_source, request.root, beams)
     graph = Builder.build(beams, source_facts)
     {model, class_issues} = Model.build(graph, config, source_facts)
-    unreadable_issues = unreadable_issues(graph)
+    unreadable_issues = empty_app_issues(request.apps, beams) ++ unreadable_issues(graph)
     rule_findings = Enum.flat_map(rules, &run_rule(&1, model, config.path))
     artifact_notes = write_artifact(deps.graph_store, request, beams, config, graph)
 
@@ -181,6 +183,13 @@ defmodule Anchor.Managers.Graph do
 
   defp source_fact({file, %{defmodules: _} = parsed}, {facts, issues}),
     do: {Map.put(facts, file, parsed), issues}
+
+  # DND-5584: the run fails closed per app, not only over the total: an app
+  # whose ebin gave no module (while another's did) is an issue on its ebin.
+  defp empty_app_issues(apps, beams) do
+    for {app, ebin} <- Beam.apps_without_modules(apps, beams),
+        do: Failures.graph_app_no_modules(app, ebin)
+  end
 
   # Every `unreadable` entry is an issue, except an Erlang module with a
   # known name: the model classifies those (an unclassified one is its issue).

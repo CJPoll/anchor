@@ -246,6 +246,24 @@ defmodule Anchor.Domain.Failures do
   end
 
   @doc """
+  The issue for one app of the project whose ebin gave no module while
+  another app's did (DND-5584): in an umbrella an app that is not compiled,
+  sits under another build path or was renamed must not read clean on the
+  other apps' modules. It sits on that app's ebin (exit 1). Zero modules over
+  every app is `graph_no_modules/1` (exit 3).
+  """
+  @spec graph_app_no_modules(atom(), String.t()) :: Violation.t()
+  def graph_app_no_modules(app, ebin) do
+    graph_issue(
+      ebin,
+      nil,
+      "read 0 modules for app #{inspect(app)} from #{ebin}, so none of its code was checked. " <>
+        "Fix: run mix compile for #{inspect(app)}; check that #{ebin} is the app's ebin " <>
+        "(its build path and app name)."
+    )
+  end
+
+  @doc """
   The per-module issue for an entry of `graph.unreadable`
   (`Anchor.Domain.Graph`): a beam Anchor could not decode, a second beam of
   one module, or a module whose graph walk crashed. It sits on the beam's

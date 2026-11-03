@@ -4,6 +4,7 @@ defmodule Anchor.Domain.FailuresGraphTest do
   # names its subject and ends with a Fix: line. Table-driven.
   #
   # Sabotage record: ../../sabotage_records/failures-20261103-dnd_5440_graph_runner.md
+  # DND-5584 (graph_app_no_modules): ../../sabotage_records/graph_runner-20261103-dnd_5441_graph_rules_a.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Failures
@@ -86,6 +87,12 @@ defmodule Anchor.Domain.FailuresGraphTest do
        [
          "COULD NOT MEASURE: read 0 modules from _build/dev/lib/a/ebin, _build/dev/lib/b/ebin.",
          "Fix: run mix compile in this project"
+       ]},
+      {"graph_app_no_modules", Failures.graph_app_no_modules(:other, "_build/dev/lib/other/ebin"),
+       "_build/dev/lib/other/ebin",
+       [
+         "read 0 modules for app :other from _build/dev/lib/other/ebin",
+         "Fix: run mix compile for :other"
        ]},
       {"graph_unknown_only", Failures.graph_unknown_only(["nope"], "proj/.anchor.yml"),
        "proj/.anchor.yml",

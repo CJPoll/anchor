@@ -5,6 +5,7 @@ defmodule Anchor.Managers.GraphTest do
   # BeamSource double. QA plan: test/anchor/managers/graph_test.exs.
   #
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5440_graph_runner.md
+  # DND-5584 (per-app): ../../sabotage_records/graph_runner-20261103-dnd_5441_graph_rules_a.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -216,6 +217,47 @@ defmodule Anchor.Managers.GraphTest do
       expect(GraphStoreMock, :write, 0, fn _dir, _key, _term -> :ok end)
 
       assert Graph.run(request(), deps()).exit_code == 3
+    end
+  end
+
+  # DND-5584: an umbrella app whose ebin holds no beam (not compiled, a wrong
+  # build path, a renamed app) must not read clean on the other apps' modules.
+  describe "run/2 an app that read no module (exit 1)" do
+    @other_ebin "/proj/_build/test/lib/other/ebin"
+    @two_apps [{:my_app, @ebin}, {:other, @other_ebin}]
+
+    defp expect_two_apps(beams) do
+      expect(ConfigLoaderMock, :load, fn -> {:ok, config([rule(:stub_ok, "ok")])} end)
+      Mox.expect(BeamSourceMock, :read_ebins, fn @two_apps -> beams end)
+
+      expect(SourceSourceMock, :read, fn @root, files ->
+        Map.new(files, &{&1, source_facts(&1, Map.get(@sources, &1, {:error, :enoent}))})
+      end)
+
+      expect(GraphStoreMock, :write, fn _dir, _key, _graph -> :ok end)
+    end
+
+    test "one app of two with an empty ebin is one issue on that ebin, naming the app", %{
+      beams: beams
+    } do
+      expect_two_apps(classified(beams))
+
+      report = Graph.run(%{request() | apps: @two_apps}, deps())
+
+      assert report.exit_code == 1
+      assert [%{file: @other_ebin, label: "anchor.graph", message: message}] = report.findings
+      assert message =~ "read 0 modules for app :other from #{@other_ebin}"
+      assert message =~ "Fix: "
+      assert report.counts == %{modules: 2, apps: 2, rules: 1, opaque: 0}
+    end
+
+    test "positive control: both apps read a module, the run is clean", %{beams: beams} do
+      other_user = %{beams[@user] | app: :other}
+      expect_two_apps([beams[@accounts], other_user])
+
+      report = Graph.run(%{request() | apps: @two_apps}, deps())
+
+      assert %GraphReport{exit_code: 0, findings: []} = report
     end
   end
 
