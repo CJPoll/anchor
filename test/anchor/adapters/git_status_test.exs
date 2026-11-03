@@ -69,4 +69,23 @@ defmodule Anchor.Adapters.GitStatusTest do
       assert GitStatus.ancestor?(root, String.duplicate("0", 40)) == {:ok, false}
     end
   end
+
+  describe "changed_since/2 (DND-5474)" do
+    # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5474_coverage_map.md
+    test "files changed since a commit, committed or not, and untracked ones", %{tmp_dir: root} do
+      {:ok, first} = GitStatus.head_sha(root)
+      assert GitStatus.changed_since(root, first) == {:ok, []}
+
+      File.write!(Path.join(root, "lib/clean.ex"), "committed change")
+      git!(root, ["commit", "-q", "-am", "second"])
+      File.write!(Path.join(root, "lib/dirty.ex"), "unstaged")
+      File.write!(Path.join(root, "lib/new.ex"), "untracked")
+
+      assert {:ok, paths} = GitStatus.changed_since(root, first)
+      assert Enum.sort(paths) == ["lib/clean.ex", "lib/dirty.ex", "lib/new.ex"]
+
+      assert {:error, {:git_failed, _args, 128, _out}} =
+               GitStatus.changed_since(root, String.duplicate("0", 40))
+    end
+  end
 end

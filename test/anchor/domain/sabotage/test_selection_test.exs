@@ -60,6 +60,36 @@ defmodule Anchor.Domain.Sabotage.TestSelectionTest do
                {:mirror, ["test/x_test.exs"]}
     end
 
+    test "a selected test file changed since the map was built runs whole, never by a stale line" do
+      inputs =
+        inputs(["test/x_test.exs"])
+        |> Map.put(:coverage, @index)
+        |> Map.put(:stale_tests, MapSet.new(["test/b_test.exs"]))
+
+      assert TestSelection.select(mutant("lib/x.ex", M, {:f, 1}), inputs) ==
+               {:coverage, ["test/a_test.exs:10", "test/b_test.exs"]}
+    end
+
+    test "a mirror file changed since the map was built is added whole: its new tests run" do
+      inputs =
+        inputs(["test/x_test.exs"])
+        |> Map.put(:coverage, @index)
+        |> Map.put(:stale_tests, MapSet.new(["test/x_test.exs"]))
+
+      assert TestSelection.select(mutant("lib/x.ex", M, {:f, 1}), inputs) ==
+               {:coverage, ["test/a_test.exs:10", "test/b_test.exs:4", "test/x_test.exs"]}
+    end
+
+    test "when what changed is unknown (:all), every selected file runs whole, the mirror too" do
+      inputs =
+        inputs(["test/x_test.exs"])
+        |> Map.put(:coverage, @index)
+        |> Map.put(:stale_tests, :all)
+
+      assert TestSelection.select(mutant("lib/x.ex", M, {:f, 1}), inputs) ==
+               {:coverage, ["test/a_test.exs", "test/b_test.exs", "test/x_test.exs"]}
+    end
+
     test "no map at all is the mirror, as before" do
       inputs = Map.put(inputs(["test/x_test.exs"]), :coverage, nil)
 

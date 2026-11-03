@@ -13,6 +13,13 @@ defmodule Anchor.Domain.Sabotage.TestSelection do
 
   A function absent from the coverage index (or a run with no map) falls to
   the next source. The source is always stated in the report.
+
+  A map's `file:line` refs are as of the commit it was built at. Input
+  `stale_tests` names the test files that changed since then (`:all` when
+  that is unknown): a ref into one of them runs its whole file, never a line
+  that may now hold another test, and the mutant's mirror file, when it is
+  stale and exists, is added whole, so a test the branch added for the
+  function runs too.
   """
 
   alias Anchor.Domain.Sabotage.TestMirror
@@ -20,14 +27,15 @@ defmodule Anchor.Domain.Sabotage.TestSelection do
   @type inputs :: %{
           required(:mirror) => [TestMirror.rule()],
           required(:existing_tests) => MapSet.t(String.t()),
-          optional(:coverage) => %{String.t() => [String.t()]} | nil
+          optional(:coverage) => %{String.t() => [String.t()]} | nil,
+          optional(:stale_tests) => MapSet.t(String.t()) | :all
         }
   @type source :: :coverage | :mirror | :none
 
   @spec select(%{file: String.t()}, inputs()) :: {source(), [String.t()]}
   def select(%{file: file} = mutant, %{mirror: rules, existing_tests: existing} = inputs) do
     case indexed(Map.get(inputs, :coverage), mfa(mutant)) do
-      [_ | _] = tests -> {:coverage, tests}
+      [_ | _] = refs -> {:coverage, fresh(refs, rules, file, existing, stale(inputs))}
       [] -> mirror(rules, file, existing)
     end
   end
@@ -40,6 +48,25 @@ defmodule Anchor.Domain.Sabotage.TestSelection do
   @spec mfa(map()) :: String.t() | nil
   def mfa(%{module: module, function: {name, arity}}), do: "#{inspect(module)}.#{name}/#{arity}"
   def mfa(_mutant), do: nil
+
+  defp stale(inputs), do: Map.get(inputs, :stale_tests, MapSet.new())
+
+  defp fresh(refs, rules, file, existing, stale) do
+    refs = Enum.map(refs, &if(stale?(stale, ref_file(&1)), do: ref_file(&1), else: &1))
+
+    mirror =
+      case mirror(rules, file, existing) do
+        {:mirror, [path]} -> if stale?(stale, path), do: [path], else: []
+        {:none, []} -> []
+      end
+
+    (refs ++ mirror) |> Enum.uniq() |> Enum.sort()
+  end
+
+  defp stale?(:all, _file), do: true
+  defp stale?(stale, file), do: MapSet.member?(stale, file)
+
+  defp ref_file(ref), do: ref |> String.split(":", parts: 2) |> hd()
 
   defp indexed(nil, _mfa), do: []
   defp indexed(_index, nil), do: []

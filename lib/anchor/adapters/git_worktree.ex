@@ -9,7 +9,9 @@ defmodule Anchor.Adapters.GitWorktree do
     * `ignored?/2` — whether git ignores the path;
     * `head_sha/1` — the full sha of `HEAD` (DND-5474);
     * `ancestor?/3` — whether a commit is an ancestor of `HEAD`
-      (`git merge-base --is-ancestor`; a commit git does not have is not one).
+      (`git merge-base --is-ancestor`; a commit git does not have is not one);
+    * `changed_since/2` — the paths whose working-tree content differs from
+      that commit's, untracked (not ignored) files included.
   """
 
   @type git_error :: {:git_failed, [String.t()], non_neg_integer(), String.t()}
@@ -21,4 +23,6 @@ defmodule Anchor.Adapters.GitWorktree do
   @callback head_sha(root :: String.t()) :: {:ok, String.t()} | {:error, git_error()}
   @callback ancestor?(root :: String.t(), sha :: String.t()) ::
               {:ok, boolean()} | {:error, git_error()}
+  @callback changed_since(root :: String.t(), sha :: String.t()) ::
+              {:ok, [String.t()]} | {:error, git_error()}
 end

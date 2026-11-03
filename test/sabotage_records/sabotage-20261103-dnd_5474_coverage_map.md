@@ -36,6 +36,29 @@ mutant's beam; the DND-5473 trap). Failure strings are copied from its output.
 | S13 | `ancestor?/2` reads git's exit 128 (a commit git does not have) as an ancestor | 1 of 3: git_status "head_sha/1 and ancestor?/2 ... a later or unknown one is not" | `code:  assert GitStatus.ancestor?(root, String.duplicate("0", 40)) == {:ok, false}` `left:  {:ok, true}` `right: {:ok, false}` |
 | S14 | the `tests selected by:` line is dropped | 2 of 50: report "DND-5474: a line counts the mutants by the source ...", run "... selects that test, by coverage" | `code:  assert text =~ "\ntests selected by: 2 coverage, 1 mirror\nanchor.sabotage run: 3 mutants"` |
 
+## Critic round 1 (two findings)
+
+The critic found (1) that a map's `file:line` refs are as of the map's commit,
+so a test file changed since then could run the wrong test or miss the
+branch's new ones, with no warning; and (2) that `CoverageFile` and
+`ProjectModules` had no test. The fix: `TestSelection` takes `stale_tests`
+(the files `GitStatus.changed_since/2` says differ from the map's commit, or
+`:all` when git cannot say or the map names no commit): a ref into a stale
+file runs the whole file, and a stale mirror file is added whole. Both
+adapters got tmp-dir tests. The new tests were seen red on the unfixed code
+first (the three `test_selection_test.exs` rows below, "left" = the unfixed
+selection), then by sabotage:
+
+| # | Mutation | Tests failed | First failure, verbatim |
+|---|---|---|---|
+| F1 | the unfixed code (c153321): `stale_tests` ignored | 3 of 14: selection "a selected test file changed since the map was built runs whole ...", "a mirror file changed ... is added whole", "when what changed is unknown (:all) ..." | `code:  assert TestSelection.select(mutant("lib/x.ex", M, {:f, 1}), inputs) ==` `left:  {:coverage, ["test/a_test.exs:10", "test/b_test.exs:4"]}` `right: {:coverage, ["test/a_test.exs:10", "test/b_test.exs"]}` |
+| S15 | `stale?/2` always false | 3 of 57: the first two rows above, and run "a selected test file changed since the map's commit runs whole, the mirror too" (the `:all` rows still pass: `:all` has its own clause) | as F1 |
+| S16 | `CoverageFile.read/1` returns `{:ok, :undecodable}` for bytes it cannot decode | 2 of 5: coverage_file "a term naming an atom this VM does not have is refused, never created", "bytes that are not an external term are :undecodable" | `code:  assert CoverageFile.read(path) == {:error, :undecodable}` `left:  {:ok, :undecodable}` `right: {:error, :undecodable}` |
+
+`Anchor.Adapters.SuiteRunner` (`Mix.Task.run("test", ...)` in this VM) has no
+unit test: it cannot run a suite inside a running suite. The bounded real run
+below and the CI workflow exercise it.
+
 ## The measured zero (S10)
 
 S10 is the row this record exists for: dropping `:arity` made the collector

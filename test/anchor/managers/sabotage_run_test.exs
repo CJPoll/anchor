@@ -729,9 +729,52 @@ defmodule Anchor.Managers.SabotageRunTest do
       expect(Anchor.CoverageStoreMock, :read, fn "/repo/cov.etf" -> call(:read_map, result) end)
     end
 
-    defp expect_ancestor(answer) do
+    defp expect_ancestor(answer, changed \\ {:ok, ["lib/calc.ex"]}) do
       expect(GitWorktreeMock, :head_sha, fn @root -> {:ok, "headsha"} end)
       expect(GitWorktreeMock, :ancestor?, fn @root, "c0ffee" -> {:ok, answer} end)
+      expect(GitWorktreeMock, :changed_since, fn @root, "c0ffee" -> changed end)
+    end
+
+    test "a selected test file changed since the map's commit runs whole, the mirror too" do
+      expect_until_selection()
+      expect_map({:ok, coverage_map()})
+      expect_ancestor(true, {:ok, ["test/other_test.exs", "test/calc_test.exs"]})
+
+      run = Sabotage.run(%{@facts | dry_run: true} |> Map.put(:coverage, "cov.etf"), @cov_opts)
+
+      assert Enum.all?(run.planned, fn {_m, selection} ->
+               selection == {:coverage, ["test/calc_test.exs", "test/other_test.exs"]}
+             end)
+    end
+
+    test "when git cannot say what changed, every selected file runs whole, with a note" do
+      expect_until_selection()
+      expect_map({:ok, coverage_map()})
+      expect_ancestor(true, {:error, {:git_failed, ["diff"], 128, "bad object"}})
+
+      run = Sabotage.run(%{@facts | dry_run: true} |> Map.put(:coverage, "cov.etf"), @cov_opts)
+
+      assert [note] = run.notes
+      assert note =~ "could not tell which files changed since the coverage map's commit c0ffee"
+
+      assert Enum.all?(run.planned, fn {_m, selection} ->
+               selection == {:coverage, ["test/calc_test.exs", "test/other_test.exs"]}
+             end)
+    end
+
+    test "a map that names no commit is used, with a warning, every file whole" do
+      expect_until_selection()
+      expect_map({:ok, coverage_map(nil)})
+
+      run = Sabotage.run(%{@facts | dry_run: true} |> Map.put(:coverage, "cov.etf"), @cov_opts)
+
+      assert run.notes == [
+               "the coverage map names no commit; selections from it may miss new tests"
+             ]
+
+      assert Enum.all?(run.planned, fn {_m, selection} ->
+               selection == {:coverage, ["test/calc_test.exs", "test/other_test.exs"]}
+             end)
     end
 
     test "a mutant of a function a test in another file runs selects that test, by coverage" do

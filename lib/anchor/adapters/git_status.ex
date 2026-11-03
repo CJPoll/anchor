@@ -9,7 +9,9 @@ defmodule Anchor.Adapters.GitStatus do
     * `git check-ignore -q -- <path>` (exit 0 ignored, 1 not);
     * `git rev-parse --verify HEAD` (DND-5474);
     * `git merge-base --is-ancestor <sha> HEAD` (exit 0 an ancestor, 1 not,
-      128 a commit git does not have: not an ancestor).
+      128 a commit git does not have: not an ancestor);
+    * `git diff --name-only -z <sha> --` and
+      `git ls-files --others --exclude-standard -z`.
   """
 
   @behaviour Anchor.Adapters.GitWorktree
@@ -60,6 +62,21 @@ defmodule Anchor.Adapters.GitStatus do
     case git(root, args) do
       {_out, 0} -> {:ok, true}
       {_out, status} when status in [1, 128] -> {:ok, false}
+      {out, status} -> {:error, {:git_failed, args, status, out}}
+    end
+  end
+
+  @impl Anchor.Adapters.GitWorktree
+  def changed_since(root, sha) do
+    with {:ok, changed} <- names(root, ["diff", "--name-only", "-z", sha, "--"]),
+         {:ok, untracked} <- names(root, ["ls-files", "--others", "--exclude-standard", "-z"]) do
+      {:ok, Enum.uniq(changed ++ untracked)}
+    end
+  end
+
+  defp names(root, args) do
+    case git(root, args) do
+      {out, 0} -> {:ok, String.split(out, <<0>>, trim: true)}
       {out, status} -> {:error, {:git_failed, args, status, out}}
     end
   end

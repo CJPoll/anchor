@@ -413,7 +413,13 @@ defmodule Anchor.Managers.Sabotage.Runner do
     end
   end
 
-  # DND-5474: the coverage map, as an index from function to test args.
+  defp coverage_inputs(nil), do: %{}
+
+  defp coverage_inputs(%{index: index, stale_tests: stale}),
+    do: %{coverage: index, stale_tests: stale}
+
+  # DND-5474: the coverage map, as an index from function to test args, and
+  # the test files changed since it was built.
   defp coverage(facts, config, ports) do
     case Map.get(facts, :coverage) || config.coverage_map do
       nil -> {:ok, nil, []}
@@ -424,7 +430,10 @@ defmodule Anchor.Managers.Sabotage.Runner do
   defp read_coverage(path, root, %{coverage: store, git: git}) do
     with {:read, {:ok, term}} <- {:read, store.read(Path.expand(path, root))},
          {:check, {:ok, map}} <- {:check, CoverageMap.check(term)} do
-      {:ok, CoverageMap.index(map), stale(map.commit, root, git)}
+      {stale_tests, changed_notes} = stale_tests(map.commit, root, git)
+
+      {:ok, %{index: CoverageMap.index(map), stale_tests: stale_tests},
+       stale(map.commit, root, git) ++ changed_notes}
     else
       {:read, {:error, reason}} ->
         {:refuse, 2,
@@ -435,6 +444,24 @@ defmodule Anchor.Managers.Sabotage.Runner do
         {:refuse, 2,
          "#{path} is not a version-1 coverage map (#{inspect(reason)}). " <>
            "Fix: download the anchor-coverage artifact again"}
+    end
+  end
+
+  # The test files whose content differs from the map's commit: a ref into
+  # one of them runs its whole file (`TestSelection`).
+  defp stale_tests(nil, _root, _git), do: {:all, []}
+
+  defp stale_tests(commit, root, git) do
+    case git.changed_since(root, commit) do
+      {:ok, paths} ->
+        {MapSet.new(paths), []}
+
+      {:error, reason} ->
+        {:all,
+         [
+           "could not tell which files changed since the coverage map's commit #{commit} " <>
+             "(#{inspect(reason)}); every test file it selects runs whole"
+         ]}
     end
   end
 
@@ -474,7 +501,12 @@ defmodule Anchor.Managers.Sabotage.Runner do
       |> patcher.existing()
       |> MapSet.new(&Path.relative_to(&1, root))
 
-    inputs = %{mirror: config.test_mirror, existing_tests: existing, coverage: coverage}
+    inputs =
+      Map.merge(
+        %{mirror: config.test_mirror, existing_tests: existing},
+        coverage_inputs(coverage)
+      )
+
     Enum.map(planned, &TestSelection.select(&1, inputs))
   end
 
