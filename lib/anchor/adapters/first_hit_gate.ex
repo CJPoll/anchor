@@ -94,7 +94,7 @@ defmodule Anchor.Adapters.FirstHitGate do
 
   @impl GenServer
   def handle_call(:flush, _from, state) do
-    IO.puts(:stderr, report(state))
+    IO.write(:stderr, report(state) <> "\n")
     {:stop, :normal, :ok, state}
   end
 
