@@ -180,6 +180,55 @@ defmodule Anchor.Domain.Failures do
   end
 
   @doc """
+  The text `mix anchor.sabotage scope` prints when it could not measure a
+  diff's scope (DND-5472): it exits 3, and the text starts `COULD NOT MEASURE`
+  and ends with a `Fix:` line. Reasons:
+
+    * `{:not_a_work_tree, root}`;
+    * `{:no_merge_base, ref}`: `ref` does not resolve, or shares no history
+      with `HEAD`;
+    * `{:git_failed, argv, status, output}`: a git command exited non-zero;
+    * `{:unparseable_diff, reason}`: git printed a diff Anchor cannot read;
+    * `{:unparseable, file, line, reason}`: a changed source file does not parse;
+    * `{:unreadable, file, posix}`: a changed source file could not be read.
+
+  A reason of any other shape is still reported, never dropped.
+  """
+  @spec scope_could_not_measure(term()) :: String.t()
+  def scope_could_not_measure({:not_a_work_tree, root}),
+    do:
+      "COULD NOT MEASURE: #{root} is not a git work tree. Fix: run from the repository checkout."
+
+  def scope_could_not_measure({:no_merge_base, ref}) do
+    "COULD NOT MEASURE: no merge-base with #{ref}. " <>
+      "Fix: fetch it (git fetch origin) or pass --base <ref>."
+  end
+
+  def scope_could_not_measure({:git_failed, argv, status, output}) do
+    "COULD NOT MEASURE: `git #{Enum.join(argv, " ")}` exited #{status}: " <>
+      "#{capped(String.trim(output))}. Fix: run the command by hand to see why."
+  end
+
+  def scope_could_not_measure({:unparseable_diff, reason}) do
+    "COULD NOT MEASURE: git printed a diff Anchor cannot read (#{capped(inspect(reason))}). " <>
+      "Fix: check git's diff config (an external diff driver or textconv), or report it to Anchor."
+  end
+
+  def scope_could_not_measure({:unparseable, file, line, reason}) do
+    "COULD NOT MEASURE: #{file}:#{line} does not parse (#{reason}). " <>
+      "Fix: make it compile; a file that does not parse cannot be scoped."
+  end
+
+  def scope_could_not_measure({:unreadable, file, posix}) do
+    "COULD NOT MEASURE: could not read #{file} (#{inspect(posix)}). " <>
+      "Fix: make #{file} a readable file."
+  end
+
+  def scope_could_not_measure(reason) do
+    "COULD NOT MEASURE: #{capped(inspect(reason))}. Fix: this is a defect in Anchor; report it with this text."
+  end
+
+  @doc """
   Names a parsed rule the way a load error does: `rule 2 (id: "web", type)`, or
   `rule 2 (type)` without an id. A rule built in memory has no position.
   """
