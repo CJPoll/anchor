@@ -20,7 +20,17 @@ defmodule Anchor.Integration.CfaSelfTest do
 
     refute cfa.bound_hit?
     assert cfa.counts.total == map_size(cfa.sites)
-    assert cfa.counts.total == cfa.counts.resolved + cfa.counts.any
+
+    # A known site: default_seed/1 hands Enum.filter and Map.new a literal fn
+    # each, so each of its sites resolves to exactly one of its own lambdas.
+    seed_sites = for {{{Cfa, :default_seed, 1}, _n}, result} <- cfa.sites, do: result
+    assert length(seed_sites) == 2
+
+    for {:ok, closures} <- seed_sites do
+      assert [{{Cfa, :default_seed, 1}, _ordinal}] = MapSet.to_list(closures)
+    end
+
+    assert Enum.all?(seed_sites, &match?({:ok, _}, &1))
     # Positive control: Anchor passes hundreds of funs to Enum.
     assert cfa.counts.total > 100
   end

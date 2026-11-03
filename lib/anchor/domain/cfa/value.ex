@@ -3,11 +3,11 @@ defmodule Anchor.Domain.Cfa.Value do
   The abstract value of the 0-CFA (`Anchor.Domain.Cfa`) — **Domain**, pure
   (DND-5497).
 
-  A value is `{closures, any?, atom?, allocs}`:
+  A value is `{closures, any?, constant?, allocs}`:
 
     * `closures` — the closure ids it may be;
     * `any?` — a value from outside the analysed world may be it;
-    * `atom?` — an atom or another constant may be it (an atom is a module
+    * `constant?` — an atom or another constant may be it (an atom is a module
       that a `s.f` dot-call could name); a field read from a constant is a
       constant;
     * `allocs` — the project containers it may be, by allocation site
@@ -31,9 +31,9 @@ defmodule Anchor.Domain.Cfa.Value do
   @spec any() :: t()
   def any, do: {MapSet.new(), true, false, MapSet.new()}
 
-  @doc "An atom, or another constant (a literal that holds no fun)."
-  @spec atom() :: t()
-  def atom, do: {MapSet.new(), false, true, MapSet.new()}
+  @doc "An atom, or another constant (a literal that holds no fun, a number, a pid)."
+  @spec constant() :: t()
+  def constant, do: {MapSet.new(), false, true, MapSet.new()}
 
   @doc "The value that is one of `closures`."
   @spec closures(Enumerable.t()) :: t()
@@ -48,19 +48,19 @@ defmodule Anchor.Domain.Cfa.Value do
 
   @doc "The closures `value` may be."
   @spec closure_set(t()) :: MapSet.t()
-  def closure_set({closures, _any?, _atom?, _allocs}), do: closures
+  def closure_set({closures, _any?, _constant?, _allocs}), do: closures
 
   @doc "The allocation sites `value` may be."
   @spec allocs(t()) :: MapSet.t(alloc())
-  def allocs({_closures, _any?, _atom?, allocs}), do: allocs
+  def allocs({_closures, _any?, _constant?, allocs}), do: allocs
 
   @doc "Whether a value from outside may be `value`."
   @spec any?(t()) :: boolean()
-  def any?({_closures, any?, _atom?, _allocs}), do: any?
+  def any?({_closures, any?, _constant?, _allocs}), do: any?
 
-  @doc "Whether an atom may be `value`."
-  @spec atom?(t()) :: boolean()
-  def atom?({_closures, _any?, atom?, _allocs}), do: atom?
+  @doc "Whether a constant (an atom: a module name, perhaps) may be `value`."
+  @spec constant?(t()) :: boolean()
+  def constant?({_closures, _any?, constant?, _allocs}), do: constant?
 
   @doc "The least value above both."
   @spec join(t(), t()) :: t()
@@ -76,7 +76,7 @@ defmodule Anchor.Domain.Cfa.Value do
   from outside, a constant when it may be a constant.
   """
   @spec outside(t()) :: t()
-  def outside(container), do: {MapSet.new(), any?(container), atom?(container), MapSet.new()}
+  def outside(container), do: {MapSet.new(), any?(container), constant?(container), MapSet.new()}
 
   @doc "The report of `value`: `:any`, or `{:ok, closures}`."
   @spec present(t()) :: {:ok, MapSet.t()} | :any

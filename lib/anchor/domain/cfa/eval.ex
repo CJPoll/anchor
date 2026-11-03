@@ -43,6 +43,17 @@ defmodule Anchor.Domain.Cfa.Eval do
                   div rem band bor bxor bnot bsl bsr not and or xor abs length
                   tuple_size map_size byte_size bit_size self node)a
 
+  # Calls that run `M:F(Args...)`: `{index of M, index of the argument list}`.
+  @mfa_calls %{
+    {:erlang, :apply, 3} => {0, 2},
+    {:erlang, :spawn, 3} => {0, 2},
+    {:erlang, :spawn, 4} => {1, 3},
+    {:erlang, :spawn_link, 3} => {0, 2},
+    {:erlang, :spawn_link, 4} => {1, 3},
+    {:erlang, :spawn_monitor, 3} => {0, 2},
+    {:erlang, :spawn_opt, 4} => {0, 2}
+  }
+
   @raises [
     {:erlang, :error, 1},
     {:erlang, :error, 2},
@@ -337,18 +348,18 @@ defmodule Anchor.Domain.Cfa.Eval do
     end
   end
 
-  defp literal(term, _ctx, acc) when is_atom(term), do: {Value.atom(), acc}
+  defp literal(term, _ctx, acc) when is_atom(term), do: {Value.constant(), acc}
 
   # An empty container has no field to read; any other constant reads as one.
   defp literal(term, _ctx, acc) when term in [%{}, [], {}], do: {Value.bottom(), acc}
-  defp literal(_term, _ctx, acc), do: {Value.atom(), acc}
+  defp literal(_term, _ctx, acc), do: {Value.constant(), acc}
 
   # A literal container holding a fun (an external fun a module attribute put
   # there): every field of it, at any depth, is its funs or the container.
   defp literal_container(node, ctx, acc) do
     alloc = alloc(node, ctx)
     funs = node |> :cerl.concrete() |> funs_in([])
-    value = Value.join(Value.container(alloc, Value.bottom()), Value.atom())
+    value = Value.join(Value.container(alloc, Value.bottom()), Value.constant())
     field = Value.join(Value.closures(funs), value)
     {value, write_field(alloc, :*, field, ctx, acc)}
   end
@@ -639,7 +650,7 @@ defmodule Anchor.Domain.Cfa.Eval do
 
   # The clause Core gives `s.f` for a module atom `s`: a zero-arity call on it.
   defp call_mfa({:elixir_erl_pass, :no_parens_remote, 2}, _node, _nodes, [subject, _f], _ctx, acc) do
-    if Value.any?(subject) or Value.atom?(subject),
+    if Value.any?(subject) or Value.constant?(subject),
       do: {Value.any(), acc},
       else: {Value.bottom(), acc}
   end
@@ -648,13 +659,86 @@ defmodule Anchor.Domain.Cfa.Eval do
     cond do
       Map.has_key?(ctx.program.closures, mfa) -> call_function(mfa, args, ctx, acc)
       mfa in @container_access -> container_access(mfa, arg_nodes, args, node, ctx, acc)
+      Map.has_key?(@mfa_calls, mfa) -> mfa_call(mfa, arg_nodes, args, ctx, acc)
       HigherOrder.invocations(mfa) != [] -> higher_order(mfa, node, args, ctx, acc)
-      pure_erlang?(mfa) -> {Value.atom(), acc}
+      pure_erlang?(mfa) -> {Value.constant(), acc}
       # A raise never returns; what it raises reaches only a catch (`any`).
       mfa in @raises -> {Value.bottom(), escape(args, acc)}
       true -> {Value.any(), escape(args, acc)}
     end
   end
+
+  # `apply(M, F, Args)` and `spawn(M, F, Args)`: a call of `M:F` with Args'
+  # elements. With M and F literal and `M:F/n` in the project it is a call
+  # (spawn returns a pid, a constant); otherwise any exported function of a
+  # matching arity (any arity, when Args' length is unknown) may be called
+  # with anything, so their parameters become `any`; unless M or F can be
+  # nothing at all, when no run reaches the call.
+  defp mfa_call({_m, name, _a} = mfa, arg_nodes, args, ctx, acc) do
+    {module_index, list_index} = Map.fetch!(@mfa_calls, mfa)
+    module = Enum.at(arg_nodes, module_index)
+    function = Enum.at(arg_nodes, module_index + 1)
+    list_node = Enum.at(arg_nodes, list_index)
+    acc = escape(args, acc)
+    {element, acc} = list_elements(Enum.at(args, list_index), ctx, acc)
+    count = list_length(list_node)
+
+    {result, acc} =
+      case {literal_atom(module), literal_atom(function), count} do
+        {{:ok, m}, {:ok, f}, n} when is_integer(n) ->
+          if Map.has_key?(ctx.program.closures, {m, f, n}),
+            do: call_function({m, f, n}, List.duplicate(element, n), ctx, acc),
+            else: {Value.any(), acc}
+
+        _dynamic ->
+          if reachable?(Enum.at(args, module_index)) and
+               reachable?(Enum.at(args, module_index + 1)),
+             do: {Value.any(), open_call(count, ctx, acc)},
+             else: {Value.bottom(), acc}
+      end
+
+    if name == :apply, do: {result, acc}, else: {Value.constant(), acc}
+  end
+
+  # Whether a module or function name may be anything at all here (a value
+  # that is nothing is a call no run reaches).
+  defp reachable?(value), do: Value.any?(value) or Value.constant?(value)
+
+  defp open_call(count, ctx, acc) do
+    ctx.program.exported_by_arity
+    |> Enum.filter(fn {arity, _mfas} -> count == nil or arity == count end)
+    |> Enum.flat_map(&elem(&1, 1))
+    |> Enum.sort()
+    |> Enum.flat_map(&Map.fetch!(ctx.program.closures, &1).params)
+    |> Enum.reduce(acc, &write(&1, Value.any(), &2))
+  end
+
+  defp literal_atom(node) do
+    if :cerl.is_literal(node) and is_atom(:cerl.concrete(node)),
+      do: {:ok, :cerl.concrete(node)},
+      else: :error
+  end
+
+  # The length of a Core list whose spine is known, else nil.
+  defp list_length(node) do
+    cond do
+      :cerl.is_c_cons(node) ->
+        case list_length(:cerl.cons_tl(node)) do
+          nil -> nil
+          length -> length + 1
+        end
+
+      :cerl.is_literal(node) and is_list(:cerl.concrete(node)) ->
+        proper_length(:cerl.concrete(node), 0)
+
+      true ->
+        nil
+    end
+  end
+
+  defp proper_length([], length), do: length
+  defp proper_length([_head | tail], length), do: proper_length(tail, length + 1)
+  defp proper_length(_improper, _length), do: nil
 
   defp call_function(mfa, args, ctx, acc) do
     case Map.get(ctx.program.closures, mfa) do
@@ -669,8 +753,17 @@ defmodule Anchor.Domain.Cfa.Eval do
     functions =
       Enum.map(HigherOrder.invocations(mfa), fn {index, _arity} -> Enum.at(args, index) end)
 
-    acc = record_sites(node, functions, ctx, acc)
+    acc = record_sites(node, Enum.map(functions, &invoked/1), ctx, acc)
     {Value.any(), escape(args, acc)}
+  end
+
+  # What an invoked argument calls: its closures, and `any` when it may be a
+  # constant or a container: a library takes a module (`Enum.sort(list,
+  # Mod)` calls `Mod.compare/2`) or a `{:asc, Mod}` tuple there.
+  defp invoked(function) do
+    if Value.constant?(function) or MapSet.size(Value.allocs(function)) > 0,
+      do: Value.join(function, Value.any()),
+      else: function
   end
 
   defp pure_erlang?({:erlang, name, _arity}), do: name in @pure_erlang

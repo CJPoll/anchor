@@ -23,7 +23,8 @@ defmodule Anchor.Domain.Cfa do
   Monovariant (one abstract value per Core variable, per function return, per
   lambda return, per field slot; no call strings). An abstract value is the
   closures that may be the value, an `any` flag (a value from outside may be
-  it) and an `atom` flag (an atom may be it). It is reported as `:any` when
+  it) and a `constant` flag (an atom, a module name perhaps, or another
+  constant may be it). It is reported as `:any` when
   the `any` flag is set: `any` absorbs at the report, but the closures beside
   it still flow, so a closure joined with an outside value still has its
   parameters and its escape tracked.
@@ -73,7 +74,10 @@ defmodule Anchor.Domain.Cfa do
 
   `analyze/3` takes the roots as a seed: `%{mfa => :any | [param_value]}`,
   where a param value is `:any` or a `MapSet` of closure ids. A root's
-  parameters start at those values and its return escapes. `default_seed/1`
+  parameters start at those values and its return escapes. A seed must hold
+  every function that code outside the analysed world calls (exported API,
+  OTP callbacks, `Mix.Task.run/1`): one left out gets only what project calls
+  pass it. A seed naming a function the graph does not hold raises. `default_seed/1`
   makes every exported function a root with `any` parameters (the open world;
   DND-5500 passes a tighter seed). A function in no seed gets only what
   project calls pass it.
@@ -186,7 +190,12 @@ defmodule Anchor.Domain.Cfa do
       end
 
     known = MapSet.new(functions, &elem(&1, 0))
-    roots = seed |> Map.keys() |> Enum.filter(&MapSet.member?(known, &1)) |> Enum.sort()
+    roots = seed |> Map.keys() |> Enum.sort()
+
+    case Enum.reject(roots, &MapSet.member?(known, &1)) do
+      [] -> :ok
+      unknown -> raise ArgumentError, unknown_roots(unknown)
+    end
 
     %{
       units:
@@ -208,8 +217,18 @@ defmodule Anchor.Domain.Cfa do
       sites: Map.new(functions, fn {mfa, fun} -> {mfa, Core.apply_sites(mfa, fun)} end),
       functions: Enum.map(functions, &elem(&1, 0)),
       roots: roots,
-      seed: Map.take(seed, roots)
+      seed: seed,
+      exported_by_arity:
+        graph
+        |> project_functions()
+        |> Enum.filter(fn {_mfa, node} -> node.kind == :def end)
+        |> Enum.group_by(fn {{_m, _f, arity}, _node} -> arity end, &elem(&1, 0))
     }
+  end
+
+  defp unknown_roots(unknown) do
+    "the seed names #{inspect(unknown)}, which the graph holds no def/defp with Core for. " <>
+      "Fix: seed only functions of the graph (Cfa.default_seed/1 lists them)."
   end
 
   defp closure_info(mfa, fun, ret) do

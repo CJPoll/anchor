@@ -10,8 +10,13 @@ defmodule Anchor.Domain.HigherOrder do
   index of the argument and the arity it is called with.
 
   A function missing from the table invokes nothing that the analysis can
-  see; every argument passed to it escapes, and its return is any
-  (`Anchor.Domain.Cfa`), so a missing row costs precision, never soundness.
+  see: no site is recorded for its invocation, every argument passed to it
+  escapes (its parameters become any), and its return is any
+  (`Anchor.Domain.Cfa`). So a missing row loses a site from the counts and
+  costs precision, but a closure it calls is still treated as called with
+  anything. Where an argument may be a function or something else (a sorter
+  or an empty fallback), the row gives the arity the function is called with
+  when it is the first kind named in the docs.
   `erlang:apply/2` (`Kernel.apply/2`) is not here: it is an apply site of its
   own. `Kernel.then/2` and `Kernel.tap/2` are macros, gone before Core.
   """
@@ -45,13 +50,17 @@ defmodule Anchor.Domain.HigherOrder do
     {Enum, :map_join, 3} => [{2, 1}],
     {Enum, :map_reduce, 3} => [{2, 2}],
     {Enum, :max_by, 2} => [{1, 1}],
-    {Enum, :max_by, 3} => [{1, 1}],
-    {Enum, :max_by, 4} => [{1, 1}],
+    {Enum, :max, 2} => [{1, 2}],
+    {Enum, :max, 3} => [{1, 2}, {2, 0}],
+    {Enum, :max_by, 3} => [{1, 1}, {2, 2}],
+    {Enum, :max_by, 4} => [{1, 1}, {2, 2}, {3, 0}],
     {Enum, :min_by, 2} => [{1, 1}],
-    {Enum, :min_by, 3} => [{1, 1}],
-    {Enum, :min_by, 4} => [{1, 1}],
+    {Enum, :min, 2} => [{1, 2}],
+    {Enum, :min, 3} => [{1, 2}, {2, 0}],
+    {Enum, :min_by, 3} => [{1, 1}, {2, 2}],
+    {Enum, :min_by, 4} => [{1, 1}, {2, 2}, {3, 0}],
     {Enum, :min_max_by, 2} => [{1, 1}],
-    {Enum, :min_max_by, 3} => [{1, 1}],
+    {Enum, :min_max_by, 3} => [{1, 1}, {2, 2}],
     {Enum, :product_by, 2} => [{1, 1}],
     {Enum, :reduce, 2} => [{1, 2}],
     {Enum, :reduce, 3} => [{2, 2}],
@@ -91,6 +100,7 @@ defmodule Anchor.Domain.HigherOrder do
     {Stream, :take_while, 2} => [{1, 1}],
     {Stream, :transform, 3} => [{2, 2}],
     {Stream, :transform, 4} => [{1, 0}, {2, 2}, {3, 1}],
+    {Stream, :transform, 5} => [{1, 0}, {2, 2}, {3, 1}, {4, 1}],
     {Stream, :unfold, 2} => [{1, 1}],
     {Stream, :uniq_by, 2} => [{1, 1}],
     {Stream, :with_index, 2} => [{1, 2}],
@@ -101,10 +111,12 @@ defmodule Anchor.Domain.HigherOrder do
     {Map, :get_and_update, 3} => [{2, 1}],
     {Map, :get_and_update!, 3} => [{2, 1}],
     {Map, :get_lazy, 3} => [{2, 0}],
+    {Map, :intersect, 3} => [{2, 3}],
     {Map, :merge, 3} => [{2, 3}],
     {Map, :new, 2} => [{1, 1}],
     {Map, :put_new_lazy, 3} => [{2, 0}],
     {Map, :reject, 2} => [{1, 1}],
+    {Map, :replace_lazy, 3} => [{2, 1}],
     {Map, :split_with, 2} => [{1, 1}],
     {Map, :update, 4} => [{3, 1}],
     {Map, :update!, 3} => [{2, 1}],
@@ -122,10 +134,12 @@ defmodule Anchor.Domain.HigherOrder do
     {List, :update_at, 3} => [{2, 1}],
     # Processes
     {Agent, :get, 2} => [{1, 1}],
+    {Agent, :get, 3} => [{1, 1}],
     {Agent, :get_and_update, 2} => [{1, 1}],
     {Agent, :start, 1} => [{0, 0}],
     {Agent, :start_link, 1} => [{0, 0}],
     {Agent, :update, 2} => [{1, 1}],
+    {Agent, :update, 3} => [{1, 1}],
     {Task, :async, 1} => [{0, 0}],
     {Task, :async_stream, 2} => [{1, 1}],
     {Task, :async_stream, 3} => [{1, 1}],

@@ -16,6 +16,7 @@ defmodule Anchor.Domain.CfaTest do
   alias Anchor.Domain.Graph.Builder
   alias AnchorFixtures.CfaTest.A
   alias AnchorFixtures.CfaTest.B
+  alias AnchorFixtures.CfaTest.Open
   alias AnchorFixtures.CfaTest.S
   alias AnchorFixtures.CfaTest.Wild
 
@@ -26,7 +27,6 @@ defmodule Anchor.Domain.CfaTest do
 
   defmodule AnchorFixtures.CfaTest.A do
     alias AnchorFixtures.CfaTest.B
-  alias AnchorFixtures.CfaTest.S
     alias AnchorFixtures.CfaTest.S
 
     def direct do
@@ -78,6 +78,29 @@ defmodule Anchor.Domain.CfaTest do
       end
     end
 
+    def lit_cross, do: lit_use({:ok, B})
+    defp lit_use({:ok, mod}), do: mod.maker.()
+
+    def via_apply3, do: apply(B, :run_apply, [fn -> :applied end])
+    def via_spawn, do: spawn(B, :run_spawn, [fn -> :spawned end])
+
+    def caught do
+      try do
+        throw(fn -> :thrown end)
+      catch
+        f -> f.()
+      end
+    end
+
+    def var_mod_start, do: var_mod(B)
+    defp var_mod(mod), do: mod.maker().()
+
+    def spread, do: apply(fn x -> x.() end, [fn -> :spread end])
+
+    def via_element, do: elem({:ok, fn -> :elem end}, 1).()
+
+    def sorter(list), do: Enum.sort(list, B)
+
     def put_get, do: put_get_on(%{})
 
     defp put_get_on(base) do
@@ -106,6 +129,15 @@ defmodule Anchor.Domain.CfaTest do
     def run1(g, x), do: g.(x)
     def f(x), do: x
     def maker, do: fn -> :made_in_b end
+    def run_apply(g), do: g.()
+    def run_spawn(g), do: g.()
+  end
+  """
+
+  @open_source """
+  defmodule AnchorFixtures.CfaTest.Open do
+    def dyn_apply(mod), do: apply(mod, :whatever, [fn -> :dyn end])
+    def run_open(g), do: g.()
   end
   """
 
@@ -137,6 +169,14 @@ defmodule Anchor.Domain.CfaTest do
     {A, :escapes, 0},
     {A, :boxed, 0},
     {A, :via_module, 0},
+    {A, :lit_cross, 0},
+    {A, :via_apply3, 0},
+    {A, :via_spawn, 0},
+    {A, :caught, 0},
+    {A, :var_mod_start, 0},
+    {A, :spread, 0},
+    {A, :via_element, 0},
+    {A, :sorter, 1},
     {A, :put_get, 0},
     {A, :tagged, 0},
     {A, :updated, 0}
@@ -244,6 +284,55 @@ defmodule Anchor.Domain.CfaTest do
       assert Cfa.closures_at(cfa, site({A, :via_module, 0})) == :any
     end
 
+    test "a module in a literal tuple, passed to another function, dot-called: :any",
+         %{closed: cfa} do
+      assert Cfa.closures_at(cfa, site({A, :lit_use, 1})) == :any
+    end
+
+    test "apply/3 and spawn/3 with a literal project M:F feed its parameters", %{closed: cfa} do
+      assert Cfa.closures_at(cfa, site({B, :run_apply, 1})) ==
+               set([lambda({A, :via_apply3, 0}, 0)])
+
+      assert Cfa.closures_at(cfa, site({B, :run_spawn, 1})) ==
+               set([lambda({A, :via_spawn, 0}, 0)])
+    end
+
+    test "apply/3 with a variable module may call any exported function of that arity with anything" do
+      graph = graph!(@open_source)
+      cfa = Cfa.analyze(graph, %{{Open, :dyn_apply, 1} => :any})
+      assert Cfa.closures_at(cfa, site({Open, :run_open, 1})) == :any
+
+      # Control: with nothing calling apply/3, run_open's parameter holds nothing.
+      quiet = Cfa.analyze(graph, %{})
+      assert Cfa.closures_at(quiet, site({Open, :run_open, 1})) == set([])
+    end
+
+    test "a fun caught from a throw is :any", %{closed: cfa} do
+      assert Cfa.closures_at(cfa, site({A, :caught, 0})) == :any
+    end
+
+    test "a call on a variable module returns :any", %{closed: cfa} do
+      assert Cfa.closures_at(cfa, site({A, :var_mod, 1})) == :any
+    end
+
+    test "apply/2 spreads its argument list over the applied lambda's parameters",
+         %{closed: cfa} do
+      results = for ordinal <- 0..1, do: Cfa.closures_at(cfa, site({A, :spread, 0}, ordinal))
+
+      assert Enum.sort(results) ==
+               Enum.sort([set([lambda({A, :spread, 0}, 0)]), set([lambda({A, :spread, 0}, 1)])])
+    end
+
+    test "elem/2 on a tuple reads the field at that position", %{closed: cfa} do
+      assert Cfa.closures_at(cfa, site({A, :via_element, 0})) ==
+               set([lambda({A, :via_element, 0}, 0)])
+    end
+
+    test "a module passed where Enum invokes an argument (a sorter) is :any, never empty",
+         %{closed: cfa} do
+      assert Cfa.closures_at(cfa, site({A, :sorter, 1})) == :any
+    end
+
     test "an exported parameter under the default seed is :any; a seed naming its closures resolves",
          %{graph: graph} do
       open = {A, :open, 1}
@@ -274,6 +363,12 @@ defmodule Anchor.Domain.CfaTest do
       refute Map.has_key?(seed, {A, :helper, 1})
     end
 
+    test "a seed naming a function the graph does not hold raises, with a Fix", %{graph: graph} do
+      assert_raise ArgumentError, ~r/:nope, 0.*Fix: /, fn ->
+        Cfa.analyze(graph, %{{A, :nope, 0} => :any})
+      end
+    end
+
     test "an unknown site id is an error, never an empty set", %{closed: cfa} do
       assert Cfa.closures_at(cfa, site({A, :direct, 0}, 99)) == {:error, :unknown_site}
     end
@@ -283,31 +378,39 @@ defmodule Anchor.Domain.CfaTest do
     # S.__struct__/1 is the struct's generated builder: its Enum.reduce
     # invokes its own lambda, so it is a site too.
     test "the fixture's exact resolved and any counts, total and per function", %{closed: cfa} do
-      assert Map.delete(cfa.counts, :by_function) == %{total: 18, resolved: 12, any: 6}
+      assert Map.delete(cfa.counts, :by_function) == %{total: 27, resolved: 17, any: 10}
 
       assert cfa.counts.by_function == %{
-               {A, :direct, 0} => %{total: 1, resolved: 1, any: 0},
-               {A, :use_make, 0} => %{total: 1, resolved: 1, any: 0},
-               {A, :stored, 0} => %{total: 1, resolved: 1, any: 0},
-               {A, :mapped, 1} => %{total: 1, resolved: 1, any: 0},
-               {A, :loop, 2} => %{total: 1, resolved: 1, any: 0},
-               {A, :received, 0} => %{total: 1, resolved: 0, any: 1},
-               {A, :from_ets, 1} => %{total: 1, resolved: 0, any: 1},
-               {A, :open, 1} => %{total: 1, resolved: 0, any: 1},
-               {A, :escapes, 0} => %{total: 1, resolved: 0, any: 1},
                {A, :boxed, 0} => %{total: 1, resolved: 0, any: 1},
-               {A, :via_module, 0} => %{total: 1, resolved: 0, any: 1},
+               {A, :caught, 0} => %{total: 1, resolved: 0, any: 1},
+               {A, :direct, 0} => %{total: 1, resolved: 1, any: 0},
+               {A, :escapes, 0} => %{total: 1, resolved: 0, any: 1},
+               {A, :from_ets, 1} => %{total: 1, resolved: 0, any: 1},
+               {A, :lit_use, 1} => %{total: 1, resolved: 0, any: 1},
+               {A, :loop, 2} => %{total: 1, resolved: 1, any: 0},
+               {A, :mapped, 1} => %{total: 1, resolved: 1, any: 0},
+               {A, :open, 1} => %{total: 1, resolved: 0, any: 1},
                {A, :put_get_on, 1} => %{total: 1, resolved: 1, any: 0},
+               {A, :received, 0} => %{total: 1, resolved: 0, any: 1},
+               {A, :sorter, 1} => %{total: 1, resolved: 0, any: 1},
+               {A, :spread, 0} => %{total: 2, resolved: 2, any: 0},
+               {A, :stored, 0} => %{total: 1, resolved: 1, any: 0},
                {A, :tagged, 0} => %{total: 1, resolved: 1, any: 0},
                {A, :updated, 0} => %{total: 1, resolved: 1, any: 0},
-               {B, :run_once, 1} => %{total: 1, resolved: 1, any: 0},
+               {A, :use_make, 0} => %{total: 1, resolved: 1, any: 0},
+               {A, :var_mod, 1} => %{total: 1, resolved: 0, any: 1},
+               {A, :via_element, 0} => %{total: 1, resolved: 1, any: 0},
+               {A, :via_module, 0} => %{total: 1, resolved: 0, any: 1},
                {B, :run, 1} => %{total: 1, resolved: 1, any: 0},
                {B, :run1, 2} => %{total: 1, resolved: 1, any: 0},
+               {B, :run_apply, 1} => %{total: 1, resolved: 1, any: 0},
+               {B, :run_once, 1} => %{total: 1, resolved: 1, any: 0},
+               {B, :run_spawn, 1} => %{total: 1, resolved: 1, any: 0},
                {S, :__struct__, 1} => %{total: 1, resolved: 1, any: 0}
              }
     end
 
-    test "positive control: an empty graph and a graph with no apply sites count zero sites" do
+    test "an empty graph and a graph with no apply sites count zero sites" do
       empty = Cfa.analyze(%Graph{}, %{})
       assert empty.counts == %{total: 0, resolved: 0, any: 0, by_function: %{}}
       assert empty.sites == %{}
