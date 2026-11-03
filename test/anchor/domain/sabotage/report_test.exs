@@ -5,6 +5,7 @@ defmodule Anchor.Domain.Sabotage.ReportTest do
   # Sabotage record (DND-5617): ../../../sabotage_records/sabotage-20261103-dnd_5617_sabotage_cfa_batch.md
   # Sabotage record (DND-5624): ../../../sabotage_records/sabotage-20261103-dnd_5624_sabotage_defimpl.md
   # Sabotage record (DND-5653): ../../../sabotage_records/sabotage-20261103-dnd_5639_sabotage_followups.md
+  # Sabotage record (DND-5483): ../../../sabotage_records/sabotage-20261103-dnd_5483_survivors_replay.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Sabotage.ChangedFunction
@@ -454,6 +455,159 @@ defmodule Anchor.Domain.Sabotage.ReportTest do
     test "R2: positive control: no timeout kill, no such line" do
       run = %Run{outcomes: [outcome("aaa", :killed, [@killer])]}
       refute Report.render(run) =~ "rest on time alone"
+    end
+  end
+
+  describe "the survivors list (DND-5483)" do
+    alias Anchor.Domain.Sabotage.Survivors.Entry
+    alias Anchor.Domain.Sabotage.Survivors.Judgement
+
+    @path ".anchor/sabotage/survivors.txt"
+
+    defp entry(id),
+      do: %Entry{
+        id: id,
+        file: "lib/calc.ex",
+        mfa: "Calc.add/2",
+        operator: "return_input",
+        reason: "logging only",
+        line_no: 1
+      }
+
+    defp judged(outcomes, judgement, grew \\ {:added, []}),
+      do: %Run{
+        outcomes: outcomes,
+        survivors: %{path: @path, base: "origin/main", judgement: judgement, grew: grew}
+      }
+
+    test "S1: one NEW survivor: exit 1; the Fix block holds the line to add" do
+      survivor = outcome("aaaaaaaaaaaa", :survived)
+
+      run =
+        judged([outcome("bbbbbbbbbbbb", :killed, [@killer]), survivor], %Judgement{
+          new: [survivor]
+        })
+
+      assert Report.exit_code(run) == 1
+      text = Report.render(run)
+      assert text =~ "NEW survivor aaaaaaaaaaaa lib/calc.ex Calc.add/2 return_input\n"
+      assert text =~ "  Fix: add a test that fails under this mutant, or add to #{@path}:\n"
+
+      assert text =~
+               "  aaaaaaaaaaaa lib/calc.ex Calc.add/2 return_input  # <why no test can kill it>\n"
+    end
+
+    test "S2: one STALE entry: exit 1; Fix: delete its line" do
+      run =
+        judged([outcome("bbbbbbbbbbbb", :killed, [@killer])], %Judgement{
+          stale: [{entry("aaaaaaaaaaaa"), "now killed by test/calc_test.exs:4 test adds"}]
+        })
+
+      assert Report.exit_code(run) == 1
+
+      assert Report.render(run) =~
+               "STALE survivor aaaaaaaaaaaa Calc.add/2 return_input " <>
+                 "(now killed by test/calc_test.exs:4 test adds). Fix: delete its line from #{@path}\n"
+    end
+
+    test "S3: only held and GREW: exit 0, the survivor line names its reason, the GREW block printed" do
+      survivor = outcome("aaaaaaaaaaaa", :survived)
+
+      run =
+        judged(
+          [outcome("bbbbbbbbbbbb", :killed, [@killer]), survivor],
+          %Judgement{held: [entry("aaaaaaaaaaaa")]},
+          {:added, [entry("aaaaaaaaaaaa")]}
+        )
+
+      assert Report.exit_code(run) == 0
+      text = Report.render(run)
+
+      assert text =~
+               "aaaaaaaaaaaa\tCalc.add/2\treturn_input\tsurvived\t\tselected by mirror: test/calc_test.exs\tlisted in #{@path}: logging only\n"
+
+      refute text =~ "Fix: add a test that fails under this mutant\n"
+      assert text =~ "Survivors added by this branch: review each reason\n"
+      assert text =~ "  aaaaaaaaaaaa lib/calc.ex Calc.add/2 return_input  # logging only\n"
+      assert text =~ "survivors: 1 held, 0 new, 0 stale, 0 not judged\n"
+    end
+
+    test "S3b: a first landing names every entry for review, and still exits 0" do
+      run =
+        judged(
+          [outcome("bbbbbbbbbbbb", :killed, [@killer])],
+          %Judgement{},
+          {:first_landing, [entry("aaaaaaaaaaaa")]}
+        )
+
+      assert Report.exit_code(run) == 0
+
+      assert Report.render(run) =~
+               "Survivors added by this branch: review each reason (#{@path} is not on origin/main: " <>
+                 "every entry is new)\n  aaaaaaaaaaaa"
+    end
+
+    test "S4: unjudged entries: exit 0, a not judged line each" do
+      run =
+        judged([outcome("bbbbbbbbbbbb", :killed, [@killer])], %Judgement{
+          unjudged: [{entry("aaaaaaaaaaaa"), :not_run}]
+        })
+
+      assert Report.exit_code(run) == 0
+
+      assert Report.render(run) =~
+               "survivor aaaaaaaaaaaa Calc.add/2 return_input not judged (not run, cap)\n"
+    end
+
+    test "S5: a malformed entry: exit 1, naming it" do
+      run =
+        judged([outcome("bbbbbbbbbbbb", :killed, [@killer])], %Judgement{
+          malformed: [{entry("aaaaaaaaaaaa"), "id aaaaaaaaaaaa belongs to X.y/1"}]
+        })
+
+      assert Report.exit_code(run) == 1
+
+      assert Report.render(run) =~
+               "survivors file #{@path}, entry 1 (aaaaaaaaaaaa lib/calc.ex Calc.add/2 return_input  # logging only): " <>
+                 "id aaaaaaaaaaaa belongs to X.y/1. Fix: correct the entry, or delete it\n"
+    end
+
+    test "S6: a crashed mutant fails the run even with the list judged" do
+      run =
+        judged(
+          [
+            outcome("bbbbbbbbbbbb", :killed, [@killer]),
+            outcome("cccccccccccc", :crashed, [], "boom")
+          ],
+          %Judgement{}
+        )
+
+      assert Report.exit_code(run) == 1
+    end
+
+    test "S7: STALE with no mutant run at all (the function changed, no mutant left): exit 1" do
+      run = judged([], %Judgement{stale: [{entry("aaaaaaaaaaaa"), "no longer generated"}]})
+      assert Report.exit_code(run) == 1
+    end
+
+    test "S8: an unmeasured run stays exit 3 even when its no_tests mutant is listed" do
+      run =
+        judged([outcome("aaaaaaaaaaaa", :no_tests, [], "test/calc_test.exs")], %Judgement{
+          held: [entry("aaaaaaaaaaaa")]
+        })
+
+      assert Report.exit_code(run) == 3
+    end
+
+    test "S9: --print-survivor-lines prints a block of lines to paste; nothing else changes" do
+      survivor = outcome("aaaaaaaaaaaa", :survived)
+      run = %{judged([survivor], %Judgement{new: [survivor]}) | print_survivor_lines: true}
+
+      assert Report.render(run) =~
+               "Survivor lines to add to #{@path} (nothing was written; replace each placeholder with the real reason):\n" <>
+                 "aaaaaaaaaaaa lib/calc.ex Calc.add/2 return_input  # <why no test can kill it>"
+
+      refute Report.render(%{run | print_survivor_lines: false}) =~ "Survivor lines to add"
     end
   end
 end

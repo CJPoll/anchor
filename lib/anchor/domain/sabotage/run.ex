@@ -31,6 +31,15 @@ defmodule Anchor.Domain.Sabotage.Run do
     * `record_error` — `nil`, or why a record could not be written. The
       outcomes still stand and keep their verdict: a survivor stays exit 1
       and an unmeasured run exit 3; only a pass becomes exit 2 (DND-5641).
+    * `scope_functions` — `"Module.fun/arity"` of every changed function, the
+      scope the survivors list is judged in (DND-5483);
+    * `not_selected` — the mutants `--only` left out: never run, so a listed
+      one is not judged (DND-5483);
+    * `survivors` — `nil` (not judged: a dry run, a refusal), or the list's
+      judgement, `%{path, base, judgement, grew}`
+      (`Anchor.Domain.Sabotage.Survivors`, DND-5483);
+    * `print_survivor_lines` — print the line to add for each new survivor
+      (`--print-survivor-lines`); nothing is written.
   """
 
   alias Anchor.Domain.Sabotage.Mutant
@@ -52,7 +61,11 @@ defmodule Anchor.Domain.Sabotage.Run do
             generated: nil,
             no_mutant: [],
             records: [],
-            record_error: nil
+            record_error: nil,
+            scope_functions: [],
+            not_selected: [],
+            survivors: nil,
+            print_survivor_lines: false
 
   @type selection :: {atom(), [String.t()]}
   @type outcome :: %{
@@ -78,6 +91,17 @@ defmodule Anchor.Domain.Sabotage.Run do
           generated: nil | non_neg_integer(),
           no_mutant: [{map(), String.t()}],
           records: [{:create | :append, String.t()}],
-          record_error: String.t() | nil
+          record_error: String.t() | nil,
+          scope_functions: [String.t()],
+          not_selected: [Mutant.t()],
+          survivors:
+            nil
+            | %{
+                path: String.t(),
+                base: String.t(),
+                judgement: Anchor.Domain.Sabotage.Survivors.Judgement.t(),
+                grew: Anchor.Domain.Sabotage.Survivors.grew()
+              },
+          print_survivor_lines: boolean()
         }
 end

@@ -71,6 +71,12 @@ defmodule Mix.Tasks.Anchor.SabotageRunTest do
     assert output =~ ".anchor/sabotage/in-flight.json cannot be read"
   end
 
+  test "DND-5483: run_facts/1 maps --print-survivor-lines; off by default" do
+    # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5483_survivors_replay.md
+    assert {:ok, %{print_survivor_lines: true}} = Sabotage.run_facts(["--print-survivor-lines"])
+    assert {:ok, %{print_survivor_lines: false}} = Sabotage.run_facts([])
+  end
+
   test "DND-5484: run_facts/1 maps the record flags; without --no-record a record is written" do
     # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5484_records.md
     argv = ["--no-record", "--domain", "d", "--ticket", "DND-1", "--slot", "s"]
@@ -134,13 +140,23 @@ defmodule Mix.Tasks.Anchor.SabotageRunTest do
     expect(GitWorktreeMock, :dirty_paths, fn ^root, ["lib/calc.ex"] -> {:ok, []} end)
     expect(SourceMutationMock, :existing, fn [] -> [] end)
     expect(SourceMutationMock, :save_run, save_run)
+    # DND-5483: the survivors list, empty here and on the base.
+    expect(Anchor.BaselineStoreMock, :read, fn ^root, ".anchor/sabotage/survivors.txt" ->
+      {:ok, []}
+    end)
+
+    expect(Anchor.GitBaseMock, :show, fn ^root, "origin/main", ".anchor/sabotage/survivors.txt" ->
+      {:ok, []}
+    end)
 
     opts = [
       config_loader: ConfigLoaderMock,
       change_source: ChangeSourceMock,
       source_mutation: SourceMutationMock,
       git_worktree: GitWorktreeMock,
-      test_execution: TestExecutionMock
+      test_execution: TestExecutionMock,
+      baseline_store: Anchor.BaselineStoreMock,
+      git_base: Anchor.GitBaseMock
     ]
 
     capture_io(fn -> assert Sabotage.run(["run"], opts) == :ok end)

@@ -5,6 +5,8 @@ defmodule Anchor.Integration.SabotageRunIntegrationTest do
   # by --only, so the run stays light: a killed `return_input` of add/2 and a
   # survived `delete_statement` of validate/1 (no test reads it).
   # DND-5484: the same run writes its sabotage record, read back here.
+  # DND-5483: then the survivors list holds the survivor, and the run passes.
+  # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5483_survivors_replay.md
   # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5473_sabotage_run.md
   # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5484_records.md
   use ExUnit.Case, async: true
@@ -140,5 +142,36 @@ defmodule Anchor.Integration.SabotageRunIntegrationTest do
 
     saved = File.read!(Path.join(root, "_build/test/anchor/sabotage/last-run.etf"))
     assert :erlang.binary_to_term(saved) == run
+
+    # DND-5483: the survivor is NEW on the real survivors list (none yet);
+    # listing it with a reason makes the same run exit 0, and the branch's
+    # addition is shown for review against the base, which has no list.
+    assert Enum.map(run.survivors.judgement.new, & &1.mutant.id) == [survived]
+
+    assert "no survivors file at .anchor/sabotage/survivors.txt: every survivor is NEW" in run.notes
+
+    write!(
+      root,
+      ".anchor/sabotage/survivors.txt",
+      "# survivors\n#{survived} lib/calc.ex Calc.validate/1 delete_statement  # check/1 is a no-op\n"
+    )
+
+    listed =
+      Sabotage.run(%{
+        root: root,
+        env: :test,
+        build_path: Path.join(root, "_build/test"),
+        base: base,
+        max: :all,
+        only: [survived],
+        dry_run: false,
+        no_record: true
+      })
+
+    assert listed.refusal == nil, Report.render(listed)
+    assert [%{id: ^survived}] = listed.survivors.judgement.held
+    assert {:first_landing, [%{id: ^survived}]} = listed.survivors.grew
+    assert Report.exit_code(listed) == 0
+    assert File.read!(Path.join(root, "lib/calc.ex")) == @calc
   end
 end

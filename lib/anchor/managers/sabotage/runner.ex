@@ -69,6 +69,21 @@ defmodule Anchor.Managers.Sabotage.Runner do
        record that cannot be written sets `record_error`: said loudly, and
        exit 2 only when every measured mutant passed (DND-5641).
 
+  ## The survivors list (DND-5483)
+
+  Before any mutant is applied (after step 7's record checks; a dry run skips
+  it), the survivors list (`sabotage.survivors`, default
+  `Anchor.Domain.Sabotage.Survivors.default_path/0`) is read through
+  `Anchor.Adapters.BaselineStore` and its copy at `base` (the ref the scope
+  read, `origin/main` by default) through `Anchor.Adapters.GitBase`, the
+  ports the graph's baselines use. A named file that is absent, or a list
+  that does not parse, refuses the run (exit 1, each entry named); a list
+  that cannot be read, or a base copy that cannot be read for any reason but
+  its absence, is exit 3. The default path absent is an empty list, said in
+  the notes. After the mutants, `Survivors.judge/2` and `Survivors.grew/2`
+  set `Run.survivors`; `Report` turns it into the exit code. The run never
+  writes the list.
+
   Selection also reads the kill maps of the records already there (DND-5484):
   a record whose `anchor-kills` block does not parse is skipped for selection
   and named in the notes (`could not read kill map in <path>:<line>`), never
@@ -83,7 +98,9 @@ defmodule Anchor.Managers.Sabotage.Runner do
 
   ## Adapters (options)
 
-  `:config_loader` (`Anchor.Adapters.ConfigFile`), `:record_store`
+  `:config_loader` (`Anchor.Adapters.ConfigFile`), `:baseline_store`
+  (`Anchor.Adapters.BaselineFile`), `:git_base` (`Anchor.Adapters.GitShow`),
+  `:record_store`
   (`Anchor.Adapters.RecordFile`), `:coverage_store`
   (`Anchor.Adapters.CoverageFile`), `:change_source`
   (`Anchor.Adapters.GitChangeSource`), `:source_mutation`
@@ -92,9 +109,11 @@ defmodule Anchor.Managers.Sabotage.Runner do
   (`Anchor.Adapters.TestRunner`).
   """
 
+  alias Anchor.Adapters.BaselineFile
   alias Anchor.Adapters.ConfigFile
   alias Anchor.Adapters.CoverageFile
   alias Anchor.Adapters.GitChangeSource
+  alias Anchor.Adapters.GitShow
   alias Anchor.Adapters.GitStatus
   alias Anchor.Adapters.RecordFile
   alias Anchor.Adapters.SourcePatcher
@@ -114,6 +133,7 @@ defmodule Anchor.Managers.Sabotage.Runner do
   alias Anchor.Domain.Sabotage.RecordNaming
   alias Anchor.Domain.Sabotage.Run
   alias Anchor.Domain.Sabotage.SharedRun
+  alias Anchor.Domain.Sabotage.Survivors
   alias Anchor.Domain.Sabotage.TestRun
   alias Anchor.Domain.Sabotage.TestSelection
   alias Anchor.Managers.Sabotage
@@ -232,8 +252,17 @@ defmodule Anchor.Managers.Sabotage.Runner do
          {:ok, plan} <- plan(mutants, facts, config),
          {:ok, coverage, notes} <- coverage(facts, config, ports),
          {:ok, records} <- existing_records(root, config, ports),
-         {:ok, recording} <- recording(facts, config, scope, run, plan, records, ports) do
-      run = %{run | not_run: plan.not_run, notes: run.notes ++ notes ++ records.notes}
+         {:ok, recording} <- recording(facts, config, scope, run, plan, records, ports),
+         {:ok, list} <- survivors_list(facts, config, ports) do
+      run = %{
+        run
+        | not_run: plan.not_run,
+          notes: run.notes ++ notes ++ records.notes ++ survivor_notes(list),
+          scope_functions: Enum.map(scope.functions, &mfa/1),
+          not_selected: not_selected(mutants, plan),
+          print_survivor_lines: Map.get(facts, :print_survivor_lines, false)
+      }
+
       selection = select(plan.planned, root, config, {coverage, records.kill_map}, ports)
       planned = Enum.zip(plan.planned, selection)
 
@@ -242,6 +271,7 @@ defmodule Anchor.Managers.Sabotage.Runner do
         else:
           run
           |> measure(facts, config, sources, planned, ports)
+          |> judge_survivors(list)
           |> write_records(recording, root, ports)
           |> save(facts, ports)
     else
@@ -259,6 +289,8 @@ defmodule Anchor.Managers.Sabotage.Runner do
       tests: Keyword.get(opts, :test_execution, TestRunner),
       coverage: Keyword.get(opts, :coverage_store, CoverageFile),
       records: Keyword.get(opts, :record_store, RecordFile),
+      baseline_store: Keyword.get(opts, :baseline_store, BaselineFile),
+      git_base: Keyword.get(opts, :git_base, GitShow),
       opts: opts
     }
   end
@@ -807,6 +839,95 @@ defmodule Anchor.Managers.Sabotage.Runner do
       results_path: build_path(facts, "results.bin"),
       timeout_seconds: config.timeout_seconds
     )
+  end
+
+  # -- DND-5483: the survivors list -------------------------------------------
+
+  # The mutants --only left out (neither planned nor past the cap).
+  defp not_selected(mutants, plan) do
+    kept = MapSet.new(plan.planned ++ plan.not_run, & &1.id)
+    Enum.reject(mutants, &MapSet.member?(kept, &1.id))
+  end
+
+  defp mfa(%{module: module, name: name, arity: arity}), do: "#{inspect(module)}.#{name}/#{arity}"
+
+  defp survivor_notes(nil), do: []
+  defp survivor_notes(%{notes: notes}), do: notes
+
+  # A dry run applies nothing, so it judges nothing.
+  defp survivors_list(%{dry_run: true}, _config, _ports), do: {:ok, nil}
+
+  defp survivors_list(facts, config, ports) do
+    path = config.survivors || Survivors.default_path()
+    base = Map.get(facts, :base, @default_base)
+
+    with {:ok, entries, notes} <- read_survivors(facts.root, path, config.survivors, ports),
+         {:ok, base_lines} <- base_survivors(facts.root, base, path, ports) do
+      {:ok, %{path: path, base: base, entries: entries, base_lines: base_lines, notes: notes}}
+    end
+  end
+
+  defp read_survivors(root, path, named, %{baseline_store: store}) do
+    case store.read(root, path) do
+      {:ok, lines} ->
+        parsed_survivors(path, Survivors.parse(lines))
+
+      {:error, :enoent} when is_nil(named) ->
+        {:ok, [], ["no survivors file at #{path}: every survivor is NEW"]}
+
+      {:error, :enoent} ->
+        {:refuse, 1,
+         "survivors file #{path} not found. Fix: create it (it may be empty) or remove " <>
+           "sabotage.survivors"}
+
+      {:error, reason} ->
+        {:refuse, 3,
+         "COULD NOT MEASURE: the survivors file #{path} cannot be read (#{inspect(reason)}). " <>
+           "Fix: make #{path} a readable UTF-8 file inside the project, with no symlink on its path"}
+    end
+  end
+
+  defp parsed_survivors(_path, {:ok, entries}), do: {:ok, entries, []}
+
+  defp parsed_survivors(path, {:error, errors}) do
+    named = Enum.map_join(errors, "\n", fn {n, message} -> "  entry #{n}: #{message}" end)
+
+    {:refuse, 1,
+     "survivors file #{path} is malformed; nothing was run:\n" <>
+       named <>
+       "\nFix: write each entry as `<id> <file> <Module.fun/arity> <operator>  # <reason>`, " <>
+       "one per id, with a real reason"}
+  end
+
+  defp base_survivors(root, base, path, %{git_base: git_base}) do
+    case git_base.show(root, base, path) do
+      {:ok, lines} ->
+        {:ok, lines}
+
+      {:error, :absent} ->
+        {:ok, :absent}
+
+      {:error, reason} ->
+        {:refuse, 3,
+         "COULD NOT MEASURE: the survivors file #{path} cannot be read at #{base} " <>
+           "(#{inspect(reason)}), so what this branch adds to it cannot be shown. " <>
+           "Fix: fetch #{base}, or pass --base with a ref that resolves"}
+    end
+  end
+
+  defp judge_survivors(run, nil), do: run
+  defp judge_survivors(%Run{refusal: {_code, _message}} = run, _list), do: run
+
+  defp judge_survivors(run, list) do
+    %{
+      run
+      | survivors: %{
+          path: list.path,
+          base: list.base,
+          judgement: Survivors.judge(run, list.entries),
+          grew: Survivors.grew(list.entries, list.base_lines)
+        }
+    }
   end
 
   # -- DND-5484: records ------------------------------------------------------

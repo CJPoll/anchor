@@ -401,3 +401,14 @@ named per `sabotage.records` (`RecordNaming`: anchor and crew
 (source `kill_map`, after `coverage`, before `mirror`) and what DND-5485
 replays. `RecordFile.create/3` never overwrites; a README is never written;
 nothing is staged or committed. The date is a fact the Mix task reads.
+
+## The survivors list (DND-5483)
+
+`mix anchor.sabotage run` judges `.anchor/sabotage/survivors.txt`
+(`sabotage.survivors`; `Anchor.Domain.Sabotage.Survivors`): a survivor not
+listed is NEW, a listed mutant now killed or no longer generated is STALE,
+both exit 1; the entries a branch adds against `--base` are printed for
+review. It reads the list through the graph's baseline ports
+(`BaselineStore`, `GitBase`) and compares through `Baseline.compare/2`: never
+a second comparator. It is not a graph baseline (`.anchor/baselines/`), and
+the run never writes it.

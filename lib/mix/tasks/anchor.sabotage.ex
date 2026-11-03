@@ -28,7 +28,7 @@ defmodule Mix.Tasks.Anchor.Sabotage do
 
       mix anchor.sabotage run [--base REF] [--max N|all] [--only ID]... [--dry-run]
                               [--coverage PATH] [--no-record] [--domain D]
-                              [--ticket KEY] [--slot S]
+                              [--ticket KEY] [--slot S] [--print-survivor-lines]
       mix anchor.sabotage restore
 
   `run` applies the mutants of the changed functions one at a time, runs only
@@ -49,18 +49,29 @@ defmodule Mix.Tasks.Anchor.Sabotage do
   the ticket key and the slot read from the branch. The date is read here,
   in UTC, and passed on as a fact.
 
+  The run judges the survivors list (DND-5483,
+  `Anchor.Domain.Sabotage.Survivors`): a survivor (or a mutant with no test)
+  that is not listed is NEW, a listed mutant now killed or no longer generated
+  is STALE, and both fail the run (1); the entries this branch adds against
+  `--base` are printed for review. `--print-survivor-lines` prints, at the
+  end, the line to add for each NEW survivor, with a placeholder reason to
+  replace; it never writes the file.
+
   Exit codes (DND-5570): 0 every measured mutant was killed or timed out (an
   invalid one, which did not compile, is listed and counted and changes
   nothing), or there was no changed function (a good diff read that found none
-  prints `sabotage: 0 changed functions in REF..HEAD`); 1 a mutant survived,
-  crashed or had no test, beside a measured one; 2 a refusal or a usage error
+  prints `sabotage: 0 changed functions in REF..HEAD`); 1 a mutant survived or
+  had no test and is not on the survivors list, a mutant crashed beside a
+  measured one, a STALE or malformed survivors entry, or a survivors file
+  named in the config that is absent; 2 a refusal or a usage error
   (a dirty target file, the journal not git-ignored, a journal that cannot be
   restored safely, a host with no `/proc`, bad flags, a sabotage record that cannot be
   written when every measured mutant passed: a survivor stays 1 and an
   unmeasured run 3, DND-5641); 3 `COULD NOT MEASURE` (no loadable `sabotage:`
   config, the baseline tests fail, the changed functions' files cannot be
   read, or mutants were run and none was measured: all invalid, crashed or
-  without a test).
+  without a test; the survivors file, or its copy at `--base`, cannot be
+  read).
 
   ## coverage (DND-5474)
 
@@ -91,7 +102,7 @@ defmodule Mix.Tasks.Anchor.Sabotage do
   Usage: mix anchor.sabotage scope [--base REF] [--format text|json]
          mix anchor.sabotage run [--base REF] [--max N|all] [--only ID]... [--dry-run]
                                  [--coverage PATH] [--no-record] [--domain D]
-                                 [--ticket KEY] [--slot S]
+                                 [--ticket KEY] [--slot S] [--print-survivor-lines]
          mix anchor.sabotage restore
          MIX_ENV=test mix anchor.sabotage coverage [--out PATH] [--local] [-- TEST_ARGS]
   Fix: use one of these forms; --max takes a positive integer or `all`\
@@ -148,7 +159,8 @@ defmodule Mix.Tasks.Anchor.Sabotage do
       record: :boolean,
       domain: :string,
       ticket: :string,
-      slot: :string
+      slot: :string,
+      print_survivor_lines: :boolean
     ]
 
     with {parsed, [], []} <- OptionParser.parse(argv, strict: switches),
@@ -167,6 +179,7 @@ defmodule Mix.Tasks.Anchor.Sabotage do
         domain: parsed[:domain],
         ticket: parsed[:ticket],
         slot: parsed[:slot],
+        print_survivor_lines: Keyword.get(parsed, :print_survivor_lines, false),
         now: DateTime.utc_now(),
         command: Enum.join(["mix", "anchor.sabotage", "run" | argv], " "),
         version: anchor_version()

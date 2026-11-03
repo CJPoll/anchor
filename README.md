@@ -1106,6 +1106,7 @@ sabotage:
     domain_from: module              # or context_dir: the directory under lib/<app>/
     domain_strip_prefixes: []        # e.g. ["MyApp.Domain.", "MyApp."]; the longest match is dropped
     adr: "the repo's sabotage-record ADR"  # named next to each test still lacking a red
+  survivors: .anchor/sabotage/survivors.txt  # the survivors list (DND-5483); named here, it must exist
 ```
 
 ```gitignore
@@ -1219,10 +1220,56 @@ function with no literal clause is listed as an error, never as killed.
 | every measured mutant killed or timed out (an `invalid` one beside them changes nothing) | 0 |
 | zero changed functions from a good diff read (an empty scope: `sabotage: 0 changed functions in <base>..HEAD`) | 0 |
 | changed functions that yielded no mutant at all (every edit skipped, no literal clause, a `defimpl` target not a literal, no mutable site): one `sabotage: no mutant from M.f/a (file): <reason>` line per function, then `sabotage: no mutants generated from N changed functions: nothing was measured` (DND-5617) | 0 |
-| a mutant survived, crashed or had no test, beside a measured one (a survivors list that gives one a reason will exempt it: DND-5483) | 1 |
+| a mutant survived or had no test and is not on the survivors list (NEW), beside a measured one; a mutant crashed beside a measured one; a survivors entry now killed or no longer generated (STALE); a malformed survivors entry; a survivors file named in `sabotage.survivors` that does not exist (DND-5483) | 1 |
 | mutants were run and none was measured (all `invalid`, `crashed` or without a test) | 3, `COULD NOT MEASURE` with `Fix:` |
 | a record that could not be named (above); a record that could not be written, when every measured mutant passed (after the outcomes: a survivor stays 1 and an unmeasured run 3, each with `sabotage: record not written: <why>`; DND-5641); a dirty target file; the journal not git-ignored; the run lock or a journal another live run holds; a host with no `/proc`; a leftover journal whose file changed; a restore that did not reproduce the original (the journal is kept); an unknown `--only` id; no `timeout` binary; bad flags | 2, with `Fix:` |
-| no loadable config or no `sabotage:` section; the scope could not be measured; the baseline fails; changed functions whose files cannot be read | 3, `COULD NOT MEASURE` with `Fix:` |
+| no loadable config or no `sabotage:` section; the scope could not be measured; the baseline fails; changed functions whose files cannot be read; the survivors file, or its copy at `--base`, cannot be read (DND-5483) | 3, `COULD NOT MEASURE` with `Fix:` |
+
+### Sabotage: the survivors list
+
+Some mutants no test can kill: dropping a log line nobody asserts on, or
+narrowing a clause that only exists as a defensive fallback. Each such
+survivor is listed, with its reason, in `.anchor/sabotage/survivors.txt`
+(`sabotage.survivors` names another path; DND-5483):
+
+```text
+# One entry per line; blank lines and `#` lines are ignored.
+3f9a01c2b7de lib/calc.ex Calc.validate/1 delete_statement  # logging only; no behaviour depends on it
+```
+
+The reason is required, and a placeholder (`TODO`, `TBD`, `FIXME`, the
+`<why no test can kill it>` the run prints, or nothing) is refused. So is a
+bad id, a missing field, an unknown operator or a duplicate id: the run
+refuses before applying any mutant, exit 1, naming each entry.
+
+`run` judges the list for the functions in its scope (the changed functions
+and the functions of the mutants it generated), through the same comparator
+as the graph baselines (`Anchor.Domain.Baseline.compare/2`), keyed on the
+mutant id:
+
+| Case | Printed | Exit |
+|---|---|---|
+| a `survived` or `no_tests` mutant the list does not hold | `NEW survivor <id> ...`, then a `Fix:` with the exact line to add | 1 |
+| a listed mutant now killed, timed out or invalid, or no longer generated (its function changed) | `STALE survivor <id> ... Fix: delete its line from <path>` | 1 |
+| an entry whose id names a mutant of another file, function or operator | `survivors file <path>, entry N (...)` with a `Fix:` | 1 |
+| a listed survivor | its run line ends `listed in <path>: <reason>` | 0 |
+| a listed mutant past the cap, left out by `--only`, whose run crashed, or whose function could not be mutated this run | `survivor <id> ... not judged (...)` | 0 |
+| an entry for a function outside the scope | nothing | 0 |
+
+The default path absent is an empty list (`no survivors file at ...: every
+survivor is NEW`); a path named in the config that is absent is exit 1. A
+crashed mutant cannot be listed: it fails the run as before.
+
+The list only shrinks without review. The run reads the list's copy at
+`--base` (default `origin/main`, the ref the scope reads) and prints the
+entries this branch adds under `Survivors added by this branch: review each
+reason` (all of them, said so, when the base has no list). That block never
+changes the exit code: adding a survivor is allowed, and the reviewer sees
+it. A base copy that cannot be read for any reason but its absence is exit 3.
+
+`--print-survivor-lines` prints, at the end, the line to add for each NEW
+survivor, with the placeholder reason to replace. The run never writes the
+list.
 
 ### Sabotage: the per-test coverage map
 
