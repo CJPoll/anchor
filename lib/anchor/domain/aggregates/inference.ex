@@ -17,10 +17,9 @@ defmodule Anchor.Domain.Aggregates.Inference do
   `render_yaml/1` prints an analysis's proposals in the exact `aggregates:`
   shape of `.anchor.yml`, sorted by name, which
   `Anchor.Domain.Aggregates.Config.parse/1` reads back, with a leading comment
-  when some writes are unresolved. With no write at all it prints
-  `declare: none` with a reason (DND-5659), and only when there is no write
-  site, no transaction and no unattributed call outside one; with no repo,
-  or such evidence but nothing resolved, it is an error, never `none`.
+  when some writes are unresolved. With nothing to propose it is an error,
+  never `declare: none`: the analysis exists only with a repo, and a repo
+  means the project persists, so `none` is a person's call, made by hand.
   """
 
   alias Anchor.Domain.Aggregates.Analysis
@@ -68,43 +67,42 @@ defmodule Anchor.Domain.Aggregates.Inference do
 
   @doc """
   The analysis's proposals as `.anchor.yml`'s `aggregates:` section; see the
-  moduledoc. `{:error, why}` when the analysis cannot support a proposal: no
-  repo, or writes found but none traced to a schema or table. "Nothing
-  resolved" is never rendered as `declare: none`.
+  moduledoc. `{:error, why}` when there is nothing to propose: no repo, or a
+  repo but nothing traced to a schema or table. It never proposes
+  `declare: none`: an analysis exists only with a repo, and a repo means the
+  project persists, so `none` is a person's call, made by hand.
   """
   @spec render_yaml(Analysis.t()) :: {:ok, String.t()} | {:error, String.t()}
   def render_yaml(%Analysis{no_repo?: true}) do
     {:error,
      "no Ecto repo found, so there is nothing to propose. Fix: list the repo under " <>
-       "aggregates.repos, or declare: none if the project persists nothing"}
+       "aggregates.repos; if the project persists nothing, write declare: none by hand " <>
+       "with a reason"}
   end
 
   def render_yaml(%Analysis{counts: counts} = analysis) do
-    case {proposed_declarations(analysis), evidence(analysis)} do
-      {[], []} ->
-        {:ok,
-         "aggregates:\n  declare: none\n" <>
-           "  reason: \"anchor found no transaction and no write in this project\"\n"}
-
-      {[], evidence} ->
+    case proposed_declarations(analysis) do
+      [] ->
         {:error,
-         "#{Enum.join(evidence, ", ")}, and nothing traced to a schema or table, so there " <>
-           "is nothing to propose. Fix: resolve the writes and calls " <>
-           "(aggregate_write_sources lists them) and propose again"}
+         "nothing traced to a schema or table (#{Enum.join(evidence(analysis), "; ")}), so " <>
+           "there is nothing to propose; a repo means the project persists, so declare: none " <>
+           "does not fit. Fix: resolve the writes (aggregate_write_sources lists them) and " <>
+           "propose again"}
 
-      {proposals, _evidence} ->
+      proposals ->
         {:ok, unresolved_note(counts) <> declarations_yaml(proposals)}
     end
   end
 
-  # What says the project persists even when nothing resolved: a write site,
-  # a transaction, or a call Anchor cannot attribute outside one (raw SQL, a
-  # write on a module held in a variable make no write site, only a gap).
-  # `declare: none` is rendered only when all three are absent.
-  defp evidence(%Analysis{counts: counts, scopes: scopes, nontx: nontx}) do
+  # What the analysis found, for the message: the repos always, then the
+  # schemas, writes, transactions and calls it could not attribute.
+  defp evidence(%Analysis{counts: counts, scopes: scopes, nontx: nontx} = analysis) do
     outside = nontx |> Map.values() |> Enum.flat_map(& &1.gaps) |> Enum.uniq() |> length()
+    schemas = analysis.tables |> Map.values() |> List.flatten() |> Enum.uniq() |> length()
 
     [
+      "repo(s) #{Enum.map_join(analysis.repos, ", ", &inspect/1)}",
+      schemas > 0 && "#{schemas} schema(s)",
       counts.writes > 0 && "#{counts.writes} write(s) found, #{counts.unresolved} unresolved",
       scopes != [] && "#{length(scopes)} transaction(s)",
       outside > 0 && "#{outside} call(s) Anchor cannot attribute outside a transaction"

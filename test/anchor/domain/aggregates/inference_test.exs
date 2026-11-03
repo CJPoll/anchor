@@ -5,6 +5,8 @@ defmodule Anchor.Domain.Aggregates.InferenceTest do
   # Sabotage record: ../../../sabotage_records/aggregates-20261103-dnd_5459_write_sets.md
   use ExUnit.Case, async: true
 
+  import Anchor.Test.WriteFixtures
+
   alias Anchor.Domain.Aggregates.Analysis
   alias Anchor.Domain.Aggregates.Config
   alias Anchor.Domain.Aggregates.Inference
@@ -92,11 +94,28 @@ defmodule Anchor.Domain.Aggregates.InferenceTest do
              Enum.map(proposals, &{&1.name, &1.schemas, &1.tables})
   end
 
-  test "F5: nothing written renders declare: none with a reason, which parses (DND-5659)" do
-    assert {:ok, yaml} = Inference.render_yaml(analysis([], []))
-    {:ok, %{"aggregates" => section}} = YamlElixir.read_from_string(yaml)
-    assert {:ok, %Config{declare: [], none: reason}} = Config.parse(section)
-    assert reason =~ "no transaction"
+  # Critic round 3: an analysis exists only with a repo, and a repo persists,
+  # so the analysis never proposes declare: none. Built through
+  # Analysis.build/3, never a hand-built state it cannot produce.
+  test "F5: a repo and a schema with no write is an error naming them, never declare: none" do
+    ns = AnchorFixtures.InferenceTest
+    s = Module.concat(ns, S)
+    repo = Module.concat(ns, Repo)
+
+    source =
+      schema(s, "s") <>
+        repo(repo) <>
+        "defmodule #{inspect(Module.concat(ns, Reader))} do\n" <>
+        "  def all, do: #{inspect(repo)}.all(#{inspect(s)})\nend\n"
+
+    analysis = Analysis.build(graph!(source), %Config{repos: [repo]})
+    refute analysis.no_repo?
+
+    assert {:error, why} = Inference.render_yaml(analysis)
+    assert why =~ "repo(s) #{inspect(repo)}"
+    assert why =~ "1 schema(s)"
+    assert why =~ "a repo means the project persists, so declare: none does not fit"
+    refute why =~ "aggregates:"
   end
 
   # Code-review finding: "nothing resolved" must never render as "nothing
@@ -134,6 +153,7 @@ defmodule Anchor.Domain.Aggregates.InferenceTest do
   test "F8: no repo is an error, never declare: none" do
     assert {:error, why} = Inference.render_yaml(%Analysis{no_repo?: true})
     assert why =~ "no Ecto repo"
+    assert why =~ "write declare: none by hand"
   end
 
   test "F8: a proposal with unresolved writes beside it says so in the YAML" do
