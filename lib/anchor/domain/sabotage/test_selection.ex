@@ -9,7 +9,9 @@ defmodule Anchor.Domain.Sabotage.TestSelection do
        `Anchor.Domain.Sabotage.CoverageMap.index/1` of a map);
     2. `:kill_map` (DND-5484): the test files whose tests killed a mutant of
        the same `Module.fun/arity` in an earlier sabotage record (input
-       `kill_map`, `\"M.f/a\" => [file]`), each of which must exist;
+       `kill_map`, `\"M.f/a\" => [file]`), each of which must exist, with
+       the mirror's test file when it exists (a branch's new tests for the
+       function live there, and no record names them yet);
     3. `:mirror`: the first `test_mirror` rule whose `from` matches the
        mutant's file names a test file, which must exist;
     4. `:none`.
@@ -54,9 +56,19 @@ defmodule Anchor.Domain.Sabotage.TestSelection do
 
     cond do
       refs != [] -> {:coverage, fresh(refs, rules, file, existing, stale(inputs))}
-      killers != [] -> {:kill_map, killers |> Enum.uniq() |> Enum.sort()}
+      killers != [] -> {:kill_map, with_mirror(killers, rules, file, existing)}
       true -> mirror(rules, file, existing)
     end
+  end
+
+  defp with_mirror(killers, rules, file, existing) do
+    mirror =
+      case mirror(rules, file, existing) do
+        {:mirror, paths} -> paths
+        {:none, []} -> []
+      end
+
+    (killers ++ mirror) |> Enum.uniq() |> Enum.sort()
   end
 
   @doc """

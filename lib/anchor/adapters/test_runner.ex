@@ -43,7 +43,11 @@ defmodule Anchor.Adapters.TestRunner do
           {output, code} =
             System.cmd(timeout, argv ++ @formatters,
               cd: Keyword.fetch!(opts, :cd),
-              env: [{"MIX_ENV", "test"}, {"ANCHOR_SABOTAGE_RESULTS", results}],
+              env: [
+                {"MIX_ENV", "test"},
+                {"ANCHOR_SABOTAGE_RESULTS", results},
+                {"ANCHOR_SABOTAGE_ROOT", Keyword.fetch!(opts, :cd)}
+              ],
               stderr_to_stdout: true
             )
 

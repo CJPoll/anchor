@@ -15,7 +15,9 @@ defmodule Anchor.Domain.Sabotage.Config do
   | `records` | below | where the run's sabotage record goes and how it is named (DND-5484) |
 
   `records` (every key optional): `dir` (default `test/sabotage_records`;
-  may hold `{app}`), `naming` (`domain_date_slot`, the default, or
+  may hold `{app}`; relative, with no `..` segment, read with a leading `./`
+  and trailing `/` dropped, so `test/sabotage_records/` names the same
+  directory), `naming` (`domain_date_slot`, the default, or
   `ticket_nn_what`), `domain_from` (`module`, the default, or `context_dir`),
   `domain_strip_prefixes` (a list of module-name prefixes, default `[]`),
   `adr` (the rule a test still lacking a red follows, named in the record;
@@ -268,6 +270,7 @@ defmodule Anchor.Domain.Sabotage.Config do
 
     with :ok <- known_record_keys(section),
          {:ok, dir} <- record_string(section, "dir", defaults.dir),
+         {:ok, dir} <- record_dir(dir),
          {:ok, naming} <- record_choice(section, "naming", @namings, defaults.naming),
          {:ok, from} <- record_choice(section, "domain_from", @domain_froms, defaults.domain_from),
          {:ok, prefixes} <- record_prefixes(section),
@@ -311,6 +314,22 @@ defmodule Anchor.Domain.Sabotage.Config do
         )
     end
   end
+
+  defp record_dir(dir) do
+    segments = dir |> String.split("/") |> drop_dot_slash() |> Enum.reject(&(&1 == ""))
+
+    if String.starts_with?(dir, "/") or ".." in segments or segments == [] do
+      refuse(
+        "sabotage.records.dir must be a directory inside the project, got: #{inspect(dir)}",
+        "set it relative to the project root, with no .. segment"
+      )
+    else
+      {:ok, Enum.join(segments, "/")}
+    end
+  end
+
+  defp drop_dot_slash(["." | rest]), do: drop_dot_slash(rest)
+  defp drop_dot_slash(segments), do: segments
 
   defp record_choice(section, key, choices, default) do
     case Map.fetch(section, key) do

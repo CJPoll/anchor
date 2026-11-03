@@ -46,11 +46,12 @@ defmodule Anchor.Domain.Sabotage.RecordNamingTest do
   end
 
   describe "slot/2 and path/2" do
-    test "1: a ticket key in the branch, matched case-insensitively and upper-cased" do
+    test "1: the slot is the branch sanitized, case kept (ADR 003); the ticket key upper-cased" do
       assert RecordNaming.slot("dnd-5473-runner") ==
-               {:ok, %{slot: "DND_5473", ticket: "DND-5473"}}
+               {:ok, %{slot: "dnd_5473_runner", ticket: "DND-5473"}}
 
-      assert RecordNaming.slot("feat/Dnd-12_x") == {:ok, %{slot: "DND_12", ticket: "DND-12"}}
+      assert RecordNaming.slot("feat/Dnd-12_x") ==
+               {:ok, %{slot: "feat_Dnd_12_x", ticket: "DND-12"}}
     end
 
     test "2: no ticket key: the branch, sanitized" do
@@ -60,7 +61,9 @@ defmodule Anchor.Domain.Sabotage.RecordNamingTest do
 
     test "--ticket and --slot override; a detached HEAD needs --slot or --ticket" do
       assert RecordNaming.slot("main", ticket: "DND-9") ==
-               {:ok, %{slot: "DND_9", ticket: "DND-9"}}
+               {:ok, %{slot: "main", ticket: "DND-9"}}
+
+      assert RecordNaming.slot(nil, ticket: "DND-9") == {:ok, %{slot: "DND_9", ticket: "DND-9"}}
 
       assert RecordNaming.slot(nil, slot: "x/y") == {:ok, %{slot: "x_y", ticket: nil}}
       assert RecordNaming.slot(nil) == {:error, :no_branch}
@@ -77,7 +80,7 @@ defmodule Anchor.Domain.Sabotage.RecordNamingTest do
 
     test "3: domain_date_slot" do
       assert RecordNaming.path(@anchor, ctx(%{})) ==
-               {:ok, "test/sabotage_records/sabotage-20261105-DND_5473.md"}
+               {:ok, "test/sabotage_records/sabotage-20261105-dnd_5473_runner.md"}
     end
 
     test "4: ticket_nn_what numbers one above the highest, not the count" do
@@ -98,7 +101,7 @@ defmodule Anchor.Domain.Sabotage.RecordNamingTest do
       assert app == "core"
 
       assert RecordNaming.path(@crew, ctx(%{app: app})) ==
-               {:ok, "apps/core/test/sabotage_records/sabotage-20261105-DND_5473.md"}
+               {:ok, "apps/core/test/sabotage_records/sabotage-20261105-dnd_5473_runner.md"}
     end
 
     test "{app} for a file outside apps/ is refused" do

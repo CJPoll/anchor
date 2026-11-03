@@ -778,10 +778,15 @@ defmodule Anchor.Managers.Sabotage.Runner do
   defp recording(%{no_record: true}, _config, _scope, _run, _plan, _records, _ports),
     do: {:ok, nil}
 
+  # A dry run writes nothing, so it needs nothing a record needs.
+  defp recording(%{dry_run: true}, _config, _scope, _run, _plan, _records, _ports),
+    do: {:ok, nil}
+
   defp recording(facts, config, scope, run, plan, records, ports) do
     cfg = config.records
 
-    with {:ok, branch} <- branch(facts.root, ports),
+    with :ok <- name_overrides(facts),
+         {:ok, branch} <- branch(facts.root, ports),
          {:ok, slot} <- record_slot(branch, facts),
          :ok <- ticket_for(cfg, slot),
          :ok <- apps_for(cfg, record_files(run, plan)) do
@@ -822,6 +827,26 @@ defmodule Anchor.Managers.Sabotage.Runner do
         {:refuse, 2,
          "HEAD is detached, so the sabotage record has no slot to be named by. " <>
            "Fix: pass --slot S (or --ticket KEY), or --no-record"}
+    end
+  end
+
+  # --domain and --ticket become part of a file name: only a name, never a path.
+  defp name_overrides(facts) do
+    domain = Map.get(facts, :domain)
+    ticket = Map.get(facts, :ticket)
+
+    cond do
+      is_binary(domain) and (domain == "" or RecordNaming.sanitize(domain) != domain) ->
+        {:refuse, 2,
+         "--domain #{inspect(domain)} must be letters, digits and _ only. " <>
+           "Fix: pass a domain such as sabotage or call_tracer"}
+
+      is_binary(ticket) and RecordNaming.ticket_key(ticket) != ticket ->
+        {:refuse, 2,
+         "--ticket #{inspect(ticket)} is not a ticket key. Fix: pass one such as DND-123"}
+
+      true ->
+        :ok
     end
   end
 

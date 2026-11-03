@@ -16,11 +16,12 @@ defmodule Anchor.Domain.Sabotage.RecordNaming do
       or `:context_dir`: the directory under `lib/<app>/` the file sits in
       (the app's own name for a file directly in `lib/<app>/`).
 
-  The slot is the ticket key in the branch name (letters, `-`, digits, found
-  case-insensitively and upper-cased), else the branch; either way every run
-  of characters outside `[A-Za-z0-9]` becomes one `_`, trimmed at both ends
-  (`dnd-5473-runner` -> `DND_5473`, `feat/umbrella-paths` ->
-  `feat_umbrella_paths`).
+  The slot is the branch, sanitized as ADR 003 says: every run of
+  characters outside `[A-Za-z0-9]` becomes one `_`, trimmed at both ends,
+  case kept (`dnd-5473-runner` -> `dnd_5473_runner`, `feat/umbrella-paths`
+  -> `feat_umbrella_paths`). The ticket key (letters, `-`, digits, found in
+  the branch case-insensitively and upper-cased: `DND-5473`) names a
+  `:ticket_nn_what` file; `--slot` and `--ticket` override them.
   """
 
   @type naming :: :domain_date_slot | :ticket_nn_what
@@ -69,11 +70,11 @@ defmodule Anchor.Domain.Sabotage.RecordNaming do
       {slot, ticket, _branch} when is_binary(slot) ->
         {:ok, %{slot: sanitize(slot), ticket: ticket}}
 
-      {nil, ticket, _branch} when is_binary(ticket) ->
-        {:ok, %{slot: sanitize(ticket), ticket: ticket}}
+      {nil, ticket, branch} when is_binary(branch) ->
+        {:ok, %{slot: sanitize(branch), ticket: ticket}}
 
-      {nil, nil, branch} when is_binary(branch) ->
-        {:ok, %{slot: sanitize(branch), ticket: nil}}
+      {nil, ticket, nil} when is_binary(ticket) ->
+        {:ok, %{slot: sanitize(ticket), ticket: ticket}}
 
       {nil, nil, nil} ->
         {:error, :no_branch}
@@ -153,9 +154,11 @@ defmodule Anchor.Domain.Sabotage.RecordNaming do
   defp after_lib([]), do: []
 
   # A ticket key: a run of letters, `-`, a run of digits, as whole tokens.
-  defp ticket_key(branch) do
+  @doc "The first ticket key in `text` (`dnd-12-x` -> `DND-12`), upper-cased, else `nil`."
+  @spec ticket_key(String.t()) :: String.t() | nil
+  def ticket_key(text) do
     tokens =
-      branch
+      text
       |> String.to_charlist()
       |> Enum.chunk_by(&alnum?/1)
       |> Enum.map(&List.to_string/1)

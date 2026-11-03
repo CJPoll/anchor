@@ -938,7 +938,7 @@ defmodule Anchor.Managers.SabotageRunTest do
     @now ~U[2026-11-05 14:07:00Z]
     @rec_facts %{@facts | no_record: false}
                |> Map.merge(%{now: @now, command: "mix anchor.sabotage run", version: "0.1.0"})
-    @record_path "test/sabotage_records/calc-20261105-DND_5484.md"
+    @record_path "test/sabotage_records/calc-20261105-dnd_5484_records.md"
 
     defp expect_git_for_record(branch \\ {:ok, "dnd-5484-records"}) do
       expect(GitWorktreeMock, :branch, fn @root -> branch end)
@@ -946,9 +946,9 @@ defmodule Anchor.Managers.SabotageRunTest do
     end
 
     # Two mutants: the first killed, the second survives (exit 1).
-    defp expect_full_run do
+    defp expect_full_run(config \\ %SabotageConfig{}) do
       [_first, second] = mutants()
-      expect_until_selection()
+      expect_until_selection(config: config)
       expect_baseline(test_run(:passed))
       expect_patcher(2)
       expect_delete_journal(2)
@@ -1006,6 +1006,43 @@ defmodule Anchor.Managers.SabotageRunTest do
       end)
 
       assert Sabotage.run(@rec_facts, @opts).records == [{:append, @record_path}]
+    end
+
+    test "ticket_nn_what: a number another run took meanwhile is retried once, at the next" do
+      config = %SabotageConfig{records: %{%SabotageConfig{}.records | naming: :ticket_nn_what}}
+      first = "test/sabotage_records/DND-77-01-anchor-sabotage-run.md"
+      second = "test/sabotage_records/DND-77-02-anchor-sabotage-run.md"
+      expect_full_run(config)
+      expect_git_for_record({:ok, "dnd-77-calc"})
+
+      # The other run's file appears between this run's listing and its create.
+      stub(Anchor.RecordStoreMock, :list, fn @root, "test/sabotage_records" ->
+        if calls_seen(:create_taken), do: [first], else: []
+      end)
+
+      expect(Anchor.RecordStoreMock, :create, 2, fn
+        @root, ^first, _content -> call(:create_taken, {:error, :eexist})
+        @root, ^second, _content -> :ok
+      end)
+
+      assert Sabotage.run(@rec_facts, @opts).records == [{:create, second}]
+    end
+
+    test "domain_date_slot: a record that appeared meanwhile is never overwritten: exit 2" do
+      expect_full_run()
+      expect_git_for_record()
+
+      expect(Anchor.RecordStoreMock, :create, fn @root, @record_path, _content ->
+        {:error, :eexist}
+      end)
+
+      run = Sabotage.run(@rec_facts, @opts)
+
+      assert Report.exit_code(run) == 2
+      assert run.records == []
+
+      assert run.record_error =~
+               "could not write the sabotage record #{@record_path} (:eexist); nothing was overwritten"
     end
 
     test "2: --no-record writes nothing" do
@@ -1072,7 +1109,10 @@ defmodule Anchor.Managers.SabotageRunTest do
 
       run = Sabotage.run(%{@facts | dry_run: true}, @opts)
 
-      assert Enum.all?(run.planned, fn {_m, sel} -> sel == {:kill_map, ["test/k_test.exs"]} end)
+      # The killer's file, and the mirror's: a branch's new tests live there.
+      assert Enum.all?(run.planned, fn {_m, sel} ->
+               sel == {:kill_map, ["test/calc_test.exs", "test/k_test.exs"]}
+             end)
     end
 
     test "a detached HEAD with no --slot is exit 2 before any mutant is applied" do
@@ -1082,6 +1122,29 @@ defmodule Anchor.Managers.SabotageRunTest do
       assert %{refusal: {2, message}, outcomes: []} = Sabotage.run(@rec_facts, @opts)
       assert message =~ "HEAD is detached"
       assert message =~ "Fix: pass --slot S"
+    end
+
+    test "a dry run needs nothing a record needs: a detached HEAD is not refused" do
+      expect_until_selection()
+
+      run = Sabotage.run(%{@rec_facts | dry_run: true}, @opts)
+
+      assert run.refusal == nil
+      assert run.dry_run
+    end
+
+    test "--domain and --ticket must be names, never paths: exit 2 before anything is read" do
+      for {facts, text} <- [
+            {%{domain: "../x"}, "--domain \"../x\" must be letters, digits and _ only"},
+            {%{domain: "call-tracer"}, "--domain \"call-tracer\" must be letters"},
+            {%{ticket: "a/b"}, "--ticket \"a/b\" is not a ticket key"},
+            {%{ticket: "dnd-1"}, "--ticket \"dnd-1\" is not a ticket key"}
+          ] do
+        expect_until_selection_but_existing()
+
+        assert %{refusal: {2, message}} = Sabotage.run(Map.merge(@rec_facts, facts), @opts)
+        assert message =~ text
+      end
     end
 
     test "ticket naming with no ticket key is exit 2: Fix: pass --ticket" do

@@ -134,7 +134,7 @@ defmodule Anchor.Domain.Sabotage.RecordTest do
   test "1: one :create entry whose content equals the golden record" do
     assert {:ok, [entry]} = Record.render(run(), ctx())
 
-    assert entry.path == "test/sabotage_records/sabotage-20261105-DND_5484.md"
+    assert entry.path == "test/sabotage_records/sabotage-20261105-dnd_5484_records.md"
     assert entry.mode == :create
     assert entry.content == File.read!(@golden_path)
   end
@@ -145,7 +145,7 @@ defmodule Anchor.Domain.Sabotage.RecordTest do
   end
 
   test "2: the same path already there the same day: :append, a `## Run` section, no title" do
-    existing = %{"test/sabotage_records" => ["sabotage-20261105-DND_5484.md"]}
+    existing = %{"test/sabotage_records" => ["sabotage-20261105-dnd_5484_records.md"]}
 
     assert {:ok, [entry]} = Record.render(run(), ctx(%{existing: existing}))
 
@@ -171,8 +171,8 @@ defmodule Anchor.Domain.Sabotage.RecordTest do
     }
 
     assert {:ok, [core, web]} = Record.render(run, ctx(%{records: crew, changed_tests: []}))
-    assert core.path == "apps/core/test/sabotage_records/agents-20261105-DND_5484.md"
-    assert web.path == "apps/web/test/sabotage_records/agents-20261105-DND_5484.md"
+    assert core.path == "apps/core/test/sabotage_records/agents-20261105-dnd_5484_records.md"
+    assert web.path == "apps/web/test/sabotage_records/agents-20261105-dnd_5484_records.md"
     assert core.content =~ "a1 " and not (core.content =~ "b2 ")
   end
 
@@ -187,8 +187,8 @@ defmodule Anchor.Domain.Sabotage.RecordTest do
     assert {:ok, entries} = Record.render(run, ctx())
 
     assert Enum.map(entries, & &1.path) == [
-             "test/sabotage_records/config-20261105-DND_5484.md",
-             "test/sabotage_records/sabotage-20261105-DND_5484.md"
+             "test/sabotage_records/config-20261105-dnd_5484_records.md",
+             "test/sabotage_records/sabotage-20261105-dnd_5484_records.md"
            ]
   end
 

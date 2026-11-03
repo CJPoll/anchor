@@ -84,6 +84,24 @@ a ref whose file is not there; with none left the mutant falls to the mirror.
 | F3 | the unfixed code (5a20390) | 2 of 16: selection "a ref whose file no longer exists is dropped; with none left, the mirror", "coverage_files/2 names the test files ..." | `code:  assert TestSelection.select(mutant("lib/x.ex", M, {:f, 1}), inputs) ==` `left:  {:coverage, ["test/a_test.exs:10", "test/b_test.exs:4"]}` `right: {:coverage, ["test/a_test.exs:10"]}` |
 | S18 | the existence filter keeps every ref | 2 of 60: the selection row above, and run "a selected test file deleted since the map was built is dropped: the mirror runs" | as F3 |
 
+## Critic round 4 (one finding)
+
+The critic found that a map's `commit` was never checked and reached
+`git diff` before `--` (a `--output=PATH` commit would make git write a
+file), and a non-string commit crashed the run. The fix: `CoverageMap.check/1`
+checks every field that reaches a command line, the commit (nil or a
+40-character lowercase hex sha) and each test file (relative, inside the
+project, not an option); a map that fails is refused, exit 2.
+
+| # | Mutation | Tests failed | First failure, verbatim |
+|---|---|---|---|
+| F4 | the unfixed code (627675a) | 2 of 18: coverage_map "check/1: ... commit is nil or a 40-character lowercase hex sha", "check/1: ... a test file is a relative path inside the project that is not an option" | `code:  assert CoverageMap.check(%{map \| commit: "--output=x"}) == {:error, {:commit, "--output=x"}}` `left:  {:ok,` `right: {:error, {:commit, "--output=x"}}` |
+| S19 | `sha?/1` accepts any commit | 2 of 63: coverage_map "check/1: ... commit is nil or a 40-character lowercase hex sha"; run "run/2 with a coverage map (DND-5474) a map whose commit is not a sha is exit 2: it never reaches git" | `code:  assert CoverageMap.check(%{map \| commit: "--output=x"}) == {:error, {:commit, "--output=x"}}` `left:  {:ok, %{version: 1, ...` |
+| S20 | a test file starting with `-` is accepted | 1 of 63: coverage_map "check/1: ... a test file is a relative path inside the project that is not an option" | `code: for file <- ["-x", "--include=slow", "/etc/x_test.exs", "test/../../x.exs", ""] do` (the loop's assertion for `"-x"`) |
+
+The `ProjectModules` adapter's tmp-dir test (critic round 1) is broken in the
+DND-5484 record, row D12, beside the other rows the review floor asked for.
+
 ## Critic round 5 (one finding)
 
 The critic found that `stop/0` returned before trace messages still on

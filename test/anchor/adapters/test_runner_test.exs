@@ -84,4 +84,10 @@ defmodule Anchor.Adapters.TestRunnerTest do
              "test/a_test.exs test/b_test.exs --formatter Anchor.Sabotage.ExUnitFormatter " <>
                "--formatter ExUnit.CLIFormatter"
   end
+
+  test "the project root reaches the formatter as ANCHOR_SABOTAGE_ROOT", %{tmp_dir: dir} do
+    # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5484_records.md
+    assert {:ok, %TestRun{output_head: head}} = run("args", dir)
+    assert head =~ "root=#{dir}\n"
+  end
 end

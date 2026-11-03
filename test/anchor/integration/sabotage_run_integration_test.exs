@@ -125,7 +125,7 @@ defmodule Anchor.Integration.SabotageRunIntegrationTest do
     assert git!(root, ["status", "--porcelain"]) == "?? test/sabotage_records/"
     assert Report.exit_code(run) == 1
 
-    record_path = "test/sabotage_records/calc-20261105-DND_77.md"
+    record_path = "test/sabotage_records/calc-20261105-dnd_77_calc.md"
     assert run.records == [{:create, record_path}]
     record = File.read!(Path.join(root, record_path))
     assert record =~ "- **Domain:** calc\n- **Branch:** dnd-77-calc\n- **Date:** 2026-11-05\n"

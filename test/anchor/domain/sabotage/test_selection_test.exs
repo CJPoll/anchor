@@ -130,9 +130,14 @@ defmodule Anchor.Domain.Sabotage.TestSelectionTest do
 
     @kill_map %{"M.f/1" => ["test/t1_test.exs"]}
 
-    test "1: a function earlier records show killed selects its killers' files, over the mirror" do
+    test "1: a function earlier records show killed selects its killers' files, and the mirror's" do
       inputs = Map.put(inputs(["test/x_test.exs", "test/t1_test.exs"]), :kill_map, @kill_map)
 
+      assert TestSelection.select(km_mutant({:f, 1}), inputs) ==
+               {:kill_map, ["test/t1_test.exs", "test/x_test.exs"]}
+
+      # No mirror file: the killers alone.
+      inputs = Map.put(inputs(["test/t1_test.exs"]), :kill_map, @kill_map)
       assert TestSelection.select(km_mutant({:f, 1}), inputs) == {:kill_map, ["test/t1_test.exs"]}
     end
 

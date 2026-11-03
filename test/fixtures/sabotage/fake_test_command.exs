@@ -9,7 +9,7 @@
 #   none           0 tests, exit 0
 #   compile_error  no frames, prints a compile error, exit 1
 #   hang           suite_started, then blocks until killed
-#   args           prints its arguments, then passes
+#   args           prints its arguments and ANCHOR_SABOTAGE_ROOT, then passes
 
 path = System.fetch_env!("ANCHOR_SABOTAGE_RESULTS")
 
@@ -47,5 +47,6 @@ case System.argv() do
 
   ["args" | rest] ->
     IO.write(Enum.join(rest, " ") <> "\n")
+    IO.write("root=" <> System.get_env("ANCHOR_SABOTAGE_ROOT", "") <> "\n")
     frame.({:suite_finished, 1, 0, 0})
 end

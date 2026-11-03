@@ -56,6 +56,7 @@ rules:
       - Anchor.Adapters.SuiteRunner
       - Anchor.Adapters.ProjectModules
       - Anchor.Adapters.CoverageFile
+      - Anchor.Adapters.RecordFile
       - Anchor.Sabotage.CoverageCollector
       - Anchor.Managers.Sabotage.Coverage
       - Anchor.Managers.Lint
