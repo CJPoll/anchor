@@ -84,6 +84,19 @@ a ref whose file is not there; with none left the mutant falls to the mirror.
 | F3 | the unfixed code (5a20390) | 2 of 16: selection "a ref whose file no longer exists is dropped; with none left, the mirror", "coverage_files/2 names the test files ..." | `code:  assert TestSelection.select(mutant("lib/x.ex", M, {:f, 1}), inputs) ==` `left:  {:coverage, ["test/a_test.exs:10", "test/b_test.exs:4"]}` `right: {:coverage, ["test/a_test.exs:10"]}` |
 | S18 | the existence filter keeps every ref | 2 of 60: the selection row above, and run "a selected test file deleted since the map was built is dropped: the mirror runs" | as F3 |
 
+## Critic round 5 (one finding)
+
+The critic found that `stop/0` returned before trace messages still on
+their way reached the collector (trace delivery is asynchronous to the
+traced calls), so a call or a `test_finished` arriving after `finish` would
+be lost, never counted. The fix: `stop/0` waits for
+`:erlang.trace_delivered(:all)`. The new test floods 4,000 calls from 8
+processes and reads the sink's queue length at once after `stop/0`.
+
+| # | Mutation | Tests failed | First failure, verbatim |
+|---|---|---|---|
+| S21 | the wait removed (the unfixed code, 00405f3) | **0 of 4, a measured zero** | none: on one node the messages arrive before the queue is read in every run seen. The race cannot be forced from a test (no hook delays delivery), so the test pins the contract but cannot prove it; the fix rests on the OTP documentation of `trace_delivered/1`. |
+
 `Anchor.Adapters.SuiteRunner` (`Mix.Task.run("test", ...)` in this VM) has no
 unit test: it cannot run a suite inside a running suite. The bounded real run
 below and the CI workflow exercise it.

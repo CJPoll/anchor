@@ -17,8 +17,12 @@ defmodule Anchor.Adapters.CallTracer do
        itself. `:arity` makes every call message carry its arity, not its
        arguments, so no traced value is ever copied to the collector.
 
-  `stop/0` turns every flag off for all processes and clears every local and
-  global pattern. Only the test VM the command itself runs is traced.
+  `stop/0` turns every flag off for all processes, clears every local and
+  global pattern, and then waits for `:erlang.trace_delivered(:all)`: trace
+  messages reach the tracer later than the calls they describe, so without
+  the wait a call (or a `test_finished`) still on its way would miss the
+  collector's `finish` and be lost, never counted. Only the test VM the
+  command itself runs is traced.
   """
 
   @behaviour Anchor.Adapters.Tracing
@@ -41,7 +45,11 @@ defmodule Anchor.Adapters.CallTracer do
     _flags = :erlang.trace(:all, false, [:all])
     _local = :erlang.trace_pattern({:_, :_, :_}, false, [:local])
     _global = :erlang.trace_pattern({:_, :_, :_}, false, [:global])
-    :ok
+    ref = :erlang.trace_delivered(:all)
+
+    receive do
+      {:trace_delivered, :all, ^ref} -> :ok
+    end
   end
 
   @impl Anchor.Adapters.Tracing

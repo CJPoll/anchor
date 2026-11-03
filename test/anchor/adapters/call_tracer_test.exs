@@ -123,6 +123,33 @@ defmodule Anchor.Adapters.CallTracerTest do
     assert calls == [f: 0, g: 1]
   end
 
+  test "stop/0 returns only once every trace message is with the tracer", %{modules: [a, _b]} do
+    parent = self()
+
+    sink =
+      spawn_link(fn -> receive(do: ({:dump, ^parent} -> send(parent, {:dumped, drain([])}))) end)
+
+    callers = 8
+    calls = 500
+
+    assert CallTracer.start(sink, [a]) == :ok
+
+    try do
+      1..callers
+      |> Enum.map(fn _i -> Task.async(fn -> for _n <- 1..calls, do: a.f() end) end)
+      |> Enum.each(&Task.await/1)
+    after
+      CallTracer.stop()
+    end
+
+    # Read at once, with no other message sent first: stop/0 already waited.
+    {:message_queue_len, queued} = Process.info(sink, :message_queue_len)
+    assert queued == callers * calls * 2
+
+    send(sink, {:dump, parent})
+    assert_receive {:dumped, _messages}
+  end
+
   defp drain(acc) do
     receive do
       message -> drain([message | acc])
