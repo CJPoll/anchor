@@ -137,3 +137,26 @@ process, so it holds no leak and asserts so.
 | # | Mutation | Tests failed | First failure, verbatim |
 |---|---|---|---|
 | U10 | the round-0 text (L8 added first, run on 8b3558a; 26 tests) | 1 | L8 `code:  assert line =~ "1 calls from a process first seen during an earlier test"` `left:  "anchor.sabotage coverage: warning: test/b_test.exs: 1 calls from a process an earlier test started were credited to a later test (selection unchanged): test/a_test.exs:3 test one -> test/b_test.exs:7 test two (1 calls)"` |
+
+## DND-5643 — a generated record opens with a one-row-per-mutant summary table
+
+- **Code under test:** `Anchor.Domain.Sabotage.Record` (`summary_table/1`,
+  `cell/1`, the `Summary` heading's place in `sections/4`)
+- **Suite run:** `mix test test/anchor/domain/sabotage/record_test.exs
+  --timeout 2000 --max-cases 2` (15 tests; green after the fix and after
+  every row)
+
+| # | Mutation | Tests failed | First failure, verbatim |
+|---|---|---|---|
+| U11 | the unfixed renderer (S1-S4 written first) | 4 | S1 `code:  assert head =~ "## Summary\n\n\| id \| function \| mutation \| status \| killers \|\n\|---\|---\|---\|---\|---\|\n"`; S2 and S3 (no `Summary` heading to split on); S4 `code:  assert entry.content =~ "## Summary\n\nNone.\n\n## Mutants\n"` |
+| Q1 | the table placed after the `Mutants` heading | 3 | S4 `code:  assert entry.content =~ "## Summary\n\nNone.\n\n## Mutants\n"` (also S1 and the golden record) |
+| Q2 | the last mutant's row dropped | 4 | S1 `code:  assert rows == [` (also S2, S3 and the golden record) |
+| Q3 | every row's status written `killed` | 3 | S1 `code:  assert rows == [` (also S2 and the golden record) |
+| Q4 | every killer count 0 | 3 | S3 `left:  ["\| eee555 \| ``Anchor.Domain.Sabotage.Calc.add/2`` \| force_condition [a \\\| b c] \| killed \| 0 \|"]` (also S1 and the golden record) |
+| Q5 | a pipe in a cell not escaped | 1 | S3 `left:  ["\| eee555 \| ``Anchor.Domain.Sabotage.Calc.add/2`` \| force_condition [a \| b c] \| killed \| 1 \|"]` |
+| Q6 | a run with no mutant prints an empty table, not `None.` | 1 | S4 `code:  assert entry.content =~ "## Summary\n\nNone.\n\n## Mutants\n"` |
+| Q7 | the mutation cell without its variant | 3 | S1 `code:  assert rows == [` (also S3 and the golden record) |
+| Q8 | a newline in a cell kept | 1 | S3 `left:  ["\| eee555 \| ``Anchor.Domain.Sabotage.Calc.add/2`` \| force_condition [a \\\| b"]` (the row ends at the newline) |
+
+Pipes inside this table's own cells are written `\|`, so the quoted failure
+strings above show `\|` where the output had `|`.

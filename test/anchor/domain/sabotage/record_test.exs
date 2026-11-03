@@ -3,6 +3,7 @@ defmodule Anchor.Domain.Sabotage.RecordTest do
   # The date and time are facts passed in, never read here.
   # Sabotage record: ../../../sabotage_records/sabotage-20261103-dnd_5484_records.md
   # Sabotage record (DND-5653): ../../../sabotage_records/sabotage-20261103-dnd_5639_sabotage_followups.md
+  # Sabotage record (DND-5643): ../../../sabotage_records/sabotage-20261103-dnd_5639_sabotage_followups.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Sabotage.ChangedFunction
@@ -302,6 +303,79 @@ defmodule Anchor.Domain.Sabotage.RecordTest do
     test "K2: positive control: a run with no timeout kill says None. there" do
       {:ok, [entry]} = Record.render(run(), ctx())
       assert entry.content =~ "## Kills by timeout\n\nNone.\n"
+    end
+  end
+
+  describe "the summary table (DND-5643)" do
+    defp table_rows(content, heading) do
+      [_before, after_heading] = String.split(content, heading <> "\n\n", parts: 2)
+
+      after_heading
+      |> String.split("\n")
+      |> Enum.take_while(&String.starts_with?(&1, "|"))
+      |> Enum.drop(2)
+    end
+
+    defp section_statuses(content, prefix) do
+      for [_, id, status] <- Regex.scan(~r/^#{prefix} (\S+) .*: (\w+)$/m, content),
+          do: {id, status}
+    end
+
+    defp row_statuses(rows) do
+      for row <- rows do
+        [id, _function, _mutation, status, _killers] =
+          row |> String.trim("|") |> String.split(" | ") |> Enum.map(&String.trim/1)
+
+        {id, status}
+      end
+    end
+
+    test "S1: one row per mutant, before the sections, matching their count and statuses" do
+      outcomes = [
+        killed("aaa111"),
+        survived("bbb222"),
+        killed("ddd444", operator: :negate, variant: nil)
+      ]
+
+      {:ok, [entry]} = Record.render(%{run() | outcomes: outcomes}, ctx())
+
+      [head, _rest] = String.split(entry.content, "## Mutants\n", parts: 2)
+
+      assert head =~
+               "## Summary\n\n| id | function | mutation | status | killers |\n|---|---|---|---|---|\n"
+
+      rows = table_rows(entry.content, "## Summary")
+
+      assert rows == [
+               "| aaa111 | `Anchor.Domain.Sabotage.Calc.add/2` | return_input [0] | killed | 1 |",
+               "| bbb222 | `Anchor.Domain.Sabotage.Calc.add/2` | delete_statement | survived | 0 |",
+               "| ddd444 | `Anchor.Domain.Sabotage.Calc.add/2` | negate | killed | 1 |"
+             ]
+
+      assert row_statuses(rows) == section_statuses(entry.content, "###")
+    end
+
+    test "S2: an appended run's table is one level down and matches its sections" do
+      existing = %{"test/sabotage_records" => ["sabotage-20261105-dnd_5484_records.md"]}
+      {:ok, [entry]} = Record.render(run(), ctx(%{existing: existing}))
+
+      rows = table_rows(entry.content, "### Summary")
+      assert length(rows) == 2
+      assert row_statuses(rows) == section_statuses(entry.content, "####")
+    end
+
+    test "S3: a pipe in a mutation text is escaped and a newline flattened, so a row keeps five cells" do
+      outcome = killed("eee555", operator: :force_condition, variant: "a | b\nc")
+      {:ok, [entry]} = Record.render(%{run() | outcomes: [outcome]}, ctx())
+
+      assert table_rows(entry.content, "## Summary") == [
+               "| eee555 | `Anchor.Domain.Sabotage.Calc.add/2` | force_condition [a \\| b c] | killed | 1 |"
+             ]
+    end
+
+    test "S4: positive control: a run with no mutant says None. under the table's heading" do
+      {:ok, [entry]} = Record.render(%{run() | outcomes: []}, ctx())
+      assert entry.content =~ "## Summary\n\nNone.\n\n## Mutants\n"
     end
   end
 end

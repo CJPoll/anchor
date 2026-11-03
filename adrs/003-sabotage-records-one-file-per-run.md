@@ -148,6 +148,13 @@ record replayable:
   check's test file. Naming the suite here is what lets a later reader re-apply
   the mutation from the header alone.
 
+**Later (2026-11-03, DND-5643):** a record `mix anchor.sabotage run` generates
+carries both forms. A `## Summary` table under the header gives one row per
+mutant run (id, function, mutation, status, killer count), so a reader sees
+the whole run at once; the per-mutant sections below it keep the verbatim
+failure strings this section requires. Neither replaces the other, and a
+hand-written record still needs only the body above.
+
 ### No index file
 
 The directory gets a `README.md` describing the *convention* and listing the
