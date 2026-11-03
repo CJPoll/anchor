@@ -635,6 +635,47 @@ defmodule Anchor.Domain.Failures do
   end
 
   @doc """
+  The note for a rule id that had no baseline at the `--base` ref (DND-5629):
+  no rule with that id was in the base config, or there was none. A first
+  landing, which no ratchet can judge, so review is the gate; it names the
+  ids that had a baseline at the ref and are gone now, so a renamed id shows
+  both. Report-only.
+  """
+  @spec baseline_new_rule(String.t(), String.t(), String.t(), [String.t()]) :: Violation.t()
+  def baseline_new_rule(path, ref, id, gone) do
+    gone_text =
+      if gone == [],
+        do: "",
+        else:
+          "; rules with a baseline at #{ref} that this config no longer has: " <>
+            Enum.map_join(gone, ", ", &inspect/1)
+
+    graph_issue(
+      path,
+      nil,
+      "NOTE: first landing of rule #{inspect(id)}: no rule with that id had a baseline at " <>
+        "#{ref}#{gone_text}. Fix: review every line of #{path} in this change; from here it " <>
+        "only shrinks."
+    )
+  end
+
+  @doc """
+  The issue for a base config that could not be read at the `--base` ref
+  (DND-5629): each baseline's base copy is found by its rule's id there, so
+  GREW could not be judged for any rule. On the config.
+  """
+  @spec baseline_base_config_unreadable(String.t(), String.t(), term()) :: Violation.t()
+  def baseline_base_config_unreadable(config, ref, reason) do
+    graph_issue(
+      config,
+      nil,
+      "Anchor could not read #{config} at #{ref} (#{capped(inspect(reason))}), so no " <>
+        "baseline's copy there could be found by its rule's id and GREW could not be judged. " <>
+        "Fix: pass a --base ref whose #{config} loads, or drop --base."
+    )
+  end
+
+  @doc """
   The refusal of `--write-baseline` over an existing file (DND-5441, exit 2):
   it only creates, so a baseline can never be loosened by rewriting it.
   """

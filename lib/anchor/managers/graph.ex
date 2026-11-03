@@ -80,6 +80,7 @@ defmodule Anchor.Managers.Graph do
   alias Anchor.Adapters.SourceReader
   alias Anchor.Config
   alias Anchor.Domain.Baseline
+  alias Anchor.Domain.BaselineBase
   alias Anchor.Domain.Cfa
   alias Anchor.Domain.Enforcement
   alias Anchor.Domain.Failures
@@ -229,6 +230,10 @@ defmodule Anchor.Managers.Graph do
     rules = Enum.map(rules, fn {rule, module} -> {rule, module, guarded_needs(module)} end)
     cfa = cfa(rules, graph, deps.cfa)
     model = %{model | cfa: analysis(cfa)}
+
+    deps =
+      Map.merge(deps, %{base: base_config(deps.git_base, request, config), now: config.rules})
+
     ran = Enum.map(rules, &run_rule(&1, model, cfa, config.path, request, deps))
 
     artifact_notes =
@@ -364,7 +369,7 @@ defmodule Anchor.Managers.Graph do
 
     with {:ok, entries} <- read_entries(deps.baseline_store, request.root, rule, path),
          :ok <- no_foreign(rule, path, entries),
-         {:ok, base} <- base_entries(deps.git_base, request.root, ref, path) do
+         {:ok, base} <- base_entries(deps, request, rule) do
       context = %{rule: rule, label: Failures.rule_label(rule), path: path, ref: ref}
       {standing, held} = Enforcement.judge(findings, entries, base, context)
       %{findings: standing, held: held, refused: []}
@@ -388,11 +393,46 @@ defmodule Anchor.Managers.Graph do
     end
   end
 
-  # The base branch's copy under `--base REF`: `nil` without it, `:absent`
-  # for a first landing. A failed read is an issue, never "no growth".
-  defp base_entries(_git, _root, nil, _path), do: {:ok, nil}
+  # DND-5629: under `--base REF`, the graph rules of the config at REF, read
+  # once and only when a rule has a baseline: each baseline's base copy is
+  # found by its rule's id there, never by the branch's path. `nil` without
+  # `--base`; a failed read is an issue for every baselined rule, never "no
+  # growth".
+  defp base_config(git, request, config) do
+    ref = Map.get(request.opts, :base)
 
-  defp base_entries(git, root, ref, path) do
+    if ref != nil and Enum.any?(config.rules, &is_binary(Map.get(&1, :baseline))),
+      do: read_base_rules(git, request.root, ref, config_path(config.path, request.root)),
+      else: nil
+  end
+
+  defp read_base_rules(git, root, ref, config) do
+    case git.rules(root, ref, config) do
+      {:ok, rules} -> {:ok, rules}
+      {:error, :absent} -> {:ok, :absent}
+      {:error, reason} -> {:fail, Failures.baseline_base_config_unreadable(config, ref, reason)}
+    end
+  end
+
+  defp config_path(path, root),
+    do: if(Path.type(path) == :relative, do: path, else: Path.relative_to(path, root))
+
+  # The base branch's copy of `rule`'s baseline: `nil` without `--base`,
+  # `{:new_rule, gone}` for a rule id the base config lacks (a first landing),
+  # `:absent` for a file absent at REF, and `{:ok, []}` for a rule that had no
+  # baseline there. A failed read is an issue, never "no growth".
+  defp base_entries(%{base: nil}, _request, _rule), do: {:ok, nil}
+  defp base_entries(%{base: {:fail, violation}}, _request, _rule), do: {:fail, violation}
+
+  defp base_entries(%{base: {:ok, base_rules}} = deps, request, rule) do
+    case BaselineBase.locate(base_rules, rule.id) do
+      :new_rule -> {:ok, {:new_rule, BaselineBase.gone(base_rules, deps.now)}}
+      :no_baseline -> {:ok, {:ok, []}}
+      {:path, base_path} -> show_base(deps.git_base, request.root, request.opts.base, base_path)
+    end
+  end
+
+  defp show_base(git, root, ref, path) do
     case git.show(root, ref, path) do
       {:ok, entries} -> {:ok, {:ok, entries}}
       {:error, :absent} -> {:ok, :absent}

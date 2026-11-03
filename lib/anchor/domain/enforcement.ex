@@ -16,7 +16,9 @@ defmodule Anchor.Domain.Enforcement do
       (`Failures.baseline_stale/2`);
     * an entry the branch added since `REF` is a GREW finding
       (`Failures.baseline_grew/3`); a file absent at `REF` is a first landing,
-      a report-only NOTE (`Failures.baseline_first_landing/2`).
+      a report-only NOTE (`Failures.baseline_first_landing/2`), and so is a
+      rule id no rule had at `REF` (`Failures.baseline_new_rule/4`, DND-5629:
+      the base copy is found by the rule's id, `Anchor.Domain.BaselineBase`).
 
   STALE and GREW take the rule's enforcement: a `report` rule reports them,
   an `enforce` rule fails on them. A finding with no key cannot be held.
@@ -28,9 +30,11 @@ defmodule Anchor.Domain.Enforcement do
 
   @typedoc """
   The base branch's copy: `nil` (no `--base`), `:absent` (no file at the
-  ref) or `{:ok, entries}`.
+  ref), `{:new_rule, gone_ids}` (no rule with this id had a baseline at the
+  ref, DND-5629; `gone_ids` had one and are not rules now) or `{:ok,
+  entries}`.
   """
-  @type base :: nil | :absent | {:ok, [String.t()]}
+  @type base :: nil | :absent | {:new_rule, [String.t()]} | {:ok, [String.t()]}
 
   @typedoc "The rule, its label, its baseline path, and the `--base` ref (or nil)."
   @type context :: %{rule: map(), label: String.t(), path: String.t(), ref: String.t() | nil}
@@ -52,6 +56,11 @@ defmodule Anchor.Domain.Enforcement do
 
   defp base_findings(_entries, :absent, %{path: path, ref: ref}) do
     note = Finding.fail_closed(Failures.baseline_first_landing(path, ref), path)
+    [%{note | enforcement: :report}]
+  end
+
+  defp base_findings(_entries, {:new_rule, gone}, %{rule: rule, path: path, ref: ref}) do
+    note = Finding.fail_closed(Failures.baseline_new_rule(path, ref, rule.id, gone), path)
     [%{note | enforcement: :report}]
   end
 

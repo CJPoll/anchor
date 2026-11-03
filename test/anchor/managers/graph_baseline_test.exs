@@ -6,6 +6,7 @@ defmodule Anchor.Managers.GraphBaselineTest do
   # rule has exactly one finding, `@key`.
   #
   # Sabotage record: ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
+  # DND-5629 (base found by rule id): ../../sabotage_records/baseline_rename-20261103-dnd_5441_graph_rules_a.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -108,6 +109,10 @@ defmodule Anchor.Managers.GraphBaselineTest do
       end
     end)
   end
+
+  # The base config's graph rules at `ref` (DND-5629).
+  defp expect_base_rules(ref, rules),
+    do: expect(GitBaseMock, :rules, fn @root, ^ref, ".anchor.yml" -> {:ok, rules} end)
 
   defp messages(report), do: Enum.map(report.findings ++ report.refused, & &1.message)
 
@@ -219,6 +224,7 @@ defmodule Anchor.Managers.GraphBaselineTest do
     test "an entry the branch added since REF fails as GREW (exit 1)", %{beam: beam} do
       expect_run([rule()], beam)
       expect_baseline("#{@key}\nf|Added|found\n")
+      expect_base_rules("main", [rule()])
       expect(GitBaseMock, :show, fn @root, "main", @path -> Baseline.parse("#{@key}\n") end)
 
       report = Graph.run(request(%{base: "main"}), deps())
@@ -233,6 +239,8 @@ defmodule Anchor.Managers.GraphBaselineTest do
       expect_run([rule()], beam)
       expect_baseline("#{@key}\n")
 
+      expect_base_rules("main", [rule()])
+
       expect(GitBaseMock, :show, fn @root, "main", @path ->
         Baseline.parse("#{@key}\nf|Fixed|found\n")
       end)
@@ -243,6 +251,7 @@ defmodule Anchor.Managers.GraphBaselineTest do
     test "a baseline absent at REF is a first landing: a NOTE, exit 0", %{beam: beam} do
       expect_run([rule()], beam)
       expect_baseline("#{@key}\n")
+      expect_base_rules("main", [rule()])
       expect(GitBaseMock, :show, fn @root, "main", @path -> {:error, :absent} end)
 
       report = Graph.run(request(%{base: "main"}), deps())
@@ -257,6 +266,7 @@ defmodule Anchor.Managers.GraphBaselineTest do
     } do
       expect_run([rule()], beam)
       expect_baseline("#{@key}\n")
+      expect_base_rules("nosuch", [rule()])
       expect(GitBaseMock, :show, fn @root, "nosuch", @path -> {:error, {:git, 128, ""}} end)
 
       report = Graph.run(request(%{base: "nosuch"}), deps())
@@ -269,8 +279,97 @@ defmodule Anchor.Managers.GraphBaselineTest do
       expect_run([rule()], beam)
       expect_baseline("#{@key}\n")
       expect(GitBaseMock, :show, 0, fn _root, _ref, _path -> {:error, :absent} end)
+      expect(GitBaseMock, :rules, 0, fn _root, _ref, _path -> {:error, :absent} end)
 
       assert %{exit_code: 0} = Graph.run(request(), deps())
+    end
+  end
+
+  # DND-5629: GREW compared the branch's file with the same PATH at the ref, so
+  # renaming `baseline:` made every entry a first landing and the list could
+  # grow unchecked. The base copy is found by the rule's id in the base config.
+  describe "run/2 --base REF finds the base baseline by rule id (DND-5629)" do
+    @old ".anchor/baselines/old.txt"
+
+    test "a renamed baseline path with an added entry is GREW", %{beam: beam} do
+      expect_run([rule()], beam)
+      expect_baseline("#{@key}\nf|Added|found\n")
+      expect_base_rules("main", [rule(%{baseline: @old})])
+      expect(GitBaseMock, :show, fn @root, "main", @old -> Baseline.parse("#{@key}\n") end)
+
+      report = Graph.run(request(%{base: "main"}), deps())
+
+      assert report.exit_code == 1
+      assert [grew] = Enum.filter(report.findings, &(&1.message =~ "was added to"))
+      assert %{file: @path, key: "f|Added|found", enforcement: :enforce} = grew
+    end
+
+    test "a renamed path with the same entries is clean", %{beam: beam} do
+      expect_run([rule()], beam)
+      expect_baseline("#{@key}\n")
+      expect_base_rules("main", [rule(%{baseline: @old})])
+      expect(GitBaseMock, :show, fn @root, "main", @old -> Baseline.parse("#{@key}\n") end)
+
+      assert %{exit_code: 0, findings: []} = Graph.run(request(%{base: "main"}), deps())
+    end
+
+    test "a rule id new at the ref is a first landing named by the id; no file is read there",
+         %{beam: beam} do
+      expect_run([rule()], beam)
+      expect_baseline("#{@key}\n")
+      expect_base_rules("main", [rule(%{id: "gone", baseline: @old})])
+      expect(GitBaseMock, :show, 0, fn _root, _ref, _path -> {:error, :absent} end)
+
+      report = Graph.run(request(%{base: "main"}), deps())
+
+      assert report.exit_code == 0
+      assert [%{enforcement: :report, file: @path, message: message}] = report.findings
+      assert message =~ ~s|NOTE: first landing of rule "f"|
+      assert message =~ ~s|no longer has: "gone"|
+    end
+
+    test "a rule id that had no baseline at the ref: every entry is GREW", %{beam: beam} do
+      expect_run([rule()], beam)
+      expect_baseline("#{@key}\n")
+      expect_base_rules("main", [Map.delete(rule(), :baseline)])
+      expect(GitBaseMock, :show, 0, fn _root, _ref, _path -> {:error, :absent} end)
+
+      report = Graph.run(request(%{base: "main"}), deps())
+
+      assert report.exit_code == 1
+      assert [%{key: @key}] = Enum.filter(report.findings, &(&1.message =~ "was added to"))
+    end
+
+    test "no config at the ref: a first landing", %{beam: beam} do
+      expect_run([rule()], beam)
+      expect_baseline("#{@key}\n")
+      expect(GitBaseMock, :rules, fn @root, "main", ".anchor.yml" -> {:error, :absent} end)
+
+      report = Graph.run(request(%{base: "main"}), deps())
+
+      assert report.exit_code == 0
+      assert [%{message: message}] = report.findings
+      assert message =~ ~s|NOTE: first landing of rule "f"|
+    end
+
+    test "a base config that cannot be read fails closed on the config, naming the ref", %{
+      beam: beam
+    } do
+      expect_run([rule()], beam)
+      expect_baseline("#{@key}\n")
+
+      expect(GitBaseMock, :rules, fn @root, "main", ".anchor.yml" ->
+        {:error, {:invalid_config, "the document is empty"}}
+      end)
+
+      report = Graph.run(request(%{base: "main"}), deps())
+
+      assert report.exit_code == 1
+
+      assert Enum.any?(
+               report.findings,
+               &(&1.file == ".anchor.yml" and &1.message =~ "could not read .anchor.yml at main")
+             )
     end
   end
 

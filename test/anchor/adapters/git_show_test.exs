@@ -160,4 +160,41 @@ defmodule Anchor.Adapters.GitShowTest do
                {:error, {:symlink, ".anchor/etc"}}
     end
   end
+
+  # DND-5629: the base config's graph rules, so a baseline's copy at the ref
+  # is found by its rule's id.
+  describe "rules/3 (DND-5629)" do
+    @canary Path.expand("../../fixtures/graph_canary/.anchor.yml", __DIR__)
+
+    test "the config's rules as committed at the ref, not the working copy", %{tmp_dir: root} do
+      git!(root, ["init", "-q", "-b", "main"])
+
+      config =
+        @canary
+        |> File.read!()
+        |> String.replace("    id: layering\n", "    id: layering\n    baseline: old.txt\n")
+
+      File.write!(Path.join(root, ".anchor.yml"), config)
+      git!(root, ["add", "."])
+      git!(root, ["commit", "-q", "-m", "config"])
+      File.write!(Path.join(root, ".anchor.yml"), "rules: []\n")
+
+      assert {:ok, rules} = GitShow.rules(root, "main", ".anchor.yml")
+      assert %{id: "layering", baseline: "old.txt"} = Enum.find(rules, &(&1[:id] == "layering"))
+    end
+
+    test "no config at a ref that resolves is :absent", %{tmp_dir: root} do
+      repo!(root)
+      assert GitShow.rules(root, "main", ".anchor.yml") == {:error, :absent}
+    end
+
+    test "a config the parser rejects is its error, never an empty rule list", %{tmp_dir: root} do
+      git!(root, ["init", "-q", "-b", "main"])
+      File.write!(Path.join(root, ".anchor.yml"), "nothing: here\n")
+      git!(root, ["add", "."])
+      git!(root, ["commit", "-q", "-m", "config"])
+
+      assert {:error, {:invalid_config, _reason}} = GitShow.rules(root, "main", ".anchor.yml")
+    end
+  end
 end

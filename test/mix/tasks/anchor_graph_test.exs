@@ -203,6 +203,11 @@ defmodule Mix.Tasks.Anchor.GraphTest do
         {:ok, ["#{@key}", "a|Extra|x"]}
       end)
 
+      # DND-5629: the base copy is found by the rule's id in the base config.
+      expect(Anchor.GitBaseMock, :rules, fn _root, "origin/main", ".anchor.yml" ->
+        {:ok, [baselined(1)]}
+      end)
+
       expect(Anchor.GitBaseMock, :show, fn _root, "origin/main", ".anchor/baselines/a.txt" ->
         {:ok, ["#{@key}"]}
       end)

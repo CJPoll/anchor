@@ -3,6 +3,7 @@ defmodule Anchor.Domain.EnforcementTest do
   # hand-built findings.
   #
   # Sabotage record: ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
+  # DND-5629 (a new rule id): ../../sabotage_records/baseline_rename-20261103-dnd_5441_graph_rules_a.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Enforcement
@@ -98,6 +99,36 @@ defmodule Anchor.Domain.EnforcementTest do
       assert note.enforcement == :report
       assert note.file == @path
       assert note.message =~ "NOTE: first landing of #{@path} (absent at main)"
+    end
+
+    # DND-5629: a rule id new at the ref is a first landing named by the id,
+    # with the ids that had a baseline there and are gone now, so a renamed id
+    # (a remove plus an add) shows review both.
+    test "a rule id new at the ref is a first landing naming it and the ids gone" do
+      {[note], [_held]} =
+        Enforcement.judge(
+          [finding("r|A|x")],
+          ["r|A|x"],
+          {:new_rule, ["old_r"]},
+          context(rule(), "main")
+        )
+
+      assert note.enforcement == :report
+      assert note.file == @path
+
+      assert note.message =~
+               ~s|NOTE: first landing of rule "r": no rule with that id had a baseline at main|
+
+      assert note.message =~
+               ~s|rules with a baseline at main that this config no longer has: "old_r"|
+    end
+
+    test "a new rule id with nothing gone says so" do
+      {[note], _held} =
+        Enforcement.judge([], [], {:new_rule, []}, context(rule(), "main"))
+
+      assert note.message =~ ~s|first landing of rule "r"|
+      refute note.message =~ "no longer has"
     end
   end
 end

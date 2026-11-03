@@ -1,6 +1,7 @@
 defmodule Anchor.Adapters.GitShow do
   @moduledoc """
-  Reads a baseline as it is on a git ref, the **Side Effect** adapter (ADR 001)
+  Reads a baseline (`show/3`), and the config's graph rules (`rules/3`,
+  DND-5629), as they are on a git ref, the **Side Effect** adapter (ADR 001)
   behind `Anchor.Adapters.GitBase` (DND-5441).
 
   It refuses a ref `Anchor.Domain.Baseline.valid_ref?/1` rejects, and an
@@ -29,27 +30,54 @@ defmodule Anchor.Adapters.GitShow do
   @behaviour Anchor.Adapters.GitBase
 
   alias Anchor.Adapters.GitEnv
+  alias Anchor.Config
   alias Anchor.Domain.Baseline
 
   @impl Anchor.Adapters.GitBase
   def show(root, ref, path) do
-    cond do
-      not Baseline.valid_ref?(ref) -> {:error, :bad_ref}
-      Path.type(path) != :relative or ".." in Path.split(path) -> {:error, :outside_root}
-      true -> show_valid(root, ref, path)
+    with {:ok, bytes} <- blob(root, ref, path), do: Baseline.parse(bytes)
+  end
+
+  @doc """
+  The graph rules of the config at `path` on `ref` (DND-5629), read as
+  `show/3` reads a baseline (the same refusals) and parsed by
+  `Anchor.Config.parse_config/1`.
+  """
+  @impl Anchor.Adapters.GitBase
+  def rules(root, ref, path) do
+    with {:ok, bytes} <- blob(root, ref, path),
+         {:ok, data} <- decode(bytes),
+         %Config{rules: rules} <- Config.parse_config(data) do
+      {:ok, rules}
     end
   end
 
-  defp show_valid(root, ref, path) do
+  defp blob(root, ref, path) do
+    cond do
+      not Baseline.valid_ref?(ref) -> {:error, :bad_ref}
+      Path.type(path) != :relative or ".." in Path.split(path) -> {:error, :outside_root}
+      true -> blob_valid(root, ref, path)
+    end
+  end
+
+  defp blob_valid(root, ref, path) do
     parts = Path.split(path) -- ["."]
     prefixes = Enum.scan(parts, &(&2 <> "/" <> &1))
     full = List.last(prefixes)
 
     with {:ok, sha} <- resolve(root, ref),
          {:ok, listed} <- git(root, ["ls-tree", "-z", sha, "--" | prefixes]),
-         :ok <- present(entries(listed), prefixes, full),
-         {:ok, bytes} <- git(root, ["cat-file", "blob", sha <> ":./" <> full]) do
-      Baseline.parse(bytes)
+         :ok <- present(entries(listed), prefixes, full) do
+      git(root, ["cat-file", "blob", sha <> ":./" <> full])
+    end
+  end
+
+  # The YAML library's error stops here: the Domain gets its text only.
+  defp decode(bytes) do
+    case YamlElixir.read_from_string(bytes) do
+      {:ok, data} -> {:ok, data}
+      {:error, %{__exception__: true} = error} -> {:error, {:yaml, Exception.message(error)}}
+      {:error, error} -> {:error, {:yaml, inspect(error)}}
     end
   end
 

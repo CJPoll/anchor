@@ -25,4 +25,22 @@ defmodule Anchor.Adapters.GitBase do
                  | {:symlink, String.t()}
                  | {:line, pos_integer(), :invalid_utf8}
                  | {:git, non_neg_integer() | :enoent, String.t()}}
+
+  @doc """
+  The graph rules of the config at `path` as it is on `ref` (DND-5629): the
+  base copy of each baseline is found by its rule's id there. `{:error,
+  :absent}` when the ref resolves and has no file there; a symlink is refused
+  as `show/3` refuses one; a document the config parser rejects is its error.
+  """
+  @callback rules(root :: Path.t(), ref :: String.t(), path :: Path.t()) ::
+              {:ok, [map()]}
+              | {:error,
+                 :absent
+                 | :bad_ref
+                 | :outside_root
+                 | {:symlink, String.t()}
+                 | {:git, non_neg_integer() | :enoent, String.t()}
+                 | {:yaml, String.t()}
+                 | {:invalid_config, term()}
+                 | {:invalid_rule, term()}}
 end
