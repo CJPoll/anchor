@@ -406,7 +406,11 @@ semantics and edge cases.
 | `uses_module` | any rule | Selects files that `use` the named module. |
 | `recursive` | any rule with `paths` | `true` gives `paths` globs `**` (across-segment) semantics. Without `paths`, nothing reads it, so it fails the load. |
 | `min_files` | any rule | Positive integer, default `1`. The fewest files the rule must select in a whole-project run; fewer is an issue. See [A rule that checks nothing](#a-rule-that-checks-nothing). |
-| `id` | any rule | A name for the rule, unique in the file. It appears beside the rule's position in its load errors and floor reports (`rule 2 (id: "web-no-repo", ...)`). |
+| `id` | any rule | A name for the rule, unique in the file. It appears beside the rule's position in its load errors and floor reports (`rule 2 (id: "web-no-repo", ...)`). A rule with a `baseline` needs one. |
+| `enforcement` | any rule | `enforce` (default) or `report` (a leading colon is accepted). A `report` rule's findings print and never fail the run; fail-closed issues still fail. See [Adopting a rule](#adopting-a-rule-report-baseline-enforce-dnd-5441). |
+| `baseline` | graph rules | A path relative to the project root, no `..` (convention `.anchor/baselines/<id>.txt`): the rule's shrink-only baseline. Needs `id`. Refused on an `ast` rule. |
+| `bucket` | graph rules | Selector: the modules of that `architecture:` bucket. Must name one of its buckets. |
+| `min_modules` | graph rules | Positive integer, default `1`: the fewest modules the rule must select; fewer is an issue. A graph rule's floor (`min_files` is refused there). |
 | `forbidden_modules` / `required_modules` | `no_direct_dependency`, `no_transitive_dependency` / `must_use_module` | Exact module tokens (see the token syntax below). |
 | `forbidden_patterns` | `no_direct_dependency`, `no_transitive_dependency` | Module-name globs; forbids any referenced/reachable module whose name matches. |
 | `forbidden_functions` | `no_direct_dependency` | `"Module.function"` or `"Module.function/arity"` tokens; forbids calling (or capturing) that function, in every call shape. A malformed token fails the load. See [Forbidding functions](#forbidding-functions-forbidden_functions). |
@@ -421,9 +425,11 @@ semantics and edge cases.
 
 #### Keys each rule type accepts
 
-A rule may carry only the keys its type reads. Every type accepts the common
-keys: `type`, `paths`, `pattern`, `uses_module`, `recursive`, `min_files` and
-`id`. The table lists
+A rule may carry only the keys its type reads. Every type accepts its
+engine's common keys: an `ast` type `type`, `paths`, `pattern`, `uses_module`,
+`recursive`, `min_files`, `id` and `enforcement`; a `graph` type `type`, `id`,
+`bucket`, `paths`, `pattern`, `min_modules`, `enforcement` and `baseline`
+(DND-5441). The table lists
 the keys each type accepts beyond those. Any other key fails the load, and the
 message names the rule, the unknown key, the nearest known key and every key the
 type accepts. So a misspelling such as `forbiden_patterns:` or `patern:` is an
@@ -432,13 +438,15 @@ another type (`match` on a `no_transitive_dependency` rule) is unknown too.
 
 The Engine column is the one engine that runs the type: `ast` rules run as
 Credo checks over source, `graph` rules run under `mix anchor.graph` over the
-compiled code (DND-5440; no `graph` type ships yet). Credo never reports a
+compiled code (DND-5440; `layering`, DND-5442, and `context_acyclic`, DND-5445). Credo never reports a
 `graph` rule as unchecked.
 
 | Rule type | Keys beyond the common ones | Relation (needs one, non-empty) | Engine |
 |---|---|---|---|
 | `alphabetized_functions` | `mode` | none | `ast` |
 | `case_on_bare_arg` | none | none | `ast` |
+| `context_acyclic` | none | none | `graph` |
+| `layering` | none | none | `graph` |
 | `max_file_length` | `max_lines` | none | `ast` |
 | `module_pattern_restrictions` | `allowed_functions` | none | `ast` |
 | `must_use_module` | `required_modules` | `required_modules` | `ast` |
@@ -565,7 +573,8 @@ mix credo --strict
 ## The graph engine: `mix anchor.graph`
 
 ```bash
-mix anchor.graph [--format text|json] [--only RULE_ID]...
+mix anchor.graph [--format text|json] [--only RULE_ID]... [--base REF]
+                 [--write-baseline RULE_ID] [--verbose]
 ```
 
 Judges the project's compiled code against `.anchor.yml`'s `architecture:`
@@ -584,18 +593,174 @@ lib/my_app/stray.ex:1: [enforce] anchor.graph MyApp.Stray is in no architecture 
 anchor.graph: 214 modules in 1 apps, 0 rules, 1 violations (0 report-only, 0 baselined)
 ```
 
-No graph rule type ships yet: the rule tickets (layering, interfaces,
-context_acyclic, ...) add them, with the graph rule keys `bucket`,
-`min_modules` and `enforcement`. Until the first lands, a run classifies every
-module and judges every bucket floor. A finding of a rule with
-`enforcement: report` prints `[report]` and does not fail the run. `--format json` prints `{"modules", "apps", "rules", "opaque",
-"apply_sites", "exit_code", "findings": [{rule_id, type, enforcement, key, file, line,
-message, fix}], "could_not_check": [...]}`. `--only RULE_ID` (repeatable) runs
-only the rules with those ids; each rule that runs is still judged against its
-floor (`--only` narrows the rules, never the modules), and an id that names no
-graph rule is COULD NOT MEASURE. `--base` and
-`--write-baseline` arrive with baselines (DND-5441); until then they are
-refused as unknown options.
+A graph rule takes the graph common keys (DND-5441): `type`, `id`, exactly
+one selector of `bucket` (an `architecture:` bucket's modules), `paths`
+(source globs, `**` always recursive) or `pattern` (a module-name glob),
+`min_modules` (default 1), `enforcement` (`enforce`, the default, or `report`)
+and `baseline` (below). Every graph rule needs the `architecture:` section,
+and a `bucket` must name one of its buckets; both are refused at load
+otherwise. `uses_module`, `recursive` and `min_files` are `ast` keys and are
+refused on a graph rule. A finding of a rule with `enforcement: report` prints
+`[report]` and does not fail the run. `--format json` prints `{"modules",
+"apps", "rules", "opaque", "no_core", "apply_sites", "exit_code", "findings":
+[{rule_id, type, enforcement, key, file, line, message, fix}],
+"could_not_check": [...], "refused": [...], "held": [...]}`. `--only RULE_ID` (repeatable) runs only the
+rules with those ids; each rule that runs is still judged against its floor and
+its baseline (`--only` narrows the rules, never the modules), and an id that
+names no graph rule is COULD NOT MEASURE.
+
+### Adopting a rule: report, baseline, enforce (DND-5441)
+
+A rule a codebase does not meet yet is adopted in three steps, and its
+findings can only shrink along the way:
+
+1. **Report.** `enforcement: report` prints every finding as `[report]` and
+   never fails on them (fail-closed issues still fail). An `ast` rule in report
+   mode gives Credo issues with exit status 0 and low priority, so `mix credo
+   --strict` lists them and still passes.
+2. **Baseline.** Give the rule an `id` and `baseline:
+   .anchor/baselines/<id>.txt`, then run `mix anchor.graph --write-baseline
+   <id>`: it writes the rule's current finding keys, sorted, and refuses
+   (exit 2) when the file exists. Review the file in the change that adds it.
+3. **Enforce.** Drop `enforcement: report`. A finding the baseline holds is
+   counted (`<H> baselined`; `--verbose` prints each as `[held]`). A finding
+   it does not hold (NEW) fails. A baseline line no finding matches (STALE)
+   fails, with `Fix: delete that line`. With `--base REF`, every line the
+   branch added to the baseline since `REF` fails as GREW, read from `REF`
+   with git, never from the branch: a baseline only shrinks, and adding to it
+   is a review decision on the base branch. A baseline absent at `REF` is a
+   first landing, printed as a NOTE.
+
+A baseline file holds one key per line; `#` comments and blank lines are
+ignored and the entries are a multiset (a key listed twice holds two
+findings). A key is `<rule id>|<subject>|<detail>` (or `<rule id>|<subject>`
+for a finding with no target, such as a `context_acyclic` cycle), such as
+`layering|MyApp.Web.Page.show/2|-> MyApp.Repo.get/2`: no line numbers and no
+message text, so moving code does not churn it. Every entry starts with the
+rule's id; a file holding another rule's entry is refused. `baseline` is read
+by graph rules only: on an `ast` rule it is refused at load, because Credo
+compares no baseline yet.
+
+### The `layering` rule (DND-5442)
+
+```yaml
+rules:
+  - type: layering
+    id: layering
+    paths: ["lib/**/*.ex"]
+
+architecture:
+  contexts:
+    depth: 2
+  buckets:
+    - name: framework
+      role: framework
+      select:
+        - paths: ["lib/my_app_web/**/*.ex"]
+    - name: managers
+      role: managers
+      select:
+        - paths: ["lib/my_app/managers/**/*.ex"]
+    - name: adapters
+      role: adapters
+      select:
+        - paths: ["lib/my_app/adapters/**/*.ex"]
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/my_app/domain/**/*.ex"]
+  calls:
+    framework: [framework, managers, domain]
+    managers: [managers, adapters, domain]
+    adapters: [adapters, domain]
+    domain: [domain]
+```
+
+`layering` enforces the `architecture: calls` matrix over compiled code: every
+call from a module the rule selects to another classified module of the
+project must land in a bucket the caller's row allows, with the row's scope
+(`same_context`, `other_context`). Anything a row does not list is denied.
+Because it reads beams, a call a macro injects (`use MyApp.Web` expanding
+into a `def` that calls `MyApp.Repo`) is the using module's call: the AST rule
+`no_direct_dependency` cannot see it. A capture (`&M.f/1`) and `apply/3` with
+a literal module are calls too.
+
+- A call within one module is allowed. A call to a module outside the
+  project (the standard library, a dependency) is not a bucket edge. A call
+  to an unclassified module is skipped: the runner already reports that
+  module.
+- A dynamic call (`mod.fetch(x)`) resolves to every project module that
+  exports `fetch/1` (a `def`), and each one is judged as a static call: any
+  of them can be the receiver, whether it declares a `@behaviour` or not.
+  When no project module exports it (`Mix.shell().info(msg)`), the call
+  reaches no bucket of the project, and there is nothing to judge.
+- A call whose function name is computed (`apply(MyApp.Repo, op, args)`,
+  `mod.op_var(x)`, `&MyApp.Repo.op_var/1`) is one violation too, keyed
+  `-> dynamic ?/n`: its target cannot be checked. Only applying a variable
+  (`fun.(x)`) is a closure application, not judged by this rule; `apply(fun,
+  args)` compiles to the same shape as `apply/3` with a computed name, so it
+  is reported, and `fun.(args)` is the form that is not.
+- One violation per caller function and callee function, at the first such
+  call's line, keyed `<id>|<Caller.f/a>|-> <Callee.g/b>` (an unresolved call
+  is `-> dynamic fetch/1`). The message names both modules' bucket and
+  context and the caller's row, and the `Fix:` names the route through the
+  matrix (`framework -> managers -> adapters`), the row's scope when only the
+  scope forbids it, or "no route".
+
+```
+lib/my_app/web/page.ex:12: [enforce] rule 1 (id: "layering", layering) MyApp.Web.Page.show/2 (framework, MyApp.Web) calls MyApp.Repo.get/2 (adapters, MyApp.Repo); framework may call: framework, managers, domain. Fix: route it through managers: framework -> managers -> adapters (call a managers module of the right context, which calls adapters); framework may not call adapters directly.
+```
+
+Anchor's own `.anchor.yml` runs it over `lib/` with a baseline,
+`.anchor/baselines/layering.txt`, holding what it found when it landed.
+
+### The `context_acyclic` rule (DND-5445)
+
+```yaml
+rules:
+  - type: context_acyclic
+    id: context_acyclic
+    paths: ["lib/**/*.ex"]
+
+architecture:
+  contexts:
+    depth: 2
+  buckets:
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/**/*.ex"]
+  calls:
+    domain: [domain]
+```
+
+A cycle between contexts leaves the causal order between them undefined.
+`context_acyclic` collapses the calls of the modules it selects into a context
+graph: a call from one context to another (both known and different) is an
+edge `A -> B`, and a dynamic call on a computed module is an edge to the
+context of every project module exporting that function. Each strongly
+connected component of more than one context is one violation; a context
+calling itself is not a cycle. A call whose function name is computed
+(`apply(MyApp.Repo, op, args)`) hides which contexts it reaches, so the rule
+reports it too, one violation per caller function keyed
+`<id>|<Caller.f/a>|-> dynamic ?/n`, whatever other rules the config runs; a
+closure application (`fun.(x)`) is not.
+
+The message lists every edge inside the cycle with one call that makes it,
+and names the edge to invert: the one with the fewest calls (ties: the
+lexically first), at its first call's line. Inverting `X -> Y` removes X's
+dependency on Y: X publishes an event Y subscribes to, or X declares the
+function it needs in an interface it owns and Y implements it. The key is
+`<id>|<the cycle's contexts, sorted, joined by ",">`, so it stays the same
+while the cycle's members do.
+
+```
+lib/my_app/billing/manager.ex:40: [enforce] rule 1 (id: "context_acyclic", context_acyclic) contexts MyApp.Billing, MyApp.Orders form a cycle: MyApp.Billing -> MyApp.Orders (MyApp.Billing.Manager.charge/1 calls MyApp.Orders.Manager.get/1), MyApp.Orders -> MyApp.Billing (MyApp.Orders.Manager.place/1 calls MyApp.Billing.Manager.charge/1). Fix: invert MyApp.Billing -> MyApp.Orders (its 1 call is the fewest): have MyApp.Billing publish an event MyApp.Orders subscribes to, or declare the function MyApp.Billing needs in an interface MyApp.Billing owns and have MyApp.Orders implement it.
+```
+
+Anchor's own `.anchor.yml` runs it over `lib/`, with a baseline holding what
+it found when it landed: one cycle through the dynamic calls of
+`Anchor.Managers.Lint` on the check modules, and `Mutator`'s `apply/3`.
 
 The only file it writes is `<build_path>/anchor/graph.etf` (Mix's build path:
 `_build/<env>`, or the directory `MIX_BUILD_PATH` names), the graph keyed by
@@ -643,6 +808,7 @@ line.
 | No `architecture:` section | 3 | the config path | `COULD NOT MEASURE: .anchor.yml has no architecture: section, so mix anchor.graph could classify no module and run no graph rule. Fix: add an architecture: section ...` |
 | `mix compile` fails | mix's own | | |
 | Zero project modules read | 3 | the first ebin | `COULD NOT MEASURE: read 0 modules from _build/dev/lib/my_app/ebin. Fix: run mix compile in this project; ...` |
+| One app of the project read no module while another did (an umbrella app not compiled, under another build path, or renamed; DND-5584) | 1 | that app's ebin | `read 0 modules for app :other from _build/dev/lib/other/ebin, so none of its code was checked. Fix: run mix compile for :other; ...` |
 | Every module read has its source outside the project root (DND-5588) | 3 | the first ebin | `COULD NOT MEASURE: read 3 modules from _build/dev/lib/my_app/ebin, and every one has a source file outside the project root /proj, so none was judged. Fix: run mix anchor.graph from the project root (the directory holding mix.exs).` |
 | A module compiled from a source outside the project root (DND-5588) | 0 (`[report]`) | its source path | `MyApp.Shared was compiled from /shared/lib/shared.ex, outside the project root /proj, so it is left out of the graph and no rule judged it. Fix: move its source under /proj, or run mix anchor.graph from the root that holds it.` |
 | A beam with no `debug_info` (or stripped) | 1 | the beam | `MyApp.X was compiled without debug_info, so Anchor cannot read it. Fix: remove debug_info: false from the project's elixirc_options ...` |
@@ -664,12 +830,26 @@ line.
 | An `interfaces.exports` entry that names no module | 1 | the config | `architecture interfaces.exports names MyApp.Gone, which is no module of the project ... Fix: ...` |
 | A graph rule below its `min_modules` | 1 | the config | `rule 2 (id: "web", layering) selects 0 modules, below min_modules 1. Fix: correct the selector; ...` |
 | A graph rule that raises, throws or exits | 1 | the config | `rule 2 (id: "web", layering) could not run: RuntimeError: ... Fix: this is an Anchor bug; file it with this line.` The other rules still run. |
+| A `baseline:` file that is missing, unreadable, not UTF-8, or holds another rule's entry | 1 | the baseline path | `rule 2 (id: "web", layering)'s baseline .anchor/baselines/web.txt could not be read (:enoent), so none of its findings is held. Fix: create it with mix anchor.graph --write-baseline web ...` |
+| A symlink on a baseline's path, a directory or the file, on disk or at `--base REF` (DND-5628) | 1 | the baseline path | `rule 2 (id: "web", layering)'s baseline .anchor/baselines/web.txt was not read: .anchor is a symlink, and Anchor never follows one out of the project root, so none of its findings is held. Fix: replace the symlink .anchor with a real directory or file inside the project, ...` `--write-baseline` creates nothing through one. |
+| A baseline entry no finding matches (STALE) | 1 (0 for a `report` rule) | the baseline path | `web\|A.f/1\|-> B.g/0 in .anchor/baselines/web.txt matches no finding (it was fixed). Fix: delete that line ...` |
+| A baseline entry the branch added since `--base REF` (GREW) | 1 (0 for a `report` rule) | the baseline path | `... was added to .anchor/baselines/web.txt since main. Fix: fix the finding instead; a baseline only shrinks ...` |
+| A baseline that could not be read at `--base REF` (git failed) | 1 | the baseline path | `Anchor could not read .anchor/baselines/web.txt at main (...), so whether the branch added to it (GREW) could not be judged. Fix: ...` |
+| A baseline absent at `--base REF` (first landing) | 0 | the baseline path | `NOTE: first landing of .anchor/baselines/web.txt (absent at main); review is the gate. ...` |
+| A rule id with no baseline at `--base REF` (DND-5629: the base copy is found by the rule's `id` in the config at REF, so renaming `baseline:` is still judged; a rule there with no `baseline:` compares with an empty one, every entry GREW) | 0 | the baseline path | `NOTE: first landing of rule "web": no rule with that id had a baseline at main; rules with a baseline at main that this config no longer has: "old_web". Fix: review every line ...` |
+| The config at `--base REF` cannot be read or loaded (DND-5629) | 1 | the config | `Anchor could not read .anchor.yml at main (...), so no baseline's copy there could be found by its rule's id and GREW could not be judged. Fix: ...` |
+| `--write-baseline` that could not create the file (not `:exists`: `:eacces`, ...) | 1 | the baseline path | `Anchor could not create .anchor/baselines/web.txt (:eacces). Fix: make its directory writable.` |
+| `--write-baseline` that created the file | 0 | the baseline path | `anchor.graph wrote 3 entries to .anchor/baselines/web.txt. Fix: review it in this change; from here it only shrinks.` (`[report]`) |
+| `--write-baseline` over an existing file, or naming no rule with a `baseline:` | 2 | the baseline path, or the config | `.anchor/baselines/web.txt exists; --write-baseline only creates, and never rewrites a baseline. Fix: ...` |
+| A `--base` ref with a character git must not see (a leading `-`, a space, `;`, `$`, `:`) | 2 | | usage, with a `Fix:` line |
 | A graph rule whose `needs/0` names an analysis the runner does not compute, or is not a list (DND-5574) | 1 | the config | `rule 2 (id: "web", layering) could not run: ArgumentError: MyApp.Rule.needs/0 names [:nope], which the graph runner does not compute (it computes [:cfa]), so it checked nothing. Fix: this is an Anchor bug; file it with this line.` The rule is not run; the other rules still run. |
 | The higher-order flow analysis a rule needs raises, throws or exits (DND-5574) | 1 | the config | `rule 2 (id: "web", layering) could not run: the higher-order flow analysis it needs (Anchor.Domain.Cfa) crashed: RuntimeError: ..., so it checked nothing. Fix: this is an Anchor bug; file it with this line.` One per rule that needs it; the rules that do not still run. |
 | Findings of a `report` rule | 0 | the finding | printed `[report]` |
 
 Exit 2 is a usage error (an unknown option, `--format` other than `text` or
-`json`, an argument), with a `Fix:` line.
+`json`, an argument, a `--base` ref Anchor refuses) or a refused
+`--write-baseline` (the file exists, or the id names no rule with a
+`baseline:`), with a `Fix:` line.
 
 ## Generated sabotage: the functions a change touched
 

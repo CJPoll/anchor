@@ -25,7 +25,8 @@ defmodule Anchor.Domain.Graph.CoreWalker do
       length — `:apply` to `{M, F, length}`, as static as a direct call
       (DND-5547). Any other `apply/2,3` — `:apply` to
       `{:dynamic, name | nil, arity | nil, :call}`; `apply V(...)` where `V` is
-      a variable (`fun.(x)`) — `:apply` to `{:dynamic, nil, arity, :variable}`.
+      a variable (`fun.(x)`, the variable bound to a parameter or to what a
+      call returned) — `:apply` to `{:dynamic, nil, arity, :variable}`.
     * `call V:'f'(...)` — `{:dynamic, f, arity, :variable}`, or `:call` when
       `V` was let-bound to a call (a computed module, `Module.concat(...)`); a
       variable let-bound to a literal module resolves to a `:remote` call.
@@ -199,8 +200,11 @@ defmodule Anchor.Domain.Graph.CoreWalker do
         :cerl.is_c_fname(operator) ->
           acc
 
+        # `fun.(x)`: a closure application, whatever bound the variable (a
+        # parameter, or a call such as `Keyword.get(opts, :clock)`). `:call`
+        # is kept for apply/2,3, whose function name may be computed.
         :cerl.is_c_var(operator) ->
-          add_call(acc, node, {:dynamic, nil, length(args), receiver(operator, ctx)}, :apply, ctx)
+          add_call(acc, node, {:dynamic, nil, length(args), :variable}, :apply, ctx)
 
         true ->
           visit(

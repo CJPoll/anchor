@@ -47,7 +47,9 @@ rules:
       - File
       - YamlElixir
       - Anchor.Adapters.ConfigFile
+      - Anchor.Adapters.BaselineFile
       - Anchor.Adapters.BeamReader
+      - Anchor.Adapters.GitShow
       - Anchor.Adapters.GitChangeSource
       - Anchor.Adapters.GitEnv
       - Anchor.Adapters.GraphArtifact
@@ -109,6 +111,34 @@ rules:
     required_modules:
       - Anchor.Check.Base
 
+  # --- Rule: the calls matrix over compiled code (DND-5442) ---
+  #
+  # `mix anchor.graph` judges every call between two of Anchor's own modules
+  # against `architecture: calls` below, including calls a macro injects and
+  # dynamic calls on a computed module, which the AST rules above cannot see.
+  #
+  # The baseline holds what it found when it landed: Lint's calls into
+  # Anchor.Check (DND-1288; a dynamic call on a computed check module is
+  # judged against every check exporting the function), GraphRules.by_type/1,
+  # and Mutator's apply/3 with a computed function name. It only shrinks;
+  # `mix anchor.graph --base origin/main` (CI, on a pull request) fails one a
+  # branch adds.
+  - type: layering
+    id: layering
+    paths: ["lib/**/*.ex"]
+    baseline: .anchor/baselines/layering.txt
+
+  # --- Rule: no cycle between contexts (DND-5445) ---
+  #
+  # The calls of lib/ collapsed to contexts (depth 2: Anchor.Domain,
+  # Anchor.Managers, ...) must form no cycle. The baseline holds what it
+  # found when it landed: one five-context cycle that runs through Lint's
+  # dynamic calls on the check modules (DND-1288), and Mutator's apply/3.
+  - type: context_acyclic
+    id: context_acyclic
+    paths: ["lib/**/*.ex"]
+    baseline: .anchor/baselines/context_acyclic.txt
+
 # --- Generated sabotage (DND-5473, DND-5484) ---
 #
 # `mix anchor.sabotage run` on Anchor's own tree. Records follow ADR 003:
@@ -135,7 +165,7 @@ sabotage:
 # Every module of lib/ lands in exactly one bucket. Each floor is the bucket's
 # module count when the runner landed: a moved directory that empties a
 # bucket fails the run instead of passing it. Lowering a floor is the owner's
-# call. The layering rule over `calls` arrives with DND-5442.
+# call. The layering rule above judges `calls` (DND-5442).
 architecture:
   contexts:
     depth: 2

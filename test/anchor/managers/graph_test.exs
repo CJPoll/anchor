@@ -7,6 +7,7 @@ defmodule Anchor.Managers.GraphTest do
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5440_graph_runner.md
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5551_graph_hardening.md
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5581_hardening_batch.md
+  # DND-5584 (per-app, and AE-O with DND-5588): ../../sabotage_records/graph_runner-20261103-dnd_5441_graph_rules_a.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -288,6 +289,56 @@ defmodule Anchor.Managers.GraphTest do
     end
   end
 
+  # DND-5584: an umbrella app whose ebin holds no beam (not compiled, a wrong
+  # build path, a renamed app) must not read clean on the other apps' modules.
+  describe "run/2 an app that read no module (exit 1)" do
+    @other_ebin "/proj/_build/test/lib/other/ebin"
+    @two_apps [{:my_app, @ebin}, {:other, @other_ebin}]
+
+    defp expect_two_apps(beams) do
+      expect(ConfigLoaderMock, :load, fn -> {:ok, config([rule(:stub_ok, "ok")])} end)
+      Mox.expect(BeamSourceMock, :read_ebins, fn @two_apps -> beams end)
+
+      expect(SourceSourceMock, :read, fn @root, files ->
+        Map.new(files, &{&1, source_facts(&1, Map.get(@sources, &1, {:error, :enoent}))})
+      end)
+
+      expect(GraphStoreMock, :write, fn _dir, _key, _graph -> :ok end)
+    end
+
+    test "one app of two with an empty ebin is one issue on that ebin, naming the app", %{
+      beams: beams
+    } do
+      expect_two_apps(classified(beams))
+
+      report = Graph.run(%{request() | apps: @two_apps}, deps())
+
+      assert report.exit_code == 1
+      assert [%{file: @other_ebin, label: "anchor.graph", message: message}] = report.findings
+      assert message =~ "read 0 modules for app :other from #{@other_ebin}"
+      assert message =~ "Fix: "
+
+      assert report.counts == %{
+               modules: 2,
+               apps: 2,
+               rules: 1,
+               opaque: 0,
+               no_core: 0,
+               excluded: 0,
+               apply_sites: nil
+             }
+    end
+
+    test "positive control: both apps read a module, the run is clean", %{beams: beams} do
+      other_user = %{beams[@user] | app: :other}
+      expect_two_apps([beams[@accounts], other_user])
+
+      report = Graph.run(%{request() | apps: @two_apps}, deps())
+
+      assert %GraphReport{exit_code: 0, findings: []} = report
+    end
+  end
+
   describe "run/2 per-module fail-closed issues (exit 1)" do
     test "a beam with no debug_info is an issue on it; the other modules still classify and their findings print",
          %{beams: beams} do
@@ -523,6 +574,24 @@ defmodule Anchor.Managers.GraphTest do
 
       assert %{modules: 2, excluded: 1} = report.counts
       assert GraphReport.summary(report) =~ "2 modules (1 outside the root, excluded) in 1 apps"
+    end
+
+    # The merge of DND-5588 with DND-5584: an app whose only module was left
+    # out as outside the root did read a module. It is named in the outside
+    # note, never reported as an empty ebin.
+    test "an app whose only module is outside the root is not an empty ebin", %{beams: beams} do
+      expect_two_apps(classified(beams) ++ [%{beams[@outside] | app: :other}])
+
+      report = Graph.run(%{request() | apps: @two_apps}, deps())
+
+      assert %GraphReport{exit_code: 0, could_not_check: []} = report
+      assert [%{enforcement: :report, file: @outside_path, message: message}] = report.findings
+
+      assert message =~
+               "AnchorFixtures.GraphManagerTest.Shared was compiled from #{@outside_path}"
+
+      refute Enum.any?(report.findings, &(&1.message =~ "read 0 modules for app :other"))
+      assert %{apps: 2, excluded: 1} = report.counts
     end
 
     test "only modules outside the root read is COULD NOT MEASURE, never an empty pass", %{

@@ -7,6 +7,7 @@ defmodule Anchor.Domain.Graph.CoreWalkerTest do
   # Sabotage record: ../../../sabotage_records/core_walker-20261103-dnd_5438.md
   # Sabotage record: ../../../sabotage_records/inlines-20261103-dnd_5551_graph_hardening.md
   # Sabotage record: ../../../sabotage_records/core_walker-20261103-dnd_5551_graph_hardening.md
+  # (funcall, DND-5442: ../../../sabotage_records/layering-20261103-dnd_5441_graph_rules_a.md, WK-A)
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -35,6 +36,7 @@ defmodule Anchor.Domain.Graph.CoreWalkerTest do
     def rcap(xs), do: Enum.map(xs, &Other.f/1) # rcap
     def lcap(xs), do: Enum.map(xs, &helper/1) # lcap
     def funapp(fun, x), do: fun.(x) # funapp
+    def funcall(opts, x), do: Keyword.fetch!(opts, :f).(x) # funcall
     def app3(mod, x), do: apply(mod, :f, [x]) # app3
     def app2(fun, x), do: apply(fun, [x]) # app2
     def app3lit(x), do: apply(Other, :f, [x]) # app3lit
@@ -159,6 +161,15 @@ defmodule Anchor.Domain.Graph.CoreWalkerTest do
     test "fun application is :apply through a variable", %{binary: binary} do
       assert calls(binary, {:funapp, 2}) ==
                [call({M, :funapp, 2}, {:dynamic, nil, 1, :variable}, :apply, "# funapp")]
+    end
+
+    # Regression (merge of origin/main 39f55e1): a fun bound from a call
+    # (`clock = Keyword.get(opts, :clock)`, then `clock.()`) was tagged
+    # `:call`, the tag of apply/3 with a computed name, so layering and
+    # context_acyclic reported a closure application as a computed function.
+    test "applying a fun a call returned is still :apply through a variable", %{binary: binary} do
+      assert [call] = calls(binary, {:funcall, 2}) |> Enum.filter(&(&1.kind == :apply))
+      assert call.to == {:dynamic, nil, 1, :variable}
     end
 
     # Row 23

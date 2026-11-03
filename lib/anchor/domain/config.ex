@@ -133,6 +133,7 @@ defmodule Anchor.Config do
          {:ok, rules} <- fetch_rules(data),
          {:ok, parsed} <- parse_rules(rules),
          {:ok, architecture} <- parse_architecture(data),
+         :ok <- validate_graph_rules(parsed, architecture),
          {:ok, sabotage} <- parse_sabotage(data) do
       %__MODULE__{rules: parsed, architecture: architecture, sabotage: sabotage}
     end
@@ -192,6 +193,28 @@ defmodule Anchor.Config do
   # exactly as before, with `architecture: nil`.
   defp parse_architecture(%{"architecture" => section}), do: Architecture.parse(section)
   defp parse_architecture(_data), do: {:ok, nil}
+
+  # DND-5441: a graph rule needs the `architecture:` section, and its `bucket`
+  # selector must name one of its buckets. Only now, with both parsed, can
+  # load time decide it (`RuleSchema.validate_architecture/2`).
+  defp validate_graph_rules(parsed, architecture) do
+    names = architecture && Architecture.bucket_names(architecture)
+
+    Enum.find_value(parsed, :ok, fn rule ->
+      case RuleSchema.validate_architecture(rule, RuleSchema.engine(rule.type), names) do
+        :ok ->
+          nil
+
+        {:error, reason} ->
+          {:error, {:invalid_rule, "#{parsed_rule_label(rule)}: #{reason}"}}
+      end
+    end)
+  end
+
+  defp parsed_rule_label(%{id: id, index: index}) when is_binary(id),
+    do: "rule #{index} (id: #{inspect(id)})"
+
+  defp parsed_rule_label(%{index: index}), do: "rule #{index}"
 
   # DND-5473: the `sabotage:` section is optional too; `mix anchor.sabotage run`
   # refuses to run without it.
@@ -310,6 +333,16 @@ defmodule Anchor.Config do
       # added by `parse_config/1`.
       id: rule["id"],
       min_files: rule["min_files"] || RuleCoverage.default_min_files(),
+      # DND-5441: the graph common keys (shared contract section 3.2) and the
+      # enforcement both engines read. `bucket` selects an `architecture:`
+      # bucket's modules; `min_modules` is a graph rule's floor (nil: the
+      # default, `GraphRules.min_modules/1`); `enforcement` is `:enforce`
+      # (default) or `:report`; `baseline` is the repo-relative path of the
+      # rule's shrink-only baseline, or nil.
+      bucket: rule["bucket"],
+      min_modules: rule["min_modules"],
+      enforcement: RuleSchema.parse_enforcement(rule["enforcement"]),
+      baseline: rule["baseline"],
       # Gap D (DND-140): surface an ABSENT `paths` as `nil`, not `[]`. An empty
       # list is a valid list, which `RuleMatching`'s path clause would match and
       # then shadow the `pattern`/`uses_module` selectors with `Enum.any?([], …)`.

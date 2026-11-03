@@ -180,6 +180,41 @@ defmodule Anchor.Check.BaseTest do
     end
   end
 
+  # DND-5441: a report rule's issue is listed (low priority) and never fails
+  # the run (exit_status 0); an enforced rule's keeps Credo's exit status.
+  # Sabotage record: ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
+  describe "check_file/3 enforcement: report" do
+    @source """
+    defmodule MyApp.Thing do
+      use Ecto.Schema
+    end
+    """
+
+    defp must_use(extra),
+      do:
+        Map.merge(
+          %{type: :must_use_module, uses_module: "Ecto.Schema", required_modules: [MyApp.Base]},
+          extra
+        )
+
+    test "a report rule's issue has exit_status 0 and low priority" do
+      source_file = Credo.SourceFile.parse(@source, "lib/thing.ex")
+
+      assert [issue] =
+               MustUseModule.check_file(source_file, [must_use(%{enforcement: :report})], [])
+
+      assert issue.exit_status == 0
+      assert issue.priority == Credo.Priority.to_integer(:low)
+    end
+
+    test "positive control: an enforced rule's issue keeps a failing exit status" do
+      source_file = Credo.SourceFile.parse(@source, "lib/thing.ex")
+
+      assert [issue] = MustUseModule.check_file(source_file, [must_use(%{})], [])
+      assert issue.exit_status != 0
+    end
+  end
+
   describe "check_file/3 on an unparseable file" do
     test "returns an issue on that file instead of no issues" do
       broken = Credo.SourceFile.parse("defmodule Broken do\n  def go(\nend\n", "lib/broken.ex")

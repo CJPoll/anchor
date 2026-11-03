@@ -7,6 +7,8 @@ defmodule Anchor.Domain.RuleSchemaTest do
   # path anchored on this file (not the cwd, which sync modules change).
   #
   # Sabotage record: ../../sabotage_records/rule_schema-20260929-dnd_1286_rule_key_allowlist.md
+  # DND-5441 (engine common keys, enforcement, baseline, validate_architecture/3):
+  #   ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config
@@ -17,7 +19,10 @@ defmodule Anchor.Domain.RuleSchemaTest do
   @valid_values %{
     "allowed_callers" => ["MyApp.Adapter"],
     "allowed_functions" => ["new"],
+    "baseline" => ".anchor/baselines/r1.txt",
+    "bucket" => "domain",
     "context_depth" => 3,
+    "enforcement" => "report",
     "forbidden_functions" => ["MyApp.Repo.insert/2"],
     "forbidden_modules" => ["MyApp.Repo"],
     "forbidden_patterns" => ["*.Adapters.*"],
@@ -25,6 +30,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
     "match" => "call",
     "max_lines" => 200,
     "min_files" => 1,
+    "min_modules" => 2,
     "owned_namespaces" => ["MyApp"],
     "mode" => "all",
     "paths" => ["lib/**/*.ex"],
@@ -41,6 +47,8 @@ defmodule Anchor.Domain.RuleSchemaTest do
   @typos %{
     alphabetized_functions: "mdoe",
     case_on_bare_arg: "pahts",
+    context_acyclic: "min_module",
+    layering: "min_module",
     max_file_length: "max_line",
     module_pattern_restrictions: "allowed_function",
     must_use_module: "require_modules",
@@ -79,7 +87,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
                Config.parse_rule(rule(:no_direct_dependency, %{"forbiden_patterns" => ["*.X.*"]}))
 
       assert reason =~
-               "known keys for no_direct_dependency: allowed_callers, context_depth, " <>
+               "known keys for no_direct_dependency: allowed_callers, context_depth, enforcement, " <>
                  "forbidden_functions, " <>
                  "forbidden_modules, " <>
                  "forbidden_patterns, id, match, min_files, paths, pattern, recursive, " <>
@@ -165,7 +173,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
       for type <- Config.rule_types() do
         data =
           for key <- RuleSchema.known_keys(type),
-              key not in ~w(type pattern uses_module),
+              key not in ~w(type pattern uses_module bucket),
               into: %{"type" => "#{type}"} do
             {key, Map.fetch!(@valid_values, key)}
           end
@@ -174,18 +182,24 @@ defmodule Anchor.Domain.RuleSchemaTest do
       end
     end
 
-    test "every rule type accepts the common keys" do
+    test "every rule type accepts its engine's common keys" do
       for type <- Config.rule_types() do
-        assert ~w(id min_files paths pattern recursive type uses_module) --
-                 RuleSchema.known_keys(type) == []
+        assert RuleSchema.common_keys(RuleSchema.engine(type)) -- RuleSchema.known_keys(type) ==
+                 []
       end
+
+      assert RuleSchema.common_keys(:ast) ==
+               ~w(enforcement id min_files paths pattern recursive type uses_module)
+
+      assert RuleSchema.common_keys(:graph) ==
+               ~w(baseline bucket enforcement id min_modules paths pattern type)
     end
 
     # Drift guard: the allowlist has an entry for exactly the shipped rule types.
-    test "the allowlist covers exactly the rule types of Anchor.checks/0" do
+    test "the ast types are exactly the rule types of Anchor.checks/0" do
       check_types = Anchor.checks() |> Enum.map(& &1.rule_type()) |> Enum.sort()
 
-      assert RuleSchema.rule_types() == check_types
+      assert RuleSchema.rule_types_for_engine(:ast) == check_types
     end
 
     # Doc drift guard: the README's per-type key table is the allowlist. A key
@@ -205,7 +219,8 @@ defmodule Anchor.Domain.RuleSchemaTest do
         # DND-5437: the engine column is `@engine_by_type`.
         assert engine == Atom.to_string(RuleSchema.engine(type)), "README engine for #{type}"
 
-        assert Enum.sort(keys ++ RuleSchema.common_keys()) == RuleSchema.known_keys(type),
+        assert Enum.sort(keys ++ RuleSchema.common_keys(RuleSchema.engine(type))) ==
+                 RuleSchema.known_keys(type),
                "README keys for #{type}"
 
         # DND-1290: the relation column is `@relations_by_type`.
@@ -219,11 +234,16 @@ defmodule Anchor.Domain.RuleSchemaTest do
   # (a type with no engine) is a CompileError, proven by sabotage, not here.
   # Sabotage record: ../../sabotage_records/rule_schema-20261103-dnd_5437.md
   describe "engine/1" do
-    test "every shipped type has an engine, and today every one is :ast" do
+    test "every shipped type has an engine; the graph types are the graph rule modules'" do
       engines = Enum.map(RuleSchema.rule_types(), &RuleSchema.engine/1)
 
       assert length(engines) == length(RuleSchema.rule_types())
-      assert Enum.all?(engines, &(&1 == :ast)), inspect(engines)
+
+      # DND-5442: layering is the first graph type.
+      assert :layering in RuleSchema.rule_types_for_engine(:graph)
+
+      assert RuleSchema.rule_types_for_engine(:graph) ==
+               Anchor.Domain.GraphRules.all() |> Enum.map(& &1.rule_type()) |> Enum.sort()
     end
 
     test "the engines partition the rule types: each type in exactly one" do
@@ -249,9 +269,9 @@ defmodule Anchor.Domain.RuleSchemaTest do
                "#{type} loaded with no selector"
 
         assert reason =~ "no selector", "#{type}: #{reason}"
-        assert reason =~ "paths"
-        assert reason =~ "pattern"
-        assert reason =~ "uses_module"
+
+        for key <- RuleSchema.selector_keys(RuleSchema.engine(type)),
+            do: assert(reason =~ key, "#{type}: #{key} not named in #{reason}")
       end
     end
 
@@ -328,6 +348,57 @@ defmodule Anchor.Domain.RuleSchemaTest do
                Config.parse_rule(%{"type" => "single_control_flow", "uses_module" => ""})
 
       assert reason =~ "`uses_module` must be a non-empty string"
+    end
+  end
+
+  # DND-5441: what load time decides only once `architecture:` is parsed.
+  describe "validate_architecture/3" do
+    test "a graph rule with no architecture: section is refused" do
+      assert {:error, reason} =
+               RuleSchema.validate_architecture(%{type: :x, bucket: "domain"}, :graph, nil)
+
+      assert reason =~ "a x rule runs on the graph engine"
+      assert reason =~ "add an architecture: section"
+    end
+
+    test "a bucket naming no architecture bucket is refused, listing the buckets" do
+      assert {:error, reason} =
+               RuleSchema.validate_architecture(%{type: :x, bucket: "web"}, :graph, ~w(domain ui))
+
+      assert reason =~ "`bucket: web` names no architecture: bucket"
+      assert reason =~ "name one of: domain, ui"
+    end
+
+    test "positive: a known bucket, or a paths/pattern rule, with the section present" do
+      assert :ok = RuleSchema.validate_architecture(%{type: :x, bucket: "ui"}, :graph, ~w(ui))
+      assert :ok = RuleSchema.validate_architecture(%{type: :x, pattern: "A.*"}, :graph, [])
+    end
+
+    test "an ast rule never needs the section" do
+      assert :ok = RuleSchema.validate_architecture(%{type: :single_control_flow}, :ast, nil)
+    end
+  end
+
+  describe "enforcement/1 and parse_enforcement/1" do
+    test "report (atom or string) is :report; anything else, absent included, is :enforce" do
+      assert RuleSchema.enforcement(%{enforcement: :report}) == :report
+      assert RuleSchema.enforcement(%{enforcement: "report"}) == :report
+      assert RuleSchema.enforcement(%{enforcement: :enforce}) == :enforce
+      assert RuleSchema.enforcement(%{}) == :enforce
+    end
+
+    test "parse_enforcement: nil is :enforce; a leading colon is accepted" do
+      assert RuleSchema.parse_enforcement(nil) == :enforce
+      assert RuleSchema.parse_enforcement("report") == :report
+      assert RuleSchema.parse_enforcement(":report") == :report
+      assert RuleSchema.parse_enforcement("enforce") == :enforce
+    end
+
+    test "a parsed rule carries its enforcement, enforce by default" do
+      base = %{"type" => "single_control_flow", "paths" => ["lib/**/*.ex"]}
+
+      assert %{enforcement: :enforce} = Config.parse_rule(base)
+      assert %{enforcement: :report} = Config.parse_rule(Map.put(base, "enforcement", "report"))
     end
   end
 
