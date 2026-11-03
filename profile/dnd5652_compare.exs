@@ -14,6 +14,14 @@ diffs =
   end
 say.("tests with differing function sets=#{length(diffs)} of #{map_size(am)}")
 for {k, only_a, only_b} <- Enum.take(diffs, 8), do: say.("DIFF #{inspect(k)} only_first_hit=#{inspect(only_a)} only_every_call=#{inspect(only_b)}")
+artifact? = fn f -> String.contains?(f, ["__info__", "__struct__", "module_info", "behaviour_info"]) end
+real =
+  for {k, only_a, only_b} <- diffs,
+      ra = Enum.reject(only_a, artifact?), rb = Enum.reject(only_b, artifact?), ra != [] or rb != [] do
+    {k, ra, rb}
+  end
+say.("tests differing after dropping module-load functions (__info__, __struct__, module_info, behaviour_info)=#{length(real)}")
+for {k, ra, rb} <- Enum.take(real, 20), do: say.("REAL #{inspect(k)} only_A=#{inspect(ra)} only_B=#{inspect(rb)}")
 say.("functions total first_hit=#{am |> Map.values() |> Enum.map(&length/1) |> Enum.sum()} every_call=#{bm |> Map.values() |> Enum.map(&length/1) |> Enum.sum()}")
 say.("outside_windows first_hit=#{a.outside_windows} every_call=#{b.outside_windows}; late first_hit=#{a.late_events} every_call=#{b.late_events}")
 la = a.window_leaks |> Enum.map(&{&1.from, &1.to}) |> MapSet.new()
