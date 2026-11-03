@@ -7,6 +7,8 @@ defmodule Anchor.Domain.Graph.ModuleNode do
       `:anno`), or `nil` when the metadata has none (DND-5440: an
       unclassified module is reported there).
     * `:behaviours` — every `@behaviour`, from the persisted attributes.
+    * `:callbacks` — every `@callback` the module declares, as `{name,
+      arity}`, sorted: the module is a behaviour when it has any (DND-5442).
     * `:attributes` — the persisted attributes, a keyword list.
     * `:specs` — `%{{name, arity} => [quoted spec]}`.
     * `:types` — `%{{name, arity} => {kind, quoted type}}`, kind `:type`,
@@ -30,6 +32,7 @@ defmodule Anchor.Domain.Graph.ModuleNode do
     :line,
     :struct_fields,
     behaviours: [],
+    callbacks: [],
     attributes: [],
     specs: %{},
     types: %{},
@@ -43,6 +46,7 @@ defmodule Anchor.Domain.Graph.ModuleNode do
           source_file: String.t() | nil,
           line: pos_integer() | nil,
           behaviours: [module()],
+          callbacks: [{atom(), arity()}],
           attributes: keyword(),
           specs: %{{atom(), arity()} => [Macro.t()]},
           types: %{{atom(), arity()} => {:type | :typep | :opaque, Macro.t()}},

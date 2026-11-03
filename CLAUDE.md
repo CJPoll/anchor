@@ -224,6 +224,23 @@ and compares (multisets: NEW, STALE, held; GREW against base), and
 no line, no message. `baseline` on an `ast` rule is refused at load until
 Credo compares baselines.
 
+## The layering rule (DND-5442)
+
+`Anchor.Domain.GraphRules.Layering` judges every call in the graph whose
+caller the rule selects against `Anchor.Domain.CallMatrix.allowed?/3` (deny
+by default: a bucket and scope the caller's `calls` row lists).
+`CallMatrix.route/3` is the shortest allowed bucket path, for the `Fix:`, and
+`row/2` prints the caller's row. A dynamic call resolves through
+`Anchor.Domain.DynamicCalls.candidates/2`: every module implementing a
+behaviour whose `ModuleNode.callbacks` (read from the beam by `BeamReader`,
+`Code.Typespec.fetch_callbacks/1`) declare that name and arity; none is
+`:unresolved`, one violation. A closure application (`{:dynamic, nil, ...}`)
+is left to the higher-order analysis. One violation per (caller, callee)
+pair, at its first line. The canary has a framework bucket with
+`layering/compliant.ex` and `layering/violating.ex`. Anchor's own
+`.anchor.yml` runs the rule with a baseline (DND-1288's two `Lint ->
+Check.Source` calls, and dynamic calls no project behaviour declares).
+
 ## Higher-order flow (DND-5497)
 
 `Anchor.Domain.Cfa.analyze/3` is a whole-program 0-CFA over every

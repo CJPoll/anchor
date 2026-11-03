@@ -25,13 +25,14 @@ defmodule Anchor.Domain.GraphRules do
   """
 
   alias Anchor.Domain.GlobPattern
+  alias Anchor.Domain.GraphRules.Layering
   alias Anchor.Domain.Model
 
   @default_min_modules 1
 
   # Every module implementing `Anchor.Domain.GraphRule`. The rule tickets add
   # theirs here (see the moduledoc).
-  @rules []
+  @rules [Layering]
 
   @doc "Every graph rule module."
   @spec all() :: [module()]

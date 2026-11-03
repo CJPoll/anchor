@@ -205,6 +205,10 @@ before coining a synonym.
   `Enforcement` and `ViolationKey`, the engine common keys in `RuleSchema`,
   report-mode detection in `Managers.Lint` and `Check.Base`, the ratchet in
   `Managers.Graph`, `BaselineFile`, `GitShow` and the task's baseline flags.
+- `layering` — the `layering` graph rule (DND-5442):
+  `Anchor.Domain.GraphRules.Layering`, `CallMatrix`, `DynamicCalls`, the
+  `@callback` reading in `BeamReader` and `Builder`, its registration and
+  Config's architecture check of graph rules.
 - `dialyzer_boundary` — the DND-5499 spike runner
   `test/fixtures/dialyzer_boundary/run.exs` (not a check: it measures what
   Dialyzer reports for clause reachability on the fixtures beside it, so F8

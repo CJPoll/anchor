@@ -109,6 +109,7 @@ defmodule Anchor.Domain.Graph.Builder do
       source_file: source_file,
       line: anno_line(Map.get(elixir, :anno)),
       behaviours: attributes |> Keyword.get_values(:behaviour) |> List.flatten(),
+      callbacks: beam.callbacks,
       attributes: attributes,
       specs: specs(beam.specs),
       types: types(beam.types),

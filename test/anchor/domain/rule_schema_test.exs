@@ -47,6 +47,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
   @typos %{
     alphabetized_functions: "mdoe",
     case_on_bare_arg: "pahts",
+    layering: "min_module",
     max_file_length: "max_line",
     module_pattern_restrictions: "allowed_function",
     must_use_module: "require_modules",
@@ -194,10 +195,10 @@ defmodule Anchor.Domain.RuleSchemaTest do
     end
 
     # Drift guard: the allowlist has an entry for exactly the shipped rule types.
-    test "the allowlist covers exactly the rule types of Anchor.checks/0" do
+    test "the ast types are exactly the rule types of Anchor.checks/0" do
       check_types = Anchor.checks() |> Enum.map(& &1.rule_type()) |> Enum.sort()
 
-      assert RuleSchema.rule_types() == check_types
+      assert RuleSchema.rule_types_for_engine(:ast) == check_types
     end
 
     # Doc drift guard: the README's per-type key table is the allowlist. A key
@@ -232,11 +233,16 @@ defmodule Anchor.Domain.RuleSchemaTest do
   # (a type with no engine) is a CompileError, proven by sabotage, not here.
   # Sabotage record: ../../sabotage_records/rule_schema-20261103-dnd_5437.md
   describe "engine/1" do
-    test "every shipped type has an engine, and today every one is :ast" do
+    test "every shipped type has an engine; the graph types are the graph rule modules'" do
       engines = Enum.map(RuleSchema.rule_types(), &RuleSchema.engine/1)
 
       assert length(engines) == length(RuleSchema.rule_types())
-      assert Enum.all?(engines, &(&1 == :ast)), inspect(engines)
+
+      # DND-5442: layering is the first graph type.
+      assert :layering in RuleSchema.rule_types_for_engine(:graph)
+
+      assert RuleSchema.rule_types_for_engine(:graph) ==
+               Anchor.Domain.GraphRules.all() |> Enum.map(& &1.rule_type()) |> Enum.sort()
     end
 
     test "the engines partition the rule types: each type in exactly one" do
@@ -262,9 +268,9 @@ defmodule Anchor.Domain.RuleSchemaTest do
                "#{type} loaded with no selector"
 
         assert reason =~ "no selector", "#{type}: #{reason}"
-        assert reason =~ "paths"
-        assert reason =~ "pattern"
-        assert reason =~ "uses_module"
+
+        for key <- RuleSchema.selector_keys(RuleSchema.engine(type)),
+            do: assert(reason =~ key, "#{type}: #{key} not named in #{reason}")
       end
     end
 

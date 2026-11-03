@@ -438,13 +438,14 @@ another type (`match` on a `no_transitive_dependency` rule) is unknown too.
 
 The Engine column is the one engine that runs the type: `ast` rules run as
 Credo checks over source, `graph` rules run under `mix anchor.graph` over the
-compiled code (DND-5440; no `graph` type ships yet). Credo never reports a
+compiled code (DND-5440; `layering` is the first, DND-5442). Credo never reports a
 `graph` rule as unchecked.
 
 | Rule type | Keys beyond the common ones | Relation (needs one, non-empty) | Engine |
 |---|---|---|---|
 | `alphabetized_functions` | `mode` | none | `ast` |
 | `case_on_bare_arg` | none | none | `ast` |
+| `layering` | none | none | `graph` |
 | `max_file_length` | `max_lines` | none | `ast` |
 | `module_pattern_restrictions` | `allowed_functions` | none | `ast` |
 | `must_use_module` | `required_modules` | `required_modules` | `ast` |
@@ -637,6 +638,76 @@ message text, so moving code does not churn it. Every entry starts with the
 rule's id; a file holding another rule's entry is refused. `baseline` is read
 by graph rules only: on an `ast` rule it is refused at load, because Credo
 compares no baseline yet.
+
+### The `layering` rule (DND-5442)
+
+```yaml
+rules:
+  - type: layering
+    id: layering
+    paths: ["lib/**/*.ex"]
+
+architecture:
+  contexts:
+    depth: 2
+  buckets:
+    - name: framework
+      role: framework
+      select:
+        - paths: ["lib/my_app_web/**/*.ex"]
+    - name: managers
+      role: managers
+      select:
+        - paths: ["lib/my_app/managers/**/*.ex"]
+    - name: adapters
+      role: adapters
+      select:
+        - paths: ["lib/my_app/adapters/**/*.ex"]
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/my_app/domain/**/*.ex"]
+  calls:
+    framework: [framework, managers, domain]
+    managers: [managers, adapters, domain]
+    adapters: [adapters, domain]
+    domain: [domain]
+```
+
+`layering` enforces the `architecture: calls` matrix over compiled code: every
+call from a module the rule selects to another classified module of the
+project must land in a bucket the caller's row allows, with the row's scope
+(`same_context`, `other_context`). Anything a row does not list is denied.
+Because it reads beams, a call a macro injects (`use MyApp.Web` expanding
+into a `def` that calls `MyApp.Repo`) is the using module's call: the AST rule
+`no_direct_dependency` cannot see it. A capture (`&M.f/1`) and `apply/3` with
+a literal module are calls too.
+
+- A call within one module is allowed. A call to a module outside the
+  project (the standard library, a dependency) is not a bucket edge. A call
+  to an unclassified module is skipped: the runner already reports that
+  module.
+- A dynamic call (`mod.fetch(x)`, `Mix.shell().info(msg)`) resolves to every
+  project module implementing a behaviour that declares that callback
+  (`@callback fetch/1`), and each one is judged as a static call. When no
+  project behaviour declares it, the call is one violation, because its
+  target cannot be checked: `Fix: declare @callback fetch/1 in a behaviour`.
+  A behaviour from a dependency (`Mix.Shell`) is not a project behaviour, so
+  such a call is a violation to baseline. Applying a closure (`fun.(x)`)
+  names no function and is not judged by this rule.
+- One violation per caller function and callee function, at the first such
+  call's line, keyed `<id>|<Caller.f/a>|-> <Callee.g/b>` (an unresolved call
+  is `-> dynamic fetch/1`). The message names both modules' bucket and
+  context and the caller's row, and the `Fix:` names the route through the
+  matrix (`framework -> managers -> adapters`), the row's scope when only the
+  scope forbids it, or "no route".
+
+```
+lib/my_app/web/page.ex:12: [enforce] rule 1 (id: "layering", layering) MyApp.Web.Page.show/2 (framework, MyApp.Web) calls MyApp.Repo.get/2 (adapters, MyApp.Repo); framework may call: framework, managers, domain. Fix: route it through managers: framework -> managers -> adapters (call a managers module of the right context, which calls adapters); framework may not call adapters directly.
+```
+
+Anchor's own `.anchor.yml` runs it over `lib/` with a baseline,
+`.anchor/baselines/layering.txt`, holding what it found when it landed.
 
 The only file it writes is `_build/<env>/anchor/graph.etf`, the graph keyed by
 a sha256 of the beams, the config and Anchor's version, for `mix

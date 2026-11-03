@@ -14,7 +14,8 @@ defmodule Anchor.Adapters.BeamReader do
       `apply(m, :f, [x])` becomes a plain call, `&M.f/1` a literal fun, and an
       unused struct literal disappears).
 
-  plus `Code.Typespec.fetch_specs/1` and `fetch_types/1` on the binary.
+  plus `Code.Typespec.fetch_specs/1`, `fetch_types/1` and `fetch_callbacks/1`
+  on the binary.
 
   A module compiled with a `parse_transform` or `core_transform` is refused
   (`{:core_v1_refused, {:transform, ...}}`): lowering it would run the
@@ -115,7 +116,8 @@ defmodule Anchor.Adapters.BeamReader do
         elixir: elixir,
         core: core,
         specs: typespecs(Code.Typespec.fetch_specs(binary)),
-        types: typespecs(Code.Typespec.fetch_types(binary))
+        types: typespecs(Code.Typespec.fetch_types(binary)),
+        callbacks: callbacks(Code.Typespec.fetch_callbacks(binary))
       }
     end
   end
@@ -154,6 +156,10 @@ defmodule Anchor.Adapters.BeamReader do
   # rule, DND-5438) rather than failing a beam whose facts were all read.
   defp typespecs({:ok, specs}), do: specs
   defp typespecs(:error), do: []
+
+  # DND-5442: the `{name, arity}` of every `@callback` the module declares
+  # (a behaviour), sorted; `[]` for a module that declares none.
+  defp callbacks(fetched), do: fetched |> typespecs() |> Enum.map(&elem(&1, 0)) |> Enum.sort()
 
   defp error(path, module, reason), do: {:error, %{path: path, module: module, reason: reason}}
 end

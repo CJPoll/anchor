@@ -191,6 +191,9 @@ defmodule Anchor.Domain.RuleSchema do
   @keys_by_type %{
     alphabetized_functions: ~w(mode),
     case_on_bare_arg: [],
+    # DND-5442: the graph engine's layering rule reads only the graph common
+    # keys (its matrix is the `architecture:` section's `calls`).
+    layering: [],
     max_file_length: ~w(max_lines),
     module_pattern_restrictions: ~w(allowed_functions),
     must_use_module: ~w(required_modules),
@@ -214,6 +217,7 @@ defmodule Anchor.Domain.RuleSchema do
   @relations_by_type %{
     alphabetized_functions: [],
     case_on_bare_arg: [],
+    layering: [],
     max_file_length: [],
     module_pattern_restrictions: [],
     must_use_module: ~w(required_modules),
@@ -235,6 +239,7 @@ defmodule Anchor.Domain.RuleSchema do
   @engine_by_type %{
     alphabetized_functions: :ast,
     case_on_bare_arg: :ast,
+    layering: :graph,
     max_file_length: :ast,
     module_pattern_restrictions: :ast,
     must_use_module: :ast,

@@ -103,13 +103,29 @@ rules:
     required_modules:
       - Anchor.Check.Base
 
+  # --- Rule: the calls matrix over compiled code (DND-5442) ---
+  #
+  # `mix anchor.graph` judges every call between two of Anchor's own modules
+  # against `architecture: calls` below, including calls a macro injects and
+  # dynamic calls through a behaviour, which the AST rules above cannot see.
+  #
+  # The baseline holds what it found when it landed: Lint's two calls into
+  # Anchor.Check.Source (DND-1288), and dynamic calls no project behaviour
+  # declares (`Mix.shell().info/1`, and Lint's calls on a computed check
+  # module). It only shrinks; `mix anchor.graph --base origin/main` fails one
+  # a branch adds.
+  - type: layering
+    id: layering
+    paths: ["lib/**/*.ex"]
+    baseline: .anchor/baselines/layering.txt
+
 # The ADR-001 five buckets over Anchor's compiled code, judged by
 # `mix anchor.graph` (DND-5440) in Anchor's own CI (run in the dev env, so the
 # graph is lib/ as it ships: test/support is compiled only under MIX_ENV=test).
 # Every module of lib/ lands in exactly one bucket. Each floor is the bucket's
 # module count when the runner landed: a moved directory that empties a
 # bucket fails the run instead of passing it. Lowering a floor is the owner's
-# call. The layering rule over `calls` arrives with DND-5442.
+# call. The layering rule above judges `calls` (DND-5442).
 architecture:
   contexts:
     depth: 2

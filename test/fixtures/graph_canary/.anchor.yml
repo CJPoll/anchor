@@ -1,7 +1,10 @@
 # The graph runner's canary tree (DND-5440). Every graph rule ticket adds a
 # compliant and a violating module per rule, and its rule here. The
 # integration test compiles lib/ in the test and runs the Manager over it.
-rules: []
+rules:
+  - type: layering
+    id: layering
+    paths: ["lib/canary/**/*.ex"]
 
 architecture:
   contexts:
@@ -20,9 +23,14 @@ architecture:
       role: adapters
       select:
         - paths: ["lib/canary/adapters/**/*.ex"]
+    - name: framework
+      role: framework
+      select:
+        - paths: ["lib/canary/framework/**/*.ex"]
   calls:
     domain: [domain]
     managers: [managers, adapters, domain]
     adapters: [adapters, domain]
+    framework: [framework, managers, domain]
   interfaces:
     buckets: [managers]

@@ -424,6 +424,24 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
 
   # The types with no relation and no key of their own: they check every file
   # they select, so only the common rows apply.
+  # DND-5442: the first graph type. Its rows are the graph common rows,
+  # loaded through `Config.parse_config/1` with an `architecture:` section
+  # (`parse_one/1`), plus what only a whole document decides.
+  defp table(:layering) do
+    base = %{"type" => "layering", "bucket" => "domain"}
+
+    graph_common_rows()
+    |> Enum.map(fn {label, rule, expected} ->
+      {label, Map.put(rule, "type", "layering"), expected}
+    end)
+    |> Enum.concat([
+      {"a bucket naming no architecture bucket", Map.put(base, "bucket", "web"),
+       {:refused, "`bucket: web` names no architecture: bucket"}},
+      {"positive: a pattern rule with the architecture section",
+       %{"type" => "layering", "pattern" => "MyApp.*"}, :accepted}
+    ])
+  end
+
   defp table(type), do: common_rows(type)
 
   defp extra_rows(:no_direct_dependency) do
@@ -575,10 +593,27 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
   end
 
   # A parser that raises is a row failure too, reported beside the others.
-  defp parse_one(rule) do
-    Config.parse_config(%{"rules" => [rule]})
+  defp parse_one(%{"type" => type} = rule) do
+    Config.parse_config(document(rule, RuleSchema.engine(String.to_existing_atom(type))))
   rescue
     error -> {:raised, Exception.message(error) |> String.split("\n") |> hd()}
+  end
+
+  # A graph rule needs the `architecture:` section (DND-5441), so its rows
+  # load beside one that has a `domain` bucket.
+  defp document(rule, :ast), do: %{"rules" => [rule]}
+
+  defp document(rule, :graph) do
+    %{
+      "rules" => [rule],
+      "architecture" => %{
+        "contexts" => %{"depth" => 2},
+        "buckets" => [
+          %{"name" => "domain", "role" => "domain", "select" => [%{"paths" => ["lib/**"]}]}
+        ],
+        "calls" => %{"domain" => ["domain"]}
+      }
+    }
   end
 
   defp row_result({:raised, message}, _expected), do: "RAISED: #{message}"
@@ -587,7 +622,7 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
   defp row_result(result, :accepted), do: "refused: #{inspect(result)}"
 
   defp row_result({:error, {:invalid_rule, reason}}, {:refused, fragment}) do
-    if reason =~ "rule 1: " and reason =~ fragment,
+    if reason =~ ~r/\Arule 1( \(id: "[^"]*"\))?: / and reason =~ fragment,
       do: nil,
       else: "wrong reason (want #{inspect(fragment)}): #{reason}"
   end
