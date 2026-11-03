@@ -9,8 +9,10 @@ defmodule Anchor.Domain.Graph do
     * `:unreadable` — every beam that could not be decoded, as the error map
       `%{path, module, reason}` (see `t:Anchor.Domain.Graph.Beam.decode_error/0`),
       in path order, and every extra beam of a module two ebins hold
-      (`reason: {:duplicate_module, kept_path}`). The runner reports each;
-      none is dropped.
+      (`reason: {:duplicate_module, kept_path}`), and every module whose
+      public function or macro has no Core body
+      (`reason: {:no_core, [{name, arity}]}`, DND-5549; the module is still
+      built). The runner reports each; none is dropped.
 
   `Anchor.Domain.Graph.Builder.build/2` makes one.
   """
@@ -55,6 +57,24 @@ defmodule Anchor.Domain.Graph do
 
   def calls_to(%__MODULE__{calls: calls}, module) when is_atom(module),
     do: Enum.filter(calls, &callee_module?(&1.to, module))
+
+  @doc """
+  Every function whose Core body the graph lacks (`core: nil`), as
+  `%{module => [{name, arity}]}` sorted, modules with none left out (DND-5549).
+  No call or struct edge was read from them, so a count of them belongs in
+  every run's summary: a missing body must never read as a function with no
+  calls. A private macro and a `defp` nothing calls have none by design (the
+  compiler emits no code for them); a public one is also in `unreadable` as
+  `{:no_core, [{name, arity}]}`.
+  """
+  @spec functions_without_core(t()) :: %{module() => [{atom(), arity()}]}
+  def functions_without_core(%__MODULE__{modules: modules}) do
+    for {module, %ModuleNode{functions: functions}} <- modules,
+        missing = for({name_arity, %FunctionNode{core: nil}} <- functions, do: name_arity),
+        missing != [],
+        into: %{},
+        do: {module, Enum.sort(missing)}
+  end
 
   @doc "The function node for `{m, f, a}`, or `nil`."
   @spec function(t(), mfa()) :: FunctionNode.t() | nil

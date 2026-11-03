@@ -6,6 +6,8 @@ defmodule Anchor.Domain.Graph.BuilderTest do
   # gets plain data.
   #
   # Sabotage record: ../../../sabotage_records/builder-20261103-dnd_5438.md
+  # Sabotage record: ../../../sabotage_records/builder-20261103-dnd_5551_graph_hardening.md
+  # Sabotage record: ../../../sabotage_records/inlines-20261103-dnd_5551_graph_hardening.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -211,6 +213,73 @@ defmodule Anchor.Domain.Graph.BuilderTest do
              ]
 
       assert %ModuleNode{} = Graph.module(graph, Plain)
+    end
+  end
+
+  describe "build/2 functions with no Core body (DND-5549)" do
+    test "a private macro and a private function nothing calls have no Core; each is counted" do
+      module = AnchorFixtures.BuilderTest.NoCore
+
+      graph =
+        """
+        defmodule AnchorFixtures.BuilderTest.NoCore do
+          defmacrop twice(x), do: quote(do: unquote(x) * 2)
+          def run(x), do: helper(twice(x))
+          defp helper(x), do: x
+          defp unused(x), do: x
+        end
+        """
+        |> compile_unloaded("lib/no_core.ex")
+        |> decode!()
+        |> Builder.build(%{})
+
+      assert Graph.functions_without_core(graph) == %{module => [{:twice, 1}, {:unused, 1}]}
+
+      assert %FunctionNode{kind: :defmacrop, core: nil} =
+               Graph.function(graph, {module, :twice, 1})
+
+      assert %FunctionNode{kind: :defp, core: nil} = Graph.function(graph, {module, :unused, 1})
+      # Positive control: the functions the beam holds have their Core.
+      assert %FunctionNode{core: core} = Graph.function(graph, {module, :helper, 1})
+      assert :cerl.is_c_fun(core)
+      # A private function the compiler emitted no code for is expected.
+      assert graph.unreadable == []
+    end
+
+    test "a public function with no Core is unreadable, naming it; the module is kept", %{
+      plain: plain
+    } do
+      [beam] = Enum.filter(plain, &(&1.module == Plain))
+
+      defs =
+        Enum.reject(:cerl.module_defs(beam.core), fn {fname, _fun} ->
+          :cerl.var_name(fname) in [{:run, 1}, {:"MACRO-m", 2}]
+        end)
+
+      core =
+        :cerl.update_c_module(
+          beam.core,
+          :cerl.module_name(beam.core),
+          :cerl.module_exports(beam.core),
+          :cerl.module_attrs(beam.core),
+          defs
+        )
+
+      graph = Builder.build([%{beam | core: core}], %{})
+
+      assert graph.unreadable == [
+               %{path: beam.path, module: Plain, reason: {:no_core, [{:m, 1}, {:run, 1}]}}
+             ]
+
+      assert Graph.functions_without_core(graph) == %{Plain => [{:m, 1}, {:run, 1}]}
+      assert %ModuleNode{} = Graph.module(graph, Plain)
+      assert Graph.calls_from(graph, {Plain, :run, 1}) == []
+    end
+
+    test "with every body present nothing is counted", %{pair: pair} do
+      graph = Builder.build(pair, %{})
+      assert Graph.functions_without_core(graph) == %{}
+      assert graph.unreadable == []
     end
   end
 

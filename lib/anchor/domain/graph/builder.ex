@@ -21,7 +21,9 @@ defmodule Anchor.Domain.Graph.Builder do
   A decode error is carried into `graph.unreadable` (in path order), never
   dropped; the good beams beside it are all built. Two beams of one module (a
   stale copy in a second ebin) build the first by path, and the other is in
-  `unreadable` as `{:duplicate_module, kept_path}`.
+  `unreadable` as `{:duplicate_module, kept_path}`. A module with a public
+  function or macro its Core does not define is built, and is in `unreadable`
+  too, as `{:no_core, [{name, arity}]}` (DND-5549).
   """
 
   alias Anchor.Domain.Graph
@@ -42,6 +44,7 @@ defmodule Anchor.Domain.Graph.Builder do
     {decoded, errors} = Enum.split_with(beams, &match?(%Beam{}, &1))
     {kept, duplicates} = first_per_module(decoded)
     nodes = Enum.map(kept, &module_node(&1, source_facts))
+    no_core = kept |> Enum.zip(nodes) |> Enum.flat_map(&public_without_core/1)
     # Core's `{:file, _}` annotations hold the cwd-relative path, which the
     # node keeps as `source_file` (`elixir_v1` `:relative_file`).
     edges = Enum.map(nodes, &module_edges(&1, &1.source_file))
@@ -54,6 +57,7 @@ defmodule Anchor.Domain.Graph.Builder do
         errors
         |> Enum.map(fn {:error, error} -> error end)
         |> Enum.concat(duplicates)
+        |> Enum.concat(no_core)
         |> Enum.sort_by(& &1.path)
     }
   end
@@ -73,6 +77,23 @@ defmodule Anchor.Domain.Graph.Builder do
 
       {[first | kept], extra ++ duplicates}
     end)
+  end
+
+  # A public function or macro the Core module does not define cannot be
+  # walked, so it is reported, never read as a function with no calls. A
+  # private one with no Core is expected: the compiler emits no code for a
+  # `defmacrop` (expanded where it is used) or for a `defp` nothing calls.
+  # `Graph.functions_without_core/1` counts both kinds (DND-5549).
+  defp public_without_core({%Beam{path: path}, %ModuleNode{module: module, functions: functions}}) do
+    missing =
+      for {name_arity, %FunctionNode{core: nil, kind: kind}} <- functions,
+          kind in [:def, :defmacro],
+          do: name_arity
+
+    case Enum.sort(missing) do
+      [] -> []
+      missing -> [%{path: path, module: module, reason: {:no_core, missing}}]
+    end
   end
 
   defp module_node(%Beam{module: module, elixir: elixir} = beam, source_facts) do

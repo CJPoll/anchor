@@ -160,7 +160,11 @@ update, read back as `:maps.put/3`), so an edge names the Erlang function.
 `Anchor.Domain.Graph.Inlines` carries the table, derived from Elixir's own
 rewrite rules when Anchor compiles, never copied by hand (DND-5551). A rule
 that names a stdlib function matches every spelling, through
-`Inlines.spellings/1` (`Graph.calls_to/2` already does). Graph test fixtures are
+`Inlines.spellings/1` (`Graph.calls_to/2` already does). A function with no Core
+body (`core: nil`: a `defmacrop`, a `defp` nothing calls) has no edges read
+from it; `Graph.functions_without_core/1` counts them per module for the
+runner's summary, and a public one is also an `unreadable` entry
+`{:no_core, [{name, arity}]}` (DND-5549). Graph test fixtures are
 compiled in the test with `Anchor.Test.BeamFixtures.compile_unloaded/2`, which
 unloads every fixture module and turns `debug_info` on per module (`mix test`
 compiles with it off).
