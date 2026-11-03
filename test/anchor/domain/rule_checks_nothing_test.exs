@@ -24,6 +24,8 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
   #   ../../sabotage_records/rule_schema-20260929-dnd_1267_forbidden_functions.md
   # The DND-1269 `allowed_callers` rows:
   #   ../../sabotage_records/rule_schema-20260929-dnd_1269_allowed_callers.md
+  # The DND-5451 `pure_patterns` rows:
+  #   ../../sabotage_records/rule_schema-20261103-dnd_5451_ast_batch.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config
@@ -254,6 +256,34 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
     common_rows(:max_file_length) ++
       [
         {"positive: max_lines", Map.put(base(:max_file_length), "max_lines", 200), :accepted}
+      ]
+  end
+
+  # DND-5451: `pure_patterns` widens what the rule reports (the stdlib pure set
+  # applies without it), so it is not a relation. A match-all entry declares
+  # every module pure, so every call would read as having no effect.
+  defp table(:no_discarded_pure_expression) do
+    base = base(:no_discarded_pure_expression)
+    list = "`pure_patterns` must be a list of non-empty strings"
+    match_all = "declares every module pure"
+
+    common_rows(:no_discarded_pure_expression) ++
+      [
+        {"positive: pure_patterns", Map.put(base, "pure_patterns", ["MyApp.*.Domain.*"]),
+         :accepted},
+        {"positive: pure_patterns: [] (the stdlib pure set only)",
+         Map.put(base, "pure_patterns", []), :accepted},
+        {"pure_patterns that is a string", Map.put(base, "pure_patterns", "MyApp.*"),
+         {:refused, list}},
+        {"pure_patterns of empty strings", Map.put(base, "pure_patterns", [""]),
+         {:refused, list}},
+        {"pure_patterns of a non-string", Map.put(base, "pure_patterns", [1]), {:refused, list}},
+        {"pure_patterns: [\"*\"] declares every module pure",
+         Map.put(base, "pure_patterns", ["MyApp.*", "*"]), {:refused, match_all}},
+        {"pure_patterns: [\"**\"] declares every module pure",
+         Map.put(base, "pure_patterns", ["**"]), {:refused, match_all}},
+        {"an unknown key (pure_modules)", Map.put(base, "pure_modules", ["MyApp.Calc"]),
+         {:refused, ~s(unknown key "pure_modules" in a no_discarded_pure_expression rule)}}
       ]
   end
 

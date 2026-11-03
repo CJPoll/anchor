@@ -187,6 +187,8 @@ rule's position (and its `id`, when it has one) and ending with `Fix:`:
 - an `allowed_callers` entry that is not exactly one Elixir module name: a glob
   (`"*"` allows every caller, so the rule checks nothing), an Erlang module
   (`":ets"`), or a malformed name (`"MyApp.adapter"`, `"MyApp.Repo.insert/1"`);
+- a `pure_patterns` entry of only wildcards (`*`, `**`), which declares every
+  module pure;
 - an `allowed_functions` entry of only wildcards (`*`, `**`), which allows
   every function. Every other glob character is a literal (see
   [Glob syntax](#glob-syntax)), so `*?` allows the functions ending in `?`, not
@@ -317,6 +319,7 @@ semantics and edge cases.
 | `same_context` | `no_direct_dependency` | Boolean, default `false`. When `true`, a `forbidden_patterns` match is a violation **only if** the dependency shares the checked file's own context. Exact `forbidden_modules` matches are never scoped. |
 | `context_depth` | `no_direct_dependency` | Positive integer, default `2`. Number of leading module-namespace segments that define a "context/subdomain". Inert unless `same_context: true`. |
 | `allowed_functions` | `module_pattern_restrictions` | Function-name allow-list (globs). |
+| `pure_patterns` | `no_discarded_pure_expression` | Module-name globs, default `[]`: modules whose functions are pure, beside the stdlib pure set. A non-list, a blank entry or a match-all glob (`*`, `**`) fails the load. See [`no_discarded_pure_expression`](#no_discarded_pure_expression). |
 | `mode`, `max_lines` | `alphabetized_functions`, `max_file_length` | Style-check parameters. `mode` is `all`, `public_only` or `separate` (a leading colon is accepted); any other token fails the load. |
 
 #### Keys each rule type accepts
@@ -339,6 +342,7 @@ another type (`match` on a `no_transitive_dependency` rule) is unknown too.
 | `must_use_module` | `required_modules` | `required_modules` |
 | `no_comparison_in_if` | none | none |
 | `no_direct_dependency` | `allowed_callers`, `context_depth`, `forbidden_functions`, `forbidden_modules`, `forbidden_patterns`, `match`, `same_context` | `forbidden_functions`, `forbidden_modules`, `forbidden_patterns` |
+| `no_discarded_pure_expression` | `pure_patterns` | none |
 | `no_discarding_arrow_in_with` | none | none |
 | `no_transitive_dependency` | `forbidden_modules`, `forbidden_patterns` | `forbidden_modules`, `forbidden_patterns` |
 | `no_tuple_match_in_head` | none | none |
@@ -437,7 +441,8 @@ Configure Credo to use the custom checks in `.credo.exs`:
           {Anchor.Check.AlphabetizedFunctions, []},
           {Anchor.Check.MaxFileLength, []},
           {Anchor.Check.NoComparisonInIf, []},
-          {Anchor.Check.StructGetterConvention, []}
+          {Anchor.Check.StructGetterConvention, []},
+          {Anchor.Check.NoDiscardedPureExpression, []}
         ]
       }
     }
@@ -968,3 +973,91 @@ Note: This check allows getters to return `%Ecto.Association.NotLoaded{}` struct
     - "lib/my_app/**/*.ex"
   recursive: true
 ```
+
+### `no_discarded_pure_expression`
+
+Reports an expression whose value nobody uses and which has no effect, so it
+causes nothing (DND-5451). It is dead code that reads as if it mattered: a
+leftover computation, or a `Map.put/3` whose result was meant to be rebound.
+The compiler warns about an unused variable, but not about
+`Map.put(state, :k, v)` on its own line, nor about `_ = Enum.map(xs, f)`.
+
+Two positions are checked:
+
+- every expression of a block except the last (the last is the block's value):
+  function, `fn`, clause, `do`/`else` and module bodies;
+- the right side of `_ = expr` or `_name = expr` written in such a position.
+  `x = expr` binds a value and `:ok = call()` asserts a match, so neither is
+  reported.
+
+Code inside `quote` is skipped (it is a macro's output).
+
+An expression is **pure**, by Anchor's definition, exactly when it is:
+
+1. a literal: an atom, a number, a string, `nil`, `true`, `false`;
+2. a variable, or a module attribute read (`@attr`);
+3. a list, tuple, map, map update, struct, binary or interpolated string whose
+   every element is pure;
+4. an operator over pure operands: `+ - * / ++ -- <> == != === !== < > <= >=
+   and or not && || ! in .. |>` (a pipe is the call it builds), or a field
+   read `x.field` / `x[:k]` on a pure value;
+5. a call `M.f(args)` where `M`, resolved through the aliases in scope, is in
+   the **stdlib pure set** or matches a `pure_patterns` glob, `f` does not end
+   in `!`, and every argument is pure. The stdlib pure set is `Access`,
+   `Atom`, `Base`, `Bitwise`, `Date`, `Enum`, `Float`, `Integer`, `Keyword`,
+   `List`, `Map`, `MapSet`, `NaiveDateTime`, `Range`, `Stream`, `String`,
+   `Time`, `Tuple`, `URI`, except the clock reads (`Date.utc_today`,
+   `NaiveDateTime.utc_now`, `NaiveDateTime.local_now`, `Time.utc_now`), the
+   random reads (`Enum.random`, `Enum.shuffle`, `Enum.take_random`) and
+   `Stream.run`;
+6. a local call `f(args)` in a module whose name matches a `pure_patterns`
+   glob, `f` not ending in `!` and not a `Kernel` function or special form,
+   every argument pure;
+7. a `Kernel` pure function over pure arguments: `abs div rem max min length
+   elem hd tl tuple_size map_size byte_size bit_size to_string inspect` and the
+   `is_*` guards;
+8. an `fn` whose every clause body is pure, `&(...)` of a pure expression, or
+   a capture `&M.f/n` / `&f/n` of a pure function.
+
+Anything else is not pure, so it is never reported: an unknown call (it may be
+an effect), a dynamic call (`mod.f()`, `apply/3`, `fun.()`), `send`, `raise`,
+`throw`, `exit`, `spawn`, a bang function, and every `case`, `cond`, `if`,
+`with`, `receive` or `try` (control flow is judged inside, not as a whole).
+So `Enum.each(xs, &IO.puts/1)` is not reported and
+`Enum.each(xs, fn x -> x + 1 end)` is.
+
+```elixir
+def put(state, value) do
+  Map.put(state, :key, value)   # reported: its result is thrown away
+  state
+end
+```
+
+Each issue ends with `Fix: use the value (bind it and use the binding, or make
+it the block's last expression), or delete it. A call kept for its effect must
+be to a module outside pure_patterns and the stdlib pure set.`
+
+```yaml
+- type: no_discarded_pure_expression
+  paths:
+    - "lib/my_app/**/*.ex"
+  recursive: true
+  pure_patterns:          # optional: your own pure modules
+    - "MyApp.*.Domain.*"
+```
+
+Known limits, each a miss rather than a false report, except the first two:
+
+- Raising is an effect only for a bang function and `raise`/`throw`/`exit`. A
+  non-bang call kept only for its raise (`String.to_integer(s)` as
+  validation) is reported; bind and use it, or check explicitly.
+- A variable holding a lazy stream with effects (`File.stream!/1`) is a pure
+  value here, so `Enum.each(stream, fn _ -> nil end)` on it is reported. The
+  graph engine's effects inference (DND-5447) knows better.
+- A local call in a `pure_patterns` module is pure even when an `import`
+  brought the function in from another module.
+- A bare literal carries no line in the parsed source, so its issue sits on
+  the nearest enclosing line.
+- Purity of your own functions is not inferred from the call graph: that is
+  the graph engine's (DND-5447, DND-5470). Declare pure namespaces with
+  `pure_patterns`.

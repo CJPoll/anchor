@@ -311,6 +311,11 @@ defmodule Anchor.Config do
       # a literal glob character, not an Erlang-atom module token.
       forbidden_patterns: rule["forbidden_patterns"] || [],
       allowed_functions: rule["allowed_functions"] || [],
+      # DND-5451: module-name globs (`GlobPattern`) a `no_discarded_pure_expression`
+      # rule declares pure, beside the stdlib pure set. `RuleSchema.validate/2`
+      # has already refused a non-list, a blank entry and a match-all glob.
+      # Absent => `[]`.
+      pure_patterns: rule["pure_patterns"] || [],
       recursive: rule["recursive"] || false,
       max_lines: rule["max_lines"],
       mode: mode,

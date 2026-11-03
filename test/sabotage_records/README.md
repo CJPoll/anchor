@@ -137,3 +137,8 @@ before coining a synonym.
   `defstruct`, and the foreign-struct `location_violation` that recovers the
   real module name) and the `Anchor.Check.StructGetterConvention` shell that
   delegates to it.
+- `no_discarded_pure_expression` — the `no_discarded_pure_expression` rule
+  (DND-5451, proposal F1): its pure detector
+  (`Anchor.Domain.Checks.NoDiscardedPureExpression`, the definition of pure,
+  the stdlib pure set and `pure_patterns`) and the
+  `Anchor.Check.NoDiscardedPureExpression` shell that delegates to it.

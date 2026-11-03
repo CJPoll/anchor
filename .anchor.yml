@@ -63,7 +63,7 @@ rules:
 
   # --- Rule 3: every check shell must use the shared Framework base ---
   #
-  # Each of Anchor's 12 checks is a thin Framework delegate built on
+  # Each of Anchor's checks is a thin Framework delegate built on
   # `Anchor.Check.Base` (which provides `run_on_all_source_files/3` and the
   # violation->issue mapping). The check shells are enumerated explicitly rather
   # than globbed as `lib/anchor/check/*.ex` because that directory also holds
@@ -79,6 +79,7 @@ rules:
       - "lib/anchor/check/must_use_module.ex"
       - "lib/anchor/check/no_comparison_in_if.ex"
       - "lib/anchor/check/no_dependency.ex"
+      - "lib/anchor/check/no_discarded_pure_expression.ex"
       - "lib/anchor/check/no_discarding_arrow_in_with.ex"
       - "lib/anchor/check/no_transitive_dependency.ex"
       - "lib/anchor/check/no_tuple_match_in_head.ex"

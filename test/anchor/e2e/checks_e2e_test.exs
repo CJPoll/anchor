@@ -37,6 +37,7 @@ defmodule Anchor.E2E.ChecksE2ETest do
   alias Anchor.Check.ModulePatternRestrictions
   alias Anchor.Check.MustUseModule
   alias Anchor.Check.NoDependency
+  alias Anchor.Check.NoDiscardedPureExpression
 
   # DND-1267: a function-level rule, from YAML to Credo issue, with no mocks.
   describe "forbidden_functions through the real pipeline" do
@@ -80,6 +81,64 @@ defmodule Anchor.E2E.ChecksE2ETest do
                {5, "Athena.Slack.user_info/1"},
                {8, "Athena.Slack.rule_post/2"}
              ]
+    end
+  end
+
+  # DND-5451: the rule type, from YAML to Credo issue, with no mocks.
+  # Sabotage record: ../../sabotage_records/no_discarded_pure_expression-20261103-dnd_5451_ast_batch.md
+  describe "no_discarded_pure_expression through the real pipeline" do
+    @pure_yaml """
+    rules:
+      - type: no_discarded_pure_expression
+        paths:
+          - "lib/**/*.ex"
+        recursive: true
+        pure_patterns:
+          - "MyApp.Calc"
+    """
+
+    @pure_source """
+    defmodule MyApp.Thing do
+      alias MyApp.Calc
+
+      def put(m) do
+        Map.put(m, :a, 1)
+        Calc.add(m, 1)
+        m
+      end
+    end
+    """
+
+    test "F1: a selected file reports each discarded pure expression, pure_patterns too" do
+      issues =
+        with_anchor_config(@pure_yaml, fn ->
+          run_check(
+            [to_source_file(@pure_source, "lib/my_app/thing.ex")],
+            NoDiscardedPureExpression
+          )
+        end)
+
+      assert issues |> Enum.map(&{&1.line_no, &1.trigger}) |> Enum.sort() == [
+               {5, "Map.put(m, :a, 1)"},
+               {6, "Calc.add(m, 1)"}
+             ]
+
+      assert Enum.all?(issues, &(&1.message =~ "Fix: use the value"))
+    end
+
+    test "F2: a file the rule does not select has no issue (F1 is the control)" do
+      issues =
+        with_anchor_config(@pure_yaml, fn ->
+          all_issues(
+            [
+              to_source_file(@pure_source, "test/my_app/thing_test.exs"),
+              to_source_file("defmodule MyApp.Other do\nend\n", "lib/my_app/other.ex")
+            ],
+            NoDiscardedPureExpression
+          )
+        end)
+
+      assert issues == []
     end
   end
 
