@@ -6,6 +6,7 @@ defmodule Anchor.Domain.Graph.ProjectFileTest do
   #
   # Sabotage record: ../../../sabotage_records/builder-20261103-dnd_5581_hardening_batch.md
   # Sabotage record: ../../../sabotage_records/graph_runner-20261103-dnd_5630_graph_hardening.md
+  # DND-5655 (an absolute apps_path): ../../../sabotage_records/graph_runner-20261103-dnd_5648_graph_followups.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Graph.ProjectFile
@@ -82,6 +83,39 @@ defmodule Anchor.Domain.Graph.ProjectFileTest do
 
     test "place/2 is place/3 with the root itself" do
       assert ProjectFile.place("lib/x.ex", @root) == ProjectFile.place("lib/x.ex", @root, ".")
+    end
+
+    # DND-5655: an umbrella's apps_path may be absolute. One under the root is
+    # made relative to it; one outside it is refused, by app, never raised.
+    test "source_dirs/2: an absolute dir under the root is made relative" do
+      assert ProjectFile.source_dirs(
+               %{alpha: "/work/my_app/apps/alpha", beta: "apps/beta"},
+               @root
+             ) ==
+               {:ok, %{alpha: "apps/alpha", beta: "apps/beta"}}
+    end
+
+    test "source_dirs/2: an absolute dir outside the root is refused, naming each app" do
+      assert ProjectFile.source_dirs(
+               %{
+                 alpha: "/elsewhere/alpha",
+                 beta: "apps/beta",
+                 gamma: "/work/my_app/../x",
+                 delta: "/work/my_app_other/delta"
+               },
+               @root
+             ) ==
+               {:error,
+                [
+                  {:alpha, "/elsewhere/alpha"},
+                  {:delta, "/work/my_app_other/delta"},
+                  {:gamma, "/work/my_app/../x"}
+                ]}
+    end
+
+    test "source_dirs/2: the root itself, or none, is fine" do
+      assert ProjectFile.source_dirs(%{alpha: "/work/my_app"}, @root) == {:ok, %{alpha: "."}}
+      assert ProjectFile.source_dirs(%{}, @root) == {:ok, %{}}
     end
 
     test "an absolute directory is refused: it is relative to the root" do

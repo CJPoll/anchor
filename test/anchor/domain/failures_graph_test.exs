@@ -114,6 +114,14 @@ defmodule Anchor.Domain.FailuresGraphTest do
          "COULD NOT MEASURE: read 0 modules from _build/dev/lib/a/ebin, _build/dev/lib/b/ebin.",
          "Fix: run mix compile in this project"
        ]},
+      # DND-5655: an umbrella app outside the root, refused with a Fix:.
+      {"graph_apps_path_outside",
+       Failures.graph_apps_path_outside([{:alpha, "/elsewhere/alpha"}], "/proj", nil),
+       ".anchor.yml",
+       [
+         "COULD NOT MEASURE: the apps_path of :alpha is /elsewhere/alpha, outside the project root /proj",
+         "Fix: set apps_path in the umbrella's mix.exs to a directory under the project root"
+       ]},
       {"graph_app_no_modules", Failures.graph_app_no_modules(:other, "_build/dev/lib/other/ebin"),
        "_build/dev/lib/other/ebin",
        [

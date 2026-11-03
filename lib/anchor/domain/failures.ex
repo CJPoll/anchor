@@ -232,6 +232,28 @@ defmodule Anchor.Domain.Failures do
   end
 
   @doc """
+  The issue for an umbrella whose `apps_path` puts apps outside the project
+  root (DND-5655): `outside` is `[{app, dir}]`. Their paths could not be
+  keyed against the root, so the run is COULD NOT MEASURE, exit 3.
+  """
+  @spec graph_apps_path_outside([{atom(), String.t()}, ...], String.t(), String.t() | nil) ::
+          Violation.t()
+  def graph_apps_path_outside(outside, root, config_path) do
+    apps =
+      Enum.map_join(outside, "; ", fn {app, dir} ->
+        "the apps_path of #{inspect(app)} is #{dir}, outside the project root #{root}"
+      end)
+
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "COULD NOT MEASURE: #{apps}, so its source paths cannot be keyed against the root. " <>
+        "Fix: set apps_path in the umbrella's mix.exs to a directory under the project root " <>
+        "(Mix's default, \"apps\"), and run mix anchor.graph from that root."
+    )
+  end
+
+  @doc """
   The issue for a run that read zero modules from `ebins` (the ebin
   directories it was given): COULD NOT MEASURE, exit 3.
   """

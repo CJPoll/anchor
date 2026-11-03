@@ -829,6 +829,7 @@ line.
 | `--only` naming no graph rule of the config | 3 | the config path | `COULD NOT MEASURE: --only "typo" names no graph rule of .anchor.yml, so the run would check nothing. Fix: ...` |
 | No `architecture:` section | 3 | the config path | `COULD NOT MEASURE: .anchor.yml has no architecture: section, so mix anchor.graph could classify no module and run no graph rule. Fix: add an architecture: section ...` |
 | `mix compile` fails | mix's own | | |
+| An umbrella `apps_path` that is absolute and outside the project root (DND-5655; an absolute one under the root is made relative) | 3 | the config | `COULD NOT MEASURE: the apps_path of :alpha is /elsewhere/alpha, outside the project root /work/my_app, so its source paths cannot be keyed against the root. Fix: set apps_path in the umbrella's mix.exs to a directory under the project root ...` |
 | Zero project modules read | 3 | the first ebin | `COULD NOT MEASURE: read 0 modules from _build/dev/lib/my_app/ebin. Fix: run mix compile in this project; ...` |
 | One app of the project read no module while another did (an umbrella app not compiled, under another build path, or renamed; DND-5584) | 1 | that app's ebin | `read 0 modules for app :other from _build/dev/lib/other/ebin, so none of its code was checked. Fix: run mix compile for :other; ...` |
 | A beam with no `debug_info` (or stripped) | 1 | the beam | `MyApp.X was compiled without debug_info, so Anchor cannot read it. Fix: remove debug_info: false from the project's elixirc_options ...` |

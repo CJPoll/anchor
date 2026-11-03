@@ -109,6 +109,7 @@ defmodule Anchor.Managers.Graph do
     deps = deps(deps)
 
     with {:ok, config} <- load_config(deps.config_loader),
+         {:ok, request} <- source_dirs(request, config),
          {:ok, rules} <- graph_rules(config, request, deps.graph_rules),
          :ok <- write_target(rules, request, config),
          {:ok, beams} <- read_beams(deps.beam_source, request) do
@@ -125,6 +126,19 @@ defmodule Anchor.Managers.Graph do
         GraphReport.new([], [], counts(request, 0, 0, 0),
           refused: [Finding.fail_closed(violation, @config_file)]
         )
+    end
+  end
+
+  # DND-5655: an umbrella's app directories keyed against the root; an
+  # absolute one outside it cannot be, and is refused before any beam is read.
+  defp source_dirs(request, config) do
+    case ProjectFile.source_dirs(request.source_dirs, request.root) do
+      {:ok, dirs} ->
+        {:ok, %{request | source_dirs: dirs}}
+
+      {:error, outside} ->
+        {:could_not_check,
+         Failures.graph_apps_path_outside(outside, Path.expand(request.root), config.path)}
     end
   end
 

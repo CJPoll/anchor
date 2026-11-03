@@ -46,6 +46,46 @@ defmodule Anchor.Domain.Graph.ProjectFile do
   @type side :: :inside_root | :outside_root
 
   @doc """
+  An umbrella's app directories (`Mix.Project.apps_paths/0`) relative to
+  the absolute `root` (DND-5655): Mix gives them relative by default, but
+  `apps_path` may be absolute. One under the root (after `..` is resolved,
+  by text: no symlink is followed) is made relative to it; one outside it
+  is `{:error, [{app, dir}]}`, every such app sorted, for the runner to
+  refuse with a `Fix:` line, never a raise.
+  """
+  @spec source_dirs(%{optional(atom()) => Path.t()}, Path.t()) ::
+          {:ok, %{optional(atom()) => Path.t()}} | {:error, [{atom(), Path.t()}]}
+  def source_dirs(dirs, root) when is_map(dirs) and is_binary(root) do
+    root = Path.expand(root)
+
+    {outside, keyed} =
+      dirs
+      |> Enum.map(fn {app, dir} -> {app, dir, relative_dir(dir, root)} end)
+      |> Enum.split_with(fn {_app, _dir, relative} -> relative == :outside end)
+
+    case outside do
+      [] -> {:ok, Map.new(keyed, fn {app, _dir, relative} -> {app, relative} end)}
+      _ -> {:error, outside |> Enum.map(fn {app, dir, _} -> {app, dir} end) |> Enum.sort()}
+    end
+  end
+
+  defp relative_dir(dir, root) do
+    cond do
+      Path.type(dir) != :absolute ->
+        dir
+
+      Path.expand(dir) == root ->
+        "."
+
+      String.starts_with?(Path.expand(dir), root <> "/") ->
+        Path.relative_to(Path.expand(dir), root)
+
+      true ->
+        :outside
+    end
+  end
+
+  @doc """
   Keys one source path against the absolute project root, a relative path
   read against `dir` (relative to `root`, the directory the compiler ran in);
   see the moduledoc.
