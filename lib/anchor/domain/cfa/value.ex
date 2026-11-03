@@ -7,7 +7,9 @@ defmodule Anchor.Domain.Cfa.Value do
 
     * `closures` — the closure ids it may be;
     * `any?` — a value from outside the analysed world may be it;
-    * `atom?` — an atom may be it (a module that a `s.f` dot-call could name);
+    * `atom?` — an atom or another constant may be it (an atom is a module
+      that a `s.f` dot-call could name); a field read from a constant is a
+      constant;
     * `allocs` — the project containers it may be, by allocation site
       (`{:alloc, mfa, ordinal}`, `Anchor.Domain.Core.label/1`). A field read
       sees the slots of these allocation sites only, so a value that is no
@@ -29,7 +31,7 @@ defmodule Anchor.Domain.Cfa.Value do
   @spec any() :: t()
   def any, do: {MapSet.new(), true, false, MapSet.new()}
 
-  @doc "An atom (or another constant that is neither a closure nor a container)."
+  @doc "An atom, or another constant (a literal that holds no fun)."
   @spec atom() :: t()
   def atom, do: {MapSet.new(), false, true, MapSet.new()}
 
@@ -69,9 +71,12 @@ defmodule Anchor.Domain.Cfa.Value do
   @spec joins([t()]) :: t()
   def joins(values), do: Enum.reduce(values, bottom(), &join/2)
 
-  @doc "What a read from `container` gives beyond its slots: `any` when it may come from outside."
+  @doc """
+  What a read from `container` gives beyond its slots: `any` when it may come
+  from outside, a constant when it may be a constant.
+  """
   @spec outside(t()) :: t()
-  def outside(container), do: if(any?(container), do: any(), else: bottom())
+  def outside(container), do: {MapSet.new(), any?(container), atom?(container), MapSet.new()}
 
   @doc "The report of `value`: `:any`, or `{:ok, closures}`."
   @spec present(t()) :: {:ok, MapSet.t()} | :any

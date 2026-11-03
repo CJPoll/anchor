@@ -339,15 +339,18 @@ defmodule Anchor.Domain.Cfa.Eval do
 
   defp literal(term, _ctx, acc) when is_atom(term), do: {Value.atom(), acc}
 
-  defp literal(_term, _ctx, acc), do: {Value.bottom(), acc}
+  # An empty container has no field to read; any other constant reads as one.
+  defp literal(term, _ctx, acc) when term in [%{}, [], {}], do: {Value.bottom(), acc}
+  defp literal(_term, _ctx, acc), do: {Value.atom(), acc}
 
   # A literal container holding a fun (an external fun a module attribute put
   # there): every field of it, at any depth, is its funs or the container.
   defp literal_container(node, ctx, acc) do
     alloc = alloc(node, ctx)
     funs = node |> :cerl.concrete() |> funs_in([])
-    field = Value.join(Value.closures(funs), Value.container(alloc, Value.bottom()))
-    {Value.container(alloc, Value.bottom()), write_field(alloc, :*, field, ctx, acc)}
+    value = Value.join(Value.container(alloc, Value.bottom()), Value.atom())
+    field = Value.join(Value.closures(funs), value)
+    {value, write_field(alloc, :*, field, ctx, acc)}
   end
 
   defp funs_in(term, found) when is_function(term) do

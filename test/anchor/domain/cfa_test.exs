@@ -72,6 +72,12 @@ defmodule Anchor.Domain.CfaTest do
 
     def boxed, do: {:box, fn h -> h.() end}
 
+    def via_module do
+      case {:ok, AnchorFixtures.CfaTest.B} do
+        {:ok, mod} -> mod.maker.()
+      end
+    end
+
     def put_get, do: put_get_on(%{})
 
     defp put_get_on(base) do
@@ -99,6 +105,7 @@ defmodule Anchor.Domain.CfaTest do
     def run(g), do: g.()
     def run1(g, x), do: g.(x)
     def f(x), do: x
+    def maker, do: fn -> :made_in_b end
   end
   """
 
@@ -129,6 +136,7 @@ defmodule Anchor.Domain.CfaTest do
     {A, :open, 1},
     {A, :escapes, 0},
     {A, :boxed, 0},
+    {A, :via_module, 0},
     {A, :put_get, 0},
     {A, :tagged, 0},
     {A, :updated, 0}
@@ -231,6 +239,11 @@ defmodule Anchor.Domain.CfaTest do
       assert Cfa.closures_at(cfa, site({A, :boxed, 0})) == :any
     end
 
+    test "a dot-call on a module read from a literal is :any, never the empty set",
+         %{closed: cfa} do
+      assert Cfa.closures_at(cfa, site({A, :via_module, 0})) == :any
+    end
+
     test "an exported parameter under the default seed is :any; a seed naming its closures resolves",
          %{graph: graph} do
       open = {A, :open, 1}
@@ -270,7 +283,7 @@ defmodule Anchor.Domain.CfaTest do
     # S.__struct__/1 is the struct's generated builder: its Enum.reduce
     # invokes its own lambda, so it is a site too.
     test "the fixture's exact resolved and any counts, total and per function", %{closed: cfa} do
-      assert Map.delete(cfa.counts, :by_function) == %{total: 17, resolved: 12, any: 5}
+      assert Map.delete(cfa.counts, :by_function) == %{total: 18, resolved: 12, any: 6}
 
       assert cfa.counts.by_function == %{
                {A, :direct, 0} => %{total: 1, resolved: 1, any: 0},
@@ -283,6 +296,7 @@ defmodule Anchor.Domain.CfaTest do
                {A, :open, 1} => %{total: 1, resolved: 0, any: 1},
                {A, :escapes, 0} => %{total: 1, resolved: 0, any: 1},
                {A, :boxed, 0} => %{total: 1, resolved: 0, any: 1},
+               {A, :via_module, 0} => %{total: 1, resolved: 0, any: 1},
                {A, :put_get_on, 1} => %{total: 1, resolved: 1, any: 0},
                {A, :tagged, 0} => %{total: 1, resolved: 1, any: 0},
                {A, :updated, 0} => %{total: 1, resolved: 1, any: 0},
