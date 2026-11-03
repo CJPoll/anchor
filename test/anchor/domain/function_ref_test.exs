@@ -99,4 +99,35 @@ defmodule Anchor.Domain.FunctionRefTest do
     refute FunctionRef.matches?(any, Bad.Mod.Sub, :f, 1)
     refute FunctionRef.matches?(any, Bad, :f, 1)
   end
+
+  # DND-5437: the `architecture:` section reuses this grammar for an
+  # `exports_function` selector ("name/arity") and Erlang module tokens.
+  # Sabotage record: ../../sabotage_records/function_ref-20261103-dnd_5437.md
+  describe "parse_name_arity/1" do
+    test "a function name and an arity parse" do
+      assert FunctionRef.parse_name_arity("__aggregate__/0") == {:ok, {:__aggregate__, 0}}
+      assert FunctionRef.parse_name_arity("valid?/1") == {:ok, {:valid?, 1}}
+      assert FunctionRef.parse_name_arity("insert!/255") == {:ok, {:insert!, 255}}
+    end
+
+    test "a token that does not name one function and arity is an error" do
+      for token <- ["run", "run/x", "run/256", "Mod.run/1", "Run/1", "/1", "run/1/2", ""] do
+        assert {:error, why} = FunctionRef.parse_name_arity(token), "#{inspect(token)} parsed"
+        assert is_binary(why)
+      end
+    end
+  end
+
+  describe "erlang_module_name?/1" do
+    test "an Erlang module name without its colon" do
+      assert FunctionRef.erlang_module_name?("gen_tcp")
+      assert FunctionRef.erlang_module_name?("a@b1")
+    end
+
+    test "anything else is not one" do
+      for name <- ["", "Gen", ":gen_tcp", "gen.tcp", "gen-tcp", "1gen"] do
+        refute FunctionRef.erlang_module_name?(name), inspect(name)
+      end
+    end
+  end
 end

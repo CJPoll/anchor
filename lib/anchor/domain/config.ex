@@ -74,13 +74,16 @@ defmodule Anchor.Config do
   """
 
   alias Anchor.Domain.AllowedCallers
+  alias Anchor.Domain.Architecture
   alias Anchor.Domain.FunctionRef
   alias Anchor.Domain.RuleCoverage
   alias Anchor.Domain.RuleSchema
 
   # `path` is where the config was read from, set by the loader (nil when the
   # config was built in memory). A run-time report about a rule sits on it.
-  defstruct rules: [], path: nil
+  # `architecture` is the parsed `architecture:` section (DND-5437), or `nil`
+  # when the document has none.
+  defstruct rules: [], path: nil, architecture: nil
 
   @matches %{"call" => :call, "reference" => :reference}
 
@@ -91,9 +94,13 @@ defmodule Anchor.Config do
   # `Anchor.checks/0`; the Domain cannot ask the (Framework) checks itself.
   @rule_types Map.new(RuleSchema.rule_types(), &{Atom.to_string(&1), &1})
 
-  @top_level_keys ["rules"]
+  @top_level_keys ["architecture", "rules"]
 
-  @type t :: %__MODULE__{rules: [map()], path: String.t() | nil}
+  @type t :: %__MODULE__{
+          rules: [map()],
+          path: String.t() | nil,
+          architecture: Architecture.t() | nil
+        }
 
   @doc """
   The rule `type`s Anchor knows: one per shipped check's `rule_type/0`
@@ -106,8 +113,10 @@ defmodule Anchor.Config do
   @doc """
   Builds a `%Anchor.Config{}` from a decoded YAML document.
 
-  The document must be a mapping whose only key is `rules`, holding a list of
-  rule mappings. Anything else fails with `{:error, {:invalid_config, reason}}`
+  The document must be a mapping with a `rules` key holding a list of rule
+  mappings, and may have an `architecture` key (DND-5437), parsed by
+  `Anchor.Domain.Architecture.parse/1` into `:architecture` (`nil` when
+  absent). Anything else fails with `{:error, {:invalid_config, reason}}`
   (DND-1265): an empty document (the `nil` an empty file decodes to), a missing
   or misspelt `rules` key, and a `rules` that is not a list would each
   otherwise load as zero rules and check nothing. An explicit `rules: []` is a
@@ -119,8 +128,9 @@ defmodule Anchor.Config do
   def parse_config(data) when is_map(data) do
     with :ok <- validate_top_level_keys(data),
          {:ok, rules} <- fetch_rules(data),
-         {:ok, parsed} <- parse_rules(rules) do
-      %__MODULE__{rules: parsed}
+         {:ok, parsed} <- parse_rules(rules),
+         {:ok, architecture} <- parse_architecture(data) do
+      %__MODULE__{rules: parsed, architecture: architecture}
     end
   end
 
@@ -170,9 +180,14 @@ defmodule Anchor.Config do
         {:error,
          {:invalid_config,
           "unknown top-level key(s) #{Enum.map_join(unknown, ", ", &inspect/1)}; " <>
-            "the only top-level key is `rules`"}}
+            "Fix: remove or correct it; the top-level keys are `architecture` and `rules`"}}
     end
   end
+
+  # DND-5437: the `architecture:` section is optional; absent, the config loads
+  # exactly as before, with `architecture: nil`.
+  defp parse_architecture(%{"architecture" => section}), do: Architecture.parse(section)
+  defp parse_architecture(_data), do: {:ok, nil}
 
   defp fetch_rules(%{"rules" => rules}) when is_list(rules), do: {:ok, rules}
 

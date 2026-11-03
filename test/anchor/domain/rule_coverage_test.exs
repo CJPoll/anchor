@@ -143,4 +143,37 @@ defmodule Anchor.Domain.RuleCoverageTest do
       assert RuleCoverage.unchecked([flow, dep], []) == [flow, dep]
     end
   end
+
+  # DND-5437: a graph-engine rule is run by `mix anchor.graph`, never by Credo,
+  # so Credo's "no enabled check reads it" report must skip it. The engine
+  # lookup is injected, standing in for a test-only schema with a graph type.
+  # Sabotage record: ../../sabotage_records/rule_coverage-20261103-dnd_5437.md
+  describe "unchecked/3" do
+    @engines %{g: :graph, a: :ast}
+
+    defp engine_of(type), do: Map.fetch!(@engines, type)
+
+    test "a graph-engine rule is never reported unchecked" do
+      assert RuleCoverage.unchecked([%{type: :g}], [], &engine_of/1) == []
+    end
+
+    test "positive control: an AST rule with no enabled check is reported" do
+      assert RuleCoverage.unchecked([%{type: :a}], [], &engine_of/1) == [%{type: :a}]
+    end
+
+    test "an AST rule with an enabled check is not reported" do
+      assert RuleCoverage.unchecked([%{type: :a}], [:a], &engine_of/1) == []
+    end
+
+    test "only the AST rule of a mixed list is reported, in order" do
+      rules = [%{type: :g}, %{type: :a}, %{type: :g}]
+
+      assert RuleCoverage.unchecked(rules, [], &engine_of/1) == [%{type: :a}]
+    end
+
+    test "unchecked/2 looks the engine up in RuleSchema" do
+      assert RuleCoverage.unchecked([%{type: :single_control_flow}], []) ==
+               [%{type: :single_control_flow}]
+    end
+  end
 end
