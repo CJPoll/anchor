@@ -1,4 +1,7 @@
 # anchor baseline for context_acyclic; shrink only
-# Landed with DND-5445. Anchor.Check <-> Anchor.Managers: the checks call
-# Lint.detect_file/5, and Lint calls Check.Source.ast/1 (DND-1288).
-context_acyclic|Anchor.Check,Anchor.Managers
+# Landed with DND-5445. The five-context cycle runs through the dynamic calls
+# the layering baseline holds (Lint and GraphRules.by_type/1 on computed
+# check modules, DND-1288), each judged against every module exporting the
+# function. Mutator.generate/4 applies a computed function name.
+context_acyclic|Anchor.Adapters,Anchor.Check,Anchor.Config,Anchor.Domain,Anchor.Managers
+context_acyclic|Anchor.Domain.Sabotage.Mutator.generate/4|-> dynamic ?/1

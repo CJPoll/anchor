@@ -123,9 +123,9 @@ rules:
   # --- Rule: no cycle between contexts (DND-5445) ---
   #
   # The calls of lib/ collapsed to contexts (depth 2: Anchor.Domain,
-  # Anchor.Managers, ...) must form no cycle. The baseline holds the one it
-  # found when it landed: Anchor.Check <-> Anchor.Managers, whose
-  # Managers -> Check half is Lint's reach into Check.Source (DND-1288).
+  # Anchor.Managers, ...) must form no cycle. The baseline holds what it
+  # found when it landed: one five-context cycle that runs through Lint's
+  # dynamic calls on the check modules (DND-1288), and Mutator's apply/3.
   - type: context_acyclic
     id: context_acyclic
     paths: ["lib/**/*.ex"]

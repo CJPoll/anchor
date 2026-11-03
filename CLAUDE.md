@@ -252,15 +252,18 @@ check module exporting the function).
 `Anchor.Domain.ContextGraph.build/2` collapses the calls of the selected
 modules to context edges `{a, b} => [witness]` (witness `{caller_mfa,
 callee_mfa, file, line}`, sorted), skipping a call within one context, to an
-unclassified or non-project module, with a nil context, and a dynamic call
-`DynamicCalls` does not resolve (layering reports those).
+unclassified or non-project module, with a nil context, a dynamic call no
+project module exports, and a closure application. A call with a computed
+function name goes into `unresolved`, and the rule reports each (caller,
+arity) itself, keyed `<id>|<Caller.f/a>|-> dynamic ?/n`.
 `Anchor.Domain.GraphRules.ContextAcyclic` runs `GraphAlgorithms.sccs/1` over
 it and reports each SCC of two or more contexts once, keyed
 `ViolationKey.graph_key/2` (`<id>|A,B,C`), at the first witness of the edge to
 invert (fewest witnesses, ties lexical). The canary's cycle pair is
 `lib/canary/domain/cycle/` (`AnchorFixtures.CycleA`/`CycleB`, their own
-contexts). Anchor's own `.anchor.yml` runs it with a baseline holding
-`Anchor.Check <-> Anchor.Managers` (DND-1288).
+contexts). Anchor's own `.anchor.yml` runs it with a baseline holding one
+five-context cycle through Lint's dynamic calls on the checks (DND-1288),
+and `Mutator`'s `apply/3`.
 
 ## Higher-order flow (DND-5497)
 

@@ -130,6 +130,45 @@ defmodule Anchor.Domain.GraphRules.ContextAcyclicTest do
     end
   end
 
+  describe "check/2 calls it cannot see" do
+    # Regression (review floor on d9a61de): see ContextGraphTest.
+    test "a computed function name is one unresolved violation; a closure is none" do
+      calls = [
+        %Call{
+          from: {A.M, :f, 0},
+          to: {:dynamic, nil, 1, :call},
+          kind: :apply,
+          line: 6,
+          line_source: :call
+        },
+        %Call{
+          from: {A.M, :f, 0},
+          to: {:dynamic, nil, 1, :call},
+          kind: :apply,
+          line: 3,
+          line_source: :call
+        },
+        %Call{
+          from: {A.M, :g, 0},
+          to: {:dynamic, nil, 1, :variable},
+          kind: :apply,
+          line: 4,
+          line_source: :call
+        }
+      ]
+
+      model = put_in(model([]).graph.calls, calls)
+
+      assert [v] = ContextAcyclic.check(model, Map.put(@rule, :id, "ctx"))
+      assert v.key == "ctx|A.M.f/0|-> dynamic ?/1"
+      assert v.filename == "lib/a.ex"
+      assert v.line == 3
+
+      assert v.message =~
+               "A.M.f/0 calls a function it computes (?/1), so its target cannot be checked."
+    end
+  end
+
   describe "shape/1" do
     test "the rule's conforming shape" do
       assert ContextAcyclic.shape(@rule) ==

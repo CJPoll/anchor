@@ -737,9 +737,14 @@ architecture:
 A cycle between contexts leaves the causal order between them undefined.
 `context_acyclic` collapses the calls of the modules it selects into a context
 graph: a call from one context to another (both known and different) is an
-edge `A -> B`, and a dynamic call resolved through a behaviour is an edge to
-each implementation's context. Each strongly connected component of more than
-one context is one violation; a context calling itself is not a cycle.
+edge `A -> B`, and a dynamic call on a computed module is an edge to the
+context of every project module exporting that function. Each strongly
+connected component of more than one context is one violation; a context
+calling itself is not a cycle. A call whose function name is computed
+(`apply(MyApp.Repo, op, args)`) hides which contexts it reaches, so the rule
+reports it too, one violation per caller function keyed
+`<id>|<Caller.f/a>|-> dynamic ?/n`, whatever other rules the config runs; a
+closure application (`fun.(x)`) is not.
 
 The message lists every edge inside the cycle with one call that makes it,
 and names the edge to invert: the one with the fewest calls (ties: the
@@ -753,8 +758,9 @@ while the cycle's members do.
 lib/my_app/billing/manager.ex:40: [enforce] rule 1 (id: "context_acyclic", context_acyclic) contexts MyApp.Billing, MyApp.Orders form a cycle: MyApp.Billing -> MyApp.Orders (MyApp.Billing.Manager.charge/1 calls MyApp.Orders.Manager.get/1), MyApp.Orders -> MyApp.Billing (MyApp.Orders.Manager.place/1 calls MyApp.Billing.Manager.charge/1). Fix: invert MyApp.Billing -> MyApp.Orders (its 1 call is the fewest): have MyApp.Billing publish an event MyApp.Orders subscribes to, or declare the function MyApp.Billing needs in an interface MyApp.Billing owns and have MyApp.Orders implement it.
 ```
 
-Anchor's own `.anchor.yml` runs it over `lib/`, with a baseline holding the
-one cycle it found when it landed (`Anchor.Check <-> Anchor.Managers`).
+Anchor's own `.anchor.yml` runs it over `lib/`, with a baseline holding what
+it found when it landed: one cycle through the dynamic calls of
+`Anchor.Managers.Lint` on the check modules, and `Mutator`'s `apply/3`.
 
 The only file it writes is `_build/<env>/anchor/graph.etf`, the graph keyed by
 a sha256 of the beams, the config and Anchor's version, for `mix

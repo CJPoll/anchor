@@ -19,6 +19,11 @@ defmodule Anchor.Domain.GraphRules.ContextAcyclic do
   or X declares the function in an interface it owns and Y implements it.
   The key is `<id>|<the component's contexts, sorted, joined by ",">`, stable
   while the cycle's members are the same.
+
+  A call with a computed function name (`apply(M, op, args)`) hides which
+  contexts it reaches, so each (caller function, arity) is one violation too,
+  keyed `<id>|<Caller.f/a>|-> dynamic ?/<arity>`, like `layering`'s: the rule
+  reports what it could not see itself, whatever other rules run.
   """
 
   @behaviour Anchor.Domain.GraphRule
@@ -26,6 +31,7 @@ defmodule Anchor.Domain.GraphRules.ContextAcyclic do
 
   alias Anchor.Domain.ContextGraph
   alias Anchor.Domain.Digraph
+  alias Anchor.Domain.DynamicCalls
   alias Anchor.Domain.GraphAlgorithms
   alias Anchor.Domain.GraphRules
   alias Anchor.Domain.Model
@@ -41,14 +47,40 @@ defmodule Anchor.Domain.GraphRules.ContextAcyclic do
 
   @impl Anchor.Domain.GraphRule
   def check(%Model{} = model, rule) do
-    %{nodes: nodes, edges: edges} = ContextGraph.build(model, GraphRules.select(model, rule))
+    graph = ContextGraph.build(model, GraphRules.select(model, rule))
 
-    nodes
-    |> Digraph.new(Map.keys(edges))
-    |> GraphAlgorithms.sccs()
-    |> Enum.filter(&match?([_, _ | _], &1))
-    |> Enum.sort()
-    |> Enum.map(&violation(&1, edges, rule))
+    cycles =
+      graph.nodes
+      |> Digraph.new(Map.keys(graph.edges))
+      |> GraphAlgorithms.sccs()
+      |> Enum.filter(&match?([_, _ | _], &1))
+      |> Enum.sort()
+      |> Enum.map(&violation(&1, graph.edges, rule))
+
+    cycles ++ unseen(graph.unresolved, rule)
+  end
+
+  # A call with a computed function name hides its edges: one violation per
+  # (caller, arity), at the first such call, so a cycle through it never reads
+  # as none.
+  defp unseen(unresolved, rule) do
+    unresolved
+    |> Enum.uniq_by(fn {from, arity, _file, _line} -> {from, arity} end)
+    |> Enum.map(fn {from, arity, file, line} ->
+      %Violation{
+        filename: file,
+        line: line,
+        trigger: ViolationKey.mfa(from),
+        rule_id: Map.get(rule, :id),
+        key:
+          ViolationKey.graph_key(
+            rule,
+            ViolationKey.mfa(from),
+            "-> " <> DynamicCalls.computed_name_target(arity)
+          ),
+        message: DynamicCalls.computed_name_message(from, arity)
+      }
+    end)
   end
 
   defp violation(contexts, edges, rule) do
