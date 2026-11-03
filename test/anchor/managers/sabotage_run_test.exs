@@ -8,6 +8,7 @@ defmodule Anchor.Managers.SabotageRunTest do
   # Sabotage record (DND-5570): ../../sabotage_records/sabotage-20261103-dnd_5570_sabotage_hardening.md
   # Sabotage record (DND-5617): ../../sabotage_records/sabotage-20261103-dnd_5617_sabotage_cfa_batch.md
   # Sabotage record (DND-5624): ../../sabotage_records/sabotage-20261103-dnd_5624_sabotage_defimpl.md
+  # Sabotage record (DND-5654): ../../sabotage_records/sabotage-20261103-dnd_5639_sabotage_followups.md
   # Sabotage record (DND-5635): ../../sabotage_records/sabotage-20261103-dnd_5630_graph_hardening.md
   use ExUnit.Case, async: true
 
@@ -41,7 +42,8 @@ defmodule Anchor.Managers.SabotageRunTest do
   @root "/repo"
   @file_path "/repo/lib/calc.ex"
   # DND-5635: a build path that is not <root>/_build/<env> (MIX_BUILD_PATH):
-  # the last run is saved under it, never under the root.
+  # the last run is saved under it, never under the root; so is the results
+  # file every test run writes (DND-5654).
   # `no_record: true`: these tests are about the run; the record tests
   # (DND-5484) set it false.
   @build_path "/builds/repo-test"
@@ -146,7 +148,7 @@ defmodule Anchor.Managers.SabotageRunTest do
                                        opts ->
       assert opts[:cd] == @root
       assert opts[:timeout_seconds] == 300
-      assert opts[:results_path] == "/repo/_build/test/anchor/sabotage/results.bin"
+      assert opts[:results_path] == "/builds/repo-test/anchor/sabotage/results.bin"
       call(:baseline, result)
     end)
   end
@@ -1434,6 +1436,32 @@ defmodule Anchor.Managers.SabotageRunTest do
       text = Report.render(run)
       refute text =~ "no mutants generated"
       refute text =~ "sabotage: no mutant from"
+    end
+  end
+
+  describe "run/2: the build path (DND-5654)" do
+    test "B1: the baseline, every mutant run and the last run all use the build path, never the root's _build" do
+      [_first, second] = mutants()
+      expect_until_selection()
+      expect_patcher(2)
+      expect_delete_journal(2)
+      expect_save()
+
+      expect(TestExecutionMock, :run, 3, fn _argv, ["test/calc_test.exs"], opts ->
+        send(self(), {:results_path, opts[:results_path]})
+
+        cond do
+          not calls_seen(:baseline) -> call(:baseline, test_run(:passed))
+          calls_seen({:write_journal, second.id}) -> test_run(:passed)
+          true -> test_run(:failed, [@killer])
+        end
+      end)
+
+      run = Sabotage.run(@facts, @opts)
+
+      assert run.refusal == nil
+      paths = for {:results_path, path} <- Process.info(self(), :messages) |> elem(1), do: path
+      assert paths == List.duplicate("/builds/repo-test/anchor/sabotage/results.bin", 3)
     end
   end
 end

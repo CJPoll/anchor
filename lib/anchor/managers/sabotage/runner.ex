@@ -51,7 +51,10 @@ defmodule Anchor.Managers.Sabotage.Runner do
        `build_path` is the fact the task gathered from Mix
        (`Mix.Project.build_path/0`: `_build/<env>`, or what `MIX_BUILD_PATH`
        names), never derived from the root (DND-5635, as DND-5585 did for
-       the graph artifact).
+       the graph artifact). Each test run's results file is
+       `<build_path>/anchor/sabotage/results.bin` too (DND-5654), so a run
+       under `MIX_BUILD_PATH` writes and reads results in the build it
+       measured.
    11. The sabotage records are written (DND-5484; `Anchor.Domain.Sabotage.Record`),
        unless `--no-record`: one per (app, domain) the run touched, created
        or appended, never overwritten. A run that exits 1 still writes them.
@@ -999,8 +1002,8 @@ defmodule Anchor.Managers.Sabotage.Runner do
   # finished run is saved after its records are written, so it names them.
   defp save(%Run{refusal: {_code, _message}} = run, _facts, _ports), do: run
 
-  defp save(run, %{build_path: build_path}, %{patcher: patcher}) do
-    path = Path.join([build_path, "anchor", "sabotage", "last-run.etf"])
+  defp save(run, facts, %{patcher: patcher}) do
+    path = build_path(facts, "last-run.etf")
 
     case patcher.save_run(path, :erlang.term_to_binary(run)) do
       :ok -> run
@@ -1008,14 +1011,7 @@ defmodule Anchor.Managers.Sabotage.Runner do
     end
   end
 
-  defp build_path(facts, name),
-    do:
-      Path.join([
-        facts.root,
-        "_build",
-        to_string(Map.get(facts, :env, :dev)),
-        "anchor",
-        "sabotage",
-        name
-      ])
+  # DND-5654: under the build path the task gathered, as last-run.etf is.
+  defp build_path(%{build_path: build_path}, name),
+    do: Path.join([build_path, "anchor", "sabotage", name])
 end
