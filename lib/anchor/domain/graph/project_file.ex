@@ -121,8 +121,14 @@ defmodule Anchor.Domain.Graph.ProjectFile do
   end
 
   defp side(relative) do
-    if relative == ".." or String.starts_with?(relative, "../"),
-      do: :outside_root,
-      else: :inside_root
+    if outside_root?(relative), do: :outside_root, else: :inside_root
   end
+
+  @doc """
+  Whether a root-relative path, as `place/3` keys it, is outside the root
+  (it leads with `..`). `nil`, no path, is not (DND-5656).
+  """
+  @spec outside_root?(String.t() | nil) :: boolean()
+  def outside_root?(nil), do: false
+  def outside_root?(relative), do: relative == ".." or String.starts_with?(relative, "../")
 end

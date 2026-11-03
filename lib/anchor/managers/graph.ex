@@ -215,15 +215,11 @@ defmodule Anchor.Managers.Graph do
   end
 
   # The modules compiled from a source outside the root: judged like every
-  # other, and counted so the layout is visible.
-  defp outside_root_count(beams, request) do
-    Enum.count(beams, fn
-      %Beam{elixir: %{relative_file: file}} = beam when is_binary(file) ->
-        match?({:outside_root, _relative}, place(beam, request))
-
-      _other ->
-        false
-    end)
+  # other, and counted so the layout is visible. Counted over the graph's
+  # modules, after the builder kept one beam per module (DND-5656): a stale
+  # duplicate beam is its own issue, never a second module.
+  defp outside_root_count(%Graph{modules: modules}) do
+    Enum.count(modules, fn {_module, node} -> ProjectFile.outside_root?(node.source_file) end)
   end
 
   defp measured(request, config, rules, beams, deps) do
@@ -260,7 +256,7 @@ defmodule Anchor.Managers.Graph do
       request
       |> counts(map_size(graph.modules), length(rules), length(Model.opaque(model)))
       |> Map.put(:no_core, no_core_count(graph))
-      |> Map.put(:outside_root, outside_root_count(beams, request))
+      |> Map.put(:outside_root, outside_root_count(graph))
       |> Map.put(:apply_sites, GraphReport.apply_sites(model.cfa))
       |> Map.put(:dynamic_calls, DynamicCalls.tally(graph)),
       held: Enum.flat_map(ran, & &1.held),

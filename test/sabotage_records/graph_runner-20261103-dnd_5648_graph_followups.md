@@ -308,3 +308,138 @@ Run summary: `63 tests, 2 failures`
 ........................
 ```
 
+
+## DND-5656: the outside-root count is taken after the builder dedupes beams
+
+**Code under test:** `Anchor.Managers.Graph`'s `outside_root_count/1` (now over the graph's modules) and `Anchor.Domain.Graph.ProjectFile.outside_root?/1`.
+
+**Suite run:** one `test-slot` ran `sab.py` per mutation (wait 1.1 s, write, `mix test --timeout 2000 --max-cases 2 <tests>`, restore, wait 1.1 s). OR-R is the new Manager test on the unfixed code (graph_test.exs alone: `outside_root?/1` did not exist yet): a stale duplicate of an outside-root module was counted twice (`outside_root: 2`). With every source restored: `49 tests, 0 failures` over graph_test.exs and project_file_test.exs.
+
+| ID | Mutation | Tests | Result | Failing tests |
+|---|---|---|---|---|
+| OR-R | regression: the unfixed code, with the new tests (`lib/anchor/managers/graph.ex`) | `graph_test.exs` | `38 tests, 1 failure` (red) | run/2 source paths outside the project root (DND-5588, DND-5630) a stale duplicate of an outside-root module counts once |
+| OR-A | the count is taken over every beam read, the stale duplicate included (`lib/anchor/managers/graph.ex`) | `graph_test.exs`, `project_file_test.exs` | `49 tests, 1 failure` (red) | run/2 source paths outside the project root (DND-5588, DND-5630) a stale duplicate of an outside-root module counts once |
+| OR-B | ".." alone is not outside (`lib/anchor/domain/graph/project_file.ex`) | `graph_test.exs`, `project_file_test.exs` | `49 tests, 1 failure` (red) | place/3 with the directory the compiler ran in outside_root?/1 reads a keyed path |
+| OR-C | no path reads as outside (`lib/anchor/domain/graph/project_file.ex`) | `graph_test.exs`, `project_file_test.exs` | `49 tests, 1 failure` (red) | place/3 with the directory the compiler ran in outside_root?/1 reads a keyed path |
+| OR-D | a name starting with .. ("..cache/x.ex") reads as outside (`lib/anchor/domain/graph/project_file.ex`) | `graph_test.exs`, `project_file_test.exs` | `49 tests, 2 failures` (red) | the table; place/3 with the directory the compiler ran in outside_root?/1 reads a keyed path |
+
+### OR-R: regression: the unfixed code, with the new tests
+
+Run summary: `38 tests, 1 failure`
+
+```text
+
+
+  1) test run/2 source paths outside the project root (DND-5588, DND-5630) a stale duplicate of an outside-root module counts once (Anchor.Managers.GraphTest)
+     test/anchor/managers/graph_test.exs:697
+     match (=) failed
+     code:  assert %{modules: 3, outside_root: 1} = report.counts
+     left:  %{modules: 3, outside_root: 1}
+     right: %{
+              modules: 3,
+              opaque: 0,
+              apps: 2,
+              rules: 1,
+              no_core: 0,
+              outside_root: 2,
+              dynamic_calls: %{narrowed: [], fanned_out: []},
+              apply_sites: nil
+            }
+     stacktrace:
+       test/anchor/managers/graph_test.exs:723: (test)
+
+.......................
+```
+
+### OR-A: the count is taken over every beam read, the stale duplicate included
+
+Run summary: `49 tests, 1 failure`
+
+```text
+
+
+  1) test run/2 source paths outside the project root (DND-5588, DND-5630) a stale duplicate of an outside-root module counts once (Anchor.Managers.GraphTest)
+     test/anchor/managers/graph_test.exs:697
+     match (=) failed
+     code:  assert %{modules: 3, outside_root: 1} = report.counts
+     left:  %{modules: 3, outside_root: 1}
+     right: %{
+              modules: 3,
+              opaque: 0,
+              apps: 2,
+              rules: 1,
+              no_core: 0,
+              outside_root: 2,
+              apply_sites: nil,
+              dynamic_calls: %{narrowed: [], fanned_out: []}
+            }
+     stacktrace:
+       test/anchor/managers/graph_test.exs:723: (test)
+
+...................................
+```
+
+### OR-B: ".." alone is not outside
+
+Run summary: `49 tests, 1 failure`
+
+```text
+
+
+  1) test place/3 with the directory the compiler ran in outside_root?/1 reads a keyed path (Anchor.Domain.Graph.ProjectFileTest)
+     test/anchor/domain/graph/project_file_test.exs:85
+     Expected truthy, got false
+     code: assert ProjectFile.outside_root?("..")
+     stacktrace:
+       test/anchor/domain/graph/project_file_test.exs:87: (test)
+
+...........................................
+```
+
+### OR-C: no path reads as outside
+
+Run summary: `49 tests, 1 failure`
+
+```text
+
+
+  1) test place/3 with the directory the compiler ran in outside_root?/1 reads a keyed path (Anchor.Domain.Graph.ProjectFileTest)
+     test/anchor/domain/graph/project_file_test.exs:85
+     Expected false or nil, got true
+     code: refute ProjectFile.outside_root?(nil)
+     stacktrace:
+       test/anchor/domain/graph/project_file_test.exs:90: (test)
+
+..........................................
+```
+
+### OR-D: a name starting with .. ("..cache/x.ex") reads as outside
+
+Run summary: `49 tests, 2 failures`
+
+```text
+
+
+  1) test the table (Anchor.Domain.Graph.ProjectFileTest)
+     test/anchor/domain/graph/project_file_test.exs:16
+     "..foo/x.ex"
+     code: for {file, expected} <- [
+     stacktrace:
+       test/anchor/domain/graph/project_file_test.exs:40: anonymous fn/2 in Anchor.Domain.Graph.ProjectFileTest."test the table"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/graph/project_file_test.exs:17: (test)
+
+.
+
+
+
+  2) test place/3 with the directory the compiler ran in outside_root?/1 reads a keyed path (Anchor.Domain.Graph.ProjectFileTest)
+     test/anchor/domain/graph/project_file_test.exs:85
+     Expected false or nil, got true
+     code: refute ProjectFile.outside_root?("..x/y.ex")
+     stacktrace:
+       test/anchor/domain/graph/project_file_test.exs:89: (test)
+
+............................................
+```
+

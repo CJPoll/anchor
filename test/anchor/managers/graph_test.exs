@@ -8,6 +8,7 @@ defmodule Anchor.Managers.GraphTest do
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5551_graph_hardening.md
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5581_hardening_batch.md
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5630_graph_hardening.md
+  # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5648_graph_followups.md
   # DND-5655, DND-5656: ../../sabotage_records/graph_runner-20261103-dnd_5648_graph_followups.md
   # DND-5584 (per-app, and AE-O with DND-5588): ../../sabotage_records/graph_runner-20261103-dnd_5441_graph_rules_a.md
   use ExUnit.Case, async: true
@@ -690,6 +691,38 @@ defmodule Anchor.Managers.GraphTest do
 
       assert [%{file: @outside_file, message: message}] = report.findings
       assert message =~ "could not read the source of #{@outside_file} (:eacces)"
+    end
+
+    # DND-5656: the count was taken over the beams read, before the builder
+    # dropped a stale duplicate, so it could exceed the modules it describes.
+    test "a stale duplicate of an outside-root module counts once", %{beams: beams} do
+      stale = %{
+        beams[@outside]
+        | app: :other,
+          path: "/proj/_build/test/lib/other/ebin/stale.beam"
+      }
+
+      expect(ConfigLoaderMock, :load, fn ->
+        {:ok, config([rule(:stub_ok, "ok")], architecture([shared_bucket()]))}
+      end)
+
+      Mox.expect(BeamSourceMock, :read_ebins, fn @two_apps ->
+        classified(beams) ++ [beams[@outside], stale]
+      end)
+
+      expect(SourceSourceMock, :read, fn @root, files ->
+        sources = with_outside_source(@sources)
+        Map.new(files, &{&1, source_facts(&1, Map.fetch!(sources, &1))})
+      end)
+
+      expect(GraphStoreMock, :write, fn _dir, _key, _graph -> :ok end)
+
+      report = Graph.run(%{request() | apps: @two_apps}, deps())
+
+      # The duplicate is its own issue; the count names distinct modules.
+      assert Enum.any?(report.findings, &(&1.message =~ "stale.beam"))
+      assert %{modules: 3, outside_root: 1} = report.counts
+      assert GraphReport.summary(report) =~ "3 modules (1 outside the root)"
     end
 
     test "a run whose every module is outside the root is measured, never COULD NOT MEASURE",

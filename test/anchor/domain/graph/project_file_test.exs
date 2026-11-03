@@ -6,6 +6,7 @@ defmodule Anchor.Domain.Graph.ProjectFileTest do
   #
   # Sabotage record: ../../../sabotage_records/builder-20261103-dnd_5581_hardening_batch.md
   # Sabotage record: ../../../sabotage_records/graph_runner-20261103-dnd_5630_graph_hardening.md
+  # Sabotage record: ../../../sabotage_records/graph_runner-20261103-dnd_5648_graph_followups.md
   # DND-5655 (an absolute apps_path): ../../../sabotage_records/graph_runner-20261103-dnd_5648_graph_followups.md
   use ExUnit.Case, async: true
 
@@ -79,6 +80,15 @@ defmodule Anchor.Domain.Graph.ProjectFileTest do
     test "an absolute path does not depend on the directory" do
       assert ProjectFile.place("/work/my_app/apps/alpha/lib/alpha.ex", @root, "apps/beta") ==
                {:inside_root, "apps/alpha/lib/alpha.ex"}
+    end
+
+    # DND-5656: the runner counts a graph module's keyed path with this.
+    test "outside_root?/1 reads a keyed path" do
+      assert ProjectFile.outside_root?("../shared/x.ex")
+      assert ProjectFile.outside_root?("..")
+      refute ProjectFile.outside_root?("lib/x.ex")
+      refute ProjectFile.outside_root?("..x/y.ex")
+      refute ProjectFile.outside_root?(nil)
     end
 
     test "place/2 is place/3 with the root itself" do
