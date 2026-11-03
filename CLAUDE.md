@@ -141,8 +141,9 @@ Extension rule:
 
 Every rule type has exactly one engine, `@engine_by_type` in
 `Anchor.Domain.RuleSchema` (DND-5437): `:ast` (a Credo check) or `:graph`
-(`mix anchor.graph`, DND-5440; the graph types are `layering`, DND-5442, and
-`context_acyclic`, DND-5445). A new rule type adds its entry there too (compilation
+(`mix anchor.graph`, DND-5440; the graph types are `layering`, DND-5442,
+`context_acyclic`, DND-5445, `effects_match_bucket`, DND-5447, and
+`struct_owned_by_module_flow`, DND-5454). A new rule type adds its entry there too (compilation
 fails without it) and to the README table's Engine column (a test compares
 them). Credo never reports a `:graph` rule as unchecked
 (`RuleCoverage.unchecked/3`).
@@ -289,8 +290,10 @@ and `Mutator`'s `apply/3`.
 
 `Anchor.Domain.Effects.infer/2` gives every `def`/`defp` a role from what it
 causes: a root (`Anchor.Domain.Roots`: framework-bucket public functions,
-`architecture.roots`, external behaviour callbacks read through
-`behaviour_info/1`) is framework; a call of an effect primitive
+`architecture.roots`, external behaviour callbacks, which the runner reads
+through the `Anchor.Adapters.BehaviourSource` port (`BehaviourReader`) for
+`Roots.external_behaviours/1` and passes in as `:callbacks`, so `Roots` stays
+pure; the result keeps them as `Effects.roots`) is framework; a call of an effect primitive
 (`EffectPrimitives.primitive?/2`, its inference list, not demand's) itself or
 through its own module is adapters; reaching one through another module, or
 an unresolved call, is managers; else domain. Apply sites are read from

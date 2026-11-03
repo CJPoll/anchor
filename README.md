@@ -937,6 +937,12 @@ if the analysis hit its bound. The JSON's `apply_sites` holds `total`,
 (`"MyApp.X.run/1"`). When no rule that runs needs it, it is not computed: the
 summary says nothing of apply sites and `apply_sites` is `null`.
 
+Likewise a rule that reads the effect inference (`Anchor.Domain.Effects`,
+DND-5447) declares `needs: [:cfa, :effects]`: the run then infers it once,
+after the flow analysis, and the summary and the JSON's `effects`
+(`functions`, `by_role`, `unresolved`, `not_analysed`) carry its counts;
+`effects` is `null` when no rule that runs needs it.
+
 An Erlang module in the project is classified by its name only (a `pattern:`
 selector): a classified one is an opaque node with no edges, counted in the
 summary as `(<n> opaque)`; an unclassified one is an issue. No setting
@@ -997,8 +1003,10 @@ line.
 | `--write-baseline` that created the file | 0 | the baseline path | `anchor.graph wrote 3 entries to .anchor/baselines/web.txt. Fix: review it in this change; from here it only shrinks.` (`[report]`) |
 | `--write-baseline` over an existing file, or naming no rule with a `baseline:` | 2 | the baseline path, or the config | `.anchor/baselines/web.txt exists; --write-baseline only creates, and never rewrites a baseline. Fix: ...` |
 | A `--base` ref with a character git must not see (a leading `-`, a space, `;`, `$`, `:`) | 2 | | usage, with a `Fix:` line |
-| A graph rule whose `needs/0` names an analysis the runner does not compute, or is not a list (DND-5574) | 1 | the config | `rule 2 (id: "web", layering) could not run: ArgumentError: MyApp.Rule.needs/0 names [:nope], which the graph runner does not compute (it computes [:cfa]), so it checked nothing. Fix: this is an Anchor bug; file it with this line.` The rule is not run; the other rules still run. |
+| A graph rule whose `needs/0` names an analysis the runner does not compute, or is not a list (DND-5574) | 1 | the config | `rule 2 (id: "web", layering) could not run: ArgumentError: MyApp.Rule.needs/0 names [:nope], which the graph runner does not compute (it computes [:cfa, :effects]), so it checked nothing. Fix: this is an Anchor bug; file it with this line.` The rule is not run; the other rules still run. |
 | The higher-order flow analysis a rule needs raises, throws or exits (DND-5574) | 1 | the config | `rule 2 (id: "web", layering) could not run: the higher-order flow analysis it needs (Anchor.Domain.Cfa) crashed: RuntimeError: ..., so it checked nothing. Fix: this is an Anchor bug; file it with this line.` One per rule that needs it; the rules that do not still run. |
+| The effect inference a rule needs raises, throws or exits, or returns no `%Effects{}` (DND-5447) | 1 | the config | `rule 2 (id: "effects", effects_match_bucket) could not run: the effect inference it needs (Anchor.Domain.Effects) crashed: RuntimeError: ..., so it checked nothing. Fix: this is an Anchor bug; file it with this line.` One per rule that needs it; the rules that do not still run. |
+| An `effects_match_bucket` rule selects modules of a judged bucket of which no public function was analysed (DND-5447) | 1 | the config | `rule 4 (id: "effects", effects_match_bucket) judged no public function of bucket domain: the modules it selects there have none that was analysed (every one is a root, generated, or has no Core body), so the bucket is below the rule's floor. Fix: select modules of domain with public functions, or set infer: false on domain in a reviewed change.` |
 | Findings of a `report` rule | 0 | the finding | printed `[report]` |
 
 Exit 2 is a usage error (an unknown option, `--format` other than `text` or

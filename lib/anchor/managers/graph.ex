@@ -72,12 +72,15 @@ defmodule Anchor.Managers.Graph do
   `:graph_rules` (the rule modules, `Anchor.Domain.GraphRules.all/0`), `:cfa`
   (a one-argument function from the graph to its `%Anchor.Domain.Cfa{}`,
   default `Cfa.analyze(graph, Cfa.default_seed(graph))`; tests pass one that
-  crashes), `:effects` (a one-argument function from the model to its
-  `%Anchor.Domain.Effects{}`, default `Effects.infer/1`).
+  crashes), `:effects` (a two-argument function from the model and its
+  options to its `%Anchor.Domain.Effects{}`, default `Effects.infer/2`), and
+  `:behaviour_source` (`Anchor.Adapters.BehaviourReader`, the external
+  behaviours' callbacks the inference's roots read).
   """
 
   alias Anchor.Adapters.BaselineFile
   alias Anchor.Adapters.BeamReader
+  alias Anchor.Adapters.BehaviourReader
   alias Anchor.Adapters.ConfigFile
   alias Anchor.Adapters.GitShow
   alias Anchor.Adapters.GraphArtifact
@@ -98,6 +101,7 @@ defmodule Anchor.Managers.Graph do
   alias Anchor.Domain.GraphReport.Finding
   alias Anchor.Domain.GraphRules
   alias Anchor.Domain.Model
+  alias Anchor.Domain.Roots
   alias Anchor.Domain.Violation
   alias Anchor.Managers.Graph.Request
 
@@ -152,7 +156,8 @@ defmodule Anchor.Managers.Graph do
       git_base: Keyword.get(deps, :git_base, GitShow),
       graph_rules: Keyword.get(deps, :graph_rules, GraphRules.all()),
       cfa: Keyword.get(deps, :cfa, &analyze_cfa/1),
-      effects: Keyword.get(deps, :effects, &Effects.infer/1)
+      effects: Keyword.get(deps, :effects, &Effects.infer/2),
+      behaviour_source: Keyword.get(deps, :behaviour_source, BehaviourReader)
     }
   end
 
@@ -236,7 +241,7 @@ defmodule Anchor.Managers.Graph do
     rules = Enum.map(rules, fn {rule, module} -> {rule, module, guarded_needs(module)} end)
     cfa = cfa(rules, graph, deps.cfa)
     model = %{model | cfa: analysis(cfa)}
-    effects = effects(rules, model, cfa, deps.effects)
+    effects = effects(rules, model, cfa, deps)
     model = %{model | effects: effects_analysis(effects)}
 
     deps =
@@ -274,14 +279,21 @@ defmodule Anchor.Managers.Graph do
   # reads, and only when a rule that runs needs it: `nil` when none does or
   # when the flow analysis crashed (that rule then reports the flow
   # analysis), else the guarded result.
-  defp effects(rules, model, cfa, infer) do
+  defp effects(rules, model, cfa, deps) do
     needed? = Enum.any?(rules, fn {_rule, _module, needs} -> needs?(needs, :effects) end)
 
     case {needed?, cfa} do
       {true, {:crashed, _kind, _reason, _stacktrace}} -> nil
-      {true, _ok_or_not_run} -> guarded(fn -> effects!(infer.(model)) end)
+      {true, _ok_or_not_run} -> guarded(fn -> effects!(infer(model, deps)) end)
       {false, _cfa} -> nil
     end
+  end
+
+  # The external behaviours' callbacks (the roots' one read of the world) come
+  # through the BehaviourSource port, so the inference itself stays pure.
+  defp infer(model, deps) do
+    callbacks = deps.behaviour_source.callbacks(Roots.external_behaviours(model.graph))
+    deps.effects.(model, callbacks: callbacks)
   end
 
   # An inference that returns anything but an `%Effects{}` is reported like

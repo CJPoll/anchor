@@ -18,6 +18,7 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
   # `Anchor.Managers.LintTest` and the e2e suite.
   #
   # Sabotage record: ../../sabotage_records/rule_schema-20260929-dnd_1290_empty_relation_list.md
+  # Sabotage record (DND-5447, DND-5454 rows): ../../sabotage_records/rule_schema-20261103-dnd_5447_graph_rules_c.md
   # The DND-1292 rows (glob metacharacters, the `***` match-all, `*?`):
   #   ../../sabotage_records/rule_schema-20260929-dnd_1292_glob_escape.md
   # The DND-1267 `forbidden_functions` rows:

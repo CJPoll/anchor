@@ -61,7 +61,7 @@ defmodule Anchor.Domain.GraphRules.EffectsMatchBucket do
   @impl Anchor.Domain.GraphRule
   def check(%Model{} = model, rule) do
     effects = model.effects || Effects.infer(model)
-    roots = Roots.roots(model)
+    roots = effects.roots
     buckets = Map.new(model.architecture.buckets, &{&1.name, &1})
 
     judged =

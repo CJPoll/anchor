@@ -7,6 +7,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
   # path anchored on this file (not the cwd, which sync modules change).
   #
   # Sabotage record: ../../sabotage_records/rule_schema-20260929-dnd_1286_rule_key_allowlist.md
+  # Sabotage record (DND-5447, DND-5454 rows): ../../sabotage_records/rule_schema-20261103-dnd_5447_graph_rules_c.md
   # DND-5441 (engine common keys, enforcement, baseline, validate_architecture/3):
   #   ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
   use ExUnit.Case, async: true

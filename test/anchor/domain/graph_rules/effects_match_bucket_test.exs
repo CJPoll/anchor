@@ -7,12 +7,25 @@ defmodule Anchor.Domain.GraphRules.EffectsMatchBucketTest do
 
   import Anchor.Test.EffectsModels
 
+  alias Anchor.Domain.Effects
   alias Anchor.Domain.GraphRules.EffectsMatchBucket
 
   @rule %{type: :effects_match_bucket, id: "effects", paths: ["lib/**"]}
 
-  defp check(modules, calls, opts \\ [], rule \\ @rule),
-    do: EffectsMatchBucket.check(model(modules, calls, opts), rule)
+  # `:callbacks` (external behaviours' callbacks) puts an inference that read
+  # them on the model, as the runner does; without it the rule infers with
+  # none.
+  defp check(modules, calls, opts \\ [], rule \\ @rule) do
+    {callbacks, opts} = Keyword.pop(opts, :callbacks)
+    model = model(modules, calls, opts)
+
+    model =
+      if callbacks,
+        do: %{model | effects: Effects.infer(model, callbacks: callbacks)},
+        else: model
+
+    EffectsMatchBucket.check(model, rule)
+  end
 
   test "a pure function in a domain bucket passes" do
     assert check([{D, "domain", [{:f, 1}], []}], [{{D, :f, 1}, {Enum, :map, 2}}]) == []
@@ -91,7 +104,7 @@ defmodule Anchor.Domain.GraphRules.EffectsMatchBucketTest do
   test "roots are not judged" do
     calls = [{{A, :fetch, 1}, {File, :read, 1}}]
     modules = [{A, "adapters", [{:handle_call, 3}, {:fetch, 1}], behaviours: [GenServer]}]
-    assert check(modules, calls) == []
+    assert check(modules, calls, callbacks: %{GenServer => [handle_call: 3]}) == []
     # Positive control: the same pure function without the behaviour is judged.
     assert [%{trigger: "A.handle_call/3"}] =
              check([{A, "adapters", [{:handle_call, 3}, {:fetch, 1}], []}], calls)

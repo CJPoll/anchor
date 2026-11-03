@@ -17,33 +17,32 @@ defmodule Anchor.Domain.Roots do
 
   A private function is never a root.
 
-  ## The one code-server call
+  ## External callbacks come in as data
 
-  An external behaviour's callbacks are its `behaviour_info(:callbacks)`,
-  read through `Code.ensure_loaded?/1` (the stdlib or a dependency, never a
-  project module: a behaviour the graph holds is a project one and is not
-  asked). It is the one code-server call here, as in
-  `Anchor.Domain.GraphRules.needs/1`. A behaviour that cannot be loaded gives
-  no callbacks, so its implementations are judged rather than skipped: a
-  miss reads as a finding, never as a pass. `roots/2` takes the lookup as an
-  argument for tests.
+  An external behaviour's callbacks are read by the runner through the
+  `Anchor.Adapters.BehaviourSource` port (`behaviour_info(:callbacks)`), for
+  exactly the behaviours `external_behaviours/1` names, and handed to
+  `roots/2` as a map. This module never loads one. A behaviour missing from
+  the map, or mapped to `[]`, gives no callbacks, so its implementations are
+  judged rather than skipped: a miss reads as a finding, never as a pass.
   """
 
   alias Anchor.Domain.Architecture.Selector
+  alias Anchor.Domain.Graph
   alias Anchor.Domain.Graph.FunctionNode
   alias Anchor.Domain.Graph.ModuleNode
   alias Anchor.Domain.Model
 
-  @typedoc "The callbacks of a behaviour module, `[{name, arity}]`."
-  @type callbacks_fun :: (module() -> [{atom(), arity()}])
+  @typedoc "Each external behaviour's callbacks, `%{behaviour => [{name, arity}]}`."
+  @type callbacks :: %{module() => [{atom(), arity()}]}
 
   @doc """
-  The roots of `model`, as a set of mfas. `callbacks` answers a behaviour's
-  callbacks (default: its `behaviour_info(:callbacks)`, `[]` when it cannot be
-  loaded).
+  The roots of `model`, as a set of mfas. `callbacks` holds the external
+  behaviours' callbacks (`Anchor.Adapters.BehaviourSource`); a behaviour it
+  does not hold has none.
   """
-  @spec roots(Model.t(), callbacks_fun()) :: MapSet.t(mfa())
-  def roots(%Model{} = model, callbacks \\ &external_callbacks/1) do
+  @spec roots(Model.t(), callbacks()) :: MapSet.t(mfa())
+  def roots(%Model{} = model, callbacks) when is_map(callbacks) do
     project = model.graph.modules
 
     for {module, %ModuleNode{functions: functions} = node} <- project,
@@ -58,14 +57,18 @@ defmodule Anchor.Domain.Roots do
   def root?(roots, mfa), do: MapSet.member?(roots, mfa)
 
   @doc """
-  The callbacks of `behaviour` (`[{name, arity}]`), read from the loaded
-  module, or `[]` when it cannot be loaded or declares none.
+  The behaviours the project's modules declare that the graph does not hold
+  (defined outside the project), sorted: what to ask the
+  `Anchor.Adapters.BehaviourSource` port for.
   """
-  @spec external_callbacks(module()) :: [{atom(), arity()}]
-  def external_callbacks(behaviour) do
-    if Code.ensure_loaded?(behaviour) and function_exported?(behaviour, :behaviour_info, 1),
-      do: behaviour.behaviour_info(:callbacks),
-      else: []
+  @spec external_behaviours(Graph.t()) :: [module()]
+  def external_behaviours(%Graph{modules: modules}) do
+    modules
+    |> Map.values()
+    |> Enum.flat_map(& &1.behaviours)
+    |> Enum.reject(&Map.has_key?(modules, &1))
+    |> Enum.uniq()
+    |> Enum.sort()
   end
 
   defp root?(module, name_arity, node, model, callbacks) do
@@ -90,6 +93,6 @@ defmodule Anchor.Domain.Roots do
   defp external_callback?(name_arity, %ModuleNode{behaviours: behaviours}, model, callbacks) do
     behaviours
     |> Enum.reject(&Map.has_key?(model.graph.modules, &1))
-    |> Enum.any?(&(name_arity in callbacks.(&1)))
+    |> Enum.any?(&(name_arity in Map.get(callbacks, &1, [])))
   end
 end

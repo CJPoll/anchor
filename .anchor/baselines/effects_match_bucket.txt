@@ -23,12 +23,7 @@ effects_match_bucket|Anchor.Domain.DependencyAnalyzer.has_direct_dependency?/2|m
 effects_match_bucket|Anchor.Domain.DependencyAnalyzer.module_dependencies/1|managers
 effects_match_bucket|Anchor.Domain.DependencyAnalyzer.resolved_modules/1|managers
 effects_match_bucket|Anchor.Domain.DependencyAnalyzer.unresolved_directives/1|managers
-effects_match_bucket|Anchor.Domain.Effects.infer/1|managers
-effects_match_bucket|Anchor.Domain.Effects.infer/2|managers
-effects_match_bucket|Anchor.Domain.GraphRules.EffectsMatchBucket.check/2|managers
-effects_match_bucket|Anchor.Domain.Roots.external_callbacks/1|managers
-effects_match_bucket|Anchor.Domain.Roots.roots/1|managers
-effects_match_bucket|Anchor.Domain.Roots.roots/2|managers
+effects_match_bucket|Anchor.Domain.GraphRules.needs/1|adapters
 effects_match_bucket|Anchor.Domain.RuleCoverage.below_floor/2|managers
 effects_match_bucket|Anchor.Domain.RuleCoverage.below_floor/3|managers
 effects_match_bucket|Anchor.Domain.RuleCoverage.missing_allowed_callers/2|managers

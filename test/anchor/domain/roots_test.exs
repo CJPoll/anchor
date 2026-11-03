@@ -1,8 +1,8 @@
 defmodule Anchor.Domain.RootsTest do
   # Domain (ADR 002). DND-5447: the roots of a program, over hand-built models
-  # (Anchor.Test.EffectsModels). The behaviour-callback lookup is passed in,
-  # so no module is loaded, except the one row that reads a real stdlib
-  # behaviour.
+  # (Anchor.Test.EffectsModels). External behaviours' callbacks come in as a
+  # map (the runner reads them through Anchor.Adapters.BehaviourSource), so no
+  # module is loaded.
   #
   # Sabotage record: ../../sabotage_records/effects-20261103-dnd_5447_graph_rules_c.md
   use ExUnit.Case, async: true
@@ -13,10 +13,8 @@ defmodule Anchor.Domain.RootsTest do
 
   @callbacks %{GenServer => [handle_call: 3, init: 1], App.Port => [run: 1]}
 
-  defp callbacks(behaviour), do: Map.get(@callbacks, behaviour, [])
-
   defp roots(modules, opts \\ []),
-    do: modules |> model([], opts) |> Roots.roots(&callbacks/1)
+    do: modules |> model([], opts) |> Roots.roots(@callbacks)
 
   test "public functions of a framework-role bucket are roots" do
     roots = roots([{Web.Controller, "framework", [{:show, 2}, {:load, 1, :defp}], []}])
@@ -58,8 +56,23 @@ defmodule Anchor.Domain.RootsTest do
     refute Roots.root?(roots(modules), {Mix.Tasks.Foo, :run, 1})
   end
 
-  test "a behaviour that cannot be loaded gives no callbacks (judged, never skipped)" do
-    assert Roots.external_callbacks(AnchorFixtures.RootsTest.NoSuchBehaviour) == []
-    assert {:handle_call, 3} in Roots.external_callbacks(GenServer)
+  test "a behaviour the callbacks do not hold gives no root (judged, never skipped)" do
+    modules = [{Store.Server, "adapters", [{:handle_call, 3}], behaviours: [GenServer]}]
+
+    refute Roots.root?(modules |> model([]) |> Roots.roots(%{}), {Store.Server, :handle_call, 3})
+  end
+
+  test "external_behaviours/1: the behaviours declared that the graph does not hold, once" do
+    graph =
+      model(
+        [
+          {App.Port, "domain", [], []},
+          {App.Impl, "adapters", [{:run, 1}], behaviours: [App.Port, GenServer]},
+          {App.Other, "adapters", [], behaviours: [GenServer, Supervisor]}
+        ],
+        []
+      ).graph
+
+    assert Roots.external_behaviours(graph) == [GenServer, Supervisor]
   end
 end

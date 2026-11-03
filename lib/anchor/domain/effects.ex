@@ -98,25 +98,28 @@ defmodule Anchor.Domain.Effects do
             targets: %{},
             unresolved_calls: 0,
             counts: %{},
-            not_analysed: 0
+            not_analysed: 0,
+            roots: MapSet.new()
 
   @type t :: %__MODULE__{
           roles: %{mfa() => role()},
           targets: %{mfa() => [target()]},
           unresolved_calls: non_neg_integer(),
           counts: %{role() => non_neg_integer()},
-          not_analysed: non_neg_integer()
+          not_analysed: non_neg_integer(),
+          roots: MapSet.t(mfa())
         }
 
   @doc """
   Infers the role of every analysed function of `model`'s graph (see the
-  moduledoc). `opts`: `:callbacks`, the behaviour-callback lookup
-  `Anchor.Domain.Roots.roots/2` takes.
+  moduledoc). `opts`: `:callbacks`, the external behaviours' callbacks
+  `Anchor.Domain.Roots.roots/2` takes (default `%{}`: no external callback is
+  a root, so each is judged). The roots it used are kept on the result.
   """
   @spec infer(Model.t(), keyword()) :: t()
   def infer(%Model{graph: graph} = model, opts \\ []) do
     primitives = EffectPrimitives.build(model.architecture, graph)
-    roots = Roots.roots(model, Keyword.get(opts, :callbacks, &Roots.external_callbacks/1))
+    roots = Roots.roots(model, Keyword.get(opts, :callbacks, %{}))
     no_core = no_core(graph)
     calls = Enum.group_by(graph.calls, & &1.from)
 
@@ -148,7 +151,8 @@ defmodule Anchor.Domain.Effects do
       targets: targets,
       unresolved_calls: count_unresolved(targets),
       counts: roles |> Map.values() |> Enum.frequencies(),
-      not_analysed: MapSet.size(no_core)
+      not_analysed: MapSet.size(no_core),
+      roots: roots
     }
   end
 
@@ -212,9 +216,12 @@ defmodule Anchor.Domain.Effects do
         [unresolved("a call of #{name}/#{arity || "?"} on a computed module", call.line)]
 
       modules ->
+        # Each candidate as a static call to it: a declared effect (or a
+        # project Repo) is a primitive there too, never just its body.
         for module <- modules,
             mfa <- exported(ctx.graph, module, name, arity),
-            do: {:fn, mfa}
+            target <- static(mfa, ctx),
+            do: target
     end
   end
 

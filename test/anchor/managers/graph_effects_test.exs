@@ -13,9 +13,11 @@ defmodule Anchor.Managers.GraphEffectsTest do
 
   alias Anchor.Adapters.BeamReader
   alias Anchor.BeamSourceMock
+  alias Anchor.BehaviourSourceMock
   alias Anchor.Config
   alias Anchor.ConfigLoaderMock
   alias Anchor.Domain.Architecture
+  alias Anchor.Domain.Effects
   alias Anchor.Domain.Graph.SourceFacts
   alias Anchor.Domain.GraphReport
   alias Anchor.Domain.GraphRules.EffectsMatchBucket
@@ -84,6 +86,7 @@ defmodule Anchor.Managers.GraphEffectsTest do
         beam_source: BeamSourceMock,
         source_source: SourceSourceMock,
         graph_store: GraphStoreMock,
+        behaviour_source: BehaviourSourceMock,
         graph_rules: [EffectsMatchBucket | Rules.all()]
       ] ++ opts
     )
@@ -99,6 +102,8 @@ defmodule Anchor.Managers.GraphEffectsTest do
   test "the rule that needs it runs on Model.effects, and the summary counts it", %{
     beams: beams
   } do
+    # The fixture declares no behaviour: the port is asked for none.
+    expect(BehaviourSourceMock, :callbacks, fn [] -> %{} end)
     report = run([rule(:effects_match_bucket, "effects", 1)], beams)
 
     assert [finding] = report.findings
@@ -119,6 +124,23 @@ defmodule Anchor.Managers.GraphEffectsTest do
              JSON.decode!(GraphReport.render(report, :json))
   end
 
+  test "the inference gets the callbacks the behaviour port read, as :callbacks", %{
+    beams: beams
+  } do
+    callbacks = %{GenServer => [init: 1]}
+    expect(BehaviourSourceMock, :callbacks, fn [] -> callbacks end)
+    test = self()
+
+    infer = fn model, opts ->
+      send(test, {:inferred_with, opts})
+      Effects.infer(model, opts)
+    end
+
+    run([rule(:effects_match_bucket, "effects", 1)], beams, effects: infer)
+
+    assert_received {:inferred_with, [callbacks: ^callbacks]}
+  end
+
   for {kind, crash, text} <- [
         {"raises", quote(do: raise("effects blew up")), "RuntimeError: effects blew up"},
         {"returns no %Effects{}", quote(do: :oops),
@@ -129,7 +151,8 @@ defmodule Anchor.Managers.GraphEffectsTest do
          %{beams: beams} do
       rules = [rule(:effects_match_bucket, "effects", 1), rule(:stub_cfa_probe, "probe", 2)]
 
-      report = run(rules, beams, effects: fn _model -> unquote(crash) end)
+      expect(BehaviourSourceMock, :callbacks, fn [] -> %{} end)
+      report = run(rules, beams, effects: fn _model, _opts -> unquote(crash) end)
 
       assert [issue, probe] = report.findings
       assert issue.message =~ "the effect inference it needs (Anchor.Domain.Effects) crashed"

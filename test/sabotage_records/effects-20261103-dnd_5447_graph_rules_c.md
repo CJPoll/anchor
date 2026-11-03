@@ -470,3 +470,159 @@ Finished in 0.1 seconds (0.1s async, 0.00s sync)
 The fix: a literal target is pure only when it is no struct, or a `MapSet`
 (`MapSet.new()` compiles to the literal `%MapSet{}`, which is how
 `Pricing.skus/1` stays pure). After: `15 tests, 0 failures`.
+
+## Review-floor fixes (2026-11-03)
+
+The review floor found that `Roots` read behaviours through the code server
+from Domain (now the `Anchor.Adapters.BehaviourSource` port, read by the
+runner), that a dynamic call's candidate skipped the primitive check, and
+that the two new `Failures` cases had no table rows. Suite run: `mix test
+--timeout 2000 --max-cases 2 test/anchor/managers/graph_effects_test.exs
+test/anchor/adapters/behaviour_reader_test.exs test/anchor/domain/effects_test.exs
+test/anchor/domain/failures_graph_test.exs test/anchor/domain/roots_test.exs
+test/anchor/integration/effects_canary_test.exs
+test/anchor/domain/graph_rules/effects_match_bucket_test.exs`.
+
+Traps seen: EF-Q first survived (0 failures of 58): no test checked that the
+runner hands the port's callbacks to the inference. The test "the inference
+gets the callbacks the behaviour port read, as :callbacks" was added; the row
+below is EF-Q's run after it (59 tests).
+
+The dynamic-candidate fix's regression test ("a dynamic call whose candidate
+is a declared effect reaches that effect"), on the unfixed code:
+
+```
+  1) test a dynamic call whose candidate is a declared effect reaches that effect (Anchor.Domain.EffectsTest)
+     test/anchor/domain/effects_test.exs:131
+     Assertion with == failed
+     code:  assert Effects.role(effects, {D, :f, 2}) == :adapters
+     left:  :domain
+     right: :adapters
+     stacktrace:
+       test/anchor/domain/effects_test.exs:137: (test)
+
+..........
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+13 tests, 1 failure
+```
+
+| # | Mutation | Tests failed | Failing test |
+|---|---|---|---|
+| EF-Q | the runner never asks the behaviour port: the inference gets no callbacks (`lib/anchor/managers/graph.ex`) | 1 | the inference gets the callbacks the behaviour port read, as :callbacks |
+| EF-R | BehaviourReader reads no callbacks (`lib/anchor/adapters/behaviour_reader.ex`) | 1 | a stdlib behaviour's callbacks, and [] for one that cannot be loaded or is no behaviour |
+| EF-S | a dynamic call's candidate is only its body, never a declared effect (`lib/anchor/domain/effects.ex`) | 1 | a dynamic call whose candidate is a declared effect reaches that effect |
+| EF-T | the crashed-inference issue names the flow analysis (`lib/anchor/domain/failures.ex`) | 3 | an inference that raises: the rule that needs it is one issue and is not run; the others run; an inference that returns no %Effects{}: the rule that needs it is one issue and is not run; the others run; every graph message is fail-closed, on its file, with its subject and a Fix: line |
+| EF-U | the unanalysed-bucket issue drops its Fix (`lib/anchor/domain/failures.ex`) | 2 | a judged bucket with no public function analysed is below the floor; every graph message is fail-closed, on its file, with its subject and a Fix: line |
+| EF-V | external_behaviours/1 asks for project behaviours too (`lib/anchor/domain/roots.ex`) | 1 | external_behaviours/1: the behaviours declared that the graph does not hold, once |
+
+## EF-Q — the runner never asks the behaviour port: the inference gets no callbacks
+
+Run summary: `59 tests, 1 failure`
+
+```
+
+  1) test the inference gets the callbacks the behaviour port read, as :callbacks (Anchor.Managers.GraphEffectsTest)
+     test/anchor/managers/graph_effects_test.exs:127
+     Assertion failed, no matching message after 0ms
+     The following variables were pinned:
+       callbacks = %{GenServer => [init: 1]}
+     Showing 1 of 1 message in the mailbox
+     code: assert_received {:inferred_with, callbacks: ^callbacks}
+     mailbox:
+       pattern: {:inferred_with, callbacks: ^callbacks}
+       value:   {:inferred_with, [callbacks: %{}]}
+     stacktrace:
+       test/anchor/managers/graph_effects_test.exs:141: (test)
+
+...................................
+```
+
+## EF-R — BehaviourReader reads no callbacks
+
+Run summary: `58 tests, 1 failure`
+
+```
+
+
+
+  1) test a stdlib behaviour's callbacks, and [] for one that cannot be loaded or is no behaviour (Anchor.Adapters.BehaviourReaderTest)
+     test/anchor/adapters/behaviour_reader_test.exs:11
+     Assertion with in failed
+     code:  assert {:handle_call, 3} in callbacks[GenServer]
+     left:  {:handle_call, 3}
+     right: []
+     stacktrace:
+       test/anchor/adapters/behaviour_reader_test.exs:15: (test)
+
+.........................................................
+```
+
+## EF-S — a dynamic call's candidate is only its body, never a declared effect
+
+Run summary: `58 tests, 1 failure`
+
+```
+
+  1) test a dynamic call whose candidate is a declared effect reaches that effect (Anchor.Domain.EffectsTest)
+     test/anchor/domain/effects_test.exs:131
+     Assertion with == failed
+     code:  assert Effects.role(effects, {D, :f, 2}) == :adapters
+     left:  :domain
+     right: :adapters
+     stacktrace:
+       test/anchor/domain/effects_test.exs:137: (test)
+
+.............................................
+```
+
+## EF-T — the crashed-inference issue names the flow analysis
+
+Run summary: `58 tests, 3 failures`
+
+```
+
+  1) test an inference that raises: the rule that needs it is one issue and is not run; the others run (Anchor.Managers.GraphEffectsTest)
+     test/anchor/managers/graph_effects_test.exs:131
+     Assertion with =~ failed
+     code:  assert issue.message =~ "the effect inference it needs (Anchor.Domain.Effects) crashed"
+     left:  "rule 1 (id: \"effects\", effects_match_bucket) could not run: the analysis it needs (Anchor.Domain.Effects) crashed: RuntimeError: effects blew up (raised at anonymous fn/2 in Anchor.Managers.GraphEffectsTest.\"test an inference that raises: the rule that needs it is one issue and is not run; the others run\"/1), so it checked nothing. Fix: this is an Anchor bug; file it with this line."
+     right: "the effect inference it needs (Anchor.Domain.Effects) crashed"
+     stacktrace:
+       test/anchor/managers/graph_effects_test.exs:140: (test)
+
+.
+```
+
+## EF-U — the unanalysed-bucket issue drops its Fix
+
+Run summary: `58 tests, 2 failures`
+
+```
+
+  1) test a judged bucket with no public function analysed is below the floor (Anchor.Domain.GraphRules.EffectsMatchBucketTest)
+     test/anchor/domain/graph_rules/effects_match_bucket_test.exs:147
+     Assertion with =~ failed
+     code:  assert issue.message =~ "Fix:"
+     left:  "rule (id: \"effects\", effects_match_bucket) judged no public function of bucket adapters: the modules it selects there have none that was analysed (every one is a root, generated, or has no Core body), so the bucket is below the rule's floor. Select modules of adapters with public functions, or set infer: false on adapters in a reviewed change."
+     right: "Fix:"
+     stacktrace:
+       test/anchor/domain/graph_rules/effects_match_bucket_test.exs:152: (test)
+```
+
+## EF-V — external_behaviours/1 asks for project behaviours too
+
+Run summary: `58 tests, 1 failure`
+
+```
+
+  1) test external_behaviours/1: the behaviours declared that the graph does not hold, once (Anchor.Domain.RootsTest)
+     test/anchor/domain/roots_test.exs:65
+     Assertion with == failed
+     code:  assert Roots.external_behaviours(graph) == [GenServer, Supervisor]
+     left:  [App.Port, GenServer, Supervisor]
+     right: [GenServer, Supervisor]
+     stacktrace:
+       test/anchor/domain/roots_test.exs:76: (test)
+
+....................................................
+```

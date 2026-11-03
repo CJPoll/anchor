@@ -6,6 +6,8 @@ defmodule Anchor.Domain.FailuresGraphTest do
   # Sabotage record: ../../sabotage_records/failures-20261103-dnd_5440_graph_runner.md
   # Sabotage record: ../../sabotage_records/failures-20261103-dnd_5551_graph_hardening.md
   # (rule_cfa_crashed, DND-5574: ../../sabotage_records/failures-20261103-dnd_5574_cfa_wiring.md)
+  # (rule_effects_crashed, effects_bucket_unanalysed, DND-5447:
+  #   ../../sabotage_records/effects-20261103-dnd_5447_graph_rules_c.md)
   # Sabotage record: ../../sabotage_records/failures-20261103-dnd_5581_hardening_batch.md
   # DND-5441 (the baseline_* messages):
   #   ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
@@ -95,6 +97,13 @@ defmodule Anchor.Domain.FailuresGraphTest do
         raise "cfa blew up"
       rescue
         e -> Failures.rule_cfa_crashed(rule, :error, e, __STACKTRACE__, nil)
+      end
+
+    effects_crashed =
+      try do
+        raise "effects blew up"
+      rescue
+        e -> Failures.rule_effects_crashed(rule, :error, e, __STACKTRACE__, nil)
       end
 
     [
@@ -229,6 +238,21 @@ defmodule Anchor.Domain.FailuresGraphTest do
          ~s|rule 2 (id: "web", layering) could not run: the higher-order flow analysis it | <>
            "needs (Anchor.Domain.Cfa) crashed: RuntimeError: cfa blew up",
          "so it checked nothing. Fix: this is an Anchor bug; file it with this line."
+       ]},
+      {"rule_effects_crashed", effects_crashed, ".anchor.yml",
+       [
+         ~s|rule 2 (id: "web", layering) could not run: the effect inference it needs | <>
+           "(Anchor.Domain.Effects) crashed: RuntimeError: effects blew up",
+         "so it checked nothing. Fix: this is an Anchor bug; file it with this line."
+       ]},
+      {"effects_bucket_unanalysed",
+       Failures.effects_bucket_unanalysed(rule, "domain", "proj/.anchor.yml"), "proj/.anchor.yml",
+       [
+         ~s|rule 2 (id: "web", layering) judged no public function of bucket domain: the | <>
+           "modules it selects there have none that was analysed (every one is a root, " <>
+           "generated, or has no Core body), so the bucket is below the rule's floor.",
+         "Fix: select modules of domain with public functions, or set infer: false on domain " <>
+           "in a reviewed change."
        ]},
       {"interface_export_missing",
        Failures.interface_export_missing(MyApp.Gone, "proj/.anchor.yml"), "proj/.anchor.yml",

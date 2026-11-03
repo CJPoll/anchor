@@ -3,6 +3,7 @@ defmodule Anchor.Domain.GraphRulesTest do
   # Pure Domain over a hand-built model.
   #
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5440_graph_runner.md
+  # Sabotage record (DND-5447, DND-5454 rows): ../../sabotage_records/rule_schema-20261103-dnd_5447_graph_rules_c.md
   # (needs/1, DND-5574: ../../sabotage_records/graph_runner-20261103-dnd_5574_cfa_wiring.md)
   use ExUnit.Case, async: true
 

@@ -514,3 +514,30 @@ Run summary: `106 tests, 1 failure`
 
 ...............................................................................
 ```
+
+
+## The canary rows (review floor, 2026-11-03)
+
+The review floor found no canary module for the rule. `lib/canary/domain/struct_flow/rebate.ex` (violating) and `Pricing.free/1` (compliant) were added to `test/fixtures/graph_canary/`, with the rule in its `.anchor.yml`. Suite run: `mix test --timeout 2000 --max-cases 2 test/anchor/integration/graph_canary_test.exs`.
+
+| # | Mutation | Tests failed | Failing test |
+|---|---|---|---|
+| SF-V | a spec return is never known (the canary rows) (`lib/anchor/domain/struct_flow.ex`) | 1 | struct_owned_by_module_flow (DND-5454): Rebate changing a spec-known Order is one finding; Pricing changing it through Order is none |
+
+## SF-V — a spec return is never known (the canary rows)
+
+Run summary: `8 tests, 1 failure`
+
+```
+
+  1) test struct_owned_by_module_flow (DND-5454): Rebate changing a spec-known Order is one finding; Pricing changing it through Order is none (Anchor.Integration.GraphCanaryTest)
+     test/anchor/integration/graph_canary_test.exs:227
+     Assertion with == failed
+     code:  assert report.exit_code == 1
+     left:  0
+     right: 1
+     stacktrace:
+       test/anchor/integration/graph_canary_test.exs:232: (test)
+
+....
+```

@@ -13,7 +13,7 @@ defmodule Anchor.Domain.EffectsTest do
   alias Anchor.Domain.Effects
 
   defp infer(modules, calls, opts \\ []),
-    do: modules |> model(calls, opts) |> Effects.infer(callbacks: fn _behaviour -> [] end)
+    do: modules |> model(calls, opts) |> Effects.infer(callbacks: %{})
 
   @adapter_modules [
     {M, "managers", [{:run, 1}], []},
@@ -126,6 +126,19 @@ defmodule Anchor.Domain.EffectsTest do
       )
 
     assert Effects.role(effects, {D, :f, 2}) == :managers
+  end
+
+  test "a dynamic call whose candidate is a declared effect reaches that effect" do
+    modules = [{I1, "adapters", [{:push, 1}], []}, {D, "domain", [{:f, 2}], []}]
+    calls = [{{D, :f, 2}, {:dynamic, :push, 1, :variable}}]
+
+    effects = infer(modules, calls, effects: ["I1.push/1"])
+
+    assert Effects.role(effects, {D, :f, 2}) == :adapters
+    assert Effects.evidence(effects, {D, :f, 2}) == [{D, :f, 2}, {:primitive, {I1, :push, 1}}]
+    # Positive control: the same call made statically reaches it the same way.
+    static = infer(modules, [{{D, :f, 2}, {I1, :push, 1}}], effects: ["I1.push/1"])
+    assert Effects.role(static, {D, :f, 2}) == :adapters
   end
 
   test "counts per role are reported" do

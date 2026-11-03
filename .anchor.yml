@@ -151,9 +151,10 @@ rules:
   #
   # The baseline holds what it found when it landed: Domain functions that
   # apply a function their caller passes in (an unresolved call counts as an
-  # effect until DND-5500's closed-world values narrow it), the root lookup
-  # that loads a stdlib behaviour, and adapter functions that are pure
-  # (conversions, GitEnv's environment list, a GenServer child_spec).
+  # effect until DND-5500's closed-world values narrow it), GraphRules.needs/1
+  # loading the rule modules through the code server (DND-5574), and adapter
+  # functions that are pure (conversions, GitEnv's environment list, a
+  # GenServer child_spec, DiffHunks' IO.iodata_to_binary/1).
   - type: effects_match_bucket
     id: effects_match_bucket
     paths: ["lib/**/*.ex"]
@@ -234,7 +235,8 @@ architecture:
     buckets: [managers]
   # The effects Anchor's adapters perform through calls outside the default
   # effect primitives (DND-5447): call tracing, a glob over the file system,
-  # and running a Mix task (the in-process test suite).
+  # running a Mix task (the in-process test suite), and loading a module
+  # through the code server (BehaviourReader).
   effects:
     - ":erlang.trace"
     - ":erlang.trace_pattern"
@@ -242,3 +244,4 @@ architecture:
     - ":erlang.trace_delivered"
     - "Path.wildcard"
     - "Mix.Task.run"
+    - "Code.ensure_loaded?"
