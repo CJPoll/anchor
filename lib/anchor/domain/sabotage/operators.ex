@@ -110,6 +110,13 @@ defmodule Anchor.Domain.Sabotage.Operators do
 
   @spec return_input(ctx()) :: [edit()]
   def return_input(%{source: source, clause: clause}) do
+    # An empty body (`do ... end` with nothing in it) has no value to replace.
+    if SourceTree.statements(clause.body) == [],
+      do: [],
+      else: return_edits(source, clause)
+  end
+
+  defp return_edits(source, clause) do
     clause.args
     |> Enum.with_index()
     |> Enum.flat_map(fn {param, index} ->

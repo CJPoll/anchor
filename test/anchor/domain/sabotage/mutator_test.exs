@@ -249,6 +249,12 @@ defmodule Anchor.Domain.Sabotage.MutatorTest do
                {:ok, %{mutants: [], skipped: []}}
     end
 
+    test "an empty do-block body has no return_input target (no crash)" do
+      source = module_source("  def f(x) when is_integer(x) do\n  end")
+
+      assert Mutator.generate(source, "m.ex", {M, :f, 1}) == {:ok, %{mutants: [], skipped: []}}
+    end
+
     test "8: a clause with a default argument covers both arities; a bodiless head's defaults too" do
       source = module_source("  def f(a, b \\\\ 1) do\n    a + b\n  end")
 
@@ -315,24 +321,34 @@ defmodule Anchor.Domain.Sabotage.MutatorTest do
   end
 
   describe "purity" do
-    test "the sabotage generator's modules call no IO, file, process or system module" do
-      impure = [File, IO, Process, System, Port, Node, :ets, :persistent_term]
+    @impure [File, IO, Process, System, Port, Node, :ets, :persistent_term]
 
+    # The impure modules `source` calls, and whether it evaluates or compiles code.
+    defp impurities(source) do
+      modules =
+        source
+        |> Code.string_to_quoted!()
+        |> Anchor.Domain.DependencyAnalyzer.extract_call_dependencies()
+
+      {Enum.filter(modules, &(&1 in @impure)), source =~ ~r/Code\.(eval|compile|require|ensure)/}
+    end
+
+    test "the sabotage generator's modules call no IO, file, process or system module" do
       files =
         ~w(mutator operators orphan_check source_tree patch mutant_id effect_calls mutant skipped)
         |> Enum.map(&"lib/anchor/domain/sabotage/#{&1}.ex")
 
-      for file <- files do
-        source = File.read!(file)
+      for file <- files, do: assert(impurities(File.read!(file)) == {[], false}, file)
+    end
 
-        modules =
-          source
-          |> Code.string_to_quoted!()
-          |> Anchor.Domain.DependencyAnalyzer.extract_call_dependencies()
-
-        assert modules -- impure == modules, "#{file} calls #{inspect(modules)}"
-        refute source =~ ~r/Code\.(eval|compile|require|ensure)/, file
+    test "positive control: the scan flags a file call, an ETS call and an eval" do
+      source = """
+      defmodule Impure do
+        def f(p, t), do: {File.read!(p), :ets.insert(t, {1}), Code.eval_string("1")}
       end
+      """
+
+      assert impurities(source) == {[File, :ets], true}
     end
   end
 end

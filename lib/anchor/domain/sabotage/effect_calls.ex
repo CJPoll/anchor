@@ -23,7 +23,8 @@ defmodule Anchor.Domain.Sabotage.EffectCalls do
       `System.cmd`, every `Logger` call, `IO.puts/write`;
     * `Task.start/start_link/async`, `Phoenix.PubSub.broadcast/broadcast!`.
 
-  Extra tokens (`.anchor.yml` `sabotage.effect_calls`) use the
+  Extra tokens (`Mutator.generate/4`'s `effect_calls:` option; the runner,
+  DND-5473, brings the `.anchor.yml` key) use the
   `Anchor.Domain.FunctionRef` grammar (`"Notifier.push"`,
   `"Notifier.push/1"`, `":gen_tcp.send/2"`). A token that does not parse
   raises `ArgumentError` with the grammar's message: a misspelt token must not
