@@ -435,7 +435,8 @@ defmodule Anchor.Domain.Failures do
       dir,
       nil,
       "Anchor could not write the graph artifact under #{dir} (#{capped(inspect(reason))}); " <>
-        "the verdict does not read it. Fix: make #{dir} writable, under _build/<env>/anchor."
+        "the verdict does not read it. Fix: make #{dir} writable (it is Mix's build path, " <>
+        "then anchor)."
     )
   end
 

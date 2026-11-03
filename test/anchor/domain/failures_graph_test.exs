@@ -166,7 +166,7 @@ defmodule Anchor.Domain.FailuresGraphTest do
        Failures.graph_artifact_not_written("_build/dev/anchor", :eacces), "_build/dev/anchor",
        [
          "could not write the graph artifact under _build/dev/anchor (:eacces)",
-         "Fix: make _build/dev/anchor writable"
+         "Fix: make _build/dev/anchor writable (it is Mix's build path, then anchor)."
        ]}
     ]
   end

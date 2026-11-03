@@ -94,3 +94,25 @@ dir); under B and C every Manager and task test (the store is a double).
      left:  {:error, :outside_artifact_dir}
      right: :ok
 ```
+
+## Review round 1 (critic): a project root is not a build path
+
+The first guard (a directory named `anchor` whose parent holds `lib/`) accepted `<project root>/anchor`,
+since every project root holds `lib/` too. The guard now asks for `lib/<app>/ebin` under the parent, and the
+refusal test has a `project/` with `lib/app` and no ebin. The Fix: hint of
+`Failures.graph_artifact_not_written/2` no longer names `_build/<env>/anchor`.
+
+| # | Mutation | Tests that failed | Run |
+|---|---|---|---|
+| D | `build_path?/1` accepts any `lib/` it can list (no `ebin` check) | "a directory that is not <build_path>/anchor is refused" (the `project/anchor` row) | `50 tests, 1 failure` |
+
+Without a mutation the five files (the four above and `failures_graph_test.exs`) run `50 tests, 0 failures`.
+
+```
+  1) test a directory that is not <build_path>/anchor is refused, for write and read (Anchor.Adapters.GraphArtifactTest)
+     test/anchor/adapters/graph_artifact_test.exs:33
+     Assertion with == failed
+     code:  assert GraphArtifact.write(outside, "k", :graph) == {:error, :outside_artifact_dir}
+     left:  :ok
+     right: {:error, :outside_artifact_dir}
+```
