@@ -610,7 +610,7 @@ writes nothing. The runner (`mix anchor.sabotage run`, later) applies them.
 | Operator | The mutant |
 |---|---|
 | `delete_statement` | a non-final statement that is not an effect call is deleted (its whole lines) |
-| `drop_effect_call` | a non-final statement that is an effect call (a Repo write, `send`, `GenServer.call/cast`, a `Logger` call, a `File`/`System`/`IO` write, ...; extra calls by `effect_calls:`) is deleted |
+| `drop_effect_call` | a non-final statement that is an effect call (a Repo write, `send`, `GenServer.call/cast`, a `Logger` call, a `File`/`System`/`IO` write, ...; extra calls by `effect_calls:`) is replaced by `_ = {arg1, ..., argN}`, which keeps its arguments evaluated (so a variable only the call read stays used) and removes the effect; a call with no argument is deleted (DND-5564) |
 | `narrow_clause` | one clause of a function or `case` with two or more clauses never matches (`when node() == :__anchor_sabotage_never__`) |
 | `with_passthrough` | one `pat <- expr` step of a `with` stops checking (its literals become `_`, `%Mod{}` becomes `%{}`, its guard goes) |
 | `force_condition` | an `if`/`unless`/`cond` condition is forced true, and separately false |

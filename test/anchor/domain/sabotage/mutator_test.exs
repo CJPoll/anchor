@@ -2,6 +2,8 @@ defmodule Anchor.Domain.Sabotage.MutatorTest do
   # DND-5471: the generator end to end over source text: the pinned mutants of
   # the canary, the orphan skips, stable ids, the errors and the patches.
   # Sabotage record: ../../../sabotage_records/sabotage-20261103-dnd_5471.md
+  # DND-5564 (drop_effect_call keeps its arguments):
+  # ../../../sabotage_records/sabotage-20261103-dnd_5473_sabotage_run.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Sabotage.Mutant
@@ -24,12 +26,14 @@ defmodule Anchor.Domain.Sabotage.MutatorTest do
       ]}},
     {{@canary, :checked, 1},
      {[{:delete_statement, nil, "true = is_integer(x)"}, {:return_input, 0, "checked(x)"}], []}},
+    # DND-5564: dropping `send(pid, ...)` keeps `pid` used (`_ = {pid, ...}`).
     {{@canary, :effects, 2},
      {[
+        {:drop_effect_call, nil, "send(pid, {:value, x})"},
         {:drop_effect_call, nil, "Logger.debug(\"sent\")"},
         {:return_input, 0, "effects(pid, x)"},
         {:return_input, 1, "effects(pid, x)"}
-      ], [{:drop_effect_call, nil, "leaves variable `pid` bound at line 27 unused"}]}},
+      ], []}},
     {{@canary, :classify, 1},
      {[
         {:narrow_clause, nil, "classify(:small)"},
@@ -99,9 +103,18 @@ defmodule Anchor.Domain.Sabotage.MutatorTest do
         {:delete_statement, nil, "_ = Link.to_string(link)"},
         {:return_input, 0, "host(%Link{} = link)"}
       ], []}},
+    {{@canary, :logged, 1},
+     {[{:drop_effect_call, nil, "Logger.info(y)"}, {:return_input, 0, "logged(x)"}],
+      [{:delete_statement, nil, "orphans variable `y` bound at line 91 and used at line 92"}]}},
+    {{@canary, :remembered, 1},
+     {[{:return_input, 0, "remembered(x)"}],
+      [
+        {:drop_effect_call, nil,
+         "orphans variable `previous` bound at line 97 and used at line 98"}
+      ]}},
     {{@nested, :twice, 1},
      {[{:drop_effect_call, nil, "send(self(), :twice)"}, {:return_input, 0, "twice(x)"}],
-      [{:delete_statement, nil, "orphans variable `y` bound at line 102 and used at line 104"}]}}
+      [{:delete_statement, nil, "orphans variable `y` bound at line 113 and used at line 115"}]}}
   ]
 
   setup_all do

@@ -13,7 +13,7 @@ defmodule Anchor.Domain.Sabotage.Operators do
   | Operator | Breaks |
   |---|---|
   | `delete_statement` | removes a non-final statement of a block that is not an effect call (its whole lines) |
-  | `drop_effect_call` | the same, for a statement (or the right side of its `=`) that is an effect call (`Anchor.Domain.Sabotage.EffectCalls`) |
+  | `drop_effect_call` | a statement (or the right side of its `=`) that is an effect call (`Anchor.Domain.Sabotage.EffectCalls`) becomes `_ = {arg1, ..., argN}` (DND-5564): its arguments stay evaluated, the effect is gone; a call with no argument is deleted, whole lines |
   | `narrow_clause` | one clause of a function or a `case` with two or more clauses never matches: its head gains `when node() == :__anchor_sabotage_never__` (an existing guard `g` becomes `(g) and ...`) |
   | `with_passthrough` | one `pat <- expr` step of a `with` stops checking: every literal in `pat` becomes `_`, `%Mod{...}` becomes `%{...}`, a step guard is dropped |
   | `force_condition` | the condition of an `if`/`unless` or one `cond` clause (not a final literal `true`) becomes `Process.get(:__anchor_sabotage__) == nil` (variant `true`) or `!= nil` (variant `false`): opaque to the compiler, and the key is never set |
@@ -357,7 +357,7 @@ defmodule Anchor.Domain.Sabotage.Operators do
 
       case effect_statement?(source, statement, tokens) do
         {:ok, effect?} when operator == :drop_effect_call == effect? ->
-          [statement_edit(source, operator, target, range)]
+          [statement_edit(source, operator, statement, target, range)]
 
         {:ok, _other_operator} ->
           []
@@ -373,10 +373,17 @@ defmodule Anchor.Domain.Sabotage.Operators do
     |> sorted()
   end
 
-  defp statement_edit(source, operator, target, {{start_line, _sc}, {end_line, _ec}} = range) do
-    if line_alone?(source, range),
-      do: edit(operator, nil, target, {{start_line, 1}, {end_line + 1, 1}}, ""),
-      else:
+  defp statement_edit(
+         source,
+         operator,
+         statement,
+         target,
+         {{start_line, _sc}, {end_line, _ec}} = range
+       ) do
+    kept = if operator == :drop_effect_call, do: kept_arguments(source, statement)
+
+    cond do
+      not line_alone?(source, range) ->
         edit(
           operator,
           nil,
@@ -385,7 +392,48 @@ defmodule Anchor.Domain.Sabotage.Operators do
           "",
           "it shares line #{start_line} with another expression"
         )
+
+      kept == nil ->
+        edit(operator, nil, target, {{start_line, 1}, {end_line + 1, 1}}, "")
+
+      true ->
+        edit(operator, nil, target, range, kept)
+    end
   end
+
+  # DND-5564: a dropped effect call keeps its arguments evaluated, as
+  # `_ = {arg1, ..., argN}` (a piped value is the first argument), so a
+  # variable the call alone read stays used and the mutant compiles; the
+  # effect itself is gone. `nil` for a call with no argument: its whole line
+  # is deleted. The statement's own `pat =` goes too, so a variable it binds
+  # and a later line reads is still an orphan (OrphanCheck refuses it).
+  defp kept_arguments(source, statement) do
+    case statement |> sourceror_rhs() |> call_arguments() do
+      [] ->
+        nil
+
+      args ->
+        "_ = {" <> Enum.map_join(args, ", ", &Patch.slice(source, argument_range(&1))) <> "}"
+    end
+  end
+
+  defp sourceror_rhs({:=, _meta, [_pattern, right]}), do: sourceror_rhs(right)
+  defp sourceror_rhs(node), do: node
+
+  defp call_arguments({:|>, _meta, [left, call]}), do: [left | call_arguments(call)]
+  defp call_arguments({_callee, _meta, args}) when is_list(args), do: args
+  defp call_arguments(_node), do: []
+
+  # A trailing keyword list (no brackets) is a list of pairs Sourceror gives
+  # no range of its own: from its first key to its last value.
+  defp argument_range([{key, _value} | _rest] = pairs) do
+    {start, _stop} = SourceTree.range(key)
+    {_key, last} = List.last(pairs)
+    {_start, stop} = argument_range(last)
+    {start, stop}
+  end
+
+  defp argument_range(node), do: SourceTree.range(node)
 
   defp variable?({name, _meta, context}) when is_atom(name) and is_atom(context),
     do: not String.starts_with?(Atom.to_string(name), "_")
