@@ -176,7 +176,12 @@ defmodule Anchor.Domain.Checks.NoDiscardedPureExpressionTest do
             "Enum.reduce(xs, a, fun)",
             "Map.update(m, :a, 1, fun)",
             "Enum.into(xs, s)",
-            "Enum.sort(xs, fun)"
+            "Enum.sort(xs, fun)",
+            # Critic round 2 on a3f6621: written values that still name any
+            # function, or a module whose compare/2 is called.
+            "Enum.map(xs, &Enum.each(s, &1))",
+            "Enum.sort(xs, {:asc, MyApp.Effectful})",
+            "Enum.sort(xs, :lists)"
           ] do
         assert detect(discarded(expr)) == [], "expression #{expr}"
       end
@@ -208,7 +213,9 @@ defmodule Anchor.Domain.Checks.NoDiscardedPureExpressionTest do
             "Time.utc_now()",
             "Enum.random(xs)",
             "Enum.shuffle(xs)",
-            "Stream.run(s)"
+            "Stream.run(s)",
+            # Critic round 2 on a3f6621: a setter of global config.
+            ~s|URI.default_port("ftp", 21)|
           ] do
         assert detect(discarded(expr)) == [], "expression #{expr}"
       end
@@ -391,6 +398,44 @@ defmodule Anchor.Domain.Checks.NoDiscardedPureExpressionTest do
     test "every rule reports its own issues" do
       assert [_one, _two] = detect(discarded("Map.put(m, :a, 1)"), [%{}, %{}])
     end
+  end
+
+  # Critic round 2 on a3f6621, closing the class: a function of the stdlib pure
+  # set whose spec returns only `:ok` (or never returns) exists for its effect.
+  # Every such function must be excluded, so a new one in a later Elixir fails
+  # here rather than being reported as "no effect". `Enum.each/2` is the one
+  # exception: with a pure function it does nothing.
+  test "every stdlib pure-set function that returns only :ok is treated as an effect" do
+    effect_only =
+      for module <-
+            [Access, Atom, Base, Bitwise, Date, Enum, Float, Integer, Keyword, List] ++
+              [Map, MapSet, NaiveDateTime, Range, Stream, String, Time, Tuple, URI],
+          {:ok, specs} = Code.Typespec.fetch_specs(module),
+          {{name, arity}, module_specs} <- specs,
+          spec <- module_specs,
+          returns_only_ok?(name, spec),
+          {module, name, arity} != {Enum, :each, 2},
+          do: {module, name, arity}
+
+    assert effect_only != [], "positive control: Stream.run/1 and URI.default_port/2 exist"
+
+    for {module, name, arity} <- effect_only do
+      args = Enum.map_join(1..arity//1, ", ", &"a#{&1}")
+      expr = "#{inspect(module)}.#{name}(#{args})"
+      source = "defmodule App.X do\n  def f(a1, a2, a3) do\n    #{expr}\n    :ok\n  end\nend\n"
+      assert detect(source) == [], "#{expr} returns only :ok, so it is an effect"
+    end
+  end
+
+  defp returns_only_ok?(name, spec) do
+    quoted =
+      case Code.Typespec.spec_to_quoted(name, spec) do
+        {:when, _meta, [quoted, _constraints]} -> quoted
+        quoted -> quoted
+      end
+
+    {:"::", _meta, [_head, return]} = quoted
+    Macro.to_string(return) in [":ok", "no_return()", "none()"]
   end
 
   describe "shape/1" do

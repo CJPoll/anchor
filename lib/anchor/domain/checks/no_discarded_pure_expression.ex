@@ -87,7 +87,9 @@ defmodule Anchor.Domain.Checks.NoDiscardedPureExpression do
   ]
 
   # Functions of the pure set that read the clock or the random state, or
-  # whose whole job is an effect. Every arity.
+  # whose whole job is an effect. Every arity. A test holds every function of
+  # the pure set whose spec returns only `:ok` to this list (`Enum.each/2`
+  # aside: with a pure function it does nothing).
   @stdlib_effectful [
     {Date, :utc_today},
     {Enum, :random},
@@ -96,7 +98,8 @@ defmodule Anchor.Domain.Checks.NoDiscardedPureExpression do
     {NaiveDateTime, :local_now},
     {NaiveDateTime, :utc_now},
     {Stream, :run},
-    {Time, :utc_now}
+    {Time, :utc_now},
+    {URI, :default_port}
   ]
 
   # For each function of the stdlib pure set, the 1-based argument positions
@@ -421,15 +424,34 @@ defmodule Anchor.Domain.Checks.NoDiscardedPureExpression do
     if written_value?(arg), do: pure?(arg, ctx), else: false
   end
 
-  # A value the source writes out, so it cannot be a function held elsewhere:
-  # an `fn` or capture literal (judged by `pure?/2`), a literal, a container
-  # literal. Not a variable, an attribute, a field read or a call's result.
-  defp written_value?({form, _meta, _args}) when form in [:fn, :&, :{}, :%{}, :%, :<<>>],
-    do: true
+  # A value the source writes out that cannot name a function held elsewhere:
+  # an `fn` or a capture literal (judged by `pure?/2`), but not the `&1`
+  # placeholder, which is any value; a sort-direction or boolean atom; or a
+  # container literal holding no module name (`{:asc, Mod}` makes `Mod`'s
+  # `compare/2` the callee). Not a variable, an attribute, a field read, a
+  # call's result, a module, or any other atom (an Erlang module name).
+  @option_atoms [:asc, :desc, nil, true, false]
 
-  defp written_value?({:__aliases__, _meta, _parts}), do: false
+  defp written_value?({:&, _meta, [index]}) when is_integer(index), do: false
+  defp written_value?({form, _meta, _args}) when form in [:fn, :&], do: true
+  defp written_value?(atom) when is_atom(atom), do: atom in @option_atoms
+
+  defp written_value?({form, _meta, _args} = container) when form in [:{}, :%{}, :%, :<<>>],
+    do: names_no_module?(container)
+
   defp written_value?({_form, _meta, _args}), do: false
-  defp written_value?(_literal_list_or_pair), do: true
+  defp written_value?(list_or_pair), do: names_no_module?(list_or_pair)
+
+  defp names_no_module?(container) do
+    {_container, found} =
+      Macro.prewalk(container, false, fn
+        {:__aliases__, _meta, _parts} = node, _found -> {node, true}
+        {:__MODULE__, _meta, ctx} = node, _found when is_atom(ctx) -> {node, true}
+        node, found -> {node, found}
+      end)
+
+    not found
+  end
 
   # `x.field` parses as a zero-argument call written without parens.
   defp field_read?(meta, []), do: Keyword.get(meta, :no_parens, false)

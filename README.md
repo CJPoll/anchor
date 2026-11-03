@@ -1008,11 +1008,13 @@ An expression is **pure**, by Anchor's definition, exactly when it is:
    `List`, `Map`, `MapSet`, `NaiveDateTime`, `Range`, `Stream`, `String`,
    `Time`, `Tuple`, `URI`, except the clock reads (`Date.utc_today`,
    `NaiveDateTime.utc_now`, `NaiveDateTime.local_now`, `Time.utc_now`), the
-   random reads (`Enum.random`, `Enum.shuffle`, `Enum.take_random`) and
-   `Stream.run`. An argument a stdlib function may call (its `@spec` types it
+   random reads (`Enum.random`, `Enum.shuffle`, `Enum.take_random`),
+   `Stream.run` and `URI.default_port/2` (a setter). An argument a stdlib function may call (its `@spec` types it
    as a function, or as a `Collectable.t()`) must be written out: an `fn` or
-   a capture literal that is pure, or a literal value. A function held in a
-   variable, a field or an attribute may be any function, so
+   a capture literal that is pure (not the `&1` placeholder), `:asc`,
+   `:desc`, a boolean or `nil`, or a container literal naming no module. A
+   function held in a variable, a field or an attribute may be any function,
+   and a module there has its `compare/2` called, so
    `Enum.each(xs, notify)` is not pure. A stdlib function with no spec is
    judged as calling every argument;
 6. a local call `f(args)` to a function its own module defines (`def` or
@@ -1060,7 +1062,10 @@ rest are misses or cosmetic:
   validation) is reported; bind and use it, or check explicitly.
 - A variable holding a lazy stream with effects (`File.stream!/1`) is a pure
   value here, so `Enum.each(stream, fn _ -> nil end)` on it is reported. The
-  graph engine's effects inference (DND-5447) knows better.
+  graph engine's effects inference (DND-5447) knows better. The same holds
+  for any value whose protocol implementation has an effect: `inspect/1` or
+  `to_string/1` on a struct with its own `Inspect` or `String.Chars`, or an
+  `Enum` call on a struct with its own `Enumerable`.
 - A `pure_patterns` module's arguments are judged as data: a function value
   passed to one of its functions is trusted to be called purely, because the
   declaration says the module is pure. Keep callbacks with effects out of

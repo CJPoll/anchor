@@ -68,3 +68,27 @@ and both pass on the fix. Mutations of the fix:
 | K2 | A callable position accepts any pure value (`written_value?(arg) or true`) | D9 (value) | `expression Enum.each(xs, fun)` |
 | L | A local call need not be the module's own function | D14 (imports) | `code: assert detect(source, [%{pure_patterns: ["MyApp.*"]}]) == []` `left: [` |
 
+## Critic round 2 (on a3f6621): a setter and three callable written values, fixed
+
+Run against a3f6621's detector first:
+
+```
+1) test every stdlib pure-set function that returns only :ok is treated as an effect
+   URI.default_port(a1, a2) returns only :ok, so it is an effect
+2) test detect_violations/2 D11: a clock or random read is not reported
+   expression URI.default_port("ftp", 21)
+3) test detect_violations/2 D9: a stdlib call that calls a function held in a value is not reported
+   expression Enum.map(xs, &Enum.each(s, &1))
+26 tests, 3 failures
+```
+
+The first row closes the class (a function of the pure set whose spec
+returns only `:ok` exists for its effect): it reads every spec of the set,
+so a setter a later Elixir adds fails it. Mutations of the fix:
+
+| # | Mutation | Failed | Failure |
+|---|---|---|---|
+| M1 | A container in a callable position may name a module (`not found or true`) | D9 | `expression Enum.sort(xs, {:asc, MyApp.Effectful})` |
+| M2 | Any atom is an option atom | D9 | `expression Enum.sort(xs, :lists)` |
+| M3 | `&1` counts as a written function | D9 | `expression Enum.map(xs, &Enum.each(s, &1))` |
+
