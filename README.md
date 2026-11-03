@@ -689,13 +689,11 @@ a literal module are calls too.
   project (the standard library, a dependency) is not a bucket edge. A call
   to an unclassified module is skipped: the runner already reports that
   module.
-- A dynamic call (`mod.fetch(x)`, `Mix.shell().info(msg)`) resolves to every
-  project module implementing a behaviour that declares that callback
-  (`@callback fetch/1`), and each one is judged as a static call. When no
-  project behaviour declares it, the call is one violation, because its
-  target cannot be checked: `Fix: declare @callback fetch/1 in a behaviour`.
-  A behaviour from a dependency (`Mix.Shell`) is not a project behaviour, so
-  such a call is a violation to baseline.
+- A dynamic call (`mod.fetch(x)`) resolves to every project module that
+  exports `fetch/1` (a `def`), and each one is judged as a static call: any
+  of them can be the receiver, whether it declares a `@behaviour` or not.
+  When no project module exports it (`Mix.shell().info(msg)`), the call
+  reaches no bucket of the project, and there is nothing to judge.
 - A call whose function name is computed (`apply(MyApp.Repo, op, args)`,
   `mod.op_var(x)`, `&MyApp.Repo.op_var/1`) is one violation too, keyed
   `-> dynamic ?/n`: its target cannot be checked. Only applying a variable

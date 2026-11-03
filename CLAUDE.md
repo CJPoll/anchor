@@ -141,7 +141,8 @@ Extension rule:
 
 Every rule type has exactly one engine, `@engine_by_type` in
 `Anchor.Domain.RuleSchema` (DND-5437): `:ast` (a Credo check) or `:graph`
-(`mix anchor.graph`, DND-5440; no graph type ships yet). A new rule type adds its entry there too (compilation
+(`mix anchor.graph`, DND-5440; the graph types are `layering`, DND-5442, and
+`context_acyclic`, DND-5445). A new rule type adds its entry there too (compilation
 fails without it) and to the README table's Engine column (a test compares
 them). Credo never reports a `:graph` rule as unchecked
 (`RuleCoverage.unchecked/3`).
@@ -231,18 +232,20 @@ caller the rule selects against `Anchor.Domain.CallMatrix.allowed?/3` (deny
 by default: a bucket and scope the caller's `calls` row lists).
 `CallMatrix.route/3` is the shortest allowed bucket path, for the `Fix:`, and
 `row/2` prints the caller's row. A dynamic call resolves through
-`Anchor.Domain.DynamicCalls.candidates/2`: every module implementing a
-behaviour whose `ModuleNode.callbacks` (read from the beam by `BeamReader`,
-`Code.Typespec.fetch_callbacks/1`) declare that name and arity; none is
-`:unresolved`, one violation. A call with a computed function name
-(`{:dynamic, nil, ...}`) is unresolved too, except a variable application
+`Anchor.Domain.DynamicCalls.candidates/2`: every project module with a `def`
+of that name and arity (any arity for `nil`), behaviour or not, each judged
+as a static call; none means the call reaches no project module, and nothing
+is judged. A call with a computed function name (`{:dynamic, nil, ...}`) is
+one unresolved violation (`DynamicCalls.computed_name_message/2`), except a
+variable application
 (`kind: :apply`, receiver `:variable`: `fun.(x)`), the one closure form,
 left to the higher-order analysis. The walker gives `apply/2` and `apply/3`
 with a computed name the same shape, so `apply(fun, args)` is reported. One violation per (caller, callee)
 pair, at its first line. The canary has a framework bucket with
 `layering/compliant.ex` and `layering/violating.ex`. Anchor's own
-`.anchor.yml` runs the rule with a baseline (DND-1288's two `Lint ->
-Check.Source` calls, and dynamic calls no project behaviour declares).
+`.anchor.yml` runs the rule with a baseline (Lint's calls into
+`Anchor.Check`, DND-1288, most of them dynamic calls fanned out to every
+check module exporting the function).
 
 ## The context_acyclic rule (DND-5445)
 

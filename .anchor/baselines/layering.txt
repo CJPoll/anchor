@@ -1,22 +1,86 @@
 # anchor baseline for layering; shrink only
-# Landed with DND-5442. The two Anchor.Check.Source.ast/1 entries are Lint's
-# reach into the framework bucket, DND-1288. Each "dynamic" entry is a call
-# whose target cannot be checked: a computed module no project behaviour
-# declares the callback of (Mix.shell(): Mix.Shell is not a project
-# behaviour; Lint's calls on a computed check module), or a computed function
-# name (Mutator's apply(Operators, operator, args)).
+# Landed with DND-5442. A dynamic call (mod.f(x)) is judged against every
+# project module exporting f, so one call on a computed check module is an
+# entry per check (15). Lint.put_module_analyses/4 and result_for_file/2 call
+# Anchor.Check.Source.ast/1 by name: Lint's reach into the framework bucket,
+# DND-1288. GraphRules.by_type/1 calls rule_type/0 on the modules it is
+# given, which any check module could be. Mutator.generate/4 applies a
+# computed function name (apply(Operators, operator, args)).
+layering|Anchor.Domain.GraphRules.by_type/1|-> Anchor.Check.AlphabetizedFunctions.rule_type/0
+layering|Anchor.Domain.GraphRules.by_type/1|-> Anchor.Check.CaseOnBareArg.rule_type/0
+layering|Anchor.Domain.GraphRules.by_type/1|-> Anchor.Check.MaxFileLength.rule_type/0
+layering|Anchor.Domain.GraphRules.by_type/1|-> Anchor.Check.ModulePatternRestrictions.rule_type/0
+layering|Anchor.Domain.GraphRules.by_type/1|-> Anchor.Check.MustUseModule.rule_type/0
+layering|Anchor.Domain.GraphRules.by_type/1|-> Anchor.Check.NoComparisonInIf.rule_type/0
+layering|Anchor.Domain.GraphRules.by_type/1|-> Anchor.Check.NoDependency.rule_type/0
+layering|Anchor.Domain.GraphRules.by_type/1|-> Anchor.Check.NoDiscardedPureExpression.rule_type/0
+layering|Anchor.Domain.GraphRules.by_type/1|-> Anchor.Check.NoDiscardingArrowInWith.rule_type/0
+layering|Anchor.Domain.GraphRules.by_type/1|-> Anchor.Check.NoForwardingFunction.rule_type/0
+layering|Anchor.Domain.GraphRules.by_type/1|-> Anchor.Check.NoTransitiveDependency.rule_type/0
+layering|Anchor.Domain.GraphRules.by_type/1|-> Anchor.Check.NoTupleMatchInHead.rule_type/0
+layering|Anchor.Domain.GraphRules.by_type/1|-> Anchor.Check.SingleControlFlow.rule_type/0
+layering|Anchor.Domain.GraphRules.by_type/1|-> Anchor.Check.StructGetterConvention.rule_type/0
+layering|Anchor.Domain.GraphRules.by_type/1|-> Anchor.Check.StructOwnedByModule.rule_type/0
 layering|Anchor.Domain.Sabotage.Mutator.generate/4|-> dynamic ?/1
-layering|Anchor.Managers.Lint.build_modules_map/3|-> dynamic needs_module_graph?/0
-layering|Anchor.Managers.Lint.detect_group/5|-> dynamic detect_violations/4
-layering|Anchor.Managers.Lint.file_facts/4|-> dynamic extract_module_names/1
-layering|Anchor.Managers.Lint.file_facts/4|-> dynamic extract_uses/1
-layering|Anchor.Managers.Lint.put_defined_modules/4|-> dynamic defined_modules/1
+layering|Anchor.Managers.Lint.build_modules_map/3|-> Anchor.Check.AlphabetizedFunctions.needs_module_graph?/0
+layering|Anchor.Managers.Lint.build_modules_map/3|-> Anchor.Check.CaseOnBareArg.needs_module_graph?/0
+layering|Anchor.Managers.Lint.build_modules_map/3|-> Anchor.Check.MaxFileLength.needs_module_graph?/0
+layering|Anchor.Managers.Lint.build_modules_map/3|-> Anchor.Check.ModulePatternRestrictions.needs_module_graph?/0
+layering|Anchor.Managers.Lint.build_modules_map/3|-> Anchor.Check.MustUseModule.needs_module_graph?/0
+layering|Anchor.Managers.Lint.build_modules_map/3|-> Anchor.Check.NoComparisonInIf.needs_module_graph?/0
+layering|Anchor.Managers.Lint.build_modules_map/3|-> Anchor.Check.NoDependency.needs_module_graph?/0
+layering|Anchor.Managers.Lint.build_modules_map/3|-> Anchor.Check.NoDiscardedPureExpression.needs_module_graph?/0
+layering|Anchor.Managers.Lint.build_modules_map/3|-> Anchor.Check.NoDiscardingArrowInWith.needs_module_graph?/0
+layering|Anchor.Managers.Lint.build_modules_map/3|-> Anchor.Check.NoForwardingFunction.needs_module_graph?/0
+layering|Anchor.Managers.Lint.build_modules_map/3|-> Anchor.Check.NoTransitiveDependency.needs_module_graph?/0
+layering|Anchor.Managers.Lint.build_modules_map/3|-> Anchor.Check.NoTupleMatchInHead.needs_module_graph?/0
+layering|Anchor.Managers.Lint.build_modules_map/3|-> Anchor.Check.SingleControlFlow.needs_module_graph?/0
+layering|Anchor.Managers.Lint.build_modules_map/3|-> Anchor.Check.StructGetterConvention.needs_module_graph?/0
+layering|Anchor.Managers.Lint.build_modules_map/3|-> Anchor.Check.StructOwnedByModule.needs_module_graph?/0
+layering|Anchor.Managers.Lint.detect_group/5|-> Anchor.Check.AlphabetizedFunctions.detect_violations/4
+layering|Anchor.Managers.Lint.detect_group/5|-> Anchor.Check.CaseOnBareArg.detect_violations/4
+layering|Anchor.Managers.Lint.detect_group/5|-> Anchor.Check.MaxFileLength.detect_violations/4
+layering|Anchor.Managers.Lint.detect_group/5|-> Anchor.Check.ModulePatternRestrictions.detect_violations/4
+layering|Anchor.Managers.Lint.detect_group/5|-> Anchor.Check.MustUseModule.detect_violations/4
+layering|Anchor.Managers.Lint.detect_group/5|-> Anchor.Check.NoComparisonInIf.detect_violations/4
+layering|Anchor.Managers.Lint.detect_group/5|-> Anchor.Check.NoDependency.detect_violations/4
+layering|Anchor.Managers.Lint.detect_group/5|-> Anchor.Check.NoDiscardedPureExpression.detect_violations/4
+layering|Anchor.Managers.Lint.detect_group/5|-> Anchor.Check.NoDiscardingArrowInWith.detect_violations/4
+layering|Anchor.Managers.Lint.detect_group/5|-> Anchor.Check.NoForwardingFunction.detect_violations/4
+layering|Anchor.Managers.Lint.detect_group/5|-> Anchor.Check.NoTransitiveDependency.detect_violations/4
+layering|Anchor.Managers.Lint.detect_group/5|-> Anchor.Check.NoTupleMatchInHead.detect_violations/4
+layering|Anchor.Managers.Lint.detect_group/5|-> Anchor.Check.SingleControlFlow.detect_violations/4
+layering|Anchor.Managers.Lint.detect_group/5|-> Anchor.Check.StructGetterConvention.detect_violations/4
+layering|Anchor.Managers.Lint.detect_group/5|-> Anchor.Check.StructOwnedByModule.detect_violations/4
+layering|Anchor.Managers.Lint.matching_rules/3|-> Anchor.Check.AlphabetizedFunctions.rule_type/0
+layering|Anchor.Managers.Lint.matching_rules/3|-> Anchor.Check.CaseOnBareArg.rule_type/0
+layering|Anchor.Managers.Lint.matching_rules/3|-> Anchor.Check.MaxFileLength.rule_type/0
+layering|Anchor.Managers.Lint.matching_rules/3|-> Anchor.Check.ModulePatternRestrictions.rule_type/0
+layering|Anchor.Managers.Lint.matching_rules/3|-> Anchor.Check.MustUseModule.rule_type/0
+layering|Anchor.Managers.Lint.matching_rules/3|-> Anchor.Check.NoComparisonInIf.rule_type/0
+layering|Anchor.Managers.Lint.matching_rules/3|-> Anchor.Check.NoDependency.rule_type/0
+layering|Anchor.Managers.Lint.matching_rules/3|-> Anchor.Check.NoDiscardedPureExpression.rule_type/0
+layering|Anchor.Managers.Lint.matching_rules/3|-> Anchor.Check.NoDiscardingArrowInWith.rule_type/0
+layering|Anchor.Managers.Lint.matching_rules/3|-> Anchor.Check.NoForwardingFunction.rule_type/0
+layering|Anchor.Managers.Lint.matching_rules/3|-> Anchor.Check.NoTransitiveDependency.rule_type/0
+layering|Anchor.Managers.Lint.matching_rules/3|-> Anchor.Check.NoTupleMatchInHead.rule_type/0
+layering|Anchor.Managers.Lint.matching_rules/3|-> Anchor.Check.SingleControlFlow.rule_type/0
+layering|Anchor.Managers.Lint.matching_rules/3|-> Anchor.Check.StructGetterConvention.rule_type/0
+layering|Anchor.Managers.Lint.matching_rules/3|-> Anchor.Check.StructOwnedByModule.rule_type/0
+layering|Anchor.Managers.Lint.own_rules/2|-> Anchor.Check.AlphabetizedFunctions.rule_type/0
+layering|Anchor.Managers.Lint.own_rules/2|-> Anchor.Check.CaseOnBareArg.rule_type/0
+layering|Anchor.Managers.Lint.own_rules/2|-> Anchor.Check.MaxFileLength.rule_type/0
+layering|Anchor.Managers.Lint.own_rules/2|-> Anchor.Check.ModulePatternRestrictions.rule_type/0
+layering|Anchor.Managers.Lint.own_rules/2|-> Anchor.Check.MustUseModule.rule_type/0
+layering|Anchor.Managers.Lint.own_rules/2|-> Anchor.Check.NoComparisonInIf.rule_type/0
+layering|Anchor.Managers.Lint.own_rules/2|-> Anchor.Check.NoDependency.rule_type/0
+layering|Anchor.Managers.Lint.own_rules/2|-> Anchor.Check.NoDiscardedPureExpression.rule_type/0
+layering|Anchor.Managers.Lint.own_rules/2|-> Anchor.Check.NoDiscardingArrowInWith.rule_type/0
+layering|Anchor.Managers.Lint.own_rules/2|-> Anchor.Check.NoForwardingFunction.rule_type/0
+layering|Anchor.Managers.Lint.own_rules/2|-> Anchor.Check.NoTransitiveDependency.rule_type/0
+layering|Anchor.Managers.Lint.own_rules/2|-> Anchor.Check.NoTupleMatchInHead.rule_type/0
+layering|Anchor.Managers.Lint.own_rules/2|-> Anchor.Check.SingleControlFlow.rule_type/0
+layering|Anchor.Managers.Lint.own_rules/2|-> Anchor.Check.StructGetterConvention.rule_type/0
+layering|Anchor.Managers.Lint.own_rules/2|-> Anchor.Check.StructOwnedByModule.rule_type/0
 layering|Anchor.Managers.Lint.put_module_analyses/4|-> Anchor.Check.Source.ast/1
-layering|Anchor.Managers.Lint.put_module_analyses/4|-> dynamic module_dependencies/1
 layering|Anchor.Managers.Lint.result_for_file/2|-> Anchor.Check.Source.ast/1
-layering|Mix.Tasks.Anchor.Graph.run_parsed/2|-> dynamic info/1
-layering|Mix.Tasks.Anchor.Graph.usage/0|-> dynamic error/1
-layering|Mix.Tasks.Anchor.Sabotage.report/1|-> dynamic info/1
-layering|Mix.Tasks.Anchor.Sabotage.scope/3|-> dynamic error/1
-layering|Mix.Tasks.Anchor.Sabotage.scope/3|-> dynamic info/1
-layering|Mix.Tasks.Anchor.Sabotage.usage/0|-> dynamic error/1

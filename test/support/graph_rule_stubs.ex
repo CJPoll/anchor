@@ -1,7 +1,8 @@
 defmodule Anchor.Test.GraphRuleStubs do
   @moduledoc """
-  Test-only graph rules (DND-5440). No graph rule type ships with the runner,
-  so the Manager and task tests inject this registry (`graph_rules: all()`).
+  Test-only graph rules (DND-5440). The Manager and task tests inject this
+  registry (`graph_rules: all()`), so they exercise the runner apart from the
+  real rule modules (`Anchor.Domain.GraphRules.all/0`).
   Their types are not in `Anchor.Domain.RuleSchema`: they never load from a
   real `.anchor.yml`.
   """

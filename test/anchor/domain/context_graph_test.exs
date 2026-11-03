@@ -9,6 +9,7 @@ defmodule Anchor.Domain.ContextGraphTest do
   alias Anchor.Domain.ContextGraph
   alias Anchor.Domain.Graph
   alias Anchor.Domain.Graph.Call
+  alias Anchor.Domain.Graph.FunctionNode
   alias Anchor.Domain.Graph.ModuleNode
   alias Anchor.Domain.Model
 
@@ -37,12 +38,32 @@ defmodule Anchor.Domain.ContextGraphTest do
     graph = %Graph{
       modules: Map.new(nodes, &{&1.module, &1}),
       calls:
-        Enum.map(calls, fn {from, to, line} ->
-          %Call{from: from, to: to, kind: :remote, line: line, line_source: :call}
+        Enum.map(calls, fn
+          {from, to, line} ->
+            %Call{from: from, to: to, kind: :remote, line: line, line_source: :call}
+
+          {from, to, line, kind} ->
+            %Call{from: from, to: to, kind: kind, line: line, line_source: :call}
         end)
     }
 
     %Model{graph: graph, architecture: nil, classification: classification, config: nil}
+  end
+
+  defp exporter(module, name, arity) do
+    %ModuleNode{
+      module: module,
+      app: :app,
+      functions: %{
+        {name, arity} => %FunctionNode{
+          module: module,
+          name: name,
+          arity: arity,
+          kind: :def,
+          line: 1
+        }
+      }
+    }
   end
 
   describe "build/1" do
@@ -53,6 +74,7 @@ defmodule Anchor.Domain.ContextGraphTest do
         )
 
       assert graph.nodes == ["A", "B"]
+      assert graph.unresolved == []
 
       assert graph.edges == %{
                {"A", "B"} => [
@@ -70,7 +92,7 @@ defmodule Anchor.Domain.ContextGraphTest do
         {{Nil.One, :g, 0}, {B.One, :h, 1}, 4}
       ]
 
-      assert ContextGraph.build(model(calls)) == %{nodes: [], edges: %{}}
+      assert ContextGraph.build(model(calls)) == %{nodes: [], edges: %{}, unresolved: []}
 
       # Positive control: the same caller to another context is an edge.
       assert %{edges: %{{"A", "B"} => [_one]}} =
@@ -78,13 +100,12 @@ defmodule Anchor.Domain.ContextGraphTest do
     end
 
     test "a dynamic call with candidates in B and C is an edge to each" do
-      port = %ModuleNode{module: Port, app: :app, callbacks: [{:fetch, 1}]}
-      b = %ModuleNode{module: B.One, app: :app, behaviours: [Port]}
-      c = %ModuleNode{module: C.One, app: :app, behaviours: [Port]}
-
       graph =
         ContextGraph.build(
-          model([{{A.One, :f, 0}, {:dynamic, :fetch, 1, :variable}, 7}], [port, b, c])
+          model([{{A.One, :f, 0}, {:dynamic, :fetch, 1, :variable}, 7}], [
+            exporter(B.One, :fetch, 1),
+            exporter(C.One, :fetch, 1)
+          ])
         )
 
       assert graph.edges == %{
@@ -93,13 +114,25 @@ defmodule Anchor.Domain.ContextGraphTest do
              }
     end
 
-    test "an unresolved dynamic call and a computed function name give no edge" do
+    test "a dynamic call no project module exports is no edge, and not unresolved" do
+      graph = ContextGraph.build(model([{{A.One, :f, 0}, {:dynamic, :info, 1, :call}, 1}]))
+      assert graph == %{nodes: [], edges: %{}, unresolved: []}
+    end
+
+    # Regression (review floor on d9a61de): a call with a computed function
+    # name was dropped silently, so a config with context_acyclic alone read
+    # "no cycle" over edges it could not see.
+    test "a computed function name is unresolved, with its caller and line; a closure is not" do
       calls = [
-        {{A.One, :f, 0}, {:dynamic, :nobody, 1, :variable}, 1},
-        {{A.One, :f, 0}, {:dynamic, nil, 1, :call}, 2}
+        {{A.One, :f, 0}, {:dynamic, nil, 1, :call}, 2, :apply},
+        {{A.One, :g, 0}, {:dynamic, nil, 2, :variable}, 3, :remote},
+        {{A.One, :h, 0}, {:dynamic, nil, 1, :variable}, 4, :apply}
       ]
 
-      assert ContextGraph.build(model(calls)).edges == %{}
+      assert ContextGraph.build(model(calls)).unresolved == [
+               {{A.One, :f, 0}, 1, "lib/A.One.ex", 2},
+               {{A.One, :g, 0}, 2, "lib/A.One.ex", 3}
+             ]
     end
   end
 

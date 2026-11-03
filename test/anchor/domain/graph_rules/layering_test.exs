@@ -15,6 +15,7 @@ defmodule Anchor.Domain.GraphRules.LayeringTest do
   alias Anchor.Domain.Graph
   alias Anchor.Domain.Graph.Builder
   alias Anchor.Domain.Graph.Call
+  alias Anchor.Domain.Graph.FunctionNode
   alias Anchor.Domain.Graph.ModuleNode
   alias Anchor.Domain.Graph.SourceFacts
   alias Anchor.Domain.GraphRules.Layering
@@ -173,14 +174,41 @@ defmodule Anchor.Domain.GraphRules.LayeringTest do
   end
 
   describe "check/2 dynamic calls" do
-    @port %ModuleNode{module: App.Port, app: :app, callbacks: [{:fetch, 1}]}
-    @manager_impl %ModuleNode{module: App.Orders.Manager, app: :app, behaviours: [App.Port]}
-    @adapter_impl %ModuleNode{module: App.Orders.Store, app: :app, behaviours: [App.Port]}
+    # Modules exporting fetch/1, none declaring a @behaviour.
+    @manager_impl %ModuleNode{
+      module: App.Orders.Manager,
+      app: :app,
+      functions: %{
+        {:fetch, 1} => %FunctionNode{
+          module: App.Orders.Manager,
+          name: :fetch,
+          arity: 1,
+          kind: :def,
+          line: 1
+        }
+      }
+    }
+    @adapter_impl %ModuleNode{
+      module: App.Orders.Store,
+      app: :app,
+      functions: %{
+        {:fetch, 1} => %FunctionNode{
+          module: App.Orders.Store,
+          name: :fetch,
+          arity: 1,
+          kind: :def,
+          line: 1
+        }
+      }
+    }
 
-    test "one forbidden implementation is one violation naming it" do
+    # Regression (review floor on d9a61de): candidates were only modules
+    # implementing a behaviour that declares the callback, so a forbidden
+    # receiver that declares no @behaviour was never judged.
+    test "a forbidden module exporting the function is one violation naming it" do
       call = [{{App.Web.Page, :show, 1}, {:dynamic, :fetch, 1, :variable}, 5}]
 
-      assert [v] = Layering.check(model(call, [@port, @manager_impl, @adapter_impl]), @rule)
+      assert [v] = Layering.check(model(call, [@manager_impl, @adapter_impl]), @rule)
       assert v.key == "layering|App.Web.Page.show/1|-> App.Orders.Store.fetch/1"
       assert v.message =~ "calls App.Orders.Store.fetch/1 (adapters, App.Orders)"
     end
@@ -191,25 +219,19 @@ defmodule Anchor.Domain.GraphRules.LayeringTest do
     test "an unknown arity resolved to a forbidden implementation prints /?" do
       call = [{{App.Web.Page, :show, 1}, {:dynamic, :fetch, nil, :call}, 5}]
 
-      assert [v] = Layering.check(model(call, [@port, @adapter_impl]), @rule)
+      assert [v] = Layering.check(model(call, [@adapter_impl]), @rule)
       assert v.key == "layering|App.Web.Page.show/1|-> App.Orders.Store.fetch/?"
       assert v.message =~ "calls App.Orders.Store.fetch/? (adapters, App.Orders)"
     end
 
-    test "only allowed implementations: none" do
+    test "only allowed modules export it: none" do
       call = [{{App.Web.Page, :show, 1}, {:dynamic, :fetch, 1, :variable}, 5}]
-      assert Layering.check(model(call, [@port, @manager_impl]), @rule) == []
+      assert Layering.check(model(call, [@manager_impl]), @rule) == []
     end
 
-    test "no behaviour declaring the callback: one unresolved violation" do
-      call = [{{App.Web.Page, :show, 1}, {:dynamic, :store, 2, :call}, 5}]
-
-      assert [v] = Layering.check(model(call, [@port, @manager_impl]), @rule)
-      assert v.key == "layering|App.Web.Page.show/1|-> dynamic store/2"
-
-      assert v.message =~
-               "no behaviour in the project declares that callback, so its target cannot be " <>
-                 "checked. Fix: declare @callback store/2 in a behaviour"
+    test "no project module exports it (Mix.shell().info/1): it reaches no bucket, none" do
+      call = [{{App.Web.Page, :show, 1}, {:dynamic, :info, 1, :call}, 5}]
+      assert Layering.check(model(call, [@manager_impl, @adapter_impl]), @rule) == []
     end
 
     test "a closure application (fun.(x)) names no function and is not judged" do

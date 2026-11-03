@@ -3,10 +3,11 @@ defmodule Anchor.Domain.GraphRules do
   The registry of graph rules and what each rule selects (DND-5440, shared
   contract section 6) — a **Domain** module (ADR 001). Pure.
 
-  `all/0` lists every module implementing `Anchor.Domain.GraphRule`. No graph
-  rule type ships with the runner itself: the rule tickets (layering,
-  interfaces, context_acyclic, struct flow, ...) each add their module here
-  and their type to `Anchor.Domain.RuleSchema` with engine `:graph`. A test
+  `all/0` lists every module implementing `Anchor.Domain.GraphRule`. The rule
+  modules ship with their rule tickets, not with the runner (DND-5440): each
+  (`layering`, DND-5442; `context_acyclic`, DND-5445; interfaces, struct flow,
+  ...) adds its module here and its type to `Anchor.Domain.RuleSchema` with
+  engine `:graph`. A test
   holds the two sets equal, so a graph type with no module (scheduled but
   never run) or a module with no type (never loadable) fails the suite.
 

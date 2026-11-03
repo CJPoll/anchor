@@ -17,10 +17,10 @@ defmodule Anchor.Domain.GraphRules.Layering do
     * A capture (`&M.f/a`) and `apply(M, f, args)` with a literal `M` are
       static calls.
     * A dynamic call (`mod.fetch(x)`) resolves to every project module that
-      implements a behaviour declaring that callback
-      (`Anchor.Domain.DynamicCalls`), and each candidate is judged as a static
-      call. No declaring behaviour is one violation: its target cannot be
-      checked.
+      exports `fetch/1` (`Anchor.Domain.DynamicCalls`: any of them can be the
+      receiver, a behaviour or not), and each candidate is judged as a static
+      call. When no project module exports it, the call reaches no bucket
+      (`Mix.shell().info/1`), so there is nothing to judge.
     * A call whose function name is computed (`apply(M, op, args)`,
       `mod.op_var(x)`, `&M.op_var/1`, `apply(fun, args)`) cannot be checked
       either: one violation. Only applying a variable (`fun.(x)`, an `:apply`
@@ -69,20 +69,17 @@ defmodule Anchor.Domain.GraphRules.Layering do
   end
 
   # Each forbidden (caller, target) of one call, with the call and why:
-  # `{:forbidden, callee_mfa}` or `{:unresolved, name, arity}`.
+  # `:forbidden` (target a callee mfa) or `:unresolved` (target
+  # `{:dynamic, nil, arity}`, a computed function name).
   defp judge(%Call{kind: :apply, to: {:dynamic, nil, _arity, :variable}}, _model), do: []
 
   defp judge(%Call{from: from, to: {:dynamic, nil, arity, _receiver}} = call, _model),
     do: [{{from, {:dynamic, nil, arity}}, call, :unresolved}]
 
   defp judge(%Call{from: from, to: {:dynamic, name, arity, _receiver}} = call, model) do
-    case DynamicCalls.candidates(model.graph, {name, arity}) do
-      :unresolved ->
-        [{{from, {:dynamic, name, arity}}, call, :unresolved}]
-
-      {:ok, candidates} ->
-        Enum.flat_map(candidates, &static(from, {&1, name, arity}, call, model))
-    end
+    model.graph
+    |> DynamicCalls.candidates({name, arity})
+    |> Enum.flat_map(&static(from, {&1, name, arity}, call, model))
   end
 
   defp judge(%Call{from: from, to: {_module, _name, _arity} = to} = call, model),
@@ -113,23 +110,11 @@ defmodule Anchor.Domain.GraphRules.Layering do
     }
   end
 
-  defp target_text({:dynamic, name, arity}), do: "dynamic #{name || "?"}/#{arity || "?"}"
+  defp target_text({:dynamic, nil, arity}), do: DynamicCalls.computed_name_target(arity)
   defp target_text(mfa), do: ViolationKey.mfa(mfa)
 
-  defp message(:unresolved, from, {:dynamic, nil, arity}, _caller_class, _model) do
-    "#{ViolationKey.mfa(from)} calls a function it computes (?/#{arity || "?"}), so its " <>
-      "target cannot be checked. Fix: call the module's function by name (or declare it as " <>
-      "a behaviour's @callback and call it on the module); apply a closure as fun.(args)."
-  end
-
-  defp message(:unresolved, from, {:dynamic, name, arity}, _caller_class, _model) do
-    arity_text = arity || "?"
-
-    "#{ViolationKey.mfa(from)} calls #{name}/#{arity_text} on a module it computes, and no " <>
-      "behaviour in the project declares that callback, so its target cannot be checked. " <>
-      "Fix: declare @callback #{name}/#{arity_text} in a behaviour and implement it in the " <>
-      "target modules."
-  end
+  defp message(:unresolved, from, {:dynamic, nil, arity}, _caller_class, _model),
+    do: DynamicCalls.computed_name_message(from, arity)
 
   defp message(:forbidden, from, {callee, _g, _b} = to, caller_class, model) do
     callee_class = Map.fetch!(model.classification, callee)
