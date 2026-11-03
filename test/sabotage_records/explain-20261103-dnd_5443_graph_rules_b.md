@@ -28,6 +28,13 @@ The regression test, written first, failed on that code (`7 tests, 1 failure`:
 the real compile ran and beams were read); TK-D and TK-E are from the run on
 the fixed code.
 
+After merging origin/main (DND-5476's aggregate declarations), the critic
+found explain still printing a fixed `unknown (no aggregates configured)`.
+The aggregate is now read from the model's index; its test, written first,
+failed on the old code (`10 tests, 1 failure`: left `"unknown (no aggregates
+configured)"`, right `"orders"`). EX-G to EX-J are from the run on the fix.
+The earlier sections quote the old text, as they ran.
+
 | # | Mutation | Tests run | Result | Failing tests |
 |---|---|---|---|---|
 | SU-A | an absolute path outside the root is accepted (`lib/anchor/domain/subject.ex`) | `subject_test.exs` | `8 tests, 1 failure` (red) | parse/2 a path that leaves the root is refused |
@@ -44,6 +51,10 @@ the fixed code.
 | EX-D | a failed compile is not noted (`lib/anchor/domain/explain.ex`) | `explain_test.exs`, `explain_test.exs`, `anchor_explain_test.exs` | `22 tests, 3 failures` (red) | build/3 with no model a compile that failed is noted; explain/2 a project that did not compile reads no beam and still answers from paths; a path answers in text, and a compile failure is noted rather than fatal |
 | EX-E | AST rules matched against no filename (`lib/anchor/domain/explain.ex`) | `explain_test.exs` | `9 tests, 3 failures` (red) | build/3 with the model a manager: classification, the modules it may call, what it must not, its rules; render/2 text: one golden case; build/3 with no model a path that does not exist yet under domain/: domain by path, beam facts unknown |
 | EX-F | findings not computed renders as an empty list in JSON (`lib/anchor/domain/explain.ex`) | `explain_test.exs`, `anchor_explain_test.exs` | `15 tests, 2 failures` (red) | render/2 json decodes and has the R5 keys; --format json prints the JSON answer |
+| EX-G | a declared schema's aggregate is not read (every module answers as an owner or none) (`lib/anchor/domain/explain.ex`) | `explain_test.exs` | `10 tests, 1 failure` (red) | build/3 with the model the aggregate is read from the model's declarations |
+| EX-H | an owner is answered as none (`lib/anchor/domain/explain.ex`) | `explain_test.exs` | `10 tests, 1 failure` (red) | build/3 with the model the aggregate is read from the model's declarations |
+| EX-I | no aggregates declared reads as none, not unknown (`lib/anchor/domain/explain.ex`) | `explain_test.exs` | `10 tests, 3 failures` (red) | build/3 with the model a manager: classification, the modules it may call, what it must not, its rules; render/2 text: one golden case; build/3 with the model the aggregate is read from the model's declarations |
+| EX-J | with no model the aggregate is claimed unknown-as-none (`lib/anchor/domain/explain.ex`) | `explain_test.exs` | `10 tests, 1 failure` (red) | build/3 with the model the aggregate is read from the model's declarations |
 | MX-A | a failed compile still reads beams and the artifact (`lib/anchor/managers/explain.ex`) | `explain_test.exs`, `anchor_explain_test.exs` | `13 tests, 3 failures` (red) | explain/2 a project that did not compile reads no beam and still answers from paths; --format json prints the JSON answer; a path answers in text, and a compile failure is noted rather than fatal |
 | MX-B | a module subject placed by naming convention, not by the graph (`lib/anchor/managers/explain.ex`) | `explain_test.exs`, `anchor_explain_test.exs` | `13 tests, 1 failure` (red) | explain/2 a module subject is placed at its source file by the graph |
 | MX-C | a missing file reported as existing (`lib/anchor/managers/explain.ex`) | `explain_test.exs`, `anchor_explain_test.exs` | `13 tests, 1 failure` (red) | explain/2 a path that does not exist yet |
@@ -1030,4 +1041,133 @@ Run summary: `8 tests, 1 failure`
        test/mix/tasks/anchor_explain_test.exs:125: (test)
 
 ....
+```
+
+## EX-G — a declared schema's aggregate is not read (every module answers as an owner or none)
+
+Run summary: `10 tests, 1 failure`
+
+```text
+  1) test build/3 with the model the aggregate is read from the model's declarations (Anchor.Domain.ExplainTest)
+     test/anchor/domain/explain_test.exs:167
+     Assertion with == failed
+     code:  assert aggregate.(%{module: App.Orders.Order, path: "lib/app/domain/order.ex"}) == "orders"
+     left:  "none (declared in no aggregate)"
+     right: "orders"
+     stacktrace:
+       test/anchor/domain/explain_test.exs:183: (test)
+
+.
+```
+
+## EX-H — an owner is answered as none
+
+Run summary: `10 tests, 1 failure`
+
+```text
+  1) test build/3 with the model the aggregate is read from the model's declarations (Anchor.Domain.ExplainTest)
+     test/anchor/domain/explain_test.exs:167
+     Assertion with == failed
+     code:  assert aggregate.(%{}) == "owner of orders"
+     left:  "none (declared in no aggregate)"
+     right: "owner of orders"
+     stacktrace:
+       test/anchor/domain/explain_test.exs:184: (test)
+
+........
+```
+
+## EX-I — no aggregates declared reads as none, not unknown
+
+Run summary: `10 tests, 3 failures`
+
+```text
+  1) test build/3 with the model a manager: classification, the modules it may call, what it must not, its rules (Anchor.Domain.ExplainTest)
+     test/anchor/domain/explain_test.exs:118
+     Assertion with == failed
+     code:  assert explain.classification == %{
+              "status" => "classified",
+              "bucket" => "managers",
+              "role" => "managers",
+              "context" => "App.Orders",
+              "app" => "app",
+              "interface" => true,
+              "aggregate" => "unknown (no aggregates declared)"
+            }
+     left:  %{
+              "aggregate" => "none (declared in no aggregate)",
+              "app" => "app",
+              "bucket" => "managers",
+              "context" => "App.Orders",
+              "interface" => true,
+              "role" => "managers",
+              "status" => "classified"
+            }
+     right: %{
+              "aggregate" => "unknown (no aggregates declared)",
+              "app" => "app",
+              "bucket" => "managers",
+              "context" => "App.Orders",
+              "interface" => true,
+              "role" => "managers",
+              "status" => "classified"
+            }
+     stacktrace:
+       test/anchor/domain/explain_test.exs:121: (test)
+
+  2) test render/2 text: one golden case (Anchor.Domain.ExplainTest)
+     test/anchor/domain/explain_test.exs:267
+     Assertion with == failed
+     code:  assert text == "anchor.explain: lib/app/managers/orders.ex
+              module: App.Orders.Manager
+              path: lib/app/managers/orders.ex (exists)
+            classification:
+              status: classified
+              bucket: managers (role managers)
+              context: App.Orders
+              app: app
+              interface: yes
+              aggregate: unknown (no aggregates declared)
+            may call:
+              managers (any): same context: App.Orders.Helper, App.Orders.Manager; other contexts (interface only): App.Billing: App.Billing.Manager
+              domain (any): same context: App.Orders.Order; other contexts (interface only): none
+            must not call: framework
+            rules:
+              [enforce] layering (id: layering, graph): #{RuleShapes.for(%{type: :layering})}
+              [enforce] single_control_flow (ast): #{RuleShapes.for(%{type: :single_control_flow})}
+            findings: none"
+     left:  "anchor.explain: lib/app/managers/orders.ex\n  module: App.Orders.Manager\n  path: lib/app/managers/orders.ex (exists)\nclassification:\n  status: classified\n  bucket: managers (role managers)\n  context: App.Orders\n  app: app\n  interface: yes\n  aggregate: none (declared in no aggregate)\nmay call:\n  managers (any): same context: App.Orders.Helper, App.Orders.Manager; other contexts (interface only): App.Billing: App.Billing.Manager\n  domain (any): same context: App.Orders.Order; other contexts (interface only): none\nmust not call: framework\nrules:\n  [enforce] layering (id: layering, graph): every call between two project modules is one the architecture: calls matrix allows; a call the matrix forbids goes through a bucket the caller may call\n  [enforce] single_control_flow (ast): one control structure per function clause: extract each extra pipe chain, case, cond, with, if, unless, for or receive into its own named function\nfindings: none"
+     right: "anchor.explain: lib/app/managers/orders.ex\n  module: App.Orders.Manager\n  path: lib/app/managers/orders.ex (exists)\nclassification:\n  status: classified\n  bucket: managers (role managers)\n  context: App.Orders\n  app: app\n  interface: yes\n  aggregate: unknown (no aggregates declared)\nmay call:\n  managers (any): same context: App.Orders.Helper, App.Orders.Manager; other contexts (interface only): App.Billing: App.Billing.Manager\n  domain (any): same context: App.Orders.Order; other contexts (interface only): none\nmust not call: framework\nrules:\n  [enforce] layering (id: layering, graph): every call between two project modules is one the architecture: calls matrix allows; a call the matrix forbids goes through a bucket the caller may call\n  [enforce] single_control_flow (ast): one control structure per function clause: extract each extra pipe chain, case, cond, with, if, unless, for or receive into its own named function\nfindings: none"
+     stacktrace:
+       test/anchor/domain/explain_test.exs:270: (test)
+
+......
+
+  3) test build/3 with the model the aggregate is read from the model's declarations (Anchor.Domain.ExplainTest)
+     test/anchor/domain/explain_test.exs:167
+     Assertion with == failed
+     code:  assert Explain.build(config(), model(), subject(%{})).classification["aggregate"] ==
+              "unknown (no aggregates declared)"
+     left:  "none (declared in no aggregate)"
+     right: "unknown (no aggregates declared)"
+     stacktrace:
+       test/anchor/domain/explain_test.exs:189: (test)
+```
+
+## EX-J — with no model the aggregate is claimed unknown-as-none
+
+Run summary: `10 tests, 1 failure`
+
+```text
+  1) test build/3 with the model the aggregate is read from the model's declarations (Anchor.Domain.ExplainTest)
+     test/anchor/domain/explain_test.exs:167
+     Assertion with == failed
+     code:  assert Explain.build(config(), nil, subject(%{findings: nil})).classification["aggregate"] ==
+              "unknown until compiled"
+     left:  "none (declared in no aggregate)"
+     right: "unknown until compiled"
+     stacktrace:
+       test/anchor/domain/explain_test.exs:192: (test)
+
+...
 ```

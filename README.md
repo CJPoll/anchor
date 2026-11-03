@@ -1112,7 +1112,7 @@ classification:
   context: MyApp.Orders
   app: my_app
   interface: yes
-  aggregate: unknown (no aggregates configured)
+  aggregate: unknown (no aggregates declared)
 may call:
   managers (any): same context: MyApp.Orders.Manager; other contexts (interface only): MyApp.Billing: MyApp.Billing.Manager
   domain (any): same context: MyApp.Orders.Order; other contexts (interface only): none

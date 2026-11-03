@@ -10,8 +10,12 @@ defmodule Anchor.Domain.Explain do
   `build/3` answers:
 
     * `classification` — the module's bucket and role, context, app, whether
-      it is its context's interface, and its aggregate (`unknown (no
-      aggregates configured)` until the transactional epic lands). From the
+      it is its context's interface, and its aggregate, read from the
+      model's aggregate declarations (`Anchor.Domain.Aggregates.Index`,
+      DND-5476): a declared schema's aggregate, `owner of <names>` for a
+      declared owner, `none (declared in no aggregate)` when aggregates are
+      declared but not this module, `unknown (no aggregates declared)` when
+      none are, and `unknown until compiled` with no model. From the
       model when the module is in it; otherwise by path and pattern
       selectors only (`Anchor.Domain.Classification.classify_planned/3`):
       a bucket only a beam fact could select is `possible`, and those facts
@@ -34,6 +38,7 @@ defmodule Anchor.Domain.Explain do
   """
 
   alias Anchor.Config
+  alias Anchor.Domain.Aggregates.Index
   alias Anchor.Domain.Architecture
   alias Anchor.Domain.Architecture.Selector
   alias Anchor.Domain.Classification
@@ -45,7 +50,6 @@ defmodule Anchor.Domain.Explain do
   alias Anchor.Domain.RuleShapes
   alias Anchor.Domain.Violation
 
-  @aggregate "unknown (no aggregates configured)"
   @beam_facts ~w(app behaviours exports_function uses_module)
   @text_names 8
 
@@ -141,12 +145,30 @@ defmodule Anchor.Domain.Explain do
 
   defp classify(model, arch, subject) do
     case model && Map.get(model.classification, subject.module) do
-      %Classification{} = class -> classified(class)
+      %Classification{} = class -> classified(class, aggregate(model, subject.module))
       nil -> unplaced(model, arch, subject)
     end
   end
 
-  defp classified(%Classification{} = class) do
+  # The module's aggregate, from the declarations in the model (DND-5476).
+  defp aggregate(nil, _module), do: "unknown until compiled"
+
+  defp aggregate(%Model{aggregates: %Index{} = index}, module),
+    do: declared_aggregate(Index.declared(index), index, module)
+
+  defp declared_aggregate(0, _index, _module), do: "unknown (no aggregates declared)"
+
+  defp declared_aggregate(_declared, index, module) do
+    case Index.aggregate_of(index, module) do
+      {:ok, name} -> name
+      :error -> owned(Map.get(index.owners, module, []))
+    end
+  end
+
+  defp owned([]), do: "none (declared in no aggregate)"
+  defp owned(names), do: "owner of " <> Enum.join(names, ", ")
+
+  defp classified(%Classification{} = class, aggregate) do
     %{
       "status" => "classified",
       "bucket" => class.bucket,
@@ -154,13 +176,13 @@ defmodule Anchor.Domain.Explain do
       "context" => class.context,
       "app" => class.app && Atom.to_string(class.app),
       "interface" => class.interface?,
-      "aggregate" => @aggregate
+      "aggregate" => aggregate
     }
   end
 
   # In the graph but not classified: the run's own verdict (unclassified or
   # ambiguous), with every bucket's selectors.
-  defp unplaced(%Model{graph: graph} = _model, arch, %{module: module} = subject)
+  defp unplaced(%Model{graph: graph} = model, arch, %{module: module} = subject)
        when is_map_key(graph.modules, module) do
     facts = Model.facts(Map.fetch!(graph.modules, module), %{})
     issue = graph_issue(Classification.classify(facts, arch), facts, arch)
@@ -169,7 +191,7 @@ defmodule Anchor.Domain.Explain do
       "status" => issue.status,
       "bucket" => nil,
       "context" => Classification.context_of(module, arch.context_depth),
-      "aggregate" => @aggregate,
+      "aggregate" => aggregate(model, module),
       "selectors" => selectors(arch, Classification.matching_selectors(facts, arch)),
       "fix" => issue.message
     }
@@ -200,7 +222,7 @@ defmodule Anchor.Domain.Explain do
         subject.module && Classification.context_of(subject.module, arch.context_depth),
       "app" => "unknown until compiled",
       "interface" => planned_interface(bucket, subject.module, arch),
-      "aggregate" => @aggregate,
+      "aggregate" => aggregate(nil, subject.module),
       "ambiguous" => planned.ambiguous,
       "possible" => planned.possible,
       "unknown_selectors" => Enum.map(planned.unknown, &Atom.to_string/1),

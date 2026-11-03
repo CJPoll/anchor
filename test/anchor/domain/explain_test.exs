@@ -6,6 +6,8 @@ defmodule Anchor.Domain.ExplainTest do
   use ExUnit.Case, async: true
 
   alias Anchor.Config
+  alias Anchor.Domain.Aggregates.Declaration
+  alias Anchor.Domain.Aggregates.Index
   alias Anchor.Domain.Classification
   alias Anchor.Domain.Explain
   alias Anchor.Domain.Graph
@@ -123,7 +125,7 @@ defmodule Anchor.Domain.ExplainTest do
                "context" => "App.Orders",
                "app" => "app",
                "interface" => true,
-               "aggregate" => "unknown (no aggregates configured)"
+               "aggregate" => "unknown (no aggregates declared)"
              }
 
       assert [managers, domain] = explain.may_call
@@ -156,6 +158,39 @@ defmodule Anchor.Domain.ExplainTest do
       assert flow["enforcement"] == "enforce"
       assert explain.findings == []
       assert explain.unknown == []
+    end
+
+    # The aggregate comes from the model's aggregate index (DND-5476): a
+    # declared schema's aggregate, an owner's aggregates, "none" when
+    # aggregates are declared but not this module, and "unknown" only when
+    # none are declared at all.
+    test "the aggregate is read from the model's declarations" do
+      index = %Index{
+        aggregates: %{
+          "orders" => %Declaration{
+            name: "orders",
+            schemas: [App.Orders.Order],
+            owners: [App.Orders.Manager]
+          }
+        },
+        by_schema: %{App.Orders.Order => "orders"},
+        owners: %{App.Orders.Manager => ["orders"]}
+      }
+
+      model = %{model() | aggregates: index}
+      aggregate = &Explain.build(config(), model, subject(&1)).classification["aggregate"]
+
+      assert aggregate.(%{module: App.Orders.Order, path: "lib/app/domain/order.ex"}) == "orders"
+      assert aggregate.(%{}) == "owner of orders"
+
+      assert aggregate.(%{module: App.Billing.Invoice, path: "lib/app/domain/invoice.ex"}) ==
+               "none (declared in no aggregate)"
+
+      assert Explain.build(config(), model(), subject(%{})).classification["aggregate"] ==
+               "unknown (no aggregates declared)"
+
+      assert Explain.build(config(), nil, subject(%{findings: nil})).classification["aggregate"] ==
+               "unknown until compiled"
     end
 
     test "the findings it was given are kept" do
@@ -243,7 +278,7 @@ defmodule Anchor.Domain.ExplainTest do
                  context: App.Orders
                  app: app
                  interface: yes
-                 aggregate: unknown (no aggregates configured)
+                 aggregate: unknown (no aggregates declared)
                may call:
                  managers (any): same context: App.Orders.Helper, App.Orders.Manager; other contexts (interface only): App.Billing: App.Billing.Manager
                  domain (any): same context: App.Orders.Order; other contexts (interface only): none
