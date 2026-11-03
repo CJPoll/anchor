@@ -55,6 +55,7 @@ rules:
       - Anchor.Adapters.GraphArtifact
       - Anchor.Adapters.SourceReader
       - Anchor.Managers.Graph
+      - Anchor.Managers.Explain
       - Anchor.Adapters.SourcePatcher
       - Anchor.Adapters.GitStatus
       - Anchor.Adapters.TestRunner

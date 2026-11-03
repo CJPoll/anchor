@@ -125,7 +125,13 @@ defmodule Mix.Tasks.Anchor.Graph do
 
   defp compile, do: Mix.Task.run("compile", [])
 
-  defp ebins do
+  @doc """
+  Every app of the project with its ebin directory, `[{app, ebin}]`: an
+  umbrella's every app, or the one app. `mix anchor.explain` gathers the
+  same (DND-5446).
+  """
+  @spec ebins() :: [{atom(), Path.t()}]
+  def ebins do
     case Mix.Project.apps_paths() do
       nil ->
         [{Mix.Project.config()[:app], Mix.Project.compile_path()}]

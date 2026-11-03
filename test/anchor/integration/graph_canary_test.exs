@@ -24,6 +24,7 @@ defmodule Anchor.Integration.GraphCanaryTest do
   alias Anchor.ConfigLoaderMock
   alias Anchor.Domain.GraphReport
   alias Anchor.Domain.GraphRules
+  alias Anchor.Domain.RuleShapes
   alias Anchor.GraphStoreMock
   alias Anchor.Managers.Graph
   alias Anchor.Managers.Graph.Request
@@ -246,6 +247,26 @@ defmodule Anchor.Integration.GraphCanaryTest do
     assert finding.message =~
              "which is not part of context AnchorFixtures.IfaceRight's interface. Fix: call " <>
                "AnchorFixtures.IfaceRight.Api instead."
+  end
+
+  # DND-5446 (R4): the graph half of the Fix-shape invariant
+  # (fix_shape_invariant_test.exs holds the AST half). Every graph rule type
+  # gives a finding over its violating canary module, and every finding of
+  # the run, fail-closed ones included, carries exactly one Fix:.
+  test "every graph rule type finds its violating canary module; every finding has one Fix:", %{
+    beams: beams
+  } do
+    report = run(beams)
+
+    found_types = report.findings |> Enum.map(& &1.type) |> Enum.uniq()
+
+    for module <- GraphRules.all() do
+      assert module.rule_type() in found_types, inspect(module)
+    end
+
+    for finding <- report.findings do
+      assert RuleShapes.fix_count(finding.message) == 1, finding.message
+    end
   end
 
   defp without(beams, files), do: Enum.reject(beams, &(&1.elixir.relative_file in files))

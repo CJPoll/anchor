@@ -33,7 +33,8 @@ defmodule Anchor.Domain.Checks.NoTupleMatchInHeadTest do
       assert violation.message ==
                "Function `process` pattern matches on :ok/:error tuple in its " <>
                  "public function head. Consider having the calling function use a " <>
-                 "case statement on the value instead."
+                 "case statement on the value instead." <>
+                 " Fix: take the result as one plain argument, and let the caller branch on {:ok, _} and {:error, _} with a case"
 
       assert violation.trigger == "process"
       assert violation.line == 2

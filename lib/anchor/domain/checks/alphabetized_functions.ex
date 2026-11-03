@@ -33,7 +33,25 @@ defmodule Anchor.Domain.Checks.AlphabetizedFunctions do
   clause line, so mis-ordering it reports one violation, not one per clause.
   """
 
+  alias Anchor.Domain.RuleShapes
   alias Anchor.Domain.Violation
+
+  @behaviour Anchor.Domain.RuleShape
+
+  @impl Anchor.Domain.RuleShape
+  def shape(rule) do
+    case mode(rule) do
+      :all ->
+        "define every function of the module in alphabetical order (by name, then arity)"
+
+      :public_only ->
+        "define the module's public functions in alphabetical order (by name, then arity)"
+
+      :separate ->
+        "define every public function before every private one, each group in " <>
+          "alphabetical order (by name, then arity)"
+    end
+  end
 
   @public_defs [:def, :defmacro, :defguard]
   @private_defs [:defp, :defmacrop, :defguardp]
@@ -49,13 +67,16 @@ defmodule Anchor.Domain.Checks.AlphabetizedFunctions do
     functions = extract_functions(ast)
 
     Enum.flat_map(rules, fn rule ->
-      case mode(rule) do
-        :all -> check_all_functions(functions)
-        :public_only -> check_public_functions_only(functions)
-        :separate -> check_separate_visibility(functions)
-      end
+      rule
+      |> mode()
+      |> check_mode(functions)
+      |> Enum.map(&RuleShapes.with_shape(&1, shape(rule)))
     end)
   end
+
+  defp check_mode(:all, functions), do: check_all_functions(functions)
+  defp check_mode(:public_only, functions), do: check_public_functions_only(functions)
+  defp check_mode(:separate, functions), do: check_separate_visibility(functions)
 
   # BUG-2 consumer: mode arrives on the ATOM key `:mode` from the T3 parse. An
   # absent or unrecognized mode falls back to `:separate`.

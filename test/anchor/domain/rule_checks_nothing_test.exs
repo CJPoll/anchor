@@ -32,7 +32,9 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
   use ExUnit.Case, async: true
 
   alias Anchor.Config
+  alias Anchor.Domain.Failures
   alias Anchor.Domain.RuleSchema
+  alias Anchor.Domain.RuleShapes
 
   # The relation each relation-bearing type checks, and a valid value for it.
   @relations %{
@@ -641,10 +643,21 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
   defp row_result(%Config{rules: [_rule]}, :accepted), do: nil
   defp row_result(result, :accepted), do: "refused: #{inspect(result)}"
 
+  # DND-5446: the issue a refusal becomes carries exactly one `Fix:`.
   defp row_result({:error, {:invalid_rule, reason}}, {:refused, fragment}) do
-    if reason =~ ~r/\Arule 1( \(id: "[^"]*"\))?: / and reason =~ fragment,
-      do: nil,
-      else: "wrong reason (want #{inspect(fragment)}): #{reason}"
+    issue =
+      Failures.config_violation({:config_load_failed, ".anchor.yml", {:invalid_rule, reason}})
+
+    cond do
+      not (reason =~ ~r/\Arule 1( \(id: "[^"]*"\))?: / and reason =~ fragment) ->
+        "wrong reason (want #{inspect(fragment)}): #{reason}"
+
+      RuleShapes.fix_count(issue.message) != 1 ->
+        "the issue carries #{RuleShapes.fix_count(issue.message)} Fix: lines: #{issue.message}"
+
+      true ->
+        nil
+    end
   end
 
   defp row_result(result, {:refused, _fragment}), do: "LOADED: #{inspect(result, limit: 4)}"

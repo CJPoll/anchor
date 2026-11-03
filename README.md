@@ -20,6 +20,7 @@ Anchor allows you to define rules about module dependencies and usage patterns t
 - **Maximum File Length**: Enforce maximum file length limits to encourage better code organization
 - **No Comparison in If**: Enforce descriptive function names instead of direct comparisons in if statements
 - **Struct Getter Convention**: Ensure getter functions follow a consistent naming pattern matching the fields they extract
+- **Ask before you write**: `mix anchor.explain <path|Module>` prints a module's bucket, context, what it may call and the rules that select it, for a file that does not exist yet too
 - **Flexible Configuration**: YAML-based rules with support for umbrella applications
 
 ## Installation
@@ -916,6 +917,77 @@ Exit 2 is a usage error (an unknown option, `--format` other than `text` or
 `json`, an argument, a `--base` ref Anchor refuses) or a refused
 `--write-baseline` (the file exists, or the id names no rule with a
 `baseline:`), with a `Fix:` line.
+
+## Ask Anchor before you write: `mix anchor.explain` (DND-5446)
+
+```bash
+mix anchor.explain <path|Module> [--format text|json]
+```
+
+Before you write a module, ask Anchor what it will be held to. Given a module
+name, or a source path (one that exists, or one you are about to create), it
+prints, from `.anchor.yml` and the compiled graph only:
+
+- **classification**: the bucket and its role, the context, the app, whether
+  the module is its context's interface, and its aggregate. A module in no
+  bucket shows every bucket's selectors and the unclassified `Fix:`.
+- **may call**: its bucket's `calls` row, resolved to concrete modules: every
+  module of its own context in each callable bucket, and only the interface
+  modules of other contexts. It also lists the buckets the module must not call.
+- **rules**: every rule of either engine (Credo or graph) that selects it,
+  with its enforcement and its *shape*, the sentence its findings' `Fix:`
+  ends with.
+- **findings**: its findings in the graph the last `mix anchor.graph` run
+  wrote, used only when that graph's key matches this build. Otherwise it
+  prints `not computed (run mix anchor.graph)`; a stale graph is never used.
+
+A path that does not exist yet is classified by its path and the module name
+Elixir's file naming implies (`lib/my_app/domain/new_thing.ex` is
+`MyApp.Domain.NewThing`). Facts only a beam has (its app, behaviours, `use`s
+and exported functions) are listed under `unknown`. A bucket that only such a
+selector could still match is listed under `possible`, so a definite path
+classification never hides an ambiguity the compiled module would have. If the
+project does not compile, it still answers from the config and the paths and
+says `compile failed; beam facts unknown`. It writes nothing and loads no
+project module.
+
+```text
+anchor.explain: lib/my_app/orders/manager.ex
+  module: MyApp.Orders.Manager
+  path: lib/my_app/orders/manager.ex (exists)
+classification:
+  status: classified
+  bucket: managers (role managers)
+  context: MyApp.Orders
+  app: my_app
+  interface: yes
+  aggregate: unknown (no aggregates configured)
+may call:
+  managers (any): same context: MyApp.Orders.Manager; other contexts (interface only): MyApp.Billing: MyApp.Billing.Manager
+  domain (any): same context: MyApp.Orders.Order; other contexts (interface only): none
+must not call: framework
+rules:
+  [enforce] layering (id: layering, graph): every call between two project modules is one the architecture: calls matrix allows; a call the matrix forbids goes through a bucket the caller may call
+findings: none
+```
+
+`--format json` prints `{subject, module, path, exists, notes,
+classification, may_call, must_not_call, rules, findings, unknown}` for agents;
+`findings` is `null` when not computed. Exit 0 answered; 2 usage (no subject,
+two subjects, an unknown option, or a subject that is neither a module name nor
+an `.ex` path under the project root); 3 no or invalid config, or no
+`architecture:` section.
+
+### One `Fix:` per finding
+
+Every finding of every rule type, Credo or graph, ends with exactly one `Fix:`.
+Each rule type declares its conforming shape (`shape/1`), and a finding whose
+message has no specific `Fix:` gets `Fix: <shape>` appended
+(`Anchor.Domain.RuleShapes`). A graph rule's `Fix:` names the instance: the
+route to call, the edge to invert. A config refusal that already carries a
+specific `Fix:` no longer gets the generic one appended after it.
+`test/anchor/domain/fix_shape_invariant_test.exs` and the graph canary hold this
+for every type.
 
 ## Generated sabotage: the functions a change touched
 

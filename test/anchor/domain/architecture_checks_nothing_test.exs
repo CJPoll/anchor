@@ -22,6 +22,8 @@ defmodule Anchor.Domain.ArchitectureChecksNothingTest do
   alias Anchor.Config
   alias Anchor.Domain.Architecture
   alias Anchor.Domain.Architecture.Bucket
+  alias Anchor.Domain.Failures
+  alias Anchor.Domain.RuleShapes
 
   @bucket %{
     "name" => "domain",
@@ -631,10 +633,22 @@ defmodule Anchor.Domain.ArchitectureChecksNothingTest do
 
   defp row_result(result, _document, :accepted), do: "refused: #{inspect(result)}"
 
+  # DND-5446: the issue a refusal becomes carries exactly one `Fix:`, its own
+  # (the generic one is not appended after it).
   defp row_result({:error, {:invalid_config, message}}, _document, {:refused, fragment}) do
-    if String.starts_with?(message, fragment) and message =~ "Fix:",
-      do: nil,
-      else: "wrong message (want it to start with #{inspect(fragment)} and hold Fix:): #{message}"
+    issue =
+      Failures.config_violation({:config_load_failed, ".anchor.yml", {:invalid_config, message}})
+
+    cond do
+      not (String.starts_with?(message, fragment) and message =~ "Fix:") ->
+        "wrong message (want it to start with #{inspect(fragment)} and hold Fix:): #{message}"
+
+      RuleShapes.fix_count(issue.message) != 1 ->
+        "the issue carries #{RuleShapes.fix_count(issue.message)} Fix: lines: #{issue.message}"
+
+      true ->
+        nil
+    end
   end
 
   defp row_result(result, _document, {:refused, _fragment}),

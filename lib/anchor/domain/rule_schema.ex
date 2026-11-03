@@ -158,6 +158,7 @@ defmodule Anchor.Domain.RuleSchema do
   """
 
   alias Anchor.Domain.AllowedCallers
+  alias Anchor.Domain.Failures
   alias Anchor.Domain.FunctionRef
   alias Anchor.Domain.GlobPattern
 
@@ -531,21 +532,13 @@ defmodule Anchor.Domain.RuleSchema do
   # glob would widen with every later module of a matching name, an Erlang
   # module is never a struct, and an empty list would check no struct. Runs
   # after `validate_string_lists/1`, so each entry is a non-blank string here.
-  defp validate_owned_namespaces(%{"owned_namespaces" => []}) do
-    {:error,
-     "`owned_namespaces: []` checks no struct; owned_namespaces lists module names, " <>
-       ~s|e.g. ["MyApp"], or leave it out to check every struct|}
-  end
+  defp validate_owned_namespaces(%{"owned_namespaces" => []}),
+    do: {:error, Failures.owned_namespaces_empty()}
 
   defp validate_owned_namespaces(%{"owned_namespaces" => namespaces}) do
     case Enum.find(namespaces, &match?({:error, _reason}, AllowedCallers.parse(&1))) do
-      nil ->
-        :ok
-
-      entry ->
-        {:error,
-         "`owned_namespaces` entry #{inspect(entry)} is not an exact Elixir module name " <>
-           ~s|(a glob, an Erlang module or a malformed name); owned_namespaces lists module names, e.g. ["MyApp"]|}
+      nil -> :ok
+      entry -> {:error, Failures.owned_namespaces_not_a_module(entry)}
     end
   end
 
@@ -561,10 +554,7 @@ defmodule Anchor.Domain.RuleSchema do
         :ok
 
       entry ->
-        {:error,
-         "`pure_patterns` entry #{inspect(entry)} declares every module pure, so every call " <>
-           "would read as having no effect; name the pure namespaces " <>
-           ~s|(e.g. ["MyApp.*.Domain.*"]), a match-all glob declares every module pure|}
+        {:error, Failures.pure_patterns_match_all(entry)}
     end
   end
 

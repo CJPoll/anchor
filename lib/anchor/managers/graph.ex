@@ -537,20 +537,53 @@ defmodule Anchor.Managers.Graph do
   defp violations!(other),
     do: raise(ArgumentError, "check/2 returned #{inspect(other, limit: 5)}, not a list")
 
+  @doc """
+  The inputs the graph artifact of `request`'s build is keyed by (DND-5446,
+  for `mix anchor.explain`): the beams read from its ebins (each module whose
+  source is outside the root left out, as a run leaves it out), each beam's
+  source facts, the artifact's directory and its key, computed exactly as
+  the run that writes it computes it. `:none` when no beam inside the root
+  was read. `deps` takes `:config_loader`, `:beam_source` and
+  `:source_source` as `run/2` does.
+  """
+  @spec artifact_inputs(Request.t(), map()) ::
+          {:ok, %{beams: list(), source_facts: map(), dir: Path.t(), key: String.t()}} | :none
+  def artifact_inputs(%Request{} = request, %{config: config} = deps) do
+    case read_beams(deps.beam_source, request) do
+      {:ok, beams, _outside} ->
+        {source_facts, _issues} = source_facts(deps.source_source, request.root, beams)
+
+        {:ok,
+         %{
+           beams: beams,
+           source_facts: source_facts,
+           dir: artifact_dir(request),
+           key: artifact_key(beams, source_facts, config)
+         }}
+
+      {:could_not_check, _violation} ->
+        :none
+    end
+  end
+
+  defp artifact_dir(request), do: Path.join(request.build_path, "anchor")
+
   # The key covers every input the graph was built from: the beams and each
   # source file's facts (DND-5586), the config and Anchor's version.
-  defp write_artifact(store, request, {beams, source_facts}, config, graph) do
-    dir = Path.join(request.build_path, "anchor")
+  defp artifact_key(beams, source_facts, config) do
+    GraphKey.key(
+      beam_entries(beams),
+      Enum.map(source_facts, fn {file, facts} ->
+        {file, :erlang.term_to_binary(facts, [:deterministic])}
+      end),
+      :erlang.term_to_binary(config, [:deterministic]),
+      version()
+    )
+  end
 
-    key =
-      GraphKey.key(
-        beam_entries(beams),
-        Enum.map(source_facts, fn {file, facts} ->
-          {file, :erlang.term_to_binary(facts, [:deterministic])}
-        end),
-        :erlang.term_to_binary(config, [:deterministic]),
-        version()
-      )
+  defp write_artifact(store, request, {beams, source_facts}, config, graph) do
+    dir = artifact_dir(request)
+    key = artifact_key(beams, source_facts, config)
 
     case store.write(dir, key, graph) do
       :ok ->

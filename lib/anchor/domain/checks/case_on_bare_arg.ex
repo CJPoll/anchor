@@ -22,7 +22,16 @@ defmodule Anchor.Domain.Checks.CaseOnBareArg do
   pattern (map/tuple match in the function head) is not flagged.
   """
 
+  alias Anchor.Domain.RuleShapes
   alias Anchor.Domain.Violation
+
+  @behaviour Anchor.Domain.RuleShape
+
+  @impl Anchor.Domain.RuleShape
+  def shape(_rule) do
+    "match the argument in the function heads, one clause per case branch, instead of a " <>
+      "case on the bare argument"
+  end
 
   @doc """
   Returns the `%Violation{}` list for `ast`.
@@ -35,7 +44,7 @@ defmodule Anchor.Domain.Checks.CaseOnBareArg do
   def detect_violations(ast) do
     ast
     |> find_case_on_bare_args()
-    |> Enum.map(&build_violation/1)
+    |> Enum.map(&RuleShapes.with_shape(build_violation(&1), shape(%{})))
   end
 
   defp find_case_on_bare_args(ast) do
