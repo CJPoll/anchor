@@ -66,6 +66,15 @@ before coining a synonym.
   (`Anchor.Adapters.GitChangeSource`) and the environment the git adapters run
   with (`Anchor.Adapters.GitEnv`, DND-5581; `GitStatus`'s use of it is
   `sabotage`'s), the `scope/2` Manager path and the task.
+- `effects` — effect inference and the `effects_match_bucket` graph rule
+  (DND-5447): `Anchor.Domain.EffectPrimitives`' inference half,
+  `Anchor.Domain.Roots`, `Anchor.Domain.Effects`,
+  `Anchor.Domain.GraphRules.EffectsMatchBucket`, and their wiring in the graph
+  runner.
+- `struct_flow` — the `struct_owned_by_module_flow` graph rule (DND-5454):
+  `Anchor.Domain.StructTypes`, `Anchor.Domain.StructFlow`,
+  `Anchor.Domain.GraphRules.StructOwnedByModuleFlow`, and the scope it shares
+  with the AST rule, `Anchor.Domain.StructOwnership`.
 - `sabotage` — the causal sabotage generator (DND-5471): every
   `Anchor.Domain.Sabotage.*` module that makes mutants (`Mutator`,
   `Operators`, `OrphanCheck`, `SourceTree`, `Patch`, `MutantId`,

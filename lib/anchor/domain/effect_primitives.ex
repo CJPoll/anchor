@@ -29,9 +29,32 @@ defmodule Anchor.Domain.EffectPrimitives do
   (`Anchor.Domain.FunctionRef`: `"Notifier.push/1"`, `":gen_tcp.connect"`).
   `parse_extra!/1` refuses a token that is neither, so a misspelt token never
   classifies nothing.
+
+  ## Effect inference (DND-5447)
+
+  The table above is about where an argument goes (demand). Effect inference
+  asks a wider question: does calling this function touch the world at all,
+  reads and clocks included? `inference_defaults/0` is that list: every
+  function of `File`, `IO`, `Logger`, `:logger`, `:telemetry`, `System`,
+  `Process`, `Port`, `Node`, `GenServer`, `Agent`, `Task`,
+  `Task.Supervisor`, `Registry`, `:ets`, `:dets`, `:persistent_term`,
+  `:gen_tcp`, `:gen_udp`, `:ssl`, `:httpc`, `:os`, `:file`, `:rand`; and
+  `:erlang.send/2,3`, `:erlang.spawn*`, `:erlang.put/2`, `:erlang.get/0,1`,
+  `:erlang.erase/0,1`, `:crypto.strong_rand_bytes/1`,
+  `:erlang.system_time/*`, `:erlang.monotonic_time/*`, `DateTime.utc_now/*`,
+  `NaiveDateTime.utc_now/*`, `Date.utc_today/*`. A clock or randomness read is
+  an effect: it makes a function non-deterministic. `build/2` adds
+  `architecture.effects` and every project module that declares `@behaviour
+  Ecto.Repo`; nothing removes a default.
+
+  `primitive?/2` matches a Core call through every source name it may have
+  been written as (`Anchor.Domain.Graph.Inlines.candidates/1`, DND-5613):
+  `System.unique_integer/0` reaches Core as `:erlang.unique_integer/0`, which
+  is a `System` call, so it is an effect.
   """
 
   alias Anchor.Domain.FunctionRef
+  alias Anchor.Domain.Graph.Inlines
 
   # Rows name modules as `.anchor.yml` tokens do (`"IO"`, `":ets"`), as
   # `Anchor.Domain.Sabotage.EffectCalls` keys them by name: this table compares
@@ -130,6 +153,40 @@ defmodule Anchor.Domain.EffectPrimitives do
     {":telemetry", :execute, :*}
   ]
 
+  # Effect inference (DND-5447): whole modules, then single functions.
+  @inference_modules ~w(File IO Logger :logger :telemetry System Process Port Node GenServer
+                        Agent Task Task.Supervisor Registry :ets :dets :persistent_term :gen_tcp
+                        :gen_udp :ssl :httpc :os :file :rand)
+
+  @inference_functions [
+    {":erlang", :send, :*},
+    {":erlang", :spawn, :*},
+    {":erlang", :spawn_link, :*},
+    {":erlang", :spawn_monitor, :*},
+    {":erlang", :spawn_opt, :*},
+    {":erlang", :spawn_request, :*},
+    {":erlang", :put, 2},
+    {":erlang", :get, 0},
+    {":erlang", :get, 1},
+    {":erlang", :erase, 0},
+    {":erlang", :erase, 1},
+    {":erlang", :system_time, :*},
+    {":erlang", :monotonic_time, :*},
+    {":crypto", :strong_rand_bytes, 1},
+    {"DateTime", :utc_now, :*},
+    {"NaiveDateTime", :utc_now, :*},
+    {"Date", :utc_today, :*}
+  ]
+
+  @inference_rows Enum.map(@inference_modules, &{&1, :*, :*}) ++ @inference_functions
+
+  @typedoc """
+  The effect primitives of one run (`build/2`): the extra tokens of
+  `architecture.effects` and the project's `Ecto.Repo` modules, beside the
+  defaults.
+  """
+  @type primitives :: %{extra: [extra()], repos: MapSet.t(module())}
+
   @repo_writes ~w(insert insert! update update! delete delete! insert_all update_all
                   delete_all insert_or_update insert_or_update! transaction)a
 
@@ -154,6 +211,41 @@ defmodule Anchor.Domain.EffectPrimitives do
   def effect?({module, function, arity} = mfa, extra) when is_list(extra) do
     escape?(mfa) or listed?(@effects, mfa) or repo_write?(module, function) or
       Enum.any?(extra, &extra_matches?(&1, module, function, arity))
+  end
+
+  @doc """
+  The default effect primitives of effect inference (DND-5447), as
+  `{module_name, function | :*, arity | :*}` rows, whole modules first.
+  """
+  @spec inference_defaults() :: [{String.t(), atom(), arity() | :*}]
+  def inference_defaults, do: @inference_rows
+
+  @doc """
+  The primitives of a run: the defaults, `architecture.effects` (parsed;
+  a token that does not parse raises, `parse_extra!/1`) and every module of
+  `graph` whose beam declares `@behaviour Ecto.Repo`.
+  """
+  @spec build(%{effects: [String.t()]}, Anchor.Domain.Graph.t()) :: primitives()
+  def build(%{effects: effects}, %{modules: modules}) do
+    repos =
+      for {module, %{behaviours: behaviours}} <- modules,
+          Ecto.Repo in behaviours,
+          into: MapSet.new(),
+          do: module
+
+    %{extra: parse_extra!(effects), repos: repos}
+  end
+
+  @doc """
+  Whether the Core call `mfa` performs an effect (DND-5447): any name it may
+  have been written as (`Inlines.candidates/1`) is a default primitive, a
+  function of a project `Ecto.Repo` module, or one of the run's extra tokens.
+  """
+  @spec primitive?(primitives(), mfa()) :: boolean()
+  def primitive?(%{extra: extra, repos: repos}, {module, function, arity} = mfa) do
+    MapSet.member?(repos, module) or
+      Enum.any?(extra, &extra_matches?(&1, module, function, arity)) or
+      mfa |> Inlines.candidates() |> Enum.any?(&listed?(@inference_rows, &1))
   end
 
   @doc "Whether a call of `mfa` lets its arguments leave the process or outlive the call."

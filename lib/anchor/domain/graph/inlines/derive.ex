@@ -47,6 +47,53 @@ defmodule Anchor.Domain.Graph.Inlines.Derive do
   end
 
   @doc """
+  The tag table (DND-5613): `%{elixir_mfa => [{index, literal}]}` for every
+  function in `exports` whose rewrite adds a literal argument, the tag that
+  tells it apart in Core from another Elixir name of the same Erlang function
+  (`Process.monitor/1` is `:erlang.monitor(:process, pid)`, `Port.monitor/1`
+  is `:erlang.monitor(:port, port)`). `index` is the 0-based position of the
+  literal among the Erlang call's arguments. A function with no tag is left
+  out.
+  """
+  @spec tags([{module(), [{atom(), arity()}]}]) :: %{mfa() => [{non_neg_integer(), term()}]}
+  def tags(exports) do
+    for {module, functions} <- exports,
+        {name, arity} <- functions,
+        name not in [:module_info, :__info__],
+        tag = tag(module, name, arity),
+        tag != [],
+        into: %{},
+        do: {{module, name, arity}, tag}
+  end
+
+  @doc """
+  The literal arguments Elixir's rewrite of `module.name/arity` adds, as
+  `[{index, literal}]` in argument order; `[]` for a function with none (an
+  `inline/3` rewrite keeps the arguments as they are, and an argument computed
+  from the caller's, such as `Kernel.elem/2`'s `index + 1`, is not a literal).
+  """
+  @spec tag(module(), atom(), arity()) :: [{non_neg_integer(), term()}]
+  def tag(module, name, arity) do
+    case :elixir_rewrite.inline(module, name, arity) do
+      {_erlang_module, _erlang_name} -> []
+      false -> rewrite_tag(module, name, arity)
+    end
+  end
+
+  defp rewrite_tag(module, name, arity) do
+    args = Macro.generate_arguments(arity, __MODULE__)
+
+    case :elixir_rewrite.rewrite(module, [], name, [], args) do
+      {{:., _dot_meta, [to_module, to_name]}, _meta, to_args}
+      when {to_module, to_name} != {module, name} ->
+        for {arg, index} <- Enum.with_index(to_args), Macro.quoted_literal?(arg), do: {index, arg}
+
+      _same_or_other ->
+        []
+    end
+  end
+
+  @doc """
   The function Elixir compiles a call of `module.name/arity` into, or `nil`
   when it compiles to a call of that same function.
   """

@@ -22,7 +22,9 @@ defmodule Anchor.Domain.GraphReport do
       source outside the project root, judged like every other module and
       counted so the layout is visible (DND-5588, DND-5630); `apply_sites` is `nil` when no
       rule that ran needed the higher-order flow analysis (DND-5574), else
-      `apply_sites/1` of it; `aggregates` (optional, DND-5476) is
+      `apply_sites/1` of it; `effects` (optional) is `nil` or absent when no
+      rule that ran needed the effect inference (DND-5447), else `effects/1`
+      of it; `aggregates` (optional, DND-5476) is
       `%{declared, tables_unknown}` when any aggregate is declared, and the
       JSON's `aggregates` is `null` otherwise.
     * `exit_code` — `exit_code/1`.
@@ -44,10 +46,15 @@ defmodule Anchor.Domain.GraphReport do
   each held one prints as `path:line: [held] <label> <message>`. When the run
   computed the higher-order flow analysis, the summary ends with `; apply
   sites: <r> resolved, <a> any`, and with `(step bound hit: every site reads
-  any)` after it when the analysis hit its bound (DND-5574, R6).
+  any)` after it when the analysis hit its bound (DND-5574, R6). When it
+  computed the effect inference, the summary then ends with `; effects: <n>
+  functions (domain <a>, managers <b>, adapters <c>, framework <d>), <u>
+  unresolved dynamic calls`, and `, not analysed: <k>` when some public
+  function had no Core body (DND-5447).
   """
 
   alias Anchor.Domain.Cfa
+  alias Anchor.Domain.Effects
   alias Anchor.Domain.GraphReport.Finding
 
   defstruct findings: [],
@@ -87,7 +94,15 @@ defmodule Anchor.Domain.GraphReport do
           required(:no_core) => non_neg_integer(),
           required(:outside_root) => non_neg_integer(),
           required(:apply_sites) => apply_sites() | nil,
+          optional(:effects) => effects() | nil,
           optional(:aggregates) => %{declared: pos_integer(), tables_unknown: non_neg_integer()}
+        }
+
+  @type effects :: %{
+          functions: non_neg_integer(),
+          by_role: %{atom() => non_neg_integer()},
+          unresolved: non_neg_integer(),
+          not_analysed: non_neg_integer()
         }
 
   @type t :: %__MODULE__{
@@ -135,6 +150,24 @@ defmodule Anchor.Domain.GraphReport do
   end
 
   @doc """
+  The effect-inference counts (DND-5447) for the summary: functions per
+  inferred role, unresolved dynamic calls, and functions not analysed. `nil`
+  for no inference.
+  """
+  @spec effects(Effects.t() | nil) :: effects() | nil
+  def effects(nil), do: nil
+
+  def effects(%Effects{counts: counts, unresolved_calls: unresolved, not_analysed: not_analysed}) do
+    %{
+      functions: counts |> Map.values() |> Enum.sum(),
+      by_role:
+        Map.new([:domain, :managers, :adapters, :framework], &{&1, Map.get(counts, &1, 0)}),
+      unresolved: unresolved,
+      not_analysed: not_analysed
+    }
+  end
+
+  @doc """
   3 when anything could not be checked, 2 when the run refused its request,
   1 for any `:enforce` finding, else 0.
   """
@@ -174,6 +207,7 @@ defmodule Anchor.Domain.GraphReport do
       "no_core" => report.counts.no_core,
       "outside_root" => report.counts.outside_root,
       "apply_sites" => apply_sites_json(report.counts.apply_sites),
+      "effects" => effects_json(Map.get(report.counts, :effects)),
       "aggregates" => aggregates_json(Map.get(report.counts, :aggregates)),
       "exit_code" => report.exit_code,
       "findings" => Enum.map(report.findings, &Finding.to_json/1),
@@ -200,7 +234,9 @@ defmodule Anchor.Domain.GraphReport do
     "anchor.graph: #{counts.modules} modules#{notes(counts)} in #{counts.apps} apps, " <>
       "#{counts.rules} rules, #{violations} violations " <>
       "(#{length(report_only)} report-only, #{length(report.held)} baselined)" <>
-      apply_sites_note(counts.apply_sites) <> aggregates_note(Map.get(counts, :aggregates))
+      apply_sites_note(counts.apply_sites) <>
+      effects_note(Map.get(counts, :effects)) <>
+      aggregates_note(Map.get(counts, :aggregates))
   end
 
   # DND-5476: when any aggregate is declared, how many, and how many of their
@@ -236,6 +272,29 @@ defmodule Anchor.Domain.GraphReport do
 
   defp apply_sites_note(%{resolved: resolved, any: any, bound_hit?: bound_hit?}),
     do: "; apply sites: #{resolved} resolved, #{any} any#{bound_note(bound_hit?)}"
+
+  defp effects_json(nil), do: nil
+
+  defp effects_json(effects) do
+    %{
+      "functions" => effects.functions,
+      "by_role" => Map.new(effects.by_role, &stringify_key/1),
+      "unresolved" => effects.unresolved,
+      "not_analysed" => effects.not_analysed
+    }
+  end
+
+  # `nil`: no rule that ran needed the effect inference.
+  defp effects_note(nil), do: ""
+
+  defp effects_note(%{functions: functions, by_role: by_role} = effects) do
+    "; effects: #{functions} functions (domain #{by_role.domain}, managers " <>
+      "#{by_role.managers}, adapters #{by_role.adapters}, framework #{by_role.framework}), " <>
+      "#{effects.unresolved} unresolved dynamic calls" <> not_analysed_note(effects.not_analysed)
+  end
+
+  defp not_analysed_note(0), do: ""
+  defp not_analysed_note(count), do: ", not analysed: #{count}"
 
   defp bound_note(true), do: " (step bound hit: every site reads any)"
   defp bound_note(false), do: ""

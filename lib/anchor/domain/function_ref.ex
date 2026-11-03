@@ -23,6 +23,8 @@ defmodule Anchor.Domain.FunctionRef do
   `Anchor.Domain.GlobPattern` is the one place a regex is built.
   """
 
+  alias Anchor.Domain.Graph.Inlines
+
   @enforce_keys [:module, :function, :arity]
   defstruct [:module, :function, :arity]
 
@@ -62,15 +64,41 @@ defmodule Anchor.Domain.FunctionRef do
   def format(module, function, arity), do: "#{inspect(module)}.#{function}/#{arity}"
 
   @doc """
-  Whether a call on `module.function/arity` reaches the function `ref` names.
-  Module and function compare exactly. An `:any` arity on either side (a token
+  Whether a call on `module.function/arity` reaches the function `ref` names:
+  the call carries one of `names/1` (DND-5613). Module and function compare
+  exactly against each name. An `:any` arity on either side (a token
   with no arity, or a call whose arity the source does not show) matches every
   arity, so an unknown arity is reported rather than assumed away.
   """
   @spec matches?(t(), module(), atom(), arity() | :any) :: boolean()
   def matches?(%__MODULE__{} = ref, module, function, arity) do
-    ref.module == module and ref.function == function and arity_matches?(ref.arity, arity)
+    ref
+    |> names()
+    |> Enum.any?(fn {m, f, a} -> m == module and f == function and arity_matches?(a, arity) end)
   end
+
+  @doc """
+  Every name a call of the function `ref` names may carry (DND-5613), as
+  `{module, function, arity | :any}`, sorted: `ref` itself and its spellings
+  across Elixir's inlining (`Anchor.Domain.Graph.Inlines.spellings/1`), so a
+  token naming `Map.put/3` or `:maps.put/3` stands for both, while one naming
+  `Process.monitor/1` never stands for `Port.monitor/1` (their tags differ).
+  A token with no arity stands for every arity's spellings. Both engines
+  match a call site against this one set: the AST rules through
+  `matches?/4`, the graph through `Anchor.Domain.Graph.calls_to/2`.
+  """
+  @spec names(t()) :: [{module(), atom(), arity() | :any}]
+  def names(%__MODULE__{module: module, function: function, arity: :any}) do
+    module
+    |> Inlines.arities(function)
+    |> Enum.flat_map(&Inlines.spellings({module, function, &1}))
+    |> then(&[{module, function, :any} | &1])
+    |> Enum.uniq()
+    |> Enum.sort()
+  end
+
+  def names(%__MODULE__{module: module, function: function, arity: arity}),
+    do: Inlines.spellings({module, function, arity})
 
   @doc """
   Whether a call the source cannot fully resolve could reach the function `ref`
@@ -79,8 +107,12 @@ defmodule Anchor.Domain.FunctionRef do
   """
   @spec may_reach?(t(), module() | nil, atom() | nil, arity() | :any) :: boolean()
   def may_reach?(%__MODULE__{} = ref, module, function, arity) do
-    (is_nil(module) or ref.module == module) and
-      (is_nil(function) or ref.function == function) and arity_matches?(ref.arity, arity)
+    ref
+    |> names()
+    |> Enum.any?(fn {m, f, a} ->
+      (is_nil(module) or m == module) and (is_nil(function) or f == function) and
+        arity_matches?(a, arity)
+    end)
   end
 
   @doc """

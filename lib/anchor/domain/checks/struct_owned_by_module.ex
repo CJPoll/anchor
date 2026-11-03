@@ -47,6 +47,7 @@ defmodule Anchor.Domain.Checks.StructOwnedByModule do
   """
 
   alias Anchor.Domain.DependencyAnalyzer
+  alias Anchor.Domain.StructOwnership
   alias Anchor.Domain.Violation
 
   @behaviour Anchor.Domain.RuleShape
@@ -90,7 +91,7 @@ defmodule Anchor.Domain.Checks.StructOwnedByModule do
   defp detect(ast, rule, resolved) do
     ctx = %{
       resolved: resolved,
-      owned: owned_namespaces(rule),
+      owned: StructOwnership.owned_namespaces(rule),
       owner: nil,
       top_level?: true,
       bindings: %{},
@@ -98,13 +99,6 @@ defmodule Anchor.Domain.Checks.StructOwnedByModule do
     }
 
     ast |> walk(ctx, []) |> Enum.reverse()
-  end
-
-  defp owned_namespaces(rule) do
-    case Map.get(rule, :owned_namespaces) do
-      namespaces when is_list(namespaces) and namespaces != [] -> namespaces
-      _absent -> :all
-    end
   end
 
   # ---- the walk: expression positions are checked, pattern positions skipped ----
@@ -285,18 +279,9 @@ defmodule Anchor.Domain.Checks.StructOwnedByModule do
   defp module_literal(node, ctx), do: resolve(node, ctx)
 
   defp other?(nil, _ctx), do: false
-  defp other?(module, ctx), do: in_scope?(module, ctx.owned) and module != ctx.owner
 
-  defp in_scope?(_module, :all), do: true
-
-  defp in_scope?(module, namespaces) do
-    name = Atom.to_string(module)
-
-    Enum.any?(namespaces, fn namespace ->
-      prefix = Atom.to_string(namespace)
-      name == prefix or String.starts_with?(name, prefix <> ".")
-    end)
-  end
+  defp other?(module, ctx),
+    do: StructOwnership.in_scope?(module, ctx.owned) and module != ctx.owner
 
   # ---- issues ----
 
@@ -317,7 +302,7 @@ defmodule Anchor.Domain.Checks.StructOwnedByModule do
   # Only a top-level module is judged: a nested one shares its namespace.
   defp report_unowned(acc, %{top_level?: true, owned: owned}, module, meta)
        when is_list(owned) and not is_nil(module) do
-    if in_scope?(module, owned) do
+    if StructOwnership.in_scope?(module, owned) do
       acc
     else
       name = inspect(module)
