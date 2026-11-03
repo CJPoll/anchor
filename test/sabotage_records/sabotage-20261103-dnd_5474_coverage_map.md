@@ -55,6 +55,21 @@ selection), then by sabotage:
 | S15 | `stale?/2` always false | 3 of 57: the first two rows above, and run "a selected test file changed since the map's commit runs whole, the mirror too" (the `:all` rows still pass: `:all` has its own clause) | as F1 |
 | S16 | `CoverageFile.read/1` returns `{:ok, :undecodable}` for bytes it cannot decode | 2 of 5: coverage_file "a term naming an atom this VM does not have is refused, never created", "bytes that are not an external term are :undecodable" | `code:  assert CoverageFile.read(path) == {:error, :undecodable}` `left:  {:ok, :undecodable}` `right: {:error, :undecodable}` |
 
+## Critic round 2 (one finding)
+
+The critic found that `SuiteRunner` put `--max-cases 1` first, but a switch
+given twice takes its last value (`OptionParser.parse(["--max-cases", "1",
+"x", "--max-cases", "4"], strict: [max_cases: :integer])` returns
+`{[max_cases: 4], ["x"], []}`), so `coverage -- --max-cases 4` would run tests
+at once and every call would land in every open window. The fix: the Manager
+refuses test arguments that set `--max-cases` (exit 2), and `SuiteRunner`
+puts `--max-cases 1` last.
+
+| # | Mutation | Tests failed | First failure, verbatim |
+|---|---|---|---|
+| F2 | the unfixed code (3e9563a) | 1 of 12: manager "a --max-cases in the test args is refused, exit 2: tests must never overlap" | `** (Mox.UnexpectedCallError) no expectation defined for Anchor.ProjectModuleSourceMock.list/1 in process #PID<0.265.0> with args [["/repo/_build/test/lib/app/ebin"]]` |
+| S17 | the refusal reads no test arguments (`serial([])`) | 1 of 12: the same test | as F2 |
+
 `Anchor.Adapters.SuiteRunner` (`Mix.Task.run("test", ...)` in this VM) has no
 unit test: it cannot run a suite inside a running suite. The bounded real run
 below and the CI workflow exercise it.

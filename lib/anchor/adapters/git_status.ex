@@ -10,8 +10,9 @@ defmodule Anchor.Adapters.GitStatus do
     * `git rev-parse --verify HEAD` (DND-5474);
     * `git merge-base --is-ancestor <sha> HEAD` (exit 0 an ancestor, 1 not,
       128 a commit git does not have: not an ancestor);
-    * `git diff --name-only -z <sha> --` and
-      `git ls-files --others --exclude-standard -z`.
+    * `git diff --name-only --relative -z <sha> --` and
+      `git ls-files --others --exclude-standard -z` (both relative to `root`,
+      so a project below the git root gets its own paths).
   """
 
   @behaviour Anchor.Adapters.GitWorktree
@@ -68,7 +69,7 @@ defmodule Anchor.Adapters.GitStatus do
 
   @impl Anchor.Adapters.GitWorktree
   def changed_since(root, sha) do
-    with {:ok, changed} <- names(root, ["diff", "--name-only", "-z", sha, "--"]),
+    with {:ok, changed} <- names(root, ["diff", "--name-only", "--relative", "-z", sha, "--"]),
          {:ok, untracked} <- names(root, ["ls-files", "--others", "--exclude-standard", "-z"]) do
       {:ok, Enum.uniq(changed ++ untracked)}
     end

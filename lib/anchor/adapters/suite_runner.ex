@@ -3,9 +3,9 @@ defmodule Anchor.Adapters.SuiteRunner do
   Runs a project's suite in this VM for the coverage map (DND-5474), the
   **Side Effect** adapter (ADR 001) behind `Anchor.Adapters.InProcessTests`.
 
-  `Mix.Task.run("test", ["--max-cases", "1", "--raise" | args])`: Mix reads
-  the first `--max-cases`, so one test runs at a time whatever `args` say,
-  and `--raise` makes a failing suite raise here instead of setting the VM's
+  `Mix.Task.run("test", args ++ ["--max-cases", "1", "--raise"])`: a switch
+  given twice takes its last value, so `--max-cases 1` comes last (the
+  Manager also refuses test arguments that set it), and `--raise` makes a failing suite raise here instead of setting the VM's
   exit status at exit, so the status is this function's to report.
   """
 
@@ -13,7 +13,7 @@ defmodule Anchor.Adapters.SuiteRunner do
 
   @impl Anchor.Adapters.InProcessTests
   def run(args) do
-    Mix.Task.run("test", ["--max-cases", "1", "--raise" | args])
+    Mix.Task.run("test", args ++ ["--max-cases", "1", "--raise"])
     :passed
   rescue
     error -> {:failed, Exception.message(error)}

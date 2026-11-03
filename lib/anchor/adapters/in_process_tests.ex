@@ -5,7 +5,7 @@ defmodule Anchor.Adapters.InProcessTests do
   `Anchor.Adapters.SuiteRunner`, doubled in tests as
   `Anchor.InProcessTestsMock`.
 
-  `run(args)` runs the suite with `--max-cases 1` first (one test at a time)
+  `run(args)` runs the suite with `--max-cases 1` last, so it wins (one test at a time)
   and returns `:passed`, or `{:failed, message}` (a failed test, a test file
   that does not compile, a suite that ran nothing).
   """

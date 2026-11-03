@@ -103,6 +103,18 @@ defmodule Anchor.Managers.SabotageCoverageTest do
     assert {0, [_summary]} = Sabotage.coverage(facts(%{ci: false, local: true}), @opts)
   end
 
+  test "a --max-cases in the test args is refused, exit 2: tests must never overlap" do
+    for args <- [["--max-cases", "4"], ["--max-cases=4"], ["test/a_test.exs", "--max-cases", "1"]] do
+      assert {2, [message]} = Sabotage.coverage(facts(%{test_args: args}), @opts), inspect(args)
+
+      assert message =~
+               "per-test coverage runs one test at a time, so the test arguments may not " <>
+                 "set --max-cases"
+    end
+
+    assert calls() == []
+  end
+
   test "MIX_ENV other than test: exit 2, nothing listed or traced" do
     assert {2, [message]} = Sabotage.coverage(facts(%{env: :dev}), @opts)
     assert message =~ "Fix: MIX_ENV=test mix anchor.sabotage coverage"

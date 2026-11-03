@@ -7,7 +7,9 @@ defmodule Anchor.Managers.Sabotage.Coverage do
     1. `MIX_ENV` must be `test` (else exit 2).
     2. Outside CI (`CI=true`) the command refuses unless `--local` was given
        (exit 2), before anything is traced: tracing every call of a whole
-       suite run one test at a time is a load that belongs in CI.
+       suite run one test at a time is a load that belongs in CI. Test
+       arguments that set `--max-cases` are refused too (exit 2): two tests
+       at once would share their calls.
     3. The project's modules (`Anchor.Adapters.ProjectModuleSource`); none is
        exit 3.
     4. Tracing starts (`Anchor.Adapters.Tracing.start/2`; another tracer
@@ -59,6 +61,7 @@ defmodule Anchor.Managers.Sabotage.Coverage do
 
     with :ok <- test_env(facts),
          :ok <- in_ci(facts),
+         :ok <- serial(Map.get(facts, :test_args, [])),
          {:ok, modules} <- modules(facts, ports),
          {:ok, state, suite} <- traced_suite(facts, modules, ports),
          {:ok, map} <- build(state, facts, modules, suite, ports),
@@ -97,6 +100,19 @@ defmodule Anchor.Managers.Sabotage.Coverage do
          "per-test coverage runs the whole suite serially with call tracing; it belongs in CI. " <>
            "Fix: run it in CI, or pass --local where that load is acceptable."
        ]}
+
+  # Windows are one test at a time only while one test runs at a time: a
+  # call while two windows are open would be added to both.
+  defp serial(args) do
+    if Enum.any?(args, &(&1 == "--max-cases" or String.starts_with?(&1, "--max-cases="))),
+      do:
+        {2,
+         [
+           "per-test coverage runs one test at a time, so the test arguments may not set " <>
+             "--max-cases (two tests at once would share their calls). Fix: drop --max-cases"
+         ]},
+      else: :ok
+  end
 
   defp modules(facts, %{modules: source}) do
     case source.list(facts.ebin_dirs) do
