@@ -156,8 +156,18 @@ defmodule Anchor.Domain.Graph.BuilderTest do
 
       assert %ModuleNode{generated?: false} = Graph.module(graph, User)
 
-      assert [%Call{to: {AnchorFixtures.BuilderTest.Other, :h, 1}, kind: :remote}] =
-               Graph.calls_from(graph, {Generated, :g, 1})
+      # Macro output carries the macro call site's line: the `use` in the
+      # user's file (shared contract section 12's assumption, seen here).
+      use_line = 2
+
+      assert [
+               %Call{
+                 to: {AnchorFixtures.BuilderTest.Other, :h, 1},
+                 kind: :remote,
+                 line: ^use_line,
+                 line_source: :call
+               }
+             ] = Graph.calls_from(graph, {Generated, :g, 1})
     end
 
     # Row 34

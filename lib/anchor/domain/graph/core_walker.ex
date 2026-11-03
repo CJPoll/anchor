@@ -37,7 +37,9 @@ defmodule Anchor.Domain.Graph.CoreWalker do
 
   Every edge carries the line of its node's Core annotation (or of the first
   annotated node inside it), `line_source: :call`. A node with no line anywhere
-  gets the function's def line, `line_source: :def`.
+  gets the function's def line, `line_source: :def`. Line 0 is no line (the
+  compiler's marker for generated code; macro output itself carries the macro
+  call site's line).
   """
 
   alias Anchor.Domain.Graph.Call
@@ -441,8 +443,8 @@ defmodule Anchor.Domain.Graph.CoreWalker do
 
   defp own_line(node) do
     Enum.find_value(:cerl.get_ann(node), fn
-      line when is_integer(line) -> line
-      {line, column} when is_integer(line) and is_integer(column) -> line
+      line when is_integer(line) and line > 0 -> line
+      {line, column} when is_integer(line) and line > 0 and is_integer(column) -> line
       _other -> nil
     end)
   end

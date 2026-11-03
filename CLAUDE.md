@@ -125,6 +125,23 @@ Extension rule:
   accepted key has a row, and compilation fails when a type has no
   `@relations_by_type` entry.
 
+## The causal graph (DND-5438)
+
+The graph engine reads compiled beams, never source alone, so macro output is
+visible. `Anchor.Adapters.BeamReader` (behaviour `Anchor.Adapters.BeamSource`)
+reads each `.beam` with `:beam_lib` only and asks its debug-info backend for
+`elixir_v1` (module facts) and `core_v1` with `[:no_copt]` (function bodies as
+Core Erlang, the way Dialyzer reads them). It never loads or calls a project
+module. A beam it cannot decode is an error value naming path, module and
+cause, never skipped. `Anchor.Domain.Graph.Builder` builds `%Anchor.Domain.Graph{}`
+from those records and `Anchor.Domain.Graph.SourceFacts` (literal `defmodule`s,
+for `generated?`); `Anchor.Domain.Graph.CoreWalker` reads call and struct-use
+edges from Core. A new Core shape goes into the walker with a row in
+`test/anchor/domain/graph/core_walker_test.exs`. Graph test fixtures are
+compiled in the test with `Anchor.Test.BeamFixtures.compile_unloaded/2`, which
+unloads every fixture module and turns `debug_info` on per module (`mix test`
+compiles with it off).
+
 ## Important Notes
 
 - When running Elixir code, use: `mix run -e "<elixir code>"`

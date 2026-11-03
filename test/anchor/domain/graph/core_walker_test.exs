@@ -181,15 +181,14 @@ defmodule Anchor.Domain.Graph.CoreWalkerTest do
     } do
       calls = calls(binary, {:lowered, 2})
 
-      for n <- 1..16 do
-        name = :"c#{n}"
-        snippet = "Other.c#{n}("
-        line = line(snippet)
+      # One {name, line} per source call site, Other.c1 .. Other.c16.
+      expected = for n <- 1..16, do: {:"c#{n}", line("Other.c#{n}(")}
 
-        assert [%Call{to: {Other, ^name, 1}, kind: :remote, line: ^line, line_source: :call}] =
-                 Enum.filter(calls, &(&1.to == {Other, name, 1})),
-               "expected one call to Other.#{name}/1 on line #{line}"
-      end
+      found =
+        for %Call{to: {Other, name, 1}, kind: :remote, line: line, line_source: :call} <- calls,
+            do: {name, line}
+
+      assert Enum.sort(found) == Enum.sort(expected)
 
       guard_line = line("# lowered head")
 
@@ -197,7 +196,7 @@ defmodule Anchor.Domain.Graph.CoreWalkerTest do
                Enum.find(calls, &(&1.to == {:erlang, :is_map, 1}))
 
       refute Enum.any?(calls, &(&1.kind == :local)),
-             "a comprehension's letrec loop is part of the function, not a local call"
+             "the letrec loop Core makes of a receive is part of the function, not a local call"
     end
   end
 
@@ -298,6 +297,13 @@ defmodule Anchor.Domain.Graph.CoreWalkerTest do
                     line_source: :def
                   }
                 ], []}
+    end
+
+    test "line 0 is no line: the edge gets the def line, flagged :def" do
+      call = :cerl.ann_c_call([0], :cerl.c_atom(Other), :cerl.c_atom(:f), [])
+      fun = :cerl.c_fun([], call)
+
+      assert {[%Call{line: 7, line_source: :def}], []} = CoreWalker.walk(M, {:f, 0}, fun, 7)
     end
 
     test "with no def line given, the c_fun's own line is the def line" do

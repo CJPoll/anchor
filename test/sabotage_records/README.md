@@ -62,6 +62,16 @@ before coining a synonym.
 - `dependency_analyzer` — `Anchor.Domain.DependencyAnalyzer`, the pure AST
   walk behind every dependency fact (module names, references, calls, uses,
   the module graph).
+- `beam_reader` — `Anchor.Adapters.BeamReader` (DND-5438): reading `.beam`
+  files and decoding each through `:beam_lib` and its debug-info backend
+  (`elixir_v1`, `core_v1`), and the decode error values.
+- `core_walker` — `Anchor.Domain.Graph.CoreWalker` (DND-5438): call and
+  struct-use edges read from a function's Core Erlang.
+- `builder` — `Anchor.Domain.Graph.Builder` (DND-5438): the causal graph built
+  from decoded beams and source facts (module facts, `generated?`,
+  `unreadable`), with the `Anchor.Domain.Graph` queries.
+- `source_facts` — `Anchor.Domain.Graph.SourceFacts` (DND-5438): the literal
+  `defmodule`s and `use`s of a source file.
 - `glob_pattern` — `Anchor.Domain.GlobPattern` (glob / module-name pattern
   matching for rule selection).
 - `rule_matching` — `Anchor.Domain.RuleMatching` (pure rule-selection predicate).
