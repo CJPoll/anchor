@@ -549,6 +549,44 @@ Then run:
 mix credo --strict
 ```
 
+## Generated sabotage: the functions a change touched
+
+```bash
+mix anchor.sabotage scope [--base REF] [--format text|json]
+```
+
+Prints the functions the working tree changed relative to the merge-base of
+`REF` (default `origin/main`) and `HEAD`: committed, staged and unstaged
+changes from `git diff --unified=0`, plus every untracked `.ex` file as wholly
+added. Each changed line inside a `def` or `defp` clause puts that function,
+`{module, name, arity}`, in scope; a multi-clause function appears once. A
+removed line maps to the function it was in at the merge-base (read with
+`git show`), so deleting lines or a whole clause of a function that still
+exists keeps it in scope; a function deleted whole is gone, and counted as a
+hunk outside a function. It reads git and source files only: nothing
+is compiled and no project code runs. Generated sabotage (the runner, later)
+mutates only these functions.
+
+Text output is one TSV line per function (`file, module, name/arity, kind,
+changed line ranges`), then a summary that counts what was left out:
+
+```
+lib/a.ex	A	f/1	def	3-5,8
+anchor.sabotage scope: 1 functions in 1 files; excluded: 0 test files, 0 non-source files, 0 deleted files, 1 hunks outside a function, 0 macros
+```
+
+Left out, and counted: test files (a `test` path segment or `_test.exs`),
+non-source files (not `.ex`, or under `deps`/`_build`), deleted files, hunks
+outside any function (attributes, docs, a deleted function), and macros
+(`defmacro`, `defmacrop`, `defguard`, `defguardp`, and any def inside `quote`).
+`--format json` carries the same fields.
+
+| Condition | Exit |
+|---|---|
+| measured (a clean diff prints `0 functions`) | 0 |
+| an unknown option, format or subcommand | 2 |
+| not a git work tree; `REF` unresolvable or no merge-base; git failing; a diff Anchor cannot read; a changed `.ex` file that does not parse or cannot be read | 3, `COULD NOT MEASURE` with `Fix:` |
+
 ## Check Types
 
 ### `no_direct_dependency`

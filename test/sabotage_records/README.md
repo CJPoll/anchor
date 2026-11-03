@@ -59,6 +59,11 @@ before coining a synonym.
 - `failures` — `Anchor.Domain.Failures`, the text of every fail-closed report
   (missing or invalid config, unparseable file, a check that crashed on a file).
 - `source` — `Anchor.Check.Source`, the AST/source acquisition edge.
+- `sabotage_scope` — `mix anchor.sabotage scope` (DND-5472): the diff parser
+  (`Anchor.Domain.Sabotage.DiffHunks`), the function spans
+  (`Anchor.Domain.Sabotage.FunctionSpans`), the mapping and its counts
+  (`Anchor.Domain.Sabotage.Scope`), the git adapter
+  (`Anchor.Adapters.GitChangeSource`), the `scope/2` Manager path and the task.
 - `dependency_analyzer` — `Anchor.Domain.DependencyAnalyzer`, the pure AST
   walk behind every dependency fact (module names, references, calls, uses,
   the module graph).
