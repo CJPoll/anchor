@@ -9,7 +9,10 @@
 # git repo (branch main = the base) and plays pull requests against it:
 #
 #   T1 a ref that does not resolve: exit 3, COULD NOT MEASURE.
-#   T2 a base with no bin/ci/base-judge.sh: exit 0, BOOTSTRAP, nothing built.
+#   T2 a base with no bin/ci/base-judge.sh and a pull request that adds it:
+#      exit 0, BOOTSTRAP, nothing built.
+#   T10 a base with no bin/ci/base-judge.sh and a pull request that does not
+#      add it (a branch cut before the judge, or the script deleted): exit 3.
 #   T3 a base whose bin/ci/base-judge.sh is a symlink: exit 3, never followed.
 #   T4 a base whose anchor does not compile: exit 3, never a pass.
 #   T5 the sabotage: a pull request that edits Enforcement to drop STALE and
@@ -201,6 +204,18 @@ if want T9; then
     expect "T9 stale beams are never read: the judge measures nothing" 3 \
       "COULD NOT MEASURE" "$status" "$work/t9.out"
   fi
+fi
+
+if want T10; then
+  if ! git -C "$repo" rev-parse --verify --quiet old-base >/dev/null; then
+    base_branch old-base "git rm -q bin/ci/base-judge.sh"
+  fi
+  pr=$(pull_request t10 old-base)
+  echo "Self-test line." >>"$pr/README.md"
+  (cd "$pr" && git commit -qam "a change on a base with no landed judge")
+  entry "$pr" old-base "$work/t10.out"
+  expect "T10 no landed judge and none added is COULD NOT MEASURE" 3 \
+    "has no bin/ci/base-judge.sh and this pull request does not add one" $? "$work/t10.out"
 fi
 
 if [ "$ran" -eq 0 ]; then

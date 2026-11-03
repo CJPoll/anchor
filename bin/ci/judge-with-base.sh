@@ -12,16 +12,18 @@
 # review is the gate for those. Keep this file to finding and starting the
 # landed copy.
 #
-# Bootstrap: a REF that has no bin/ci/base-judge.sh predates the separated
-# judge (the pull request that adds it is the only one). That prints a
-# BOOTSTRAP line and exits 0; the pull request's own `mix anchor.graph --base`
-# step still judges it. Once the script is on REF, every later pull request is
-# judged by REF's copy.
+# Bootstrap: a REF with no bin/ci/base-judge.sh, judged for a pull request
+# whose diff from REF ADDS that file (the pull request that brings the judge),
+# prints a BOOTSTRAP line and exits 0; that pull request's own `mix
+# anchor.graph --base` step still judges it. A REF with no landed judge and a
+# pull request that does not add one (a branch cut before the judge, or a base
+# where the script was deleted) is exit 3, never a pass. Once the script is on
+# REF, every later pull request is judged by REF's copy.
 #
 # Exit codes: base-judge.sh's own (0, 1, 3); 0 with BOOTSTRAP as above; 3
-# COULD NOT MEASURE when REF does not resolve, its tree cannot be listed, or
-# its bin/ci/base-judge.sh is not a regular file (a symlink is never
-# followed).
+# COULD NOT MEASURE when REF does not resolve, its tree cannot be listed, it
+# has no landed judge and this pull request adds none, or its
+# bin/ci/base-judge.sh is not a regular file (a symlink is never followed).
 set -uo pipefail
 
 could_not_measure() {
@@ -46,8 +48,14 @@ listing=$(git ls-tree "$sha" -- "$script") ||
   could_not_measure "could not list $script at $ref ($sha)" "check the checkout's git objects"
 
 if [ -z "$listing" ]; then
-  echo "judge-with-base: BOOTSTRAP: $ref ($sha) has no $script, so no landed judge exists" \
-    "yet; this pull request is judged by its own mix anchor.graph --base step only."
+  added=$(git diff --name-only --diff-filter=A "$sha" HEAD -- "$script") ||
+    could_not_measure "could not diff $ref ($sha) against HEAD" "check the checkout's git objects"
+  if [ "$added" != "$script" ]; then
+    could_not_measure "$ref ($sha) has no $script and this pull request does not add one" \
+      "land $script on $ref (a branch cut before DND-5658 needs it merged in)"
+  fi
+  echo "judge-with-base: BOOTSTRAP: $ref ($sha) has no $script, and this pull request adds" \
+    "it; it is judged by its own mix anchor.graph --base step only."
   exit 0
 fi
 

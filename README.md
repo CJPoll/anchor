@@ -659,8 +659,8 @@ pass. A change the landed judge refuses (a new rule type or config key it
 cannot parse, a rule narrowed so a baselined finding is gone) is landed by
 the owner. The pull request's own `mix anchor.graph --base` step still runs:
 it is the product under test. A base with no `bin/ci/base-judge.sh` prints
-`BOOTSTRAP` and exits 0; only the pull request that adds the script meets
-one. Self-test: `bin/tests/base-judge-test.sh` (CI job `Base judge
+`BOOTSTRAP` and exits 0 only for a pull request whose diff adds the script;
+any other pull request into such a base is exit 3. Self-test: `bin/tests/base-judge-test.sh` (CI job `Base judge
 self-test`). Not caught: a pull request that edits `.github/workflows/ci.yml`
 or `bin/ci/judge-with-base.sh` itself (GitHub runs the pull request's
 workflow), and build-time code a deliberately hostile pull request runs

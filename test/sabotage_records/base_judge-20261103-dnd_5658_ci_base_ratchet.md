@@ -21,6 +21,7 @@ The T5 premise is itself a recorded sabotage. The pull request in T5 edits `Anch
 | S7 | a ref that does not resolve exits 0 | T1 | `FAIL T1 an unresolvable ref is COULD NOT MEASURE: exit 0, wanted 3` |
 | S8 | the old anchor beams are not deleted before the pull request compiles (`true \|\|` in place of the `rm -rf`) | T9 | `FAIL T9 the judge passed on stale beams; output:`: the judge read the beams a build at main left and passed a pull request whose compile wrote elsewhere (the review finding was real) |
 | S9 | the judge is built before the pull request is compiled | T8 | `FAIL T8 built the judge first` |
+| S10 | BOOTSTRAP for any base with no landed judge (`if false; then` in place of the check that this pull request adds the script) | T10 | `FAIL T10 no landed judge and none added is COULD NOT MEASURE: exit 0, wanted 3` (critic finding, round 2) |
 | Z | `BASE_JUDGE_TEST_ONLY="T99"`, a filter that names no case | - | exit 3, `base-judge-test: COULD NOT MEASURE: BASE_JUDGE_TEST_ONLY="T99" names no case` (never a zero-case green) |
 
 T6 (an honest pull request passes) is the positive control for T5. It passed in the unmutated run.
