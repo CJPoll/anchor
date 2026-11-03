@@ -925,7 +925,9 @@ A function no literal `def`/`defp` defines is `{:error, :not_in_source}`.
 A protocol implementation's function is found as `scope` names it (DND-5624):
 `defimpl P, for: T` is `P.T`; a `defimpl P` with no `for:` inside
 `defmodule T` is `P.T`; `for: [T1, T2]` makes each `P.Tn` resolve to the one
-block, so each target gets the same edits under its own ids. A `defimpl` whose
+block, so each target gets the same edits under its own ids. Targets whose
+mutants select the same tests share one run: the edit is applied and its tests
+run once, and each target is listed with that verdict (DND-5639). A `defimpl` whose
 `for:` is not a literal module name (a variable, an attribute), or that has no
 `for:` inside an unnamed module, has no module name to give, so its functions
 are `{:error, :defimpl_target_not_literal}`, reported as `defimpl target not a

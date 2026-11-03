@@ -82,7 +82,7 @@ a `:failed` run with no failure frame stays `{:killed, []}`, as before.
 | P3 | the key drops the replacement | 16 | G3 `code: refute SharedRun.key(calc, tests) == SharedRun.key(replaced, tests)` `left: {"lib/calc.ex", {{3, 5}, {3, 29}}, nil, ["test/a_test.exs"]}` (and 15 runner tests whose mutants of one site took one verdict, e.g. `code:  assert Report.exit_code(run) == 1`) |
 | P4 | the key drops the file | 1 | G4 `left: {nil, {{3, 5}, {3, 29}}, "_ = {\"rendering\"}", ["test/a_test.exs"]}` |
 | P5 | a mutant with no test gets a key | 1 | G5 `code:  assert SharedRun.key(calc, {:none, []}) == nil` `left:  {"lib/calc.ex", {{3, 5}, {3, 29}}, "_ = {\"rendering\"}", []}` |
-| P6 | the tests not sorted (selection order is part of the key) | 1 | G1 `code:  assert SharedRun.key(other, {:coverage, ["test/b_test.exs", "test/a_test.exs"]}) == key` |
+| P6 | the tests used as selected, neither sorted nor de-duplicated | 1 | G1 `code:  assert SharedRun.key(other, {:coverage, ["test/b_test.exs", "test/a_test.exs"]}) == key` |
 | P7 | `attribute/3` keeps the first target's mutant | 2 | G6 `code:  assert shared == %{` (also T1) |
 | P8 | `attribute/3` keeps the first target's selection | 1 | G6 `code:  assert shared == %{` |
 | P9 | the runner never records a measured run | 1 | T1 `** (Mox.UnexpectedCallError) expected Anchor.SourceMutationMock.write_journal/2 to be called once but it has been called 2 times` |
