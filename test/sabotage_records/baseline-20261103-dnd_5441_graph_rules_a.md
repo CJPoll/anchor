@@ -85,6 +85,7 @@ which the critic caught from its verbatim output.
 | AD-K | BaselineFile does not refuse a line that is not UTF-8 (`lib/anchor/adapters/baseline_file.ex`) | `baseline_file_test.exs` | `5 tests, 1 failure` (red) | read/2 parses: comments dropped, a line that is not UTF-8 refused |
 | AD-F | regression: the existence probe was `git cat-file -e`, which printed git's fatal: line on every first landing (`lib/anchor/adapters/git_show.ex`) | `git_show_test.exs` | `5 tests, 1 failure` (red) | an absent file prints nothing: git's stderr never reaches the terminal |
 | AD-L | regression (review floor on d9a61de): GitShow read a failed path probe as absent, returned raw bytes, and passed any path to git (`lib/anchor/adapters/git_show.ex`) | `git_show_test.exs`, `baseline_file_test.exs` | `13 tests, 4 failures` (red) | an absolute path or a .. segment never reaches git; a path git cannot look up at a resolved ref is a git error, never :absent; a line that is not UTF-8 at the ref is its error, naming the line |
+| AD-M | regression (merge of origin/main 93f72d4): GitShow ran git with only GIT_OPTIONAL_LOCKS=0, so under a git hook's GIT_DIR it read another repository (`lib/anchor/adapters/git_show.ex`) | `git_env_isolation_test.exs` | `5 tests, 1 failure` (red) | E5: GitShow reads a baseline from the repository at its root, not GIT_DIR's |
 
 ## BL-A — comment lines are kept as keys
 
@@ -2192,4 +2193,27 @@ Run summary: `13 tests, 4 failures`
      right: {:error, {:line, 2, :invalid_utf8}}
      stacktrace:
        test/anchor/adapters/git_show_test.exs:112: (test)
+```
+
+## AD-M — regression (merge of origin/main 93f72d4): GitShow read the repository GIT_DIR named
+
+Main's DND-5581 gave every git adapter `Anchor.Adapters.GitEnv.env/0`, which
+unsets the repository-local variables a git hook exports. GitShow, new on
+this branch, ran git with only `GIT_OPTIONAL_LOCKS=0`, so `mix anchor.graph
+--base` run from a hook read the baseline at the ref in the repository
+`GIT_DIR` named: there it was absent, a silent first landing, and GREW went
+unjudged. The test ran on the unfixed adapter with `mix test --force
+test/anchor/adapters/git_env_isolation_test.exs`:
+
+Run summary: `5 tests, 1 failure`
+
+```text
+  1) test E5: GitShow reads a baseline from the repository at its root, not GIT_DIR's (Anchor.Adapters.GitEnvIsolationTest)
+     test/anchor/adapters/git_env_isolation_test.exs:143
+     Assertion with == failed
+     code:  assert GitShow.show(real, "main", ".anchor/baselines/r.txt") == {:ok, ["r|A|x"]}
+     left:  {:error, :absent}
+     right: {:ok, ["r|A|x"]}
+     stacktrace:
+       test/anchor/adapters/git_env_isolation_test.exs:153: (test)
 ```

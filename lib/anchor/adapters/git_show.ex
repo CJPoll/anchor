@@ -6,7 +6,9 @@ defmodule Anchor.Adapters.GitShow do
   It refuses a ref `Anchor.Domain.Baseline.valid_ref?/1` rejects, and an
   absolute path or one with a `..` segment, before git runs. Git runs with
   `System.cmd/3` (argv only, never a shell), in `root`, with
-  `GIT_OPTIONAL_LOCKS=0`, and only reads:
+  `Anchor.Adapters.GitEnv.env/0` (DND-5581: run from a git hook, it still
+  reads the repository at `root`, never the one `GIT_DIR` names, and
+  `GIT_OPTIONAL_LOCKS=0`), and only reads:
 
     1. `git rev-parse --verify --quiet --end-of-options <ref>^{commit}`: a ref
        that does not resolve is an error, never an absent file;
@@ -23,6 +25,7 @@ defmodule Anchor.Adapters.GitShow do
 
   @behaviour Anchor.Adapters.GitBase
 
+  alias Anchor.Adapters.GitEnv
   alias Anchor.Domain.Baseline
 
   @impl Anchor.Adapters.GitBase
@@ -57,7 +60,7 @@ defmodule Anchor.Adapters.GitShow do
     case System.cmd("git", args,
            cd: root,
            stderr_to_stdout: false,
-           env: [{"GIT_OPTIONAL_LOCKS", "0"}]
+           env: GitEnv.env()
          ) do
       {out, 0} -> {:ok, out}
       {out, status} -> {:error, {:git, status, out}}
