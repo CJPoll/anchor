@@ -24,7 +24,7 @@ defmodule Anchor.Managers.Graph.Request do
   @type t :: %__MODULE__{
           apps: [{atom(), Path.t()}],
           root: Path.t(),
-          source_dirs: %{atom() => Path.t()},
+          source_dirs: %{optional(atom()) => Path.t()},
           build_path: Path.t(),
           env: atom(),
           opts: %{format: :text | :json, only: [String.t()]}

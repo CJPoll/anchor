@@ -52,9 +52,9 @@ defmodule Anchor.Domain.Graph.Builder do
   """
   @spec build(
           [Beam.t() | Beam.decode_error()],
-          %{String.t() => SourceFacts.t() | {:error, :unparseable}},
+          %{optional(String.t()) => SourceFacts.t() | {:error, :unparseable}},
           root: Path.t(),
-          source_dirs: %{atom() => Path.t()}
+          source_dirs: %{optional(atom()) => Path.t()}
         ) :: Graph.t()
   def build(beams, source_facts, opts \\ []) do
     root = {Keyword.get(opts, :root), Keyword.get(opts, :source_dirs, %{})}

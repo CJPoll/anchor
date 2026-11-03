@@ -10,6 +10,7 @@ defmodule Anchor.Managers.GraphTest do
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5630_graph_hardening.md
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5637_umbrella_paths.md
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5638_root_in_key.md
+  # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5636_empty_uses.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -235,6 +236,26 @@ defmodule Anchor.Managers.GraphTest do
       assert finding.file == @user_file
       assert finding.rule_id == "f"
       assert finding.label == ~s|rule 1 (id: "f", stub_finds)|
+    end
+  end
+
+  # DND-5636: a source file with no literal defmodule (its modules are macro
+  # output) has an empty uses map: a measured "uses nothing", which the
+  # SourceSource port (Hammox) must accept. An unparseable file, whose facts
+  # are unknown, is the issue beside it.
+  describe "run/2 source facts with no uses" do
+    test "an empty uses map is read as facts, an unparseable file as unknown", %{beams: beams} do
+      expect_run(config([rule(:stub_ok, "ok")]), classified(beams),
+        sources: %{
+          @user_file => {:ok, "use MyApp.DSL\nresource :user\n"},
+          @accounts_file => {:ok, "defmodule Broken do\n"}
+        }
+      )
+
+      report = Graph.run(request(), deps())
+
+      assert [%{file: @accounts_file, message: message}] = report.findings
+      assert message =~ "could not read the source of #{@accounts_file} (:unparseable)"
     end
   end
 

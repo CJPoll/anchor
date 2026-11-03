@@ -13,7 +13,11 @@ defmodule Anchor.Domain.Graph.SourceFacts do
       `"A.B"`), in source order. A `defmodule` inside a `quote` is macro output,
       not a literal module of this file, and is not collected.
     * `uses` — for each of those modules, the literal `use` targets in its own
-      body (not in a nested module's, and not inside a `quote`).
+      body (not in a nested module's, and not inside a `quote`). A file with
+      no literal `defmodule` has an empty map: a measured "uses nothing",
+      not unknown (that is `{:error, :unparseable}`), so the type's key is
+      `optional` (a bare `String.t() =>` key in a typespec is required, and
+      Hammox refused the empty map at the `SourceSource` port, DND-5636).
 
     * `nonliteral_defmodule?` — whether the file has a `defmodule` whose name
       is not literal (`defmodule unquote(name)`, `defmodule Module.concat(...)`),
@@ -35,7 +39,7 @@ defmodule Anchor.Domain.Graph.SourceFacts do
 
   @type t :: %{
           defmodules: [String.t()],
-          uses: %{String.t() => [String.t()]},
+          uses: %{optional(String.t()) => [String.t()]},
           nonliteral_defmodule?: boolean()
         }
 

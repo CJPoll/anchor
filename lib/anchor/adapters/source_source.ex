@@ -9,12 +9,15 @@ defmodule Anchor.Adapters.SourceSource do
   entry per path: the file's `SourceFacts`, `{:error, :unparseable}` for a
   file that does not parse, or `{:error, reason}` for one that cannot be read.
   No raw text leaves the adapter (ADR 001). A path that cannot be read is an
-  error entry, never dropped. The real adapter is
+  error entry, never dropped; no paths is an empty map (DND-5636). The real adapter is
   `Anchor.Adapters.SourceReader`.
   """
 
   alias Anchor.Domain.Graph.SourceFacts
 
   @callback read(root :: Path.t(), paths :: [String.t()]) ::
-              %{String.t() => SourceFacts.t() | {:error, :unparseable} | {:error, term()}}
+              %{
+                optional(String.t()) =>
+                  SourceFacts.t() | {:error, :unparseable} | {:error, term()}
+              }
 end
