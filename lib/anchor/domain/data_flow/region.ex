@@ -16,8 +16,8 @@ defmodule Anchor.Domain.DataFlow.Region do
       variable escapes (the block's value is the exit); `:none` when the run
       neither ends its block nor lets a variable escape (it only computes or
       performs effects).
-    * `:lines` — `first..last` over the lines the run's nodes carry, or `nil`
-      when none carries one.
+    * `:lines` — `first..last` over every source line in the run's
+      expressions, or `nil` when none carries one.
   """
 
   @enforce_keys [:block, :nodes, :inputs, :output]

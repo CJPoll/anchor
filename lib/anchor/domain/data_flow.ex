@@ -45,6 +45,7 @@ defmodule Anchor.Domain.DataFlow do
   """
 
   alias Anchor.Domain.DataFlow.Builder
+  alias Anchor.Domain.DataFlow.Forms
   alias Anchor.Domain.DataFlow.Node
   alias Anchor.Domain.DataFlow.Region
   alias Anchor.Domain.DataFlow.Scope
@@ -239,10 +240,12 @@ defmodule Anchor.Domain.DataFlow do
   end
 
   defp region_lines(flow, members) do
-    case members |> Enum.map(&flow.nodes[&1].line) |> Enum.reject(&is_nil/1) do
-      [] -> nil
-      lines -> Enum.min(lines)..Enum.max(lines)//1
-    end
+    lines =
+      members
+      |> Enum.flat_map(&[flow.nodes[&1].line, Forms.last_line(flow.nodes[&1].ast)])
+      |> Enum.reject(&is_nil/1)
+
+    if lines == [], do: nil, else: Enum.min(lines)..Enum.max(lines)//1
   end
 
   defp region_output([]), do: :none

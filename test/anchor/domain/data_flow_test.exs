@@ -233,6 +233,14 @@ defmodule Anchor.Domain.DataFlowTest do
       assert call.uses == [k(:x, 0), k(:y, 0)]
     end
 
+    test "11b: a multi-line pipeline's node starts on its first line" do
+      flow = flow!("def f(x) do\n  x\n  |> f()\n  |> g()\nend")
+      [id] = flow.blocks[[]]
+
+      assert flow.nodes[id].line == 2
+      assert [%DataFlow.Region{lines: 2..4//1}] = DataFlow.regions(flow)
+    end
+
     test "12: if is a branch with two blocks; unless with no else still has two" do
       flow = flow!("def f(c, a, b) do\n  if c, do: a, else: b\nend")
       branch = node_at(flow, 2)

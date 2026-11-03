@@ -10,8 +10,9 @@ defmodule Anchor.Domain.DataFlow.Node do
       clause, `[2, :after, 0]` the first expression of a `try`'s `after` block.
     * `:ast` — the expression, with every `|>` already read as the call it
       desugars to.
-    * `:line` — the first source line found in the expression, or `nil` for a
-      bare literal (which carries no metadata).
+    * `:line` — the smallest source line anywhere in the expression (a
+      multi-line pipeline starts on its first stage), or `nil` for a bare
+      literal (which carries no metadata).
     * `:block` — the id of the block the node sits in (`[]` is the clause body).
     * `:parent` — the id of the enclosing `:branch`, `:fn` or `:for` node, or
       `nil` at the clause body.

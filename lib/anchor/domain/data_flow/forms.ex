@@ -71,12 +71,17 @@ defmodule Anchor.Domain.DataFlow.Forms do
   @spec desugar_pipes(Macro.t()) :: Macro.t()
   def desugar_pipes(ast), do: Macro.prewalk(ast, &unpipe/1)
 
-  @doc "The first source line in `ast` (outermost first), or `nil`."
+  @doc """
+  The smallest source line anywhere in `ast`, or `nil` when nothing in it
+  carries one. Not the outermost node's line: a multi-line pipeline's outer
+  call carries its last stage's line.
+  """
   @spec first_line(Macro.t()) :: pos_integer() | nil
-  def first_line(ast) do
-    {_ast, line} = Macro.prewalk(ast, nil, &line_step/2)
-    line
-  end
+  def first_line(ast), do: ast |> lines() |> Enum.min(fn -> nil end)
+
+  @doc "The largest source line anywhere in `ast`, or `nil`."
+  @spec last_line(Macro.t()) :: pos_integer() | nil
+  def last_line(ast), do: ast |> lines() |> Enum.max(fn -> nil end)
 
   @doc """
   The parts of a pattern: the variables it binds (name and context, in order,
@@ -207,10 +212,19 @@ defmodule Anchor.Domain.DataFlow.Forms do
   defp desc(form, kind, head, clauses),
     do: %{form: form, kind: kind, head: head, clauses: clauses}
 
-  defp line_step({_form, meta, _args} = node, nil) when is_list(meta),
-    do: {node, Keyword.get(meta, :line)}
+  defp line_step({_form, meta, _args} = node, lines) when is_list(meta) do
+    case Keyword.get(meta, :line) do
+      line when is_integer(line) -> {node, [line | lines]}
+      _none -> {node, lines}
+    end
+  end
 
-  defp line_step(node, line), do: {node, line}
+  defp line_step(node, lines), do: {node, lines}
+
+  defp lines(ast) do
+    {_ast, lines} = Macro.prewalk(ast, [], &line_step/2)
+    lines
+  end
 
   defp option_value({_key, value}), do: [value]
   defp option_value(_other), do: []
