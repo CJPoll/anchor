@@ -7,6 +7,7 @@ defmodule Mix.Tasks.Anchor.SabotageRunTest do
   # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5473_sabotage_run.md
   # Sabotage record (DND-5570): ../../sabotage_records/sabotage-20261103-dnd_5570_sabotage_hardening.md
   # Sabotage record (DND-5617): ../../sabotage_records/sabotage-20261103-dnd_5617_sabotage_cfa_batch.md
+  # Sabotage record (DND-5635): ../../sabotage_records/sabotage-20261103-dnd_5630_graph_hardening.md
   use ExUnit.Case, async: false
 
   import ExUnit.CaptureIO
@@ -108,7 +109,10 @@ defmodule Mix.Tasks.Anchor.SabotageRunTest do
     end
   end
 
-  test "DND-5617: changed functions that yield no mutant print a line each and the count, exit 0" do
+  # A run whose one changed function yields no mutant: it reaches the save of
+  # the last run without applying anything. Returns the output; `save_run`
+  # is the double's body.
+  defp no_mutant_run(save_run) do
     root = File.cwd!()
     source = "defmodule Calc do\n  def add(_a, _b) do\n    x = :ok\n    x\n  end\nend\n"
 
@@ -129,7 +133,7 @@ defmodule Mix.Tasks.Anchor.SabotageRunTest do
     expect(ChangeSourceMock, :show, fn ^root, "abc", "lib/calc.ex" -> {:ok, source} end)
     expect(GitWorktreeMock, :dirty_paths, fn ^root, ["lib/calc.ex"] -> {:ok, []} end)
     expect(SourceMutationMock, :existing, fn [] -> [] end)
-    expect(SourceMutationMock, :save_run, fn _path, _bytes -> :ok end)
+    expect(SourceMutationMock, :save_run, save_run)
 
     opts = [
       config_loader: ConfigLoaderMock,
@@ -139,7 +143,11 @@ defmodule Mix.Tasks.Anchor.SabotageRunTest do
       test_execution: TestExecutionMock
     ]
 
-    output = capture_io(fn -> assert Sabotage.run(["run"], opts) == :ok end)
+    capture_io(fn -> assert Sabotage.run(["run"], opts) == :ok end)
+  end
+
+  test "DND-5617: changed functions that yield no mutant print a line each and the count, exit 0" do
+    output = no_mutant_run(fn _path, _bytes -> :ok end)
 
     assert output =~
              "sabotage: no mutant from Calc.add/2 (lib/calc.ex): skipped: delete_statement: " <>
@@ -147,5 +155,29 @@ defmodule Mix.Tasks.Anchor.SabotageRunTest do
 
     assert output =~
              "sabotage: no mutants generated from 1 changed functions: nothing was measured"
+  end
+
+  # DND-5635: a project built somewhere other than <root>/_build/<env>
+  # (MIX_BUILD_PATH) saves its last run under its own build path, as the task
+  # gathers it from Mix. sync: MIX_BUILD_PATH is the VM's OS environment.
+  test "the last run is saved under Mix's build path, as MIX_BUILD_PATH sets it" do
+    build = Path.join(System.tmp_dir!(), "anchor-build-#{System.unique_integer([:positive])}")
+    previous = System.get_env("MIX_BUILD_PATH")
+
+    on_exit(fn ->
+      if previous,
+        do: System.put_env("MIX_BUILD_PATH", previous),
+        else: System.delete_env("MIX_BUILD_PATH")
+    end)
+
+    System.put_env("MIX_BUILD_PATH", build)
+
+    no_mutant_run(fn path, _bytes ->
+      send(self(), {:saved, path})
+      :ok
+    end)
+
+    assert_received {:saved, path}
+    assert path == Path.join(build, "anchor/sabotage/last-run.etf")
   end
 end

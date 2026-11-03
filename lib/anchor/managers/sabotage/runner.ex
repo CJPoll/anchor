@@ -47,7 +47,11 @@ defmodule Anchor.Managers.Sabotage.Runner do
        write the original back, touch, check its sha256 and only then delete
        the journal. A restore that does not reproduce the original stops the
        run (exit 2) with the journal kept.
-   10. The run is saved to `_build/<env>/anchor/sabotage/last-run.etf`.
+   10. The run is saved to `<build_path>/anchor/sabotage/last-run.etf`, where
+       `build_path` is the fact the task gathered from Mix
+       (`Mix.Project.build_path/0`: `_build/<env>`, or what `MIX_BUILD_PATH`
+       names), never derived from the root (DND-5635, as DND-5585 did for
+       the graph artifact).
    11. The sabotage records are written (DND-5484; `Anchor.Domain.Sabotage.Record`),
        unless `--no-record`: one per (app, domain) the run touched, created
        or appended, never overwritten. A run that exits 1 still writes them.
@@ -110,7 +114,7 @@ defmodule Anchor.Managers.Sabotage.Runner do
   @restore_failed :anchor_sabotage_restore_failed
 
   @spec run(map(), keyword()) :: Run.t()
-  def run(%{root: root} = facts, opts) do
+  def run(%{root: root, build_path: build_path} = facts, opts) when is_binary(build_path) do
     ports = ports(opts)
     run = %Run{base: Map.get(facts, :base, @default_base)}
 
@@ -995,8 +999,8 @@ defmodule Anchor.Managers.Sabotage.Runner do
   # finished run is saved after its records are written, so it names them.
   defp save(%Run{refusal: {_code, _message}} = run, _facts, _ports), do: run
 
-  defp save(run, facts, %{patcher: patcher}) do
-    path = build_path(facts, "last-run.etf")
+  defp save(run, %{build_path: build_path}, %{patcher: patcher}) do
+    path = Path.join([build_path, "anchor", "sabotage", "last-run.etf"])
 
     case patcher.save_run(path, :erlang.term_to_binary(run)) do
       :ok -> run

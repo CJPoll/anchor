@@ -8,6 +8,7 @@ defmodule Anchor.Managers.SabotageRunTest do
   # Sabotage record (DND-5570): ../../sabotage_records/sabotage-20261103-dnd_5570_sabotage_hardening.md
   # Sabotage record (DND-5617): ../../sabotage_records/sabotage-20261103-dnd_5617_sabotage_cfa_batch.md
   # Sabotage record (DND-5624): ../../sabotage_records/sabotage-20261103-dnd_5624_sabotage_defimpl.md
+  # Sabotage record (DND-5635): ../../sabotage_records/sabotage-20261103-dnd_5630_graph_hardening.md
   use ExUnit.Case, async: true
 
   import Hammox
@@ -39,11 +40,15 @@ defmodule Anchor.Managers.SabotageRunTest do
 
   @root "/repo"
   @file_path "/repo/lib/calc.ex"
+  # DND-5635: a build path that is not <root>/_build/<env> (MIX_BUILD_PATH):
+  # the last run is saved under it, never under the root.
   # `no_record: true`: these tests are about the run; the record tests
   # (DND-5484) set it false.
+  @build_path "/builds/repo-test"
   @facts %{
     root: @root,
     env: :test,
+    build_path: @build_path,
     base: "origin/main",
     max: nil,
     only: [],
@@ -168,7 +173,7 @@ defmodule Anchor.Managers.SabotageRunTest do
     do: expect(SourceMutationMock, :delete_journal, n, fn @root -> call(:delete_journal, :ok) end)
 
   defp expect_save do
-    expect(SourceMutationMock, :save_run, fn "/repo/_build/test/anchor/sabotage/last-run.etf",
+    expect(SourceMutationMock, :save_run, fn "/builds/repo-test/anchor/sabotage/last-run.etf",
                                              bytes ->
       assert %Anchor.Domain.Sabotage.Run{} = :erlang.binary_to_term(bytes)
       :ok
