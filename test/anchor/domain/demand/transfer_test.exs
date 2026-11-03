@@ -72,6 +72,7 @@ defmodule Anchor.Domain.Demand.TransferTest do
     end
 
     def returned(a), do: a + 1
+    def streamed(xs, p), do: Stream.map(xs, fn x -> x + p end)
 
     def dotted(m) do
       _ = m.x
@@ -219,6 +220,13 @@ defmodule Anchor.Domain.Demand.TransferTest do
     test "m.x with its result unused still uses field x (m may be a module: m.x() runs)",
          context do
       assert params(context, :dotted, 1) == [{:used, %{x: :all}}]
+    end
+
+    test "Stream.map (a HigherOrder function outside the pure modules): used, precisely",
+         context do
+      result = transfer(context, :streamed, 2)
+      assert result.params == [:all, :all]
+      assert MapSet.size(result.reasons) == 0
     end
 
     test "a + 1 returned uses a (the positive control of the discarded row)", context do
