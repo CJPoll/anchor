@@ -3,7 +3,7 @@ defmodule Anchor.Domain.Sabotage.ScopeTest do
   # counts, and the two renderings (DND-5472). Spans come from the real
   # `FunctionSpans` over literal source, so a line number in a test is a line of
   # the source beside it.
-  # Sabotage record: test/sabotage_records/sabotage_scope-20261103-dnd_5472.md
+  # Sabotage record: ../../../sabotage_records/sabotage_scope-20261103-dnd_5472.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Sabotage.ChangedFunction
@@ -132,7 +132,8 @@ defmodule Anchor.Domain.Sabotage.ScopeTest do
       assert Enum.map(scope.functions, &{&1.name, &1.arity}) == [{:f, 1}, {:g, 1}, {:h, 1}]
       assert hd(scope.functions).changed_lines == [3, 4, 5, 7, 8, 9]
       assert scope.counts.macros == 1
-      assert scope.counts.outside_hunks == 1
+      # The defmodule line is the added file's own, not a hunk outside a function.
+      assert scope.counts.outside_hunks == 0
     end
 
     test "S10: a change inside a defmacro is counted as a macro, not scoped" do
@@ -142,12 +143,36 @@ defmodule Anchor.Domain.Sabotage.ScopeTest do
     end
 
     test "S11: identity does not depend on line numbers" do
+      # Both clauses of f/1 change, before and after the file moves down 10
+      # lines: one function each time, the same in all but its line numbers.
       moved = String.duplicate("\n", 10) <> @source
-      before = build([{4, 1}])
-      later = build([{14, 1}], moved)
+      before = build([{4, 1}, {8, 1}])
+      later = build([{14, 1}, {18, 1}], moved)
 
-      assert Enum.map(before.functions, &{&1.module, &1.name, &1.arity}) ==
-               Enum.map(later.functions, &{&1.module, &1.name, &1.arity})
+      assert [%ChangedFunction{changed_lines: [4, 8]} = was] = before.functions
+      assert [%ChangedFunction{changed_lines: [14, 18]} = now] = later.functions
+      assert %{was | changed_lines: []} == %{now | changed_lines: []}
+    end
+
+    test "S13: a whole clause deleted from the middle of f/1 puts f/1 in scope" do
+      source = """
+      defmodule M do
+        def f(1), do: 1
+        def f(3), do: 3
+
+        def g, do: :g
+        def h, do: :h
+      end
+      """
+
+      # `def f(2), do: 2` was line 3: deletion point between new lines 2 and 3.
+      scope = build([{2, 0}], source)
+      assert identities(scope) == [{M, :f, 1, [3]}]
+      assert scope.counts == @zero
+
+      # Positive control: a deletion point between two different functions is outside.
+      assert build([{5, 0}], source).counts == %{@zero | outside_hunks: 1}
+      assert build([{5, 0}], source).functions == []
     end
 
     test "S12: one hunk over two functions scopes both, in file then line order" do

@@ -12,8 +12,8 @@ defmodule Anchor.Domain.Sabotage.FunctionSpans do
 
     * **Module.** A stack of `defmodule`s: a nested `defmodule B` inside `A` is
       `A.B`, `defmodule Elixir.C` is `C`, and `defprotocol` names a module the
-      same way. `defimpl P, for: T` is `P.T`; without `for:` it is `P.<the
-      enclosing module>`. Names are the literal spelling (aliases are not
+      same way. `defimpl P, for: T` is `P.T`, `for: [T, U]` gives a span per
+      type, and without `for:` it is `P.<the enclosing module>`. Names are the literal spelling (aliases are not
       resolved: DND-1282).
     * **First line** is the `def` call's line.
     * **Last line** is the `end` of a do-block, else the `end_of_expression`
@@ -84,10 +84,19 @@ defmodule Anchor.Domain.Sabotage.FunctionSpans do
   defp walk(nodes, ctx, acc) when is_list(nodes), do: Enum.reduce(nodes, acc, &walk(&1, ctx, &2))
   defp walk(_leaf, _ctx, acc), do: acc
 
+  # `for: [A, B]` defines one implementation module per type, each with the
+  # same body.
   defp walk_impl(protocol, opts, ctx, acc) do
-    target = Keyword.get(opts, :for)
-    module = impl_name(protocol, target, ctx.module)
-    walk(Keyword.get(opts, :do), %{ctx | module: module}, acc)
+    body = Keyword.get(opts, :do)
+
+    opts
+    |> Keyword.get(:for)
+    |> List.wrap()
+    |> then(fn
+      [] -> [nil]
+      targets -> targets
+    end)
+    |> Enum.reduce(acc, &walk(body, %{ctx | module: impl_name(protocol, &1, ctx.module)}, &2))
   end
 
   defp span(kind, meta, head, node, ctx) do
@@ -145,7 +154,6 @@ defmodule Anchor.Domain.Sabotage.FunctionSpans do
   defp nested_name(_built, _parent), do: nil
 
   defp impl_name(protocol, nil, parent), do: concat(literal_name(protocol, parent), parent)
-  defp impl_name(protocol, [target | _more], parent), do: impl_name(protocol, target, parent)
 
   defp impl_name(protocol, target, parent),
     do: concat(literal_name(protocol, parent), literal_name(target, parent))

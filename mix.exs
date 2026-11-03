@@ -5,7 +5,7 @@ defmodule Anchor.MixProject do
     [
       app: :anchor,
       version: "0.1.0",
-      elixir: "~> 1.15",
+      elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
       elixirc_options: [warnings_as_errors: true],
       deps: deps(),

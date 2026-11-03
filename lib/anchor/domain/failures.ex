@@ -206,7 +206,7 @@ defmodule Anchor.Domain.Failures do
 
   def scope_could_not_measure({:git_failed, argv, status, output}) do
     "COULD NOT MEASURE: `git #{Enum.join(argv, " ")}` exited #{status}: " <>
-      "#{capped(String.trim(output))}. Fix: run the command by hand to see why."
+      "#{git_output(String.trim(output))}. Fix: run the command by hand to see why."
   end
 
   def scope_could_not_measure({:unparseable_diff, reason}) do
@@ -227,6 +227,11 @@ defmodule Anchor.Domain.Failures do
   def scope_could_not_measure(reason) do
     "COULD NOT MEASURE: #{capped(inspect(reason))}. Fix: this is a defect in Anchor; report it with this text."
   end
+
+  # `diff` and `ls-files` keep git's stderr out of their output, so a failure
+  # there usually quotes nothing: git's own message is on stderr.
+  defp git_output(""), do: "(git's message is printed above, on stderr)"
+  defp git_output(output), do: capped(output)
 
   @doc """
   Names a parsed rule the way a load error does: `rule 2 (id: "web", type)`, or

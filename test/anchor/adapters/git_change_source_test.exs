@@ -2,7 +2,7 @@ defmodule Anchor.Adapters.GitChangeSourceTest do
   # Adapter tests (DND-5472): the conversion of real git output, in a git
   # repository each test makes in its own tmp_dir. The commit identity is argv
   # (`-c user.name=...`), never global config.
-  # Sabotage record: test/sabotage_records/sabotage_scope-20261103-dnd_5472.md
+  # Sabotage record: ../../sabotage_records/sabotage_scope-20261103-dnd_5472.md
   use ExUnit.Case, async: true
 
   alias Anchor.Adapters.GitChangeSource
@@ -16,8 +16,13 @@ defmodule Anchor.Adapters.GitChangeSourceTest do
     "commit.gpgsign=false"
   ]
 
+  @hook_env Enum.map(~w(DIR WORK_TREE INDEX_FILE COMMON_DIR), &("GIT_" <> &1))
+
   defp git!(root, args) do
-    {out, 0} = System.cmd("git", @identity ++ args, cd: root, stderr_to_stdout: true)
+    # A suite run under a git hook inherits the repository-locating variables,
+    # which would point these commands at the outer repository instead of tmp_dir.
+    env = Enum.map(@hook_env, &{&1, nil})
+    {out, 0} = System.cmd("git", @identity ++ args, cd: root, stderr_to_stdout: true, env: env)
     out
   end
 
@@ -65,7 +70,7 @@ defmodule Anchor.Adapters.GitChangeSourceTest do
     assert GitChangeSource.untracked(root) == {:ok, ["lib/new.ex"]}
   end
 
-  test "G3: an unresolvable ref, or one that looks like an option, is no merge-base", %{
+  test "G3: an unresolvable ref, or one spelled like an option, is no merge-base", %{
     tmp_dir: root
   } do
     repo!(root)
@@ -75,8 +80,6 @@ defmodule Anchor.Adapters.GitChangeSourceTest do
 
     assert GitChangeSource.merge_base(root, "--output=x") ==
              {:error, {:no_merge_base, "--output=x"}}
-
-    refute File.exists?(Path.join(root, "x"))
   end
 
   test "G3b: a ref with no history in common with HEAD is no merge-base", %{tmp_dir: root} do

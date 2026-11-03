@@ -14,9 +14,10 @@ defmodule Anchor.Adapters.GitChangeSource do
     * `git rev-parse --verify --quiet --end-of-options <ref>^{commit}`, then
       `git merge-base <sha> HEAD`;
     * `git diff --unified=0 --no-color --no-ext-diff --no-textconv --no-renames
-      --relative --src-prefix=a/ --dst-prefix=b/ <sha> --` (`--relative`: paths
-      relative to `root`, the same base `ls-files` uses; the prefixes are set
-      so a user's `diff.noprefix` cannot change the text);
+      --relative --submodule=short --src-prefix=a/ --dst-prefix=b/ <sha> --`
+      (`--relative`: paths relative to `root`, the same base `ls-files` uses;
+      the submodule format and the prefixes are set so a user's
+      `diff.submodule` or `diff.noprefix` cannot change the text);
     * `git ls-files -z --others --exclude-standard -- *.ex`.
 
   `diff` and `ls-files` keep git's stderr out of their output, so a warning
@@ -27,7 +28,7 @@ defmodule Anchor.Adapters.GitChangeSource do
   @behaviour Anchor.Adapters.ChangeSource
 
   @diff_args ~w(diff --unified=0 --no-color --no-ext-diff --no-textconv --no-renames --relative
-                --src-prefix=a/ --dst-prefix=b/)
+                --submodule=short --src-prefix=a/ --dst-prefix=b/)
 
   @impl Anchor.Adapters.ChangeSource
   def merge_base(root, ref) do
@@ -74,13 +75,14 @@ defmodule Anchor.Adapters.GitChangeSource do
   end
 
   defp resolve(root, ref) do
-    case git(
-           root,
-           ["rev-parse", "--verify", "--quiet", "--end-of-options", ref <> "^{commit}"],
-           true
-         ) do
+    args = ["rev-parse", "--verify", "--quiet", "--end-of-options", ref <> "^{commit}"]
+
+    # `--verify --quiet` exits 1, silently, for a ref that does not resolve;
+    # any other failure is git's, and says so.
+    case git(root, args, true) do
       {out, 0} -> {:ok, String.trim(out)}
-      {_out, _status} -> {:error, {:no_merge_base, ref}}
+      {"", 1} -> {:error, {:no_merge_base, ref}}
+      {out, status} -> {:error, {:git_failed, args, status, out}}
     end
   end
 

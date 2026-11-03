@@ -3,7 +3,7 @@ defmodule Anchor.Managers.SabotageScopeTest do
   # change-source port doubled by Hammox `expect/3`, which self-verifies: a call
   # the test does not expect fails it, so "diff never called" is proven by not
   # expecting it.
-  # Sabotage record: test/sabotage_records/sabotage_scope-20261103-dnd_5472.md
+  # Sabotage record: ../../sabotage_records/sabotage_scope-20261103-dnd_5472.md
   use ExUnit.Case, async: true
 
   import Hammox

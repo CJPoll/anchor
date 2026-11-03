@@ -1,6 +1,6 @@
 defmodule Anchor.Domain.Sabotage.FunctionSpansTest do
   # Domain tests for the def-clause line spans of a source file (DND-5472).
-  # Sabotage record: test/sabotage_records/sabotage_scope-20261103-dnd_5472.md
+  # Sabotage record: ../../../sabotage_records/sabotage_scope-20261103-dnd_5472.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Sabotage.FunctionSpans
@@ -191,6 +191,19 @@ defmodule Anchor.Domain.Sabotage.FunctionSpansTest do
       assert {:error, {line, reason}} = FunctionSpans.spans(source, "lib/m.ex")
       assert line == 2
       assert is_binary(reason) and reason != ""
+    end
+
+    test "P13: defimpl for: a list of types gives a span per type" do
+      source = """
+      defimpl String.Chars, for: [A, B] do
+        def to_string(_x), do: "x"
+      end
+      """
+
+      assert summary(spans!(source)) == [
+               {String.Chars.A, :to_string, 1, :def, 2..2, false},
+               {String.Chars.B, :to_string, 1, :def, 2..2, false}
+             ]
     end
 
     test "P12: a name built by unquote outside quote cannot be named, and is marked excluded_macro" do

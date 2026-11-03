@@ -16,7 +16,9 @@ defmodule Anchor.Domain.Sabotage.Scope do
 
   For `{start, count}` with `count > 0` the changed lines are
   `start..start + count - 1`. With `count == 0` it is a deletion point between
-  lines `start` and `start + 1`, which belongs to a span holding both. An added
+  lines `start` and `start + 1`, which belongs to a span holding both, or, when
+  none does, to the function whose clauses sit on both sides of it (a whole
+  clause deleted from the middle of a multi-clause function). An added
   file (or an untracked one) changes every line of every function in it.
 
   Each changed line goes to every function span holding it that is not
@@ -175,10 +177,22 @@ defmodule Anchor.Domain.Sabotage.Scope do
     end
   end
 
-  # An added file changed every line its functions hold: one hunk over them all.
+  # An added file changed every line its functions hold: one hunk over them
+  # all. Its lines outside a function (the defmodule line, attributes) are not
+  # a hunk the diff made outside a function, so they are not counted.
   defp scope_file(path, :added, _hunks, spans, acc) do
     last = spans |> Enum.map(& &1.last) |> Enum.max(fn -> 1 end)
-    scope_file(path, :modified, [{1, last}], spans, acc)
+
+    {functions, counts} =
+      scope_file(
+        path,
+        :modified,
+        [{1, last}],
+        spans,
+        {elem(acc, 0), %{elem(acc, 1) | outside_hunks: 0}}
+      )
+
+    {functions, %{counts | outside_hunks: elem(acc, 1).outside_hunks}}
   end
 
   defp scope_file(path, _status, hunks, spans, acc) do
@@ -190,8 +204,16 @@ defmodule Anchor.Domain.Sabotage.Scope do
     end)
   end
 
+  # A deletion point inside one clause belongs to it. One between two clauses
+  # of the same function (a whole clause deleted from the middle) belongs to
+  # that function: its behaviour changed even though no clause holds the point.
   defp map_hunk({start, 0}, path, spans, functions) do
-    holders = Enum.filter(spans, &(&1.first <= start and start + 1 <= &1.last))
+    holders =
+      case Enum.filter(spans, &(&1.first <= start and start + 1 <= &1.last)) do
+        [] -> between_clauses(spans, start)
+        holders -> holders
+      end
+
     map_line(start + 1, holders, path, {functions, []})
   end
 
@@ -202,6 +224,17 @@ defmodule Anchor.Domain.Sabotage.Scope do
     end)
   end
 
+  defp between_clauses(spans, start) do
+    before = spans |> Enum.filter(&(&1.last <= start)) |> Enum.max_by(& &1.last, fn -> nil end)
+
+    later =
+      spans |> Enum.filter(&(&1.first >= start + 1)) |> Enum.min_by(& &1.first, fn -> nil end)
+
+    if before && later && identity(before) == identity(later), do: [before], else: []
+  end
+
+  defp identity(span), do: {span.module, span.name, span.arity}
+
   defp map_line(line, holders, path, {functions, flags}) do
     case Enum.reject(holders, & &1.excluded_macro) do
       [] when holders == [] -> {functions, [:outside | flags]}
@@ -211,7 +244,7 @@ defmodule Anchor.Domain.Sabotage.Scope do
   end
 
   defp add_line(functions, span, path, line) do
-    key = {span.module, span.name, span.arity}
+    key = identity(span)
 
     Map.update(functions, key, {span.first, new_function(span, path, line)}, fn {first, function} ->
       {min(first, span.first), %{function | changed_lines: [line | function.changed_lines]}}

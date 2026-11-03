@@ -2,7 +2,7 @@ defmodule Anchor.Domain.Sabotage.DiffHunksTest do
   # Domain tests for the `git diff --unified=0` parser (DND-5472). Every input is
   # literal diff text in the shape git prints with the adapter's flags
   # (`--src-prefix=a/ --dst-prefix=b/ --no-renames`).
-  # Sabotage record: test/sabotage_records/sabotage_scope-20261103-dnd_5472.md
+  # Sabotage record: ../../../sabotage_records/sabotage_scope-20261103-dnd_5472.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Sabotage.DiffHunks

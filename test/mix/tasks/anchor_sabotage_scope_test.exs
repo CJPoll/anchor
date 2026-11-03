@@ -4,7 +4,7 @@ defmodule Mix.Tasks.Anchor.SabotageScopeTest do
   # doubled by Hammox (real git is covered by the adapter tests).
   # sync: capture_io(:stderr) captures the VM-wide standard_error device, which
   # another async test's output would interleave with.
-  # Sabotage record: test/sabotage_records/sabotage_scope-20261103-dnd_5472.md
+  # Sabotage record: ../../sabotage_records/sabotage_scope-20261103-dnd_5472.md
   use ExUnit.Case, async: false
 
   import ExUnit.CaptureIO
