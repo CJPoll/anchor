@@ -16,7 +16,8 @@ The two mutations the QA plan names: DEM-A (the SCC loop runs one round only: bo
 - The rows below come from four runs: a9deba8 (the main run, 37 mutations), fd79e2e (DEM-D, DEM-P, DEM-AE, EFF-A rewritten for the final code; DEM-D's first form only skipped clearing a clause's names on entry, which the restore on exit masked, so it reddened nothing: it now removes the scope entirely), c33e8b7 (LAT-*, DEM-AI..AK, EFF-B..D, PURE-B..C, written for the tests no earlier row reached) and 43d2404 (LAT-C and SELF-A again, after the monotonicity row was widened to every ordered pair; LAT-C reddened only the bound rows before).
 - DEM-AL ran on ada6b84, the critic fix (with DEM-Y again, which still reddens only its pure-call row there). A first DEM-AL run, on the uncommitted fix, is not counted: the driver's `git checkout --` restore then dropped that uncommitted fix (2dea3b9 went out without it; ada6b84 restores it).
 - DEM-AM and DEM-AN ran on efa463f, the critic round 3 fix, with DEM-Y again: DEM-Y there reddens both protection rows (the pure call and the failed match), DEM-AN only the failed-match row, DEM-AM only the apply/2 row.
-- Every one of the 85 tests in the six files is seen failing in at least one row.
+- DEM-AO ran on 54a7db7, alone.
+- Every one of the 86 tests in the six files is seen failing in at least one row.
 - Not counted: in 13 rows the self test (`Anchor's own code: ...`) also failed by **timing out** at the mutation runs' 2000 ms `--timeout` under a loaded machine; those are not kills and are left out of the "Tests failed" counts. The self test now carries `@moduletag timeout: 60_000` (43d2404). The self test is killed for real (an assertion) by DEM-C, DEM-T and SELF-A.
 - Measured zeros: none in the final runs. DEM-M (a literal-key field read uses the whole value) of the first run targeted a helper the review-floor fix removed; DEM-AH covers the code that replaced it.
 
@@ -73,6 +74,7 @@ The two mutations the QA plan names: DEM-A (the SCC loop runs one round only: bo
 | DEM-AL | a project call or closure apply inside try takes only its summary (the critic's finding on ebc5e60) | `transfer.ex` | 2 | analyze/4 inside try, a project call or a lambda apply that can raise uses its argument; counts functions analysed, absent parameters and imprecise functions, exact |
 | DEM-AM | apply(f, list) inside try takes only the closures' summaries (critic round 3) | `transfer.ex` | 2 | analyze/4 inside try, a project call or a lambda apply that can raise uses its argument; counts functions analysed, absent parameters and imprecise functions, exact |
 | DEM-AN | a failed match inside try drops its value (critic round 3) | `transfer.ex` | 1 | more Core shapes inside try, a failed match's value reaches the handler: used |
+| DEM-AO | a binary inside try uses its segments only when it is used (self-review after critic round 3) | `transfer.ex` | 1 | more Core shapes inside try, a binary built from a can raise (badarg): a used |
 
 ## DEM-A — the SCC loop runs one round only
 
@@ -967,4 +969,19 @@ Run summary: `85 tests, 1 failure`
        test/anchor/domain/demand/transfer_test.exs:299: (test)
 
 ...................................
+```
+
+## DEM-AO — a binary inside try uses its segments only when it is used
+
+Run summary: `86 tests, 1 failure`
+
+```
+  1) test more Core shapes inside try, a binary built from a can raise (badarg): a used (Anchor.Domain.Demand.TransferTest)
+     test/anchor/domain/demand/transfer_test.exs:313
+     Assertion with == failed
+     code:  assert params(context, :guarded_bin, 1) == [:all]
+     left:  [:absent]
+     right: [:all]
+     stacktrace:
+       test/anchor/domain/demand/transfer_test.exs:314: (test)
 ```
