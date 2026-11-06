@@ -4161,3 +4161,257 @@ a helper given only literals is a gap (`lib/anchor/domain/aggregates/write_sites
 
 .........................................
 ```
+
+# Eighth run: a Multi from a local helper; a value read out of a changeset
+
+5 mutations for critic round 10's finding and two of its notes: all red on their first run.
+
+| # | Mutation | Tests run | Result |
+|---|---|---|---|
+| WSK-LOCALHELPER | a Multi built by a local helper is not traced (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `55 tests, 1 failure` (red) |
+| WSK-MAKES | a helper making its own Multi from data is a gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `55 tests, 2 failures` (red) |
+| WSK-MAKESANY | any helper reads as making its own Multi (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `55 tests, 2 failures` (red) |
+| WSK-VARLITERAL | a literal through a variable is a gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `55 tests, 1 failure` (red) |
+| FS-CHANGESETREAD | a value read out of a changeset is its schema (`lib/anchor/domain/aggregates/write_source.ex`) | `real_ecto_test.exs` | `12 tests, 1 failure` (red) |
+
+## WSK-LOCALHELPER
+
+a Multi built by a local helper is not traced (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `55 tests, 1 failure`.
+
+```
+
+  1) test build/3 a Multi built by a local helper is traced, its helper's writes in the scope (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:524
+     match (=) failed
+     code:  assert %Scope{kind: :multi, complete?: true} = scope = one(a, :s54)
+     left:  %Anchor.Domain.Aggregates.Scope{kind: :multi, complete?: true} = scope
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s54, 1},
+              ordinal: 1,
+              line: 223,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              complete?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.ScopesTest.X, :s54, 1}, 223}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:527: (test)
+
+...............
+```
+
+## WSK-MAKES
+
+a helper making its own Multi from data is a gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `55 tests, 2 failures`.
+
+```
+
+  1) test build/3 a helper that makes its own Multi from data is complete; one given a Multi is not (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:533
+     match (=) failed
+     code:  assert %Scope{complete?: true} = scope = one(a, :s56)
+     left:  %Anchor.Domain.Aggregates.Scope{complete?: true} = scope
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s56, 1},
+              ordinal: 1,
+              line: 232,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.ScopesTest.Builder, :build,
+                   1},
+                  line: 62,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.ScopesTest.T],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([schema: AnchorFixtures.ScopesTest.T]),
+              complete?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.ScopesTest.X, :s56, 1}, 232}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:536: (test)
+
+...
+
+
+  2) test build/3 a Multi built by a local helper is traced, its helper's writes in the scope (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:524
+     match (=) failed
+     code:  assert %Scope{kind: :multi, complete?: true} = scope = one(a, :s54)
+     left:  %Anchor.Domain.Aggregates.Scope{kind: :multi, complete?: true} = scope
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s54, 1},
+              ordinal: 1,
+              line: 223,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.ScopesTest.X, :local_build,
+                   1},
+                  line: 221,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.ScopesTest.T],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([schema: AnchorFixtures.ScopesTest.T]),
+              complete?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.ScopesTest.X, :s54, 1}, 223}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:527: (test)
+
+.................
+```
+
+## WSK-MAKESANY
+
+any helper reads as making its own Multi (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `55 tests, 2 failures`.
+
+```
+
+  1) test build/3 a helper given only a Multi Anchor cannot trace is a gap at the transaction (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:510
+     match (=) failed
+     code:  assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s50, 1}, _}]} = one(a, :s50)
+     left:  %Anchor.Domain.Aggregates.Scope{
+              complete?: false,
+              gaps: [{:dynamic_call, {AnchorFixtures.ScopesTest.X, :s50, 1}, _}]
+            }
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s50, 1},
+              ordinal: 1,
+              line: 216,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.ScopesTest.Builder, :add_t,
+                   1},
+                  line: 60,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.ScopesTest.T],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([schema: AnchorFixtures.ScopesTest.T]),
+              complete?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:513: (test)
+
+.............
+
+
+  2) test build/3 a helper that makes its own Multi from data is complete; one given a Multi is not (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:533
+     match (=) failed
+     code:  assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s57, 1}, _}]} = one(a, :s57)
+     left:  %Anchor.Domain.Aggregates.Scope{
+              complete?: false,
+              gaps: [{:dynamic_call, {AnchorFixtures.ScopesTest.X, :s57, 1}, _}]
+            }
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s57, 1},
+              ordinal: 1,
+              line: 233,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.ScopesTest.X, :local_add, 1},
+                  line: 222,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.ScopesTest.T],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([schema: AnchorFixtures.ScopesTest.T]),
+              complete?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:538: (test)
+
+......................................
+```
+
+## WSK-VARLITERAL
+
+a literal through a variable is a gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `55 tests, 1 failure`.
+
+```
+
+  1) test build/3 a literal reaching a function-taking call through a variable is no gap (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:541
+     match (=) failed
+     code:  assert %Scope{complete?: true} = one(a, :s58)
+     left:  %Anchor.Domain.Aggregates.Scope{complete?: true}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s58, 1},
+              ordinal: 1,
+              line: 237,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              complete?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.ScopesTest.X, :s58, 1}, 237}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:542: (test)
+
+..................
+```
+
+## FS-CHANGESETREAD
+
+a value read out of a changeset is its schema (`lib/anchor/domain/aggregates/write_source.ex`). Result: `12 tests, 1 failure`.
+
+```
+
+  1) test a value read out of a changeset is not the changeset's schema (Anchor.Domain.Aggregates.RealEctoTest)
+     test/anchor/domain/aggregates/real_ecto_test.exs:137
+     match (=) failed
+     code:  assert %{sources: [], unresolved: seen} = site(a, :e7)
+     left:  %{sources: [], unresolved: seen}
+     right: %Anchor.Domain.Aggregates.WriteSite{
+              mfa: {AnchorFixtures.RealEctoTest.E, :e7, 0},
+              line: 33,
+              op: :insert,
+              via: :repo,
+              sources: [schema: AnchorFixtures.RealEctoTest.Thread],
+              unresolved: nil,
+              scopes: [],
+              run_callback?: false
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/real_ecto_test.exs:138: (test)
+
+......
+```
