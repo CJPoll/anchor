@@ -269,9 +269,15 @@ defmodule Anchor.Domain.Aggregates.NoWrite do
     System => @system_functions
   }
 
-  # A function given as the default comes back as a value: nothing here runs it, and
-  # project code that runs it is a gap of its own, at that call.
-  @given_back MapSet.new([{Keyword, :get, 3}, {Map, :get, 3}])
+  # A function here comes to no gap. A default comes back as a value: nothing here
+  # runs it, and project code that runs it is a gap of its own, at that call. A log
+  # message may be data or a function (so no `HigherOrder` row), and a function there
+  # runs on the spot.
+  @harmless_function_argument MapSet.new([
+                                {Keyword, :get, 3},
+                                {Logger, :__do_log__, 4},
+                                {Map, :get, 3}
+                              ])
 
   @doc """
   Whether a call of `{module, name, arity}` is cleared: the built-in list, or
@@ -285,7 +291,7 @@ defmodule Anchor.Domain.Aggregates.NoWrite do
     end
   end
 
-  @doc "Whether `mfa` only hands back a function it is given, and never runs it."
-  @spec gives_back?(mfa()) :: boolean()
-  def gives_back?(mfa), do: MapSet.member?(@given_back, mfa)
+  @doc "Whether a function value given to `mfa`, in any place, needs no following."
+  @spec harmless_function_argument?(mfa()) :: boolean()
+  def harmless_function_argument?(mfa), do: MapSet.member?(@harmless_function_argument, mfa)
 end

@@ -13,7 +13,7 @@ defmodule Anchor.Domain.Aggregates.Config do
     repos: [MyApp.Repo]                       # DND-5459 reads it
     write_functions: ["MyApp.Repo.soft_delete/2"]
     transaction_functions: ["GenSaas.UnitOfWork.transaction/3"]
-    no_write_modules: [MyApp.Pdf, ":ets"]     # a listed module's writes are not read
+    no_write_modules: [SomeLib, ":ets"]       # a listed module's writes are not read
   ```
 
   The whole section is parsed here. `repos` (exact module names),

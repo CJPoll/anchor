@@ -93,6 +93,9 @@ defmodule Anchor.Domain.Aggregates.WriteSitesDefaultTest do
     def d17(pid), do: GenServer.call(pid, :save)
     def d18, do: Task.async(fn -> :ok end)
     def d20a, do: Repo.transaction(fn -> Logger.debug(fn -> "x" end) end)
+    def d20h(m), do: Repo.transaction(fn -> Logger.info(m) end)
+    def d20i(m), do: Repo.transaction(fn -> Logger.info("said \#{m}") end)
+    def d20j(m), do: Repo.transaction(fn -> Logger.error(inspect(m)) end)
     def d20b(c), do: Repo.transaction(fn -> Ecto.Changeset.traverse_errors(c, fn e -> e end) end)
     def d20c(c), do: Repo.transaction(fn -> Ecto.Changeset.update_change(c, :x, fn v -> v end) end)
     def d20d(c), do: Repo.transaction(fn -> Ecto.Changeset.validate_change(c, :x, fn _f, _v -> [] end) end)
@@ -242,10 +245,10 @@ defmodule Anchor.Domain.Aggregates.WriteSitesDefaultTest do
     end
   end
 
-  describe "a function a listed function runs where it is called" do
-    for name <- [:d20a, :d20b, :d20c, :d20d, :d20e, :d20f, :d20g] do
+  describe "a function value, or data, that needs no following" do
+    for name <- [:d20a, :d20h, :d20i, :d20j, :d20b, :d20c, :d20d, :d20e, :d20f, :d20g] do
       @tag name: name
-      test "#{name}: HigherOrder names its place, so it is no gap", %{analysis: a, name: name} do
+      test "#{name}: no gap", %{analysis: a, name: name} do
         assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
       end
     end

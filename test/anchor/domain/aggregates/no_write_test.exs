@@ -56,11 +56,12 @@ defmodule Anchor.Domain.Aggregates.NoWriteTest do
     end
   end
 
-  describe "gives_back?/1" do
-    test "a function that returns its default, never runs it; any other is not" do
-      assert NoWrite.gives_back?({Keyword, :get, 3})
-      assert NoWrite.gives_back?({Map, :get, 3})
-      refute NoWrite.gives_back?({Keyword, :put, 3})
+  describe "harmless_function_argument?/1" do
+    test "a default handed back and a log message; any other is not" do
+      assert NoWrite.harmless_function_argument?({Keyword, :get, 3})
+      assert NoWrite.harmless_function_argument?({Map, :get, 3})
+      assert NoWrite.harmless_function_argument?({Logger, :__do_log__, 4})
+      refute NoWrite.harmless_function_argument?({Keyword, :put, 3})
     end
   end
 end

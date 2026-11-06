@@ -1406,7 +1406,8 @@ What is left is not read by construction:
   `Ecto.Query`, `Logger`, and the pure `:erlang` functions. `GenServer`, `Task` and
   `Agent` are not on it, and neither is `Stream`, whose functions run later;
 - **the modules under `aggregates.no_write_modules`,** your own assumption: a
-  listed module's writes are not read, and the run counts the calls it cleared;
+  listed module's writes are not read, and the run counts the calls it cleared. A
+  project module is followed whether it is listed or not;
 - **dependencies' own internals,** for a function listed in
   `aggregates.write_functions` or a listed module alike;
 - **an unknown value given to a listed module,** which Anchor cannot tell from
@@ -1414,7 +1415,7 @@ What is left is not read by construction:
 
 ```yaml
 aggregates:
-  no_write_modules: [MyApp.Pdf, ":ets"]   # a listed module's writes are not read
+  no_write_modules: [SomeLib, ":ets"]   # a listed module's writes are not read
 ```
 
 The summary line ends `; writes: <W> read, <R> resolved, <U> unresolved;
