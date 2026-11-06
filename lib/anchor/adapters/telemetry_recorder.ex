@@ -51,14 +51,10 @@ defmodule Anchor.Adapters.TelemetryRecorder do
     handler = {__MODULE__, make_ref()}
     config = %{table: table, probe: probe}
 
-    case :telemetry.attach(handler, event, &__MODULE__.handle_event/4, config) do
-      :ok ->
-        {:ok, %{table: table, handler: handler, event: event}}
-
-      {:error, reason} ->
-        :ets.delete(table)
-        {:error, reason}
-    end
+    # The handler id holds a fresh ref, so :telemetry's one refusal
+    # (`{:error, :already_exists}`) cannot happen: a match error if it does.
+    :ok = :telemetry.attach(handler, event, &__MODULE__.handle_event/4, config)
+    {:ok, %{table: table, handler: handler, event: event}}
   end
 
   @doc """

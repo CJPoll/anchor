@@ -235,7 +235,7 @@ or `Repo.in_transaction?/0`). The handler reads only `query` and `source`
 (`Aggregates.Backstop`) runs in the test's `on_exit`. What cannot be tied to a
 transaction is an escape, counted and summed at suite end, never clean. The
 VM's one session is in `:persistent_term`: a test that installs it is
-`async: false` (`telemetry_recorder_session_test.exs`), because
+`async: false` (`telemetry_recorder_test.exs`), because
 `Anchor.BackstopTest` asserts none is installed. `:telemetry` is an optional
 dependency. README, *The test-time backstop*, is the user's reference.
 

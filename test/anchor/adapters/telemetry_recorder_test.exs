@@ -5,8 +5,13 @@ defmodule Anchor.Adapters.TelemetryRecorderTest do
   # event of its own name, so async tests never share a handler, and detaches
   # it on exit. Ordering is by message receipt only.
   #
+  # sync: the session test below writes the VM's one session
+  # (`:persistent_term`), and `Anchor.BackstopTest` (async) asserts none is
+  # installed. Async modules all run before sync ones, so it never overlaps
+  # that test, and on_exit erases it.
+  #
   # Sabotage record: ../../sabotage_records/backstop-20261106-dnd_5480_test_backstop.md
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   import ExUnit.CaptureLog
 
@@ -201,5 +206,23 @@ defmodule Anchor.Adapters.TelemetryRecorderTest do
              outside_transaction: 0,
              unattributed: 0
            }
+  end
+
+  test "detach_recorder detaches the handler and drops the table", %{recorder: recorder} do
+    assert :ets.info(recorder.table, :id) != :undefined
+    assert :ok = Recorder.detach_recorder(recorder)
+
+    assert :ets.info(recorder.table, :id) == :undefined
+    refute Enum.any?(:telemetry.list_handlers(recorder.event), &(&1.id == recorder.handler))
+  end
+
+  test "a session installed is the session installed_session returns" do
+    on_exit(fn -> :persistent_term.erase({Recorder, :session}) end)
+    assert Recorder.installed_session() == :error
+
+    session = %{escapes: :report, marker: make_ref()}
+    assert Recorder.install_session(session) == :ok
+
+    assert Recorder.installed_session() == {:ok, session}
   end
 end
