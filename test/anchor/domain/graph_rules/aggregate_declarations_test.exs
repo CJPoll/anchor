@@ -3,6 +3,7 @@ defmodule Anchor.Domain.GraphRules.AggregateDeclarationsTest do
   # hand-built models whose index holds the issues.
   #
   # Sabotage record: ../../../sabotage_records/aggregates-20261103-dnd_5476_aggregate_decls.md
+  # Sabotage record: ../../../sabotage_records/aggregates-20261103-dnd_5459_write_sets.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config
@@ -191,6 +192,41 @@ defmodule Anchor.Domain.GraphRules.AggregateDeclarationsTest do
 
       assert [v] = AggregateDeclarations.check(model([issue]), Map.delete(@rule, :id))
       assert v.key == "aggregate_declarations|.anchor.yml|unknown_schema A Nope"
+    end
+  end
+
+  # DND-5659: `aggregates: declare: none`.
+  describe "check/2 under declare: none" do
+    @persists %DeclarationIssue{
+      kind: :persists_under_none,
+      subject: App.Store,
+      site: {:module, App.Store, "lib/app/store.ex", 3},
+      detail: "it calls MyApp.Repo.insert/2 (line 9)"
+    }
+
+    defp none_model(issues),
+      do: %{model(issues, %{}) | aggregates: %Index{none: "no database", issues: issues}}
+
+    test "Z3: none with nothing persisting is clean: no checks-nothing violation" do
+      assert AggregateDeclarations.check(none_model([]), @rule) == []
+    end
+
+    test "Z4: a module that persists is one violation at its module, naming it, with the Fix" do
+      assert [v] = AggregateDeclarations.check(none_model([@persists]), @rule)
+
+      assert v.kind == :rule
+      assert {v.filename, v.line} == {"lib/app/store.ex", 3}
+      assert v.key == "aggregates|App.Store|persists_under_none - App.Store"
+
+      assert v.message ==
+               "App.Store persists (it calls MyApp.Repo.insert/2 (line 9)), but .anchor.yml " <>
+                 "says aggregates: declare: none (no database). Fix: declare the aggregate and " <>
+                 "remove declare: none: " <> @shape
+    end
+
+    test "Z4: a persisting module outside the selector is not reported" do
+      rule = @rule |> Map.put(:paths, nil) |> Map.put(:pattern, "Other.*")
+      assert AggregateDeclarations.check(none_model([@persists]), rule) == []
     end
   end
 

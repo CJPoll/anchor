@@ -2,6 +2,7 @@ defmodule Anchor.Domain.Aggregates.ConfigTest do
   # DND-5476: the `aggregates:` section of `.anchor.yml`. Pure Domain.
   #
   # Sabotage record: ../../../sabotage_records/aggregates-20261103-dnd_5476_aggregate_decls.md
+  # Sabotage record: ../../../sabotage_records/aggregates-20261103-dnd_5459_write_sets.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config
@@ -116,10 +117,70 @@ defmodule Anchor.Domain.Aggregates.ConfigTest do
     end
   end
 
+  # DND-5659: `declare: none` with a required `reason:` says on purpose that
+  # the repo persists nothing.
+  describe "parse/1, declare: none" do
+    @reason "Anchor reads beams and YAML; it has no database"
+
+    test "Z1: none with a reason parses to a section with no declarations and that reason" do
+      assert {:ok, %AggregatesConfig{none: @reason, declare: [], repos: []}} =
+               AggregatesConfig.parse(%{"declare" => "none", "reason" => @reason})
+    end
+
+    test "Z1: a section without none has none: nil" do
+      assert {:ok, %AggregatesConfig{none: nil}} = AggregatesConfig.parse(@section)
+      assert {:ok, %AggregatesConfig{none: nil}} = AggregatesConfig.parse(nil)
+    end
+
+    @none_refused [
+      {"an empty declare list", %{"declare" => []},
+       "aggregates.declare is an empty list, which says nothing on purpose"},
+      {"none without a reason", %{"declare" => "none"},
+       "aggregates: declare: none needs a reason:"},
+      {"none with an empty reason", %{"declare" => "none", "reason" => "  "},
+       "aggregates: declare: none needs a reason:"},
+      {"none with a reason that is not a string", %{"declare" => "none", "reason" => 3},
+       "aggregates: declare: none needs a reason:"},
+      {"a reason without none", %{"declare" => [@entry], "reason" => @reason},
+       "aggregates.reason is only read with declare: none"},
+      {"a reason with no declare", %{"reason" => @reason},
+       "aggregates.reason is only read with declare: none"},
+      {"none with repos", %{"declare" => "none", "reason" => @reason, "repos" => ["MyApp.Repo"]},
+       ~s(aggregates: declare: none says nothing persists, but it also sets "repos")},
+      {"none with write_functions",
+       %{"declare" => "none", "reason" => @reason, "write_functions" => []},
+       ~s(aggregates: declare: none says nothing persists, but it also sets "write_functions")},
+      {"none with transaction_functions",
+       %{"declare" => "none", "reason" => @reason, "transaction_functions" => ["X.t/1"]},
+       ~s(aggregates: declare: none says nothing persists, but it also sets ) <>
+         ~s("transaction_functions")},
+      {"a declare string other than none", %{"declare" => "None", "reason" => @reason},
+       "aggregates.declare must be a list of declarations or none"}
+    ]
+
+    for {label, section, expected} <- @none_refused do
+      @tag section: section, expected: expected
+      test "Z2: refused: #{label}", %{section: section, expected: expected} do
+        assert {:error, {:invalid_config, message}} = AggregatesConfig.parse(section)
+        assert String.starts_with?(message, expected), "got: #{message}"
+        assert [_problem, fix] = String.split(message, ". Fix: ", parts: 2)
+        assert fix =~ "declare: none"
+      end
+    end
+  end
+
   describe "Anchor.Config.parse_config/1" do
     test "an aggregates section loads into :aggregates" do
       assert %Config{aggregates: %AggregatesConfig{declare: [%Declaration{}]}} =
                Config.parse_config(%{"rules" => [], "aggregates" => @section})
+    end
+
+    test "Z1: an aggregates: declare: none section loads with its reason" do
+      assert %Config{aggregates: %AggregatesConfig{none: "no database"}} =
+               Config.parse_config(%{
+                 "rules" => [],
+                 "aggregates" => %{"declare" => "none", "reason" => "no database"}
+               })
     end
 
     test "no aggregates section is nil (no declarations), never an empty section" do

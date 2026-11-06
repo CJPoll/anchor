@@ -62,8 +62,10 @@ defmodule Anchor.Managers.Graph do
        effect counts (`GraphReport.effects/1`) when the effect inference ran,
        the parameter counts (`GraphReport.parameter_sinks/4`) when a
        `parameter_reaches_sink` rule ran,
-       and declared aggregates' counts (`Anchor.Domain.Aggregates.Index`,
-       DND-5476) when any is declared.
+       declared aggregates' counts (`Anchor.Domain.Aggregates.Index`,
+       DND-5476) when any is declared, and the write analysis's counts
+       (`Anchor.Domain.Aggregates.Analysis`, DND-5459) when it ran with a
+       repo.
 
   Every per-module problem is an issue on that module (exit 1), never a
   skipped module: a beam it could not decode, a module whose graph walk
@@ -101,6 +103,7 @@ defmodule Anchor.Managers.Graph do
   alias Anchor.Adapters.GraphArtifact
   alias Anchor.Adapters.SourceReader
   alias Anchor.Config
+  alias Anchor.Domain.Aggregates.Analysis
   alias Anchor.Domain.Aggregates.Index
   alias Anchor.Domain.Baseline
   alias Anchor.Domain.BaselineBase
@@ -190,8 +193,9 @@ defmodule Anchor.Managers.Graph do
       git_base: Keyword.get(deps, :git_base, GitShow),
       graph_rules: Keyword.get(deps, :graph_rules, GraphRules.all()),
       cfa: Keyword.get(deps, :cfa, &analyze_cfa/1),
-      demand: Keyword.get(deps, :demand, &Demand.analyze/3),
       effects: Keyword.get(deps, :effects, &Effects.infer/2),
+      aggregate_analysis: Keyword.get(deps, :aggregate_analysis, &Model.aggregate_analysis/1),
+      demand: Keyword.get(deps, :demand, &Demand.analyze/3),
       behaviour_source: Keyword.get(deps, :behaviour_source, BehaviourReader)
     }
   end
@@ -292,7 +296,8 @@ defmodule Anchor.Managers.Graph do
       |> put_effects(GraphReport.effects(model.effects))
       |> put_demand(GraphReport.demand(model.demand))
       |> put_parameter_sinks(parameter_sinks(rules, model))
-      |> put_aggregates(model.aggregates),
+      |> put_aggregates(model.aggregates)
+      |> put_writes(model.aggregate_analysis),
       held: Enum.flat_map(ran, & &1.held),
       refused: Enum.flat_map(ran, & &1.refused)
     )
@@ -337,8 +342,11 @@ defmodule Anchor.Managers.Graph do
     effects = effects(rules, model, cfa, deps)
     model = %{model | effects: effects_analysis(effects)}
     demand = demand(rules, model, cfa, deps)
+    model = with_demand(model, demand)
+    writes = writes(rules, model, deps)
 
-    {with_demand(model, demand), %{cfa: cfa, effects: effects, demand: demand}}
+    {%{model | aggregate_analysis: writes_analysis(writes)},
+     %{cfa: cfa, effects: effects, demand: demand, writes: writes}}
   end
 
   # DND-5476: the declared aggregates and their unknown tables are counted
@@ -352,6 +360,12 @@ defmodule Anchor.Managers.Graph do
         Map.put(counts, :aggregates, %{declared: declared, tables_unknown: index.tables_unknown})
     end
   end
+
+  # DND-5459: the write analysis's counts, when the run made one with a repo.
+  defp put_writes(counts, %Analysis{no_repo?: false, counts: writes}),
+    do: Map.put(counts, :writes, writes)
+
+  defp put_writes(counts, _none), do: counts
 
   defp analyze_cfa(graph), do: Cfa.analyze(graph, Cfa.default_seed(graph))
 
@@ -400,6 +414,27 @@ defmodule Anchor.Managers.Graph do
 
   defp effects_analysis({:ok, %Effects{} = effects}), do: effects
   defp effects_analysis(_none_or_crashed), do: nil
+
+  # DND-5459: the write analysis, like the others: once, only when a rule that
+  # runs needs it, guarded.
+  defp writes(rules, model, deps) do
+    if Enum.any?(rules, fn {_rule, _module, needs} -> needs?(needs, :aggregate_analysis) end),
+      do: guarded(fn -> writes!(deps.aggregate_analysis.(model)) end),
+      else: nil
+  end
+
+  defp writes!(%Analysis{} = analysis), do: analysis
+  defp writes!(nil), do: nil
+
+  defp writes!(other),
+    do:
+      raise(
+        ArgumentError,
+        "the analysis returned #{inspect(other, limit: 5)}, not an %Analysis{}"
+      )
+
+  defp writes_analysis({:ok, %Analysis{} = analysis}), do: analysis
+  defp writes_analysis(_none_or_crashed), do: nil
 
   # DND-5715: the demand analysis runs once, after the flow analysis it reads,
   # and only when a rule that runs needs it; `nil` when none does or the flow
@@ -756,6 +791,21 @@ defmodule Anchor.Managers.Graph do
         {:crashed,
          rule |> Failures.rule_demand_crashed(kind, reason, stacktrace, path) |> fail_closed()},
       else: run_check({:ok, needs}, %{analyses | demand: nil}, rule, module, model, path)
+  end
+
+  defp run_check(
+         {:ok, needs},
+         %{writes: {:crashed, kind, reason, stacktrace}} = analyses,
+         rule,
+         module,
+         model,
+         path
+       ) do
+    if :aggregate_analysis in needs,
+      do:
+        {:crashed,
+         rule |> Failures.rule_writes_crashed(kind, reason, stacktrace, path) |> fail_closed()},
+      else: run_check({:ok, needs}, %{analyses | writes: nil}, rule, module, model, path)
   end
 
   defp run_check({:ok, _needs}, _analyses, rule, module, model, path),

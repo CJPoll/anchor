@@ -263,7 +263,11 @@ before coining a synonym.
 - `aggregates` — aggregate declarations (DND-5476): the `aggregates:`
   section (`Anchor.Domain.Aggregates.Config`), the declaration index
   (`Anchor.Domain.Aggregates.Index`), the `aggregate_declarations` graph rule
-  and the `use Anchor.Aggregate` macro.
+  and the `use Anchor.Aggregate` macro; the write analysis (DND-5459:
+  `FunctionWalk`, `WriteSites`, `WriteSource`, `Scopes`, `NonTransactional`,
+  `Inference`, `Analysis` and the `aggregate_write_sources` graph rule); and
+  `declare: none` (DND-5659: `Config`'s `none`, `Persistence`, the
+  `:persists_under_none` issue).
 - `context_acyclic` — the `context_acyclic` graph rule (DND-5445):
   `Anchor.Domain.ContextGraph`, `GraphRules.ContextAcyclic`,
   `ViolationKey.graph_key/2` and its registration.

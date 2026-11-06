@@ -22,6 +22,11 @@ defmodule Anchor.Domain.Model do
       `aggregates:` section and every module's persisted `@anchor_aggregate`;
       the index holds its own issues, which the `aggregate_declarations` rule
       reports;
+    * `aggregate_analysis` — the write analysis
+      (`%Anchor.Domain.Aggregates.Analysis{}`, DND-5459): the writes it read, their
+      sources, the write sets of the transactions it read, and the writes with
+      no transaction read around them. Set by the runner, only when a rule that runs needs it
+      (`aggregate_analysis/1` builds it), else `nil`;
     * `config` — the `%Anchor.Config{}`;
     * `cfa` — the higher-order flow analysis (`%Anchor.Domain.Cfa{}`,
       DND-5574), set by the runner only when a rule that runs declares
@@ -51,6 +56,7 @@ defmodule Anchor.Domain.Model do
   """
 
   alias Anchor.Config
+  alias Anchor.Domain.Aggregates.Analysis
   alias Anchor.Domain.Aggregates.Index
   alias Anchor.Domain.Architecture
   alias Anchor.Domain.Cfa
@@ -70,6 +76,7 @@ defmodule Anchor.Domain.Model do
     :config,
     aggregates: %Index{},
     callbacks: %{},
+    aggregate_analysis: nil,
     cfa: nil,
     demand: nil,
     effects: nil,
@@ -81,6 +88,7 @@ defmodule Anchor.Domain.Model do
           architecture: Architecture.t(),
           classification: %{module() => Classification.t()},
           aggregates: Index.t(),
+          aggregate_analysis: Analysis.t() | nil,
           config: Config.t(),
           callbacks: %{module() => [{atom(), arity()}]},
           cfa: Cfa.t() | nil,
@@ -148,6 +156,23 @@ defmodule Anchor.Domain.Model do
       behaviours: node.behaviours,
       exports: exports(node)
     }
+  end
+
+  @doc """
+  The write analysis of `model` (DND-5459), `nil` with no `aggregates:` section.
+  Under
+  `declare: none` (DND-5659) there is nothing to analyse: the
+  aggregate_declarations rule reports every module that persists.
+  """
+  @spec aggregate_analysis(t()) :: Analysis.t() | nil
+  def aggregate_analysis(%__MODULE__{config: %Config{aggregates: nil}}), do: nil
+
+  def aggregate_analysis(%__MODULE__{config: %Config{aggregates: %{none: reason}}})
+      when reason != nil,
+      do: nil
+
+  def aggregate_analysis(%__MODULE__{config: %Config{aggregates: aggregates}} = model) do
+    Analysis.build(model.graph, aggregates)
   end
 
   @doc """
