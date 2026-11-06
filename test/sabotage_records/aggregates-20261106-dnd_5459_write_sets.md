@@ -2909,3 +2909,526 @@ the summary does not count the gaps (`lib/anchor/domain/graph_report.ex`). Resul
 
 ...
 ```
+
+# Fifth run: outside means outside on every path
+
+7 mutations for critic round 7's finding and the claims its notes questioned. These replace the second run's WSF-ONREPO, WSF-ONREPOWRITE, WSF-ONREPORAW and WSF-ONREPOGEN, whose `written_on_repo?/2` is gone. AN-ALWAYS's first form, deleting the filter, was a compile error under `warnings_as_errors` (an unused parameter) and was re-anchored. WSH-GENWRITE, WSH-GENRAW and WSH-GENOTHER fail the same three tests because each test's fixture holds all three kinds of generated function; each run's output names the function it found.
+
+| # | Mutation | Tests run | Result |
+|---|---|---|---|
+| AN-ALWAYS | raw SQL reached only inside a transaction is reported (`lib/anchor/domain/aggregates/analysis.ex`) | `non_transactional_test.exs` | `16 tests, 1 failure` (red) |
+| NT-RUNEMPTY | a captured run callback keeps its own entry (`lib/anchor/domain/aggregates/non_transactional.ex`) | `non_transactional_test.exs` | `16 tests, 1 failure` (red) |
+| WSH-GENERATED | what Ecto generates on a repo is walked (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs`, `scopes_test.exs` | `59 tests, 3 failures` (red) |
+| WSH-GENWRITE | a generated write is walked (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs`, `scopes_test.exs` | `59 tests, 3 failures` (red) |
+| WSH-GENRAW | generated raw SQL is walked (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs`, `scopes_test.exs` | `59 tests, 3 failures` (red) |
+| WSH-GENOTHER | a generated read is walked (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs`, `scopes_test.exs` | `59 tests, 3 failures` (red) |
+| WSH-ONREPO | a local call in a function written on a repo is not read (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `43 tests, 2 failures` (red) |
+
+## AN-ALWAYS
+
+raw SQL reached only inside a transaction is reported (`lib/anchor/domain/aggregates/analysis.ex`). Result: `16 tests, 1 failure`.
+
+```
+
+
+
+  1) test unattributed: raw SQL and a write on a computed module, outside a transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:133
+     match (=) failed
+     code:  assert [%{mfa: {@n, :n11, 0}, what: raw, line: line}, %{mfa: {@n, :n12, 1}, what: computed}] =
+              a.unattributed
+     left:  [
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n11, 0}, what: raw, line: line},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n12, 1}, what: computed}
+            ]
+     right: [
+              %{
+                line: 58,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n11,
+                 0},
+                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
+              },
+              %{
+                line: 59,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n12,
+                 1},
+                what: "a call of insert/1 on a module held in a variable"
+              },
+              %{
+                line: 66,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n17h,
+                 0},
+                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
+              },
+              %{
+                line: 69,
+                mfa: {AnchorFixtures.NonTransactionalTest.N,
+                 :n18_step, 2},
+                what: "raw SQL (repo.query!/1 in a Multi.run callback) Anchor cannot attribute"
+              }
+            ]
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:136: (test)
+
+...............
+```
+
+## NT-RUNEMPTY
+
+a captured run callback keeps its own entry (`lib/anchor/domain/aggregates/non_transactional.ex`). Result: `16 tests, 1 failure`.
+
+```
+
+  1) test a captured run callback's own entry is empty; a direct caller still has its writes (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:146
+     Assertion with == failed
+     code:  assert nontx(a, :n7_step, 2).keys == MapSet.new()
+     left:  MapSet.new([schema: AnchorFixtures.NonTransactionalTest.T])
+     right: MapSet.new([])
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:148: (test)
+
+..............
+```
+
+## WSH-GENERATED
+
+what Ecto generates on a repo is walked (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `59 tests, 3 failures`.
+
+```
+
+  1) test a function written on a repo is read; what Ecto generates on it is not (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:152
+     match (=) failed
+     The following variables were pinned:
+       sql_repo = AnchorFixtures.NonTransactionalTest.SqlRepo
+     code:  assert [%{mfa: {^sql_repo, :purge, 0}}] =
+              Enum.filter(analysis.unattributed, &(elem(&1.mfa, 0) == sql_repo))
+     left:  [%{mfa: {^sql_repo, :purge, 0}}]
+     right: [
+              %{
+                line: 83,
+                mfa: {AnchorFixtures.NonTransactionalTest.SqlRepo,
+                 :purge, 0},
+                what: "raw SQL (AnchorFixtures.NonTransactionalTest.SqlRepo.query!/1) Anchor cannot attribute"
+              },
+              %{
+                line: 79,
+                mfa: {AnchorFixtures.NonTransactionalTest.SqlRepo,
+                 :query!, 1},
+                what: "raw SQL (Ecto.Adapters.SQL.query!/3) Anchor cannot attribute"
+              }
+            ]
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:170: (test)
+
+....................
+
+
+  2) test counts: writes found, resolved, unresolved; scopes, complete, incomplete (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:502
+     Assertion with == failed
+     code:  assert a.counts.unresolved == 2
+     left:  17
+     right: 2
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:507: (test)
+
+....................
+
+
+  3) test build/3 only a function written on a repo is read for its calls, not what Ecto generates (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:354
+     Assertion with == failed
+     code:  assert a.sites |> Enum.filter(&(elem(&1.mfa, 0) == @custom_repo)) |> Enum.map(& &1.mfa) == [
+              {@custom_repo, :soft, 1}
+            ]
+     left:  [
+              {AnchorFixtures.ScopesTest.CustomRepo, :insert, 1},
+              {AnchorFixtures.ScopesTest.CustomRepo, :query, 1},
+              {AnchorFixtures.ScopesTest.CustomRepo, :reload, 1},
+              {AnchorFixtures.ScopesTest.CustomRepo, :soft, 1},
+              {AnchorFixtures.ScopesTest.CustomRepo, :update, 1}
+            ]
+     right: [{AnchorFixtures.ScopesTest.CustomRepo, :soft, 1}]
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:357: (test)
+
+.............
+```
+
+## WSH-GENWRITE
+
+a generated write is walked (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `59 tests, 3 failures`.
+
+```
+
+  1) test a function written on a repo is read; what Ecto generates on it is not (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:152
+     Expected false or nil, got true
+     code: refute Map.has_key?(analysis.nontx, {sql_repo, :insert, 1})
+     arguments:
+
+         # 1
+         %{
+           {AnchorFixtures.NonTransactionalTest.Repo, :delete!, 1} => %{
+             keys: MapSet.new([]),
+             gaps: [
+               unresolved_write: %Anchor.Domain.Aggregates.WriteSite{
+                 mfa: {AnchorFixtures.NonTransactionalTest.Repo,
+                  :delete!, 1},
+                 line: 19,
+                 op: :delete!,
+                 via: :repo,
+                 sources: [],
+                 unresolved: "parameter 1 of AnchorFixtures.NonTransactionalTest.Repo.delete!/1 has no @spec and no project caller",
+                 scopes: [],
+                 run_callback?: false
+               }
+             ],
+             sites: [
+               %Anchor.Domain.Aggregates.WriteSite{
+                 mfa: {AnchorFixtures.NonTransactionalTest.Repo,
+                  :delete!, 1},
+                 line: 19,
+                 op: :delete!,
+                 via: :repo,
+                 sources: [],
+                 unresolved: "parameter 1 of AnchorFixtures.NonTransactionalTest.Repo.delete!/1 has no @spec and no project caller",
+                 scopes: [],
+                 run_callback?: false
+               }
+             ],
+             complete?: false
+           },
+           {AnchorFixtures.NonTransactionalTest.N, :n3g, 0} => %{
+             keys: MapSet.new([
+               schema: AnchorFixtures.NonTransactionalTest.T
+             ]),
+             gaps: [],
+             sites: [
+               %Anchor.Domain.Aggregates.WriteSite{
+                 mfa: {AnchorFixtures.NonTransactionalTest.N, :n3g, 0},
+                 line: 42,
+                 op: :insert,
+                 via: :repo,
+                 sources: [
+                   schema: AnchorFixtures.NonTransactionalTest.T
+                 ],
+                 unresolved: nil,
+                 scopes: [],
+                 run_callback?: false
+               }
+             ],
+             complete?: true
+           },
+           {AnchorFixtures.NonTransactionalTest.N, :n4b, 1} => %{
+             keys: MapSet.new([
+               schema: AnchorFixtures.NonTransactionalTest.S,
+               schema: AnchorFixtures.NonTransactionalTest.T
+             ]),
+             gaps: [],
+             sites: [
+               %Anchor.Domain.Aggregates.WriteSite{
+                 mfa: {AnchorFixtures.NonTransactionalTest.N, :n4a, 1},
+                 line: 44,
+                 op: :insert,
+                 via: :repo,
+                 sources: [
+                   schema: AnchorFixtures.NonTransactionalTest.S
+                 ],
+                 unresolved: nil,
+                 scopes: [],
+                 run_callback?: false
+               },
+               %Anchor.Domain.Aggregates.WriteSite{
+                 mfa: {AnchorFixtures.NonTransactionalTest.N, :n4b, 1},
+                 line: 46,
+                 op: :insert,
+                 via: :repo,
+                 sources: [
+                   schema: AnchorFixtures.NonTransactionalTest.T
+                 ],
+                 unresolved: nil,
+                 scopes: [],
+                 run_callback?: false
+               }
+             ],
+             complete?: true
+           },
+           {AnchorFixtures.NonTransactionalTest.N, :n19_step, 2} => %{
+             keys: MapSet.new([]),
+             gaps: [],
+             sites: [],
+             complete?: true
+           },
+           {AnchorFixtures.NonTransactionalTest.Repo, ...} => %{...},
+           ...
+         }
+
+         # 2
+         {AnchorFixtures.NonTransactionalTest.SqlRepo, :insert, 1}
+
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:175: (test)
+
+...........
+
+
+  2) test build/3 only a function written on a repo is read for its calls, not what Ecto generates (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:354
+     Assertion with == failed
+     code:  assert a.sites |> Enum.filter(&(elem(&1.mfa, 0) == @custom_repo)) |> Enum.map(& &1.mfa) == [
+              {@custom_repo, :soft, 1}
+            ]
+     left:  [
+              {AnchorFixtures.ScopesTest.CustomRepo, :insert, 1},
+              {AnchorFixtures.ScopesTest.CustomRepo, :soft, 1},
+              {AnchorFixtures.ScopesTest.CustomRepo, :update, 1}
+            ]
+     right: [{AnchorFixtures.ScopesTest.CustomRepo, :soft, 1}]
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:357: (test)
+
+................................
+
+
+  3) test counts: writes found, resolved, unresolved; scopes, complete, incomplete (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:502
+     Assertion with == failed
+     code:  assert a.counts.unresolved == 2
+     left:  15
+     right: 2
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:507: (test)
+
+..........
+```
+
+## WSH-GENRAW
+
+generated raw SQL is walked (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `59 tests, 3 failures`.
+
+```
+
+  1) test build/3 only a function written on a repo is read for its calls, not what Ecto generates (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:354
+     Assertion with == failed
+     code:  assert a.sites |> Enum.filter(&(elem(&1.mfa, 0) == @custom_repo)) |> Enum.map(& &1.mfa) == [
+              {@custom_repo, :soft, 1}
+            ]
+     left:  [
+              {AnchorFixtures.ScopesTest.CustomRepo, :query, 1},
+              {AnchorFixtures.ScopesTest.CustomRepo, :soft, 1}
+            ]
+     right: [{AnchorFixtures.ScopesTest.CustomRepo, :soft, 1}]
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:357: (test)
+
+
+
+
+  2) test counts: writes found, resolved, unresolved; scopes, complete, incomplete (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:502
+     Assertion with == failed
+     code:  assert a.counts.unresolved == 2
+     left:  3
+     right: 2
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:507: (test)
+
+..........
+
+
+  3) test a function written on a repo is read; what Ecto generates on it is not (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:152
+     match (=) failed
+     The following variables were pinned:
+       sql_repo = AnchorFixtures.NonTransactionalTest.SqlRepo
+     code:  assert [%{mfa: {^sql_repo, :purge, 0}}] =
+              Enum.filter(analysis.unattributed, &(elem(&1.mfa, 0) == sql_repo))
+     left:  [%{mfa: {^sql_repo, :purge, 0}}]
+     right: [
+              %{
+                line: 83,
+                mfa: {AnchorFixtures.NonTransactionalTest.SqlRepo,
+                 :purge, 0},
+                what: "raw SQL (AnchorFixtures.NonTransactionalTest.SqlRepo.query!/1) Anchor cannot attribute"
+              },
+              %{
+                line: 79,
+                mfa: {AnchorFixtures.NonTransactionalTest.SqlRepo,
+                 :query!, 1},
+                what: "raw SQL (Ecto.Adapters.SQL.query!/3) Anchor cannot attribute"
+              }
+            ]
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:170: (test)
+
+...........................
+```
+
+## WSH-GENOTHER
+
+a generated read is walked (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `59 tests, 3 failures`.
+
+```
+
+  1) test a function written on a repo is read; what Ecto generates on it is not (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:152
+     Expected false or nil, got true
+     code: refute Map.has_key?(analysis.nontx, {sql_repo, :get, 2})
+     arguments:
+
+         # 1
+         %{
+           {AnchorFixtures.NonTransactionalTest.N, :n19, 0} => %{
+             keys: MapSet.new([]),
+             gaps: [],
+             sites: [],
+             complete?: true
+           },
+           {AnchorFixtures.NonTransactionalTest.N, :n15, 1} => %{
+             keys: MapSet.new([]),
+             gaps: [],
+             sites: [],
+             complete?: true
+           },
+           {AnchorFixtures.NonTransactionalTest.N, :n17, 0} => %{
+             keys: MapSet.new([]),
+             gaps: [],
+             sites: [],
+             complete?: true
+           },
+           {AnchorFixtures.NonTransactionalTest.Repo, :transaction, 1} => %{
+             keys: MapSet.new([]),
+             gaps: [],
+             sites: [],
+             complete?: true
+           },
+           {AnchorFixtures.NonTransactionalTest.N, :n14, 0} => %{
+             keys: MapSet.new([]),
+             gaps: [],
+             sites: [],
+             complete?: true
+           },
+           {AnchorFixtures.NonTransactionalTest.N, :n5, 0} => %{
+             keys: MapSet.new([]),
+             gaps: [],
+             sites: [],
+             complete?: true
+           },
+           {AnchorFixtures.NonTransactionalTest.S, :__schema__, 1} => %{
+             keys: MapSet.new([]),
+             gaps: [],
+             sites: [],
+             complete?: true
+           },
+           {AnchorFixtures.NonTransactionalTest.Repo, :transaction, 2} => %{
+             keys: MapSet.new([]),
+             gaps: [],
+             sites: [],
+             complete?: true
+           },
+           {AnchorFixtures.NonTransactionalTest.N, :n3g, 0} => %{
+             keys: MapSet.new([
+               schema: AnchorFixtures.NonTransactionalTest.T
+             ]),
+             gaps: [],
+             sites: [
+               %Anchor.Domain.Aggregates.WriteSite{
+                 mfa: {AnchorFixtures.NonTransactionalTest.N, :n3g, 0},
+                 line: 42,
+                 op: :insert,
+                 via: :repo,
+                 sources: [
+                   schema: AnchorFixtures.NonTransactionalTest.T
+                 ],
+                 unresolved: nil,
+                 scopes: [],
+                 run_callback?: false
+               }
+             ],
+             complete?: true
+           },
+           {AnchorFixtures.NonTransactionalTest.N, :n9, 0} => %{
+             keys: MapSet.new([]),
+             gaps: [
+               {:dynamic_call,
+                {AnchorFixtures.NonTransactionalTest.N, :n9, 0}, 75}
+             ],
+             sites: [],
+             ...
+           },
+           ...
+         }
+
+         # 2
+         {AnchorFixtures.NonTransactionalTest.SqlRepo, :get, 2}
+
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:173: (test)
+
+...............................
+
+
+  2) test counts: writes found, resolved, unresolved; scopes, complete, incomplete (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:502
+     Assertion with == failed
+     code:  assert a.counts.unresolved == 2
+     left:  3
+     right: 2
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:507: (test)
+
+........
+
+
+  3) test build/3 only a function written on a repo is read for its calls, not what Ecto generates (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:354
+     Assertion with == failed
+     code:  assert a.sites |> Enum.filter(&(elem(&1.mfa, 0) == @custom_repo)) |> Enum.map(& &1.mfa) == [
+              {@custom_repo, :soft, 1}
+            ]
+     left:  [
+              {AnchorFixtures.ScopesTest.CustomRepo, :reload, 1},
+              {AnchorFixtures.ScopesTest.CustomRepo, :soft, 1}
+            ]
+     right: [{AnchorFixtures.ScopesTest.CustomRepo, :soft, 1}]
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:357: (test)
+
+.........
+```
+
+## WSH-ONREPO
+
+a local call in a function written on a repo is not read (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `43 tests, 2 failures`.
+
+```
+
+  1) test build/3 a function written on a repo is followed: its own writes are in the scope (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:347
+     Assertion with == failed
+     code:  assert scope.keys == keys([@s])
+     left:  MapSet.new([])
+     right: MapSet.new([schema: AnchorFixtures.ScopesTest.S])
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:351: (test)
+
+........
+
+
+  2) test build/3 only a function written on a repo is read for its calls, not what Ecto generates (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:354
+     Assertion with == failed
+     code:  assert a.sites |> Enum.filter(&(elem(&1.mfa, 0) == @custom_repo)) |> Enum.map(& &1.mfa) == [
+              {@custom_repo, :soft, 1}
+            ]
+     left:  []
+     right: [{AnchorFixtures.ScopesTest.CustomRepo, :soft, 1}]
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:357: (test)
+
+...........................
+```
