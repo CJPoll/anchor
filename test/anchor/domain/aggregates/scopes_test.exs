@@ -216,6 +216,8 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
     def s64, do: Repo.transaction(fn -> spawn(fn -> Repo.insert(%S{}) end) end)
     def s65, do: Task.async(fn -> Repo.insert(%S{}) end)
 
+    def s66(other), do: Repo.transaction(Builder.append_to_new(other))
+
     def s35 do
       Multi.new()
       |> Multi.run(:a, fn repo, _ -> repo.get(S, 1); repo.insert(%S{}) end)
@@ -257,6 +259,7 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
               def add_t(m), do: Ecto.Multi.insert(m, :b, %#{inspect(@t)}{})
               def add_merge(m, f), do: Ecto.Multi.merge(m, f)
               def add_append(m, other), do: Ecto.Multi.append(m, other)
+              def append_to_new(other), do: Ecto.Multi.append(Ecto.Multi.new(), other)
               def build(attrs), do: Ecto.Multi.insert(Ecto.Multi.new(), {:d, attrs}, %#{inspect(@t)}{})
               def add_run(m, f), do: Ecto.Multi.run(m, :r, f)
               def add_run5(m, mod, f), do: Ecto.Multi.run(m, :r, mod, f, [])
@@ -315,7 +318,7 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
        do: 1
 
   defp arity(name)
-       when name in [:s48, :s49, :s50, :s51, :s54, :s56, :s57, :s58, :s59, :s62],
+       when name in [:s48, :s49, :s50, :s51, :s54, :s56, :s57, :s58, :s59, :s62, :s66],
        do: 1
 
   defp arity(_name), do: 0
@@ -581,6 +584,11 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
 
       assert %Scope{complete?: false, gaps: [{:dynamic_call, {@builder, :add_append, 2}, _}]} =
                one(a, :s59)
+    end
+
+    test "a helper appending an untraced Multi to its own new one is a gap", %{analysis: a} do
+      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@builder, :append_to_new, 1}, _}]} =
+               one(a, :s66)
     end
 
     test "a function run in another process is outside the transaction: a gap", %{analysis: a} do
