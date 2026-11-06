@@ -7,6 +7,7 @@ defmodule Anchor.Domain.CfaTest do
   #
   # Sabotage record: ../../sabotage_records/cfa-20261103-dnd_5497_zero_cfa.md
   # Sabotage record (DND-5575): ../../sabotage_records/cfa-20261103-dnd_5617_sabotage_cfa_batch.md
+  # Sabotage record (DND-5715): ../../sabotage_records/cfa-20261106-dnd_5715_bucket_split.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures

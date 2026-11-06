@@ -101,6 +101,25 @@ defmodule Anchor.Domain.ConfigTest do
     end
 
     # Row 8 (BUG 2)
+    test "analyses_complete's floors surfaced as atom-keyed integers, nil when absent" do
+      rule =
+        parse_rule(%{
+          "type" => "analyses_complete",
+          "paths" => ["lib/**/*.ex"],
+          "min_functions" => 501,
+          "min_apply_sites" => 101,
+          "min_absent_parameters" => 1
+        })
+
+      assert {rule.min_functions, rule.min_apply_sites, rule.min_absent_parameters} ==
+               {501, 101, 1}
+
+      bare = parse_rule(%{"type" => "analyses_complete", "paths" => ["lib/**"]})
+
+      assert {bare.min_functions, bare.min_apply_sites, bare.min_absent_parameters} ==
+               {nil, nil, nil}
+    end
+
     test "max_lines surfaced as an atom-keyed integer" do
       rule =
         parse_rule(%{

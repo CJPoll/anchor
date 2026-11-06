@@ -7,6 +7,7 @@ defmodule Anchor.Domain.DemandTest do
   # imprecise reasons or the counts).
   #
   # Sabotage record: ../../sabotage_records/demand-20261103-dnd_5498_demand.md
+  # Sabotage record (DND-5715): ../../sabotage_records/demand-20261106-dnd_5715_bucket_split.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
