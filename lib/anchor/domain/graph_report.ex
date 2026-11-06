@@ -132,7 +132,9 @@ defmodule Anchor.Domain.GraphReport do
             scopes: non_neg_integer(),
             no_gap_noticed: non_neg_integer(),
             incomplete: non_neg_integer(),
-            outside_gaps: non_neg_integer()
+            outside_gaps: non_neg_integer(),
+            cleared: non_neg_integer(),
+            unread_by_callee: %{String.t() => pos_integer()}
           }
         }
 
@@ -333,7 +335,10 @@ defmodule Anchor.Domain.GraphReport do
   `; aggregates: <N> declared, <U> tables unknown`) and the write analysis
   (DND-5459: `; writes: <W> read, <R> resolved, <U> unresolved; transactions:
   <S> read, <N> no gap noticed, <I> incomplete; <G> gaps with no transaction
-  read around them; forms not listed in the README are not read`).
+  read around them; <D> dependency calls cleared by the no-write list; not read:
+  the modules under aggregates.no_write_modules, the built-in no-write list, an
+  unknown value given to one of them and dependencies' own internals; see the
+  README's What it does not read`).
   """
   @spec summary(t()) :: String.t()
   def summary(%__MODULE__{counts: counts} = report) do
@@ -363,7 +368,10 @@ defmodule Anchor.Domain.GraphReport do
       "#{writes.unresolved} unresolved; transactions: #{writes.scopes} read, " <>
       "#{writes.no_gap_noticed} no gap noticed, #{writes.incomplete} incomplete; " <>
       "#{writes.outside_gaps} gaps with no transaction read around them; " <>
-      "forms not listed in the README are not read"
+      "#{writes.cleared} dependency calls cleared by the no-write list; " <>
+      "not read: the modules under aggregates.no_write_modules, the built-in no-write " <>
+      "list, an unknown value given to one of them and dependencies' own internals; " <>
+      "see the README's What it does not read"
   end
 
   defp writes_json(nil), do: nil

@@ -4,6 +4,7 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
   #
   # Sabotage record: ../../../sabotage_records/aggregates-20261103-dnd_5459_write_sets.md
   # and ../../../sabotage_records/aggregates-20261106-dnd_5459_write_sets.md
+  # Sabotage record: ../../../sabotage_records/aggregates-20261106-dnd_5889_default_deny_walker.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.WriteFixtures
@@ -309,7 +310,8 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
 
     # n17h is only called in a transaction, but its own function reads none around it.
     assert Enum.any?(gaps, &match?({:dynamic_call, {@n, :n17h, 0}, _line}, &1))
-    refute Enum.any?(gaps, &match?({:dynamic_call, {@n, :n26, 0}, _line}, &1))
+    # DND-5889: a function run in another process is a gap with no transaction around it too.
+    assert Enum.any?(gaps, &match?({:dynamic_call, {@n, :n26, 0}, _line}, &1))
     refute Enum.any?(gaps, &match?({:dynamic_call, {@n, :n25, 2}, _line}, &1))
 
     assert a.counts.outside_gaps == length(gaps)

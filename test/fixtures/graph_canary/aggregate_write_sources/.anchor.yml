@@ -2,8 +2,8 @@
 # canary tree's counts do not move. The integration test compiles lib/ in the
 # test (against Ecto, a test-only dependency) and runs the Manager over it.
 # Compliant: repo.ex, thread.ex and compliant.ex (one complete transaction).
-# Violating: violating.ex, an unresolved write and a transaction that calls a
-# fun parameter.
+# Violating: violating.ex, an unresolved write, a transaction that calls a
+# fun parameter, and one that calls an unlisted dependency (DND-5889).
 rules:
   - type: aggregate_write_sources
     id: aggregate_write_sources

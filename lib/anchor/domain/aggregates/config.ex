@@ -13,10 +13,11 @@ defmodule Anchor.Domain.Aggregates.Config do
     repos: [MyApp.Repo]                       # DND-5459 reads it
     write_functions: ["MyApp.Repo.soft_delete/2"]
     transaction_functions: ["GenSaas.UnitOfWork.transaction/3"]
+    no_write_modules: [SomeLib, ":ets"]       # a listed module's writes are not read
   ```
 
   The whole section is parsed here. `repos` (exact module names),
-  `write_functions` and `transaction_functions` (`Anchor.Domain.FunctionRef`
+  `no_write_modules` (the same, or an Erlang module with its colon), `write_functions` and `transaction_functions` (`Anchor.Domain.FunctionRef`
   tokens) are checked for shape and stored for the write analysis.
 
   Every refusal is `{:error, {:invalid_config, message}}`, the message
@@ -24,7 +25,8 @@ defmodule Anchor.Domain.Aggregates.Config do
   with a `Fix:` that gives the conforming shape. Refused: a section that is not
   a mapping; an unknown key at any level; a `declare` that is neither `none` nor a list; an
   entry that is not a mapping, has no `name`, or an unknown key; a `name` that
-  is not a module-name token; `schemas`, `owners` or `repos` that are not lists
+  is not a module-name token; `schemas`, `owners`, `repos` or `no_write_modules`
+  that are not lists
   of exact module names; `tables` that is not a list of non-empty strings; two
   entries with one `name`; a malformed function token.
 
@@ -42,7 +44,7 @@ defmodule Anchor.Domain.Aggregates.Config do
 
   It parses to `none: <reason>` and `declare: []`. `reason` is required, a
   non-blank string, and read only with `none`; no other key (`repos`,
-  `write_functions`, `transaction_functions`) may stand beside it, since
+  `no_write_modules`, `write_functions`, `transaction_functions`) may stand beside it, since
   each says something persists. An explicit `declare: []` is refused: an
   empty list says nothing on purpose, so the Fix names both forms. Under
   `none`, `aggregate_declarations` fails every module that persists
@@ -53,7 +55,7 @@ defmodule Anchor.Domain.Aggregates.Config do
   alias Anchor.Domain.Aggregates.Declaration
   alias Anchor.Domain.FunctionRef
 
-  @keys ~w(declare reason repos transaction_functions write_functions)
+  @keys ~w(declare no_write_modules reason repos transaction_functions write_functions)
   @entry_keys ~w(name owners schemas tables)
 
   @shape "aggregates: declare: - name: <Aggregate>, schemas: [<Schema>...], " <>
@@ -62,11 +64,17 @@ defmodule Anchor.Domain.Aggregates.Config do
   @none_fix "write declare: none with reason: \"<why this repo persists nothing>\" and no " <>
               "other key, or list the aggregates: #{@shape}"
 
-  defstruct declare: [], none: nil, repos: [], write_functions: [], transaction_functions: []
+  defstruct declare: [],
+            none: nil,
+            no_write_modules: [],
+            repos: [],
+            write_functions: [],
+            transaction_functions: []
 
   @type t :: %__MODULE__{
           declare: [Declaration.t()],
           none: String.t() | nil,
+          no_write_modules: [module()],
           repos: [module()],
           write_functions: [FunctionRef.t()],
           transaction_functions: [FunctionRef.t()]
@@ -93,11 +101,14 @@ defmodule Anchor.Domain.Aggregates.Config do
          {:ok, declare} <- declare_key(section),
          :ok <- no_reason(section),
          {:ok, repos} <- modules(Map.get(section, "repos", []), "aggregates.repos"),
+         {:ok, no_write} <-
+           no_write_modules(Map.get(section, "no_write_modules", [])),
          {:ok, writes} <- functions(section, "write_functions"),
          {:ok, transactions} <- functions(section, "transaction_functions") do
       {:ok,
        %__MODULE__{
          declare: declare,
+         no_write_modules: no_write,
          repos: repos,
          write_functions: writes,
          transaction_functions: transactions
@@ -234,6 +245,45 @@ defmodule Anchor.Domain.Aggregates.Config do
   end
 
   defp modules(tokens, path), do: bad_modules(path, "got: #{inspect(tokens)}")
+
+  # An Erlang module is written with its colon: a dependency's call on one is a gap
+  # like any other, so this key has to be able to clear it.
+  defp no_write_modules(tokens) when is_list(tokens) do
+    Enum.reduce_while(tokens, {:ok, []}, fn token, {:ok, acc} ->
+      case no_write_module(token) do
+        {:ok, module} -> {:cont, {:ok, acc ++ [module]}}
+        :error -> {:halt, bad_no_write_modules(inspect(token))}
+      end
+    end)
+  end
+
+  defp no_write_modules(tokens), do: bad_no_write_modules(inspect(tokens))
+
+  defp no_write_module(":" <> <<first, rest::binary>> = token) when first in ?a..?z do
+    if rest |> String.to_charlist() |> Enum.all?(&erlang_name_char?/1),
+      do: {:ok, token |> String.trim_leading(":") |> String.to_atom()},
+      else: :error
+  end
+
+  defp no_write_module(":" <> _not_a_name), do: :error
+
+  defp no_write_module(token) do
+    case module(token) do
+      {:ok, module} -> {:ok, module}
+      {:error, _why} -> :error
+    end
+  end
+
+  defp erlang_name_char?(char),
+    do: char in ?a..?z or char in ?A..?Z or char in ?0..?9 or char == ?_
+
+  defp bad_no_write_modules(got) do
+    refuse(
+      "aggregates.no_write_modules must be a list of module names, got: #{got}",
+      "name each module in full, as its defmodule spells it, and an Erlang module with " <>
+        "its colon (\":ets\"); #{@shape}"
+    )
+  end
 
   defp module(token) when is_binary(token) do
     case AllowedCallers.parse(token) do

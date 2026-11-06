@@ -3,8 +3,9 @@ defmodule Anchor.Domain.Aggregates.RealEctoTest do
   # `Ecto.Query.from/2`, `Ecto.Multi`), pinned by fixtures compiled against Ecto
   # as a test-only dependency. Nothing is loaded or run.
   #
-  # Sabotage record: ../../../sabotage_records/aggregates-20261103-dnd_5459_write_sets.md
-  # and ../../../sabotage_records/aggregates-20261106-dnd_5459_write_sets.md
+  # Sabotage record: ../../../sabotage_records/aggregates-20261103-dnd_5459_write_sets.md,
+  # ../../../sabotage_records/aggregates-20261106-dnd_5459_write_sets.md
+  # and ../../../sabotage_records/aggregates-20261106-dnd_5889_default_deny_walker.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.WriteFixtures
@@ -64,6 +65,27 @@ defmodule Anchor.Domain.Aggregates.RealEctoTest do
     def e6_prefixed, do: Repo.delete_all(put_query_prefix(from(t in "threads"), "tenant_a"))
     def e6_prefixed_pin(v) do
       Repo.delete_all(put_query_prefix(from(t in "threads", where: t.x == ^v), "tenant_a"))
+    end
+
+    def e9(v) do
+      Repo.transaction(fn ->
+        query =
+          from t in Thread,
+            join: p in Post,
+            on: t.id == p.id,
+            where: t.x == ^v and not is_nil(p.body),
+            group_by: t.id,
+            having: count(p.id) > 1,
+            order_by: [desc: t.id],
+            limit: 1,
+            offset: 1,
+            lock: "FOR UPDATE",
+            preload: [],
+            select: {t.id, count(p.id)}
+
+        changeset = Ecto.Changeset.change(%Thread{})
+        {Repo.all(query), Repo.update(Ecto.Changeset.validate_required(changeset, [:x]))}
+      end)
     end
 
     def e4 do
@@ -147,12 +169,18 @@ defmodule Anchor.Domain.Aggregates.RealEctoTest do
   end
 
   test "every callback of Ecto.Repo is a write, raw SQL, or known to write nothing" do
-    known =
-      MapSet.union(MapSet.new(Map.keys(WriteSites.repo_writes())), WriteSites.repo_functions())
+    known = Map.merge(WriteSites.repo_writes(), WriteSites.repo_functions())
 
     assert Ecto.Repo.behaviour_info(:callbacks)
-           |> Keyword.keys()
-           |> Enum.reject(&MapSet.member?(known, &1)) == []
+           |> Enum.reject(fn {name, arity} -> arity in Map.get(known, name, []) end) == []
+  end
+
+  test "DND-5889: Ecto's own expansion, and what `use Ecto.Schema` generates, is no gap", %{
+    analysis: a
+  } do
+    assert a.counts.unread_by_callee == %{}
+    assert [%{no_gap_noticed?: true}] = Enum.filter(a.scopes, &(&1.mfa == {@e, :e9, 1}))
+    assert a.counts.cleared > 0
   end
 
   test "E4: a real Multi pipeline's scope keys are exactly the written schemas", %{analysis: a} do

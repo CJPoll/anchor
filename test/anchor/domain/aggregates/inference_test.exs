@@ -4,6 +4,7 @@ defmodule Anchor.Domain.Aggregates.InferenceTest do
   #
   # Sabotage record: ../../../sabotage_records/aggregates-20261103-dnd_5459_write_sets.md
   # and ../../../sabotage_records/aggregates-20261106-dnd_5459_write_sets.md
+  # Sabotage record: ../../../sabotage_records/aggregates-20261106-dnd_5889_default_deny_walker.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.WriteFixtures
@@ -171,9 +172,11 @@ defmodule Anchor.Domain.Aggregates.InferenceTest do
     assert Inference.components(analysis) == [MapSet.new(schema: App.Z)]
   end
 
-  test "every proposal says on its first line what it was read from" do
+  test "every proposal says on its first line what it does not read" do
     read_note =
-      "# read from the forms Anchor recognises; a write in any other form is not in this proposal\n"
+      "# not read: the modules under aggregates.no_write_modules, the built-in no-write list, " <>
+        "an unknown value given to one of them and dependencies' own internals; a write " <>
+        "there is not in this proposal; see the README's What it does not read\n"
 
     healthy = %{analysis([scope(1, [{:schema, App.S}])], []) | repos: [App.Repo]}
     assert {:ok, yaml} = Inference.render_yaml(healthy)

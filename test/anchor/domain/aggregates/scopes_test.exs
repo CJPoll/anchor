@@ -4,6 +4,7 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
   #
   # Sabotage record: ../../../sabotage_records/aggregates-20261103-dnd_5459_write_sets.md
   # and ../../../sabotage_records/aggregates-20261106-dnd_5459_write_sets.md
+  # Sabotage record: ../../../sabotage_records/aggregates-20261106-dnd_5889_default_deny_walker.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.WriteFixtures
@@ -73,7 +74,7 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
 
     def s12(xs), do: Repo.transaction(fn -> Enum.each(xs, &Helper.write_s/1) end)
 
-    def s13(x), do: Repo.transaction(fn -> Repo.insert(%S{}); JSON.encode!(x) end)
+    def s13(x), do: Repo.transaction(fn -> Repo.insert(%S{}); Code.ensure_loaded(x) end)
 
     def s14, do: Repo.transaction(fn -> Repo.insert(%S{}); Repo.query!("UPDATE t SET x = 1") end)
 
@@ -665,7 +666,10 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
 
       assert %Scope{
                no_gap_noticed?: false,
-               gaps: [{:dynamic_call, {@builder, :add_append, 2}, _}]
+               gaps: [
+                 {:dynamic_call, {@builder, :add_append, 2}, _},
+                 {:dynamic_call, {@x, :s59, 1}, _}
+               ]
              } =
                one(a, :s59)
     end
@@ -673,7 +677,10 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
     test "a helper appending an untraced Multi to its own new one is a gap", %{analysis: a} do
       assert %Scope{
                no_gap_noticed?: false,
-               gaps: [{:dynamic_call, {@builder, :append_to_new, 1}, _}]
+               gaps: [
+                 {:dynamic_call, {@builder, :append_to_new, 1}, _},
+                 {:dynamic_call, {@x, :s66, 1}, _}
+               ]
              } =
                one(a, :s66)
     end
@@ -863,10 +870,13 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
       assert one(a, :s12).no_gap_noticed?
     end
 
-    test "S13: a call into a dependency is not followed, and the scope stays complete", %{
-      analysis: a
-    } do
-      assert %Scope{no_gap_noticed?: true, gaps: []} = scope = one(a, :s13)
+    test "S13: a call into a dependency is not followed: a gap naming it, the write still read",
+         %{analysis: a} do
+      assert %Scope{
+               no_gap_noticed?: false,
+               gaps: [{:unread, {@x, :s13, 1}, _line, "unread: call of Code.ensure_loaded/1"}]
+             } = scope = one(a, :s13)
+
       assert scope.keys == keys([@s])
     end
   end

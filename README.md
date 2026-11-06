@@ -1326,7 +1326,8 @@ aggregates:
 
 `declare` names the aggregates; `repos`, `write_functions` and
 `transaction_functions` tell the write analysis what writes and what opens a
-transaction, and are checked for shape (exact module names, and
+transaction, and `no_write_modules` (*What it does not read*) what it clears
+unread, Erlang modules included, and are checked for shape (exact module names, and
 `"Module.function/arity"` tokens). The load refuses, each with a `Fix:` giving this shape: a section that is not a
 mapping; an unknown key at any level; a `declare` that is neither `none` nor a list; an entry
 that is not a mapping, has no `name`, or a `name` that is not a module-name
@@ -1465,7 +1466,7 @@ does not define, and a call on a computed module.
 
 The load refuses (exit 3, each with a `Fix:` naming both forms): `none`
 without a `reason:` or with a blank one; a `reason:` without `none`; `none`
-beside `repos`, `write_functions` or `transaction_functions`; a `declare`
+beside `repos`, `write_functions`, `transaction_functions` or `no_write_modules`; a `declare`
 string other than `none`; and an explicit `declare: []`, so "nothing" is
 always said on purpose. A missing `aggregates:` section keeps the fail-closed
 checks-nothing violation above. Under `none` no write analysis is built, and
@@ -1505,8 +1506,9 @@ what it read; it does not claim to have seen all of them.
   writes read in its body and those of the project functions it calls,
   transitively. A call Anchor cannot resolve, a function value it cannot follow
   (a `fn` defined outside the body, a capture of a write, an unknown function
-  handed to a library function that invokes it), or an unresolved write, makes
-  it **incomplete**. Calls into dependencies are not followed.
+  handed to a library function that invokes it), a call it does not read (below),
+  or an unresolved write, makes it **incomplete**. Calls into dependencies are not
+  followed.
 - **With no transaction read around it,** raw SQL, a write or transaction on a
   computed module, and an `apply/3` that may be one are reported, in the function
   they are written in: no schema or table names what it writes. A caller's
@@ -1514,24 +1516,63 @@ what it read; it does not claim to have seen all of them.
 
 #### What it does not read
 
-- a function handed to a library `Anchor.Domain.HigherOrder` does not know;
-- a Multi handed to a helper that also calls `Multi.new/0` (DND-5884);
-- a `fn` bound once and both called and passed to a transaction (DND-5885);
-- a `transaction_functions` call with one traced and one untraced function
-  argument;
-- dependencies' own writes;
-- any other form.
+Core Erlang has a closed set of forms, and only a `call` or an `apply` can reach
+code that writes. So every `call` and `apply` is one of: a form read above; a
+project function, followed; a call on the no-write list, cleared and counted; or
+a gap at its line. A dependency call, say, is `unread: call of Lib.save/1`: the
+transaction around it is incomplete, and a function with no transaction around
+it has a gap. So is a `transaction_functions` call with a non-literal argument
+Anchor cannot trace beside the one it can. A function value handed to a listed
+module is a gap too, unless `Anchor.Domain.HigherOrder` names that place.
 
-An absent write is not evidence of no write; DND-5889 makes each such form a gap
-at its line.
+A `fn` is read once, where it is defined and in any transaction it is given to. A
+run of it anywhere else is a gap there, so a `fn` both called and passed to a
+transaction (`f.(); Repo.transaction(f)`) is a gap at the call (DND-5885). So is a
+`fn` or a Multi bound outside a body and given to a repo call or a
+`transaction_functions` call inside it, and a `fn` bound outside a body and logged
+inside it. The rule is one: a form that opens a transaction (`Repo.transaction`,
+`Repo.transact`, a `transaction_functions` call) needs the bodies around it to be
+among the value's own; anything else that runs a value needs exactly the value's
+own, so `Repo.transaction(f); Repo.checkout(f)` is a gap at the checkout.
+
+A Multi that comes back from a project helper is read from what the helper returns
+(DND-5884): an argument it is built on that Anchor cannot trace is a gap, even when
+the helper also makes its own Multi. A helper whose return Anchor cannot follow is
+a gap too, and that includes a recursive helper and one that builds the Multi with
+`Enum.reduce`.
+
+What is left is not read by construction:
+
+- **the built-in no-write list** (`Anchor.Domain.Aggregates.NoWrite`): modules
+  that cannot reach a database connection, such as `Enum`, `Map`, `Ecto.Changeset`,
+  `Ecto.Query`, `Logger`, and the pure `:erlang` functions. `GenServer`, `Task` and
+  `Agent` are not on it, and neither is `Stream`, whose functions run later;
+- **the modules under `aggregates.no_write_modules`,** your own assumption: a
+  listed module's writes are not read, and the run counts the calls it cleared. A
+  project module is followed whether it is listed or not;
+- **dependencies' own internals,** for a function listed in
+  `aggregates.write_functions` or a listed module alike;
+- **an unknown value given to a listed module,** which Anchor cannot tell from
+  data, in a place `HigherOrder` does not name;
+- **a function a repo defines at a name and arity `use Ecto.Repo` generates.** Anchor
+  reads that call as Ecto's. The same name at another arity is followed.
+
+```yaml
+aggregates:
+  no_write_modules: [SomeLib, ":ets"]   # a listed module's writes are not read
+```
 
 The summary line ends `; writes: <W> read, <R> resolved, <U> unresolved;
 transactions: <S> read, <N> no gap noticed, <I> incomplete; <G> gaps with no
-transaction read around them; forms not listed in the README are not read` (the
-JSON's `writes`, whose keys include `no_gap_noticed`). `no gap noticed` is a count
-of what Anchor noticed, not a statement that a write set is whole. An unresolved
-write, an incomplete transaction and a call Anchor could not follow with no
-transaction read around it are counted.
+transaction read around them; <D> dependency calls cleared by the no-write list;
+not read: the modules under aggregates.no_write_modules, the built-in no-write
+list, an unknown value given to one of them and dependencies' own internals; see
+the README's What it does not read` (the JSON's `writes`, whose keys include
+`no_gap_noticed`, `cleared`, and `unread_by_callee`: each `unread:` gap's text with
+its count, so a run shows what a list would have to hold). `no gap noticed` is a
+count of what Anchor noticed, not a statement that a write set is whole. An
+unresolved write, an incomplete transaction and a call Anchor could not follow
+with no transaction read around it are counted.
 
 ```yaml
 rules:
@@ -1559,6 +1600,7 @@ architecture:
 | A write whose source is unresolved (at the write) | `Repo.insert in MyApp.X.save/1 writes a value Anchor cannot trace to a schema or table (parameter 1 of MyApp.X.save/1 has no @spec and no project caller). Fix: pass a struct, changeset or schema the call can see; add @spec with Schema.t() for the parameter; or list a wrapper under aggregates.write_functions.` |
 | Raw SQL, or a write or transaction on a computed module, with no transaction read around it (at the call) | `MyApp.X.purge/0 writes, or may write, with no transaction read around it in a way no schema or table names: raw SQL (MyApp.Repo.query!/1) Anchor cannot attribute. Fix: write through a schema with Repo, or name the module the call is on.` |
 | An incomplete transaction (at the transaction) | `transaction 1 in MyApp.X.run/1 reaches 1 call(s) Anchor cannot resolve (first: MyApp.X.run/1 line 12), so its write set is incomplete. Fix: call a named function instead of a variable, ...` |
+| A transaction that reaches a call it does not read (at the transaction) | `transaction 1 in MyApp.X.run/1 reaches 1 call(s) it does not read (first: unread: call of Lib.save/1 in MyApp.X.run/1 line 12), so its write set is incomplete. Fix: ...; list a dependency that cannot write under aggregates.no_write_modules, or one that writes under aggregates.write_functions; ...` |
 
 The key is `<id>|<M.f/a>|unresolved <op> <seen>`, `<id>|<M.f/a>|unattributed <what>` or `<id>|<M.f/a>|incomplete
 <ordinal>`, where the ordinal is the transaction's position in its function:
@@ -1567,8 +1609,10 @@ no line number. The rule's selector chooses whose findings are reported.
 `Anchor.Domain.Aggregates.Inference` turns the analysis into proposed
 aggregates: the connected components of the co-write graph (each
 transaction's written schemas are written together), printed as the exact
-`aggregates:` YAML above. Its first line is always `# read from the forms Anchor
-recognises; a write in any other form is not in this proposal`. `mix anchor.propose
+`aggregates:` YAML above. Its first line is always `# not read: the modules under
+aggregates.no_write_modules, the built-in no-write list, an unknown value given
+to one of them and dependencies' own internals; a write there is not in this
+proposal; see the README's What it does not read`. `mix anchor.propose
 --level aggregate` prints it once DND-5449's `mix anchor.propose` lands.
 
 ### Graph rows of the fail-closed table

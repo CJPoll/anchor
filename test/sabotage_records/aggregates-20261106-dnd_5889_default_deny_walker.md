@@ -1,0 +1,7321 @@
+# Sabotage record — the write walker's default deny (DND-5889)
+
+- **Domain:** aggregates (`Anchor.Domain.HigherOrder`, `Anchor.Domain.GraphReport` and `GraphRules.AggregateWriteSources` are off-domain and labelled by their file)
+- **Branch:** dnd-5889-default-deny-walker
+- **Date:** 2026-11-06
+- **Code under test:** `Anchor.Domain.Aggregates.WriteSites` (the default of `project_call/8`, `multi_read/7`, `transaction_function/6`), `NoWrite`, `Scopes`, `Analysis`, `Config`, `Inference`, `GraphReport.summary/1`, `AggregateWriteSources`, `HigherOrder`
+- **Suite run:** a driver: one exact, unique anchor per mutation, `mix test --timeout 2000 --max-cases 2 <its test files>` inside `test-slot`, every failure block kept (cut at 3500 bytes), the source restored from bytes with its mtime moved past the last write. `git status` was clean after the run.
+- **Passes:** 55 mutations on the ticket's last code. All red. `0 failures, 41 invalid` (`SC-GAPORDER`) is `setup_all` crashing, so the file ran no test: that shows the clause exists, and `SC-GAPCONST` in the sixth run shows its order. Rows that first failed to compile were rewritten and re-run; none of those runs is kept.
+- **Not mutated:** every entry of the no-write list. `NW-ENUM`, `NW-QUERYABLE`, `NW-CHANGESET` and `NW-GENSERVER` stand for the class: an entry is an assumption the count and a critic hold (the design says so), and no test asserts a measurement's number.
+
+| # | Mutation | Tests run | Result |
+|---|---|---|---|
+| DD-DEFAULT | restore the dropping default: an unlisted call reads as no write (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs`, `scopes_test.exs` | `113 tests, 9 failures` (red) |
+| DD-CAPTURE | a capture of an unlisted function is dropped (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 8 failures` (red) |
+| DD-CAPTAGS | a capture given as a body is not inside it (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 3 failures` (red) |
+| DD-MIXEDKEEP | a dependency capture beside a body reads only as outside (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| DD-MIXEDOUT | a dependency capture beside a body reads only as inside (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| DD-HOCAPTURE | a capture of a listed function that runs its argument is cleared (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| DD-RUN5 | Multi.run/5 on a dependency reads as no write (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| DD-RUN5PROJECT | Multi.run/5 on a project function is unread (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| DD-TXDEP | a dependency's listed transaction function is also unread (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| DD-ONEOUTCOME | a gap on a handed function is also cleared (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| DD-FUNARG | a function handed to a listed module is not checked (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 2 failures` (red) |
+| DD-NAMED | a place HigherOrder names counts as an unread function too (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 8 failures` (red) |
+| DD-DATA | any argument to a listed module counts as a function (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 14 failures` (red) |
+| DD-APPLYARGS | an apply/3 of a listed function with arguments is cleared (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| DD-ZEROARGS | an apply/3 with no arguments counts as unread (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 6 failures` (red) |
+| DD-CLEARED | a cleared call is not counted (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 2 failures` (red) |
+| DD-UNREADMARK | an unread call is a plain dynamic gap, with no name (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs`, `scopes_test.exs` | `113 tests, 20 failures` (red) |
+| DD-GENERATED | a function use Ecto.Repo generates counts as followed (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| DD-WFSITE | a dependency's write function is also an unread call (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| DD-MULTINAME | an Ecto.Multi name nothing knows reads as no write (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| DD-MULTIREAD | Multi.new is unread (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs`, `real_ecto_test.exs` | `54 tests, 7 failures` (red) |
+| DD-MULTIFUN | a function handed to a Multi read is not checked (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| DD-OTHERPROCESS | a function in another process is no gap outside a transaction (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs`, `non_transactional_test.exs` | `60 tests, 2 failures` (red) |
+| DD-PARTLY | an untraced argument beside a traced body is no gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| DD-LITERAL | a literal beside a traced body counts as untraced (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| DD-LISTWIRED | aggregates.no_write_modules never reaches the walker (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 2 failures` (red) |
+| NW-GENSERVER | GenServer on the list (`lib/anchor/domain/aggregates/no_write.ex`) | `no_write_test.exs`, `write_sites_default_test.exs` | `46 tests, 4 failures` (red) |
+| NW-ENUM | Enum off the list (`lib/anchor/domain/aggregates/no_write.ex`) | `no_write_test.exs`, `write_sites_default_test.exs` | `46 tests, 8 failures` (red) |
+| NW-QUERYABLE | Ecto.Queryable off the list: real Ecto expansion gives a gap (`lib/anchor/domain/aggregates/no_write.ex`) | `real_ecto_test.exs` | `13 tests, 1 failure` (red) |
+| NW-CHANGESET | Ecto.Changeset off the list (`lib/anchor/domain/aggregates/no_write.ex`) | `no_write_test.exs`, `real_ecto_test.exs` | `18 tests, 2 failures` (red) |
+| NW-GIVESBACK | a function given to Keyword.get/3 is a gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 2 failures` (red) |
+| NW-GIVESBACKTABLE | any listed function counts as harmless (`lib/anchor/domain/aggregates/no_write.ex`) | `no_write_test.exs`, `write_sites_default_test.exs` | `46 tests, 3 failures` (red) |
+| NW-LOGGERFN | a function as a log message is a gap (`lib/anchor/domain/aggregates/no_write.ex`) | `no_write_test.exs`, `write_sites_default_test.exs` | `46 tests, 2 failures` (red) |
+| NW-PROCESS | every function of a module held by function is cleared (`lib/anchor/domain/aggregates/no_write.ex`) | `no_write_test.exs` | `5 tests, 1 failure` (red) |
+| HO-TRAVERSE | HigherOrder loses the row: {Ecto.Changeset, :traverse_errors, 2} => [{1, 1}], (`lib/anchor/domain/higher_order.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| HO-UPDATE | HigherOrder loses the row: {Ecto.Changeset, :update_change, 3} => [{2, 1}], (`lib/anchor/domain/higher_order.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| HO-VALIDATE3 | HigherOrder loses the row: {Ecto.Changeset, :validate_change, 3} => [{2, 2}], (`lib/anchor/domain/higher_order.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| HO-VALIDATE4 | HigherOrder loses the row: {Ecto.Changeset, :validate_change, 4} => [{3, 2}], (`lib/anchor/domain/higher_order.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| HO-MAPSET | HigherOrder loses the row: {MapSet, :new, 2} => [{1, 1}], (`lib/anchor/domain/higher_order.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| HO-MAPJOIN | HigherOrder loses the row: {Enum, :map_join, 2} => [{1, 1}], (`lib/anchor/domain/higher_order.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| NW-LISTED | a listed module is not cleared (`lib/anchor/domain/aggregates/no_write.ex`) | `no_write_test.exs` | `5 tests, 1 failure` (red) |
+| NW-LISTEDFN | listing a module held by function clears nothing more (`lib/anchor/domain/aggregates/no_write.ex`) | `no_write_test.exs` | `5 tests, 1 failure` (red) |
+| SC-NONTX | an unread call is no gap with no transaction around it (`lib/anchor/domain/aggregates/scopes.ex`) | `write_sites_default_test.exs`, `non_transactional_test.exs` | `60 tests, 9 failures` (red) |
+| SC-GAPORDER | an unread gap has no sort order (`lib/anchor/domain/aggregates/scopes.ex`) | `write_sites_default_test.exs` | `41 tests, 0 failures, 41 invalid` (red) |
+| AN-CLEARED | the cleared calls are not summed (`lib/anchor/domain/aggregates/analysis.ex`) | `write_sites_default_test.exs`, `real_ecto_test.exs` | `54 tests, 2 failures` (red) |
+| AN-UNREAD | the unread calls by callee are empty (`lib/anchor/domain/aggregates/analysis.ex`) | `write_sites_default_test.exs` | `41 tests, 2 failures` (red) |
+| AN-DEDUPE | a call read twice at one line counts twice (`lib/anchor/domain/aggregates/analysis.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| CF-PARSE | no_write_modules is parsed and dropped (`lib/anchor/domain/aggregates/config.ex`) | `config_test.exs` | `48 tests, 2 failures` (red) |
+| CF-ERLANG | an Erlang module is refused under no_write_modules (`lib/anchor/domain/aggregates/config.ex`) | `config_test.exs` | `48 tests, 1 failure` (red) |
+| CF-ERLANGCHAR | any character passes in an Erlang name (`lib/anchor/domain/aggregates/config.ex`) | `config_test.exs` | `48 tests, 1 failure` (red) |
+| CF-KEY | no_write_modules is an unknown key (`lib/anchor/domain/aggregates/config.ex`) | `config_test.exs` | `48 tests, 8 failures` (red) |
+| GR-CLEARED | the summary does not print the cleared count (`lib/anchor/domain/graph_report.ex`) | `graph_report_aggregates_test.exs` | `4 tests, 1 failure` (red) |
+| GR-NARROW | the summary keeps the run-wide sentence (`lib/anchor/domain/graph_report.ex`) | `graph_report_aggregates_test.exs` | `4 tests, 1 failure` (red) |
+| IN-NARROW | the proposal keeps the run-wide sentence (`lib/anchor/domain/aggregates/inference.ex`) | `inference_test.exs` | `17 tests, 1 failure` (red) |
+| RU-UNREAD | the rule's message does not name the unread call (`lib/anchor/domain/graph_rules/aggregate_write_sources.ex`) | `aggregate_write_sources_integration_test.exs` | `2 tests, 1 failure` (red) |
+
+## DD-DEFAULT
+
+restore the dropping default: an unlisted call reads as no write (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `113 tests, 9 failures`.
+
+```
+  1) test a call the walker does not read row 4: an unlisted dependency call is a gap at its line, naming it; the scope is incomplete (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:166
+     match (=) failed
+     The following variables were pinned:
+       line = 40
+     code:  assert %Scope{no_gap_noticed?: false, gaps: [{:unread, {@d, :d4, 1}, ^line, what}]} = one(a, :d4)
+     left:  %Anchor.Domain.Aggregates.Scope{
+              no_gap_noticed?: false,
+              gaps: [{:unread, {AnchorFixtures.WriteSitesDefaultTest.D, :d4, 1}, ^line, what}]
+            }
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d4, 1},
+              ordinal: 1,
+              line: 40,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:170: (test)
+
+
+
+  2) test a call the walker does not read a function run in another process is a gap with no transaction around it too (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:245
+     Assertion with == failed
+     code:  assert whats(nontx(a, :d17, 1).gaps) == ["unread: call of GenServer.call/2"]
+     left:  []
+     right: ["unread: call of GenServer.call/2"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:249: (test)
+
+........
+
+  3) test a project function the analysis does not walk a macro's own function is a gap, never a call to nowhere (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:269
+     Assertion with == failed
+     code:  assert whats(one(a, :d19).gaps) == ["unread: call of #{inspect(@macros)}.MACRO-m/2"]
+     left:  []
+     right: ["unread: call of AnchorFixtures.WriteSitesDefaultTest.Macros.MACRO-m/2"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:270: (test)
+
+
+
+  4) test an apply with a literal module and name of an unlisted dependency is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:388
+     Assertion with == failed
+     code:  assert whats(one(a, :d13a).gaps) == [lib_call("save/1")]
+     left:  []
+     right: ["unread: call of AnchorFixtures.WriteSitesDefaultTest.Lib.save/1"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:389: (test)
+
+
+
+  5) test a call the walker does not read row 9: reached through two project calls, a gap on the scope that reaches it only (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:226
+     match (=) failed
+     code:  assert [{:unread, {@d, :second, 0}, _line, what}] = one(a, :d9).gaps
+     left:  [{:unread, {AnchorFixtures.WriteSitesDefaultTest.D, :second, 0}, _line, what}]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:229: (test)
+
+
+
+  6) test a call the walker does not read row 6: GenServer.call/2 is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:194
+     Assertion with == failed
+     code:  assert whats(one(a, :d6).gaps) == ["unread: call of GenServer.call/2"]
+     left:  []
+```
+
+## DD-CAPTURE
+
+a capture of an unlisted function is dropped (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 8 failures`.
+
+```
+  1) test a dependency's function a transaction or a Multi runs a second capture of it beside the body does not take the gap off the transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:331
+     Assertion with in failed
+     code:  assert capture in whats(one(a, name).gaps)
+     left:  "unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.run/0"
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:337: anonymous fn/4 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test a dependency's function a transaction or a Multi runs a second capture of it beside the body does not take the gap off the transaction"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:336: (test)
+
+.................
+
+  2) test a dependency's function a transaction or a Multi runs a capture of one as a Multi.run callback is a gap of that transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:342
+     Assertion with == failed
+     code:  assert whats(one(a, :d21b).gaps) == [String.replace(lib_call("step/2"), "call of", "capture of")]
+     left:  []
+     right: ["unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.step/2"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:343: (test)
+
+...
+
+  3) test a dependency's function a transaction or a Multi runs a capture of one as the transaction's body is a gap of that transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:323
+     Assertion with == failed
+     code:  assert whats(one(a, :d21a).gaps) == [String.replace(lib_call("run/0"), "call of", "capture of")]
+     left:  []
+     right: ["unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.run/0"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:324: (test)
+
+
+
+  4) test exactly one outcome per call a capture read twice at one line counts once in unread_by_callee (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:380
+     Assertion with == failed
+     code:  assert a.counts.unread_by_callee[String.replace(lib_call("only_here/1"), "call of", "capture of")] == 1
+     left:  nil
+     right: 1
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:381: (test)
+
+.....
+
+  5) test a capture of a listed function that runs its argument is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:312
+     Assertion with == failed
+     code:  assert whats(one(a, :d12c).gaps) == ["unread: capture of Enum.map/2"]
+     left:  []
+     right: ["unread: capture of Enum.map/2"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:313: (test)
+
+.
+
+  6) test a capture of an Ecto.Multi step or a generated repo function is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:316
+     Assertion with == failed
+     code:  assert whats(one(a, :d12d).gaps) == ["unread: capture of Ecto.Multi.insert/3"]
+     left:  []
+     right: ["unread: capture of Ecto.Multi.insert/3"]
+     stacktrace:
+       test/anchor/domain/aggregates/write
+```
+
+## DD-CAPTAGS
+
+a capture given as a body is not inside it (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 3 failures`.
+
+```
+  1) test a dependency's function a transaction or a Multi runs a capture of one as a Multi.run callback is a gap of that transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:342
+     Assertion with == failed
+     code:  assert whats(one(a, :d21b).gaps) == [String.replace(lib_call("step/2"), "call of", "capture of")]
+     left:  []
+     right: ["unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.step/2"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:343: (test)
+
+......
+
+  2) test a dependency's function a transaction or a Multi runs a capture of one as the transaction's body is a gap of that transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:323
+     Assertion with == failed
+     code:  assert whats(one(a, :d21a).gaps) == [String.replace(lib_call("run/0"), "call of", "capture of")]
+     left:  []
+     right: ["unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.run/0"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:324: (test)
+
+.......
+
+  3) test a dependency's function a transaction or a Multi runs a second capture of it beside the body does not take the gap off the transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:331
+     Assertion with in failed
+     code:  assert capture in whats(one(a, name).gaps)
+     left:  "unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.run/0"
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:337: anonymous fn/4 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test a dependency's function a transaction or a Multi runs a second capture of it beside the body does not take the gap off the transaction"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:336: (test)
+
+....
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+41 tests, 3 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+## DD-MIXEDKEEP
+
+a dependency capture beside a body reads only as outside (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 1 failure`.
+
+```
+  1) test a dependency's function a transaction or a Multi runs a second capture of it beside the body does not take the gap off the transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:331
+     Assertion with in failed
+     code:  assert capture in whats(one(a, name).gaps)
+     left:  "unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.run/0"
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:337: anonymous fn/4 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test a dependency's function a transaction or a Multi runs a second capture of it beside the body does not take the gap off the transaction"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:336: (test)
+
+.......................
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+41 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+## DD-MIXEDOUT
+
+a dependency capture beside a body reads only as inside (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 1 failure`.
+
+```
+  1) test a dependency's function a transaction or a Multi runs a second capture of it beside the body does not take the gap off the transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:331
+     Assertion with in failed
+     code:  assert capture in whats(nontx(a, name, arity).gaps)
+     left:  "unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.run/0"
+     right: ["unread: a function handed to Keyword.put/3"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:338: anonymous fn/4 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test a dependency's function a transaction or a Multi runs a second capture of it beside the body does not take the gap off the transaction"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:336: (test)
+
+....
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+41 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+## DD-HOCAPTURE
+
+a capture of a listed function that runs its argument is cleared (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 1 failure`.
+
+```
+  1) test a capture of a listed function that runs its argument is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:312
+     Assertion with == failed
+     code:  assert whats(one(a, :d12c).gaps) == ["unread: capture of Enum.map/2"]
+     left:  []
+     right: ["unread: capture of Enum.map/2"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:313: (test)
+
+..........................
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+41 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+## DD-RUN5
+
+Multi.run/5 on a dependency reads as no write (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 1 failure`.
+
+```
+  1) test a dependency's function a transaction or a Multi runs Multi.run/5 on one is a gap of that transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:348
+     Assertion with == failed
+     code:  assert whats(one(a, :d21c).gaps) == [String.replace(lib_call("step/2"), "call of", "capture of")]
+     left:  []
+     right: ["unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.step/2"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:349: (test)
+
+.................................
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+41 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+## DD-RUN5PROJECT
+
+Multi.run/5 on a project function is unread (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 1 failure`.
+
+```
+  1) test a dependency's function a transaction or a Multi runs positive control: Multi.run/5 on a project function is no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:354
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :d21d)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d21d,
+               0},
+              ordinal: 1,
+              line: 104,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:unread,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d21d, 0},
+                 104,
+                 "unread: capture of AnchorFixtures.WriteSitesDefaultTest.D.own_step/2"}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:355: (test)
+
+.............................
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+41 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+## DD-TXDEP
+
+a dependency's listed transaction function is also unread (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 1 failure`.
+
+```
+  1) test a dependency's function a transaction or a Multi runs a dependency's listed transaction function is read as a scope, never unread (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:358
+     Expected truthy, got false
+     code: assert Enum.all?(scopes, &(&1.gaps == []))
+     arguments:
+
+         # 1
+         [
+           %Anchor.Domain.Aggregates.Scope{
+             mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d22, 0},
+             ordinal: 1,
+             line: 106,
+             kind: :transaction_function,
+             writes: [
+               %Anchor.Domain.Aggregates.WriteSite{
+                 mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d22, 0},
+                 line: 106,
+                 op: :insert,
+                 via: :repo,
+                 sources: [
+                   schema: AnchorFixtures.WriteSitesDefaultTest.S
+                 ],
+                 unresolved: nil,
+                 scopes: [2, 1],
+                 run_callback?: false
+               }
+             ],
+             keys: MapSet.new([
+               schema: AnchorFixtures.WriteSitesDefaultTest.S
+             ]),
+             no_gap_noticed?: true,
+             gaps: []
+           },
+           %Anchor.Domain.Aggregates.Scope{
+             mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d22, 0},
+             ordinal: 2,
+             line: 106,
+             kind: :fun,
+             writes: [
+               %Anchor.Domain.Aggregates.WriteSite{
+                 mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d22, 0},
+                 line: 106,
+                 op: :insert,
+                 via: :repo,
+                 sources: [
+                   schema: AnchorFixtures.WriteSitesDefaultTest.S
+                 ],
+                 unresolved: nil,
+                 scopes: [2, 1],
+                 run_callback?: false
+               }
+             ],
+             keys: MapSet.new([
+               schema: AnchorFixtures.WriteSitesDefaultTest.S
+             ]),
+             no_gap_noticed?: false,
+             gaps: [
+               {:unread,
+                {AnchorFixtures.WriteSitesDefaultTest.D, :d22, 0}, 106,
+                "unread: call of AnchorFixtures.WriteSitesDefaultTest.Lib.tx/1"}
+             ]
+           }
+         ]
+
+         # 2
+         #Function<4.15630406/1 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test a dependency's function a transaction or a Multi runs a dependency's listed transaction function is read as a scope, never unread"/1>
+
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:365: (test)
+
+.......................
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+41 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+## DD-ONEOUTCOME
+
+a gap on a handed function is also cleared (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 1 failure`.
+
+```
+  1) test exactly one outcome per call an unknown function handed to a listed function is a gap, and is not also cleared (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:372
+     match (=) failed
+     code:  assert %{cleared: 0, dynamic: [_gap]} = facts.functions[{@d, :d23, 2}]
+     left:  %{cleared: 0, dynamic: [_gap]}
+     right: %{
+              dynamic: [
+                %{
+                  line: 107,
+                  tags: [1],
+                  what: "the function handed to Enum.map/2",
+                  write?: false
+                }
+              ],
+              computed: [],
+              sites: [],
+              txs: [
+                %{
+                  line: 107,
+                  kind: :fun,
+                  ordinal: 1,
+                  captures: [],
+                  gaps: []
+                }
+              ],
+              calls: [],
+              cleared: 1,
+              def_line: 107,
+              public?: true
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:377: (test)
+
+.......................................
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+41 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+## DD-FUNARG
+
+a function handed to a listed module is not checked (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 2 failures`.
+
+```
+  1) test the forms DND-5459 reads stay the rest of Ecto.Multi reads; a name it does not know is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:290
+     Assertion with == failed
+     code:  assert whats(one(a, :d15b).gaps) == ["unread: a function handed to Ecto.Multi.put/3"]
+     left:  []
+     right: ["unread: a function handed to Ecto.Multi.put/3"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:292: (test)
+
+.........................
+
+  2) test a call the walker does not read row 8: a function given to a listed module where HigherOrder names no place is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:206
+     Assertion with == failed
+     code:  assert whats(one(a, :d8a).gaps) == ["unread: a function handed to Keyword.put/3"]
+     left:  []
+     right: ["unread: a function handed to Keyword.put/3"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:208: (test)
+
+..........
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+41 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+## DD-NAMED
+
+a place HigherOrder names counts as an unread function too (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 8 failures`.
+
+```
+  1) test a function value, or data, that needs no following d20c: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:262
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d20c,
+               1},
+              ordinal: 1,
+              line: 95,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:unread,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d20c, 1},
+                 95,
+                 "unread: a function handed to Ecto.Changeset.update_change/3"}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:263: (test)
+
+
+
+  2) test a call the walker does not read row 8: positive controls: data to a listed module, a function HigherOrder names (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:218
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true} = one(a, :d8e)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d8e, 1},
+              ordinal: 1,
+              line: 49,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:unread,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d8e, 1},
+                 49, "unread: a function handed to Enum.map/2"}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:222: (test)
+
+..
+
+  3) test a function value, or data, that needs no following d20f: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:262
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d20f,
+               1},
+              ordinal: 1,
+              line: 98,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:unread,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d20f, 1},
+                 98, "unread: a function handed to MapSet.new/2"}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:263: (test)
+
+.................
+
+  4) test a function value, or data, that needs no following d20g: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:262
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d20g,
+```
+
+## DD-DATA
+
+any argument to a listed module counts as a function (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 14 failures`.
+
+```
+  1) test a function value, or data, that needs no following d20d: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:262
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d20d,
+               1},
+              ordinal: 1,
+              line: 96,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:unread,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d20d, 1},
+                 96,
+                 "unread: a function handed to Ecto.Changeset.validate_change/3"}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:263: (test)
+
+
+
+  2) test a function value, or data, that needs no following d20i: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:262
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d20i,
+               1},
+              ordinal: 1,
+              line: 92,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:unread,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d20i, 1},
+                 92,
+                 "unread: a function handed to String.Chars.to_string/1"}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:263: (test)
+
+...
+
+  3) test a function value, or data, that needs no following d20f: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:262
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d20f,
+               1},
+              ordinal: 1,
+              line: 98,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:unread,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d20f, 1},
+                 98, "unread: a function handed to MapSet.new/2"}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:263: (test)
+
+
+
+  4) test a capture of an unlisted dependency is a gap; of a listed function it is cleared (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:304
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true} = one(a, :d12b)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d12b,
+```
+
+## DD-APPLYARGS
+
+an apply/3 of a listed function with arguments is cleared (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 1 failure`.
+
+```
+  1) test an apply with a literal module and name of a listed function with arguments is a gap: Anchor has no argument nodes (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:392
+     Assertion with == failed
+     code:  assert whats(one(a, :d13b).gaps) == ["unread: a function handed to Map.put/3"]
+     left:  []
+     right: ["unread: a function handed to Map.put/3"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:395: (test)
+
+.........................
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+41 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+## DD-ZEROARGS
+
+an apply/3 with no arguments counts as unread (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 6 failures`.
+
+```
+  1) test the forms DND-5459 reads stay the rest of Ecto.Multi reads; a name it does not know is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:290
+     Assertion with == failed
+     code:  assert whats(one(a, :d15).gaps) == ["unread: call of Ecto.Multi.not_a_function/1"]
+     left:  ["unread: a function handed to Ecto.Multi.new/0",
+             "unread: call of Ecto.Multi.not_a_function/1"]
+     right: ["unread: call of Ecto.Multi.not_a_function/1"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:291: (test)
+
+........
+
+  2) test the forms DND-5459 reads stay row 11: a repo write, a Multi step, a listed write function, raw SQL: sites as before (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:275
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d11b,
+               0},
+              ordinal: 1,
+              line: 64,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.WriteSitesDefaultTest.D,
+                   :d11b, 0},
+                  line: 64,
+                  op: :insert,
+                  via: :multi,
+                  sources: [
+                    schema: AnchorFixtures.WriteSitesDefaultTest.S
+                  ],
+                  unresolved: nil,
+                  scopes: [1],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.WriteSitesDefaultTest.S
+              ]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:unread,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d11b, 0},
+                 64,
+                 "unread: a function handed to Ecto.Multi.new/0"}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:284: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test the forms DND-5459 reads stay row 11: a repo write, a Multi step, a listed write function, raw SQL: sites as before"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:283: (test)
+
+..
+
+  3) test a dependency's function a transaction or a Multi runs Multi.run/5 on one is a gap of that transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:348
+     Assertion with == failed
+     code:  assert whats(one(a, :d21c).gaps) == [String.replace(lib_call("step/2"), "call of", "capture of")]
+     left:  ["unread: a function handed to Ecto.Multi.new/0",
+             "unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.step/2"]
+     right: ["unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.step/2"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:349: (test)
+
+..............
+
+  4) test a dependency's function a transaction or a Multi runs a capture of one as a Multi.run callback is a gap of that transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     tes
+```
+
+## DD-CLEARED
+
+a cleared call is not counted (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 2 failures`.
+
+```
+  1) test a call the walker does not read row 5: every cleared call is counted, none from a form read another way (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:182
+     Assertion with == failed
+     code:  assert facts.functions[{@d, :d5, 1}].cleared == 1
+     left:  0
+     right: 1
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:188: (test)
+
+......
+
+  2) test a call the walker does not read the counts hold the cleared calls and the unread ones by callee (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:252
+     Assertion with >= failed
+     code:  assert a.counts.cleared >= 1
+     left:  0
+     right: 1
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:253: (test)
+
+................................
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+41 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+## DD-UNREADMARK
+
+an unread call is a plain dynamic gap, with no name (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `113 tests, 20 failures`.
+
+```
+  1) test a call the walker does not read a function run in another process is a gap with no transaction around it too (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:245
+     Assertion with == failed
+     code:  assert whats(nontx(a, :d17, 1).gaps) == ["unread: call of GenServer.call/2"]
+     left:  []
+     right: ["unread: call of GenServer.call/2"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:249: (test)
+
+.
+
+  2) test a dependency's function a transaction or a Multi runs Multi.run/5 on one is a gap of that transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:348
+     Assertion with == failed
+     code:  assert whats(one(a, :d21c).gaps) == [String.replace(lib_call("step/2"), "call of", "capture of")]
+     left:  []
+     right: ["unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.step/2"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:349: (test)
+
+
+
+  3) test a capture of an Ecto.Multi step or a generated repo function is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:316
+     Assertion with == failed
+     code:  assert whats(one(a, :d12d).gaps) == ["unread: capture of Ecto.Multi.insert/3"]
+     left:  []
+     right: ["unread: capture of Ecto.Multi.insert/3"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:317: (test)
+
+.
+
+  4) test a call the walker does not read row 9: reached through two project calls, a gap on the scope that reaches it only (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:226
+     match (=) failed
+     code:  assert [{:unread, {@d, :second, 0}, _line, what}] = one(a, :d9).gaps
+     left:  [{:unread, {AnchorFixtures.WriteSitesDefaultTest.D, :second, 0}, _line, what}]
+     right: [
+              {:dynamic_call,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :second, 0},
+               57}
+            ]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:229: (test)
+
+
+
+  5) test a capture of a listed function that runs its argument is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:312
+     Assertion with == failed
+     code:  assert whats(one(a, :d12c).gaps) == ["unread: capture of Enum.map/2"]
+     left:  []
+     right: ["unread: capture of Enum.map/2"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:313: (test)
+
+
+
+  6) test a capture of an unlisted dependency is a gap; of a listed function it is cleared (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:304
+     Assertion with == failed
+     code:  assert whats(one(a, :d12a).gaps) == [lib_call("save/1") |> String.replace("call of", "capture of")]
+     left:  []
+     right: ["unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.save/1"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:305: (test)
+
+
+
+  7) test a project function the analysis does not walk a macro's own function is a gap, never a call to nowhere (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:269
+     Assertion
+```
+
+## DD-GENERATED
+
+a function use Ecto.Repo generates counts as followed (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 1 failure`.
+
+```
+  1) test a capture of an Ecto.Multi step or a generated repo function is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:316
+     Assertion with == failed
+     code:  assert whats(one(a, :d12e).gaps) == ["unread: capture of #{inspect(@repo)}.all/1"]
+     left:  []
+     right: ["unread: capture of AnchorFixtures.WriteSitesDefaultTest.Repo.all/1"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:318: (test)
+
+..............
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+41 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+## DD-WFSITE
+
+a dependency's write function is also an unread call (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 1 failure`.
+
+```
+  1) test the forms DND-5459 reads stay row 11: a repo write, a Multi step, a listed write function, raw SQL: sites as before (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:275
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d11c,
+               0},
+              ordinal: 1,
+              line: 65,
+              kind: :fun,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.WriteSitesDefaultTest.D,
+                   :d11c, 0},
+                  line: 65,
+                  op: :soft_delete,
+                  via: :write_function,
+                  sources: [
+                    schema: AnchorFixtures.WriteSitesDefaultTest.S
+                  ],
+                  unresolved: nil,
+                  scopes: [1],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.WriteSitesDefaultTest.S
+              ]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:unread,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d11c, 0},
+                 65,
+                 "unread: call of AnchorFixtures.WriteSitesDefaultTest.Lib.soft_delete/1"}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:284: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test the forms DND-5459 reads stay row 11: a repo write, a Multi step, a listed write function, raw SQL: sites as before"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:283: (test)
+
+....................
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+41 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+## DD-MULTINAME
+
+an Ecto.Multi name nothing knows reads as no write (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 1 failure`.
+
+```
+  1) test the forms DND-5459 reads stay the rest of Ecto.Multi reads; a name it does not know is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:290
+     Assertion with == failed
+     code:  assert whats(one(a, :d15).gaps) == ["unread: call of Ecto.Multi.not_a_function/1"]
+     left:  []
+     right: ["unread: call of Ecto.Multi.not_a_function/1"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:291: (test)
+
+..
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+41 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+## DD-MULTIREAD
+
+Multi.new is unread (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `54 tests, 7 failures`.
+
+```
+  1) test E4: a real Multi pipeline's scope keys are exactly the written schemas (Anchor.Domain.Aggregates.RealEctoTest)
+     test/anchor/domain/aggregates/real_ecto_test.exs:188
+     Expected truthy, got false
+     code: assert scope.no_gap_noticed?
+     stacktrace:
+       test/anchor/domain/aggregates/real_ecto_test.exs:191: (test)
+
+.........
+
+  2) test DND-5889: Ecto's own expansion, and what `use Ecto.Schema` generates, is no gap (Anchor.Domain.Aggregates.RealEctoTest)
+     test/anchor/domain/aggregates/real_ecto_test.exs:180
+     Assertion with == failed
+     code:  assert a.counts.unread_by_callee == %{}
+     left:  %{"unread: call of Ecto.Multi.new/0" => 1}
+     right: %{}
+     stacktrace:
+       test/anchor/domain/aggregates/real_ecto_test.exs:183: (test)
+
+....
+
+  3) test the forms DND-5459 reads stay the rest of Ecto.Multi reads; a name it does not know is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:290
+     Assertion with == failed
+     code:  assert whats(one(a, :d15).gaps) == ["unread: call of Ecto.Multi.not_a_function/1"]
+     left:  ["unread: call of Ecto.Multi.new/0",
+             "unread: call of Ecto.Multi.not_a_function/1"]
+     right: ["unread: call of Ecto.Multi.not_a_function/1"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:291: (test)
+
+.
+
+  4) test a dependency's function a transaction or a Multi runs positive control: Multi.run/5 on a project function is no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:354
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :d21d)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d21d,
+               0},
+              ordinal: 1,
+              line: 104,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:unread,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d21d, 0},
+                 104, "unread: call of Ecto.Multi.new/0"}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:355: (test)
+
+...
+
+  5) test a dependency's function a transaction or a Multi runs Multi.run/5 on one is a gap of that transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:348
+     Assertion with == failed
+     code:  assert whats(one(a, :d21c).gaps) == [String.replace(lib_call("step/2"), "call of", "capture of")]
+     left:  ["unread: call of Ecto.Multi.new/0",
+             "unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.step/2"]
+     right: ["unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.step/2"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:349: (test)
+
+........
+
+  6) test the forms DND-5459 reads stay row 11: a repo write, a Multi step, a listed write function, raw SQL: sites as before (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:275
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
+     left:  %Anchor.Domain.Aggregates.Scope{
+```
+
+## DD-MULTIFUN
+
+a function handed to a Multi read is not checked (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 1 failure`.
+
+```
+  1) test the forms DND-5459 reads stay the rest of Ecto.Multi reads; a name it does not know is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:290
+     Assertion with == failed
+     code:  assert whats(one(a, :d15b).gaps) == ["unread: a function handed to Ecto.Multi.put/3"]
+     left:  []
+     right: ["unread: a function handed to Ecto.Multi.put/3"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:292: (test)
+
+.....................
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+41 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+## DD-OTHERPROCESS
+
+a function in another process is no gap outside a transaction (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `60 tests, 2 failures`.
+
+```
+  1) test a call the walker does not read a function run in another process is a gap with no transaction around it too (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:245
+     match (=) failed
+     code:  assert [{:dynamic_call, {@d, :d18, 0}, _line}] = nontx(a, :d18, 0).gaps
+     left:  [{:dynamic_call, {AnchorFixtures.WriteSitesDefaultTest.D, :d18, 0}, _line}]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:248: (test)
+
+...............
+
+  2) test the gaps with no transaction read around them are counted (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:305
+     Expected truthy, got false
+     code: assert Enum.any?(gaps, &match?({:dynamic_call, {@n, :n26, 0}, _line}, &1))
+     arguments:
+
+         # 1
+         [
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n27, 1}, 104},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n32, 1}, 99},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n43, 1}, 97},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n38, 2}, 92},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n37, 3}, 91},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n35, 2}, 89},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n56, 1}, 67},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n41, 2}, 95},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n48, 0}, 83},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n36, 1}, 90},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n51, 2}, 69},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n11, 0}, 58},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n33, 1}, 100},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n54, 2}, 72},
+           {:dynamic_call, ...},
+           ...
+         ]
+
+         # 2
+         #Function<7.16135393/1 in Anchor.Domain.Aggregates.NonTransactionalTest."test the gaps with no transaction read around them are counted"/1>
+
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:314: (test)
+
+.
+Finished in 0.5 seconds (0.5s async, 0.00s sync)
+60 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+## DD-PARTLY
+
+an untraced argument beside a traced body is no gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 1 failure`.
+
+```
+  1) test a transaction_functions call row 14: one argument traced and one not is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:404
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@d, :d14a, 1}, _}]} = one(a, :d14a)
+     left:  %Anchor.Domain.Aggregates.Scope{
+              no_gap_noticed?: false,
+              gaps: [{:dynamic_call, {AnchorFixtures.WriteSitesDefaultTest.D, :d14a, 1}, _}]
+            }
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d14a,
+               1},
+              ordinal: 1,
+              line: 79,
+              kind: :transaction_function,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.WriteSitesDefaultTest.D,
+                   :d14a, 1},
+                  line: 79,
+                  op: :insert,
+                  via: :repo,
+                  sources: [
+                    schema: AnchorFixtures.WriteSitesDefaultTest.S
+                  ],
+                  unresolved: nil,
+                  scopes: [1],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.WriteSitesDefaultTest.S
+              ]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:405: (test)
+
+............................
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+41 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+## DD-LITERAL
+
+a literal beside a traced body counts as untraced (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 1 failure`.
+
+```
+  1) test a transaction_functions call row 14: positive control: the other argument a literal is no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:409
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, keys: keys} = one(a, :d14b)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, keys: keys}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d14b,
+               0},
+              ordinal: 1,
+              line: 80,
+              kind: :transaction_function,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.WriteSitesDefaultTest.D,
+                   :d14b, 0},
+                  line: 80,
+                  op: :insert,
+                  via: :repo,
+                  sources: [
+                    schema: AnchorFixtures.WriteSitesDefaultTest.S
+                  ],
+                  unresolved: nil,
+                  scopes: [1],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.WriteSitesDefaultTest.S
+              ]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d14b, 0},
+                 80}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:410: (test)
+
+.............................
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+41 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+## DD-LISTWIRED
+
+aggregates.no_write_modules never reaches the walker (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 2 failures`.
+
+```
+  1) test a call the walker does not read row 8: a function given to a listed module where HigherOrder names no place is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:206
+     Assertion with == failed
+     code:  assert whats(one(a, :d8c).gaps) == ["unread: a function handed to #{inspect(@listed)}.run/1"]
+     left:  ["unread: call of AnchorFixtures.WriteSitesDefaultTest.Listed.run/1"]
+     right: ["unread: a function handed to AnchorFixtures.WriteSitesDefaultTest.Listed.run/1"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:211: (test)
+
+..................
+
+  2) test a call the walker does not read row 8: positive controls: data to a listed module, a function HigherOrder names (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:218
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true} = one(a, :d8d)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d8d, 1},
+              ordinal: 1,
+              line: 48,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:unread,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d8d, 1},
+                 48,
+                 "unread: call of AnchorFixtures.WriteSitesDefaultTest.Listed.run/1"}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:221: (test)
+
+.............
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+41 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+## NW-GENSERVER
+
+GenServer on the list (`lib/anchor/domain/aggregates/no_write.ex`). Result: `46 tests, 4 failures`.
+
+```
+  1) test member?/2 what hands work to another process, or runs code, is never cleared (Anchor.Domain.Aggregates.NoWriteTest)
+     test/anchor/domain/aggregates/no_write_test.exs:23
+     {GenServer, :call, 2} must be a gap
+     code: for mfa <- [
+     stacktrace:
+       test/anchor/domain/aggregates/no_write_test.exs:42: anonymous fn/2 in Anchor.Domain.Aggregates.NoWriteTest."test member?/2 what hands work to another process, or runs code, is never cleared"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/no_write_test.exs:24: (test)
+
+.........
+
+  2) test a call the walker does not read row 6: GenServer.call/2 is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:194
+     Assertion with == failed
+     code:  assert whats(one(a, :d6).gaps) == ["unread: call of GenServer.call/2"]
+     left:  []
+     right: ["unread: call of GenServer.call/2"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:195: (test)
+
+...
+
+  3) test a call the walker does not read the counts hold the cleared calls and the unread ones by callee (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:252
+     Assertion with == failed
+     code:  assert a.counts.unread_by_callee["unread: call of GenServer.call/2"] == 2
+     left:  nil
+     right: 2
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:254: (test)
+
+..........................
+
+  4) test a call the walker does not read a function run in another process is a gap with no transaction around it too (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:245
+     Assertion with == failed
+     code:  assert whats(nontx(a, :d17, 1).gaps) == ["unread: call of GenServer.call/2"]
+     left:  []
+     right: ["unread: call of GenServer.call/2"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:249: (test)
+
+.
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+46 tests, 4 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/no_write.ex" was set to the future, resetting to now
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+## NW-ENUM
+
+Enum off the list (`lib/anchor/domain/aggregates/no_write.ex`). Result: `46 tests, 8 failures`.
+
+```
+  1) test member?/2 a pure library call is cleared (Anchor.Domain.Aggregates.NoWriteTest)
+     test/anchor/domain/aggregates/no_write_test.exs:10
+     Expected truthy, got false
+     code: assert NoWrite.member?({Enum, :count, 1}, [])
+     stacktrace:
+       test/anchor/domain/aggregates/no_write_test.exs:11: (test)
+
+......
+
+  2) test a call the walker does not read row 8: positive controls: data to a listed module, a function HigherOrder names (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:218
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true} = one(a, :d8e)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d8e, 1},
+              ordinal: 1,
+              line: 49,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:unread,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d8e, 1},
+                 49, "unread: call of Enum.map/2"}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:222: (test)
+
+.
+
+  3) test an apply with a literal module and name of a listed function with no arguments is cleared (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:398
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true} = one(a, :d13c)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d13c,
+               0},
+              ordinal: 1,
+              line: 77,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:unread,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d13c, 0},
+                 77, "unread: call of Enum.to_list/0"}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:399: (test)
+
+.
+
+  4) test a call the walker does not read row 10: with no transaction, a gap on the root's nontx and on no scope (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:234
+     Assertion with == failed
+     code:  assert nontx(a, :d10_clean, 1).gaps == []
+     left:  [
+              {:unread,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :d10_clean,
+                1}, 61, "unread: call of Enum.count/1"}
+            ]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:242: (test)
+
+..................
+
+  5) test a function value, or data, that needs no following d20g: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:262
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d20g,
+               1},
+              ordinal: 1,
+              line: 99,
+              kind: :fun,
+              writes: [
+```
+
+## NW-QUERYABLE
+
+Ecto.Queryable off the list: real Ecto expansion gives a gap (`lib/anchor/domain/aggregates/no_write.ex`). Result: `13 tests, 1 failure`.
+
+```
+  1) test DND-5889: Ecto's own expansion, and what `use Ecto.Schema` generates, is no gap (Anchor.Domain.Aggregates.RealEctoTest)
+     test/anchor/domain/aggregates/real_ecto_test.exs:180
+     Assertion with == failed
+     code:  assert a.counts.unread_by_callee == %{}
+     left:  %{"unread: call of Ecto.Queryable.to_query/1" => 1}
+     right: %{}
+     stacktrace:
+       test/anchor/domain/aggregates/real_ecto_test.exs:183: (test)
+
+...........
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+13 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/no_write.ex" was set to the future, resetting to now
+```
+
+## NW-CHANGESET
+
+Ecto.Changeset off the list (`lib/anchor/domain/aggregates/no_write.ex`). Result: `18 tests, 2 failures`.
+
+```
+  1) test member?/2 a pure library call is cleared (Anchor.Domain.Aggregates.NoWriteTest)
+     test/anchor/domain/aggregates/no_write_test.exs:10
+     Expected truthy, got false
+     code: assert NoWrite.member?({Ecto.Changeset, :change, 1}, [])
+     stacktrace:
+       test/anchor/domain/aggregates/no_write_test.exs:14: (test)
+
+.........
+
+  2) test DND-5889: Ecto's own expansion, and what `use Ecto.Schema` generates, is no gap (Anchor.Domain.Aggregates.RealEctoTest)
+     test/anchor/domain/aggregates/real_ecto_test.exs:180
+     Assertion with == failed
+     code:  assert a.counts.unread_by_callee == %{}
+     left:  %{
+              "unread: call of Ecto.Changeset.apply_changes/1" => 1,
+              "unread: call of Ecto.Changeset.change/1" => 3,
+              "unread: call of Ecto.Changeset.get_change/2" => 1,
+              "unread: call of Ecto.Changeset.validate_required/2" => 1
+            }
+     right: %{}
+     stacktrace:
+       test/anchor/domain/aggregates/real_ecto_test.exs:183: (test)
+
+.......
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+18 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/no_write.ex" was set to the future, resetting to now
+```
+
+## NW-GIVESBACK
+
+a function given to Keyword.get/3 is a gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 2 failures`.
+
+```
+  1) test a function value, or data, that needs no following d20a: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:262
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d20a,
+               0},
+              ordinal: 1,
+              line: 90,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:unread,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d20a, 0},
+                 90,
+                 "unread: a function handed to Logger.__do_log__/4"}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:263: (test)
+
+.............
+
+  2) test a call the walker does not read row 8: positive controls: data to a listed module, a function HigherOrder names (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:218
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true} = one(a, :d8f)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d8f, 1},
+              ordinal: 1,
+              line: 50,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:unread,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d8f, 1},
+                 50, "unread: a function handed to Keyword.get/3"}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:223: (test)
+
+..
+Finished in 0.5 seconds (0.5s async, 0.00s sync)
+41 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/no_write.ex" was set to the future, resetting to now
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+## NW-GIVESBACKTABLE
+
+any listed function counts as harmless (`lib/anchor/domain/aggregates/no_write.ex`). Result: `46 tests, 3 failures`.
+
+```
+  1) test harmless_function_argument?/1 a default handed back and a log message; any other is not (Anchor.Domain.Aggregates.NoWriteTest)
+     test/anchor/domain/aggregates/no_write_test.exs:60
+     Expected false or nil, got true
+     code: refute NoWrite.harmless_function_argument?({Keyword, :put, 3})
+     stacktrace:
+       test/anchor/domain/aggregates/no_write_test.exs:64: (test)
+
+.....
+
+  2) test a call the walker does not read row 8: a function given to a listed module where HigherOrder names no place is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:206
+     Assertion with == failed
+     code:  assert whats(one(a, :d8a).gaps) == ["unread: a function handed to Keyword.put/3"]
+     left:  []
+     right: ["unread: a function handed to Keyword.put/3"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:208: (test)
+
+................
+
+  3) test the forms DND-5459 reads stay the rest of Ecto.Multi reads; a name it does not know is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:290
+     Assertion with == failed
+     code:  assert whats(one(a, :d15b).gaps) == ["unread: a function handed to Ecto.Multi.put/3"]
+     left:  []
+     right: ["unread: a function handed to Ecto.Multi.put/3"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:292: (test)
+
+...................
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+46 tests, 3 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/no_write.ex" was set to the future, resetting to now
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+## NW-LOGGERFN
+
+a function as a log message is a gap (`lib/anchor/domain/aggregates/no_write.ex`). Result: `46 tests, 2 failures`.
+
+```
+  1) test harmless_function_argument?/1 a default handed back and a log message; any other is not (Anchor.Domain.Aggregates.NoWriteTest)
+     test/anchor/domain/aggregates/no_write_test.exs:60
+     Expected truthy, got false
+     code: assert NoWrite.harmless_function_argument?({Logger, :__do_log__, 4})
+     stacktrace:
+       test/anchor/domain/aggregates/no_write_test.exs:63: (test)
+
+........................................
+
+  2) test a function value, or data, that needs no following d20a: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:262
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d20a,
+               0},
+              ordinal: 1,
+              line: 90,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:unread,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d20a, 0},
+                 90,
+                 "unread: a function handed to Logger.__do_log__/4"}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:263: (test)
+
+..
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+46 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/no_write.ex" was set to the future, resetting to now
+```
+
+## NW-PROCESS
+
+every function of a module held by function is cleared (`lib/anchor/domain/aggregates/no_write.ex`). Result: `5 tests, 1 failure`.
+
+```
+  1) test member?/2 what hands work to another process, or runs code, is never cleared (Anchor.Domain.Aggregates.NoWriteTest)
+     test/anchor/domain/aggregates/no_write_test.exs:23
+     {:erlang, :send, 2} must be a gap
+     code: for mfa <- [
+     stacktrace:
+       test/anchor/domain/aggregates/no_write_test.exs:42: anonymous fn/2 in Anchor.Domain.Aggregates.NoWriteTest."test member?/2 what hands work to another process, or runs code, is never cleared"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/no_write_test.exs:24: (test)
+
+..
+Finished in 0.03 seconds (0.03s async, 0.00s sync)
+5 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/no_write.ex" was set to the future, resetting to now
+```
+
+## HO-TRAVERSE
+
+HigherOrder loses the row: {Ecto.Changeset, :traverse_errors, 2} => [{1, 1}], (`lib/anchor/domain/higher_order.ex`). Result: `41 tests, 1 failure`.
+
+```
+  1) test a function value, or data, that needs no following d20b: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:262
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d20b,
+               1},
+              ordinal: 1,
+              line: 94,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:unread,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d20b, 1},
+                 94,
+                 "unread: a function handed to Ecto.Changeset.traverse_errors/2"}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:263: (test)
+
+...............................
+Finished in 0.5 seconds (0.5s async, 0.00s sync)
+41 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/higher_order.ex" was set to the future, resetting to now
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/no_write.ex" was set to the future, resetting to now
+```
+
+## HO-UPDATE
+
+HigherOrder loses the row: {Ecto.Changeset, :update_change, 3} => [{2, 1}], (`lib/anchor/domain/higher_order.ex`). Result: `41 tests, 1 failure`.
+
+```
+  1) test a function value, or data, that needs no following d20c: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:262
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d20c,
+               1},
+              ordinal: 1,
+              line: 95,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:unread,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d20c, 1},
+                 95,
+                 "unread: a function handed to Ecto.Changeset.update_change/3"}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:263: (test)
+
+...........
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+41 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/higher_order.ex" was set to the future, resetting to now
+```
+
+## HO-VALIDATE3
+
+HigherOrder loses the row: {Ecto.Changeset, :validate_change, 3} => [{2, 2}], (`lib/anchor/domain/higher_order.ex`). Result: `41 tests, 1 failure`.
+
+```
+  1) test a function value, or data, that needs no following d20d: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:262
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d20d,
+               1},
+              ordinal: 1,
+              line: 96,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:unread,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d20d, 1},
+                 96,
+                 "unread: a function handed to Ecto.Changeset.validate_change/3"}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:263: (test)
+
+.........................
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+41 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/higher_order.ex" was set to the future, resetting to now
+```
+
+## HO-VALIDATE4
+
+HigherOrder loses the row: {Ecto.Changeset, :validate_change, 4} => [{3, 2}], (`lib/anchor/domain/higher_order.ex`). Result: `41 tests, 1 failure`.
+
+```
+  1) test a function value, or data, that needs no following d20e: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:262
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d20e,
+               1},
+              ordinal: 1,
+              line: 97,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:unread,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d20e, 1},
+                 97,
+                 "unread: a function handed to Ecto.Changeset.validate_change/4"}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:263: (test)
+
+....................
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+41 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/higher_order.ex" was set to the future, resetting to now
+```
+
+## HO-MAPSET
+
+HigherOrder loses the row: {MapSet, :new, 2} => [{1, 1}], (`lib/anchor/domain/higher_order.ex`). Result: `41 tests, 1 failure`.
+
+```
+  1) test a function value, or data, that needs no following d20f: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:262
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d20f,
+               1},
+              ordinal: 1,
+              line: 98,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:unread,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d20f, 1},
+                 98, "unread: a function handed to MapSet.new/2"}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:263: (test)
+
+..............................
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+41 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/higher_order.ex" was set to the future, resetting to now
+```
+
+## HO-MAPJOIN
+
+HigherOrder loses the row: {Enum, :map_join, 2} => [{1, 1}], (`lib/anchor/domain/higher_order.ex`). Result: `41 tests, 1 failure`.
+
+```
+  1) test a function value, or data, that needs no following d20g: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:262
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d20g,
+               1},
+              ordinal: 1,
+              line: 99,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:unread,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d20g, 1},
+                 99, "unread: a function handed to Enum.map_join/2"}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:263: (test)
+
+...................................
+Finished in 0.5 seconds (0.5s async, 0.00s sync)
+41 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/higher_order.ex" was set to the future, resetting to now
+```
+
+## NW-LISTED
+
+a listed module is not cleared (`lib/anchor/domain/aggregates/no_write.ex`). Result: `5 tests, 1 failure`.
+
+```
+  1) test member?/2 a module under aggregates.no_write_modules is cleared; with no list it is not (Anchor.Domain.Aggregates.NoWriteTest)
+     test/anchor/domain/aggregates/no_write_test.exs:46
+     Expected truthy, got false
+     code: assert NoWrite.member?({Lib, :save, 1}, [Lib])
+     stacktrace:
+       test/anchor/domain/aggregates/no_write_test.exs:47: (test)
+
+...
+Finished in 0.03 seconds (0.03s async, 0.00s sync)
+5 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/higher_order.ex" was set to the future, resetting to now
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/no_write.ex" was set to the future, resetting to now
+```
+
+## NW-LISTEDFN
+
+listing a module held by function clears nothing more (`lib/anchor/domain/aggregates/no_write.ex`). Result: `5 tests, 1 failure`.
+
+```
+  1) test member?/2 listing a module held by function clears its other functions (Anchor.Domain.Aggregates.NoWriteTest)
+     test/anchor/domain/aggregates/no_write_test.exs:52
+     Expected truthy, got false
+     code: assert NoWrite.member?({:erlang, :send, 2}, [:erlang])
+     stacktrace:
+       test/anchor/domain/aggregates/no_write_test.exs:53: (test)
+
+..
+Finished in 0.03 seconds (0.03s async, 0.00s sync)
+5 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/no_write.ex" was set to the future, resetting to now
+```
+
+## SC-NONTX
+
+an unread call is no gap with no transaction around it (`lib/anchor/domain/aggregates/scopes.ex`). Result: `60 tests, 9 failures`.
+
+```
+  1) test a captured run callback's own entry is empty; a direct caller still has its writes (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:268
+     Assertion with == failed
+     code:  assert nontx(a, :n19_direct).keys == keys([@s])
+     left:  MapSet.new([])
+     right: MapSet.new([schema: AnchorFixtures.NonTransactionalTest.S])
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:271: (test)
+
+.
+
+  2) test a capture beside a body capture of one function is outside the transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:156
+     Assertion with == failed
+     code:  assert nontx(a, :n47_run).keys == keys([@s])
+     left:  MapSet.new([])
+     right: MapSet.new([schema: AnchorFixtures.NonTransactionalTest.S])
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:159: (test)
+
+.
+
+  3) test N4: recursion terminates at the fixpoint (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:172
+     Assertion with == failed
+     code:  assert nontx(a, :n4a, 1).keys == keys([@s, @t])
+     left:  MapSet.new([schema: AnchorFixtures.NonTransactionalTest.S])
+     right: MapSet.new([
+              schema: AnchorFixtures.NonTransactionalTest.S,
+              schema: AnchorFixtures.NonTransactionalTest.T
+            ])
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:173: (test)
+
+.
+
+  4) test the gaps with no transaction read around them are counted (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:305
+     Expected truthy, got false
+     code: assert Enum.any?(gaps, &match?({:dynamic_call, {@n, :n17h, 0}, _line}, &1))
+     arguments:
+
+         # 1
+         []
+
+         # 2
+         #Function<6.16135393/1 in Anchor.Domain.Aggregates.NonTransactionalTest."test the gaps with no transaction read around them are counted"/1>
+
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:312: (test)
+
+
+
+  5) test N1: a function's own writes and its callees' outside a transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:138
+     Assertion with == failed
+     code:  assert nontx(a, :n1f).keys == keys([@s, @t])
+     left:  MapSet.new([schema: AnchorFixtures.NonTransactionalTest.S])
+     right: MapSet.new([
+              schema: AnchorFixtures.NonTransactionalTest.S,
+              schema: AnchorFixtures.NonTransactionalTest.T
+            ])
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:139: (test)
+
+
+
+  6) test N3: a callee also called outside: the outside caller has its keys (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:150
+     Assertion with == failed
+     code:  assert nontx(a, :n3h).keys == keys([@t])
+     left:  MapSet.new([])
+     right: MapSet.new([schema: AnchorFixtures.NonTransactionalTest.T])
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:152: (test)
+
+...................
+
+  7) test a call the walker does not read a function run in another process is a gap with no transaction around it too (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:245
+     ma
+```
+
+## SC-GAPORDER
+
+an unread gap has no sort order (`lib/anchor/domain/aggregates/scopes.ex`). Result: `41 tests, 0 failures, 41 invalid`.
+
+```
+Compiling 16 files (.ex)
+Generated anchor app
+Running ExUnit with seed: 857719, max_cases: 2
+
+?????????????????????????????????????????
+
+  0) Anchor.Domain.Aggregates.WriteSitesDefaultTest: failure on setup_all callback, all tests have been invalidated
+     ** (FunctionClauseError) no function clause matching in Anchor.Domain.Aggregates.Scopes.gap_order/1
+
+     The following arguments were given to Anchor.Domain.Aggregates.Scopes.gap_order/1:
+
+         # 1
+         {:unread, {AnchorFixtures.WriteSitesDefaultTest.D, :d12a, 1}, 69, "unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.save/1"}
+
+     Attempted function clauses (showing 2 out of 2):
+
+         defp gap_order(-{:dynamic_call, mfa, line}-)
+         defp gap_order(-{:unresolved_write, %Anchor.Domain.Aggregates.WriteSite{} = site}-)
+
+     stacktrace:
+       (anchor 0.1.0) lib/anchor/domain/aggregates/scopes.ex:182: Anchor.Domain.Aggregates.Scopes.gap_order/1
+       (elixir 1.19.4) lib/enum.ex:3347: anonymous fn/2 in Enum.sort_by/3
+       (elixir 1.19.4) lib/enum.ex:1696: anonymous fn/3 in Enum.map/2
+       (elixir 1.19.4) lib/enum.ex:4570: anonymous fn/3 in Enum.map/2
+       (elixir 1.19.4) lib/enum.ex:5023: Enumerable.List.reduce/3
+       (elixir 1.19.4) lib/enum.ex:4570: Enum.map/2
+       (elixir 1.19.4) lib/enum.ex:3347: Enum.sort_by/3
+       (anchor 0.1.0) lib/anchor/domain/aggregates/scopes.ex:128: Anchor.Domain.Aggregates.Scopes.scope/5
+       (elixir 1.19.4) lib/enum.ex:1688: Enum."-map/2-lists^map/1-1-"/2
+       (elixir 1.19.4) lib/enum.ex:4497: Enum.flat_map_list/2
+       (elixir 1.19.4) lib/enum.ex:4500: Enum.flat_map_list/2
+       (anchor 0.1.0) lib/anchor/domain/aggregates/analysis.ex:113: Anchor.Domain.Aggregates.Analysis.analyse/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:145: Anchor.Domain.Aggregates.WriteSitesDefaultTest.__ex_unit_setup_all_0/1
+       test/anchor/domain/aggregates/write_sites_default_test.exs:1: Anchor.Domain.Aggregates.WriteSitesDefaultTest.__ex_unit__/2
+
+
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+41 tests, 0 failures, 41 invalid
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/scopes.ex" was set to the future, resetting to now
+```
+
+## AN-CLEARED
+
+the cleared calls are not summed (`lib/anchor/domain/aggregates/analysis.ex`). Result: `54 tests, 2 failures`.
+
+```
+  1) test DND-5889: Ecto's own expansion, and what `use Ecto.Schema` generates, is no gap (Anchor.Domain.Aggregates.RealEctoTest)
+     test/anchor/domain/aggregates/real_ecto_test.exs:180
+     Assertion with > failed, both sides are exactly equal
+     code: assert a.counts.cleared > 0
+     left: 0
+     stacktrace:
+       test/anchor/domain/aggregates/real_ecto_test.exs:185: (test)
+
+......
+
+  2) test a call the walker does not read the counts hold the cleared calls and the unread ones by callee (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:252
+     Assertion with >= failed
+     code:  assert a.counts.cleared >= 1
+     left:  0
+     right: 1
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:253: (test)
+
+......................................
+Finished in 0.5 seconds (0.5s async, 0.00s sync)
+54 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/analysis.ex" was set to the future, resetting to now
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/scopes.ex" was set to the future, resetting to now
+```
+
+## AN-UNREAD
+
+the unread calls by callee are empty (`lib/anchor/domain/aggregates/analysis.ex`). Result: `41 tests, 2 failures`.
+
+```
+  1) test a call the walker does not read the counts hold the cleared calls and the unread ones by callee (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:252
+     Assertion with == failed
+     code:  assert a.counts.unread_by_callee["unread: call of GenServer.call/2"] == 2
+     left:  nil
+     right: 2
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:254: (test)
+
+..................
+
+  2) test exactly one outcome per call a capture read twice at one line counts once in unread_by_callee (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:380
+     Assertion with == failed
+     code:  assert a.counts.unread_by_callee[String.replace(lib_call("only_here/1"), "call of", "capture of")] == 1
+     left:  nil
+     right: 1
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:381: (test)
+
+.....................
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+41 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/analysis.ex" was set to the future, resetting to now
+```
+
+## AN-DEDUPE
+
+a call read twice at one line counts twice (`lib/anchor/domain/aggregates/analysis.ex`). Result: `41 tests, 1 failure`.
+
+```
+  1) test exactly one outcome per call a capture read twice at one line counts once in unread_by_callee (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:380
+     Assertion with == failed
+     code:  assert a.counts.unread_by_callee[String.replace(lib_call("only_here/1"), "call of", "capture of")] == 1
+     left:  2
+     right: 1
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:381: (test)
+
+........................
+Finished in 0.5 seconds (0.5s async, 0.00s sync)
+41 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/analysis.ex" was set to the future, resetting to now
+```
+
+## CF-PARSE
+
+no_write_modules is parsed and dropped (`lib/anchor/domain/aggregates/config.ex`). Result: `48 tests, 2 failures`.
+
+```
+  1) test parse/1, no_write_modules (DND-5889) an Erlang module is written with its colon (Anchor.Domain.Aggregates.ConfigTest)
+     test/anchor/domain/aggregates/config_test.exs:141
+     match (=) failed
+     code:  assert {:ok, %AggregatesConfig{no_write_modules: [:ets, Jason]}} =
+              AggregatesConfig.parse(%{"no_write_modules" => [":ets", "Jason"]})
+     left:  {:ok, %Anchor.Domain.Aggregates.Config{no_write_modules: [:ets, Jason]}}
+     right: {:ok,
+             %Anchor.Domain.Aggregates.Config{
+               declare: [],
+               none: nil,
+               no_write_modules: [],
+               repos: [],
+               write_functions: [],
+               transaction_functions: []
+             }}
+     stacktrace:
+       test/anchor/domain/aggregates/config_test.exs:142: (test)
+
+..............................
+
+  2) test parse/1, no_write_modules (DND-5889) the modules are stored, and absent is an empty list (Anchor.Domain.Aggregates.ConfigTest)
+     test/anchor/domain/aggregates/config_test.exs:134
+     match (=) failed
+     code:  assert {:ok, %AggregatesConfig{no_write_modules: [Jason, MyApp.Pure]}} =
+              AggregatesConfig.parse(%{"no_write_modules" => ["Jason", "MyApp.Pure"]})
+     left:  {:ok, %Anchor.Domain.Aggregates.Config{no_write_modules: [Jason, MyApp.Pure]}}
+     right: {:ok,
+             %Anchor.Domain.Aggregates.Config{
+               declare: [],
+               none: nil,
+               no_write_modules: [],
+               repos: [],
+               write_functions: [],
+               transaction_functions: []
+             }}
+     stacktrace:
+       test/anchor/domain/aggregates/config_test.exs:135: (test)
+
+...
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+48 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/analysis.ex" was set to the future, resetting to now
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/config.ex" was set to the future, resetting to now
+```
+
+## CF-ERLANG
+
+an Erlang module is refused under no_write_modules (`lib/anchor/domain/aggregates/config.ex`). Result: `48 tests, 1 failure`.
+
+```
+  1) test parse/1, no_write_modules (DND-5889) an Erlang module is written with its colon (Anchor.Domain.Aggregates.ConfigTest)
+     test/anchor/domain/aggregates/config_test.exs:141
+     match (=) failed
+     code:  assert {:ok, %AggregatesConfig{no_write_modules: [:ets, Jason]}} =
+              AggregatesConfig.parse(%{"no_write_modules" => [":ets", "Jason"]})
+     left:  {:ok, %Anchor.Domain.Aggregates.Config{no_write_modules: [:ets, Jason]}}
+     right: {:error,
+             {:invalid_config,
+              "aggregates.no_write_modules must be a list of module names, got: \":ets\". Fix: name each module in full, as its defmodule spells it, and an Erlang module with its colon (\":ets\"); aggregates: declare: - name: <Aggregate>, schemas: [<Schema>...], tables: [\"<table>\"...], owners: [<Module>...]"}}
+     stacktrace:
+       test/anchor/domain/aggregates/config_test.exs:142: (test)
+
+.....................................
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+48 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/config.ex" was set to the future, resetting to now
+```
+
+## CF-ERLANGCHAR
+
+any character passes in an Erlang name (`lib/anchor/domain/aggregates/config.ex`). Result: `48 tests, 1 failure`.
+
+```
+  1) test parse/1 C3: refused: no_write_modules a bad Erlang name (Anchor.Domain.Aggregates.ConfigTest)
+     test/anchor/domain/aggregates/config_test.exs:127
+     match (=) failed
+     code:  assert {:error, {:invalid_config, message}} = AggregatesConfig.parse(section)
+     left:  {:error, {:invalid_config, message}}
+     right: {:ok,
+             %Anchor.Domain.Aggregates.Config{
+               declare: [
+                 %Anchor.Domain.Aggregates.Declaration{
+                   name: "MyApp.Threads.ThreadSpace",
+                   schemas: [MyApp.Threads.Thread,
+                    MyApp.Threads.Message],
+                   tables: ["thread_reads"],
+                   owners: [MyApp.Threads.ThreadStore],
+                   sites: [:config]
+                 }
+               ],
+               none: nil,
+               no_write_modules: [:"not a module"],
+               repos: [MyApp.Repo],
+               write_functions: [
+                 %Anchor.Domain.FunctionRef{
+                   module: MyApp.Repo,
+                   function: :soft_delete,
+                   arity: 2
+                 }
+               ],
+               transaction_functions: [
+                 %Anchor.Domain.FunctionRef{
+                   module: GenSaas.UnitOfWork,
+                   function: :transaction,
+                   arity: 3
+                 }
+               ]
+             }}
+     stacktrace:
+       test/anchor/domain/aggregates/config_test.exs:237: Anchor.Domain.Aggregates.ConfigTest.assert_refused/2
+       test/anchor/domain/aggregates/config_test.exs:128: (test)
+
+......................
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+48 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/config.ex" was set to the future, resetting to now
+```
+
+## CF-KEY
+
+no_write_modules is an unknown key (`lib/anchor/domain/aggregates/config.ex`). Result: `48 tests, 8 failures`.
+
+```
+  1) test parse/1, no_write_modules (DND-5889) it says something persists, so it cannot stand beside declare: none (Anchor.Domain.Aggregates.ConfigTest)
+     test/anchor/domain/aggregates/config_test.exs:146
+     got: aggregates: unknown key(s) "no_write_modules". Fix: remove or correct it; the keys are declare, reason, repos, transaction_functions, write_functions; aggregates: declare: - name: <Aggregate>, schemas: [<Schema>...], tables: ["<table>"...], owners: [<Module>...]
+     code: assert_refused(
+     stacktrace:
+       test/anchor/domain/aggregates/config_test.exs:238: Anchor.Domain.Aggregates.ConfigTest.assert_refused/2
+       test/anchor/domain/aggregates/config_test.exs:147: (test)
+
+.....
+
+  2) test parse/1 C3: refused: no_write_modules a bad Erlang start (Anchor.Domain.Aggregates.ConfigTest)
+     test/anchor/domain/aggregates/config_test.exs:127
+     got: aggregates: unknown key(s) "no_write_modules". Fix: remove or correct it; the keys are declare, reason, repos, transaction_functions, write_functions; aggregates: declare: - name: <Aggregate>, schemas: [<Schema>...], tables: ["<table>"...], owners: [<Module>...]
+     code: assert_refused(section, expected)
+     stacktrace:
+       test/anchor/domain/aggregates/config_test.exs:238: Anchor.Domain.Aggregates.ConfigTest.assert_refused/2
+       test/anchor/domain/aggregates/config_test.exs:128: (test)
+
+
+
+  3) test parse/1 C3: refused: no_write_modules not module names (Anchor.Domain.Aggregates.ConfigTest)
+     test/anchor/domain/aggregates/config_test.exs:127
+     got: aggregates: unknown key(s) "no_write_modules". Fix: remove or correct it; the keys are declare, reason, repos, transaction_functions, write_functions; aggregates: declare: - name: <Aggregate>, schemas: [<Schema>...], tables: ["<table>"...], owners: [<Module>...]
+     code: assert_refused(section, expected)
+     stacktrace:
+       test/anchor/domain/aggregates/config_test.exs:238: Anchor.Domain.Aggregates.ConfigTest.assert_refused/2
+       test/anchor/domain/aggregates/config_test.exs:128: (test)
+
+.
+
+  4) test parse/1, no_write_modules (DND-5889) an Erlang module is written with its colon (Anchor.Domain.Aggregates.ConfigTest)
+     test/anchor/domain/aggregates/config_test.exs:141
+     match (=) failed
+     code:  assert {:ok, %AggregatesConfig{no_write_modules: [:ets, Jason]}} =
+              AggregatesConfig.parse(%{"no_write_modules" => [":ets", "Jason"]})
+     left:  {:ok, %Anchor.Domain.Aggregates.Config{no_write_modules: [:ets, Jason]}}
+     right: {:error,
+             {:invalid_config,
+              "aggregates: unknown key(s) \"no_write_modules\". Fix: remove or correct it; the keys are declare, reason, repos, transaction_functions, write_functions; aggregates: declare: - name: <Aggregate>, schemas: [<Schema>...], tables: [\"<table>\"...], owners: [<Module>...]"}}
+     stacktrace:
+       test/anchor/domain/aggregates/config_test.exs:142: (test)
+
+.....
+
+  5) test parse/1, no_write_modules (DND-5889) the modules are stored, and absent is an empty list (Anchor.Domain.Aggregates.ConfigTest)
+     test/anchor/domain/aggregates/config_test.exs:134
+     match (=) failed
+     code:  assert {:ok, %AggregatesConfig{no_write_modules: [Jason, MyApp.Pure]}} =
+              AggregatesConfig.parse(%{"no_write_modules" => ["Jason", "MyApp.Pure"]})
+     left:  {:ok, %Anchor.Domain.Aggregates.Config{no_write_modules: [Jason, MyApp.Pure]}}
+     right: {:error,
+             {:invalid_config,
+              "aggregates: unknown key
+```
+
+## GR-CLEARED
+
+the summary does not print the cleared count (`lib/anchor/domain/graph_report.ex`). Result: `4 tests, 1 failure`.
+
+```
+  1) test the write analysis's counts are in the summary and the JSON (Anchor.Domain.GraphReportAggregatesTest)
+     test/anchor/domain/graph_report_aggregates_test.exs:43
+     Assertion with == failed
+     code:  assert GraphReport.summary(report) ==
+              "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 " <>
+                "baselined); writes: 7 read, 5 resolved, 2 unresolved; transactions: 3 read, 2 " <>
+                "no gap noticed, 1 incomplete; 4 gaps with no transaction read around them; " <>
+                "9 dependency calls cleared by the no-write list; not read: the modules under " <>
+                "aggregates.no_write_modules, the built-in no-write list and dependencies' own " <>
+                "internals"
+     left:  "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 baselined); writes: 7 read, 5 resolved, 2 unresolved; transactions: 3 read, 2 no gap noticed, 1 incomplete; 4 gaps with no transaction read around them; not read: the modules under aggregates.no_write_modules, the built-in no-write list and dependencies' own internals"
+     right: "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 baselined); writes: 7 read, 5 resolved, 2 unresolved; transactions: 3 read, 2 no gap noticed, 1 incomplete; 4 gaps with no transaction read around them; 9 dependency calls cleared by the no-write list; not read: the modules under aggregates.no_write_modules, the built-in no-write list and dependencies' own internals"
+     stacktrace:
+       test/anchor/domain/graph_report_aggregates_test.exs:58: (test)
+
+
+Finished in 0.02 seconds (0.02s async, 0.00s sync)
+4 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/config.ex" was set to the future, resetting to now
+warning: mtime (modified time) for "lib/anchor/domain/graph_report.ex" was set to the future, resetting to now
+```
+
+## GR-NARROW
+
+the summary keeps the run-wide sentence (`lib/anchor/domain/graph_report.ex`). Result: `4 tests, 1 failure`.
+
+```
+  1) test the write analysis's counts are in the summary and the JSON (Anchor.Domain.GraphReportAggregatesTest)
+     test/anchor/domain/graph_report_aggregates_test.exs:43
+     Assertion with == failed
+     code:  assert GraphReport.summary(report) ==
+              "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 " <>
+                "baselined); writes: 7 read, 5 resolved, 2 unresolved; transactions: 3 read, 2 " <>
+                "no gap noticed, 1 incomplete; 4 gaps with no transaction read around them; " <>
+                "9 dependency calls cleared by the no-write list; not read: the modules under " <>
+                "aggregates.no_write_modules, the built-in no-write list and dependencies' own " <>
+                "internals"
+     left:  "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 baselined); writes: 7 read, 5 resolved, 2 unresolved; transactions: 3 read, 2 no gap noticed, 1 incomplete; 4 gaps with no transaction read around them; 9 dependency calls cleared by the no-write list; forms not listed in the README are not read"
+     right: "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 baselined); writes: 7 read, 5 resolved, 2 unresolved; transactions: 3 read, 2 no gap noticed, 1 incomplete; 4 gaps with no transaction read around them; 9 dependency calls cleared by the no-write list; not read: the modules under aggregates.no_write_modules, the built-in no-write list and dependencies' own internals"
+     stacktrace:
+       test/anchor/domain/graph_report_aggregates_test.exs:58: (test)
+
+.
+Finished in 0.02 seconds (0.02s async, 0.00s sync)
+4 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/graph_report.ex" was set to the future, resetting to now
+```
+
+## IN-NARROW
+
+the proposal keeps the run-wide sentence (`lib/anchor/domain/aggregates/inference.ex`). Result: `17 tests, 1 failure`.
+
+```
+  1) test every proposal says on its first line what it does not read (Anchor.Domain.Aggregates.InferenceTest)
+     test/anchor/domain/aggregates/inference_test.exs:175
+     Expected truthy, got false
+     code: assert String.starts_with?(yaml, read_note)
+     arguments:
+
+         # 1
+         "# read from the forms Anchor recognises; a write in any other form is not in this proposal\naggregates:\n  declare:\n    - name: App.S\n      schemas: [App.S]\n      tables: []\n      # owners: proposed by aggregate_owner_writes\n"
+
+         # 2
+         "# not read: the modules under aggregates.no_write_modules, the built-in no-write list and dependencies' own internals; a write there is not in this proposal\n"
+
+     stacktrace:
+       test/anchor/domain/aggregates/inference_test.exs:182: (test)
+
+...............
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+17 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/inference.ex" was set to the future, resetting to now
+warning: mtime (modified time) for "lib/anchor/domain/graph_report.ex" was set to the future, resetting to now
+```
+
+## RU-UNREAD
+
+the rule's message does not name the unread call (`lib/anchor/domain/graph_rules/aggregate_write_sources.ex`). Result: `2 tests, 1 failure`.
+
+```
+  1) test I1: the violating module gives exactly the unresolved write and the incomplete transactions (Anchor.Integration.AggregateWriteSourcesIntegrationTest)
+     test/anchor/integration/aggregate_write_sources_integration_test.exs:79
+     Assertion with =~ failed
+     code:  assert ask.message =~ "unread: call of GenServer.call/2 in Aws.Violating.ask/1"
+     left:  "transaction 1 in Aws.Violating.ask/1 reaches 1 call(s) it does not read (first: ), so its write set is incomplete. Fix: call a named function instead of a variable, or declare the behaviour so the callee is known; list a dependency that cannot write under aggregates.no_write_modules, or one that writes under aggregates.write_functions; trace each write to a schema or table."
+     right: "unread: call of GenServer.call/2 in Aws.Violating.ask/1"
+     stacktrace:
+       test/anchor/integration/aggregate_write_sources_integration_test.exs:98: (test)
+
+.
+Finished in 0.09 seconds (0.09s async, 0.00s sync)
+2 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/inference.ex" was set to the future, resetting to now
+warning: mtime (modified time) for "lib/anchor/domain/graph_rules/aggregate_write_sources.ex" was set to the future, resetting to now
+```
+
+## Second run: the wrapper's read body, the closed list's fourth item
+
+ADR 003: this run appends. The run above regenerated this file in place on 9a46cff and e8377de; the earlier forms are in this file's commit history. Same driver and rules; only the mutations for what changed since e8377de. `WRAP-VANISH` is the regression: `transaction_call/6` on the unfixed code, so a listed wrapper's read body with a gap beside it opened no scope.
+
+| # | Mutation | Tests run | Result |
+|---|---|---|---|
+| WRAP-VANISH | restore the unfixed filter: a listed wrapper's read body with a gap beside it opens no scope (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `43 tests, 1 failure` (red) |
+| WRAP-KEEP | a listed wrapper's own parameter opens a scope (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `43 tests, 1 failure` (red) |
+| GR-FOURTH | the summary drops the fourth item again (`lib/anchor/domain/graph_report.ex`) | `graph_report_aggregates_test.exs` | `4 tests, 1 failure` (red) |
+| IN-FOURTH | the proposal drops the fourth item again (`lib/anchor/domain/aggregates/inference.ex`) | `inference_test.exs` | `17 tests, 1 failure` (red) |
+
+### WRAP-VANISH
+
+restore the unfixed filter: a listed wrapper's read body with a gap beside it opens no scope (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `43 tests, 1 failure`.
+
+```
+  1) test a transaction_functions call inside a listed wrapper, a body it reads stays read, with the gap beside it (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:418
+     ** (MatchError) no match of right hand side value:
+
+         []
+
+     code: one(a, :outer)
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:159: Anchor.Domain.Aggregates.WriteSitesDefaultTest.one/2
+       test/anchor/domain/aggregates/write_sites_default_test.exs:422: (test)
+
+.
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+43 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+### WRAP-KEEP
+
+a listed wrapper's own parameter opens a scope (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `43 tests, 1 failure`.
+
+```
+  1) test a transaction_functions call inside a listed wrapper, its own parameter opens nothing (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:427
+     Assertion with == failed
+     code:  assert Enum.filter(a.scopes, &(elem(&1.mfa, 1) == :pass_on)) == []
+     left:  [
+              %Anchor.Domain.Aggregates.Scope{
+                mfa: {AnchorFixtures.WriteSitesDefaultTest.UoW,
+                 :pass_on, 2},
+                ordinal: 1,
+                line: 26,
+                kind: :transaction_function,
+                writes: [],
+                keys: MapSet.new([]),
+                no_gap_noticed?: false,
+                gaps: [
+                  {:dynamic_call,
+                   {AnchorFixtures.WriteSitesDefaultTest.UoW,
+                    :pass_on, 2}, 26}
+                ]
+              }
+            ]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:428: (test)
+
+.......
+Finished in 0.5 seconds (0.5s async, 0.00s sync)
+43 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+### GR-FOURTH
+
+the summary drops the fourth item again (`lib/anchor/domain/graph_report.ex`). Result: `4 tests, 1 failure`.
+
+```
+  1) test the write analysis's counts are in the summary and the JSON (Anchor.Domain.GraphReportAggregatesTest)
+     test/anchor/domain/graph_report_aggregates_test.exs:43
+     Assertion with == failed
+     code:  assert GraphReport.summary(report) ==
+              "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 " <>
+                "baselined); writes: 7 read, 5 resolved, 2 unresolved; transactions: 3 read, 2 " <>
+                "no gap noticed, 1 incomplete; 4 gaps with no transaction read around them; " <>
+                "9 dependency calls cleared by the no-write list; not read: the modules under " <>
+                "aggregates.no_write_modules, the built-in no-write list, an unknown value given to " <>
+                "one of them and dependencies' own internals; see the README's What it does not " <> "read"
+     left:  "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 baselined); writes: 7 read, 5 resolved, 2 unresolved; transactions: 3 read, 2 no gap noticed, 1 incomplete; 4 gaps with no transaction read around them; 9 dependency calls cleared by the no-write list; not read: the modules under aggregates.no_write_modules, the built-in no-write list and dependencies' own internals"
+     right: "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 baselined); writes: 7 read, 5 resolved, 2 unresolved; transactions: 3 read, 2 no gap noticed, 1 incomplete; 4 gaps with no transaction read around them; 9 dependency calls cleared by the no-write list; not read: the modules under aggregates.no_write_modules, the built-in no-write list, an unknown value given to one of them and dependencies' own internals; see the README's What it does not read"
+     stacktrace:
+       test/anchor/domain/graph_report_aggregates_test.exs:58: (test)
+
+...
+Finished in 0.02 seconds (0.02s async, 0.00s sync)
+4 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/graph_report.ex" was set to the future, resetting to now
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+### IN-FOURTH
+
+the proposal drops the fourth item again (`lib/anchor/domain/aggregates/inference.ex`). Result: `17 tests, 1 failure`.
+
+```
+  1) test every proposal says on its first line what it does not read (Anchor.Domain.Aggregates.InferenceTest)
+     test/anchor/domain/aggregates/inference_test.exs:175
+     Expected truthy, got false
+     code: assert String.starts_with?(yaml, read_note)
+     arguments:
+
+         # 1
+         "# not read: the modules under aggregates.no_write_modules, the built-in no-write list and dependencies' own internals; a write there is not in this proposal\naggregates:\n  declare:\n    - name: App.S\n      schemas: [App.S]\n      tables: []\n      # owners: proposed by aggregate_owner_writes\n"
+
+         # 2
+         "# not read: the modules under aggregates.no_write_modules, the built-in no-write list, an unknown value given to one of them and dependencies' own internals; a write there is not in this proposal; see the README's What it does not read\n"
+
+     stacktrace:
+       test/anchor/domain/aggregates/inference_test.exs:183: (test)
+
+.............
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+17 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/inference.ex" was set to the future, resetting to now
+warning: mtime (modified time) for "lib/anchor/domain/graph_report.ex" was set to the future, resetting to now
+```
+
+
+## Third run: what a helper's Multi is built on (DND-5884)
+
+The third ticket-level run on this branch: `Anchor.Domain.Aggregates.MultiRoots` and `helper_gaps/5` in `WriteSites`, on DND-5884's code. Same driver and rules, `test/anchor/domain/aggregates/multi_roots_test.exs`. `MR-UNFIXED` is the regression: `makes_multi?/1` restored as it was. `MR-NOCALL`, `MR-THROUGH` and `MR-PATTERN` first survived; the file got `computed/2`, `swapped/2` and `matched/1`, and the rows are their second run. `MR-APPLY` first failed to compile and was rewritten. None of those first runs counts.
+
+| # | Mutation | Tests run | Result |
+|---|---|---|---|
+| MR-UNFIXED | restore the unfixed `makes_multi?/1` read: the regression (`lib/anchor/domain/aggregates/write_sites.ex`) | `multi_roots_test.exs` | `22 tests, 4 failures` (red) |
+| MR-UNKNOWNGAP | a helper whose return is unknown comes to no gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `multi_roots_test.exs` | `22 tests, 1 failure` (red) |
+| MR-ROOTGAP | an untraced root comes to no gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `multi_roots_test.exs` | `22 tests, 5 failures` (red) |
+| MR-ANYARG | any untraced argument is a gap, root or not (`lib/anchor/domain/aggregates/write_sites.ex`) | `multi_roots_test.exs` | `22 tests, 4 failures` (red) |
+| MR-LITERAL | a literal at a root is a gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `multi_roots_test.exs` | `22 tests, 1 failure` (red) |
+| MR-PARAM | a parameter is no root (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `22 tests, 11 failures` (red) |
+| MR-VARDEFAULT | a variable it cannot read has no root (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `22 tests, 1 failure` (red) |
+| MR-PRIMOP | a failed match is unknown (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `22 tests, 15 failures` (red) |
+| MR-LITERALVAL | a literal is unknown (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `22 tests, 1 failure` (red) |
+| MR-SEQ | a seq reads its first expression (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `22 tests, 1 failure` (red) |
+| MR-CASEONE | a case reads only its first clause (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `22 tests, 2 failures` (red) |
+| MR-LETBIND | a let binds nothing (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `22 tests, 3 failures` (red) |
+| MR-TRYHANDLER | a try does not read its handler (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `22 tests, 1 failure` (red) |
+| MR-TRYBODY | a try does not read its body (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `22 tests, 1 failure` (red) |
+| MR-NOCALL | a call on a computed module has no root (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `22 tests, 1 failure` (red) |
+| MR-APPLY | a local call is unknown (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `22 tests, 2 failures` (red) |
+| MR-APPLYFUN | a fn value called comes to no root (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `22 tests, 1 failure` (red) |
+| MR-TYPEDEFAULT | a form it does not name has no root (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `22 tests, 1 failure` (red) |
+| MR-NEW | Multi.new/0 is unknown (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `22 tests, 4 failures` (red) |
+| MR-APPEND | prepend roots on its first side only (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `22 tests, 1 failure` (red) |
+| MR-STEP | a step has no root (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `22 tests, 6 failures` (red) |
+| MR-NORETURN | a raise or throw is unknown (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `22 tests, 2 failures` (red) |
+| MR-THROUGH | a call's roots are not mapped through its arguments (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `22 tests, 1 failure` (red) |
+| MR-UNKNOWNCALLEE | a callee it cannot read has no root (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `22 tests, 3 failures` (red) |
+| MR-CYCLE | recursion has no root: a claim of none (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `22 tests, 15 failures` (red) |
+| MR-NOCORE | a function with no code has no root (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `22 tests, 4 failures` (red) |
+| MR-UNIONLEFT | unknown from a later branch is overwritten (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `22 tests, 3 failures` (red) |
+| MR-UNIONRIGHT | unknown in a branch is dropped (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `22 tests, 3 failures` (red) |
+| MR-PATTERN | a pattern binds its whole value (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `22 tests, 1 failure` (red) |
+| MR-ALIAS | an alias binds nothing (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `22 tests, 1 failure` (red) |
+
+### MR-UNFIXED
+
+restore the unfixed `makes_multi?/1` read: the regression (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `22 tests, 4 failures`.
+
+```
+  1) test a transaction given a helper's Multi a traced argument beside an untraced root does not hide it (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:219
+     match (=) failed
+     code:  assert [_gap] = a |> one(:second_unknown) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:220: (test)
+
+
+
+  2) test a transaction given a helper's Multi a branch's untraced root is a gap; a raise beside a traced one is not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:241
+     match (=) failed
+     code:  assert [_what] = a |> one(:branch) |> own_gaps()
+     left:  [_what]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:242: (test)
+
+
+
+  3) test a transaction given a helper's Multi row 12: an untraced Multi handed to a helper that also makes one is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:200
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = scope = one(a, :row12)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false} = scope
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :row12, 2},
+              ordinal: 1,
+              line: 100,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :hides, 2},
+                  line: 30,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.MultiRootsTest.S
+              ]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:203: (test)
+
+.........
+
+  4) test a transaction given a helper's Multi a helper whose return Anchor cannot follow is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:236
+     match (=) failed
+     code:  assert [_gap] = a |> one(:lib) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:238: (test)
+
+.....
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+22 tests, 4 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### MR-UNKNOWNGAP
+
+a helper whose return is unknown comes to no gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `22 tests, 1 failure`.
+
+```
+  1) test a transaction given a helper's Multi a helper whose return Anchor cannot follow is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:236
+     match (=) failed
+     code:  assert [_gap] = a |> one(:loops) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:237: (test)
+
+.....................
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+22 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### MR-ROOTGAP
+
+an untraced root comes to no gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `22 tests, 5 failures`.
+
+```
+  1) test a transaction given a helper's Multi a private helper behind a public one is followed (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:247
+     match (=) failed
+     code:  assert [_what] = a |> one(:local) |> own_gaps()
+     left:  [_what]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:248: (test)
+
+....
+
+  2) test a transaction given a helper's Multi a traced argument beside an untraced root does not hide it (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:219
+     match (=) failed
+     code:  assert [_gap] = a |> one(:second_unknown) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:220: (test)
+
+
+
+  3) test a transaction given a helper's Multi a branch's untraced root is a gap; a raise beside a traced one is not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:241
+     match (=) failed
+     code:  assert [_what] = a |> one(:branch) |> own_gaps()
+     left:  [_what]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:242: (test)
+
+.....
+
+  4) test a transaction given a helper's Multi through another helper the root is still a gap; traced, it is not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:231
+     match (=) failed
+     code:  assert [_what] = a |> one(:through) |> own_gaps()
+     left:  [_what]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:232: (test)
+
+...
+
+  5) test a transaction given a helper's Multi row 12: an untraced Multi handed to a helper that also makes one is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:200
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = scope = one(a, :row12)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false} = scope
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :row12, 2},
+              ordinal: 1,
+              line: 100,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :hides, 2},
+                  line: 30,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.MultiRootsTest.S
+              ]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:203: (test)
+
+..
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+22 tests, 5 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### MR-ANYARG
+
+any untraced argument is a gap, root or not (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `22 tests, 4 failures`.
+
+```
+  1) test a transaction given a helper's Multi row 12, positive: the same helper given a traced Multi is no gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:207
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :row12_positive)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D,
+               :row12_positive, 1},
+              ordinal: 1,
+              line: 101,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :hides, 2},
+                  line: 30,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.MultiRootsTest.S
+              ]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :row12_positive,
+                  1}, 101}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:208: (test)
+
+.....
+
+  2) test a transaction given a helper's Multi an untraced argument that is no root is no gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:223
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :first_unknown)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :first_unknown,
+               1},
+              ordinal: 1,
+              line: 105,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :first_unknown,
+                  1}, 105}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:224: (test)
+
+.
+
+  3) test a transaction given a helper's Multi a branch's untraced root is a gap; a raise beside a traced one is not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:241
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :raises)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :raises, 1},
+              ordinal: 1,
+              line: 112,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :raises, 1}, 112}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:244: (test)
+
+....
+
+  4) test a transaction given a helper's Multi a traced Multi piped in, beside untraced data, is no gap (Anchor.Domain.Aggregates.Mul
+```
+
+
+### MR-LITERAL
+
+a literal at a root is a gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `22 tests, 1 failure`.
+
+```
+  1) test a transaction given a helper's Multi a literal at a root is no gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:227
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :literal_root)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :literal_root,
+               0},
+              ordinal: 1,
+              line: 106,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :literal_root, 0},
+                 106}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:228: (test)
+
+...
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+22 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### MR-PARAM
+
+a parameter is no root (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `22 tests, 11 failures`.
+
+```
+  1) test a transaction given a helper's Multi a branch's untraced root is a gap; a raise beside a traced one is not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:241
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :raises)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :raises, 1},
+              ordinal: 1,
+              line: 112,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :raises, 1}, 112}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:244: (test)
+
+
+
+  2) test of/2: what the helper returns only the returned parameter is a root (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:155
+     Assertion with == failed
+     code:  assert roots(g, :pick_second, 2) == set([2])
+     left:  MapSet.new([0])
+     right: MapSet.new([2])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:156: (test)
+
+...
+
+  3) test of/2: what the helper returns a step keeps its Multi's root; a data argument is no root (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:150
+     Assertion with == failed
+     code:  assert roots(g, :step_on, 2) == set([1])
+     left:  MapSet.new([0])
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:151: (test)
+
+....
+
+  4) test a transaction given a helper's Multi a traced Multi piped in, beside untraced data, is no gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:211
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :piped)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :piped, 1},
+              ordinal: 1,
+              line: 102,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :step_on,
+                   2},
+                  line: 34,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.MultiRootsTest.S
+              ]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :piped, 1}, 102}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:212: (test)
+
+.
+
+  5) test a transaction given a helper's Multi through another helper the root is still a gap; traced, it is not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:231
+     match (=) failed
+     code:  assert [_what] = a |> one(:through) |> own_gaps()
+```
+
+
+### MR-VARDEFAULT
+
+a variable it cannot read has no root (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `22 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns a value it cannot follow is unknown (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:181
+     Assertion with == failed
+     code:  assert roots(g, :destructured, 1) == :unknown
+     left:  MapSet.new([])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:182: (test)
+
+....
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+22 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-PRIMOP
+
+a failed match is unknown (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `22 tests, 15 failures`.
+
+```
+  1) test of/2: what the helper returns a step keeps its Multi's root; a data argument is no root (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:150
+     Assertion with == failed
+     code:  assert roots(g, :step_on, 2) == set([1])
+     left:  :unknown
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:151: (test)
+
+
+
+  2) test a transaction given a helper's Multi row 12, positive: the same helper given a traced Multi is no gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:207
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :row12_positive)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D,
+               :row12_positive, 1},
+              ordinal: 1,
+              line: 101,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :hides, 2},
+                  line: 30,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.MultiRootsTest.S
+              ]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :row12_positive,
+                  1}, 101}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:208: (test)
+
+
+
+  3) test of/2: what the helper returns prepend and append root on both sides (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:160
+     Assertion with == failed
+     code:  assert roots(g, :both, 2) == set([1, 2])
+     left:  :unknown
+     right: MapSet.new([1, 2])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:161: (test)
+
+
+
+  4) test a transaction given a helper's Multi a literal at a root is no gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:227
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :literal_root)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :literal_root,
+               0},
+              ordinal: 1,
+              line: 106,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :literal_root, 0},
+                 106}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:228: (test)
+
+
+
+  5) test of/2: what the helper returns a project call maps the callee's roots through its arguments (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:164
+     Assertion with == failed
+     code:  assert roots(g, :thr
+```
+
+
+### MR-LITERALVAL
+
+a literal is unknown (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `22 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns a helper that returns only its own Multi has none (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:145
+     Assertion with == failed
+     code:  assert roots(g, :literal_multi, 0) == set([])
+     left:  :unknown
+     right: MapSet.new([])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:147: (test)
+
+.....
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+22 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-SEQ
+
+a seq reads its first expression (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `22 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns only the returned parameter is a root (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:155
+     Assertion with == failed
+     code:  assert roots(g, :seq, 2) == set([1])
+     left:  MapSet.new([])
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:157: (test)
+
+....................
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+22 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-CASEONE
+
+a case reads only its first clause (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `22 tests, 2 failures`.
+
+```
+  1) test of/2: what the helper returns every branch counts; what does not return does not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:169
+     Assertion with == failed
+     code:  assert roots(g, :branch, 2) == set([1])
+     left:  MapSet.new([])
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:170: (test)
+
+...
+
+  2) test a transaction given a helper's Multi a branch's untraced root is a gap; a raise beside a traced one is not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:241
+     match (=) failed
+     code:  assert [_what] = a |> one(:branch) |> own_gaps()
+     left:  [_what]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:242: (test)
+
+...
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+22 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-LETBIND
+
+a let binds nothing (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `22 tests, 3 failures`.
+
+```
+  1) test a transaction given a helper's Multi a helper making its own Multi from data is no gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:215
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :own)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :own, 1},
+              ordinal: 1,
+              line: 103,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :own, 1},
+                  line: 33,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.MultiRootsTest.S
+              ]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :own, 1}, 103}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:216: (test)
+
+....
+
+  2) test of/2: what the helper returns a step keeps its Multi's root; a data argument is no root (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:150
+     Assertion with == failed
+     code:  assert roots(g, :bound, 1) == set([1])
+     left:  :unknown
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:152: (test)
+
+.....
+
+  3) test of/2: what the helper returns a helper that returns only its own Multi has none (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:145
+     Assertion with == failed
+     code:  assert roots(g, :own, 1) == set([])
+     left:  :unknown
+     right: MapSet.new([])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:146: (test)
+
+.........
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+22 tests, 3 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-TRYHANDLER
+
+a try does not read its handler (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `22 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns a try counts its body and its handler (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:175
+     Assertion with == failed
+     code:  assert roots(g, :tried_handler, 1) == set([1])
+     left:  MapSet.new([])
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:177: (test)
+
+..
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+22 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-TRYBODY
+
+a try does not read its body (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `22 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns a try counts its body and its handler (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:175
+     Assertion with == failed
+     code:  assert roots(g, :tried, 1) == set([1])
+     left:  MapSet.new([])
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:176: (test)
+
+.....
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+22 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-NOCALL
+
+a call on a computed module has no root (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `22 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns a value it cannot follow is unknown (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:187
+     Assertion with == failed
+     code:  assert roots(g, :computed, 2) == :unknown
+     left:  MapSet.new([])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:190: (test)
+
+.........
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+22 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-APPLY
+
+a local call is unknown (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `22 tests, 2 failures`.
+
+```
+  1) test a transaction given a helper's Multi through another helper the root is still a gap; traced, it is not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:239
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :through_traced)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D,
+               :through_traced, 0},
+              ordinal: 1,
+              line: 112,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :step_on,
+                   2},
+                  line: 34,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.MultiRootsTest.S
+              ]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :through_traced,
+                  0}, 112}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:241: (test)
+
+.........
+
+  2) test of/2: what the helper returns a project call maps the callee's roots through its arguments (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:169
+     Assertion with == failed
+     code:  assert roots(g, :through, 1) == set([1])
+     left:  :unknown
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:170: (test)
+
+...........
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+22 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+### MR-APPLYFUN
+
+a fn value called comes to no root (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `22 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns a value it cannot follow is unknown (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:181
+     Assertion with == failed
+     code:  assert roots(g, :called_fn, 1) == :unknown
+     left:  MapSet.new([])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:185: (test)
+
+.....................
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+22 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-TYPEDEFAULT
+
+a form it does not name has no root (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `22 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns a value it cannot follow is unknown (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:181
+     Assertion with == failed
+     code:  assert roots(g, :tagged, 1) == :unknown
+     left:  MapSet.new([])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:183: (test)
+
+....................
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+22 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-NEW
+
+Multi.new/0 is unknown (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `22 tests, 4 failures`.
+
+```
+  1) test of/2: what the helper returns a try counts its body and its handler (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:175
+     Assertion with == failed
+     code:  assert roots(g, :tried, 1) == set([1])
+     left:  :unknown
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:176: (test)
+
+....
+
+  2) test a transaction given a helper's Multi a helper making its own Multi from data is no gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:215
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :own)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :own, 1},
+              ordinal: 1,
+              line: 103,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :own, 1},
+                  line: 33,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.MultiRootsTest.S
+              ]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :own, 1}, 103}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:216: (test)
+
+
+
+  3) test of/2: what the helper returns every branch counts; what does not return does not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:169
+     Assertion with == failed
+     code:  assert roots(g, :branch, 2) == set([1])
+     left:  :unknown
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:170: (test)
+
+.....
+
+  4) test of/2: what the helper returns a helper that returns only its own Multi has none (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:145
+     Assertion with == failed
+     code:  assert roots(g, :own, 1) == set([])
+     left:  :unknown
+     right: MapSet.new([])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:146: (test)
+
+......
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+22 tests, 4 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-APPEND
+
+prepend roots on its first side only (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `22 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns prepend and append root on both sides (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:160
+     Assertion with == failed
+     code:  assert roots(g, :both, 2) == set([1, 2])
+     left:  MapSet.new([1])
+     right: MapSet.new([1, 2])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:161: (test)
+
+...............
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+22 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-STEP
+
+a step has no root (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `22 tests, 6 failures`.
+
+```
+  1) test a transaction given a helper's Multi through another helper the root is still a gap; traced, it is not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:231
+     match (=) failed
+     code:  assert [_what] = a |> one(:through) |> own_gaps()
+     left:  [_what]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:232: (test)
+
+........
+
+  2) test a transaction given a helper's Multi row 12: an untraced Multi handed to a helper that also makes one is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:200
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = scope = one(a, :row12)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false} = scope
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :row12, 2},
+              ordinal: 1,
+              line: 100,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :hides, 2},
+                  line: 30,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.MultiRootsTest.S
+              ]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:203: (test)
+
+.
+
+  3) test of/2: what the helper returns a helper that also makes its own Multi has the root it returns (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:141
+     Assertion with == failed
+     code:  assert roots(g, :hides, 2) == set([1])
+     left:  MapSet.new([])
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:142: (test)
+
+.....
+
+  4) test of/2: what the helper returns a step keeps its Multi's root; a data argument is no root (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:150
+     Assertion with == failed
+     code:  assert roots(g, :step_on, 2) == set([1])
+     left:  MapSet.new([])
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:151: (test)
+
+.
+
+  5) test of/2: what the helper returns a project call maps the callee's roots through its arguments (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:164
+     Assertion with == failed
+     code:  assert roots(g, :through, 1) == set([1])
+     left:  MapSet.new([])
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:165: (test)
+
+
+
+  6) test a transaction given a helper's Multi a private helper behind a public one is followed (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:247
+     match (=) failed
+     code:  assert [_what] = a |> one(:local) |> own_gaps()
+     left:  [_what]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:248: (test)
+
+
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+22 tests, 6 failu
+```
+
+
+### MR-NORETURN
+
+a raise or throw is unknown (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `22 tests, 2 failures`.
+
+```
+  1) test a transaction given a helper's Multi a branch's untraced root is a gap; a raise beside a traced one is not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:241
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :raises)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :raises, 1},
+              ordinal: 1,
+              line: 112,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :raises, 1}, 112}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:244: (test)
+
+........
+
+  2) test of/2: what the helper returns every branch counts; what does not return does not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:169
+     Assertion with == failed
+     code:  assert roots(g, :raises, 2) == set([1])
+     left:  :unknown
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:171: (test)
+
+....
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+22 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-THROUGH
+
+a call's roots are not mapped through its arguments (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `22 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns a project call maps the callee's roots through its arguments (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:169
+     Assertion with == failed
+     code:  assert roots(g, :swapped, 2) == set([1])
+     left:  MapSet.new([2])
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:172: (test)
+
+............
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+22 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-UNKNOWNCALLEE
+
+a callee it cannot read has no root (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `22 tests, 3 failures`.
+
+```
+  1) test a transaction given a helper's Multi a helper whose return Anchor cannot follow is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:236
+     match (=) failed
+     code:  assert [_gap] = a |> one(:lib) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:238: (test)
+
+
+
+  2) test of/2: what the helper returns a value it cannot follow is unknown (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:181
+     Assertion with == failed
+     code:  assert roots(g, :from_lib, 0) == :unknown
+     left:  MapSet.new([])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:184: (test)
+
+...........
+
+  3) test of/2: what the helper returns a recursive helper is unknown, direct or through another (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:188
+     Assertion with == failed
+     code:  assert roots(g, :loops, 2) == :unknown
+     left:  MapSet.new([1])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:189: (test)
+
+
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+22 tests, 3 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-CYCLE
+
+recursion has no root: a claim of none (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `22 tests, 15 failures`.
+
+```
+  1) test of/2: what the helper returns a step keeps its Multi's root; a data argument is no root (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:150
+     Assertion with == failed
+     code:  assert roots(g, :step_on, 2) == set([1])
+     left:  :unknown
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:151: (test)
+
+...
+
+  2) test a transaction given a helper's Multi a traced Multi piped in, beside untraced data, is no gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:211
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :piped)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :piped, 1},
+              ordinal: 1,
+              line: 102,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :step_on,
+                   2},
+                  line: 34,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.MultiRootsTest.S
+              ]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :piped, 1}, 102}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:212: (test)
+
+
+
+  3) test of/2: what the helper returns a project call maps the callee's roots through its arguments (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:164
+     Assertion with == failed
+     code:  assert roots(g, :through, 1) == set([1])
+     left:  :unknown
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:165: (test)
+
+..
+
+  4) test a transaction given a helper's Multi row 12, positive: the same helper given a traced Multi is no gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:207
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :row12_positive)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D,
+               :row12_positive, 1},
+              ordinal: 1,
+              line: 101,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :hides, 2},
+                  line: 30,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.MultiRootsTest.S
+              ]),
+              no_gap_noticed?: false,
+              gaps: [
+```
+
+
+### MR-NOCORE
+
+a function with no code has no root (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `22 tests, 4 failures`.
+
+```
+  1) test of/2: what the helper returns a function Anchor has no code for is unknown (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:193
+     Assertion with == failed
+     code:  assert MultiRoots.of(g, {@lib, :make, 0}) == :unknown
+     left:  MapSet.new([])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:194: (test)
+
+.
+
+  2) test a transaction given a helper's Multi a helper whose return Anchor cannot follow is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:236
+     match (=) failed
+     code:  assert [_gap] = a |> one(:lib) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:238: (test)
+
+.....
+
+  3) test of/2: what the helper returns a recursive helper is unknown, direct or through another (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:188
+     Assertion with == failed
+     code:  assert roots(g, :loops, 2) == :unknown
+     left:  MapSet.new([1])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:189: (test)
+
+.....
+
+  4) test of/2: what the helper returns a value it cannot follow is unknown (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:181
+     Assertion with == failed
+     code:  assert roots(g, :from_lib, 0) == :unknown
+     left:  MapSet.new([])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:184: (test)
+
+.
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+22 tests, 4 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-UNIONLEFT
+
+unknown from a later branch is overwritten (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `22 tests, 3 failures`.
+
+```
+  1) test of/2: what the helper returns a recursive helper is unknown, direct or through another (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:188
+     Assertion with == failed
+     code:  assert roots(g, :loops, 2) == :unknown
+     left:  MapSet.new([1])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:189: (test)
+
+..
+
+  2) test of/2: what the helper returns a value it cannot follow is unknown (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:181
+     Assertion with == failed
+     code:  assert roots(g, :destructured, 1) == :unknown
+     left:  MapSet.new([])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:182: (test)
+
+
+
+  3) test a transaction given a helper's Multi a helper whose return Anchor cannot follow is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:236
+     match (=) failed
+     code:  assert [_gap] = a |> one(:lib) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:238: (test)
+
+
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+22 tests, 3 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-UNIONRIGHT
+
+unknown in a branch is dropped (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `22 tests, 3 failures`.
+
+```
+  1) test of/2: what the helper returns a recursive helper is unknown, direct or through another (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:188
+     Assertion with == failed
+     code:  assert roots(g, :loops, 2) == :unknown
+     left:  MapSet.new([1])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:189: (test)
+
+...
+
+  2) test a transaction given a helper's Multi a helper whose return Anchor cannot follow is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:236
+     match (=) failed
+     code:  assert [_gap] = a |> one(:lib) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:238: (test)
+
+......
+
+  3) test of/2: what the helper returns a value it cannot follow is unknown (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:181
+     Assertion with == failed
+     code:  assert roots(g, :destructured, 1) == :unknown
+     left:  MapSet.new([])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:182: (test)
+
+
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+22 tests, 3 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-PATTERN
+
+a pattern binds its whole value (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `22 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns a value it cannot follow is unknown (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:187
+     Assertion with == failed
+     code:  assert roots(g, :matched, 1) == :unknown
+     left:  MapSet.new([1])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:189: (test)
+
+...........
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+22 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-ALIAS
+
+an alias binds nothing (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `22 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns a step keeps its Multi's root; a data argument is no root (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:154
+     Assertion with == failed
+     code:  assert roots(g, :aliased, 1) == set([1])
+     left:  :unknown
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:157: (test)
+
+................
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+22 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+## Fourth run: only a root's gaps, each function once (DND-5884)
+
+Fourth run, after critic round 6 on 7f5e529: `helper_gaps/5` and the memo in `MultiRoots`. Every `MR-` mutation again, on the fixed code; the third run's rows above are of the earlier code. `MR-ROOTONLY` is the regression for the finding: a project call computing data at a non-root position gave a false gap. `MR-MEMO` is the memo. A first shape's `root?(:unknown, _)` clause survived its mutation because an unknown return is already a gap, so that clause was deleted instead of being tested.
+
+| # | Mutation | Tests run | Result |
+|---|---|---|---|
+| MR-ROOTONLY | the finding: a traced argument's gaps count at any position (`lib/anchor/domain/aggregates/write_sites.ex`) | `multi_roots_test.exs` | `26 tests, 1 failure` (red) |
+| MR-ROOTNEVER | a traced root's own gap is dropped (`lib/anchor/domain/aggregates/write_sites.ex`) | `multi_roots_test.exs` | `26 tests, 2 failures` (red) |
+| MR-UNKNOWNGAP | a helper whose return is unknown comes to no gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `multi_roots_test.exs` | `26 tests, 3 failures` (red) |
+| MR-ROOTGAP | an untraced root comes to no gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `multi_roots_test.exs` | `26 tests, 5 failures` (red) |
+| MR-ANYARG | any untraced argument is a gap, root or not (`lib/anchor/domain/aggregates/write_sites.ex`) | `multi_roots_test.exs` | `26 tests, 6 failures` (red) |
+| MR-LITERAL | a literal at a root is a gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `multi_roots_test.exs` | `26 tests, 1 failure` (red) |
+| MR-MEMO | no memo: a function is read once per call (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 1 failure` (red) |
+| MR-PARAM | a parameter is no root (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 14 failures` (red) |
+| MR-VARDEFAULT | a variable it cannot read has no root (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 1 failure` (red) |
+| MR-PRIMOP | a failed match is unknown (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 17 failures` (red) |
+| MR-LITERALVAL | a literal is unknown (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 1 failure` (red) |
+| MR-SEQ | a seq reads its first expression (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 1 failure` (red) |
+| MR-CASEONE | a case reads only its first clause (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 2 failures` (red) |
+| MR-LETBIND | a let binds nothing (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 4 failures` (red) |
+| MR-TRYHANDLER | a try does not read its handler (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 1 failure` (red) |
+| MR-TRYBODY | a try does not read its body (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 1 failure` (red) |
+| MR-NOCALL | a call on a computed module has no root (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 1 failure` (red) |
+| MR-APPLY | a local call is unknown (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 3 failures` (red) |
+| MR-APPLYFUN | a fn value called comes to no root (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 1 failure` (red) |
+| MR-TYPEDEFAULT | a form it does not name has no root (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 2 failures` (red) |
+| MR-NEW | Multi.new/0 is unknown (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 5 failures` (red) |
+| MR-APPEND | prepend roots on its first side only (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 1 failure` (red) |
+| MR-STEP | a step has no root (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 7 failures` (red) |
+| MR-NORETURN | a raise or throw is unknown (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 2 failures` (red) |
+| MR-THROUGH | a call's roots are not mapped through its arguments (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 1 failure` (red) |
+| MR-UNKNOWNCALLEE | a callee it cannot read has no root (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 4 failures` (red) |
+| MR-CYCLE | recursion has no root: a claim of none (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 17 failures` (red) |
+| MR-NOCORE | a function with no code has no root (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 5 failures` (red) |
+| MR-UNIONLEFT | unknown from a later branch is overwritten (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 5 failures` (red) |
+| MR-UNIONRIGHT | unknown in a branch is dropped (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 5 failures` (red) |
+| MR-PATTERN | a pattern binds its whole value (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 1 failure` (red) |
+| MR-ALIAS | an alias binds nothing (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 1 failure` (red) |
+
+### MR-ROOTONLY
+
+the finding: a traced argument's gaps count at any position (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `26 tests, 1 failure`.
+
+```
+  1) test a transaction given a helper's Multi a project call computing data beside a root is no gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:269
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :data_call_beside)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D,
+               :data_call_beside, 0},
+              ordinal: 1,
+              line: 362,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :step_on,
+                   2},
+                  line: 34,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.MultiRootsTest.S
+              ]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D,
+                  :data_call_beside, 0}, 362}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:270: (test)
+
+............
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### MR-ROOTNEVER
+
+a traced root's own gap is dropped (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `26 tests, 2 failures`.
+
+```
+  1) test a transaction given a helper's Multi the same call at a root is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:274
+     match (=) failed
+     code:  assert [_gap] = a |> one(:data_call_at_root) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:275: (test)
+
+.......
+
+  2) test a transaction given a helper's Multi a gap on the Multi at a root stays, through a helper (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:278
+     match (=) failed
+     code:  assert [_gap] = a |> one(:gap_at_root) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:279: (test)
+
+.................
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### MR-UNKNOWNGAP
+
+a helper whose return is unknown comes to no gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `26 tests, 3 failures`.
+
+```
+  1) test a transaction given a helper's Multi a gap on the Multi at a root stays, through a helper (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:278
+     match (=) failed
+     code:  assert [_gap] = a |> one(:gap_at_root) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:279: (test)
+
+
+
+  2) test a transaction given a helper's Multi the same call at a root is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:274
+     match (=) failed
+     code:  assert [_gap] = a |> one(:data_call_at_root) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:275: (test)
+
+...
+
+  3) test a transaction given a helper's Multi a helper whose return Anchor cannot follow is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:258
+     match (=) failed
+     code:  assert [_gap] = a |> one(:loops) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:259: (test)
+
+....................
+Finished in 0.2 seconds (0.2s async, 0.00s sync)
+26 tests, 3 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### MR-ROOTGAP
+
+an untraced root comes to no gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `26 tests, 5 failures`.
+
+```
+  1) test a transaction given a helper's Multi a branch's untraced root is a gap; a raise beside a traced one is not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:263
+     match (=) failed
+     code:  assert [_what] = a |> one(:branch) |> own_gaps()
+     left:  [_what]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:264: (test)
+
+.
+
+  2) test a transaction given a helper's Multi a traced argument beside an untraced root does not hide it (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:241
+     match (=) failed
+     code:  assert [_gap] = a |> one(:second_unknown) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:242: (test)
+
+.........
+
+  3) test a transaction given a helper's Multi through another helper the root is still a gap; traced, it is not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:253
+     match (=) failed
+     code:  assert [_what] = a |> one(:through) |> own_gaps()
+     left:  [_what]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:254: (test)
+
+.
+
+  4) test a transaction given a helper's Multi a private helper behind a public one is followed (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:282
+     match (=) failed
+     code:  assert [_what] = a |> one(:local) |> own_gaps()
+     left:  [_what]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:283: (test)
+
+..
+
+  5) test a transaction given a helper's Multi row 12: an untraced Multi handed to a helper that also makes one is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:222
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = scope = one(a, :row12)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false} = scope
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :row12, 2},
+              ordinal: 1,
+              line: 347,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :hides, 2},
+                  line: 30,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.MultiRootsTest.S
+              ]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:225: (test)
+
+...
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 5 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### MR-ANYARG
+
+any untraced argument is a gap, root or not (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `26 tests, 6 failures`.
+
+```
+  1) test a transaction given a helper's Multi a helper making its own Multi from data is no gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:237
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :own)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :own, 1},
+              ordinal: 1,
+              line: 350,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :own, 1},
+                  line: 33,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.MultiRootsTest.S
+              ]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :own, 1}, 350}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:238: (test)
+
+..
+
+  2) test a transaction given a helper's Multi a branch's untraced root is a gap; a raise beside a traced one is not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:263
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :raises)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :raises, 1},
+              ordinal: 1,
+              line: 359,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :raises, 1}, 359}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:266: (test)
+
+......
+
+  3) test a transaction given a helper's Multi a traced Multi piped in, beside untraced data, is no gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:233
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :piped)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :piped, 1},
+              ordinal: 1,
+              line: 349,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :step_on,
+                   2},
+                  line: 34,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.MultiRootsTest.S
+              ]),
+              no_gap_noticed?: fal
+```
+
+
+### MR-LITERAL
+
+a literal at a root is a gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `26 tests, 1 failure`.
+
+```
+  1) test a transaction given a helper's Multi a literal at a root is no gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:249
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :literal_root)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :literal_root,
+               0},
+              ordinal: 1,
+              line: 353,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :literal_root, 0},
+                 353}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:250: (test)
+
+........................
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+### MR-MEMO
+
+no memo: a function is read once per call (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns a function called twice on every level is read once (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:211
+     ** (ExUnit.TimeoutError) test timed out after 2000ms. You can change the timeout:
+
+       1. per test by setting "@tag timeout: x" (accepts :infinity)
+       2. per test module by setting "@moduletag timeout: x" (accepts :infinity)
+       3. globally via "ExUnit.start(timeout: x)" configuration
+       4. by running "mix test --timeout x" which sets timeout
+       5. or by running "mix test --trace" which sets timeout to infinity
+          (useful when using IEx.pry/0)
+
+     where "x" is the timeout given as integer in milliseconds (defaults to 60_000).
+
+     stacktrace:
+       (elixir 1.19.4) lib/enum.ex:1687: Enum.map/2
+       (anchor 0.1.0) lib/anchor/domain/aggregates/multi_roots.ex:80: Anchor.Domain.Aggregates.MultiRoots.value/5
+       (anchor 0.1.0) lib/anchor/domain/aggregates/multi_roots.ex:53: Anchor.Domain.Aggregates.MultiRoots.read_function/3
+       (anchor 0.1.0) lib/anchor/domain/aggregates/multi_roots.ex:134: Anchor.Domain.Aggregates.MultiRoots.through/5
+       (elixir 1.19.4) lib/enum.ex:1814: Enum."-map_reduce/3-lists^mapfoldl/2-0-"/3
+       (anchor 0.1.0) lib/anchor/domain/aggregates/multi_roots.ex:172: Anchor.Domain.Aggregates.MultiRoots.all/3
+       (anchor 0.1.0) lib/anchor/domain/aggregates/multi_roots.ex:53: Anchor.Domain.Aggregates.MultiRoots.read_function/3
+       (anchor 0.1.0) lib/anchor/domain/aggregates/multi_roots.ex:134: Anchor.Domain.Aggregates.MultiRoots.through/5
+       (elixir 1.19.4) lib/enum.ex:1814: Enum."-map_reduce/3-lists^mapfoldl/2-0-"/3
+       (anchor 0.1.0) lib/anchor/domain/aggregates/multi_roots.ex:172: Anchor.Domain.Aggregates.MultiRoots.all/3
+       (anchor 0.1.0) lib/anchor/domain/aggregates/multi_roots.ex:53: Anchor.Domain.Aggregates.MultiRoots.read_function/3
+       (anchor 0.1.0) lib/anchor/domain/aggregates/multi_roots.ex:134: Anchor.Domain.Aggregates.MultiRoots.through/5
+       (elixir 1.19.4) lib/enum.ex:1814: Enum."-map_reduce/3-lists^mapfoldl/2-0-"/3
+       (anchor 0.1.0) lib/anchor/domain/aggregates/multi_roots.ex:172: Anchor.Domain.Aggregates.MultiRoots.all/3
+       (anchor 0.1.0) lib/anchor/domain/aggregates/multi_roots.ex:53: Anchor.Domain.Aggregates.MultiRoots.read_function/3
+       (anchor 0.1.0) lib/anchor/domain/aggregates/multi_roots.ex:134: Anchor.Domain.Aggregates.MultiRoots.through/5
+       (elixir 1.19.4) lib/enum.ex:1814: Enum."-map_reduce/3-lists^mapfoldl/2-0-"/3
+       (anchor 0.1.0) lib/anchor/domain/aggregates/multi_roots.ex:172: Anchor.Domain.Aggregates.MultiRoots.all/3
+       (anchor 0.1.0) lib/anchor/domain/aggregates/multi_roots.ex:53: Anchor.Domain.Aggregates.MultiRoots.read_function/3
+       (anchor 0.1.0) lib/anchor/domain/aggregates/multi_roots.ex:134: Anchor.Domain.Aggregates.MultiRoots.through/5
+
+...........
+Finished in 2.1 seconds (2.1s async, 0.00s sync)
+26 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### MR-PARAM
+
+a parameter is no root (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 14 failures`.
+
+```
+  1) test a transaction given a helper's Multi through another helper the root is still a gap; traced, it is not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:253
+     match (=) failed
+     code:  assert [_what] = a |> one(:through) |> own_gaps()
+     left:  [_what]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:254: (test)
+
+.
+
+  2) test a transaction given a helper's Multi the same call at a root is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:274
+     match (=) failed
+     code:  assert [_gap] = a |> one(:data_call_at_root) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:275: (test)
+
+
+
+  3) test of/2: what the helper returns a helper that also makes its own Multi has the root it returns (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:155
+     Assertion with == failed
+     code:  assert roots(g, :hides, 2) == set([1])
+     left:  MapSet.new([0])
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:156: (test)
+
+
+
+  4) test of/2: what the helper returns a project call maps the callee's roots through its arguments (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:179
+     Assertion with == failed
+     code:  assert roots(g, :through, 1) == set([1])
+     left:  MapSet.new([])
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:180: (test)
+
+
+
+  5) test of/2: what the helper returns every branch counts; what does not return does not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:185
+     Assertion with == failed
+     code:  assert roots(g, :branch, 2) == set([1])
+     left:  MapSet.new([0])
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:186: (test)
+
+.
+
+  6) test a transaction given a helper's Multi a branch's untraced root is a gap; a raise beside a traced one is not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:263
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :raises)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :raises, 1},
+              ordinal: 1,
+              line: 359,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :raises, 1}, 359}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:266: (test)
+
+
+
+  7) test a transaction given a helper's Multi row 12, positive: the same helper given a traced Multi is no gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:229
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :row12_positive)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {
+```
+
+
+### MR-VARDEFAULT
+
+a variable it cannot read has no root (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns a value it cannot follow is unknown (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:197
+     Assertion with == failed
+     code:  assert roots(g, :destructured, 1) == :unknown
+     left:  MapSet.new([])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:198: (test)
+
+........
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-PRIMOP
+
+a failed match is unknown (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 17 failures`.
+
+```
+  1) test a transaction given a helper's Multi a traced Multi piped in, beside untraced data, is no gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:233
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :piped)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :piped, 1},
+              ordinal: 1,
+              line: 349,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :step_on,
+                   2},
+                  line: 34,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.MultiRootsTest.S
+              ]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :piped, 1}, 349}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:234: (test)
+
+.
+
+  2) test a transaction given a helper's Multi through another helper the root is still a gap; traced, it is not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:253
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :through_traced)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D,
+               :through_traced, 0},
+              ordinal: 1,
+              line: 355,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :step_on,
+                   2},
+                  line: 34,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.MultiRootsTest.S
+              ]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :through_traced,
+                  0}, 355}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:255: (test)
+
+
+
+  3) test of/2: what the helper returns prepend and append root on both sides (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:175
+     Assertion with == failed
+     code:  assert roots(g, :both, 2) == set([1, 2])
+     left:  :unknown
+     right: MapSet.new([1, 2])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:176: (test)
+
+
+
+  4) test of/2: what the helper returns a step keeps its Multi's root; a data argument is no root (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/mult
+```
+
+
+### MR-LITERALVAL
+
+a literal is unknown (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns a helper that returns only its own Multi has none (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:159
+     Assertion with == failed
+     code:  assert roots(g, :literal_multi, 0) == set([])
+     left:  :unknown
+     right: MapSet.new([])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:161: (test)
+
+............
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-SEQ
+
+a seq reads its first expression (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns only the returned parameter is a root (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:170
+     Assertion with == failed
+     code:  assert roots(g, :seq, 2) == set([1])
+     left:  MapSet.new([])
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:172: (test)
+
+.............
+Finished in 0.2 seconds (0.2s async, 0.00s sync)
+26 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-CASEONE
+
+a case reads only its first clause (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 2 failures`.
+
+```
+  1) test a transaction given a helper's Multi a branch's untraced root is a gap; a raise beside a traced one is not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:263
+     match (=) failed
+     code:  assert [_what] = a |> one(:branch) |> own_gaps()
+     left:  [_what]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:264: (test)
+
+..........
+
+  2) test of/2: what the helper returns every branch counts; what does not return does not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:185
+     Assertion with == failed
+     code:  assert roots(g, :branch, 2) == set([1])
+     left:  MapSet.new([])
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:186: (test)
+
+..........
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-LETBIND
+
+a let binds nothing (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 4 failures`.
+
+```
+  1) test a transaction given a helper's Multi a helper making its own Multi from data is no gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:237
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :own)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :own, 1},
+              ordinal: 1,
+              line: 350,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :own, 1},
+                  line: 33,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.MultiRootsTest.S
+              ]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :own, 1}, 350}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:238: (test)
+
+....
+
+  2) test a transaction given a helper's Multi a project call computing data beside a root is no gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:269
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :data_call_own)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :data_call_own,
+               0},
+              ordinal: 1,
+              line: 363,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :own, 1},
+                  line: 33,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.MultiRootsTest.S
+              ]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :data_call_own,
+                  0}, 363}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:271: (test)
+
+.
+
+  3) test of/2: what the helper returns a helper that returns only its own Multi has none (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:159
+     Assertion with == failed
+     code:  assert roots(g, :own, 1) == set([])
+     left:  :unknown
+     right: MapSet.new([])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:160: (test)
+
+............
+
+  4) test of/2: what the helper returns a step keeps its Multi's root; a data argument is no root (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:164
+     Assertion with == failed
+```
+
+
+### MR-TRYHANDLER
+
+a try does not read its handler (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns a try counts its body and its handler (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:191
+     Assertion with == failed
+     code:  assert roots(g, :tried_handler, 1) == set([1])
+     left:  MapSet.new([])
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:193: (test)
+
+..........
+Finished in 0.2 seconds (0.2s async, 0.00s sync)
+26 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-TRYBODY
+
+a try does not read its body (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns a try counts its body and its handler (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:191
+     Assertion with == failed
+     code:  assert roots(g, :tried, 1) == set([1])
+     left:  MapSet.new([])
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:192: (test)
+
+..................
+Finished in 0.2 seconds (0.2s async, 0.00s sync)
+26 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-NOCALL
+
+a call on a computed module has no root (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns a value it cannot follow is unknown (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:197
+     Assertion with == failed
+     code:  assert roots(g, :computed, 2) == :unknown
+     left:  MapSet.new([])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:200: (test)
+
+.
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-APPLY
+
+a local call is unknown (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 3 failures`.
+
+```
+  1) test of/2: what the helper returns a project call maps the callee's roots through its arguments (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:179
+     Assertion with == failed
+     code:  assert roots(g, :through, 1) == set([1])
+     left:  :unknown
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:180: (test)
+
+................
+
+  2) test a transaction given a helper's Multi through another helper the root is still a gap; traced, it is not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:253
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :through_traced)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D,
+               :through_traced, 0},
+              ordinal: 1,
+              line: 355,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :step_on,
+                   2},
+                  line: 34,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.MultiRootsTest.S
+              ]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :through_traced,
+                  0}, 355}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:255: (test)
+
+......
+
+  3) test of/2: what the helper returns a function called twice on every level is read once (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:211
+     Assertion with == failed
+     code:  assert roots(g, :chain0, 1) == set([1])
+     left:  :unknown
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:212: (test)
+
+
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 3 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-APPLYFUN
+
+a fn value called comes to no root (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns a value it cannot follow is unknown (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:197
+     Assertion with == failed
+     code:  assert roots(g, :called_fn, 1) == :unknown
+     left:  MapSet.new([])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:203: (test)
+
+....
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-TYPEDEFAULT
+
+a form it does not name has no root (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 2 failures`.
+
+```
+  1) test of/2: what the helper returns a value it cannot follow is unknown (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:197
+     Assertion with == failed
+     code:  assert roots(g, :tagged, 1) == :unknown
+     left:  MapSet.new([])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:201: (test)
+
+.......
+
+  2) test a transaction given a helper's Multi the same call at a root is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:274
+     match (=) failed
+     code:  assert [_gap] = a |> one(:data_call_at_root) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:275: (test)
+
+......
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-NEW
+
+Multi.new/0 is unknown (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 5 failures`.
+
+```
+  1) test of/2: what the helper returns a try counts its body and its handler (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:191
+     Assertion with == failed
+     code:  assert roots(g, :tried, 1) == set([1])
+     left:  :unknown
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:192: (test)
+
+....
+
+  2) test a transaction given a helper's Multi a helper making its own Multi from data is no gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:237
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :own)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :own, 1},
+              ordinal: 1,
+              line: 350,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :own, 1},
+                  line: 33,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.MultiRootsTest.S
+              ]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :own, 1}, 350}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:238: (test)
+
+....
+
+  3) test of/2: what the helper returns every branch counts; what does not return does not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:185
+     Assertion with == failed
+     code:  assert roots(g, :branch, 2) == set([1])
+     left:  :unknown
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:186: (test)
+
+.
+
+  4) test of/2: what the helper returns a helper that returns only its own Multi has none (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:159
+     Assertion with == failed
+     code:  assert roots(g, :own, 1) == set([])
+     left:  :unknown
+     right: MapSet.new([])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:160: (test)
+
+..
+
+  5) test a transaction given a helper's Multi a project call computing data beside a root is no gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:269
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :data_call_own)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :data_call_own,
+               0},
+              ordinal: 1,
+              line: 363,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :own, 1},
+                  line: 33,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtur
+```
+
+
+### MR-APPEND
+
+prepend roots on its first side only (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns prepend and append root on both sides (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:175
+     Assertion with == failed
+     code:  assert roots(g, :both, 2) == set([1, 2])
+     left:  MapSet.new([1])
+     right: MapSet.new([1, 2])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:176: (test)
+
+.......
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-STEP
+
+a step has no root (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 7 failures`.
+
+```
+  1) test a transaction given a helper's Multi a gap on the Multi at a root stays, through a helper (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:278
+     match (=) failed
+     code:  assert [_gap] = a |> one(:gap_at_root) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:279: (test)
+
+
+
+  2) test of/2: what the helper returns a project call maps the callee's roots through its arguments (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:179
+     Assertion with == failed
+     code:  assert roots(g, :through, 1) == set([1])
+     left:  MapSet.new([])
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:180: (test)
+
+
+
+  3) test a transaction given a helper's Multi through another helper the root is still a gap; traced, it is not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:253
+     match (=) failed
+     code:  assert [_what] = a |> one(:through) |> own_gaps()
+     left:  [_what]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:254: (test)
+
+
+
+  4) test of/2: what the helper returns a helper that also makes its own Multi has the root it returns (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:155
+     Assertion with == failed
+     code:  assert roots(g, :hides, 2) == set([1])
+     left:  MapSet.new([])
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:156: (test)
+
+.......
+
+  5) test of/2: what the helper returns a step keeps its Multi's root; a data argument is no root (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:164
+     Assertion with == failed
+     code:  assert roots(g, :step_on, 2) == set([1])
+     left:  MapSet.new([])
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:165: (test)
+
+
+
+  6) test a transaction given a helper's Multi a private helper behind a public one is followed (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:282
+     match (=) failed
+     code:  assert [_what] = a |> one(:local) |> own_gaps()
+     left:  [_what]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:283: (test)
+
+...
+
+  7) test a transaction given a helper's Multi row 12: an untraced Multi handed to a helper that also makes one is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:222
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = scope = one(a, :row12)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false} = scope
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :row12, 2},
+              ordinal: 1,
+              line: 347,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :hides, 2},
+                  line: 30,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+```
+
+
+### MR-NORETURN
+
+a raise or throw is unknown (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 2 failures`.
+
+```
+  1) test a transaction given a helper's Multi a branch's untraced root is a gap; a raise beside a traced one is not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:263
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :raises)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :raises, 1},
+              ordinal: 1,
+              line: 359,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :raises, 1}, 359}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:266: (test)
+
+..
+
+  2) test of/2: what the helper returns every branch counts; what does not return does not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:185
+     Assertion with == failed
+     code:  assert roots(g, :raises, 2) == set([1])
+     left:  :unknown
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:187: (test)
+
+.
+Finished in 0.2 seconds (0.2s async, 0.00s sync)
+26 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-THROUGH
+
+a call's roots are not mapped through its arguments (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns a project call maps the callee's roots through its arguments (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:179
+     Assertion with == failed
+     code:  assert roots(g, :swapped, 2) == set([1])
+     left:  MapSet.new([2])
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:182: (test)
+
+..
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-UNKNOWNCALLEE
+
+a callee it cannot read has no root (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 4 failures`.
+
+```
+  1) test a transaction given a helper's Multi a gap on the Multi at a root stays, through a helper (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:278
+     match (=) failed
+     code:  assert [_gap] = a |> one(:gap_at_root) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:279: (test)
+
+
+
+  2) test of/2: what the helper returns a value it cannot follow is unknown (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:197
+     Assertion with == failed
+     code:  assert roots(g, :from_lib, 0) == :unknown
+     left:  MapSet.new([])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:202: (test)
+
+
+
+  3) test a transaction given a helper's Multi a helper whose return Anchor cannot follow is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:258
+     match (=) failed
+     code:  assert [_gap] = a |> one(:lib) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:260: (test)
+
+..
+
+  4) test of/2: what the helper returns a recursive helper is unknown, direct or through another (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:206
+     Assertion with == failed
+     code:  assert roots(g, :loops, 2) == :unknown
+     left:  MapSet.new([1])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:207: (test)
+
+...................
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 4 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-CYCLE
+
+recursion has no root: a claim of none (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 17 failures`.
+
+```
+  1) test of/2: what the helper returns a try counts its body and its handler (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:191
+     Assertion with == failed
+     code:  assert roots(g, :tried, 1) == set([1])
+     left:  :unknown
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:192: (test)
+
+
+
+  2) test of/2: what the helper returns only the returned parameter is a root (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:170
+     Assertion with == failed
+     code:  assert roots(g, :pick_second, 2) == set([2])
+     left:  :unknown
+     right: MapSet.new([2])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:171: (test)
+
+
+
+  3) test of/2: what the helper returns a project call maps the callee's roots through its arguments (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:179
+     Assertion with == failed
+     code:  assert roots(g, :through, 1) == set([1])
+     left:  :unknown
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:180: (test)
+
+
+
+  4) test a transaction given a helper's Multi a project call computing data beside a root is no gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:269
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :data_call_beside)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D,
+               :data_call_beside, 0},
+              ordinal: 1,
+              line: 362,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :step_on,
+                   2},
+                  line: 34,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.MultiRootsTest.S
+              ]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D,
+                  :data_call_beside, 0}, 362}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:270: (test)
+
+.
+
+  5) test a transaction given a helper's Multi a branch's untraced root is a gap; a raise beside a traced one is not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:263
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :raises)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :raises, 1},
+              ordinal: 1,
+              line: 359,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRoots
+```
+
+
+### MR-NOCORE
+
+a function with no code has no root (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 5 failures`.
+
+```
+  1) test of/2: what the helper returns a value it cannot follow is unknown (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:197
+     Assertion with == failed
+     code:  assert roots(g, :from_lib, 0) == :unknown
+     left:  MapSet.new([])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:202: (test)
+
+.......
+
+  2) test of/2: what the helper returns a function Anchor has no code for is unknown (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:215
+     Assertion with == failed
+     code:  assert MultiRoots.of(g, {@lib, :make, 0}) == :unknown
+     left:  MapSet.new([])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:216: (test)
+
+..
+
+  3) test a transaction given a helper's Multi a gap on the Multi at a root stays, through a helper (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:278
+     match (=) failed
+     code:  assert [_gap] = a |> one(:gap_at_root) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:279: (test)
+
+
+
+  4) test a transaction given a helper's Multi a helper whose return Anchor cannot follow is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:258
+     match (=) failed
+     code:  assert [_gap] = a |> one(:lib) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:260: (test)
+
+...
+
+  5) test of/2: what the helper returns a recursive helper is unknown, direct or through another (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:206
+     Assertion with == failed
+     code:  assert roots(g, :loops, 2) == :unknown
+     left:  MapSet.new([1])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:207: (test)
+
+......
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 5 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-UNIONLEFT
+
+unknown from a later branch is overwritten (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 5 failures`.
+
+```
+  1) test a transaction given a helper's Multi a helper whose return Anchor cannot follow is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:258
+     match (=) failed
+     code:  assert [_gap] = a |> one(:lib) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:260: (test)
+
+.........
+
+  2) test of/2: what the helper returns a recursive helper is unknown, direct or through another (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:206
+     Assertion with == failed
+     code:  assert roots(g, :loops, 2) == :unknown
+     left:  MapSet.new([1])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:207: (test)
+
+.
+
+  3) test a transaction given a helper's Multi the same call at a root is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:274
+     match (=) failed
+     code:  assert [_gap] = a |> one(:data_call_at_root) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:275: (test)
+
+..
+
+  4) test a transaction given a helper's Multi a gap on the Multi at a root stays, through a helper (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:278
+     match (=) failed
+     code:  assert [_gap] = a |> one(:gap_at_root) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:279: (test)
+
+
+
+  5) test of/2: what the helper returns a value it cannot follow is unknown (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:197
+     Assertion with == failed
+     code:  assert roots(g, :destructured, 1) == :unknown
+     left:  MapSet.new([])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:198: (test)
+
+.........
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 5 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-UNIONRIGHT
+
+unknown in a branch is dropped (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 5 failures`.
+
+```
+  1) test of/2: what the helper returns a value it cannot follow is unknown (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:197
+     Assertion with == failed
+     code:  assert roots(g, :destructured, 1) == :unknown
+     left:  MapSet.new([])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:198: (test)
+
+
+
+  2) test a transaction given a helper's Multi the same call at a root is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:274
+     match (=) failed
+     code:  assert [_gap] = a |> one(:data_call_at_root) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:275: (test)
+
+...
+
+  3) test a transaction given a helper's Multi a gap on the Multi at a root stays, through a helper (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:278
+     match (=) failed
+     code:  assert [_gap] = a |> one(:gap_at_root) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:279: (test)
+
+
+
+  4) test of/2: what the helper returns a recursive helper is unknown, direct or through another (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:206
+     Assertion with == failed
+     code:  assert roots(g, :loops, 2) == :unknown
+     left:  MapSet.new([1])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:207: (test)
+
+.....
+
+  5) test a transaction given a helper's Multi a helper whose return Anchor cannot follow is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:258
+     match (=) failed
+     code:  assert [_gap] = a |> one(:lib) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:260: (test)
+
+............
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 5 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-PATTERN
+
+a pattern binds its whole value (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns a value it cannot follow is unknown (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:197
+     Assertion with == failed
+     code:  assert roots(g, :matched, 1) == :unknown
+     left:  MapSet.new([1])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:199: (test)
+
+..............
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-ALIAS
+
+an alias binds nothing (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns a step keeps its Multi's root; a data argument is no root (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:164
+     Assertion with == failed
+     code:  assert roots(g, :aliased, 1) == set([1])
+     left:  :unknown
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:167: (test)
+
+....
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+## Fifth run: a fn run where the walk did not read it (DND-5885)
+
+The fifth run: `lambda_run/5` in `WriteSites`, on DND-5885's code. Same driver and rules. `LR-UNFIXED` is the regression: the subset test restored as it was.
+
+| # | Mutation | Tests run | Result |
+|---|---|---|---|
+| LR-UNFIXED | restore the unfixed read: only a run in a body it is not defined in is a gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `48 tests, 2 failures` (red) |
+| LR-NOGAP | no run of a fn is a gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `48 tests, 3 failures` (red) |
+| LR-ALWAYS | every run of a fn is a gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `48 tests, 9 failures` (red) |
+| LR-REVERSE | only a run outside a body it is defined in is a gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `48 tests, 1 failure` (red) |
+
+### LR-UNFIXED
+
+restore the unfixed read: only a run in a body it is not defined in is a gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `48 tests, 2 failures`.
+
+```
+  1) test a fn run where the walk did not read it row 13: called and passed to a transaction is a gap at the call (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:449
+     match (=) failed
+     code:  assert [{:dynamic_call, {@d, :d30a, 0}, _line}] = nontx(a, :d30a, 0).gaps
+     left:  [{:dynamic_call, {AnchorFixtures.WriteSitesDefaultTest.D, :d30a, 0}, _line}]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:451: (test)
+
+
+
+  2) test a fn run where the walk did not read it row 13: called and given to Multi.run is a gap at the call (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:454
+     match (=) failed
+     code:  assert [{:dynamic_call, {@d, :d30b, 0}, _line}] = nontx(a, :d30b, 0).gaps
+     left:  [{:dynamic_call, {AnchorFixtures.WriteSitesDefaultTest.D, :d30b, 0}, _line}]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:455: (test)
+
+...................
+Finished in 0.5 seconds (0.5s async, 0.00s sync)
+48 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+### LR-NOGAP
+
+no run of a fn is a gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `48 tests, 3 failures`.
+
+```
+  1) test a fn run where the walk did not read it row 13: called and passed to a transaction is a gap at the call (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:449
+     match (=) failed
+     code:  assert [{:dynamic_call, {@d, :d30a, 0}, _line}] = nontx(a, :d30a, 0).gaps
+     left:  [{:dynamic_call, {AnchorFixtures.WriteSitesDefaultTest.D, :d30a, 0}, _line}]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:451: (test)
+
+..
+
+  2) test a fn run where the walk did not read it run in a transaction it is not given to is a gap there (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:458
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d30c)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d30c,
+               1},
+              ordinal: 1,
+              line: 140,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:459: (test)
+
+.........................
+
+  3) test a fn run where the walk did not read it row 13: called and given to Multi.run is a gap at the call (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:454
+     match (=) failed
+     code:  assert [{:dynamic_call, {@d, :d30b, 0}, _line}] = nontx(a, :d30b, 0).gaps
+     left:  [{:dynamic_call, {AnchorFixtures.WriteSitesDefaultTest.D, :d30b, 0}, _line}]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:455: (test)
+
+.................
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+48 tests, 3 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+### LR-ALWAYS
+
+every run of a fn is a gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `48 tests, 9 failures`.
+
+```
+  1) test a function value, or data, that needs no following d20c: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:307
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d20c,
+               1},
+              ordinal: 1,
+              line: 97,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d20c, 1},
+                 97}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:308: (test)
+
+..
+
+  2) test a function value, or data, that needs no following d20b: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:307
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d20b,
+               1},
+              ordinal: 1,
+              line: 96,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d20b, 1},
+                 96}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:308: (test)
+
+..
+
+  3) test the forms DND-5459 reads stay a fn applied where it is written is read, inside a body or not (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:341
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, keys: keys} = one(a, :d16)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, keys: keys}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d16, 0},
+              ordinal: 1,
+              line: 88,
+              kind: :fun,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.WriteSitesDefaultTest.D,
+                   :d16, 0},
+                  line: 88,
+                  op: :insert,
+                  via: :repo,
+                  sources: [
+                    schema: AnchorFixtures.WriteSitesDefaultTest.S
+                  ],
+                  unresolved: nil,
+                  scopes: [1],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.WriteSitesDefaultTest.S
+              ]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d16, 0},
+                 88}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:342: (test)
+
+..
+
+  4) test a call the walker does not read row 8: positive controls: data to a lis
+```
+
+### LR-REVERSE
+
+only a run outside a body it is defined in is a gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `48 tests, 1 failure`.
+
+```
+  1) test a fn run where the walk did not read it run in a transaction it is not given to is a gap there (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:458
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d30c)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d30c,
+               1},
+              ordinal: 1,
+              line: 140,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:459: (test)
+
+.....................
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+48 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+## Sixth run: what runs a value, and the arities of a repo's functions
+
+Sixth run, the whole MR's fixes after the critic's round 9 and the review floor: `given_value/6`, `harmless_functions/7`, the arities of `@repo_functions`, `Scopes.sort_gaps/1`. `GV-NOGAP`, `HF-NORUN` and `RF-NAME` are the regressions, each restoring the unfixed read. `SC-GAPCONST` first survived, which was a finding of its own: nothing tested the order of unread gaps, and `SC-GAPORDER` above showed only that the clause exists, since deleting it crashes `setup_all`. The file got `Scopes.sort_gaps/1`'s test. `GV-NOGAP` first failed to compile and was rewritten.
+
+**Passes on this record.** This file was regenerated in place, where ADR 003 asks for an append, until the second run above. Every row of every earlier form was red and no row was lost but one:
+
+- 45 rows, at the ticket's first code.
+- 53 rows, after the first critic round; `HO-LOGGER` was here.
+- 53 rows, after the second critic round: `HO-LOGGER` replaced by `NW-LOGGERFN`, because that fix removed the `HigherOrder` row it mutated, so it has no successor.
+- 55 rows, after the third critic round: the table at the top of this file.
+
+Earlier failure output is not kept. It was replaced, not lost to a survivor: `HO-LOGGER` read `HigherOrder loses the row: {Logger, :__do_log__, 4} => [{1, 0}]`, `write_sites_default_test.exs`, `37 tests, 1 failure` (red).
+
+| # | Mutation | Tests run | Result |
+|---|---|---|---|
+| GV-NOGAP | the finding: a value given to a repo call in a body it is not in is no gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `59 tests, 3 failures` (red) |
+| GV-ALWAYS | every value given to a repo call is a gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `58 tests, 7 failures` (red) |
+| GV-CHECKOUT | Repo.checkout does not check what it is given (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `58 tests, 2 failures` (red) |
+| GV-NESTED | a nested Repo.transaction does not check what it is given (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `58 tests, 1 failure` (red) |
+| GV-MULTI | a Multi's steps are not checked (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `58 tests, 1 failure` (red) |
+| GV-LAMBDA | a fn is not checked (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `58 tests, 3 failures` (red) |
+| GV-CALLTAGS | a call's tags are not kept (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `58 tests, 1 failure` (red) |
+| HF-NORUN | the finding: a fn bound elsewhere and logged reads as cleared (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `58 tests, 2 failures` (red) |
+| RF-NAME | the finding: a repo function matches by name at any arity (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `58 tests, 1 failure` (red) |
+| RF-TABLE | the table loses an arity of `get` (`lib/anchor/domain/aggregates/write_sites.ex`) | `real_ecto_test.exs` | `13 tests, 1 failure` (red) |
+| SC-GAPCONST | an unread gap sorts as a constant, so a set of them has no order (`lib/anchor/domain/aggregates/scopes.ex`) | `write_sites_default_test.exs` | `59 tests, 1 failure` (red) |
+
+### GV-NOGAP
+
+the finding: a value given to a repo call in a body it is not in is no gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `59 tests, 3 failures`.
+
+```
+  1) test a value bound outside a body and given to a repo call inside it a callback's repo.transaction is a gap of the transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:553
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d31e)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d31e,
+               0},
+              ordinal: 1,
+              line: 195,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:554: (test)
+
+...............
+
+  2) test a value bound outside a body and given to a repo call inside it Repo.checkout is a gap of the body (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:543
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d31a)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d31a,
+               0},
+              ordinal: 1,
+              line: 175,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:544: (test)
+
+...................
+
+  3) test a value bound outside a body and given to a repo call inside it a nested transaction is a gap of the outer body, for a fn or a Multi (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:547
+     d31b
+     code: for name <- [:d31b, :d31c, :d31d] do
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:549: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test a value bound outside a body and given to a repo call inside it a nested transaction is a gap of the outer body, for a fn or a Multi"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:548: (test)
+
+..
+Finished in 0.5 seconds (0.5s async, 0.00s sync)
+59 tests, 3 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/scopes.ex" was set to the future, resetting to now
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+### GV-ALWAYS
+
+every value given to a repo call is a gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `58 tests, 7 failures`.
+
+```
+  1) test a dependency's function a transaction or a Multi runs a dependency's listed transaction function is read as a scope, never unread (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:469
+     Assertion with == failed
+     code:  assert facts.functions[{@d, :d22, 0}].dynamic == []
+     left:  [
+              %{
+                line: 115,
+                tags: [],
+                what: "a value given to a repo call in a body it is not in",
+                write?: false
+              }
+            ]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:478: (test)
+
+...
+
+  2) test a fn run where the walk did not read it row 13: called and given to Multi.run is a gap at the call (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:520
+     match (=) failed
+     code:  assert [{:dynamic_call, {@d, :d30b, 0}, _line}] = nontx(a, :d30b, 0).gaps
+     left:  [{:dynamic_call, {AnchorFixtures.WriteSitesDefaultTest.D, :d30b, 0}, _line}]
+     right: [
+              {:dynamic_call,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :d30b, 0},
+               140},
+              {:dynamic_call,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :d30b, 0},
+               141}
+            ]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:521: (test)
+
+................
+
+  3) test exactly one outcome per call an unknown function handed to a listed function is a gap, and is not also cleared (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:483
+     match (=) failed
+     code:  assert %{cleared: 0, dynamic: [_gap]} = facts.functions[{@d, :d23, 2}]
+     left:  %{cleared: 0, dynamic: [_gap]}
+     right: %{
+              dynamic: [
+                %{
+                  line: 116,
+                  tags: [1],
+                  what: "the function handed to Enum.map/2",
+                  write?: false
+                },
+                %{
+                  line: 116,
+                  tags: [],
+                  what: "a value given to a repo call in a body it is not in",
+                  write?: false
+                }
+              ],
+              computed: [],
+              sites: [],
+              txs: [
+                %{
+                  line: 116,
+                  kind: :fun,
+                  ordinal: 1,
+                  captures: [],
+                  gaps: []
+                }
+              ],
+              calls: [],
+              cleared: 0,
+              def_line: 116,
+              public?: true
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:488: (test)
+
+..
+
+  4) test a value bound outside a body and given to a repo call inside it positive: given to two transactions at no body is no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:563
+     Assertion with == failed
+     code:  assert nontx(a, :d31i, 0).gaps == []
+     left:  [
+              {:dynamic_call,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :d31i, 0},
+               209},
+              {:dynamic_call,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :d31i, 0},
+               210}
+            ]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_defaul
+```
+
+
+### GV-CHECKOUT
+
+Repo.checkout does not check what it is given (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `58 tests, 2 failures`.
+
+```
+  1) test a value bound outside a body and given to a repo call inside it Repo.checkout is a gap of the body (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:543
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d31a)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d31a,
+               0},
+              ordinal: 1,
+              line: 175,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:544: (test)
+
+.
+
+  2) test a value bound outside a body and given to a repo call inside it a callback's repo.transaction is a gap of the transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:553
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d31e)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d31e,
+               0},
+              ordinal: 1,
+              line: 195,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:554: (test)
+
+.......................................................
+Finished in 0.5 seconds (0.5s async, 0.00s sync)
+58 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### GV-NESTED
+
+a nested Repo.transaction does not check what it is given (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `58 tests, 1 failure`.
+
+```
+  1) test a value bound outside a body and given to a repo call inside it a nested transaction is a gap of the outer body, for a fn or a Multi (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:547
+     d31b
+     code: for name <- [:d31b, :d31c, :d31d] do
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:549: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test a value bound outside a body and given to a repo call inside it a nested transaction is a gap of the outer body, for a fn or a Multi"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:548: (test)
+
+............................................
+Finished in 0.5 seconds (0.5s async, 0.00s sync)
+58 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### GV-MULTI
+
+a Multi's steps are not checked (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `58 tests, 1 failure`.
+
+```
+  1) test a value bound outside a body and given to a repo call inside it a nested transaction is a gap of the outer body, for a fn or a Multi (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:547
+     d31c
+     code: for name <- [:d31b, :d31c, :d31d] do
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:549: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test a value bound outside a body and given to a repo call inside it a nested transaction is a gap of the outer body, for a fn or a Multi"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:548: (test)
+
+..............
+Finished in 0.6 seconds (0.6s async, 0.00s sync)
+58 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### GV-LAMBDA
+
+a fn is not checked (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `58 tests, 3 failures`.
+
+```
+  1) test a value bound outside a body and given to a repo call inside it a nested transaction is a gap of the outer body, for a fn or a Multi (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:547
+     d31b
+     code: for name <- [:d31b, :d31c, :d31d] do
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:549: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test a value bound outside a body and given to a repo call inside it a nested transaction is a gap of the outer body, for a fn or a Multi"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:548: (test)
+
+.....
+
+  2) test a value bound outside a body and given to a repo call inside it Repo.checkout is a gap of the body (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:543
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d31a)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d31a,
+               0},
+              ordinal: 1,
+              line: 175,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:544: (test)
+
+..................
+
+  3) test a value bound outside a body and given to a repo call inside it a callback's repo.transaction is a gap of the transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:553
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d31e)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d31e,
+               0},
+              ordinal: 1,
+              line: 195,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:554: (test)
+
+....................
+Finished in 0.7 seconds (0.7s async, 0.00s sync)
+58 tests, 3 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### GV-CALLTAGS
+
+a call's tags are not kept (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `58 tests, 1 failure`.
+
+```
+  1) test a value bound outside a body and given to a repo call inside it positive: written inside the body is no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:557
+     ** (MatchError) no match of right hand side value:
+
+         [
+           %Anchor.Domain.Aggregates.Scope{
+             mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d31h, 0},
+             ordinal: 2,
+             line: 202,
+             kind: :fun,
+             writes: [
+               %Anchor.Domain.Aggregates.WriteSite{
+                 mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d31h, 0},
+                 line: 203,
+                 op: :insert,
+                 via: :multi,
+                 sources: [schema: AnchorFixtures.WriteSitesDefaultTest.S],
+                 unresolved: nil,
+                 scopes: [2, 1],
+                 run_callback?: false
+               }
+             ],
+             keys: MapSet.new([schema: AnchorFixtures.WriteSitesDefaultTest.S]),
+             no_gap_noticed?: false,
+             gaps: [
+               {:dynamic_call, {AnchorFixtures.WriteSitesDefaultTest.D, :d31h, 0}, 203}
+             ]
+           }
+         ]
+
+     code: for name <- [:d31f, :d31g, :d31h] do
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:559: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test a value bound outside a body and given to a repo call inside it positive: written inside the body is no gap"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:558: (test)
+
+.......................
+Finished in 0.7 seconds (0.7s async, 0.00s sync)
+58 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### HF-NORUN
+
+the finding: a fn bound elsewhere and logged reads as cleared (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `58 tests, 2 failures`.
+
+```
+  1) test a fn at a harmless argument bound outside the body and logged in it is a gap of the body (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:570
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d32a)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d32a,
+               0},
+              ordinal: 1,
+              line: 215,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:571: (test)
+
+..................................
+
+  2) test a fn at a harmless argument a default bound outside the body is a gap too, on the safe side (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:574
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d32c)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d32c,
+               1},
+              ordinal: 1,
+              line: 225,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:575: (test)
+
+...........
+Finished in 0.6 seconds (0.6s async, 0.00s sync)
+58 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### RF-NAME
+
+the finding: a repo function matches by name at any arity (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `58 tests, 1 failure`.
+
+```
+  1) test a call on a repo a function it defines at a generated name and another arity is followed (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:584
+     Assertion with == failed
+     code:  assert keys == MapSet.new(schema: @s)
+     left:  MapSet.new([])
+     right: MapSet.new([schema: AnchorFixtures.WriteSitesDefaultTest.S])
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:588: (test)
+
+.............
+Finished in 0.5 seconds (0.5s async, 0.00s sync)
+58 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### RF-TABLE
+
+the table loses an arity of `get` (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `13 tests, 1 failure`.
+
+```
+  1) test every callback of Ecto.Repo is a write, raw SQL, or known to write nothing (Anchor.Domain.Aggregates.RealEctoTest)
+     test/anchor/domain/aggregates/real_ecto_test.exs:171
+     Assertion with == failed
+     code:  assert Ecto.Repo.behaviour_info(:callbacks)
+            |> Enum.reject(fn {name, arity} -> arity in Map.get(known, name, []) end) == []
+     left:  [get: 3]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/real_ecto_test.exs:174: (test)
+
+............
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+13 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### SC-GAPCONST
+
+an unread gap sorts as a constant, so a set of them has no order (`lib/anchor/domain/aggregates/scopes.ex`). Result: `59 tests, 1 failure`.
+
+```
+  1) test Scopes.sort_gaps/1 unread gaps sort by function, line and text (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:584
+     Assertion with == failed
+     code:  assert Anchor.Domain.Aggregates.Scopes.sort_gaps([late, early_b, early_a]) == [early_a, early_b, late]
+     left:  [
+              {:unread,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :a, 0}, 2,
+               "unread: a"},
+              {:unread,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :a, 0}, 1,
+               "unread: b"},
+              {:unread,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :a, 0}, 1,
+               "unread: a"}
+            ]
+     right: [
+              {:unread,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :a, 0}, 1,
+               "unread: a"},
+              {:unread,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :a, 0}, 1,
+               "unread: b"},
+              {:unread,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :a, 0}, 2,
+               "unread: a"}
+            ]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:589: (test)
+
+........................
+Finished in 0.6 seconds (0.6s async, 0.00s sync)
+59 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/scopes.ex" was set to the future, resetting to now
+```
+
+
+
+## Seventh run: one rule for whatever runs a value
+
+Seventh run, the closure pass over everything that runs a value: `value_ran/6`, `read_here?/4`, `function_parts/3`, `value_parts/3`, `listed_call/7`. `VR-RUNSSUB` and `LC-NOCHECK` are the regressions for critic round 10's two findings. `VR-CHECKOUT`, `VR-NESTED` and `VR-HARMLESS` replace `GV-CHECKOUT`, `GV-NESTED` and `HF-NORUN` of the sixth run, whose code this replaces; `GV-NOGAP`, `GV-ALWAYS`, `GV-MULTI`, `GV-LAMBDA` have `VR-OPENSOFF`, `VR-OPENSEQ`, `VR-PARTMULTI`, `VR-PARTLAMBDA` as successors.
+
+A first `VR-RUNSDEFAULT`, on `Map.get(ctx.defined_in, id, tags)`, survived: every id comes from a node the walk visited, so the default never ran. The default was deleted for `Map.fetch!`, and the row with it. A first `LC-NOFOLLOW` also survived, because nothing tested a listed function's own writes; the file got `d35`. `VR-HARMLESS` and `LC-NOTLISTED` first failed to compile and were rewritten. None of those first runs is kept.
+
+| # | Mutation | Tests run | Result |
+|---|---|---|---|
+| VR-RUNSSUB | the finding: a form that opens no scope uses the subset test (`Repo.transaction(f); Repo.checkout(f)`, `f.(); Repo.transaction(f)`) (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `70 tests, 3 failures` (red) |
+| VR-OPENSEQ | a form that opens a scope uses equality: every value given to a transaction is a gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `70 tests, 9 failures` (red) |
+| VR-OPENSOFF | a form that opens a scope checks nothing (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `70 tests, 3 failures` (red) |
+| VR-RUNSOFF | a form that opens no scope checks nothing (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `70 tests, 9 failures` (red) |
+| VR-CAPTURES | a capture bound outside a body and run in it is no call from here (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `70 tests, 2 failures` (red) |
+| VR-TOPLEVEL | a capture given to a top-level transaction is a call outside it too (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `70 tests, 2 failures` (red) |
+| VR-PARTLAMBDA | a fn is no part of what a form runs (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `70 tests, 8 failures` (red) |
+| VR-PARTCAPTURE | a capture is no part of what a form runs (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `70 tests, 2 failures` (red) |
+| VR-PARTMULTI | a Multi is no part of what a form runs (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `70 tests, 2 failures` (red) |
+| VR-CHECKOUT | Repo.checkout does not check what it is given (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `70 tests, 5 failures` (red) |
+| VR-NESTED | a nested Repo.transaction does not check what it is given (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `70 tests, 1 failure` (red) |
+| VR-HARMLESS | a value at a log message is not checked (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `70 tests, 3 failures` (red) |
+| VR-HARMLESSDATA | a log message computed outside the body is traced as a Multi: a false gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `70 tests, 1 failure` (red) |
+| LC-NOCHECK | the finding: a listed function does not check what it is given (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `70 tests, 2 failures` (red) |
+| LC-NOFOLLOW | a listed function the project defines is not followed (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs`, `scopes_test.exs` | `142 tests, 1 failure` (red) |
+| LC-NOTLISTED | a listed function takes the plain project path (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs`, `scopes_test.exs` | `142 tests, 4 failures` (red) |
+| LC-LOCAL | a local call of a listed function does not reach `literal_call/7` (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `70 tests, 1 failure` (red) |
+
+### VR-RUNSSUB
+
+the finding: a form that opens no scope uses the subset test (`Repo.transaction(f); Repo.checkout(f)`, `f.(); Repo.transaction(f)`) (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 3 failures`.
+
+```
+  1) test a fn run where the walk did not read it row 13: called and passed to a transaction is a gap at the call (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:593
+     match (=) failed
+     code:  assert [{:dynamic_call, {@d, :d30a, 0}, _line}] = nontx(a, :d30a, 0).gaps
+     left:  [{:dynamic_call, {AnchorFixtures.WriteSitesDefaultTest.D, :d30a, 0}, _line}]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:595: (test)
+
+...............
+
+  2) test the one rule: a form that opens a scope, or anything else Repo.checkout beside a transaction is a gap outside: it opens no scope (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:648
+     match (=) failed
+     code:  assert [{:dynamic_call, {@d, :d34a, 0}, _line}] = nontx(a, :d34a, 0).gaps
+     left:  [{:dynamic_call, {AnchorFixtures.WriteSitesDefaultTest.D, :d34a, 0}, _line}]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:649: (test)
+
+.......................
+
+  3) test a fn run where the walk did not read it row 13: called and given to Multi.run is a gap at the call (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:598
+     match (=) failed
+     code:  assert [{:dynamic_call, {@d, :d30b, 0}, _line}] = nontx(a, :d30b, 0).gaps
+     left:  [{:dynamic_call, {AnchorFixtures.WriteSitesDefaultTest.D, :d30b, 0}, _line}]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:599: (test)
+
+
+Finished in 0.6 seconds (0.6s async, 0.00s sync)
+70 tests, 3 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### VR-OPENSEQ
+
+a form that opens a scope uses equality: every value given to a transaction is a gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 9 failures`.
+
+```
+  1) test a fn run where the walk did not read it positive: only given to the transaction is no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:612
+     Assertion with == failed
+     code:  assert nontx(a, :d30f, 0).gaps == []
+     left:  [
+              {:dynamic_call,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :d30f, 0},
+               175}
+            ]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:614: (test)
+
+..
+
+  2) test a fn run where the walk did not read it row 13: called and given to Multi.run is a gap at the call (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:598
+     match (=) failed
+     code:  assert [{:dynamic_call, {@d, :d30b, 0}, _line}] = nontx(a, :d30b, 0).gaps
+     left:  [{:dynamic_call, {AnchorFixtures.WriteSitesDefaultTest.D, :d30b, 0}, _line}]
+     right: [
+              {:dynamic_call,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :d30b, 0},
+               150},
+              {:dynamic_call,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :d30b, 0},
+               151}
+            ]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:599: (test)
+
+...
+
+  3) test the one rule: a form that opens a scope, or anything else Repo.checkout beside a transaction is a gap outside: it opens no scope (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:648
+     match (=) failed
+     code:  assert [{:dynamic_call, {@d, :d34a, 0}, _line}] = nontx(a, :d34a, 0).gaps
+     left:  [{:dynamic_call, {AnchorFixtures.WriteSitesDefaultTest.D, :d34a, 0}, _line}]
+     right: [
+              {:dynamic_call,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :d34a, 0},
+               225},
+              {:dynamic_call,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :d34a, 0},
+               226}
+            ]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:649: (test)
+
+.......
+
+  4) test a value bound outside a body and given to a repo call inside it positive: given to two transactions at no body is no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:641
+     Assertion with == failed
+     code:  assert nontx(a, :d31i, 0).gaps == []
+     left:  [
+              {:dynamic_call,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :d31i, 0},
+               219},
+              {:dynamic_call,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :d31i, 0},
+               220}
+            ]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:643: (test)
+
+
+
+  5) test exactly one outcome per call an unknown function handed to a listed function is a gap, and is not also cleared (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:561
+     match (=) failed
+     code:  assert %{cleared: 0, dynamic: [_gap]} = facts.functions[{@d, :d23, 2}]
+     left:  %{cleared: 0, dynamic: [_gap]}
+     right: %{
+              dynamic: [
+                %{
+                  line: 126,
+                  tags: [1],
+                  what: "the function handed to Enum.map/2",
+                  write?: false
+                },
+                %{
+```
+
+
+### VR-OPENSOFF
+
+a form that opens a scope checks nothing (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 3 failures`.
+
+```
+  1) test a value bound outside a body and given to a repo call inside it a nested transaction is a gap of the outer body, for a fn or a Multi (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:625
+     d31b
+     code: for name <- [:d31b, :d31c, :d31d] do
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:627: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test a value bound outside a body and given to a repo call inside it a nested transaction is a gap of the outer body, for a fn or a Multi"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:626: (test)
+
+.................
+
+  2) test the one rule: a form that opens a scope, or anything else a listed function in a body, given a value bound outside, is a gap of the body (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:656
+     ** (MatchError) no match of right hand side value:
+
+         []
+
+     code: for name <- [:d34b, :d34c, :d34d] do
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:660: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test the one rule: a form that opens a scope, or anything else a listed function in a body, given a value bound outside, is a gap of the body"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:659: (test)
+
+.........................................
+
+  3) test the one rule: a form that opens a scope, or anything else a local call of a listed function is held to the same rule (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:669
+     match (=) failed
+     code:  assert [%Scope{kind: :fun}] = Enum.reject(scopes(a, :local_listed), & &1.no_gap_noticed?)
+     left:  [%Anchor.Domain.Aggregates.Scope{kind: :fun}]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:670: (test)
+
+.
+Finished in 0.6 seconds (0.6s async, 0.00s sync)
+70 tests, 3 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### VR-RUNSOFF
+
+a form that opens no scope checks nothing (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 9 failures`.
+
+```
+  1) test a fn run where the walk did not read it run in a transaction it is not given to is a gap there (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:602
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d30c)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d30c,
+               1},
+              ordinal: 1,
+              line: 157,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:603: (test)
+
+.
+
+  2) test the one rule: a form that opens a scope, or anything else Repo.checkout beside a transaction is a gap outside: it opens no scope (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:648
+     match (=) failed
+     code:  assert [{:dynamic_call, {@d, :d34a, 0}, _line}] = nontx(a, :d34a, 0).gaps
+     left:  [{:dynamic_call, {AnchorFixtures.WriteSitesDefaultTest.D, :d34a, 0}, _line}]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:649: (test)
+
+...
+
+  3) test a value bound outside a body and given to a repo call inside it a callback's repo.transaction is a gap of the transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:631
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d31e)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d31e,
+               0},
+              ordinal: 1,
+              line: 205,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:632: (test)
+
+
+
+  4) test a fn at a harmless argument a default bound outside the body is a gap too, on the safe side (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:712
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d32c)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d32c,
+               1},
+              ordinal: 1,
+              line: 302,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:713: (test)
+
+.....
+
+  5) test the one rule: a form that opens a scope, or anything else a fn run through a callback's checkout, bound outside the fn, keeps its rule (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:700
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d34n)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.D
+```
+
+
+### VR-CAPTURES
+
+a capture bound outside a body and run in it is no call from here (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 2 failures`.
+
+```
+  1) test the one rule: a form that opens a scope, or anything else a capture given to a transaction and checked out beside it writes outside too (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:688
+     match (=) failed
+     code:  assert [_write] = nontx(a, :d34h, 0).sites
+     left:  [_write]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:693: (test)
+
+.
+
+  2) test the one rule: a form that opens a scope, or anything else a capture bound outside a body and run inside it reads the body's write (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:679
+     d34e
+     code: for name <- [:d34e, :d34f, :d34g] do
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:684: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test the one rule: a form that opens a scope, or anything else a capture bound outside a body and run inside it reads the body's write"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:682: (test)
+
+.........
+Finished in 0.6 seconds (0.6s async, 0.00s sync)
+70 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### VR-TOPLEVEL
+
+a capture given to a top-level transaction is a call outside it too (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 2 failures`.
+
+```
+  1) test a dependency's function a transaction or a Multi runs a capture of one as the transaction's body is a gap of that transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:512
+     Assertion with == failed
+     code:  assert nontx(a, :d21a, 0).gaps == []
+     left:  [
+              {:unread,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :d21a, 0},
+               120,
+               "unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.run/0"}
+            ]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:517: (test)
+
+..............
+
+  2) test the one rule: a form that opens a scope, or anything else positive: a capture given only to a transaction is no write outside (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:696
+     Assertion with == failed
+     code:  assert nontx(a, :d34k, 0).sites == []
+     left:  [
+              %Anchor.Domain.Aggregates.WriteSite{
+                mfa: {AnchorFixtures.WriteSitesDefaultTest.D,
+                 :own_write, 0},
+                line: 282,
+                op: :insert,
+                via: :repo,
+                sources: [
+                  schema: AnchorFixtures.WriteSitesDefaultTest.S
+                ],
+                unresolved: nil,
+                scopes: [],
+                run_callback?: false
+              }
+            ]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:697: (test)
+
+...........
+Finished in 0.6 seconds (0.6s async, 0.00s sync)
+70 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### VR-PARTLAMBDA
+
+a fn is no part of what a form runs (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 8 failures`.
+
+```
+  1) test a fn at a harmless argument a default bound outside the body is a gap too, on the safe side (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:712
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d32c)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d32c,
+               1},
+              ordinal: 1,
+              line: 302,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:713: (test)
+
+.
+
+  2) test the one rule: a form that opens a scope, or anything else a local call of a listed function is held to the same rule (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:669
+     match (=) failed
+     code:  assert [%Scope{kind: :fun}] = Enum.reject(scopes(a, :local_listed), & &1.no_gap_noticed?)
+     left:  [%Anchor.Domain.Aggregates.Scope{kind: :fun}]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:670: (test)
+
+..
+
+  3) test a value bound outside a body and given to a repo call inside it a callback's repo.transaction is a gap of the transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:631
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d31e)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d31e,
+               0},
+              ordinal: 1,
+              line: 205,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:632: (test)
+
+..........
+
+  4) test the one rule: a form that opens a scope, or anything else Repo.checkout beside a transaction is a gap outside: it opens no scope (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:648
+     match (=) failed
+     code:  assert [{:dynamic_call, {@d, :d34a, 0}, _line}] = nontx(a, :d34a, 0).gaps
+     left:  [{:dynamic_call, {AnchorFixtures.WriteSitesDefaultTest.D, :d34a, 0}, _line}]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:649: (test)
+
+.....
+
+  5) test a value bound outside a body and given to a repo call inside it a nested transaction is a gap of the outer body, for a fn or a Multi (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:625
+     d31b
+     code: for name <- [:d31b, :d31c, :d31d] do
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:627: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test a value bound outside a body and given to a repo call inside it a nested transaction is a gap of the outer body, for a fn or a Multi"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/do
+```
+
+
+### VR-PARTCAPTURE
+
+a capture is no part of what a form runs (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 2 failures`.
+
+```
+  1) test the one rule: a form that opens a scope, or anything else a capture bound outside a body and run inside it reads the body's write (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:679
+     d34e
+     code: for name <- [:d34e, :d34f, :d34g] do
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:684: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test the one rule: a form that opens a scope, or anything else a capture bound outside a body and run inside it reads the body's write"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:682: (test)
+
+..............................
+
+  2) test the one rule: a form that opens a scope, or anything else a capture given to a transaction and checked out beside it writes outside too (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:688
+     match (=) failed
+     code:  assert [_write] = nontx(a, :d34h, 0).sites
+     left:  [_write]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:693: (test)
+
+...............................
+Finished in 0.6 seconds (0.6s async, 0.00s sync)
+70 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### VR-PARTMULTI
+
+a Multi is no part of what a form runs (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 2 failures`.
+
+```
+  1) test the one rule: a form that opens a scope, or anything else a listed function in a body, given a value bound outside, is a gap of the body (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:656
+     ** (MatchError) no match of right hand side value:
+
+         []
+
+     code: for name <- [:d34b, :d34c, :d34d] do
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:660: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test the one rule: a form that opens a scope, or anything else a listed function in a body, given a value bound outside, is a gap of the body"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:659: (test)
+
+...............................
+
+  2) test a value bound outside a body and given to a repo call inside it a nested transaction is a gap of the outer body, for a fn or a Multi (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:625
+     d31c
+     code: for name <- [:d31b, :d31c, :d31d] do
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:627: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test a value bound outside a body and given to a repo call inside it a nested transaction is a gap of the outer body, for a fn or a Multi"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:626: (test)
+
+...................................
+Finished in 0.6 seconds (0.6s async, 0.00s sync)
+70 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### VR-CHECKOUT
+
+Repo.checkout does not check what it is given (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 5 failures`.
+
+```
+  1) test a value bound outside a body and given to a repo call inside it a callback's repo.transaction is a gap of the transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:631
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d31e)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d31e,
+               0},
+              ordinal: 1,
+              line: 205,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:632: (test)
+
+.......
+
+  2) test the one rule: a form that opens a scope, or anything else a capture given to a transaction and checked out beside it writes outside too (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:688
+     match (=) failed
+     code:  assert [_write] = nontx(a, :d34h, 0).sites
+     left:  [_write]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:693: (test)
+
+..................................
+
+  3) test a value bound outside a body and given to a repo call inside it Repo.checkout is a gap of the body (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:621
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d31a)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d31a,
+               0},
+              ordinal: 1,
+              line: 185,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:622: (test)
+
+..
+
+  4) test the one rule: a form that opens a scope, or anything else a capture bound outside a body and run inside it reads the body's write (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:679
+     d34e
+     code: for name <- [:d34e, :d34f, :d34g] do
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:684: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test the one rule: a form that opens a scope, or anything else a capture bound outside a body and run inside it reads the body's write"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:682: (test)
+
+.................
+
+  5) test the one rule: a form that opens a scope, or anything else Repo.checkout beside a transaction is a gap outside: it opens no scope (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:648
+     match (=) failed
+     code:  assert [{:dynamic_call, {@d, :d34a, 0}, _line}] = nontx(a, :d34a, 0).gaps
+     left:  [{:dynamic_call, {AnchorFixtures.WriteSitesDefaultTest.D, :d34a, 0}, _line}]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_
+```
+
+
+### VR-NESTED
+
+a nested Repo.transaction does not check what it is given (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 1 failure`.
+
+```
+  1) test a value bound outside a body and given to a repo call inside it a nested transaction is a gap of the outer body, for a fn or a Multi (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:625
+     d31b
+     code: for name <- [:d31b, :d31c, :d31d] do
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:627: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test a value bound outside a body and given to a repo call inside it a nested transaction is a gap of the outer body, for a fn or a Multi"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:626: (test)
+
+..............................................................
+Finished in 0.6 seconds (0.6s async, 0.00s sync)
+70 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### VR-HARMLESS
+
+a value at a log message is not checked (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 3 failures`.
+
+```
+  1) test the one rule: a form that opens a scope, or anything else a capture bound outside a body and run inside it reads the body's write (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:679
+     d34g
+     code: for name <- [:d34e, :d34f, :d34g] do
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:684: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test the one rule: a form that opens a scope, or anything else a capture bound outside a body and run inside it reads the body's write"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:682: (test)
+
+......................
+
+  2) test a fn at a harmless argument bound outside the body and logged in it is a gap of the body (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:708
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d32a)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d32a,
+               0},
+              ordinal: 1,
+              line: 287,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:709: (test)
+
+..........
+
+  3) test a fn at a harmless argument a default bound outside the body is a gap too, on the safe side (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:712
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d32c)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d32c,
+               1},
+              ordinal: 1,
+              line: 302,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:713: (test)
+
+.....
+Finished in 0.6 seconds (0.6s async, 0.00s sync)
+70 tests, 3 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### VR-HARMLESSDATA
+
+a log message computed outside the body is traced as a Multi: a false gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 1 failure`.
+
+```
+  1) test a fn at a harmless argument positive: data computed outside the body and logged in it is no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:716
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true} = one(a, :d32d)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d32d,
+               0},
+              ordinal: 1,
+              line: 297,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d32d, 0},
+                 297}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:717: (test)
+
+.......................
+Finished in 0.6 seconds (0.6s async, 0.00s sync)
+70 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### LC-NOCHECK
+
+the finding: a listed function does not check what it is given (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 2 failures`.
+
+```
+  1) test the one rule: a form that opens a scope, or anything else a local call of a listed function is held to the same rule (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:669
+     match (=) failed
+     code:  assert [%Scope{kind: :fun}] = Enum.reject(scopes(a, :local_listed), & &1.no_gap_noticed?)
+     left:  [%Anchor.Domain.Aggregates.Scope{kind: :fun}]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:670: (test)
+
+...
+
+  2) test the one rule: a form that opens a scope, or anything else a listed function in a body, given a value bound outside, is a gap of the body (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:656
+     ** (MatchError) no match of right hand side value:
+
+         []
+
+     code: for name <- [:d34b, :d34c, :d34d] do
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:660: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test the one rule: a form that opens a scope, or anything else a listed function in a body, given a value bound outside, is a gap of the body"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:659: (test)
+
+.................
+Finished in 0.6 seconds (0.6s async, 0.00s sync)
+70 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### LC-NOFOLLOW
+
+a listed function the project defines is not followed (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `142 tests, 1 failure`.
+
+```
+  1) test the one rule: a form that opens a scope, or anything else a listed function the project defines is followed, for its own writes (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:665
+     match (=) failed
+     code:  assert [_write] = nontx(a, :d35, 0).sites
+     left:  [_write]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:666: (test)
+
+.................
+Finished in 0.9 seconds (0.9s async, 0.00s sync)
+142 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### LC-NOTLISTED
+
+a listed function takes the plain project path (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `142 tests, 4 failures`.
+
+```
+  1) test the one rule: a form that opens a scope, or anything else a listed function in a body, given a value bound outside, is a gap of the body (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:656
+     ** (MatchError) no match of right hand side value:
+
+         []
+
+     code: for name <- [:d34b, :d34c, :d34d] do
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:660: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test the one rule: a form that opens a scope, or anything else a listed function in a body, given a value bound outside, is a gap of the body"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:659: (test)
+
+....
+
+  2) test a dependency's function a transaction or a Multi runs a dependency's listed transaction function is read as a scope, never unread (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:547
+     Expected truthy, got false
+     code: assert Enum.all?(scopes, &(&1.gaps == []))
+     arguments:
+
+         # 1
+         [
+           %Anchor.Domain.Aggregates.Scope{
+             mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d22, 0},
+             ordinal: 1,
+             line: 125,
+             kind: :transaction_function,
+             writes: [
+               %Anchor.Domain.Aggregates.WriteSite{
+                 mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d22, 0},
+                 line: 125,
+                 op: :insert,
+                 via: :repo,
+                 sources: [
+                   schema: AnchorFixtures.WriteSitesDefaultTest.S
+                 ],
+                 unresolved: nil,
+                 scopes: [2, 1],
+                 run_callback?: false
+               }
+             ],
+             keys: MapSet.new([
+               schema: AnchorFixtures.WriteSitesDefaultTest.S
+             ]),
+             no_gap_noticed?: true,
+             gaps: []
+           },
+           %Anchor.Domain.Aggregates.Scope{
+             mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d22, 0},
+             ordinal: 2,
+             line: 125,
+             kind: :fun,
+             writes: [
+               %Anchor.Domain.Aggregates.WriteSite{
+                 mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d22, 0},
+                 line: 125,
+                 op: :insert,
+                 via: :repo,
+                 sources: [
+                   schema: AnchorFixtures.WriteSitesDefaultTest.S
+                 ],
+                 unresolved: nil,
+                 scopes: [2, 1],
+                 run_callback?: false
+               }
+             ],
+             keys: MapSet.new([
+               schema: AnchorFixtures.WriteSitesDefaultTest.S
+             ]),
+             no_gap_noticed?: false,
+             gaps: [
+               {:unread,
+                {AnchorFixtures.WriteSitesDefaultTest.D, :d22, 0}, 125,
+                "unread: call of AnchorFixtures.WriteSitesDefaultTest.Lib.tx/1"}
+             ]
+           }
+         ]
+
+         # 2
+         #Function<5.25410521/1 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test a dependency's function a transaction or a Multi runs a dependency's listed transaction function is read as a scope, never unread"/1>
+
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:554: (test)
+
+......
+```
+
+### LC-LOCAL
+
+a local call of a listed function does not reach `literal_call/7` (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 1 failure`.
+
+```
+  1) test the one rule: a form that opens a scope, or anything else a local call of a listed function is held to the same rule (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:669
+     match (=) failed
+     code:  assert [%Scope{kind: :fun}] = Enum.reject(scopes(a, :local_listed), & &1.no_gap_noticed?)
+     left:  [%Anchor.Domain.Aggregates.Scope{kind: :fun}]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:670: (test)
+
+..........................................
+Finished in 0.6 seconds (0.6s async, 0.00s sync)
+70 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
