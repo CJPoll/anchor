@@ -572,8 +572,8 @@ defmodule Anchor.Domain.Failures do
 
   @doc """
   The issue for a graph rule whose needed demand analysis
-  (`Anchor.Domain.Demand`, DND-5715) crashed: it is not run, since without the
-  summaries it would check nothing.
+  (`Anchor.Domain.Demand`, DND-5715) crashed, or the behaviour read beside it did
+  (DND-5470): it is not run, since without the summaries it would check nothing.
   """
   @spec rule_demand_crashed(map(), atom(), term(), Exception.stacktrace(), String.t() | nil) ::
           Violation.t()
@@ -702,6 +702,21 @@ defmodule Anchor.Domain.Failures do
         "selects there have none that was analysed (every one is a root, generated, or has " <>
         "no Core body), so the bucket is below the rule's floor. Fix: select modules of " <>
         "#{bucket} with public functions, or set infer: false on #{bucket} in a reviewed change."
+    )
+  end
+
+  @doc """
+  The issue for a `parameter_reaches_sink` rule (DND-5470) that selects modules
+  of which not one function could be judged: it checked nothing.
+  """
+  @spec parameter_sink_unjudged(map(), String.t() | nil) :: Violation.t()
+  def parameter_sink_unjudged(rule, config_path) do
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "#{rule_label(rule)} judged no function: every function of the modules it selects is " <>
+        "exempt, has no Core body, or could not be analysed, so it checked nothing. Fix: " <>
+        "select modules with functions of their own, or remove the rule."
     )
   end
 

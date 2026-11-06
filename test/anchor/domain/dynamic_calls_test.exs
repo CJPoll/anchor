@@ -76,4 +76,27 @@ defmodule Anchor.Domain.DynamicCallsTest do
     g = graph([node(X, [{:other, 1, :def}])])
     assert DynamicCalls.candidates(g, {:info, 1}) == []
   end
+
+  # DND-5470. Sabotage record: ../../sabotage_records/parameter_reaches_sink-20261106-dnd_5470_param_sink_locality.md
+  describe "computed_name_count/1" do
+    defp call(from, to),
+      do: %Anchor.Domain.Graph.Call{from: from, to: to, kind: :apply, line: 1, line_source: :call}
+
+    test "counts a computed name once per caller and shape, never a fun apply or a known name" do
+      calls = [
+        call({X, :a, 0}, {:dynamic, nil, 1, :call}),
+        call({X, :a, 0}, {:dynamic, nil, 1, :call}),
+        call({X, :a, 0}, {:dynamic, nil, nil, :call}),
+        call({X, :b, 0}, {:dynamic, nil, 1, :call}),
+        call({X, :c, 0}, {:dynamic, nil, 1, :variable}),
+        call({X, :d, 0}, {:dynamic, :known, 1, :call})
+      ]
+
+      assert DynamicCalls.computed_name_count(%Graph{calls: calls}) == 3
+    end
+
+    test "no such call is a measured zero" do
+      assert DynamicCalls.computed_name_count(%Graph{}) == 0
+    end
+  end
 end

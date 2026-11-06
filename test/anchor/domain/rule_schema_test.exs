@@ -13,6 +13,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
   # DND-5441 (engine common keys, enforcement, baseline, validate_architecture/3):
   #   ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
   # DND-5476 (aggregate_declarations rows): ../../sabotage_records/aggregates-20261103-dnd_5476_aggregate_decls.md
+  # Sabotage record (DND-5470): ../../sabotage_records/parameter_reaches_sink-20261106-dnd_5470_param_sink_locality.md
   # DND-5459 (aggregate_write_sources rows): ../../sabotage_records/aggregates-20261103-dnd_5459_write_sets.md
   use ExUnit.Case, async: true
 
@@ -73,6 +74,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
     no_forwarding_function: "pahts",
     no_transitive_dependency: "forbiden_modules",
     no_tuple_match_in_head: "pahts",
+    parameter_reaches_sink: "min_module",
     single_control_flow: "pahts",
     struct_getter_convention: "pahts",
     struct_owned_by_module: "owned_namespace",

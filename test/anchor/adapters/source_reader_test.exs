@@ -4,12 +4,30 @@ defmodule Anchor.Adapters.SourceReaderTest do
   #
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5440_graph_runner.md
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5630_graph_hardening.md
+  # Sabotage record (DND-5489): ../../sabotage_records/sabotage-20261106-dnd_5470_param_sink_locality.md
   use ExUnit.Case, async: true
 
   alias Anchor.Adapters.SourceReader
   alias Anchor.Adapters.SourceSource
 
   @moduletag :tmp_dir
+
+  test "list/1: the project's lib sources, relative and sorted, and nothing else",
+       %{tmp_dir: tmp_dir} do
+    for path <- [
+          "lib/b/b.ex",
+          "lib/a.ex",
+          "lib/a.exs",
+          "apps/x/lib/x.ex",
+          "test/t.ex",
+          "apps/x/test/y.ex"
+        ] do
+      File.mkdir_p!(Path.dirname(Path.join(tmp_dir, path)))
+      File.write!(Path.join(tmp_dir, path), "")
+    end
+
+    assert SourceReader.list(tmp_dir) == ["apps/x/lib/x.ex", "lib/a.ex", "lib/b/b.ex"]
+  end
 
   test "each path relative to the root becomes its facts; unparseable and missing files are errors, never dropped",
        %{tmp_dir: tmp_dir} do

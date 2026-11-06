@@ -126,6 +126,7 @@ defmodule Anchor.Domain.Sabotage.CoverageMap do
   def validate(%{tests: []}), do: {:error, :no_tests}
   def validate(%{modules_traced: 0}), do: {:error, :no_modules}
   def validate(%{tests: [_ | _], modules_traced: n}) when is_integer(n) and n > 0, do: :ok
+  def validate(_map), do: {:error, :no_modules}
 
   @doc """
   The bytes two builds of one commit must share: the tests' sets, the leaks and

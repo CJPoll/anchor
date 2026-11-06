@@ -38,6 +38,9 @@ defmodule Anchor.Domain.Model do
     * `demand` — the demand analysis (`%Anchor.Domain.Demand{}`, DND-5715), set
       by the runner only when a rule that runs declares `needs: [:demand]`;
       `nil` otherwise;
+    * `callbacks` — the external behaviours' callbacks
+      (`%{behaviour => [{name, arity}]}`), read with `demand` when a
+      `parameter_reaches_sink` rule runs (DND-5470): `%{}` otherwise;
     * `facts` — `%{module => Classification.facts()}`, the facts each module
       was classified by (DND-5447: `architecture.roots` selectors read them
       too, `uses_module` included).
@@ -72,6 +75,7 @@ defmodule Anchor.Domain.Model do
     :classification,
     :config,
     aggregates: %Index{},
+    callbacks: %{},
     aggregate_analysis: nil,
     cfa: nil,
     demand: nil,
@@ -86,6 +90,7 @@ defmodule Anchor.Domain.Model do
           aggregates: Index.t(),
           aggregate_analysis: Analysis.t() | nil,
           config: Config.t(),
+          callbacks: %{module() => [{atom(), arity()}]},
           cfa: Cfa.t() | nil,
           demand: Demand.t() | nil,
           effects: Effects.t() | nil,

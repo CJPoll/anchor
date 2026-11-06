@@ -20,6 +20,14 @@ defmodule Anchor.Adapters.SourceReader do
     Map.new(paths, fn path -> {path, facts(path, File.read(Path.expand(path, root)))} end)
   end
 
+  @impl Anchor.Adapters.SourceSource
+  def list(root) do
+    ["lib/**/*.ex", "apps/*/lib/**/*.ex"]
+    |> Enum.flat_map(&Path.wildcard(Path.join(root, &1)))
+    |> Enum.map(&Path.relative_to(&1, root))
+    |> Enum.sort()
+  end
+
   defp facts(path, {:ok, text}), do: SourceFacts.from_source(path, text)
   defp facts(_path, {:error, posix}), do: {:error, posix}
 end

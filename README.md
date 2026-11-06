@@ -443,7 +443,8 @@ The Engine column is the one engine that runs the type: `ast` rules run as
 Credo checks over source, `graph` rules run under `mix anchor.graph` over the
 compiled code (DND-5440; `layering`, DND-5442, `context_acyclic`, DND-5445,
 `aggregate_declarations`, DND-5476, `aggregate_write_sources`, DND-5459,
-`effects_match_bucket`, DND-5447, `struct_owned_by_module_flow`, DND-5454,
+`effects_match_bucket`, DND-5447, `parameter_reaches_sink`, DND-5470,
+`struct_owned_by_module_flow`, DND-5454,
 `analyses_complete`, DND-5715, and `interface`, DND-5443). Credo never reports a
 `graph` rule as unchecked.
 
@@ -468,6 +469,7 @@ compiled code (DND-5440; `layering`, DND-5442, `context_acyclic`, DND-5445,
 | `no_forwarding_function` | none | none | `ast` |
 | `no_transitive_dependency` | `forbidden_modules`, `forbidden_patterns` | `forbidden_modules`, `forbidden_patterns` | `ast` |
 | `no_tuple_match_in_head` | none | none | `ast` |
+| `parameter_reaches_sink` | none | none | `graph` |
 | `single_control_flow` | none | none | `ast` |
 | `struct_getter_convention` | none | none | `ast` |
 | `struct_owned_by_module` | `owned_namespaces` | none | `ast` |
@@ -619,7 +621,7 @@ otherwise. `uses_module`, `recursive` and `min_files` are `ast` keys and are
 refused on a graph rule. A finding of a rule with `enforcement: report` prints
 `[report]` and does not fail the run. `--format json` prints `{"modules",
 "apps", "rules", "opaque", "no_core", "outside_root", "apply_sites", "interface_width",
-"dynamic_calls", "effects", "demand", "aggregates", "writes", "exit_code",
+"dynamic_calls", "effects", "demand", "parameter_sinks", "aggregates", "writes", "exit_code",
 "findings":
 [{rule_id, type, enforcement, key, file, line, message, fix}],
 "could_not_check": [...], "refused": [...], "held": [...]}`. `--only RULE_ID` (repeatable) runs only the
@@ -1152,7 +1154,10 @@ Likewise a rule that reads the effect inference (`Anchor.Domain.Effects`,
 DND-5447) declares `needs: [:cfa, :effects]`: the run then infers it once,
 after the flow analysis, and the summary and the JSON's `effects`
 (`functions`, `by_role`, `unresolved`, `not_analysed`) carry its counts;
-`effects` is `null` when no rule that runs needs it.
+`effects` is `null` when no rule that runs needs it. A rule that reads the
+demand analysis (`Anchor.Domain.Demand`, DND-5470) declares `needs: [:cfa,
+:demand]`: the run then analyses once, with the external behaviours' callbacks
+beside it; a zero in its counts was measured, and `null` means no such rule ran.
 
 An Erlang module in the project is classified by its name only (a `pattern:`
 selector): a classified one is an opaque node with no edges, counted in the
@@ -1170,6 +1175,79 @@ key on. The summary counts such modules as `(<n> outside the root)`, and the
 JSON as `outside_root`, so the layout is visible. An absolute path inside the
 root is made relative to it, so `paths:` selectors match it as they match
 every other file.
+
+### The `parameter_reaches_sink` rule (DND-5470)
+
+```yaml
+rules:
+  - type: parameter_reaches_sink
+    id: parameter_reaches_sink
+    paths: ["lib/**/*.ex"]
+
+architecture:
+  contexts:
+    depth: 2
+  buckets:
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/**/*.ex"]
+  calls:
+    domain: [domain]
+```
+
+Every parameter reaches the function's return value or an effect, directly or
+through the callees it is passed to. The answer comes from the demand analysis
+(`Anchor.Domain.Demand`) over Core Erlang, so a parameter bound, passed on and
+finally dropped, which the compiler misses, is reported at each level, naming
+the chain:
+
+```text
+lib/my_app/pricing.ex:6: [enforce] rule 1 (id: "parameter_reaches_sink", parameter_reaches_sink) MyApp.Pricing.f/2 parameter 2 (b) reaches no return value and no effect (chain: MyApp.Pricing.f/2 param 2 -> MyApp.Pricing.g/1 param 1 (dropped); call sites: 3). Fix: drop parameter 2 (b) of MyApp.Pricing.f/2 and stop passing it at its 3 call sites.
+```
+
+The key is `<id>|<Mod.fun/arity>|param <position>`, 1-based.
+
+An underscore name (`_opts`) is reported too: an unused input of a function
+that nothing obliges to take it is still a dead input. Reading part of a value
+is a use, and so is matching it: a clause pattern other than a variable, or a
+guard that reads the parameter.
+
+**Exempt**, because something else fixes the signature: a callback of a
+behaviour the module declares; a function captured anywhere in the project
+(`&M.f/2`); a public function a dynamic call can reach (`mod.f(x)`, by
+`Anchor.Domain.DynamicCalls`, and `apply(M, :f, args)` with args of unknown length,
+which reaches every module's public `f`); a public function the code names in full, a literal
+`{M, :f, args}` with a list of known length, in a term or a call (a child spec's
+`start:`, `spawn(M, :f, [a])`); and a generated function (a module with no literal
+`defmodule`, a `__name__`, a macro's output, the head a default argument
+generates).
+
+**Not analysed**, because an answer could be wrong: a function with no Core body;
+a function of a module that may be generated (`generated?: :unknown`); a public
+function of a module with an external behaviour whose callbacks could not be
+read. If nothing the rule selects could be judged, that is one fail-closed issue.
+
+Demand over-approximates what a function does with a parameter, so its imprecision
+only hides a finding: a parameter passed to an unresolved call is used. Who calls a
+function is another question, and there a finding can be false. A caller with no call
+edge and no full name is unseen: `apply(M, name, args)`, `spawn(M, :f, args)`,
+`spawn(mod, :f, [a])`, an MFA in variables. Reading any of them as naming every
+candidate would let one such call silence the rule, so what they might reach stays
+judged. A library that adds arguments to the MFA it is given is the same: `{M, :f, []}`
+names `f/0`, so the `f/2` it really calls stays judged (Plug's `body_reader:`). Before
+you drop a public function's parameter, check that no such caller relies on it. The run counts the `apply`s that compute a name, as a hint; a zero there
+does not rule out the other shapes. Each run prints all of it:
+
+```text
+; parameter_reaches_sink: 1900 apply sites precise, 74 fell to any, 724 imprecise parameters, 7 calls of a computed name, 2142 functions judged, 906 exempt, 15 not analysed
+```
+
+An `apply/3` whose target Core does not name is no apply site; a parameter passed
+to one is counted in the imprecise parameters. The JSON's `parameter_sinks` holds
+`precise`, `any`, `imprecise`, `computed_names`, `judged`, `exempt` and `not_analysed`. A zero there
+was measured; `null` means no such rule ran, or that its analysis crashed, which the
+run reports as an issue.
 
 ### Aggregates: the `aggregates:` section and the `aggregate_declarations` rule (DND-5476)
 
@@ -1507,6 +1585,8 @@ line.
 | The demand analysis a rule needs raises, throws or exits, or returns no `%Demand{}` (DND-5715) | 1 | the config | `rule 1 (id: "analyses_complete", analyses_complete) could not run: the demand analysis it needs (Anchor.Domain.Demand) crashed: ... Fix: this is an Anchor bug; file it with this line.` The other rules still run. |
 | The write analysis a rule needs raises, throws or exits, or returns no `%Analysis{}` (DND-5459) | 1 | the config | `rule 2 (id: "writes", aggregate_write_sources) could not run: the write analysis it needs (Anchor.Domain.Aggregates.Analysis) crashed: RuntimeError: ..., so it checked nothing. Fix: this is an Anchor bug; file it with this line.` |
 | An `effects_match_bucket` rule selects modules of a judged bucket of which no public function was analysed (DND-5447) | 1 | the config | `rule 4 (id: "effects", effects_match_bucket) judged no public function of bucket domain: the modules it selects there have none that was analysed (every one is a root, generated, or has no Core body), so the bucket is below the rule's floor. Fix: select modules of domain with public functions, or set infer: false on domain in a reviewed change.` |
+| The demand analysis a rule needs, or the behaviour read beside it, raises, throws or exits, or the analysis returns no `%Demand{}` (DND-5470) | 1 | the config | `rule 2 (id: "sinks", parameter_reaches_sink) could not run: the demand analysis it needs (Anchor.Domain.Demand) crashed: RuntimeError: ..., so it checked nothing. Fix: this is an Anchor bug; file it with this line.` One per rule that needs it; the rules that do not still run. |
+| A `parameter_reaches_sink` rule selects modules of which no function could be judged (DND-5470) | 1 | the config | `rule 2 (id: "sinks", parameter_reaches_sink) judged no function: every function of the modules it selects is exempt, has no Core body, or could not be analysed, so it checked nothing. Fix: select modules with functions of their own, or remove the rule.` |
 | Findings of a `report` rule | 0 | the finding | printed `[report]` |
 
 Exit 2 is a usage error (an unknown option, `--format` other than `text` or
@@ -1708,6 +1788,8 @@ sabotage:
     domain_strip_prefixes: []        # e.g. ["MyApp.Domain.", "MyApp."]; the longest match is dropped
     adr: "the repo's sabotage-record ADR"  # named next to each test still lacking a red
   survivors: .anchor/sabotage/survivors.txt  # the survivors list (DND-5483); named here, it must exist
+  behaviour_locality_baseline: .anchor/baselines/behaviour-locality.txt  # DND-5489; named here, it must exist
+  behaviour_locality_enforcement: report  # or enforce: fail on NEW, STALE or GREW
 ```
 
 ```gitignore
@@ -2016,6 +2098,51 @@ runs is wrong. `coverage-compare` exits:
 | the canonical bytes differ: each differing (test, function), each test in one build only and each ambient function is named, with a `Fix:` line. The fix goes in the test or the tool, never in an exclusion | 1 |
 | wrong arguments | 2 |
 | a map absent (a missing second build is never a pass), unreadable, of another version or measuring nothing; one file given as both builds; two maps not of one commit, Elixir and OTP; a map with no commit | 3, `COULD NOT MEASURE` |
+
+
+### Sabotage: behaviours and how far they spread
+
+```bash
+mix anchor.sabotage behaviours [--coverage PATH] [--format text|json] [--write-baseline] [--base REF]
+```
+
+A test case is a behaviour. Its **confirmed causes** are the functions it executed (the
+coverage map) and killed a mutant of (a `killed` row of a kill map). A function it only
+executed may be incidental, so it does not count. A test with no confirmed cause is
+**unconfirmed**, and the run counts those, so the gap shows: a function never mutated
+confirms nothing yet. `--format json` lists them, and each behaviour's functions.
+
+A behaviour's **directories** are the parent directories of its confirmed causes' files.
+A behaviour whose causes sit in many directories takes many places to change, so each
+directory is one line of a shrink-only baseline, keyed `<test file>::<full test name>`.
+There is no line number in the key, so moving a test changes nothing. A cause with no
+source file shows as `(generated)` and counts as no directory.
+
+The command runs no test. It prints up to 20 behaviours, widest first, the totals, then:
+
+| Line | Meaning |
+|---|---|
+| `NEW <key>` | the behaviour reaches one more directory than the baseline holds |
+| `STALE <key>` | it reaches one fewer: delete that line |
+| `GREW <key>` | with `--base`: the branch added this line to the baseline |
+
+Killers that name no test of the map, and kills of a function the map says their test
+never ran, confirm nothing and are counted on their own lines.
+
+`--write-baseline` creates `sabotage.behaviour_locality_baseline` (default
+`.anchor/baselines/behaviour-locality.txt`) and never replaces one. A default path with
+no file is an empty baseline, and says so.
+
+| Condition | Exit |
+|---|---|
+| measured, in `report` mode (the default), whatever the verdict; the baseline written | 0 |
+| in `enforce` mode: NEW, STALE or GREW | 1 |
+| in either mode: a baseline named in the config that is absent, or a malformed one | 1 |
+| usage; `--write-baseline` over an existing file | 2 |
+| no `sabotage:` config; no usable coverage map (`Fix: download a current anchor-coverage artifact (CI) and pass --coverage`) or one with no tests; a record that cannot be read; no `killed` row anywhere, or none that confirms a behaviour (`nothing confirms any cause yet`); the baseline unreadable, here or at `--base` | 3 |
+
+Anchor runs it in report mode after each successful coverage map on main
+(`.github/workflows/behaviour-locality.yml`).
 
 ## Check Types
 

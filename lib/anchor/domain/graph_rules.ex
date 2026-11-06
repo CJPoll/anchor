@@ -45,6 +45,7 @@ defmodule Anchor.Domain.GraphRules do
   alias Anchor.Domain.GraphRules.EffectsMatchBucket
   alias Anchor.Domain.GraphRules.Interface
   alias Anchor.Domain.GraphRules.Layering
+  alias Anchor.Domain.GraphRules.ParameterReachesSink
   alias Anchor.Domain.GraphRules.StructOwnedByModuleFlow
   alias Anchor.Domain.Model
 
@@ -62,6 +63,7 @@ defmodule Anchor.Domain.GraphRules do
     AggregateWriteSources,
     EffectsMatchBucket,
     Interface,
+    ParameterReachesSink,
     StructOwnedByModuleFlow,
     AnalysesComplete
   ]

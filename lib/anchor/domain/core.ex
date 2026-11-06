@@ -31,6 +31,9 @@ defmodule Anchor.Domain.Core do
   `lambdas/1`, `apply_sites/2`, `lambda_ordinal/1`, `site_ordinals/1` and
   `alloc_ordinal/1` read those annotations back, so the 0-CFA and its
   consumers share one numbering.
+
+  `mfa_references/1` reads a different fact, with no label: the literal
+  `{module, name, args}` triples a function holds (DND-5470).
   """
 
   alias Anchor.Domain.HigherOrder
@@ -140,6 +143,22 @@ defmodule Anchor.Domain.Core do
   @spec site_ordinals(:cerl.cerl()) :: [non_neg_integer()]
   def site_ordinals(node), do: label_value(node, :anchor_sites, [])
 
+  @doc """
+  The functions `core_fun` names in full, which call them where no call edge shows
+  it: a literal module, a literal name and an args list of known length, in a tuple
+  or a literal term (a child spec's `start:`) or as three arguments in a row of a
+  call, remote or local (`spawn(M, :f, [a])`). Each is `{M, :f, arity}`, listed once.
+
+  That shape is all it reads. Anything less names nothing and is not here: a
+  variable for the module, the name or the args, and a list of unknown length. A
+  call that merely has the shape (`foo(M, :f, [a])`) reads as one, which can only
+  exempt that exact name and arity.
+  """
+  @spec mfa_references(:cerl.cerl()) :: [mfa()]
+  def mfa_references(core_fun) do
+    core_fun |> collect(&node_references/1) |> Enum.uniq()
+  end
+
   # --- labelling ---------------------------------------------------------------
 
   defp label_node(node, {lambdas, sites, allocs}) do
@@ -207,6 +226,49 @@ defmodule Anchor.Domain.Core do
   defp holds_fun?(term) when is_map(term), do: term |> Map.to_list() |> Enum.any?(&holds_fun?/1)
   defp holds_fun?([head | tail]), do: holds_fun?(head) or holds_fun?(tail)
   defp holds_fun?(_term), do: false
+
+  # --- literal MFAs ------------------------------------------------------------
+
+  defp node_references(node) do
+    case :cerl.type(node) do
+      :tuple -> node |> :cerl.tuple_es() |> triple_reference()
+      :call -> node |> :cerl.call_args() |> window_references()
+      :apply -> node |> :cerl.apply_args() |> window_references()
+      :literal -> node |> :cerl.concrete() |> term_references()
+      _other -> []
+    end
+  end
+
+  defp window_references(args) do
+    args |> Enum.chunk_every(3, 1, :discard) |> Enum.flat_map(&triple_reference/1)
+  end
+
+  defp triple_reference([module, name, args]) do
+    if literal_atom?(module) and literal_atom?(name) and :cerl.is_c_list(args),
+      do: [{:cerl.concrete(module), :cerl.concrete(name), :cerl.list_length(args)}],
+      else: []
+  end
+
+  defp triple_reference(_elements), do: []
+
+  defp literal_atom?(node), do: :cerl.is_literal(node) and is_atom(:cerl.concrete(node))
+
+  defp term_references({module, name, args} = term)
+       when is_atom(module) and is_atom(name) and is_list(args) do
+    inner = term |> Tuple.to_list() |> Enum.flat_map(&term_references/1)
+    if List.improper?(args), do: inner, else: [{module, name, length(args)} | inner]
+  end
+
+  defp term_references(term) when is_tuple(term),
+    do: term |> Tuple.to_list() |> Enum.flat_map(&term_references/1)
+
+  defp term_references(term) when is_map(term),
+    do: term |> Map.to_list() |> Enum.flat_map(&term_references/1)
+
+  defp term_references([head | tail]),
+    do: term_references(head) ++ term_references(tail)
+
+  defp term_references(_term), do: []
 
   # --- reading -----------------------------------------------------------------
 

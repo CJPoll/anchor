@@ -9,8 +9,9 @@ defmodule Anchor.Adapters.SourceSource do
   entry per path: the file's `SourceFacts`, `{:error, :unparseable}` for a
   file that does not parse, or `{:error, reason}` for one that cannot be read.
   No raw text leaves the adapter (ADR 001). A path that cannot be read is an
-  error entry, never dropped; no paths is an empty map (DND-5636). The real adapter is
-  `Anchor.Adapters.SourceReader`.
+  error entry, never dropped; no paths is an empty map (DND-5636). `list/1` gives
+  the project's `lib` source files, relative to the root and sorted (DND-5489). The
+  real adapter is `Anchor.Adapters.SourceReader`.
   """
 
   alias Anchor.Domain.Graph.SourceFacts
@@ -20,4 +21,6 @@ defmodule Anchor.Adapters.SourceSource do
                 optional(String.t()) =>
                   SourceFacts.t() | {:error, :unparseable} | {:error, term()}
               }
+
+  @callback list(root :: Path.t()) :: [String.t()]
 end

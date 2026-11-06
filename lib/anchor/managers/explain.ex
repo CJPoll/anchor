@@ -33,7 +33,7 @@ defmodule Anchor.Managers.Explain do
   ## Options (the adapters, for tests)
 
   `:config_loader`, `:beam_source`, `:source_source`, `:graph_store`,
-  `:graph_rules`, `:cfa`, `:effects`, `:behaviour_source`, defaulting as
+  `:graph_rules`, `:cfa`, `:effects`, `:demand`, `:behaviour_source`, defaulting as
   `Anchor.Managers.Graph`'s do.
   """
 

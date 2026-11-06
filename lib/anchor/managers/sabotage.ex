@@ -23,6 +23,11 @@ defmodule Anchor.Managers.Sabotage do
   Delegated to `Anchor.Managers.Sabotage.Replay`: re-applies each landed
   record's mutants and runs their killers.
 
+  ## behaviours/2 (DND-5489)
+
+  Delegated to `Anchor.Managers.Sabotage.Behaviours`: each test's confirmed causes
+  and the directories they spread over, ratcheted by a baseline.
+
   ## scope/2 (DND-5472)
 
   The functions the working tree changed relative to the merge-base of `base`
@@ -52,6 +57,7 @@ defmodule Anchor.Managers.Sabotage do
   alias Anchor.Domain.Sabotage.Run
   alias Anchor.Domain.Sabotage.Scope
   alias Anchor.Domain.Sabotage.Replay.Result
+  alias Anchor.Managers.Sabotage.Behaviours
   alias Anchor.Managers.Sabotage.Coverage
   alias Anchor.Managers.Sabotage.CoverageCompare
   alias Anchor.Managers.Sabotage.Replay
@@ -85,6 +91,13 @@ defmodule Anchor.Managers.Sabotage do
   """
   @spec replay(map(), keyword()) :: Result.t()
   def replay(facts, opts \\ []), do: Replay.run(facts, opts)
+
+  @doc """
+  Reports each test's confirmed causes and judges their locality (DND-5489), and
+  returns `{exit_code, lines}`. See `Anchor.Managers.Sabotage.Behaviours`.
+  """
+  @spec behaviours(Behaviours.facts(), keyword()) :: {non_neg_integer(), [String.t()]}
+  def behaviours(facts, opts \\ []), do: Behaviours.run(facts, opts)
 
   @doc "Restores a leftover journal's file, if any (`mix anchor.sabotage restore`)."
   @spec restore(%{root: String.t()}, keyword()) :: Run.t()

@@ -1,0 +1,18 @@
+# The parameter_reaches_sink canary tree (DND-5470): every module is Domain;
+# the violating ones are named in its integration test, the rest are compliant
+# or exempt.
+rules:
+  - type: parameter_reaches_sink
+    id: sinks
+    bucket: domain
+
+architecture:
+  contexts:
+    depth: 2
+  buckets:
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/sinks/domain/**/*.ex"]
+  calls:
+    domain: [domain]

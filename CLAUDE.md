@@ -42,7 +42,7 @@ never an adapter.
 | Bucket | Modules |
 |---|---|
 | Framework | `Anchor.Check.*` (Credo checks, `Anchor.Check.Base`, `Anchor.Check.Source`), `Anchor.Aggregate` (the compile-time macro, DND-5476), `Mix.Tasks.Anchor.*` (`lib/mix/tasks/`; `Mix.Tasks.Anchor.Sabotage`, `.Graph`, `.Explain`), the `Anchor` module (by name), `Anchor.Sabotage.CoverageCollector` (an OTP process, in `lib/mix/tasks/anchor/sabotage/` so `mix anchor.graph` buckets it as Framework) |
-| Managers | `Anchor.Managers.Lint`, `Anchor.Managers.AstBaseline`, `Anchor.Managers.Sabotage` (`.Runner`, `.Coverage`, `.CoverageCompare`, `.Replay`), `Anchor.Managers.Graph` (`.Request`), `Anchor.Managers.Explain` |
+| Managers | `Anchor.Managers.Lint`, `Anchor.Managers.AstBaseline`, `Anchor.Managers.Sabotage` (`.Runner`, `.Coverage`, `.CoverageCompare`, `.Replay`, `.Behaviours`), `Anchor.Managers.Graph` (`.Request`), `Anchor.Managers.Explain` |
 | Side Effects | ports: `Anchor.Adapters.ConfigLoader`, `ChangeSource`, `BeamSource`, `Tracing`, `InProcessTests`, `ProjectModuleSource`, `CoverageStore`, `BaselineStore`, `GitBase`, `LintKeys`, `SourceSource`, `GraphStore`, `TestExecution`, `SourceMutation`, `BehaviourSource`; adapters: `ConfigFile`, `CredoKeys`, `GitChangeSource`, `BeamReader`, `BehaviourReader`, `CallTracer`, `SuiteRunner`, `ProjectModules`, `CoverageFile`, `RecordFile` (port `RecordStore`), `BaselineFile`, `GitShow`, `SourceReader`, `GraphArtifact`, `TestRunner`, `SourcePatcher`, `GitStatus`, `GitWorktree` (`lib/anchor/adapters/`); `GitEnv`, the environment the git adapters run git with (DND-5581); `Anchor.Sabotage.ExUnitFormatter` (`lib/anchor/sabotage/`) |
 | Domain | everything under `lib/anchor/domain/`, including `Anchor.Domain.Sabotage.*` (`Mutator`, `Operators`, `DiffHunks`, `FunctionSpans`, `Scope`, `CoverageMap`, `Record`, `RecordNaming`, `KillMap`, `ChangedTests`, `TestPath`: the one rule for a path handed to `mix test`, DND-5640) and `Anchor.Domain.Graph.*`, the graph rules (`GraphRules.*`), `Model`, `Classification`, `Interfaces`, `Explain`, `Subject`, `RuleShapes` |
 
@@ -152,6 +152,7 @@ Every rule type has exactly one engine, `@engine_by_type` in
 (`mix anchor.graph`, DND-5440; the graph types are `layering`, DND-5442,
 `context_acyclic`, DND-5445, `aggregate_declarations`, DND-5476,
 `aggregate_write_sources`, DND-5459, `effects_match_bucket`, DND-5447,
+`parameter_reaches_sink`, DND-5470,
 `struct_owned_by_module_flow`, DND-5454, `analyses_complete`, DND-5715, and
 `interface`, DND-5443). A new rule type adds its entry there too (compilation
 fails without it) and to the README table's Engine column (a test compares
@@ -483,6 +484,26 @@ uses its arguments. A new Core shape goes into `Transfer` with a row in
 `test/anchor/domain/demand/transfer_test.exs`. A field map may hold the key
 `:__struct__`: read it with `:maps`, never `Enum`.
 
+## The parameter_reaches_sink rule (DND-5470)
+
+`Anchor.Domain.GraphRules.ParameterReachesSink` (F2) reports each parameter whose
+sound demand is `:absent`, keyed `<id>|<mfa>|param <position>` (1-based), with the
+chain rebuilt from `Demand.Param.passes`. It needs `[:cfa, :demand]`: the runner
+stores `Model.demand` and, under the same guard, `Model.callbacks` (the external
+behaviours' callbacks, the same port the effect inference reads). Patterns and
+guards need no code here: they are uses in the summary. Exempt: callbacks,
+captures, a public function a dynamic call or a literal `{M, :f, [args]}`
+(`Core.mfa_references/1`) can reach, generated functions (a
+clause meta with `context` or `generated` is a macro's output, and a default's
+head has only generated arguments). Not analysed: no Core, `generated?: :unknown`,
+an external behaviour with no callbacks read. A caller with no edge and no full name
+(`apply(M, name, args)`, `spawn(mod, :f, [a])`) is unseen: reading it as naming every
+candidate would let one silence the rule, so what it might reach stays judged, and a
+public finding is checked by hand. `DynamicCalls.computed_name_count/1` counts the
+`apply`s, as a hint only. `GraphReport.parameter_sinks/4` is the summary's
+precision count. Its `Fix:` is the rule's own text until
+`Anchor.Domain.Placement` lands (DND-5448).
+
 ## Important Notes
 
 - When running Elixir code, use: `mix run -e "<elixir code>"`
@@ -545,6 +566,18 @@ difference fails naming the test and function: a defect in a test or the tool, f
 there and never excluded. A build whose map is missing is exit 3, never a pass. A
 red build is not stopped from reaching the comparison by `continue-on-error`, which
 would hide it, but by `if: !cancelled()` on the steps after it, so the job stays red.
+
+## Behaviour locality (DND-5489)
+
+`mix anchor.sabotage behaviours` (`Anchor.Managers.Sabotage.Behaviours`) joins the
+coverage map to every record's kill map. `BehaviourMap.build/3` (Domain): a test's
+confirmed causes are the functions it executed and killed a mutant of; only a `killed`
+row confirms; the key is `<file>::<full test name>`, no line. `locality_keys/1` repeats
+a key once per directory, the multiset `Baseline.compare/2` ratchets. Report mode exits
+0 except for what cannot be measured (3); a named-but-absent or malformed baseline is 1
+in both modes, since a ratchet it cannot read is no report of no drift. Anchor's own
+baseline waits for a CI map. `.github/workflows/behaviour-locality.yml` runs it after
+`Coverage map` by `workflow_run`, so `coverage-map.yml` is untouched.
 
 ## Sabotage records (DND-5484)
 

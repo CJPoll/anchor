@@ -3,6 +3,7 @@ defmodule Anchor.Domain.Sabotage.CoverageMapTest do
   # call and resolved once the run is over. Pids are only names here.
   # Sabotage record: ../../../sabotage_records/sabotage-20261103-dnd_5474_coverage_map.md
   # Sabotage record: ../../../sabotage_records/coverage_attribution-20261106-dnd_5691_causal_attribution.md
+  # Sabotage record (DND-5489): ../../../sabotage_records/sabotage-20261106-dnd_5470_param_sink_locality.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Sabotage.CoverageMap
