@@ -10,7 +10,6 @@ defmodule AnchorFixtures.Attribution.LeakCases do
   use ExUnit.Case, async: false
 
   alias AnchorFixtures.Attribution.F
-  alias AnchorFixtures.Attribution.Spin
 
   import AnchorFixtures.Attribution.Shared
 
@@ -45,16 +44,14 @@ defmodule AnchorFixtures.Attribution.LeakCases do
     receive(do: (:done -> :ok))
   end
 
-  # A task parked on a counter, because a message from B would hand it B's label.
-  defp parked_task(start, name, index) do
-    flags = :persistent_term.get(:attribution_flags)
+  # An owned process's label is never read, so these are released with no token.
+  defp parked_task(start, name) do
     me = self()
 
     fun = fn ->
+      Process.register(self(), name)
       send(me, {:running, name})
-      Spin.until_set(flags, index)
-      apply(F, name, [])
-      :counters.put(flags, index + 1, 1)
+      release(fn -> apply(F, name, []) end)
     end
 
     start.(fun)
@@ -62,25 +59,20 @@ defmodule AnchorFixtures.Attribution.LeakCases do
   end
 
   test "l1 spinner a" do
-    flags = :counters.new(2, [:atomics])
-    :persistent_term.put(:attribution_l1, flags)
     me = self()
 
     spawn(fn ->
       F.l1_spinner()
+      Process.register(self(), :attribution_l1)
       send(me, :started)
-      Spin.until_set(flags, 1)
-      F.l1_after()
-      :counters.put(flags, 2, 1)
+      release(&F.l1_after/0)
     end)
 
     receive(do: (:started -> :ok))
   end
 
   test "l1 spinner b" do
-    flags = :persistent_term.get(:attribution_l1)
-    :counters.put(flags, 1, 1)
-    Spin.until_set(flags, 2)
+    go_clean(:attribution_l1)
   end
 
   test "l2 released a" do
@@ -137,37 +129,30 @@ defmodule AnchorFixtures.Attribution.LeakCases do
   end
 
   test "l6 task a" do
-    parked_task(&Task.Supervisor.start_child(task_sup(), &1), :l6_task, 1)
+    parked_task(&Task.Supervisor.start_child(task_sup(), &1), :l6_task)
   end
 
   test "l6 task b" do
-    flags = :persistent_term.get(:attribution_flags)
-    :counters.put(flags, 1, 1)
-    Spin.until_set(flags, 2)
+    go_clean(:l6_task)
   end
 
   test "l8 task reply a" do
     parked_task(
       &Task.Supervisor.start_child(task_sup(), :erlang, :apply, [&1, []], restart: :temporary),
-      :l8_task_reply,
-      3
+      :l8_task_reply
     )
   end
 
   test "l8 task reply b" do
-    flags = :persistent_term.get(:attribution_flags)
-    :counters.put(flags, 3, 1)
-    Spin.until_set(flags, 4)
+    go_clean(:l8_task_reply)
   end
 
   test "l9 task nolink a" do
-    parked_task(&Task.Supervisor.async_nolink(task_sup(), &1), :l9_task_nolink, 5)
+    parked_task(&Task.Supervisor.async_nolink(task_sup(), &1), :l9_task_nolink)
   end
 
   test "l9 task nolink b" do
-    flags = :persistent_term.get(:attribution_flags)
-    :counters.put(flags, 5, 1)
-    Spin.until_set(flags, 6)
+    go_clean(:l9_task_nolink)
   end
 end
 
@@ -175,7 +160,7 @@ defmodule AnchorFixtures.Attribution.CleanCases do
   use ExUnit.Case, async: false
 
   alias AnchorFixtures.Attribution.F
-  alias AnchorFixtures.Attribution.Spin
+  alias AnchorFixtures.Attribution.Hold
   alias AnchorFixtures.Attribution.Worker
 
   import AnchorFixtures.Attribution.Shared
@@ -212,27 +197,19 @@ defmodule AnchorFixtures.Attribution.CleanCases do
   end
 
   test "n9 late cast a" do
-    flags = :counters.new(2, [:atomics])
-    :persistent_term.put(:attribution_n9, flags)
-    GenServer.cast(server(), {:n9_late_cast, flags})
+    GenServer.cast(server(), :n9_late_cast)
   end
 
   test "n9 late cast b" do
-    flags = :persistent_term.get(:attribution_n9)
-    :counters.put(flags, 1, 1)
-    Spin.until_set(flags, 2)
+    Hold.release(:n9_release)
   end
 
   test "n10 stale timer a" do
-    flags = :counters.new(2, [:atomics])
-    :persistent_term.put(:attribution_n10, flags)
-    :ok = GenServer.call(server(), {:n10_stale_timer, flags})
+    :ok = GenServer.call(server(), :n10_stale_timer)
   end
 
   test "n10 stale timer b" do
-    flags = :persistent_term.get(:attribution_n10)
-    :counters.put(flags, 1, 1)
-    Spin.until_set(flags, 2)
+    Hold.release(:n10_release)
   end
 
   test "n11 lost its label" do

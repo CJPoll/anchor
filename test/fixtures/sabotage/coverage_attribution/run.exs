@@ -3,8 +3,9 @@
 # trace a whole ExUnit run from inside one. Run by coverage_attribution_integration_test.exs:
 #   elixir -pa <anchor ebin> run.exs <out.etf>
 # Each case's function is its own, so the map says which call went where. Nothing
-# here waits on a clock: a wait blocks on a message, or spins on a :counters word
-# where a message would change the label being tested.
+# here waits on a clock or spins: every wait blocks on a message. A server handler
+# that must keep a label across its wait puts its token back after it
+# (Attribution.Hold), because a message with no token clears it.
 [out] = System.argv()
 
 alias Anchor.Adapters.CallTracer
@@ -32,6 +33,7 @@ defmodule AnchorFixtures.Attribution.Server do
   @moduledoc false
   use GenServer
   alias AnchorFixtures.Attribution.F
+  alias AnchorFixtures.Attribution.Hold
 
   def init(state), do: {:ok, state}
 
@@ -67,24 +69,25 @@ defmodule AnchorFixtures.Attribution.Server do
 
   # A stale label on a server's timer. The message is armed here, under A's label,
   # and read only once B has opened; a timer message does not clear a token.
-  def handle_call({:n10_stale_timer, flags}, from, state) do
+  def handle_call(:n10_stale_timer, from, state) do
     Process.send_after(self(), :n10_tick, 0)
     GenServer.reply(from, :ok)
-    AnchorFixtures.Attribution.Spin.until_set(flags, 1)
 
-    receive do
-      :n10_tick -> F.n10_stale_timer()
-    end
+    ack =
+      Hold.until_released(:n10_release, fn ->
+        receive do
+          :n10_tick -> F.n10_stale_timer()
+        end
+      end)
 
-    :counters.put(flags, 2, 1)
+    Hold.done(ack)
     {:noreply, state}
   end
 
   # A late cast: the handler runs on past A's return, still holding A's label.
-  def handle_cast({:n9_late_cast, flags}, state) do
-    AnchorFixtures.Attribution.Spin.until_set(flags, 1)
-    F.n9_late_cast()
-    :counters.put(flags, 2, 1)
+  def handle_cast(:n9_late_cast, state) do
+    ack = Hold.until_released(:n9_release, &F.n9_late_cast/0)
+    Hold.done(ack)
     {:noreply, state}
   end
 
@@ -95,14 +98,32 @@ defmodule AnchorFixtures.Attribution.Server do
   end
 end
 
-defmodule AnchorFixtures.Attribution.Spin do
+defmodule AnchorFixtures.Attribution.Hold do
   @moduledoc false
-  def until_set(flags, index) do
-    if :counters.get(flags, index) == 1 do
-      :ok
-    else
-      :erlang.yield()
-      until_set(flags, index)
+  # A handler still holding the label it was called with, once the next test has
+  # released it: the release has no token and clears this process's, so it goes back.
+  def until_released(tag, fun) do
+    token = :seq_trace.get_token()
+
+    receive do
+      {^tag, ack} ->
+        :seq_trace.set_token(token)
+        fun.()
+        ack
+    end
+  end
+
+  # The test must not take this handler's stale label from the answer.
+  def done(ack), do: send(AnchorFixtures.Attribution.Shared.clean(), {:send, ack, :done})
+
+  def release(tag) do
+    send(
+      AnchorFixtures.Attribution.Shared.clean(),
+      {:send, AnchorFixtures.Attribution.Shared.server(), {tag, self()}}
+    )
+
+    receive do
+      :done -> :ok
     end
   end
 end
@@ -148,7 +169,6 @@ end
 :persistent_term.put(:attribution_server, server)
 :persistent_term.put(:attribution_clean, AnchorFixtures.Attribution.Clean.start())
 :persistent_term.put(:attribution_task_sup, task_sup)
-:persistent_term.put(:attribution_flags, :counters.new(8, [:atomics]))
 
 ExUnit.start(
   autorun: false,

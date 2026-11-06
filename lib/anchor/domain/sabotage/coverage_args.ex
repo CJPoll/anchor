@@ -3,7 +3,7 @@ defmodule Anchor.Domain.Sabotage.CoverageArgs do
   What `mix anchor.sabotage coverage` hands to `mix test` (DND-5691). Pure
   **Domain**. The map is of the whole suite, so a test argument that chooses
   files is refused: a path, and `--failed`, `--stale` or `--partitions`. Filters
-  (`--only`, `--exclude`, `--include`) still pass through, and every test they
+  (`--only`, `--exclude`, `--include`, `--name-pattern`) still pass through, and every test they
   filter out is still counted.
 
   An argument this cannot place (an unknown switch's value included) reads as a

@@ -110,8 +110,10 @@ defmodule Anchor.Integration.CoverageIntegrationTest do
       ~s(["coverage", "--local", "--out", "map.etf", "--", "--exclude", "excluded_here", "--seed", "0"])
 
     System.cmd(
-      "elixir",
+      "timeout",
       [
+        "120",
+        "elixir",
         "-pa",
         ebin,
         "-S",

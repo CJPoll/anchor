@@ -188,8 +188,8 @@ defmodule Anchor.Adapters.CallTracerTest do
       %{sup: sup}
     end
 
-    # Each started task waits for the go, so a spawn event's arguments are read
-    # with the task still alive and no timing matters.
+    # The spawn event is read after the task returned: its arguments are in the
+    # trace message, so no timing matters.
     test "6: Task.Supervisor.start_child/3 is the noreply shape", %{sup: sup} do
       me = self()
 
