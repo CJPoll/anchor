@@ -11,6 +11,9 @@ rules:
   - type: reachable_from_root
     id: reachable_from_root
     paths: ["lib/placement/**/*.ex"]
+  - type: no_inert_hop
+    id: no_inert_hop
+    paths: ["lib/placement/**/*.ex"]
 
 architecture:
   contexts:

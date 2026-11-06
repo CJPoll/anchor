@@ -3,12 +3,15 @@ defmodule Anchor.Domain.PlacementTest do
   # models (Anchor.Test.PlacementModels). No beams.
   #
   # Sabotage record: ../../sabotage_records/placement-20261106-dnd_5448_placement_core.md
+  # DND-5461 (render/1 joins this file, the mirror the generated sabotage runs):
+  # ../../sabotage_records/placement-20261106-dnd_5461_placement_rules.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.PlacementModels
 
   alias Anchor.Domain.Digraph
   alias Anchor.Domain.Placement
+  alias Anchor.Domain.Proposal
 
   @line_struct {Inv.Line, "domain", [], struct: [:x]}
   @root {W, "framework", [{:a, 0}, {:b, 0}], []}
@@ -541,6 +544,180 @@ defmodule Anchor.Domain.PlacementTest do
   describe "facts/2" do
     test "nil for a function the model does not hold" do
       assert facts([@root], [], {Nope, :f, 0}) == nil
+    end
+  end
+
+  defp render_proposal(reason, proposed, evidence \\ []) do
+    %Proposal{
+      level: :function,
+      subject: {F, :line, 1},
+      current: F,
+      proposed: proposed,
+      rule: :function_placement,
+      reason: reason,
+      evidence: evidence
+    }
+  end
+
+  describe "render/1" do
+    test "output owner text" do
+      assert Placement.render(render_proposal(:output_type_owner, Inv.Line)) ==
+               "move F.line/1 to Inv.Line (it returns %Inv.Line{}; the owner of a type holds its " <>
+                 "transitions)"
+    end
+
+    test "input owner text" do
+      assert Placement.render(render_proposal(:input_type_owner, Lease)) ==
+               "move F.line/1 to Lease (its result is computed from %Lease{})"
+    end
+
+    test "dominated text" do
+      assert Placement.render(render_proposal(:dominated_by, Inv)) ==
+               "move F.line/1 into Inv as a private function (only Inv calls it)"
+    end
+
+    test "unreachable text starts delete and names the alternative" do
+      assert Placement.render(render_proposal(:unreachable, :delete)) ==
+               "delete F.line/1 (no root reaches it), or add the root that should call it"
+    end
+
+    test "bucket text names the context and module when known, and the evidence" do
+      assert Placement.render(
+               render_proposal(:bucket_from_effects, {:bucket, :managers, "App.B", App.B.Inv}, [
+                 "a -> b"
+               ])
+             ) == "move F.line/1 to the managers bucket of App.B (App.B.Inv): a -> b"
+
+      assert Placement.render(
+               render_proposal(:bucket_from_effects, {:bucket, :domain, nil, nil}, ["x"])
+             ) ==
+               "move F.line/1 to the domain bucket: x"
+    end
+
+    test "inert hop text names the callers and the target (DND-5461)" do
+      hop = fn callers ->
+        %Proposal{
+          render_proposal(:inert_hop, {:inline, {N, :g, 1}}, ["forwards to N.g/1", callers])
+          | rule: :no_inert_hop
+        }
+      end
+
+      assert Placement.render(hop.("callers: A.x/1, B.y/2")) ==
+               "inline F.line/1: its callers (A.x/1, B.y/2) call N.g/1 directly (it forwards " <>
+                 "without crossing a bucket, context, app, aggregate, interface or callback boundary)"
+
+      assert Placement.render(hop.("dynamic callers only")) =~
+               "inline F.line/1: its callers (dynamic callers only) call N.g/1 directly"
+    end
+
+    test "an unknown reason raises: there is no default text" do
+      assert_raise FunctionClauseError, fn -> Placement.render(render_proposal(:nope, F)) end
+    end
+
+    test "the key has no line number and is stable when lines shift" do
+      build = fn line ->
+        model =
+          model(
+            [
+              {W, "framework", [{:run, 1}], []},
+              {Round, "domain", [{:r, 1}], []},
+              {Inv, "domain", [{:total, 1}], []}
+            ],
+            [{{W, :run, 1}, {Inv, :total, 1}}, {{Inv, :total, 1}, {Round, :r, 1}}]
+          )
+
+        model = put_in(model.graph.modules[Round].functions[{:r, 1}].line, line)
+        model |> Placement.build() |> Placement.proposals(model, :function) |> Enum.map(& &1.key)
+      end
+
+      assert build.(10) == build.(500)
+      assert build.(10) == ["function_placement|function|Round.r/1|Inv"]
+    end
+  end
+
+  describe "to_violation/3" do
+    @rule %{type: :function_placement, id: "r"}
+
+    defp violation_message(reason, subject, proposed, opts \\ []) do
+      model =
+        model(
+          [
+            {F, "domain", [{:line, 1}], []},
+            {Mgr, "managers", [{:run, 1}], []},
+            {Ad, "adapters", [{:get, 1}], []}
+          ],
+          []
+        )
+
+      proposal = %Proposal{
+        level: :function,
+        subject: subject,
+        current: elem(subject, 0),
+        proposed: proposed,
+        rule: Keyword.get(opts, :rule, :function_placement),
+        reason: reason,
+        evidence: Keyword.get(opts, :evidence, []),
+        key: Keyword.get(opts, :key, "function_placement|function|x|y")
+      }
+
+      Placement.to_violation(proposal, model, @rule).message
+    end
+
+    defp effects_message(subject, role, evidence) do
+      violation_message(:bucket_from_effects, subject, {:bucket, role, nil, nil},
+        rule: :effects_match_bucket,
+        evidence: evidence,
+        key: "effects_match_bucket|x|#{role}"
+      )
+    end
+
+    test "each owner reason says why before the Fix" do
+      assert violation_message(:output_type_owner, {F, :line, 1}, Inv) ==
+               "F.line/1 is in F (bucket domain), but it returns %Inv{}. Fix: " <>
+                 Placement.render(render_proposal(:output_type_owner, Inv))
+
+      assert violation_message(:input_type_owner, {F, :line, 1}, Inv) =~
+               "F.line/1 is in F (bucket domain), but its result is computed from %Inv{}. Fix: "
+
+      assert violation_message(:dominated_by, {F, :line, 1}, Inv) =~
+               "F.line/1 is in F (bucket domain), but only Inv calls it. Fix: "
+    end
+
+    test "an unreachable function's sentence" do
+      assert violation_message(:unreachable, {F, :line, 1}, :delete) =~
+               ~r/^F.line\/1 is public and no root reaches it. Fix: delete/
+    end
+
+    test "an inert hop's sentence names the target (DND-5461)" do
+      message =
+        violation_message(:inert_hop, {F, :line, 1}, {:inline, {N, :g, 1}},
+          evidence: ["forwards to N.g/1", "callers: A.x/1"]
+        )
+
+      assert message ==
+               "F.line/1 only forwards to N.g/1, and the hop crosses no boundary. Fix: inline " <>
+                 "F.line/1: its callers (A.x/1) call N.g/1 directly (it forwards without crossing " <>
+                 "a bucket, context, app, aggregate, interface or callback boundary)"
+    end
+
+    test "each effects sentence names the bucket and what the inference found" do
+      assert effects_message({F, :line, 1}, :adapters, ["F.line/1 -> File.read/1"]) =~
+               ~r/^F.line\/1 is in bucket domain \(domain\) but reaches an effect. Fix: /
+
+      assert effects_message({Mgr, :run, 1}, :adapters, ["x"]) =~
+               ~r/^Mgr.run\/1 is in bucket managers \(managers\) but calls an effect itself. Fix: /
+
+      assert effects_message({Mgr, :run, 1}, :domain, ["x"]) =~
+               ~r/^Mgr.run\/1 is in bucket managers but reaches no effect. Fix: /
+
+      assert effects_message({Ad, :get, 1}, :managers, ["Ad.get/1 -> B.c/1 -> File.read/1"]) =~
+               ~r/^Ad.get\/1 is in bucket adapters \(adapters\) but reaches effects only through B.c\/1. Fix: /
+
+      assert effects_message({Ad, :get, 1}, :managers, ["Ad.get/1"]) =~
+               "reaches effects only through Ad.get/1."
+
+      assert effects_message({Ad, :get, 1}, :framework, ["x"]) =~
+               ~r/^Ad.get\/1 is in bucket adapters \(adapters\) but infers framework. Fix: /
     end
   end
 end

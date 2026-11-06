@@ -153,6 +153,7 @@ Every rule type has exactly one engine, `@engine_by_type` in
 `context_acyclic`, DND-5445, `aggregate_declarations`, DND-5476,
 `aggregate_write_sources`, DND-5459, `effects_match_bucket`, DND-5447,
 `function_placement`, DND-5448,
+`no_inert_hop`, DND-5461,
 `parameter_reaches_sink`, DND-5470,
 `reachable_from_root`, DND-5448,
 `struct_owned_by_module_flow`, DND-5454, `analyses_complete`, DND-5715, and
@@ -540,7 +541,7 @@ dominator and reachability (`Placement.CallGraph`, `GraphAlgorithms.dominators/2
 macro counts as a root). A placement rule reports `Placement.proposals/3`, and a violation
 is `Placement.to_violation/3` of an `Anchor.Domain.Proposal`, its `Fix:` exactly
 `Placement.render/1`, one clause per reason, an unknown reason raising. A new reason adds its
-render clause and a row in `placement_render_test.exs`; a new rule type reports through
+render clause and a row in `placement_test.exs` (`describe "render/1"`); a new rule type reports through
 `proposals/3` and joins `test/fixtures/graph_canary/placement/` and its `EXPECTED` manifest.
 The rule order is `Placement.Rules`' moduledoc. `effects_match_bucket` is rule 1: its key stays
 `<rule>|<mfa>|<role>`, the key its landed baselines hold. The runner builds the model once

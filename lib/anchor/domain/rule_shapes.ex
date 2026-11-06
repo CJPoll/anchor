@@ -40,6 +40,7 @@ defmodule Anchor.Domain.RuleShapes do
     no_discarded_pure_expression: Checks.NoDiscardedPureExpression,
     no_discarding_arrow_in_with: Checks.NoDiscardingArrowInWith,
     no_forwarding_function: Checks.NoForwardingFunction,
+    no_inert_hop: GraphRules.NoInertHop,
     no_transitive_dependency: Checks.NoTransitiveDependency,
     no_tuple_match_in_head: Checks.NoTupleMatchInHead,
     parameter_reaches_sink: GraphRules.ParameterReachesSink,

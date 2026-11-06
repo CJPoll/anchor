@@ -230,6 +230,8 @@ defmodule Anchor.Domain.RuleSchema do
     no_discarded_pure_expression: ~w(pure_patterns),
     no_discarding_arrow_in_with: [],
     no_forwarding_function: [],
+    # DND-5461: no_inert_hop reads only the graph common keys.
+    no_inert_hop: [],
     no_transitive_dependency: ~w(forbidden_modules forbidden_patterns),
     no_tuple_match_in_head: [],
     # DND-5470: parameter_reaches_sink reads only the graph common keys.
@@ -264,6 +266,7 @@ defmodule Anchor.Domain.RuleSchema do
     no_discarded_pure_expression: [],
     no_discarding_arrow_in_with: [],
     no_forwarding_function: [],
+    no_inert_hop: [],
     no_transitive_dependency: ~w(forbidden_modules forbidden_patterns),
     no_tuple_match_in_head: [],
     parameter_reaches_sink: [],
@@ -296,6 +299,7 @@ defmodule Anchor.Domain.RuleSchema do
     no_discarded_pure_expression: :ast,
     no_discarding_arrow_in_with: :ast,
     no_forwarding_function: :ast,
+    no_inert_hop: :graph,
     no_transitive_dependency: :ast,
     no_tuple_match_in_head: :ast,
     parameter_reaches_sink: :graph,

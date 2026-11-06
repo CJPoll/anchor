@@ -16,6 +16,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
   # Sabotage record (DND-5470): ../../sabotage_records/parameter_reaches_sink-20261106-dnd_5470_param_sink_locality.md
   # DND-5459 (aggregate_write_sources rows): ../../sabotage_records/aggregates-20261103-dnd_5459_write_sets.md
   # Sabotage record (DND-5448): ../../sabotage_records/placement-20261106-dnd_5448_placement_core.md
+  # Sabotage record (DND-5461): ../../sabotage_records/placement-20261106-dnd_5461_placement_rules.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config
@@ -74,6 +75,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
     no_discarded_pure_expression: "pure_pattern",
     no_discarding_arrow_in_with: "pahts",
     no_forwarding_function: "pahts",
+    no_inert_hop: "min_module",
     no_transitive_dependency: "forbiden_modules",
     no_tuple_match_in_head: "pahts",
     parameter_reaches_sink: "min_module",

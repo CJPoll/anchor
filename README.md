@@ -444,7 +444,7 @@ Credo checks over source, `graph` rules run under `mix anchor.graph` over the
 compiled code (DND-5440; `layering`, DND-5442, `context_acyclic`, DND-5445,
 `aggregate_declarations`, DND-5476, `aggregate_write_sources`, DND-5459,
 `effects_match_bucket`, DND-5447, `function_placement`, DND-5448,
-`parameter_reaches_sink`, DND-5470, `reachable_from_root`, DND-5448,
+`no_inert_hop`, DND-5461, `parameter_reaches_sink`, DND-5470, `reachable_from_root`, DND-5448,
 `struct_owned_by_module_flow`, DND-5454,
 `analyses_complete`, DND-5715, and `interface`, DND-5443). Credo never reports a
 `graph` rule as unchecked.
@@ -469,6 +469,7 @@ compiled code (DND-5440; `layering`, DND-5442, `context_acyclic`, DND-5445,
 | `no_discarded_pure_expression` | `pure_patterns` | none | `ast` |
 | `no_discarding_arrow_in_with` | none | none | `ast` |
 | `no_forwarding_function` | none | none | `ast` |
+| `no_inert_hop` | none | none | `graph` |
 | `no_transitive_dependency` | `forbidden_modules`, `forbidden_patterns` | `forbidden_modules`, `forbidden_patterns` | `ast` |
 | `no_tuple_match_in_head` | none | none | `ast` |
 | `parameter_reaches_sink` | none | none | `graph` |
@@ -1313,6 +1314,56 @@ Over a project whose every non-framework bucket is an interface, `function_place
 judges nothing, and says so. Anchor's own `.anchor.yml` is such a project, and it has one
 computed name (`Mutator.generate/4`), so it enables neither rule yet; its
 `effects_match_bucket` builds the model on every run.
+
+### The `no_inert_hop` rule (DND-5461)
+
+```yaml
+rules:
+  - type: no_inert_hop
+    id: no_inert_hop
+    paths: ["lib/**/*.ex"]
+
+architecture:
+  contexts:
+    depth: 2
+  buckets:
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/**/domain/**/*.ex"]
+    - name: web
+      role: framework
+      select:
+        - paths: ["lib/**/web/**/*.ex"]
+  calls:
+    domain: [domain]
+    web: [domain]
+```
+
+A function is a **forwarder** when its Core Erlang is one clause of distinct bare
+parameters, guard `true`, whose body is one call to another module's function with
+exactly those parameters, in order. `defdelegate` compiles to the same Core, so it is read
+the same way. A pattern, a guard, a second clause, a literal, extra or reordered argument,
+a transforming pipe, or a default argument makes it no forwarder. A hop inside one module
+is the AST rule `no_forwarding_function`'s.
+
+A forwarder from `M.f` to `N.g` is **inert** only when it crosses no boundary, and then it
+is one violation, proposal `inline`: its callers call `N.g` directly. It is legal when:
+
+- `N` is not a project module (a wrapper over a dependency or the standard library is an
+  adapter seam);
+- `M` and `N` are in different buckets, contexts or OTP apps;
+- aggregates are declared and `M` and `N` belong to different ones;
+- `M` is an interface module and `N` is not (a facade forwarding to its interior);
+- `M.f` implements a behaviour callback (its signature is the behaviour's).
+
+So Framework to Manager to Adapter forwarding and a context facade's `defdelegate`s are
+legal by construction. An unclassified module is reported by the run; a hop to or from one
+is not judged inert. The evidence lists the static callers, or says `dynamic callers only`.
+
+```text
+lib/billing/domain/totals.ex:2: [enforce] rule 1 (id: "no_inert_hop", no_inert_hop) Billing.Domain.Totals.sum/1 only forwards to Billing.Domain.Math.sum/1, and the hop crosses no boundary. Fix: inline Billing.Domain.Totals.sum/1: its callers (BillingWeb.Show.run/1) call Billing.Domain.Math.sum/1 directly (it forwards without crossing a bucket, context, app, aggregate, interface or callback boundary)
+```
 
 ### The `parameter_reaches_sink` rule (DND-5470)
 

@@ -3,4 +3,5 @@ effects_match_bucket|AnchorFixtures.PlacementTest.Billing.Managers.Calc.total/1|
 function_placement|function|AnchorFixtures.PlacementTest.Billing.Domain.Format.invoice_line/1|AnchorFixtures.PlacementTest.Billing.Domain.Invoice.Line
 function_placement|function|AnchorFixtures.PlacementTest.Billing.Domain.Lease.expired?/2|AnchorFixtures.PlacementTest.Billing.Domain.Invoice
 function_placement|function|AnchorFixtures.PlacementTest.Billing.Domain.Rounding.round_cents/1|AnchorFixtures.PlacementTest.Billing.Domain.Statement
+no_inert_hop|function|AnchorFixtures.PlacementTest.Billing.Domain.Totals.sum/1|AnchorFixtures.PlacementTest.Billing.Domain.Statement.total/1
 reachable_from_root|function|AnchorFixtures.PlacementTest.Billing.Domain.Dead.unused/0|delete

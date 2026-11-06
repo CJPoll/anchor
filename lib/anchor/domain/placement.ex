@@ -10,6 +10,9 @@ defmodule Anchor.Domain.Placement do
   proposed, built by `to_violation/3`, and its `Fix:` is `render/1` of the proposal,
   character for character. The rule order is `Anchor.Domain.Placement.Rules`.
 
+  The other function-level rule is `no_inert_hop` (DND-5461): a forwarder that
+  crosses no boundary, read from Core by `Anchor.Domain.Placement.Forwarders`.
+
   ## Roots
 
   `roots` are the effect inference's (`Anchor.Domain.Roots`), plus every public macro:
@@ -40,6 +43,7 @@ defmodule Anchor.Domain.Placement do
   alias Anchor.Domain.GraphAlgorithms
   alias Anchor.Domain.Model
   alias Anchor.Domain.Placement.CallGraph
+  alias Anchor.Domain.Placement.Forwarders
   alias Anchor.Domain.Placement.FunctionFacts
   alias Anchor.Domain.Placement.Ownership
   alias Anchor.Domain.Placement.Rules
@@ -83,7 +87,14 @@ defmodule Anchor.Domain.Placement do
 
   @typedoc "What `proposals/3` lists: a level, or one rule's own."
   @type selection ::
-          :function | :function_placement | :reachable_from_root | :effects_match_bucket
+          :function
+          | :function_placement
+          | :reachable_from_root
+          | :effects_match_bucket
+          | :no_inert_hop
+
+  @rules [:function_placement, :reachable_from_root, :effects_match_bucket, :no_inert_hop]
+  @levels [:function]
 
   @doc "The model of `model`; see the moduledoc."
   @spec build(Model.t()) :: t()
@@ -113,15 +124,16 @@ defmodule Anchor.Domain.Placement do
   def facts(%__MODULE__{functions: functions}, mfa), do: Map.get(functions, mfa)
 
   @doc """
-  The proposals of `selection`, sorted by key: `:function` is every one, the others
-  one rule's. Under lost precision `:reachable_from_root` lists none.
+  The proposals of `selection`, sorted by key: a level (`:function`) is every
+  proposal of that level, a rule type one rule's. Under lost precision
+  `:reachable_from_root` lists none.
   """
   @spec proposals(t(), Model.t(), selection()) :: [Proposal.t()]
-  def proposals(%__MODULE__{proposals: proposals}, %Model{}, :function), do: proposals
+  def proposals(%__MODULE__{proposals: proposals}, %Model{}, level) when level in @levels,
+    do: Enum.filter(proposals, &(&1.level == level))
 
-  def proposals(%__MODULE__{proposals: proposals}, %Model{}, rule)
-      when rule in [:function_placement, :reachable_from_root, :effects_match_bucket],
-      do: Enum.filter(proposals, &(&1.rule == rule))
+  def proposals(%__MODULE__{proposals: proposals}, %Model{}, rule) when rule in @rules,
+    do: Enum.filter(proposals, &(&1.rule == rule))
 
   @doc "The one line a placement `Fix:` carries. An unknown reason raises: no default text."
   @spec render(Proposal.t()) :: String.t()
@@ -149,6 +161,12 @@ defmodule Anchor.Domain.Placement do
 
   def render(%Proposal{reason: :unreachable} = proposal) do
     "delete #{subject(proposal)} (no root reaches it), or add the root that should call it"
+  end
+
+  def render(%Proposal{reason: :inert_hop, proposed: {:inline, to}, evidence: [_to, callers]} = p) do
+    "inline #{subject(p)}: its callers (#{String.replace_prefix(callers, "callers: ", "")}) " <>
+      "call #{ViolationKey.mfa(to)} directly (it forwards without crossing a bucket, context, " <>
+      "app, aggregate, interface or callback boundary)"
   end
 
   @doc """
@@ -203,6 +221,10 @@ defmodule Anchor.Domain.Placement do
 
   defp headline(%Proposal{reason: :unreachable} = proposal, _model),
     do: "#{subject(proposal)} is public and no root reaches it."
+
+  defp headline(%Proposal{reason: :inert_hop, proposed: {:inline, to}} = proposal, _model),
+    do:
+      "#{subject(proposal)} only forwards to #{ViolationKey.mfa(to)}, and the hop crosses no boundary."
 
   defp headline(%Proposal{reason: reason} = proposal, model) do
     {module, _f, _a} = proposal.subject
@@ -272,7 +294,7 @@ defmodule Anchor.Domain.Placement do
   end
 
   defp facts_for_ownership(mfa, function, node) do
-    %FunctionFacts{mfa: mfa, kind: function.kind, generated?: generated?(function, node)}
+    %FunctionFacts{mfa: mfa, kind: function.kind, generated?: generated_function?(function, node)}
   end
 
   defp answers(graph, mfa, function) do
@@ -307,7 +329,7 @@ defmodule Anchor.Domain.Placement do
       idom: idom,
       reachable?: idom != nil,
       shared?: GraphAlgorithms.shared?(dominators, mfa),
-      generated?: generated?(function, node),
+      generated?: generated_function?(function, node),
       callers: calls.digraph |> Digraph.predecessors(mfa),
       named?: MapSet.member?(calls.named, mfa)
     }
@@ -316,10 +338,14 @@ defmodule Anchor.Domain.Placement do
   defp owner_of({:ok, owner}), do: owner
   defp owner_of(_no_owner), do: nil
 
-  # A module the source shows no literal `defmodule` for, or may not, and a clause a
-  # macro wrote: `quote` puts `context` on the def, `quote generated: true` puts
-  # `generated`.
-  defp generated?(%FunctionNode{clauses: clauses}, %ModuleNode{generated?: module}) do
+  @doc """
+  Whether `function` of `node` is macro or DSL output, or may be: a module the
+  source shows no literal `defmodule` for, or may not, and a clause a macro wrote
+  (`quote` puts `context` on the def, `quote generated: true` puts `generated`).
+  No placement rule judges it.
+  """
+  @spec generated_function?(FunctionNode.t(), ModuleNode.t()) :: boolean()
+  def generated_function?(%FunctionNode{clauses: clauses}, %ModuleNode{generated?: module}) do
     module != false or Enum.any?(clauses, &macro_clause?/1)
   end
 
@@ -364,6 +390,8 @@ defmodule Anchor.Domain.Placement do
         do: Enum.flat_map(facts, &(&1 |> Rules.unreachable() |> List.wrap())),
         else: []
 
-    Enum.sort_by(function_rules ++ unreachable, & &1.key)
+    hops = Forwarders.proposals(%{model | effects: effects})
+
+    Enum.sort_by(function_rules ++ unreachable ++ hops, & &1.key)
   end
 end

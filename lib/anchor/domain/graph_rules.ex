@@ -46,6 +46,7 @@ defmodule Anchor.Domain.GraphRules do
   alias Anchor.Domain.GraphRules.FunctionPlacement
   alias Anchor.Domain.GraphRules.Interface
   alias Anchor.Domain.GraphRules.Layering
+  alias Anchor.Domain.GraphRules.NoInertHop
   alias Anchor.Domain.GraphRules.ParameterReachesSink
   alias Anchor.Domain.GraphRules.ReachableFromRoot
   alias Anchor.Domain.GraphRules.StructOwnedByModuleFlow
@@ -66,6 +67,7 @@ defmodule Anchor.Domain.GraphRules do
     EffectsMatchBucket,
     FunctionPlacement,
     Interface,
+    NoInertHop,
     ParameterReachesSink,
     ReachableFromRoot,
     StructOwnedByModuleFlow,

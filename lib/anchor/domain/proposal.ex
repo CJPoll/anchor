@@ -12,7 +12,8 @@ defmodule Anchor.Domain.Proposal do
     * `subject` — what the proposal is about (an mfa at the function level).
     * `current`, `proposed` — where it is, and where it belongs: a module,
       `{:bucket, role, context, module | nil}` (`module` named when the target is
-      known), or `:delete`.
+      known), `:delete`, or `{:inline, mfa}` (an inert hop's callers call `mfa`
+      directly, DND-5461).
     * `rule` — the rule type that reports it.
     * `reason` — why; one `render/1` clause per reason, and an unknown reason
       raises.
@@ -26,7 +27,11 @@ defmodule Anchor.Domain.Proposal do
   defstruct [:level, :subject, :current, :proposed, :rule, :reason, evidence: [], key: nil]
 
   @type level :: :expression | :function | :module | :directory | :context | :app | :aggregate
-  @type place :: module() | {:bucket, atom(), String.t() | nil, module() | nil} | :delete
+  @type place ::
+          module()
+          | {:bucket, atom(), String.t() | nil, module() | nil}
+          | :delete
+          | {:inline, mfa()}
   @type t :: %__MODULE__{
           level: level(),
           subject: mfa(),

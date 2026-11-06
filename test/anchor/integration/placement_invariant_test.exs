@@ -42,6 +42,7 @@ defmodule Anchor.Integration.PlacementInvariantTest do
     lib/placement/domain/rounding.ex
     lib/placement/domain/dead.ex
     lib/placement/domain/leaky.ex
+    lib/placement/domain/totals.ex
     lib/placement/managers/calc.ex
   )
 
@@ -146,6 +147,11 @@ defmodule Anchor.Integration.PlacementInvariantTest do
              {:dominated_by, AnchorFixtures.PlacementTest.Billing.Domain.Statement}
 
     assert reasons["Dead"] == {:unreachable, :delete}
+
+    assert reasons["Totals"] ==
+             {:inert_hop,
+              {:inline, {AnchorFixtures.PlacementTest.Billing.Domain.Statement, :total, 1}}}
+
     assert {:bucket_from_effects, {:bucket, :adapters, _context, nil}} = reasons["Leaky"]
   end
 
@@ -293,7 +299,7 @@ defmodule Anchor.Integration.PlacementInvariantTest do
     refute Placement.facts(placement, {unsupervised, :start_link, 1}).reachable?
   end
 
-  test "every reason the canary emits renders one non-empty line, and all five are there", %{
+  test "every reason the canary emits renders one non-empty line, and each is there", %{
     beams: beams
   } do
     {_report, placement, model} = run(beams)
@@ -302,6 +308,7 @@ defmodule Anchor.Integration.PlacementInvariantTest do
     assert proposals |> Enum.map(& &1.reason) |> Enum.uniq() |> Enum.sort() == [
              :bucket_from_effects,
              :dominated_by,
+             :inert_hop,
              :input_type_owner,
              :output_type_owner,
              :unreachable
