@@ -40,6 +40,9 @@ Positive controls that stayed green under every mutation, and why:
 | L17 | `Config.judged/3` keeps the change's `aggregates` | 7, 1 failed | same test |
 | L18 | `GitShow.config/3` drops every section but `rules` and `path` | 16, 1 failed | `config/3 (DND-5658) every section as committed at the ref, not the working copy` |
 | L19 | a base config with no `architecture` is not refused (`architecture: :dnd_5658_never` in the clause's pattern) | 9, 1 failed | `a base config with no architecture is COULD NOT MEASURE, never a crash` |
+| L20 | no config at the base reads as no `--base` (`if no_base == :absent, do: nil`) | 11, 1 failed | `no config at the base: the change's own rules run, each baseline a first landing` |
+| L21 | no `--base` reads as no config at the base (`if no_base in [:absent, nil], do: {:ok, :absent}`) | 11, 1 failed | `without --base nothing is compared and no base is read` |
+| L22 | no `--base` still asks git (`read_base_config`'s `nil` clause never matches) | 11, 1 failed | same test |
 | S11 | the landed judge never sets a rule aside (L1, in the base copy) | self-test T7 | `FAIL T7 a rule type new in the pull request is a FIRST LANDING, not a refusal: exit 3, wanted 0` |
 | S12 | the landed judge passes a removed base rule (L3, in the base copy) | self-test T11 | `FAIL T11 a removed base rule fails the landed judge: exit 0, wanted 1` |
 | S13 | the landed judge runs the change's rule definitions (L13, in the base copy) | self-test T13 | `FAIL T13 a downgraded base rule is judged as the base defines it: exit 0, wanted 1` |
