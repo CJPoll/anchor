@@ -55,6 +55,9 @@ before coining a synonym.
   Manager wiring rather than a single check's Domain detection. Also
   `Anchor.Domain.EnforcementPasses` (DND-5631): joining the enforce and report
   passes' findings, one copy each.
+- `parameter_reaches_sink` — `Anchor.Domain.GraphRules.ParameterReachesSink` and
+  its runner wiring (`:demand` in `Anchor.Managers.Graph`, the summary's counts,
+  DND-5470).
 - `base` — `Anchor.Check.Base`, the shared Framework layer every check `use`s:
   mapping violations to Credo issues and choosing the run's shared-failure
   reporter (DND-1265).

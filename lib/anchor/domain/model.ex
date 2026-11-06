@@ -30,6 +30,11 @@ defmodule Anchor.Domain.Model do
     * `effects` — the effects-inferred role of every function
       (`%Anchor.Domain.Effects{}`, DND-5447), set by the runner only when a
       rule that runs declares `needs: [:effects]`; `nil` otherwise;
+    * `demand` — the demand analysis (`%Anchor.Domain.Demand{}`, DND-5470), set
+      by the runner only when a rule that runs declares `needs: [:demand]`;
+      `nil` otherwise;
+    * `callbacks` — the external behaviours' callbacks
+      (`%{behaviour => [{name, arity}]}`), read with `demand`: `%{}` otherwise;
     * `facts` — `%{module => Classification.facts()}`, the facts each module
       was classified by (DND-5447: `architecture.roots` selectors read them
       too, `uses_module` included).
@@ -49,6 +54,7 @@ defmodule Anchor.Domain.Model do
   alias Anchor.Domain.Architecture
   alias Anchor.Domain.Cfa
   alias Anchor.Domain.Classification
+  alias Anchor.Domain.Demand
   alias Anchor.Domain.Effects
   alias Anchor.Domain.Failures
   alias Anchor.Domain.Graph
@@ -62,7 +68,9 @@ defmodule Anchor.Domain.Model do
     :classification,
     :config,
     aggregates: %Index{},
+    callbacks: %{},
     cfa: nil,
+    demand: nil,
     effects: nil,
     facts: %{}
   ]
@@ -73,7 +81,9 @@ defmodule Anchor.Domain.Model do
           classification: %{module() => Classification.t()},
           aggregates: Index.t(),
           config: Config.t(),
+          callbacks: %{module() => [{atom(), arity()}]},
           cfa: Cfa.t() | nil,
+          demand: Demand.t() | nil,
           effects: Effects.t() | nil,
           facts: %{module() => Classification.facts()}
         }

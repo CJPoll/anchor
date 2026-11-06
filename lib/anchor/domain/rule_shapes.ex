@@ -39,6 +39,7 @@ defmodule Anchor.Domain.RuleShapes do
     no_forwarding_function: Checks.NoForwardingFunction,
     no_transitive_dependency: Checks.NoTransitiveDependency,
     no_tuple_match_in_head: Checks.NoTupleMatchInHead,
+    parameter_reaches_sink: GraphRules.ParameterReachesSink,
     single_control_flow: Checks.SingleControlFlow,
     struct_getter_convention: Checks.StructGetterConvention,
     struct_owned_by_module: Checks.StructOwnedByModule,

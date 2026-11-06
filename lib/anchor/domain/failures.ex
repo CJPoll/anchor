@@ -576,6 +576,38 @@ defmodule Anchor.Domain.Failures do
   end
 
   @doc """
+  The issue for a graph rule whose needed demand analysis
+  (`Anchor.Domain.Demand`, DND-5470) crashed, or whose behaviour read did: it is
+  not run, since without the summaries it would check nothing.
+  """
+  @spec rule_demand_crashed(map(), atom(), term(), Exception.stacktrace(), String.t() | nil) ::
+          Violation.t()
+  def rule_demand_crashed(rule, kind, reason, stacktrace, config_path) do
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "#{rule_label(rule)} could not run: the demand analysis it needs " <>
+        "(Anchor.Domain.Demand) crashed: #{crash_summary(kind, reason, stacktrace)}, so it " <>
+        "checked nothing. Fix: this is an Anchor bug; file it with this line."
+    )
+  end
+
+  @doc """
+  The issue for a `parameter_reaches_sink` rule (DND-5470) that selects modules
+  of which not one function could be judged: it checked nothing.
+  """
+  @spec parameter_sink_unjudged(map(), String.t() | nil) :: Violation.t()
+  def parameter_sink_unjudged(rule, config_path) do
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "#{rule_label(rule)} judged no function: every function of the modules it selects is " <>
+        "exempt, has no Core body, or could not be analysed, so it checked nothing. Fix: " <>
+        "select modules with functions of their own, or remove the rule."
+    )
+  end
+
+  @doc """
   The note for a graph artifact that could not be written (DND-5440). The
   verdict never reads the artifact, so this does not fail the run; `mix
   anchor.explain` and `place` rebuild the graph instead.

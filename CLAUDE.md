@@ -432,6 +432,21 @@ uses its arguments. A new Core shape goes into `Transfer` with a row in
 `test/anchor/domain/demand/transfer_test.exs`. A field map may hold the key
 `:__struct__`: read it with `:maps`, never `Enum`.
 
+## The parameter_reaches_sink rule (DND-5470)
+
+`Anchor.Domain.GraphRules.ParameterReachesSink` (F2) reports each parameter whose
+sound demand is `:absent`, keyed `<id>|<mfa>|param <position>` (1-based), with the
+chain rebuilt from `Demand.Param.passes`. It needs `[:cfa, :demand]`: the runner
+stores `Model.demand` and, under the same guard, `Model.callbacks` (the external
+behaviours' callbacks, the same port the effect inference reads). Patterns and
+guards need no code here: they are uses in the summary. Exempt: callbacks,
+captures, a public function a dynamic call can reach, generated functions (a
+clause meta with `context` or `generated` is a macro's output, and a default's
+head has only generated arguments). Not analysed: no Core, `generated?: :unknown`,
+an external behaviour with no callbacks read. `GraphReport.parameter_sinks/3` is
+the summary's precision count. Its `Fix:` is the rule's own text until
+`Anchor.Domain.Placement` lands (DND-5448).
+
 ## Important Notes
 
 - When running Elixir code, use: `mix run -e "<elixir code>"`

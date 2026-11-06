@@ -168,6 +168,12 @@ rules:
     paths: ["lib/**/*.ex"]
     baseline: .anchor/baselines/effects_match_bucket.txt
 
+  # --- Rule: every parameter reaches the return value or an effect (DND-5470) ---
+  - type: parameter_reaches_sink
+    id: parameter_reaches_sink
+    paths: ["lib/**/*.ex"]
+    baseline: .anchor/baselines/parameter_reaches_sink.txt
+
   # --- Rule: only a struct's own module changes it, by value flow (DND-5454) ---
   #
   # The graph half of struct ownership: a Map writer, struct/2, put_in or a

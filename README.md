@@ -443,6 +443,7 @@ The Engine column is the one engine that runs the type: `ast` rules run as
 Credo checks over source, `graph` rules run under `mix anchor.graph` over the
 compiled code (DND-5440; `layering`, DND-5442, `context_acyclic`, DND-5445,
 `aggregate_declarations`, DND-5476, `effects_match_bucket`, DND-5447,
+`parameter_reaches_sink`, DND-5470,
 `struct_owned_by_module_flow`, DND-5454, and `interface`, DND-5443). Credo never reports a
 `graph` rule as unchecked.
 
@@ -465,6 +466,7 @@ compiled code (DND-5440; `layering`, DND-5442, `context_acyclic`, DND-5445,
 | `no_forwarding_function` | none | none | `ast` |
 | `no_transitive_dependency` | `forbidden_modules`, `forbidden_patterns` | `forbidden_modules`, `forbidden_patterns` | `ast` |
 | `no_tuple_match_in_head` | none | none | `ast` |
+| `parameter_reaches_sink` | none | none | `graph` |
 | `single_control_flow` | none | none | `ast` |
 | `struct_getter_convention` | none | none | `ast` |
 | `struct_owned_by_module` | `owned_namespaces` | none | `ast` |
@@ -616,7 +618,7 @@ otherwise. `uses_module`, `recursive` and `min_files` are `ast` keys and are
 refused on a graph rule. A finding of a rule with `enforcement: report` prints
 `[report]` and does not fail the run. `--format json` prints `{"modules",
 "apps", "rules", "opaque", "no_core", "outside_root", "apply_sites", "interface_width",
-"dynamic_calls", "effects", "aggregates", "exit_code",
+"dynamic_calls", "effects", "parameter_sinks", "aggregates", "exit_code",
 "findings":
 [{rule_id, type, enforcement, key, file, line, message, fix}],
 "could_not_check": [...], "refused": [...], "held": [...]}`. `--only RULE_ID` (repeatable) runs only the
@@ -1103,7 +1105,10 @@ Likewise a rule that reads the effect inference (`Anchor.Domain.Effects`,
 DND-5447) declares `needs: [:cfa, :effects]`: the run then infers it once,
 after the flow analysis, and the summary and the JSON's `effects`
 (`functions`, `by_role`, `unresolved`, `not_analysed`) carry its counts;
-`effects` is `null` when no rule that runs needs it.
+`effects` is `null` when no rule that runs needs it. A rule that reads the
+demand analysis (`Anchor.Domain.Demand`, DND-5470) declares `needs: [:cfa,
+:demand]`: the run then analyses once, with the external behaviours' callbacks
+beside it; a zero in its counts was measured, and `null` means no such rule ran.
 
 An Erlang module in the project is classified by its name only (a `pattern:`
 selector): a classified one is an opaque node with no edges, counted in the
@@ -1121,6 +1126,67 @@ key on. The summary counts such modules as `(<n> outside the root)`, and the
 JSON as `outside_root`, so the layout is visible. An absolute path inside the
 root is made relative to it, so `paths:` selectors match it as they match
 every other file.
+
+### The `parameter_reaches_sink` rule (DND-5470)
+
+```yaml
+rules:
+  - type: parameter_reaches_sink
+    id: parameter_reaches_sink
+    paths: ["lib/**/*.ex"]
+
+architecture:
+  contexts:
+    depth: 2
+  buckets:
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/**/*.ex"]
+  calls:
+    domain: [domain]
+```
+
+Every parameter reaches the function's return value or an effect, directly or
+through the callees it is passed to. The answer comes from the demand analysis
+(`Anchor.Domain.Demand`) over Core Erlang, so a parameter bound, passed on and
+finally dropped, which the compiler misses, is reported at each level, naming
+the chain:
+
+```text
+lib/my_app/pricing.ex:6: [enforce] rule 1 (id: "parameter_reaches_sink", parameter_reaches_sink) MyApp.Pricing.f/2 parameter 2 (b) reaches no return value and no effect (chain: MyApp.Pricing.f/2 param 2 -> MyApp.Pricing.g/1 param 1 (dropped); call sites: 3). Fix: drop parameter 2 (b) of MyApp.Pricing.f/2 and stop passing it at its 3 call sites.
+```
+
+The key is `<id>|<Mod.fun/arity>|param <position>`, 1-based.
+
+An underscore name (`_opts`) is reported too: an unused input of a function
+that nothing obliges to take it is still a dead input. Reading part of a value
+is a use, and so is matching it: a clause pattern other than a variable, or a
+guard that reads the parameter.
+
+**Exempt**, because something else fixes the signature: a callback of a
+behaviour the module declares; a function captured anywhere in the project
+(`&M.f/2`); a public function a dynamic call can reach (`mod.f(x)`, by
+`Anchor.Domain.DynamicCalls`); and a generated function (a module with no literal
+`defmodule`, a `__name__`, a macro's output, the head a default argument
+generates).
+
+**Not analysed**, because an answer could be wrong: a function with no Core body;
+a function of a module that may be generated (`generated?: :unknown`); a public
+function of a module with an external behaviour whose callbacks could not be
+read. If nothing the rule selects could be judged, that is one fail-closed issue.
+
+Imprecision can only hide a finding: demand over-approximates, so a parameter
+passed to an unresolved call is used. Each run prints what that cost:
+
+```text
+; parameter_reaches_sink: 1900 apply sites precise, 74 fell to any, 724 imprecise parameters, 2142 functions judged, 906 exempt, 15 not analysed
+```
+
+An `apply/3` whose target Core does not name is no apply site; a parameter passed
+to one is counted in the imprecise parameters. The JSON's `parameter_sinks` holds
+`precise`, `any`, `imprecise`, `judged`, `exempt` and `not_analysed`. A zero there
+was measured; `null` means no such rule ran.
 
 ### Aggregates: the `aggregates:` section and the `aggregate_declarations` rule (DND-5476)
 
@@ -1298,10 +1364,12 @@ line.
 | `--write-baseline` that created the file | 0 | the baseline path | `anchor.graph wrote 3 entries to .anchor/baselines/web.txt. Fix: review it in this change; from here it only shrinks.` (`[report]`) |
 | `--write-baseline` over an existing file, or naming no rule with a `baseline:` | 2 | the baseline path, or the config | `.anchor/baselines/web.txt exists; --write-baseline only creates, and never rewrites a baseline. Fix: ...` |
 | A `--base` ref with a character git must not see (a leading `-`, a space, `;`, `$`, `:`) | 2 | | usage, with a `Fix:` line |
-| A graph rule whose `needs/0` names an analysis the runner does not compute, or is not a list (DND-5574) | 1 | the config | `rule 2 (id: "web", layering) could not run: ArgumentError: MyApp.Rule.needs/0 names [:nope], which the graph runner does not compute (it computes [:cfa, :effects]), so it checked nothing. Fix: this is an Anchor bug; file it with this line.` The rule is not run; the other rules still run. |
+| A graph rule whose `needs/0` names an analysis the runner does not compute, or is not a list (DND-5574) | 1 | the config | `rule 2 (id: "web", layering) could not run: ArgumentError: MyApp.Rule.needs/0 names [:nope], which the graph runner does not compute (it computes [:cfa, :demand, :effects]), so it checked nothing. Fix: this is an Anchor bug; file it with this line.` The rule is not run; the other rules still run. |
 | The higher-order flow analysis a rule needs raises, throws or exits (DND-5574) | 1 | the config | `rule 2 (id: "web", layering) could not run: the higher-order flow analysis it needs (Anchor.Domain.Cfa) crashed: RuntimeError: ..., so it checked nothing. Fix: this is an Anchor bug; file it with this line.` One per rule that needs it; the rules that do not still run. |
 | The effect inference a rule needs raises, throws or exits, or returns no `%Effects{}` (DND-5447) | 1 | the config | `rule 2 (id: "effects", effects_match_bucket) could not run: the effect inference it needs (Anchor.Domain.Effects) crashed: RuntimeError: ..., so it checked nothing. Fix: this is an Anchor bug; file it with this line.` One per rule that needs it; the rules that do not still run. |
 | An `effects_match_bucket` rule selects modules of a judged bucket of which no public function was analysed (DND-5447) | 1 | the config | `rule 4 (id: "effects", effects_match_bucket) judged no public function of bucket domain: the modules it selects there have none that was analysed (every one is a root, generated, or has no Core body), so the bucket is below the rule's floor. Fix: select modules of domain with public functions, or set infer: false on domain in a reviewed change.` |
+| The demand analysis a rule needs, or the behaviour read beside it, raises, throws or exits, or the analysis returns no `%Demand{}` (DND-5470) | 1 | the config | `rule 2 (id: "sinks", parameter_reaches_sink) could not run: the demand analysis it needs (Anchor.Domain.Demand) crashed: RuntimeError: ..., so it checked nothing. Fix: this is an Anchor bug; file it with this line.` One per rule that needs it; the rules that do not still run. |
+| A `parameter_reaches_sink` rule selects modules of which no function could be judged (DND-5470) | 1 | the config | `rule 2 (id: "sinks", parameter_reaches_sink) judged no function: every function of the modules it selects is exempt, has no Core body, or could not be analysed, so it checked nothing. Fix: select modules with functions of their own, or remove the rule.` |
 | Findings of a `report` rule | 0 | the finding | printed `[report]` |
 
 Exit 2 is a usage error (an unknown option, `--format` other than `text` or
