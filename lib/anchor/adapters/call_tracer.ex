@@ -6,9 +6,11 @@ defmodule Anchor.Adapters.CallTracer do
   `start/2`, after refusing when a tracer is already on
   (`:erlang.trace_info(:new_processes, :tracer)`):
 
-    1. loads each project module and sets `trace_pattern({m, :_, :_}, true,
-       [:local])` on it (a pattern on a module not yet loaded would never
-       apply);
+    1. loads each project module, refusing with `{:error, {:not_loadable,
+       modules}}` before any pattern or flag is set when one cannot load
+       (DND-5690: tracing around it would read as a module never called), and
+       sets `trace_pattern({m, :_, :_}, true, [:local])` on each (a pattern on
+       a module not yet loaded would never apply);
     2. sets a `[:global]` pattern on `ExUnit.EventManager.test_started/2` and
        `test_finished/2` whose match spec puts the `%ExUnit.Test{}` argument
        into the trace message;
@@ -35,7 +37,7 @@ defmodule Anchor.Adapters.CallTracer do
   @impl Anchor.Adapters.Tracing
   def start(collector, modules) do
     case :erlang.trace_info(:new_processes, :tracer) do
-      {:tracer, []} -> traced(collector, modules)
+      {:tracer, []} -> loaded_then_traced(collector, modules)
       {:tracer, _other} -> {:error, :already_tracing}
     end
   end
@@ -66,8 +68,15 @@ defmodule Anchor.Adapters.CallTracer do
     :exit, reason -> {:error, {:collector_down, reason}}
   end
 
+  defp loaded_then_traced(collector, modules) do
+    case Enum.reject(modules, &Code.ensure_loaded?/1) do
+      [] -> traced(collector, modules)
+      not_loadable -> {:error, {:not_loadable, Enum.sort(not_loadable)}}
+    end
+  end
+
   defp traced(collector, modules) do
-    for module <- modules, Code.ensure_loaded?(module) do
+    for module <- modules do
       :erlang.trace_pattern({module, :_, :_}, true, [:local])
     end
 

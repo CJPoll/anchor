@@ -7,7 +7,8 @@ defmodule Anchor.Adapters.Tracing do
     * `start/2` — traces every local call of the given modules, and the
       `ExUnit.EventManager` calls that bound each test, to the collector
       process; `{:error, :already_tracing}` when another tracer is on (it is
-      never switched off or shared);
+      never switched off or shared), `{:error, {:not_loadable, modules}}` when
+      a given module cannot be loaded, with nothing traced (DND-5690);
     * `stop/0` — clears every trace flag and pattern `start/2` set;
     * `collected/1` — asks the collector for what it attributed:
       `{:ok, state}` (a drained `Anchor.Domain.Sabotage.CoverageMap` state),
@@ -17,7 +18,7 @@ defmodule Anchor.Adapters.Tracing do
   alias Anchor.Domain.Sabotage.CoverageMap
 
   @callback start(collector :: pid(), modules :: [module()]) ::
-              :ok | {:error, :already_tracing}
+              :ok | {:error, :already_tracing} | {:error, {:not_loadable, [module()]}}
   @callback stop() :: :ok
   @callback collected(collector :: pid()) ::
               {:ok, CoverageMap.state()} | {:error, {:collector_down, term()}}

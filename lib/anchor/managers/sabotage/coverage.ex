@@ -13,7 +13,8 @@ defmodule Anchor.Managers.Sabotage.Coverage do
     3. The project's modules (`Anchor.Adapters.ProjectModuleSource`); none is
        exit 3.
     4. Tracing starts (`Anchor.Adapters.Tracing.start/2`; another tracer
-       already on is exit 2), the suite runs in this VM
+       already on is exit 2, a project module that cannot load is exit 3 naming
+       it, DND-5690), the suite runs in this VM
        (`Anchor.Adapters.InProcessTests`), and tracing stops in an `after`
        block, so a raise never leaves the VM traced.
     5. The collector's state becomes the map
@@ -145,6 +146,15 @@ defmodule Anchor.Managers.Sabotage.Coverage do
          [
            "another tracer is already on in this VM, so per-test coverage cannot be traced. " <>
              "Fix: run without other tracers"
+         ]}
+
+      {:error, {:not_loadable, not_loadable}} ->
+        {3,
+         [
+           "COULD NOT MEASURE: #{length(not_loadable)} project module(s) could not be loaded, " <>
+             "so their calls cannot be traced: #{Enum.map_join(not_loadable, ", ", &inspect/1)}; " <>
+             "no map was written. Fix: recompile the project (MIX_ENV=test mix compile --force); " <>
+             "a beam that still does not load is broken in this build"
          ]}
     end
   end

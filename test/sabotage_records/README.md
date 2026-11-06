@@ -59,6 +59,10 @@ before coining a synonym.
 - `failures` — `Anchor.Domain.Failures`, the text of every fail-closed report
   (missing or invalid config, unparseable file, a check that crashed on a file).
 - `source` — `Anchor.Check.Source`, the AST/source acquisition edge.
+- `test_preload` — `Anchor.TestPreload` and the `test/test_helper.exs` call
+  `Anchor.TestBootTest` holds (DND-5690): the application closure loaded before
+  any test runs. The coverage tool's own refusal of a module that cannot load
+  is `sabotage`'s.
 - `sabotage_scope` — `mix anchor.sabotage scope` (DND-5472): the diff parser
   (`Anchor.Domain.Sabotage.DiffHunks`), the function spans
   (`Anchor.Domain.Sabotage.FunctionSpans`), the mapping and its counts
