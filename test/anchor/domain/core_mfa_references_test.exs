@@ -19,6 +19,8 @@ defmodule Anchor.Domain.CoreMfaReferencesTest do
     def literal, do: {M, :f, [:a, :b]}
     def nested_literal, do: {:wrap, {M, :f, [:a]}}
     def literal_map, do: %{start: {M, :f, [:a]}}
+    def tuple_in_map, do: %{start: {:wrap, {M, :f, [:a]}}}
+    def list_in_map, do: %{starts: [:x, {M, :f, [:a]}]}
     def literal_list, do: [:x, {M, :g, []}, {M, :f, [:a]}]
     def spawned(x), do: spawn(M, :f, [x])
     def args_var(args), do: spawn(M, :f, args)
