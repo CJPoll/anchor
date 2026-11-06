@@ -1301,7 +1301,9 @@ unrelated places) get no move from rules 2 to 4; rule 1 still names their bucket
 ; placement: 42 functions placed, 3 with no @spec (ownership unknown), 0 ambiguous owner, 0 with no clause to slice, 1 calls of a computed name, reachability lost at 1 call sites
 ```
 
-A call whose function name is computed (`apply(mod, name, args)`, `spawn(mod, name, args)`,
+A project module a function holds as a value (`children = [M, {N, arg}]`) reaches that
+module's `child_spec/1`, so a supervised process is never read as dead. A call whose function
+name is computed (`apply(mod, name, args)`, `spawn(mod, name, args)`,
 and the `Task` and `:timer` forms in `Core.partial_mfa_calls/1`), in a reachable function,
 could reach anything, so `reachable_from_root` then reports no function and fails closed,
 naming each call site. A variable application (`fun.(x)`) does not: what it can reach was

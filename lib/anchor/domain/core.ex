@@ -48,14 +48,31 @@ defmodule Anchor.Domain.Core do
     {:erlang, :spawn_monitor, 3} => 0,
     {:erlang, :spawn, 4} => 1,
     {:erlang, :spawn_link, 4} => 1,
+    {:erlang, :spawn_monitor, 4} => 1,
+    {:erlang, :spawn_opt, 4} => 0,
+    {:erlang, :spawn_opt, 5} => 1,
+    {:erpc, :call, 4} => 1,
+    {:erpc, :call, 5} => 1,
+    {:erpc, :cast, 4} => 1,
+    {:proc_lib, :spawn, 3} => 0,
+    {:proc_lib, :spawn, 4} => 1,
+    {:proc_lib, :spawn_link, 3} => 0,
+    {:proc_lib, :spawn_link, 4} => 1,
+    {:proc_lib, :start, 3} => 0,
+    {:proc_lib, :start_link, 3} => 0,
+    {:rpc, :call, 4} => 1,
+    {:rpc, :cast, 4} => 1,
     {:timer, :apply_after, 4} => 1,
     {:timer, :apply_interval, 4} => 1,
     {Task, :async, 3} => 0,
     {Task, :start, 3} => 0,
     {Task, :start_link, 3} => 0,
     {Task.Supervisor, :async, 4} => 1,
+    {Task.Supervisor, :async, 5} => 1,
     {Task.Supervisor, :async_nolink, 4} => 1,
-    {Task.Supervisor, :start_child, 4} => 1
+    {Task.Supervisor, :async_nolink, 5} => 1,
+    {Task.Supervisor, :start_child, 4} => 1,
+    {Task.Supervisor, :start_child, 5} => 1
   }
 
   @typedoc "An apply site: the enclosing function and the site's ordinal in it."
@@ -177,6 +194,14 @@ defmodule Anchor.Domain.Core do
   end
 
   @doc """
+  Every atom a function's body holds as a value, in a literal of any depth (DND-5448):
+  what could name a module to a supervisor (`children = [M, {N, arg}]`). The module and
+  name a call is made on are not values, so they are not here.
+  """
+  @spec held_atoms(:cerl.cerl()) :: [atom()]
+  def held_atoms(core_fun), do: core_fun |> held_atoms_of() |> Enum.uniq() |> Enum.sort()
+
+  @doc """
   The calls of a function that takes a module, a function name and arguments and
   starts that function later (`spawn(mod, name, args)`, `Task.start(M, :f, args)`,
   the table `@mfa_taking`), whose triple `mfa_references/1` cannot read in full (DND-5448):
@@ -258,6 +283,20 @@ defmodule Anchor.Domain.Core do
   defp holds_fun?(_term), do: false
 
   # --- literal MFAs ------------------------------------------------------------
+
+  defp held_atoms_of(node) do
+    case :cerl.type(node) do
+      :literal -> node |> :cerl.concrete() |> term_atoms()
+      :call -> node |> :cerl.call_args() |> Enum.flat_map(&held_atoms_of/1)
+      _other -> node |> :cerl.subtrees() |> List.flatten() |> Enum.flat_map(&held_atoms_of/1)
+    end
+  end
+
+  defp term_atoms(term) when is_atom(term), do: [term]
+  defp term_atoms(term) when is_tuple(term), do: term |> Tuple.to_list() |> term_atoms()
+  defp term_atoms(term) when is_map(term), do: term |> Map.to_list() |> term_atoms()
+  defp term_atoms([head | tail]), do: term_atoms(head) ++ term_atoms(tail)
+  defp term_atoms(_other), do: []
 
   defp partial_mfa_call(node) do
     with :call <- :cerl.type(node),

@@ -37,8 +37,8 @@ Traps seen:
 | PL-BH | a shared function still moves by rules 2 and 3 (`lib/anchor/domain/placement/rules.ex`) | U | `136 tests, 2 failures` (red) | proposals/3 rule 1 of a shared pure function names its bucket, not an owner; proposals/3 a shared function gets no move from rules 2 or 3 |
 | PL-BI | a macro alone counts as a root for no_roots (`lib/anchor/domain/placement.ex`) | U | `136 tests, 1 failure` (red) | build/1 a macro alone is no root the inference found: still no roots |
 | PL-BJ | rule 4 moves into an interface (`lib/anchor/domain/placement/rules.ex`) | U | `136 tests, 1 failure` (red) | proposals/3 a move into an interface module is not proposed |
-| PL-BK | a spawn with a computed name loses nothing (`lib/anchor/domain/placement/call_graph.ex`) | U | `136 tests, 1 failure` (red) | spawn with a computed name loses reachability, naming its line |
-| PL-BL | a known name with unknown arguments is no edge (`lib/anchor/domain/placement/call_graph.ex`) | U | `136 tests, 1 failure` (red) | a known name with arguments of unknown length reaches every arity, and stays public |
+| PL-BK | a spawn with a computed name loses nothing (`lib/anchor/domain/placement/call_graph.ex`) | U | `137 tests, 1 failure` (red) | spawn with a computed name loses reachability, naming its line |
+| PL-BL | a known name with unknown arguments is no edge (`lib/anchor/domain/placement/call_graph.ex`) | U | `137 tests, 1 failure` (red) | a known name with arguments of unknown length reaches every arity, and stays public |
 | PL-BM | partial_mfa_calls reads the triple from the wrong place (`lib/anchor/domain/core.ex`) **off-domain** | `test/anchor/domain/core_mfa_references_test.exs` | `41 tests, 1 failure` (red) | partial_mfa_calls/1 literal_args_var/1 reads as {M, :f} |
 | PL-BN | partial_mfa_calls keeps a whole triple (`lib/anchor/domain/core.ex`) **off-domain** | `test/anchor/domain/core_mfa_references_test.exs` | `41 tests, 1 failure` (red) | partial_mfa_calls/1 a whole triple is mfa_references/1's, and nothing else is read |
 | PL-N | rule 1 ignores a known owner (`lib/anchor/domain/placement/rules.ex`) | U | `136 tests, 2 failures` (red) | proposals/3 rule 1: a pure function in a Manager whose input owner is known goes there; each finding carries the acceptance criteria's reason and target |
@@ -82,6 +82,11 @@ Traps seen:
 | PL-AY | the bucket render leaves out the word bucket (`lib/anchor/domain/placement.ex`) | `test/anchor/integration/effects_canary_test.exs`, `test/anchor/domain/graph_rules/effects_match_bucket_test.exs`, `test/anchor/domain/placement_render_test.exs` | `27 tests, 5 failures` (red) | bucket text names the context and module when known, and the evidence; a domain function that reaches an effect is one issue naming the chain; an adapter function with no effect is an issue; an adapter that reaches effects only through another module names it; a manager with a direct effect is an issue |
 | PL-BC | a literal {M, :f, args} is no edge (`lib/anchor/domain/placement/call_graph.ex`) | `test/anchor/integration/placement_invariant_test.exs` | `12 tests, 1 failure` (red) | a function a literal {M, :f, args} names is reachable, and stays public |
 | PL-AT | the note says precise whatever the reachability (`lib/anchor/domain/graph_report.ex`) **off-domain** | `test/anchor/domain/graph_report_test.exs` | `36 tests, 1 failure` (red) | placement precision |
+| PL-BO | a held module does not reach its child spec (`lib/anchor/domain/placement/call_graph.ex`) | U | `137 tests, 1 failure` (red) | a supervised process outside a framework bucket is reached through its child spec |
+| PL-BS | a module's own name reaches its child spec (`lib/anchor/domain/placement/call_graph.ex`) | U | `137 tests, 1 failure` (red) | a supervised process outside a framework bucket is reached through its child spec |
+| PL-BP | held_atoms reads the top of a literal only (`lib/anchor/domain/core.ex`) **off-domain** | `test/anchor/domain/core_mfa_references_test.exs` | `70 tests, 1 failure` (red) | held_atoms/1 reads a literal of any depth |
+| PL-BQ | held_atoms takes the module a call is made on (`lib/anchor/domain/core.ex`) **off-domain** | `test/anchor/domain/core_mfa_references_test.exs` | `70 tests, 1 failure` (red) | held_atoms/1 the module a call is made on is not held |
+| PL-BR | a table row is gone (`lib/anchor/domain/core.ex`) **off-domain** | `test/anchor/domain/core_mfa_references_test.exs` | `70 tests, 1 failure` (red) | partial_mfa_calls/1 the table's row row_proc_spawn reads its module, and a computed name |
 
 ## Failure text
 
@@ -1429,7 +1434,7 @@ Run summary: `136 tests, 1 failure`
 
 ### PL-BK — a spawn with a computed name loses nothing
 
-Run summary: `136 tests, 1 failure`
+Run summary: `137 tests, 1 failure`
 
 ```text
   1) test spawn with a computed name loses reachability, naming its line (Anchor.Integration.PlacementInvariantTest)
@@ -1444,7 +1449,7 @@ Run summary: `136 tests, 1 failure`
 
 ### PL-BL — a known name with unknown arguments is no edge
 
-Run summary: `136 tests, 1 failure`
+Run summary: `137 tests, 1 failure`
 
 ```text
   1) test a known name with arguments of unknown length reaches every arity, and stays public (Anchor.Integration.PlacementInvariantTest)
@@ -3035,4 +3040,76 @@ Run summary: `36 tests, 1 failure`
      right: "reachability lost at 2 call sites"
      stacktrace:
        test/anchor/domain/graph_report_test.exs:254: (test)
+```
+
+### PL-BO — a held module does not reach its child spec
+
+Run summary: `137 tests, 1 failure`
+
+```text
+  1) test a supervised process outside a framework bucket is reached through its child spec (Anchor.Integration.PlacementInvariantTest)
+     test/anchor/integration/placement_invariant_test.exs:240
+     AnchorFixtures.PlacementTest.Billing.Managers.Bare
+     code: for module <- [Module.concat(managers, Bare), Module.concat(managers, Tupled)] do
+     stacktrace:
+       test/anchor/integration/placement_invariant_test.exs:288: anonymous fn/3 in Anchor.Integration.PlacementInvariantTest."test a supervised process outside a framework bucket is reached through its child spec"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/integration/placement_invariant_test.exs:287: (test)
+```
+
+### PL-BS — a module's own name reaches its child spec
+
+Run summary: `137 tests, 1 failure`
+
+```text
+  1) test a supervised process outside a framework bucket is reached through its child spec (Anchor.Integration.PlacementInvariantTest)
+     test/anchor/integration/placement_invariant_test.exs:240
+     Expected false or nil, got true
+     code: refute Placement.facts(placement, {unsupervised, :start_link, 1}).reachable?
+     stacktrace:
+       test/anchor/integration/placement_invariant_test.exs:293: (test)
+```
+
+### PL-BP — held_atoms reads the top of a literal only
+
+Run summary: `70 tests, 1 failure`
+
+```text
+  1) test held_atoms/1 reads a literal of any depth (Anchor.Domain.CoreMfaReferencesTest)
+     test/anchor/domain/core_mfa_references_test.exs:195
+     Bare
+     code: for atom <- [Bare, Tupled, Mapped, :x, :key], do: assert(atom in held, inspect(atom))
+     stacktrace:
+       (elixir 1.19.4) lib/enum.ex:1688: Enum."-map/2-lists^map/1-1-"/2
+       test/anchor/domain/core_mfa_references_test.exs:198: (test)
+```
+
+### PL-BQ — held_atoms takes the module a call is made on
+
+Run summary: `70 tests, 1 failure`
+
+```text
+  1) test held_atoms/1 the module a call is made on is not held (Anchor.Domain.CoreMfaReferencesTest)
+     test/anchor/domain/core_mfa_references_test.exs:208
+     Refute with in failed
+     code:  refute Called in (binary |> core({:called, 1}) |> Core.held_atoms())
+     left:  Called
+     right: [Called, :function_clause, :match_fail, true]
+     stacktrace:
+       test/anchor/domain/core_mfa_references_test.exs:209: (test)
+```
+
+### PL-BR — a table row is gone
+
+Run summary: `70 tests, 1 failure`
+
+```text
+  1) test partial_mfa_calls/1 the table's row row_proc_spawn reads its module, and a computed name (Anchor.Domain.CoreMfaReferencesTest)
+     test/anchor/domain/core_mfa_references_test.exs:181
+     match (=) failed
+     code:  assert [%{module: M, name: nil}] = binary |> core({:row_proc_spawn, 2}) |> Core.partial_mfa_calls()
+     left:  [%{module: M, name: nil}]
+     right: []
+     stacktrace:
+       test/anchor/domain/core_mfa_references_test.exs:182: (test)
 ```

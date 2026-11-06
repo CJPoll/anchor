@@ -237,6 +237,62 @@ defmodule Anchor.Integration.PlacementInvariantTest do
     end
   end
 
+  test "a supervised process outside a framework bucket is reached through its child spec", %{
+    beams: beams
+  } do
+    tree = """
+    defmodule AnchorFixtures.PlacementTest.Billing.Web.Tree do
+      alias AnchorFixtures.PlacementTest.Billing.Managers.Bare
+      alias AnchorFixtures.PlacementTest.Billing.Managers.Tupled
+
+      def start, do: Supervisor.start_link([Bare, {Tupled, :arg}], strategy: :one_for_one)
+    end
+    """
+
+    source = """
+    defmodule AnchorFixtures.PlacementTest.Billing.Managers.Bare do
+      use GenServer
+      def start_link(arg), do: GenServer.start_link(__MODULE__, arg)
+      @impl true
+      def init(arg), do: {:ok, arg}
+    end
+
+    defmodule AnchorFixtures.PlacementTest.Billing.Managers.Tupled do
+      use GenServer
+      def start_link(arg), do: GenServer.start_link(__MODULE__, arg)
+      @impl true
+      def init(arg), do: {:ok, arg}
+    end
+
+    defmodule AnchorFixtures.PlacementTest.Billing.Managers.Unsupervised do
+      use GenServer
+      def start_link(arg), do: GenServer.start_link(__MODULE__, arg)
+      @impl true
+      def init(arg), do: {:ok, arg}
+    end
+    """
+
+    extra =
+      [{tree, "lib/placement/web/tree.ex"}, {source, "lib/placement/managers/supervised.ex"}]
+      |> compile_all_unloaded()
+      |> Enum.map(fn {module, binary} ->
+        BeamReader.decode(binary, app: :placement, path: "#{@ebin}/#{module}.beam")
+      end)
+
+    # These files are not on disk, so their modules read as possibly generated and get no
+    # finding: the call graph's reachability is what this test reads.
+    {_report, placement, _model} = run(extra ++ beams)
+    managers = AnchorFixtures.PlacementTest.Billing.Managers
+
+    for module <- [Module.concat(managers, Bare), Module.concat(managers, Tupled)] do
+      assert Placement.facts(placement, {module, :start_link, 1}).reachable?, inspect(module)
+    end
+
+    # The control: a process nothing names is still unreachable.
+    unsupervised = Module.concat(managers, Unsupervised)
+    refute Placement.facts(placement, {unsupervised, :start_link, 1}).reachable?
+  end
+
   test "every reason the canary emits renders one non-empty line, and all five are there", %{
     beams: beams
   } do

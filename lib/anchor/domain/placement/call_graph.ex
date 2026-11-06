@@ -9,13 +9,17 @@ defmodule Anchor.Domain.Placement.CallGraph do
     * a dynamic call with a known name, to each project function it can reach
       (`Anchor.Domain.DynamicCalls.candidates/2`);
     * a literal `{M, :f, args}` a function holds (a child spec's `start:`,
-      `spawn(M, :f, [a])`, `Anchor.Domain.Core.mfa_references/1`).
-
+      `spawn(M, :f, [a])`, `Anchor.Domain.Core.mfa_references/1`);
     * a call that takes a module, a known name and arguments of unknown length
       (`spawn(M, :f, args)`, `Task.start(mod, :f, args)`, `Core.partial_mfa_calls/1`),
-      to every project function of that name, of `M` when it names one.
+      to every project function of that name, of `M` when it names one;
+    * another project module a function holds as a value (`children = [M, {N, arg}]`,
+      `Core.held_atoms/1`), to that module's `child_spec/1`, because a supervisor calls
+      it. That edge is what reaches the `start_link/1` the child spec names. A held
+      name is not always a child, so this can keep an unused process reachable. A
+      module's own name does not count: every `use GenServer` callback holds it.
 
-  The last three also mark the target `named`: it must stay public.
+  The last four also mark the target `named`: it must stay public.
 
   A call whose function name is computed (`apply(mod, name, args)`, `spawn(mod, name,
   args)`) has no edge, because any function could be its target: it is a `computed`
@@ -44,7 +48,7 @@ defmodule Anchor.Domain.Placement.CallGraph do
     nodes = functions(graph)
     known = MapSet.new(nodes)
     resolved = Enum.flat_map(graph.calls, &resolve(&1, graph, known))
-    references = references(graph, known) ++ partial_targets(graph)
+    references = references(graph, known) ++ partial_targets(graph) ++ held_children(graph, known)
     named = for({:named, _from, to} <- resolved, do: to) ++ Enum.map(references, &elem(&1, 1))
 
     edges =
@@ -91,6 +95,15 @@ defmodule Anchor.Domain.Placement.CallGraph do
         target <- Core.mfa_references(core),
         MapSet.member?(known, target),
         do: {{module, name, arity}, target}
+  end
+
+  defp held_children(%Graph{modules: modules}, known) do
+    for {module, %ModuleNode{functions: functions}} <- modules,
+        {{name, arity}, %FunctionNode{core: core}} when core != nil <- functions,
+        held <- Core.held_atoms(core),
+        held != module,
+        MapSet.member?(known, {held, :child_spec, 1}),
+        do: {{module, name, arity}, {held, :child_spec, 1}}
   end
 
   defp computed(%Graph{calls: calls} = graph) do
