@@ -29,7 +29,7 @@ No bound changed: the floors are the self tests' own values, and each analysis k
 
 ## The dogfood run under sabotage
 
-Each row applied one mutation and ran `MIX_ENV=dev mix anchor.graph`, the run CI makes. A row's exit is that command's. DF-0 is the positive control.
+Each row applied one mutation and ran `MIX_ENV=dev mix anchor.graph`, the run CI makes. A row's exit is that command's. DF-0 is the positive control. DF-0 to DF-J ran before main came in (185 modules). After it came in, on 2dcfd17, the unsabotaged run still exits 0 and prints: `anchor.graph: 201 modules (15 functions with no Core body) in 1 apps, 5 rules, 0 violations (0 report-only, 120 baselined); apply sites: 1804 resolved, 72 any; dynamic calls: 100 fanned out to every exporter, 1 narrowed by behaviour; effects: 2914 functions (domain 2188, managers 188, adapters 114, framework 424), 30 unresolved dynamic calls; demand: 2899 functions, 5216 parameters, 79 absent, 688 imprecise functions`.
 
 | # | Mutation | File | Exit | What it printed |
 |---|---|---|---|---|
