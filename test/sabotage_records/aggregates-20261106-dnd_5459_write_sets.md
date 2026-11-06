@@ -3285,7 +3285,7 @@ a local call in a function written on a repo is not read (`lib/anchor/domain/agg
 
 # Sixth run: local calls, captured bodies, the outside count
 
-8 mutations for critic round 8's findings. WSI-LOCALTX's first form was a compile error under `warnings_as_errors` (an unused function) and was re-anchored. A ninth, WSI-LETREC (reading a letrec's own apply as a transaction call), survived with 48 tests, 0 failures: a letrec's compiler-made name cannot match a configured function, so the check was deleted.
+7 mutations remain here; the claims cut removed one. WSI-LOCALTX's first form was a compile error under `warnings_as_errors` (an unused function) and was re-anchored. A ninth, WSI-LETREC (reading a letrec's own apply as a transaction call), survived with 48 tests, 0 failures: a letrec's compiler-made name cannot match a configured function, so the check was deleted.
 
 | # | Mutation | Tests run | Result |
 |---|---|---|---|
@@ -4723,7 +4723,7 @@ an Agent reads as this process (`lib/anchor/domain/aggregates/write_sites.ex`). 
 
 # Eleventh run: the write analysis runs lazily and guarded
 
-7 mutations for critic round 13's finding. MG-NEEDS survived its first run (3 tests, 0 failures), because a guarded crash reads the same as not running; the test now sees whether it ran, and the row holds the red run. MG-SHAPE's anchor missed the formatted source, and MG-OTHERS's first form was a compile error under `warnings_as_errors`; both were re-anchored. MD-ANALYSIS replaces the row of that name in the 2026-11-03 record: the function it mutated moved to `Model.aggregate_analysis/1`.
+6 mutations remain here; the twenty-first run holds the seventh, MD-ANALYSIS. MG-NEEDS survived its first run (3 tests, 0 failures), because a guarded crash reads the same as not running; the test now sees whether it ran, and the row holds the red run. MG-SHAPE's anchor missed the formatted source, and MG-OTHERS's first form was a compile error under `warnings_as_errors`; both were re-anchored. MD-ANALYSIS replaces the row of that name in the 2026-11-03 record: the function it mutated moved to `Model.aggregate_analysis/1`.
 
 | # | Mutation | Tests run | Result |
 |---|---|---|---|
@@ -7352,7 +7352,7 @@ the dynamic row keeps its tag when mixed (`lib/anchor/domain/aggregates/write_si
 
 # Twentieth run: an apply on a module that writes; a computed name reaches its module
 
-6 mutations for critic round 22's finding. WSU-LISTEDMOD survived its first run (25 tests, 0 failures); it got a test, and its row holds the red run.
+6 mutations; the twenty-first run holds two of them, WSU-MODULEREACH and WSU-MODULEMARK. WSU-LISTEDMOD survived its first run (25 tests, 0 failures); it got a test, and its row holds the red run.
 
 | # | Mutation | Tests run | Result |
 |---|---|---|---|

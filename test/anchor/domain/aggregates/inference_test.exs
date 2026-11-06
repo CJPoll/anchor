@@ -142,7 +142,7 @@ defmodule Anchor.Domain.Aggregates.InferenceTest do
     assert why =~ "1 transaction(s)"
   end
 
-  test "F8: a gap outside every transaction is an error, never declare: none" do
+  test "F8: a gap with no transaction read around it is an error, never declare: none" do
     outside = %{analysis([], []) | counts: %{counts() | outside_gaps: 1}}
 
     assert {:error, why} = Inference.render_yaml(outside)

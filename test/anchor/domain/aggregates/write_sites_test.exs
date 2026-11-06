@@ -1,5 +1,5 @@
 defmodule Anchor.Domain.Aggregates.WriteSitesTest do
-  # DND-5459: every write found in Core, with its op, via and line.
+  # DND-5459: the writes read from Core, with its op, via and line.
   #
   # Sabotage record: ../../../sabotage_records/aggregates-20261103-dnd_5459_write_sets.md
   use ExUnit.Case, async: true

@@ -23,9 +23,9 @@ defmodule Anchor.Domain.Model do
       the index holds its own issues, which the `aggregate_declarations` rule
       reports;
     * `aggregate_analysis` — the write analysis
-      (`%Anchor.Domain.Aggregates.Analysis{}`, DND-5459): every write, its
-      source, every transaction's write set and the writes outside
-      transactions. Set by the runner, only when a rule that runs needs it
+      (`%Anchor.Domain.Aggregates.Analysis{}`, DND-5459): the writes it read, their
+      sources, the write sets of the transactions it read, and the writes with
+      no transaction read around them. Set by the runner, only when a rule that runs needs it
       (`aggregate_analysis/1` builds it), else `nil`;
     * `config` — the `%Anchor.Config{}`;
     * `cfa` — the higher-order flow analysis (`%Anchor.Domain.Cfa{}`,

@@ -228,7 +228,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   end
 
   @doc """
-  Every write of the project, its sources resolved
+  The writes read in the project, their sources resolved
   (`Anchor.Domain.Aggregates.WriteSource`), in function then Core order;
   `{:error, :no_repo}` when the project has no repo.
   """
@@ -244,7 +244,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
     end
   end
 
-  @doc "Every raw write of `facts`, resolved into `WriteSite`s, in function then Core order."
+  @doc "The raw writes of `facts`, resolved into `WriteSite`s, in function then Core order."
   @spec sites(t(), Graph.t()) :: [WriteSite.t()]
   def sites(facts, graph) do
     ctx = WriteSource.context(graph, facts)

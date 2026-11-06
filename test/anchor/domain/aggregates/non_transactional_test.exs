@@ -1,5 +1,5 @@
 defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
-  # DND-5459: writes outside every transaction, per function with its
+  # DND-5459: writes with no transaction read around them, per function with its
   # callees', and the functions only ever called inside a transaction.
   #
   # Sabotage record: ../../../sabotage_records/aggregates-20261103-dnd_5459_write_sets.md
