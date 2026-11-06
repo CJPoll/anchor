@@ -14,6 +14,7 @@ defmodule Anchor.Domain.FailuresGraphTest do
   # DND-5584 (graph_app_no_modules): ../../sabotage_records/graph_runner-20261103-dnd_5441_graph_rules_a.md
   # DND-5628 (the symlink rows): ../../sabotage_records/baseline_symlink-20261103-dnd_5441_graph_rules_a.md
   # DND-5476 (aggregate_declarations rows): ../../sabotage_records/aggregates-20261103-dnd_5476_aggregate_decls.md
+  # DND-5715 (analyses_*, rule_demand_crashed): ../../sabotage_records/analyses_complete-20261106-dnd_5715_bucket_split.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Failures
@@ -98,6 +99,13 @@ defmodule Anchor.Domain.FailuresGraphTest do
         raise "cfa blew up"
       rescue
         e -> Failures.rule_cfa_crashed(rule, :error, e, __STACKTRACE__, nil)
+      end
+
+    demand_crashed =
+      try do
+        raise "demand blew up"
+      rescue
+        e -> Failures.rule_demand_crashed(rule, :error, e, __STACKTRACE__, nil)
       end
 
     effects_crashed =
@@ -245,6 +253,38 @@ defmodule Anchor.Domain.FailuresGraphTest do
          ~s|rule 2 (id: "web", layering) could not run: the higher-order flow analysis it | <>
            "needs (Anchor.Domain.Cfa) crashed: RuntimeError: cfa blew up",
          "so it checked nothing. Fix: this is an Anchor bug; file it with this line."
+       ]},
+      {"rule_demand_crashed", demand_crashed, ".anchor.yml",
+       [
+         "could not run: the demand analysis it needs (Anchor.Domain.Demand) crashed",
+         "RuntimeError: demand blew up",
+         "checked nothing",
+         "Fix: this is an Anchor bug"
+       ]},
+      {"analyses_cfa_bound_hit", Failures.analyses_cfa_bound_hit(rule, 40, "proj/.anchor.yml"),
+       "proj/.anchor.yml",
+       [
+         "the higher-order flow analysis (Anchor.Domain.Cfa) hit its step bound after 40 steps",
+         "every apply site reads any",
+         "Fix: this is a scale limit of Anchor",
+         "the owner's call"
+       ]},
+      {"analyses_demand_bound_hit",
+       Failures.analyses_demand_bound_hit(rule, [{MyApp.X, :f, 1}, {MyApp.X, :g, 2}], nil),
+       ".anchor.yml",
+       [
+         "the demand analysis (Anchor.Domain.Demand) hit its round bound on 2 function(s)",
+         "MyApp.X.f/1, MyApp.X.g/2",
+         "read as used without being judged",
+         "Fix: this is a scale limit of Anchor"
+       ]},
+      {"analyses_unsummarised names five functions and counts the rest",
+       Failures.analyses_unsummarised(rule, for(a <- 0..6, do: {MyApp.X, :f, a}), nil),
+       ".anchor.yml",
+       [
+         "7 function(s) have a Core body and no demand summary",
+         "MyApp.X.f/0, MyApp.X.f/1, MyApp.X.f/2, MyApp.X.f/3, MyApp.X.f/4 and 2 more",
+         "Fix: this is an Anchor bug"
        ]},
       {"rule_effects_crashed", effects_crashed, ".anchor.yml",
        [

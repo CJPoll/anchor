@@ -2,10 +2,14 @@ defmodule Anchor.Domain.Graph.InlinesTest do
   # Domain (ADR 002). DND-5551: Elixir rewrites some stdlib calls to Erlang ones
   # before Core (Map.put becomes :maps.put), so the graph names the Erlang
   # function. Anchor carries the table, derived from Elixir's own rewrite rules,
-  # and every stdlib name matches both spellings.
+  # and every stdlib name matches both spellings. Pure: the table logic on
+  # hand-built exports. The check of the table against the real stdlib reads
+  # every stdlib module, so it is an Adapter-level test:
+  # ../../adapters/inlines_stdlib_test.exs (DND-5715).
   #
   # Sabotage record: ../../../sabotage_records/inlines-20261103-dnd_5551_graph_hardening.md
   # Sabotage record (DND-5613): ../../../sabotage_records/inlines-20261103-dnd_5447_graph_rules_c.md
+  # Sabotage record (DND-5715): ../../../sabotage_records/inlines-20261106-dnd_5715_bucket_split.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Graph.Inlines
@@ -17,18 +21,19 @@ defmodule Anchor.Domain.Graph.InlinesTest do
       assert Map.fetch!(Inlines.table(), {Map, :merge, 2}) == {:maps, :merge, 2}
     end
 
-    test "is the table Elixir's rewrite rules give on the Elixir it runs on, not a copy" do
-      exports =
-        for module <- Application.spec(:elixir, :modules),
-            String.starts_with?(Atom.to_string(module), "Elixir."),
-            do: {module, module.module_info(:exports)}
-
-      assert Inlines.table() == Derive.derive(exports)
-    end
-
     test "derive/1 reads only the exports it is given" do
       assert Derive.derive([{Map, [put: 3, get: 2, module_info: 0]}]) ==
                %{{Map, :put, 3} => {:maps, :put, 3}}
+    end
+
+    test "derive/1 covers every module it is given" do
+      assert Derive.derive([
+               {Map, [merge: 2, __info__: 1, module_info: 1]},
+               {Kernel, [elem: 2, __info__: 1]}
+             ]) == %{
+               {Map, :merge, 2} => {:maps, :merge, 2},
+               {Kernel, :elem, 2} => {:erlang, :element, 2}
+             }
     end
 
     test "derive/1 refuses to give an empty table" do
@@ -94,13 +99,19 @@ defmodule Anchor.Domain.Graph.InlinesTest do
       assert Inlines.tag({Float, :to_string, 1}) == [{1, [:short]}]
     end
 
-    test "the tag table is derived from Elixir's rules, not copied" do
-      exports =
-        for module <- Application.spec(:elixir, :modules),
-            String.starts_with?(Atom.to_string(module), "Elixir."),
-            do: {module, module.module_info(:exports)}
+    test "tags/1 reads only the exports it is given, every module, leaving out the untagged" do
+      assert Derive.tags([
+               {Process, [monitor: 1, get: 0, module_info: 0]},
+               {Port, [monitor: 1]},
+               {Map, [put: 3]}
+             ]) == %{
+               {Process, :monitor, 1} => [{0, :process}],
+               {Port, :monitor, 1} => [{0, :port}]
+             }
+    end
 
-      assert Inlines.tags() == Derive.tags(exports)
+    test "tags/1 of exports with no tagged function is empty (positive control above)" do
+      assert Derive.tags([{Map, [put: 3, get: 2]}]) == %{}
     end
 
     test "an untagged inline has no tag (positive control: Map.put/3, Bitwise.band/2)" do

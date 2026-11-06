@@ -357,7 +357,53 @@ defmodule Anchor.Domain.DemandTest do
     end
   end
 
+  describe "a lattice's shape (the two summaries the whole-Anchor self test knew, DND-5715)" do
+    @lattice """
+    defmodule AnchorFixtures.DemandTest.LatticeShape do
+      def at(:absent, _key), do: :absent
+      def at(:all, _key), do: :all
+      def at({:used, fields}, key), do: Map.get(fields, key, :absent)
+
+      def join(:absent, other), do: other
+      def join(other, :absent), do: other
+      def join(:all, _other), do: :all
+      def join(_other, :all), do: :all
+
+      def join({:used, left}, {:used, right}),
+        do: bound({:used, Map.merge(left, right, fn _key, l, r -> join(l, r) end)})
+
+      def bound(demand), do: demand
+    end
+    """
+
+    setup do
+      graph = graph!(@lattice)
+      %{lattice: Demand.analyze(graph, Cfa.analyze(graph, Cfa.default_seed(graph)), [])}
+    end
+
+    test "at/2 reads its first parameter in full, and its key", %{lattice: demand} do
+      assert Demand.param(demand, {AnchorFixtures.DemandTest.LatticeShape, :at, 2}, 0) == :all
+      assert Demand.param(demand, {AnchorFixtures.DemandTest.LatticeShape, :at, 2}, 1) == :all
+    end
+
+    test "join/2 reads both parameters in full, through its own recursion", %{lattice: demand} do
+      assert Demand.param(demand, {AnchorFixtures.DemandTest.LatticeShape, :join, 2}, 0) == :all
+      assert Demand.param(demand, {AnchorFixtures.DemandTest.LatticeShape, :join, 2}, 1) == :all
+    end
+  end
+
   describe "counts" do
+    test "the counts agree with the summaries they count", %{demand: demand} do
+      assert demand.counts.functions == map_size(demand.summaries)
+
+      assert demand.counts.parameters ==
+               demand.summaries |> Map.values() |> List.flatten() |> length()
+
+      # Positive control: the fixture has functions and absent parameters.
+      assert demand.counts.functions > 0
+      assert demand.counts.absent > 0
+    end
+
     # 30 functions (A 22, B 7, C 1), 41 parameters; absent: first/2's b,
     # chain, g, h, loop's acc, ping's and pong's p, ignored's p, run's p,
     # received_drop's m, wrong_arity's p, run_wrong's p, helper's a. 25

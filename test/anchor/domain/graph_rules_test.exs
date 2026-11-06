@@ -42,19 +42,23 @@ defmodule Anchor.Domain.GraphRulesTest do
       assert GraphRules.needs(Stubs.NeedsCfa) == [:cfa]
     end
 
+    test "the rule that holds the analyses complete needs the flow analysis and demand" do
+      assert GraphRules.needs(GraphRules.AnalysesComplete) == [:cfa, :demand]
+    end
+
     test "a need the runner does not compute raises, naming it and what it computes" do
       error = assert_raise ArgumentError, fn -> GraphRules.needs(Stubs.NeedsUnknown) end
 
       assert error.message ==
                "Anchor.Test.GraphRuleStubs.NeedsUnknown.needs/0 names [:nope], which the " <>
-                 "graph runner does not compute (it computes [:cfa, :effects])"
+                 "graph runner does not compute (it computes [:cfa, :effects, :demand])"
     end
 
     test "a needs/0 that is not a list raises" do
       error = assert_raise ArgumentError, fn -> GraphRules.needs(Stubs.NeedsNonList) end
 
       assert error.message ==
-               "Anchor.Test.GraphRuleStubs.NeedsNonList.needs/0 returned :cfa, not a list of [:cfa, :effects]"
+               "Anchor.Test.GraphRuleStubs.NeedsNonList.needs/0 returned :cfa, not a list of [:cfa, :effects, :demand]"
     end
   end
 

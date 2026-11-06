@@ -426,13 +426,14 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
 
   # The types with no relation and no key of their own: they check every file
   # they select, so only the common rows apply.
-  # DND-5442, DND-5445, DND-5447, DND-5476: the graph types, none reading a key of its own.
+  # DND-5442, DND-5445, DND-5447, DND-5476, DND-5715: the graph types, none reading a key of its own.
   # Their rows are the graph common rows, loaded through
   # `Config.parse_config/1` with an `architecture:` section (`parse_one/1`),
   # plus what only a whole document decides.
   defp table(type)
        when type in [
               :aggregate_declarations,
+              :analyses_complete,
               :layering,
               :context_acyclic,
               :effects_match_bucket

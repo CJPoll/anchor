@@ -194,6 +194,9 @@ defmodule Anchor.Domain.RuleSchema do
     # declarations are the `aggregates:` section's and the modules').
     aggregate_declarations: [],
     alphabetized_functions: ~w(mode),
+    # DND-5715: analyses_complete reads only the graph common keys (the bounds
+    # are the analyses' own).
+    analyses_complete: [],
     case_on_bare_arg: [],
     # DND-5445: context_acyclic reads only the graph common keys (the contexts
     # are the `architecture:` section's).
@@ -228,6 +231,7 @@ defmodule Anchor.Domain.RuleSchema do
   @relations_by_type %{
     aggregate_declarations: [],
     alphabetized_functions: [],
+    analyses_complete: [],
     case_on_bare_arg: [],
     context_acyclic: [],
     effects_match_bucket: [],
@@ -254,6 +258,7 @@ defmodule Anchor.Domain.RuleSchema do
   @engine_by_type %{
     aggregate_declarations: :graph,
     alphabetized_functions: :ast,
+    analyses_complete: :graph,
     case_on_bare_arg: :ast,
     context_acyclic: :graph,
     effects_match_bucket: :graph,

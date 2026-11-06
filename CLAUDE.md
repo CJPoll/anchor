@@ -143,7 +143,8 @@ Every rule type has exactly one engine, `@engine_by_type` in
 `Anchor.Domain.RuleSchema` (DND-5437): `:ast` (a Credo check) or `:graph`
 (`mix anchor.graph`, DND-5440; the graph types are `layering`, DND-5442,
 `context_acyclic`, DND-5445, `aggregate_declarations`, DND-5476,
-`effects_match_bucket`, DND-5447, and `struct_owned_by_module_flow`, DND-5454). A new rule type adds its entry there too (compilation
+`effects_match_bucket`, DND-5447, `struct_owned_by_module_flow`, DND-5454, and
+`analyses_complete`, DND-5715). A new rule type adds its entry there too (compilation
 fails without it) and to the README table's Engine column (a test compares
 them). Credo never reports a `:graph` rule as unchecked
 (`RuleCoverage.unchecked/3`).
@@ -323,6 +324,22 @@ buckets with `infer: true`. Its canary is its own tree,
 `test/anchor/integration/effects_canary_test.exs`. Anchor's own config
 declares its extra effects (tracing, `Path.wildcard`, `Mix.Task.run`) and a
 first-landing baseline.
+
+## The analyses_complete rule, and testing the analyses at their bucket's level (DND-5715)
+
+`Anchor.Domain.GraphRules.AnalysesComplete` needs `[:cfa, :demand]` (the runner
+computes the demand analysis once when a rule that runs needs it, onto
+`Model.demand`, with `architecture.effects`) and fails the run closed on a hit
+step bound, a hit round bound, or a selected function with Core and no demand
+summary. Anchor's own `.anchor.yml` declares it over lib/, with a floor, so CI's
+`mix anchor.graph` is the whole-Anchor run of those analyses. **No test reads
+Anchor's own beams or the whole stdlib as a Domain or Manager test:** a behaviour
+of an analysis gets a row in `demand_test.exs`, `transfer_test.exs` or
+`cfa_test.exs` on a small fixture, and `test/anchor/integration/analyses_complete_integration_test.exs`
+is the one happy path over beams on disk. The table logic of `Inlines` is tested
+on hand-built exports; the check against the real stdlib is
+`test/anchor/adapters/inlines_stdlib_test.exs` (`@moduletag bucket: :adapter`),
+which reads the stdlib once, in `setup_all`.
 
 ## The struct_owned_by_module_flow rule (DND-5454)
 

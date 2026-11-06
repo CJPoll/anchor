@@ -49,6 +49,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
   @typos %{
     aggregate_declarations: "min_module",
     alphabetized_functions: "mdoe",
+    analyses_complete: "min_module",
     case_on_bare_arg: "pahts",
     context_acyclic: "min_module",
     effects_match_bucket: "min_module",
