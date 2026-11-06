@@ -126,29 +126,24 @@ defmodule Anchor.Integration.ParameterReachesSinkCanaryTest do
   } do
     report = run(beams)
 
-    %{
-      precise: precise,
-      any: any,
-      imprecise: imprecise,
-      judged: judged,
-      exempt: exempt,
-      not_analysed: not_analysed
-    } = report.counts.parameter_sinks
-
-    assert any > 0, "Uses.invoked/2 applies a closure from outside"
-    assert imprecise > 0, "Uses.applied/3 passes p to an apply/3 Core does not name"
-
-    assert report.counts.parameter_sinks.computed_names == 4,
-           "Uses.applied/3, Computed.dispatch/2, Computed.anywhere/3, Started.run/3"
-
-    assert judged > 0
-    assert exempt > 0
-    assert not_analysed == 0
+    # Each number is the fixture's own and no two are equal where they could swap.
+    assert report.counts.parameter_sinks == %{
+             precise: 3,
+             any: 1,
+             imprecise: 3,
+             computed_names: 4,
+             judged: 30,
+             exempt: 18,
+             not_analysed: 0
+           }
 
     assert GraphReport.summary(report) =~
-             "; parameter_reaches_sink: #{precise} apply sites precise, #{any} fell to any, "
+             "; parameter_reaches_sink: 3 apply sites precise, 1 fell to any, " <>
+               "3 imprecise parameters, 4 calls of a computed name, " <>
+               "30 functions judged, 18 exempt, 0 not analysed"
 
-    assert GraphReport.summary(report) =~ ", 4 calls of a computed name"
+    any = report.counts.parameter_sinks.any
+    judged = report.counts.parameter_sinks.judged
 
     assert %{"parameter_sinks" => %{"any" => ^any, "judged" => ^judged}} =
              JSON.decode!(GraphReport.render(report, :json))

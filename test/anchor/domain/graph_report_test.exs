@@ -361,6 +361,38 @@ defmodule Anchor.Domain.GraphReportTest do
   end
 
   # DND-5470.
+  test "parameter_sinks/4: each number lands in its own field, summed over the rules" do
+    cfa = %Anchor.Domain.Cfa{counts: %{resolved: 11, any: 7}}
+    demand = %Anchor.Domain.Demand{counts: %{imprecise_parameters: 5}}
+
+    rules = [
+      %{judged: 20, exempt: 30, not_analysed: 40},
+      %{judged: 1, exempt: 2, not_analysed: 3}
+    ]
+
+    counts = GraphReport.parameter_sinks(rules, cfa, demand, 13)
+
+    assert counts == %{
+             precise: 11,
+             any: 7,
+             imprecise: 5,
+             computed_names: 13,
+             judged: 21,
+             exempt: 32,
+             not_analysed: 43
+           }
+
+    report = %GraphReport{counts: Map.put(@counts, :parameter_sinks, counts), findings: []}
+
+    assert GraphReport.summary(report) =~
+             "; parameter_reaches_sink: 11 apply sites precise, 7 fell to any, " <>
+               "5 imprecise parameters, 13 calls of a computed name, " <>
+               "21 functions judged, 32 exempt, 43 not analysed"
+
+    assert %{"parameter_sinks" => %{"precise" => 11, "any" => 7, "exempt" => 32}} =
+             JSON.decode!(GraphReport.render(report, :json))
+  end
+
   test "parameter_sinks/4: no such rule is nil, never a row of zeros" do
     assert GraphReport.parameter_sinks([], %Anchor.Domain.Cfa{}, %Anchor.Domain.Demand{}, 3) ==
              nil

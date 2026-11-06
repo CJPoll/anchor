@@ -1184,8 +1184,9 @@ function is another question, and there a finding can be false. A caller with no
 edge and no full name is unseen: `apply(M, name, args)`, `spawn(M, :f, args)`,
 `spawn(mod, :f, [a])`, an MFA in variables. Reading any of them as naming every
 candidate would let one such call silence the rule, so what they might reach stays
-judged. Before you drop a public function's parameter, check that no such caller
-relies on it. The run counts the `apply`s that compute a name, as a hint; a zero there
+judged. A library that adds arguments to the MFA it is given is the same: `{M, :f, []}`
+names `f/0`, so the `f/2` it really calls stays judged (Plug's `body_reader:`). Before
+you drop a public function's parameter, check that no such caller relies on it. The run counts the `apply`s that compute a name, as a hint; a zero there
 does not rule out the other shapes. Each run prints all of it:
 
 ```text
