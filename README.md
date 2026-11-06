@@ -1394,10 +1394,14 @@ it has a gap. So is a `transaction_functions` call with a non-literal argument
 Anchor cannot trace beside the one it can. A function value handed to a listed
 module is a gap too, unless `Anchor.Domain.HigherOrder` names that place.
 
-Two reads are still false, and their tickets remove them:
+One read is still false, and its ticket removes it: a `fn` bound once and both
+called and passed to a transaction (DND-5885).
 
-- a Multi handed to a helper that also calls `Multi.new/0` (DND-5884);
-- a `fn` bound once and both called and passed to a transaction (DND-5885).
+A Multi that comes back from a project helper is read from what the helper returns
+(DND-5884): an argument it is built on that Anchor cannot trace is a gap, even when
+the helper also makes its own Multi. A helper whose return Anchor cannot follow is
+a gap too, and that includes a recursive helper and one that builds the Multi with
+`Enum.reduce`.
 
 What is left is not read by construction:
 

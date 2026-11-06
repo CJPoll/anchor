@@ -87,6 +87,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
 
   alias Anchor.Domain.Aggregates.Config
   alias Anchor.Domain.Aggregates.FunctionWalk
+  alias Anchor.Domain.Aggregates.MultiRoots
   alias Anchor.Domain.Aggregates.NoWrite
   alias Anchor.Domain.Aggregates.WriteSite
   alias Anchor.Domain.Aggregates.WriteSource
@@ -679,38 +680,34 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
     if project_function?(ctx.graph, {module, name, arity}) do
       traced = Enum.map(args, &multi(&1, env, mfa, ctx, depth + 1))
 
-      unknown? =
-        Enum.all?(traced, &(&1 == :error)) and
-          Enum.any?(args, &(not plain_literal?(FunctionWalk.deref_value(&1, env)))) and
-          not makes_multi?(Graph.function(ctx.graph, {module, name, arity}))
-
       traced
       |> Enum.reduce({:ok, :multi, [FunctionWalk.id(node)], [], []}, fn
         {:ok, _kind, ids, captures, gaps}, acc -> add(acc, ids, captures, gaps)
         :error, acc -> acc
       end)
-      |> add(
-        [],
-        [],
-        if(unknown?,
-          do: [
-            "#{format({module, name, arity})} is given a value Anchor cannot trace to an Ecto.Multi"
-          ],
-          else: []
-        )
-      )
+      |> add([], [], helper_gaps({module, name, arity}, args, traced, env, ctx))
     else
       :error
     end
   end
 
-  defp makes_multi?(%FunctionNode{core: core}) do
-    core
-    |> FunctionWalk.events()
-    |> Enum.any?(fn
-      {:call, node, env, _tags} -> call(node, env) == {:ok, {@multi, :new, 0}}
-      _event -> false
-    end)
+  # What the helper returns is built on its roots: an argument there that Anchor
+  # cannot trace is part of this transaction, whatever else the helper makes.
+  defp helper_gaps(callee, args, traced, env, ctx) do
+    case MultiRoots.of(ctx.graph, callee) do
+      :unknown ->
+        ["#{format(callee)} returns a value Anchor cannot trace to an Ecto.Multi"]
+
+      roots ->
+        if Enum.any?(roots, &untraced_root?(&1, args, traced, env)),
+          do: ["#{format(callee)} is given a value Anchor cannot trace to an Ecto.Multi"],
+          else: []
+    end
+  end
+
+  defp untraced_root?(position, args, traced, env) do
+    Enum.at(traced, position - 1) == :error and
+      not plain_literal?(args |> Enum.at(position - 1) |> FunctionWalk.deref_value(env))
   end
 
   defp step(node, previous, env, mfa, ctx, depth) do

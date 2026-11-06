@@ -666,7 +666,10 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
 
       assert %Scope{
                no_gap_noticed?: false,
-               gaps: [{:dynamic_call, {@builder, :add_append, 2}, _}]
+               gaps: [
+                 {:dynamic_call, {@builder, :add_append, 2}, _},
+                 {:dynamic_call, {@x, :s59, 1}, _}
+               ]
              } =
                one(a, :s59)
     end
@@ -674,7 +677,10 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
     test "a helper appending an untraced Multi to its own new one is a gap", %{analysis: a} do
       assert %Scope{
                no_gap_noticed?: false,
-               gaps: [{:dynamic_call, {@builder, :append_to_new, 1}, _}]
+               gaps: [
+                 {:dynamic_call, {@builder, :append_to_new, 1}, _},
+                 {:dynamic_call, {@x, :s66, 1}, _}
+               ]
              } =
                one(a, :s66)
     end
