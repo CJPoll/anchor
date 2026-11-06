@@ -118,6 +118,16 @@ defmodule Anchor.Config do
         }
 
   @doc """
+  The config the landed judge runs (DND-5658): every section of `base`, the
+  base branch's, with `rules` as its rules. Only what names the change's own
+  file stays the change's: its `path` and the rule types the judge set aside. A
+  section this struct gains later is the base's by construction.
+  """
+  @spec judged(t(), t(), [map()]) :: t()
+  def judged(%__MODULE__{} = config, %__MODULE__{} = base, rules),
+    do: %{base | rules: rules, path: config.path, deferred: config.deferred}
+
+  @doc """
   The rule `type`s Anchor knows: one per shipped check's `rule_type/0`
   (`Anchor.checks/0`). A rule of any other type fails the load (DND-1265, A8),
   because no check would ever read it.

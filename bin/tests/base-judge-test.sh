@@ -20,6 +20,9 @@
 #   T13 a pull request that downgrades a base rule (layering) to `enforcement:
 #      report` and grows its baseline: the landed judge runs the base's
 #      definition (enforce), so the GREW line fails it: exit 1.
+#   T14 a pull request that adds a Managers-to-Framework call and widens the
+#      calls matrix in its own .anchor.yml to allow it: the landed judge reads
+#      the base's architecture, so layering finds the call: exit 1.
 #   T3 a base whose bin/ci/base-judge.sh is a symlink: exit 3, never followed.
 #   T4 a base whose anchor does not compile: exit 3, never a pass.
 #   T5 the sabotage: a pull request that edits Enforcement to drop STALE and
@@ -38,7 +41,7 @@
 #      old beams are deleted first, so the judge reads none and the run is not
 #      a pass.
 #
-# T4-T13 build anchor from scratch in throwaway worktrees (several minutes).
+# T4-T14 build anchor from scratch in throwaway worktrees (several minutes).
 # BASE_JUDGE_TEST_ONLY="T2 T5" runs only those cases (sabotage runs); CI runs
 # every case. Exit 0 when every case it ran holds, 1 otherwise.
 #
@@ -260,6 +263,31 @@ if want T13; then
   expect "T13 a downgraded base rule is judged as the base defines it" 1 \
     "layering|SelfTest.Grown|entry was added to .anchor/baselines/layering.txt since main." \
     $? "$work/t13.out"
+fi
+
+if want T14; then
+  pr=$(pull_request t14 main)
+  cat >"$pr/lib/anchor/check/self_test_pure.ex" <<'ELIXIR'
+defmodule Anchor.Check.SelfTestPure do
+  @moduledoc false
+  def one, do: 1
+end
+ELIXIR
+  cat >"$pr/lib/anchor/managers/self_test_leak.ex" <<'ELIXIR'
+defmodule Anchor.Managers.SelfTestLeak do
+  @moduledoc false
+  def one, do: Anchor.Check.SelfTestPure.one()
+end
+ELIXIR
+  perl -pi -e 's/^    managers: \[managers, adapters, domain\]$/    managers: [managers, adapters, domain, framework]/' "$pr/.anchor.yml"
+  if ! grep -qF "managers: [managers, adapters, domain, framework]" "$pr/.anchor.yml"; then
+    fail "T14 setup: the calls matrix was not widened"
+  fi
+  (cd "$pr" && git add -A && git commit -qm "a forbidden call, allowed by a wider calls matrix")
+  entry "$pr" main "$work/t14.out"
+  expect "T14 a widened calls matrix is judged by the base's architecture" 1 \
+    '(id: "layering", layering) Anchor.Managers.SelfTestLeak' \
+    $? "$work/t14.out"
 fi
 
 if [ "$ran" -eq 0 ]; then

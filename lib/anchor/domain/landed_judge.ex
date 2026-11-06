@@ -26,6 +26,7 @@ defmodule Anchor.Domain.LandedJudge do
   defines it, so a change that narrows a base rule's selector or downgrades
   its enforcement (and shrinks its baseline to match) is still judged by the
   base's rule, plus the change's own rules that the base does not have.
+  Every other section the rules read is the base's too (`Anchor.Config.judged/3`).
   """
 
   alias Anchor.Domain.Failures

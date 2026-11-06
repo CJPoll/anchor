@@ -50,20 +50,27 @@ defmodule Anchor.Managers.GraphLandedJudgeTest do
   end
 
   defp config(rules, deferred) do
+    %Config{rules: rules, architecture: architecture(), path: ".anchor.yml", deferred: deferred}
+  end
+
+  defp architecture(bucket \\ %{}) do
     {:ok, arch} =
       Architecture.parse(%{
         "contexts" => %{"depth" => 2},
         "buckets" => [
-          %{
-            "name" => "domain",
-            "role" => "domain",
-            "select" => [%{"paths" => ["lib/**/domain/**/*.ex"]}]
-          }
+          Map.merge(
+            %{
+              "name" => "domain",
+              "role" => "domain",
+              "select" => [%{"paths" => ["lib/**/domain/**/*.ex"]}]
+            },
+            bucket
+          )
         ],
         "calls" => %{"domain" => []}
       })
 
-    %Config{rules: rules, architecture: arch, path: ".anchor.yml", deferred: deferred}
+    arch
   end
 
   defp rule(extra \\ %{}),
@@ -100,8 +107,13 @@ defmodule Anchor.Managers.GraphLandedJudgeTest do
     end)
 
     expect(GraphStoreMock, :write, fn _dir, _key, _graph -> :ok end)
-    expect(GitBaseMock, :rules, fn @root, @ref, ".anchor.yml" -> base_rules end)
+    expect(GitBaseMock, :config, fn @root, @ref, ".anchor.yml" -> base_config(base_rules) end)
   end
+
+  # A list of rules is a base with the change's architecture; a test that means
+  # another passes its %Config{}.
+  defp base_config({:ok, rules}) when is_list(rules), do: {:ok, config(rules, [])}
+  defp base_config(other), do: other
 
   defp messages(report), do: Enum.map(report.findings, & &1.message)
 
@@ -155,7 +167,7 @@ defmodule Anchor.Managers.GraphLandedJudgeTest do
   test "a base config that cannot be read is COULD NOT MEASURE, never nothing removed" do
     expect(ConfigLoaderMock, :load_judged, fn @root -> {:ok, config([rule()], [])} end)
 
-    expect(GitBaseMock, :rules, fn @root, @ref, ".anchor.yml" ->
+    expect(GitBaseMock, :config, fn @root, @ref, ".anchor.yml" ->
       {:error, {:git, 128, "fatal"}}
     end)
 
@@ -167,6 +179,33 @@ defmodule Anchor.Managers.GraphLandedJudgeTest do
 
     assert issue.message =~
              "COULD NOT MEASURE: the landed judge could not read .anchor.yml at origin/main"
+  end
+
+  test "a base config with no architecture is COULD NOT MEASURE, never a crash" do
+    expect(ConfigLoaderMock, :load_judged, fn @root -> {:ok, config([rule()], [])} end)
+
+    expect(GitBaseMock, :config, fn @root, @ref, ".anchor.yml" ->
+      {:ok, %Config{rules: [rule()], path: ".anchor.yml"}}
+    end)
+
+    report = Graph.run(request(%{}), deps())
+
+    assert report.exit_code == 3
+    assert [issue] = report.could_not_check
+    assert issue.message =~ ":no_architecture"
+  end
+
+  test "a bucket floor the change lowers is judged by the base's architecture: exit 1",
+       %{beam: beam} do
+    # The change's own architecture has no floor; the base's domain bucket has
+    # one the tree does not meet, so it is the base's section that ran.
+    base = %{config([rule()], []) | architecture: architecture(%{"min_modules" => 99})}
+    expect_run([rule()], [], beam, {:ok, base})
+
+    report = Graph.run(request(%{}), deps())
+
+    assert report.exit_code == 1
+    assert Enum.any?(messages(report), &(&1 =~ "99"))
   end
 
   test "positive control: an honest shrink of a base rule's baseline passes", %{beam: beam} do

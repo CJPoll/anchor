@@ -24,6 +24,37 @@ defmodule Anchor.Domain.ConfigDeferredTest do
 
   defp defer(data), do: Config.parse_config(data, defer_unknown_types: true)
 
+  describe "judged/3" do
+    test "every section is the base's; only the path and the set-aside rules are the change's" do
+      change = %Config{
+        rules: [:change],
+        path: "change.yml",
+        architecture: :change,
+        aggregates: :change,
+        sabotage: :change,
+        deferred: [:set_aside]
+      }
+
+      base = %Config{
+        rules: [:base],
+        path: "base.yml",
+        architecture: :base,
+        aggregates: :base,
+        sabotage: :base,
+        deferred: []
+      }
+
+      assert Config.judged(change, base, [:merged]) == %Config{
+               rules: [:merged],
+               path: "change.yml",
+               architecture: :base,
+               aggregates: :base,
+               sabotage: :base,
+               deferred: [:set_aside]
+             }
+    end
+  end
+
   test "an unknown rule type is set aside with its position, id, type and baseline" do
     assert %Config{rules: [rule], deferred: [deferred]} =
              defer(%{"rules" => [@unknown, @known]})

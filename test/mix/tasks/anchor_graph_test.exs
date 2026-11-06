@@ -395,8 +395,8 @@ defmodule Mix.Tasks.Anchor.GraphTest do
         {:ok, [key, "a|Extra|x"]}
       end)
 
-      expect(Anchor.GitBaseMock, :rules, fn ^dir, "origin/main", ".anchor.yml" ->
-        {:ok, [rule]}
+      expect(Anchor.GitBaseMock, :config, fn ^dir, "origin/main", ".anchor.yml" ->
+        {:ok, config([rule])}
       end)
 
       expect(Anchor.GitBaseMock, :show, fn ^dir, "origin/main", ".anchor/baselines/a.txt" ->

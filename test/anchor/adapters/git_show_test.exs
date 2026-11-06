@@ -175,6 +175,26 @@ defmodule Anchor.Adapters.GitShowTest do
 
   # DND-5629: the base config's graph rules, so a baseline's copy at the ref
   # is found by its rule's id.
+  describe "config/3 (DND-5658)" do
+    @canary_config Path.expand("../../fixtures/graph_canary/.anchor.yml", __DIR__)
+
+    test "every section as committed at the ref, not the working copy", %{tmp_dir: root} do
+      git!(root, ["init", "-q", "-b", "main"])
+      File.write!(Path.join(root, ".anchor.yml"), File.read!(@canary_config))
+      git!(root, ["add", "."])
+      git!(root, ["commit", "-q", "-m", "config"])
+      File.write!(Path.join(root, ".anchor.yml"), "rules: []\n")
+
+      assert {:ok, %Anchor.Config{architecture: %{buckets: [_ | _]}, rules: [_ | _]}} =
+               GitShow.config(root, "main", ".anchor.yml")
+    end
+
+    test "no config at a ref that resolves is :absent", %{tmp_dir: root} do
+      repo!(root)
+      assert GitShow.config(root, "main", ".anchor.yml") == {:error, :absent}
+    end
+  end
+
   describe "rules/3 (DND-5629)" do
     @canary Path.expand("../../fixtures/graph_canary/.anchor.yml", __DIR__)
 

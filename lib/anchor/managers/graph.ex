@@ -626,9 +626,8 @@ defmodule Anchor.Managers.Graph do
   # "no growth", and is one issue naming them all (DND-5648).
   defp base_config(git, request, config) do
     ref = Map.get(request.opts, :base)
-    judge? = Map.get(request.opts, :judge) == true
 
-    if ref != nil and (judge? or Enum.any?(config.rules, &is_binary(Map.get(&1, :baseline)))),
+    if ref != nil and Enum.any?(config.rules, &is_binary(Map.get(&1, :baseline))),
       do: read_base_rules(git, request.root, ref, config_path(config.path, request.root)),
       else: nil
   end
@@ -643,46 +642,58 @@ defmodule Anchor.Managers.Graph do
 
   # DND-5658: under `--project` (the landed judge), the base config is read
   # once, up front: the base rules this change removes or retypes fail, each
-  # rule type the judge set aside is a report-only FIRST LANDING note, and
-  # every rule the base has is judged as the BASE defines it
-  # (`Anchor.Domain.LandedJudge.rules/2`), so a change cannot narrow a base
-  # rule's selector or downgrade its enforcement and shrink its baseline to
-  # match. A base config that could not be read is COULD NOT MEASURE (exit 3),
-  # never "nothing removed".
+  # rule type the judge set aside is a report-only FIRST LANDING note, and the
+  # run is judged by the BASE's config, every section of it
+  # (`Anchor.Config.judged/3`), plus the change's rules the base does not have
+  # (`Anchor.Domain.LandedJudge.rules/2`). So a change cannot loosen a base rule
+  # through `.anchor.yml`: not its selector or enforcement, not the calls matrix
+  # or bucket selectors, not `aggregates:`. A base config that could not be read
+  # is COULD NOT MEASURE (exit 3), never "nothing removed".
   defp landed(%Request{opts: %{judge: true}} = request, config, deps) do
-    case base_config(deps.git_base, request, config) do
-      {:unreadable, path, ref, reason} ->
+    path = config_path(config.path, request.root)
+    ref = Map.get(request.opts, :base)
+
+    case read_base_config(deps.git_base, request.root, ref, path) do
+      {:ok, %Config{architecture: nil}} ->
+        {:could_not_check, Failures.landed_judge_base_unreadable(path, ref, :no_architecture)}
+
+      {:ok, %Config{} = base} ->
+        findings = landed_findings(request, config, base.rules)
+        judged = Config.judged(config, base, LandedJudge.rules(base.rules, config.rules))
+        {:ok, judged, Map.merge(deps, %{base: {:ok, base.rules}, landed: findings})}
+
+      {:unreadable, reason} ->
         {:could_not_check, Failures.landed_judge_base_unreadable(path, ref, reason)}
 
-      base ->
-        findings = landed_findings(request, config, base)
-        config = %{config | rules: judged_rules(base, config.rules)}
+      no_base ->
+        findings = landed_findings(request, config, no_base)
+        base = if no_base == :absent, do: {:ok, :absent}
         {:ok, config, Map.merge(deps, %{base: base, landed: findings})}
     end
   end
 
   defp landed(_request, config, deps), do: {:ok, config, deps}
 
-  defp landed_findings(request, config, base) do
+  # The whole config at `ref`, `:absent` when the ref has none, `nil` without
+  # `--base`.
+  defp read_base_config(_git, _root, nil, _path), do: nil
+
+  defp read_base_config(git, root, ref, path) do
+    case git.config(root, ref, path) do
+      {:ok, %Config{} = base} -> {:ok, base}
+      {:error, :absent} -> :absent
+      {:error, reason} -> {:unreadable, reason}
+    end
+  end
+
+  defp landed_findings(request, config, base_rules) do
     path = config_path(config.path, request.root)
     ref = Map.get(request.opts, :base)
-
-    {failures, notes} =
-      LandedJudge.judge(base_rules(base), config.rules, config.deferred, path, ref)
+    {failures, notes} = LandedJudge.judge(base_rules, config.rules, config.deferred, path, ref)
 
     Enum.map(failures, &Finding.fail_closed(&1, @config_file)) ++
       Enum.map(notes, &Finding.note(&1, @config_file))
   end
-
-  defp judged_rules({:ok, base_rules}, rules) when is_list(base_rules),
-    do: LandedJudge.rules(base_rules, rules)
-
-  defp judged_rules(_no_base, rules), do: rules
-
-  # The base config's rules (`:absent` when the ref has no config), or `nil`
-  # without `--base`.
-  defp base_rules({:ok, rules}), do: rules
-  defp base_rules(nil), do: nil
 
   # DND-5648: a base config that does not load is one cause, so it is one
   # issue, naming every rule whose GREW it left unjudged; each of those rules

@@ -667,9 +667,12 @@ build path outside the judge's own root, and `--write-baseline`. A base that
 cannot be checked out or built, a pull request that does not compile, and a
 judge that exits other than 0 or 1 are exit 3 (COULD NOT MEASURE), never a
 pass. The landed judge (`--project`) loads the config with rule types it does
-not know set aside, and runs every rule the base has as the BASE defines it
-(its selector, keys and enforcement), plus the pull request's rules the base
-does not have. Per rule id:
+not know set aside, and judges by the BASE's config: every rule the base has as
+the base defines it (its selector, keys and enforcement), plus the pull
+request's rules the base does not have, all under the base's `architecture:`
+and `aggregates:`. So a pull request that widens the calls matrix, moves a
+module to another bucket or lowers a floor in `.anchor.yml` fails this step
+when its code relies on that; the owner lands such a change. Per rule id:
 
 | The pull request's rule | Landed judge | Exit |
 |---|---|---|
@@ -683,6 +686,7 @@ does not have. Per rule id:
 | on the base, narrowed (a smaller selector, `enforcement: report`) with its baseline shrunk or grown to match | the base's definition still finds it: NEW or GREW | 1 |
 | on the base, its new entry excused by a `narrows?/2` the pull request changed | the base's `narrows?/2` decides: GREW | 1 |
 | any, with a `.anchor.yml` at the base that cannot be read | COULD NOT MEASURE | 3 |
+| any, with `architecture:` or `aggregates:` changed | the base's sections are the ones judged: NEW, STALE or a bucket floor | 1 / 3 |
 
 The refused rows are landed by the owner. The pull request's own `mix anchor.graph --base` step still runs:
 it is the product under test. A base with no `bin/ci/base-judge.sh` prints
