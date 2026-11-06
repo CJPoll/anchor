@@ -1,74 +1,94 @@
 defmodule Anchor.Sabotage.CoverageCollector do
   @moduledoc """
-  The process that receives call trace messages while
-  `mix anchor.sabotage coverage` runs the suite (DND-5474). An OTP process
-  module, so **Framework** (ADR 001), and it lives under `lib/mix/tasks/`, a
-  Framework path in `.anchor.yml`'s `architecture:` buckets (the
-  `Mix.Tasks.Anchor.Sabotage` task starts it). It turns each trace message into a
-  `Anchor.Domain.Sabotage.CoverageMap` event and hands them to
-  `CoverageMap.attribute/2` in batches.
+  The tracer of `mix anchor.sabotage coverage` (DND-5474, DND-5691). An OTP
+  process module, so **Framework** (ADR 001), and it lives under
+  `lib/mix/tasks/`, a Framework path in `.anchor.yml`'s `architecture:` buckets
+  (the `Mix.Tasks.Anchor.Sabotage` task starts it). It turns each trace message
+  into a `Anchor.Domain.Sabotage.CoverageMap` event.
 
-  It keeps no trace argument: a call becomes its `{module, name, arity}` and
-  the pid that made it (for `CoverageMap`'s window leaks, DND-5642), and
-  the `%ExUnit.Test{}` that `ExUnit.EventManager.test_started/2` and
-  `test_finished/2` are called with becomes the test's ref
-  (`%{file, line, name, module}`, from its tags). It reads both message shapes
-  a tracer sends: `{:trace_ts, pid, :call, {m, f, args}, stamp}` and, under
-  the `arity` flag with a match-spec message, `{:trace_ts, pid, :call,
-  {m, f, arity}, message, stamp}`.
+  It keeps no traced value. A call becomes its `{module, name, arity}`, its pid and
+  the label and word the VM read at the call. A window's `%ExUnit.Test{}` becomes
+  the test's ref (`%{file, line, name, module}`, from its tags) and whether it ran.
+  A spawn event's arguments become the one pid they name, or a refusal
+  (`Anchor.Domain.Sabotage.ProcessOwnership.edge/3`).
 
-  `finish/1` (the call `{:finish}`) attributes what is buffered and replies
-  `{:ok, state}`, the drained `CoverageMap` state.
+  A call message in any other shape is an error in the state, never dropped: the
+  spec that sent it did not install as the run assumes (COULD NOT MEASURE). Other
+  process events (`:spawned`, `:exit`, `:link`, ...) carry nothing the map reads.
+
+  `finish/1` (the call `{:finish}`) replies `{:ok, state}`.
   """
 
   use GenServer
 
   alias Anchor.Domain.Sabotage.CoverageMap
+  alias Anchor.Domain.Sabotage.ProcessOwnership
 
-  @batch 1_000
   @event_manager ExUnit.EventManager
+  @on_exit_handler ExUnit.OnExitHandler
+  @runner ExUnit.Runner
 
-  @doc "Starts a collector; `slack:` is `CoverageMap.new/1`'s reorder slack."
+  @doc "Starts a collector."
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []), do: GenServer.start_link(__MODULE__, opts)
 
-  @doc "Attributes every buffered event and returns the drained state."
+  @doc "Returns everything recorded."
   @spec finish(pid(), timeout()) :: {:ok, CoverageMap.state()}
   def finish(pid, timeout \\ :infinity), do: GenServer.call(pid, {:finish}, timeout)
 
   @impl GenServer
-  def init(opts),
-    do: {:ok, %{map: CoverageMap.new(Keyword.take(opts, [:slack])), batch: [], count: 0}}
-
-  @impl GenServer
-  def handle_call({:finish}, _from, state) do
-    map = state |> flush() |> Map.fetch!(:map) |> CoverageMap.drain()
-    {:reply, {:ok, map}, %{state | map: map}}
+  def init(_opts) do
+    # A trace message costs the traced process nothing to send, and a queue this
+    # long must not be copied on every garbage collection.
+    Process.flag(:message_queue_data, :off_heap)
+    Process.flag(:priority, :high)
+    {:ok, CoverageMap.new()}
   end
 
   @impl GenServer
-  def handle_info({:trace_ts, pid, :call, {module, name, args}, stamp}, state),
-    do: {:noreply, add(state, event(module, name, args, nil, stamp, pid))}
+  def handle_call({:finish}, _from, map), do: {:reply, {:ok, map}, map}
 
-  def handle_info({:trace_ts, pid, :call, {module, name, arity}, message, stamp}, state),
-    do: {:noreply, add(state, event(module, name, arity, message, stamp, pid))}
+  @impl GenServer
+  def handle_info({:trace, pid, :call, mfa, message}, map),
+    do: {:noreply, CoverageMap.attribute(map, [event(pid, mfa, message)])}
 
-  def handle_info(_other, state), do: {:noreply, state}
+  def handle_info({:trace, parent, :spawn, child, mfa}, map),
+    do: {:noreply, CoverageMap.attribute(map, [spawn_event(child, parent, mfa)])}
 
-  defp event(@event_manager, :test_started, args, message, stamp, _pid),
-    do: {:window_open, stamp, test_ref(test_arg(args, message))}
+  def handle_info(_other, map), do: {:noreply, map}
 
-  defp event(@event_manager, :test_finished, args, message, stamp, _pid),
-    do: {:window_close, stamp, test_ref(test_arg(args, message))}
+  defp event(pid, {@event_manager, :test_started, 2}, {test, word}),
+    do: {:test_started, pid, word, test_ref(test), test.module}
 
-  defp event(module, name, args, _message, stamp, pid) when is_list(args),
-    do: {:call, stamp, {module, name, length(args)}, pid}
+  defp event(pid, {@event_manager, :test_finished, 2}, {test, word}),
+    do: {:test_finished, pid, word, ran?(test), test.module}
 
-  defp event(module, name, arity, _message, stamp, pid),
-    do: {:call, stamp, {module, name, arity}, pid}
+  defp event(pid, {@event_manager, :module_finished, 2}, {module, word}),
+    do: {:module_finished, pid, module, word}
 
-  defp test_arg([_manager, test], _message), do: test
-  defp test_arg(_arity, message), do: message
+  defp event(_pid, {@on_exit_handler, :register, 1}, {:entry, word}), do: {:entry, word}
+
+  defp event(pid, {@runner, :run_setup_all, 4}, {:module, module}),
+    do: {:module_started, pid, module}
+
+  defp event(pid, {module, name, arity}, {label, word})
+       when is_atom(module) and is_integer(arity) and is_integer(word),
+       do: {:call, {module, name, arity}, pid, label, word}
+
+  defp event(_pid, mfa, message), do: {:error, {:unreadable, {mfa, message}}}
+
+  defp spawn_event(child, parent, mfa) do
+    case ProcessOwnership.edge(child, parent, mfa) do
+      {^child, ^parent, via} -> {:spawn, parent, child, via}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # A test with a process ends passed (nil) or failed; every other state means
+  # ExUnit never started one.
+  defp ran?(%{state: nil}), do: true
+  defp ran?(%{state: {:failed, _failures}}), do: true
+  defp ran?(_test), do: false
 
   defp test_ref(%{tags: tags} = test) do
     %{
@@ -77,17 +97,5 @@ defmodule Anchor.Sabotage.CoverageCollector do
       name: to_string(Map.get(test, :name, "")),
       module: inspect(Map.get(test, :module))
     }
-  end
-
-  defp add(state, event) do
-    state = %{state | batch: [event | state.batch], count: state.count + 1}
-    if state.count >= @batch, do: flush(state), else: state
-  end
-
-  defp flush(%{batch: []} = state), do: state
-
-  defp flush(state) do
-    map = CoverageMap.attribute(state.map, Enum.reverse(state.batch))
-    %{state | map: map, batch: [], count: 0}
   end
 end

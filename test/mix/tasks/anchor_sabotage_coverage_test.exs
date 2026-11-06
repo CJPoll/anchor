@@ -42,13 +42,30 @@ defmodule Mix.Tasks.Anchor.SabotageCoverageTest do
       capture_io(:stderr, fn ->
         assert catch_exit(
                  Sabotage.run(
-                   ["coverage", "--local", "--", "test/x_test.exs"],
+                   ["coverage", "--local", "--", "--exclude", "slow"],
                    [ci: false] ++ @opts
                  )
                ) == {:shutdown, 3}
       end)
 
     assert stderr =~ "COULD NOT MEASURE: 0 project modules"
+  end
+
+  # DND-5691: the map is of the whole suite. No port has an expectation, so listing
+  # or tracing anything fails this.
+  test "a path after -- is refused, exit 2, before anything is listed or traced" do
+    stderr =
+      capture_io(:stderr, fn ->
+        assert catch_exit(
+                 Sabotage.run(
+                   ["coverage", "--local", "--", "test/x_test.exs"],
+                   [ci: false] ++ @opts
+                 )
+               ) == {:shutdown, 2}
+      end)
+
+    assert stderr =~ "the test arguments choose files (test/x_test.exs)"
+    assert stderr =~ "Fix: "
   end
 
   test "an unknown flag is a usage error, exit 2" do

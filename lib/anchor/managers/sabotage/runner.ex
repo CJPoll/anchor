@@ -36,7 +36,7 @@ defmodule Anchor.Managers.Sabotage.Runner do
     7. `Plan.build/2` (order, `--only`, cap), then `TestSelection.select/2`
        per mutant. With a coverage map (`--coverage PATH`, or the config's
        `coverage_map`; DND-5474) it is read first: one that cannot be read
-       or is not a version-1 map is exit 2; one built from a commit that is
+       or is not a version-2 map is exit 2; one built from a commit that is
        not an ancestor of `HEAD` is used, with a warning in the notes. `--dry-run` stops here: it writes no mutant (step 1 may
        still have restored a leftover one).
     8. The baseline: the union of the selected tests, run once with no
@@ -563,8 +563,9 @@ defmodule Anchor.Managers.Sabotage.Runner do
 
       {:check, {:error, reason}} ->
         {:refuse, 2,
-         "#{path} is not a usable version-1 coverage map (#{inspect(reason)}). " <>
-           "Fix: download the anchor-coverage artifact again"}
+         "#{path} is not a usable version-2 coverage map (#{inspect(reason)}). " <>
+           "Fix: download a current anchor-coverage artifact, or rebuild it with " <>
+           "mix anchor.sabotage coverage"}
     end
   end
 

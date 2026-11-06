@@ -65,6 +65,10 @@ before coining a synonym.
   `Anchor.TestBootTest` holds (DND-5690): the application closure loaded before
   any test runs. The coverage tool's own refusal of a module that cannot load
   is `sabotage`'s.
+- `coverage_attribution` — `mix anchor.sabotage coverage`'s causal attribution
+  (DND-5691): `Anchor.Domain.Sabotage.Attribution`, `ProcessOwnership`, `LabelSpec`,
+  `CoverageArgs`, the map's classification, and the tracer, collector and suite
+  runner around them.
 - `sabotage_scope` — `mix anchor.sabotage scope` (DND-5472): the diff parser
   (`Anchor.Domain.Sabotage.DiffHunks`), the function spans
   (`Anchor.Domain.Sabotage.FunctionSpans`), the mapping and its counts

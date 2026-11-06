@@ -7,10 +7,13 @@ defmodule Anchor.Adapters.CallTracerTest do
   # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5474_coverage_map.md
   # Sabotage record (DND-5642): ../../sabotage_records/sabotage-20261103-dnd_5639_sabotage_followups.md
   # Sabotage record (DND-5690): ../../sabotage_records/sabotage-20261106-dnd_5690_preload.md
+  # Sabotage record (DND-5691): ../../sabotage_records/coverage_attribution-20261106-dnd_5691_causal_attribution.md
   use ExUnit.Case, async: false
 
   alias Anchor.Adapters.CallTracer
   alias Anchor.Domain.Sabotage.CoverageMap
+  alias Anchor.Domain.Sabotage.LabelSpec
+  alias Anchor.Domain.Sabotage.ProcessOwnership
   alias Anchor.Sabotage.CoverageCollector
 
   @moduletag :global_tracing
@@ -46,7 +49,24 @@ defmodule Anchor.Adapters.CallTracerTest do
       tags: %{file: "/p/test/f_test.exs", line: line}
     }
 
-  test "1: window events and project calls reach the collector in stamp order; stop clears all",
+  # A test's process as ExUnit runs one: spawned by the runner in the window, it
+  # registers (which sets its label), then does its work; the caller waits for it.
+  defp in_test_process(fun) do
+    {pid, ref} =
+      spawn_monitor(fn ->
+        ExUnit.OnExitHandler.register(self())
+        fun.()
+      end)
+
+    receive do
+      {:DOWN, ^ref, :process, ^pid, reason} -> :normal = reason
+    end
+
+    :ets.delete(ExUnit.Server, pid)
+    :ok
+  end
+
+  test "1: windows, labels and project calls reach the collector; stop clears all",
        %{modules: [a, b]} do
     {:ok, manager} = ExUnit.EventManager.start_link()
     {:ok, collector} = CoverageCollector.start_link()
@@ -58,11 +78,11 @@ defmodule Anchor.Adapters.CallTracerTest do
       assert CallTracer.start(collector, [a]) == {:error, :already_tracing}
 
       ExUnit.EventManager.test_started(manager, exunit_test(1))
-      2 = a.f()
+      in_test_process(fn -> 2 = a.f() end)
       ExUnit.EventManager.test_finished(manager, exunit_test(1))
 
       ExUnit.EventManager.test_started(manager, exunit_test(2))
-      :h = b.h()
+      in_test_process(fn -> :h = b.h() end)
       ExUnit.EventManager.test_finished(manager, exunit_test(2))
     after
       assert CallTracer.stop() == :ok
@@ -70,15 +90,16 @@ defmodule Anchor.Adapters.CallTracerTest do
 
     assert {:ok, state} = CallTracer.collected(collector)
 
-    map =
-      CoverageMap.finalize(state, %{
-        commit: nil,
-        elixir: "x",
-        otp: "x",
-        modules_traced: 2,
-        suite_exit: 0,
-        root: "/p"
-      })
+    assert {:ok, map} =
+             CoverageMap.finalize(state, %{
+               commit: nil,
+               elixir: "x",
+               otp: "x",
+               modules_traced: 2,
+               suite_exit: 0,
+               total: 2,
+               root: "/p"
+             })
 
     assert Map.new(map.tests, &{&1.line, &1.functions}) == %{
              1 => [
@@ -88,7 +109,7 @@ defmodule Anchor.Adapters.CallTracerTest do
              2 => ["AnchorFixtures.CallTracerTest.B.h/0"]
            }
 
-    assert map.late_events == 0
+    assert map.leaks == []
     assert :erlang.trace_info(:new_processes, :tracer) == {:tracer, []}
     assert :erlang.trace_info({a, :f, 0}, :traced) == {:traced, false}
 
@@ -96,6 +117,121 @@ defmodule Anchor.Adapters.CallTracerTest do
              {:traced, false}
 
     assert :erlang.trace_info(self(), :flags) == {:flags, []}
+  end
+
+  describe "start/2: the patterns" do
+    test "1: a private ExUnit function that is gone is refused, naming it; nothing is traced",
+         %{modules: [a, _b]} do
+      gone = {ExUnit.Runner, :no_such_function, 9}
+      {:ok, collector} = CoverageCollector.start_link()
+      [first | rest] = LabelSpec.patterns()
+      patterns = [first, {gone, [{:_, [], [{:message, false}]}], [:local]} | rest]
+
+      try do
+        assert CallTracer.start(collector, [a], patterns) == {:error, {:pattern_missing, gone}}
+        assert :erlang.trace_info(:new_processes, :tracer) == {:tracer, []}
+        assert :erlang.trace_info({a, :f, 0}, :traced) == {:traced, false}
+
+        assert :erlang.trace_info({ExUnit.EventManager, :test_started, 2}, :traced) ==
+                 {:traced, false}
+      after
+        CallTracer.stop()
+      end
+    end
+
+    test "2: all six patterns install on this Elixir", %{modules: [a, _b]} do
+      {:ok, collector} = CoverageCollector.start_link()
+
+      try do
+        assert CallTracer.start(collector, [a]) == :ok
+
+        for {mfa, _spec, flags} <- LabelSpec.patterns() do
+          assert :erlang.trace_info(mfa, :traced) == {:traced, hd(flags)}, inspect(mfa)
+        end
+      after
+        CallTracer.stop()
+      end
+    end
+  end
+
+  # The value the spike did not assert: the pid read from a real spawn event is the
+  # caller's own, through every start path, with the supervisor as the parent.
+  describe "the owner pid in a real Task spawn event" do
+    defp spawn_events(traced, fun) do
+      parent = self()
+
+      sink =
+        spawn_link(fn ->
+          receive(do: ({:dump, ^parent} -> send(parent, {:dumped, drain([])})))
+        end)
+
+      :erlang.trace(traced, true, [:procs, {:tracer, sink}])
+
+      try do
+        fun.()
+      after
+        :erlang.trace(traced, false, [:all])
+        ref = :erlang.trace_delivered(traced)
+
+        receive do
+          {:trace_delivered, ^traced, ^ref} -> :ok
+        end
+      end
+
+      send(sink, {:dump, parent})
+      assert_receive {:dumped, messages}
+      for {:trace, ^traced, :spawn, child, mfa} <- messages, do: {child, mfa}
+    end
+
+    setup do
+      sup = start_supervised!(Task.Supervisor)
+      %{sup: sup}
+    end
+
+    # Each started task waits for the go, so a spawn event's arguments are read
+    # with the task still alive and no timing matters.
+    test "6: Task.Supervisor.start_child/3 is the noreply shape", %{sup: sup} do
+      me = self()
+
+      assert [{child, {Task.Supervised, :noreply, _args} = mfa}] =
+               spawn_events(sup, fn ->
+                 {:ok, _pid} = Task.Supervisor.start_child(sup, fn -> :ok end)
+               end)
+
+      assert ProcessOwnership.edge(child, sup, mfa) == {child, sup, me}
+    end
+
+    test "8: Task.Supervisor.start_child/5 is the reply shape", %{sup: sup} do
+      me = self()
+
+      assert [{child, {Task.Supervised, :reply, _args} = mfa}] =
+               spawn_events(sup, fn ->
+                 {:ok, _pid} =
+                   Task.Supervisor.start_child(sup, Kernel, :is_atom, [:x], restart: :temporary)
+               end)
+
+      assert ProcessOwnership.edge(child, sup, mfa) == {child, sup, me}
+    end
+
+    test "9: Task.Supervisor.async_nolink/2 is the reply shape", %{sup: sup} do
+      me = self()
+
+      assert [{child, {Task.Supervised, :reply, _args} = mfa}] =
+               spawn_events(sup, fn ->
+                 Task.await(Task.Supervisor.async_nolink(sup, fn -> :ok end))
+               end)
+
+      assert ProcessOwnership.edge(child, sup, mfa) == {child, sup, me}
+    end
+
+    test "Task.async is the reply shape, with this process both parent and owner" do
+      me = self()
+
+      assert [{child, {Task.Supervised, :reply, _args} = mfa}] =
+               spawn_events(me, fn -> Task.await(Task.async(fn -> :ok end)) end)
+
+      assert ProcessOwnership.edge(child, me, mfa) == {child, me, me}
+    end
   end
 
   # DND-5690: this filtered on Code.ensure_loaded?/1, so a project module that
@@ -143,7 +279,9 @@ defmodule Anchor.Adapters.CallTracerTest do
     send(sink, {:dump, parent})
     assert_receive {:dumped, messages}
 
-    calls = for {:trace_ts, _pid, :call, {^a, name, arity}, _stamp} <- messages, do: {name, arity}
+    calls =
+      for {:trace, _pid, :call, {^a, name, arity}, {:none, 0}} <- messages, do: {name, arity}
+
     assert calls == [f: 0, g: 1]
   end
 
@@ -166,12 +304,13 @@ defmodule Anchor.Adapters.CallTracerTest do
       CallTracer.stop()
     end
 
-    # Read at once, with no other message sent first: stop/0 already waited.
-    {:message_queue_len, queued} = Process.info(sink, :message_queue_len)
-    assert queued == callers * calls * 2
-
+    # Asked at once: stop/0 already waited, so every call is there, ahead of the
+    # dump. The queue also holds the tasks' spawn and exit events.
     send(sink, {:dump, parent})
-    assert_receive {:dumped, _messages}
+    assert_receive {:dumped, messages}
+
+    assert Enum.count(messages, &match?({:trace, _pid, :call, _mfa, _word}, &1)) ==
+             callers * calls * 2
   end
 
   test "stop/0 asks for trace delivery and returns only once it is notified" do
@@ -205,86 +344,5 @@ defmodule Anchor.Adapters.CallTracerTest do
     GenServer.stop(collector)
 
     assert {:error, {:collector_down, _reason}} = CallTracer.collected(collector)
-  end
-
-  describe "window leaks through real tracing (DND-5642)" do
-    # Each call is made by a process that answers a message, so the window it
-    # falls in is set by when the test asks, never by timing.
-    defp worker(fun) do
-      spawn_link(fn -> serve(fun) end)
-    end
-
-    defp serve(fun) do
-      receive do
-        {:run, from} ->
-          send(from, {:ran, self(), fun.()})
-          serve(fun)
-      end
-    end
-
-    defp run_in(worker) do
-      send(worker, {:run, self()})
-
-      # Blocks until the worker has made its call: bounded by the test's own
-      # timeout, never by a receive deadline.
-      receive do
-        {:ran, ^worker, _result} -> :ok
-      end
-    end
-
-    defp traced_windows(modules, steps) do
-      {:ok, manager} = ExUnit.EventManager.start_link()
-      {:ok, collector} = CoverageCollector.start_link()
-      :ok = CallTracer.start(collector, modules)
-
-      try do
-        for {line, step} <- steps do
-          ExUnit.EventManager.test_started(manager, exunit_test(line))
-          step.()
-          ExUnit.EventManager.test_finished(manager, exunit_test(line))
-        end
-      after
-        :ok = CallTracer.stop()
-      end
-
-      {:ok, state} = CallTracer.collected(collector)
-
-      CoverageMap.finalize(state, %{
-        commit: nil,
-        elixir: "x",
-        otp: "x",
-        modules_traced: 2,
-        suite_exit: 0,
-        root: "/p"
-      })
-    end
-
-    test "LT1: a process the first test left running, called in the next window, warns", %{
-      modules: [_a, b]
-    } do
-      leaker = worker(&b.h/0)
-
-      map = traced_windows([b], [{1, fn -> run_in(leaker) end}, {2, fn -> run_in(leaker) end}])
-
-      assert [%{from: [%{line: 1}], to: %{line: 2}, calls: 1}] = map.window_leaks
-      assert [warning] = CoverageMap.leak_warnings(map)
-      assert warning =~ "test/f_test.exs:1 test 1 -> test/f_test.exs:2 test 2 (1 calls)"
-
-      assert Map.new(map.tests, &{&1.line, &1.functions})[2] == [
-               "AnchorFixtures.CallTracerTest.B.h/0"
-             ]
-    end
-
-    test "LT2: positive control: a clean pair, a new process per window, warns of nothing", %{
-      modules: [_a, b]
-    } do
-      first = worker(&b.h/0)
-      second = worker(&b.h/0)
-
-      map = traced_windows([b], [{1, fn -> run_in(first) end}, {2, fn -> run_in(second) end}])
-
-      assert map.window_leaks == []
-      assert CoverageMap.leak_warnings(map) == []
-    end
   end
 end

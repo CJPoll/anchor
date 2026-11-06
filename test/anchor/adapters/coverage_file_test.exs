@@ -9,10 +9,21 @@ defmodule Anchor.Adapters.CoverageFileTest do
 
   test "a map round-trips, its directory made first", %{tmp_dir: dir} do
     path = Path.join([dir, "deep", "cov.etf"])
-    map = %{version: 1, commit: "abc", tests: [%{file: "t.exs", line: 1, functions: ["A.f/0"]}]}
+    map = %{version: 2, commit: "abc", tests: [%{file: "t.exs", line: 1, functions: ["A.f/0"]}]}
 
     assert CoverageFile.write(path, map) == :ok
     assert CoverageFile.read(path) == {:ok, map}
+  end
+
+  test "the same map writes the same bytes", %{tmp_dir: dir} do
+    a = Path.join(dir, "a.etf")
+    b = Path.join(dir, "b.etf")
+    map = Map.new(1..64, &{&1, "v#{&1}"})
+
+    assert CoverageFile.write(a, map) == :ok
+    assert CoverageFile.write(b, Map.new(Enum.reverse(Map.to_list(map)))) == :ok
+    assert File.read!(a) == File.read!(b)
+    assert File.read!(a) == :erlang.term_to_binary(map, [:deterministic])
   end
 
   test "a missing file is its posix error", %{tmp_dir: dir} do
