@@ -246,7 +246,7 @@ defmodule Spike.CaseA do
   end
 
   test "port open" do
-    port = Port.open({:spawn_executable, System.find_executable("echo")}, [:binary, args: ["x"], :exit_status])
+    port = Port.open({:spawn_executable, System.find_executable("echo")}, [:binary, :exit_status, args: ["x"]])
 
     receive do
       {^port, {:exit_status, 0}} -> :ok
