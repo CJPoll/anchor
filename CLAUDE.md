@@ -360,7 +360,8 @@ first-landing baseline.
 
 `Anchor.Domain.GraphRules.AnalysesComplete` needs `[:cfa, :demand]` (the runner
 computes the demand analysis once when a rule that runs needs it, onto
-`Model.demand`, with `architecture.effects`) and fails the run closed on a hit
+`Model.demand`, with `architecture.effects`, and the run's summary and JSON
+print its counts) and fails the run closed on a hit
 step bound, a hit round bound, a selected function with Core and no demand
 summary, or a count below a floor it declares (`min_functions`, `min_apply_sites`,
 `min_absent_parameters`). Anchor's own `.anchor.yml` declares it over lib/, with

@@ -3,8 +3,8 @@
 - **Domain:** graph_runner
 - **Branch:** dnd-5715-bucket-split
 - **Date:** 2026-11-06
-- **Code under test:** `Anchor.Managers.Graph` (the lazy, guarded `Demand.analyze/3` run and `Model.demand`, the crash chain in `run_check`, `unreadable_issues`), `GraphRules.needs/1`
-- **Suite run:** one `test-slot` held a driver that, per mutation, asserted the replaced text occurs exactly once, edited one file, ran `mix test --timeout 2000 --max-cases 2 <its test files>`, and wrote the file back. Heads: 257f359, 2d8b756. Every row compiled and ran (its summary line is quoted), so no row is a compile failure read as a test failure.
+- **Code under test:** `Anchor.Managers.Graph` (the lazy, guarded `Demand.analyze/3` run and `Model.demand`, the crash chain in `run_check`, `unreadable_issues`), `GraphRules.needs/1`, `Anchor.Domain.GraphReport` (the demand counts in the summary and the JSON)
+- **Suite run:** one `test-slot` held a driver that, per mutation, asserted the replaced text occurs exactly once, edited one file, ran `mix test --timeout 2000 --max-cases 2 <its test files>`, and wrote the file back. Heads: 257f359, 2d8b756, d32964e. Every row compiled and ran (its summary line is quoted), so no row is a compile failure read as a test failure.
 
 | # | Mutation | File | Tests run | Result | Failing tests |
 |---|---|---|---|---|---|
@@ -18,6 +18,12 @@
 | GR-H | a crashed flow analysis still runs the demand analysis | `lib/anchor/managers/graph.ex` | `graph_demand_test.exs` | `14 tests, 1 failure` | fail closed a flow analysis that crashed: the demand analysis is not run, and the rule says why |
 | GR-I | the runner does not provide :demand | `lib/anchor/domain/graph_rules.ex` | `graph_rules_test.exs`, `graph_demand_test.exs` | `27 tests, 14 failures` | needs/1 (DND-5574) the rule that holds the analyses complete needs the flow analysis and demand; needs/1 (DND-5574) a need the runner does not compute raises, naming it and what it computes; needs/1 (DND-5574) a needs/0 that is not a list raises; fail closed an analysis that exits: the rule that needs it is one issue and is not run; the others run; analyses_complete fails the run closed on a function the analysis left unsummarised; analyses_complete fails the run closed on a demand analysis that hit its round bound; a rule that runs needs the analysis it runs once, over the flow analysis and the architecture's effect tokens; fail closed an analysis that raises: the rule that needs it is one issue and is not run; the others run; fail closed an analysis that throws: the rule that needs it is one issue and is not run; the others run; fail closed the effect inference and the demand analysis both crashed: each rule says its own; a rule that runs needs the analysis the rule alone over a complete analysis: exit 0, no finding; analyses_complete fails the run closed on a flow analysis that hit its step bound; fail closed an analysis that returns no %Demand{}: the rule that needs it is one issue and is not run; the others run; fail closed a flow analysis that crashed: the demand analysis is not run, and the rule says why |
 | GR-J | an unreadable beam is no issue | `lib/anchor/managers/graph.ex` | `analyses_complete_integration_test.exs` | `5 tests, 1 failure` | a beam on disk that cannot be read fails the run, naming it |
+| GR-K | the counts are not put on the report | `lib/anchor/managers/graph.ex` | `graph_demand_test.exs` | `16 tests, 2 failures` | a rule that runs needs the analysis the rule alone over a complete analysis: exit 0, no finding; analyses_complete fails the run closed on a demand analysis that hit its round bound |
+| RP-A | the summary never prints the demand counts | `lib/anchor/domain/graph_report.ex` | `graph_demand_test.exs`, `graph_report_test.exs` | `46 tests, 4 failures` | demand counts (DND-5715) a hit round bound is said, with how many functions hit it; demand counts (DND-5715) the summary ends with the counts when the analysis ran, with no finding; a rule that runs needs the analysis the rule alone over a complete analysis: exit 0, no finding; analyses_complete fails the run closed on a demand analysis that hit its round bound |
+| RP-B | a hit round bound is not said | `lib/anchor/domain/graph_report.ex` | `graph_demand_test.exs`, `graph_report_test.exs` | `46 tests, 2 failures` | demand counts (DND-5715) a hit round bound is said, with how many functions hit it; analyses_complete fails the run closed on a demand analysis that hit its round bound |
+| RP-C | the JSON always says null | `lib/anchor/domain/graph_report.ex` | `graph_demand_test.exs`, `graph_report_test.exs` | `46 tests, 2 failures` | demand counts (DND-5715) the JSON carries the same counts under string keys; a rule that runs needs the analysis the rule alone over a complete analysis: exit 0, no finding |
+| RP-D | no analysis still prints a demand note | `lib/anchor/domain/graph_report.ex` | `graph_demand_test.exs`, `graph_report_test.exs` | `46 tests, 9 failures` | demand counts (DND-5715) no analysis says nothing in the summary, and null in the JSON; render/2 :text one line per finding, then the summary with exact counts; apply sites (DND-5574, R6) the summary ends with the resolved and any counts when the analysis ran; render/2 functions with no Core body (DND-5549) are counted in the summary and the JSON when there are any; render/2 :text opaque modules are counted in the summary when there are any; render/2 modules outside the root (DND-5588, DND-5630) are counted in the summary and the JSON when there are any; render/2 :text could-not-check entries print first and count as violations; dynamic calls (DND-5633) the summary ends with the fanned-out and narrowed counts; no rule that runs needs the analysis it is not run, and the rule that does not need it sees none |
+| RP-E | the bound is printed as a list length of one | `lib/anchor/domain/graph_report.ex` | `graph_report_test.exs` | `30 tests, 1 failure` | demand counts (DND-5715) demand/1 takes the counts from the analysis, and the bound as a count; nil for none |
 
 ## Failure strings (verbatim, the first failing test of each row)
 
@@ -187,4 +193,113 @@
      right: 1
      stacktrace:
        test/anchor/integration/analyses_complete_integration_test.exs:140: (test)
+```
+
+### GR-K: the counts are not put on the report
+
+```
+
+  1) test a rule that runs needs the analysis the rule alone over a complete analysis: exit 0, no finding (Anchor.Managers.GraphDemandTest)
+     test/anchor/managers/graph_demand_test.exs:167
+     Assertion with =~ failed
+     code:  assert GraphReport.summary(report) =~
+              "; demand: 4 functions, 7 parameters, 1 absent, 0 imprecise functions"
+     left:  "anchor.graph: 1 modules in 1 apps, 1 rules, 0 violations (0 report-only, 0 baselined); apply sites: 1 resolved, 0 any"
+     right: "; demand: 4 functions, 7 parameters, 1 absent, 0 imprecise functions"
+     stacktrace:
+       test/anchor/managers/graph_demand_test.exs:175: (test)
+```
+
+### RP-A: the summary never prints the demand counts
+
+```
+
+  1) test demand counts (DND-5715) a hit round bound is said, with how many functions hit it (Anchor.Domain.GraphReportTest)
+     test/anchor/domain/graph_report_test.exs:227
+     Assertion with =~ failed
+     code:  assert GraphReport.summary(report) =~ "2 imprecise functions (round bound hit on 3 functions)"
+     left:  "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 baselined)"
+     right: "2 imprecise functions (round bound hit on 3 functions)"
+     stacktrace:
+       test/anchor/domain/graph_report_test.exs:230: (test)
+```
+
+### RP-B: a hit round bound is not said
+
+```
+
+  1) test demand counts (DND-5715) a hit round bound is said, with how many functions hit it (Anchor.Domain.GraphReportTest)
+     test/anchor/domain/graph_report_test.exs:227
+     Assertion with =~ failed
+     code:  assert GraphReport.summary(report) =~ "2 imprecise functions (round bound hit on 3 functions)"
+     left:  "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 baselined); demand: 4 functions, 7 parameters, 1 absent, 2 imprecise functions"
+     right: "2 imprecise functions (round bound hit on 3 functions)"
+     stacktrace:
+       test/anchor/domain/graph_report_test.exs:230: (test)
+```
+
+### RP-C: the JSON always says null
+
+```
+
+  1) test demand counts (DND-5715) the JSON carries the same counts under string keys (Anchor.Domain.GraphReportTest)
+     test/anchor/domain/graph_report_test.exs:241
+     Assertion with == failed
+     code:  assert JSON.decode!(GraphReport.render(report, :json))["demand"] == %{
+              "functions" => 4,
+              "parameters" => 7,
+              "absent" => 1,
+              "imprecise_functions" => 2,
+              "bound_hit" => 0
+            }
+     left:  nil
+     right: %{
+              "absent" => 1,
+              "bound_hit" => 0,
+              "functions" => 4,
+              "imprecise_functions" => 2,
+              "parameters" => 7
+            }
+     stacktrace:
+       test/anchor/domain/graph_report_test.exs:244: (test)
+```
+
+### RP-D: no analysis still prints a demand note
+
+```
+
+  1) test demand counts (DND-5715) no analysis says nothing in the summary, and null in the JSON (Anchor.Domain.GraphReportTest)
+     test/anchor/domain/graph_report_test.exs:234
+     Refute with =~ failed
+     code:  refute GraphReport.summary(report) =~ "demand"
+     left:  "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 baselined); demand: none"
+     right: "demand"
+     stacktrace:
+       test/anchor/domain/graph_report_test.exs:237: (test)
+```
+
+### RP-E: the bound is printed as a list length of one
+
+```
+
+  1) test demand counts (DND-5715) demand/1 takes the counts from the analysis, and the bound as a count; nil for none (Anchor.Domain.GraphReportTest)
+     test/anchor/domain/graph_report_test.exs:208
+     Assertion with == failed
+     code:  assert GraphReport.demand(analysis) == %{@demand | bound_hit: 3}
+     left:  %{
+              functions: 4,
+              parameters: 7,
+              absent: 1,
+              imprecise_functions: 2,
+              bound_hit: 1
+            }
+     right: %{
+              functions: 4,
+              parameters: 7,
+              absent: 1,
+              imprecise_functions: 2,
+              bound_hit: 3
+            }
+     stacktrace:
+       test/anchor/domain/graph_report_test.exs:214: (test)
 ```
