@@ -741,3 +741,28 @@ unused.
 | B3 | a failed baseline read as a pass | 2 of 13: "a killer file run whole that fails ...", "1: the killers fail with no mutant ..." | `** (Mox.UnexpectedCallError) no expectation defined for Anchor.SourceMutationMock.write_journal/2` |
 
 After every row was restored, each file named above was green.
+
+## The replay's failure branches (critic, whole MR)
+
+The critic found no test on a killer that does not read as a test. The sweep of
+that class (a branch of the replay that ends a row or the run other than by a
+pass) found five more: a function never read, git failing on the dirty check, a
+baseline ending in neither a pass nor a failure, a test run that cannot start
+(baseline and row), and a record the store cannot read. G8's and G6's rows show
+a write the test did not expect: Hammox fails it. Each row ran `mix test --force
+--timeout 2000 --max-cases 2`.
+
+| # | Mutation | Tests failed | First failure, verbatim |
+|---|---|---|---|
+| G1 | a killer that does not read is dropped | 1 of 30: "a killer that does not read as a test is drifted, never dropped" | `left:  []` |
+| G2 | `(timeout)` drifts as a bad killer | 3 of 30: "a (timeout) row runs the killer files ...", "a (timeout) row with no other killed row ...", "(timeout) beside a named killer ..." | `left:  %{replayable: [t, _k], drifted: []}` |
+| G3 | a function never read gives no mutants | 1 of 30: "a function the plan never read is drifted, function gone" | `left:  [` |
+| G4 | the drift line loses why the killer does not read | 1 of 30: "a killer that does not read names itself in the drift line" | ``left:  "drifted (killer \"--include:1 test x\": false) 3f9a01c2b7de Calc.add/2 return_input ...`` |
+| G5 | git failing on the dirty check is exit 2 | 1 of 18: "git cannot say what is dirty: exit 3, before any test runs" | `left:  %{refusal: {3, message}}` |
+| G6 | a baseline that timed out reads as a pass | 1 of 18: "the baseline ends any other way (a timeout) ..." | `** (Mox.UnexpectedCallError) no expectation defined for Anchor.SourceMutationMock.write_journal/2` |
+| G7 | a baseline that cannot start is always exit 3 | 1 of 18: "the baseline cannot start: the run ends on the refusal's own code and message" | `left:  %{refusal: {2, message}}` |
+| G8 | a row's refusal does not end the run | 1 of 18: "a row's test run cannot start: the file is restored, and the run ends on the refusal" | `** (Mox.UnexpectedCallError) expected Anchor.SourceMutationMock.write_journal/2 to be called once but it has been called 2 times` |
+| G9 | a record the store cannot read is dropped silently | 1 of 18: "a record that cannot be read at all is named by its path and error; alone, exit 3" | `left:  []` |
+
+After every row was restored, each file named above was green (`48 tests, 0
+failures`).

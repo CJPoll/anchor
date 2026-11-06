@@ -142,6 +142,33 @@ defmodule Anchor.Domain.Sabotage.ReplayTest do
       assert plan([timed], facts()).drifted == [{timed, :no_killer_test}]
     end
 
+    test "a killer that does not read as a test is drifted, never dropped" do
+      for {killer, reason} <- [
+            {"--include:1 test x", {:bad_path, :option}},
+            {"no line number here", {:not_a_ref, "no line number here"}}
+          ] do
+        beside = item(%{killers: ["test/calc_test.exs:4 test add/2 sums", killer]})
+        assert plan([beside], facts()).drifted == [{beside, {:bad_killer, killer, reason}}]
+      end
+    end
+
+    test "(timeout) beside a named killer: run by name, the bound names no test" do
+      both =
+        item(%{status: "timeout", killers: ["(timeout)", "test/calc_test.exs:4 test add/2 sums"]})
+
+      assert %{replayable: [r], drifted: []} = plan([both], facts())
+      assert r.by_file == false
+      assert r.test_args == ["test/calc_test.exs", "--only", "test:test add/2 sums"]
+    end
+
+    test "a function the plan never read is drifted, function gone" do
+      unread = item()
+
+      assert plan([unread], facts(%{generated: %{}})).drifted == [
+               {unread, {:function_gone, :not_read}}
+             ]
+    end
+
     test "a module name that does not read: drifted, not a Module.fun/arity" do
       i = item(%{mfa: "add/2"})
       assert plan([i], facts()).drifted == [{i, :bad_function}]
@@ -257,6 +284,13 @@ defmodule Anchor.Domain.Sabotage.ReplayTest do
                  "(killer run by file: the record names no test)\n"
 
       assert text =~ "still killed #{@id} Calc.add/2 return_input\n"
+    end
+
+    test "a killer that does not read names itself in the drift line" do
+      bad = item()
+      reason = {:bad_killer, "--include:1 test x", {:bad_path, :option}}
+      text = Replay.render(%Result{rows: 1, records: 1, drifted: [{bad, reason}]})
+      assert text =~ ~s(drifted (killer "--include:1 test x": {:bad_path, :option}\) #{@id})
     end
 
     test "zero rows says COULD NOT MEASURE and names the directories searched" do

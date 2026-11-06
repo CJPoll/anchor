@@ -204,6 +204,81 @@ defmodule Anchor.Managers.SabotageReplayTest do
     assert :file_baseline in calls()
   end
 
+  test "git cannot say what is dirty: exit 3, before any test runs" do
+    [first | _rest] = mutants()
+    expect_until_plan(%{"test/sabotage_records/a.md" => record([first])})
+    reason = {:git_failed, ["status"], 128, "fatal"}
+    expect(GitWorktreeMock, :dirty_paths, fn @root, ["lib/calc.ex"] -> {:error, reason} end)
+
+    assert %{refusal: {3, message}} = Sabotage.replay(@facts, @opts)
+
+    assert message ==
+             "COULD NOT MEASURE: git could not say which files are dirty (#{inspect(reason)})"
+  end
+
+  test "the baseline ends any other way (a timeout): exit 3, naming it, not read as a pass" do
+    [first | _rest] = mutants()
+    expect_until_plan(%{"test/sabotage_records/a.md" => record([first])})
+    expect_clean()
+    expect(TestExecutionMock, :run, fn _argv, @args, _opts -> test_run(:timeout) end)
+
+    assert %{refusal: {3, message}} = Sabotage.replay(@facts, @opts)
+    assert message =~ "the recorded killers did not pass with no mutant applied (timeout)"
+  end
+
+  test "the baseline cannot start: the run ends on the refusal's own code and message" do
+    [first | _rest] = mutants()
+    expect_until_plan(%{"test/sabotage_records/a.md" => record([first])})
+    expect_clean()
+    expect(TestExecutionMock, :run, fn _argv, @args, _opts -> {:error, :timeout_not_found} end)
+
+    assert %{refusal: {2, message}} = Sabotage.replay(@facts, @opts)
+    assert message =~ "the `timeout` binary was not found"
+  end
+
+  test "a row's test run cannot start: the file is restored, and the run ends on the refusal" do
+    [first, second | _rest] = mutants()
+    expect_until_plan(%{"test/sabotage_records/a.md" => record([first, second])})
+    expect_clean()
+    expect_patcher(1)
+
+    TestExecutionMock
+    |> expect(:run, fn _argv, @args, _opts -> test_run(:passed) end)
+    |> expect(:run, fn _argv, @args, _opts ->
+      {:error, {:results_not_removed, "/x/results.bin", :eisdir}}
+    end)
+
+    result = Sabotage.replay(@facts, @opts)
+
+    assert {3, message} = result.refusal
+    assert message =~ "COULD NOT MEASURE: the previous results file /x/results.bin"
+    assert result.results == []
+    assert {:write_file, :original} in calls()
+  end
+
+  test "a record that cannot be read at all is named by its path and error; alone, exit 3" do
+    expect(SourceMutationMock, :read_journal, fn @root -> :none end)
+
+    expect(ConfigLoaderMock, :load_in, fn @root ->
+      {:ok, %Anchor.Config{rules: [], sabotage: %SabotageConfig{}}}
+    end)
+
+    expect(GitWorktreeMock, :ignored?, fn @root, ".anchor/sabotage/in-flight.json" ->
+      {:ok, true}
+    end)
+
+    expect(RecordStoreMock, :list, fn @root, "test/sabotage_records" ->
+      ["test/sabotage_records/a.md"]
+    end)
+
+    expect(RecordStoreMock, :read, fn @root, "test/sabotage_records/a.md" -> {:error, :eacces} end)
+
+    result = Sabotage.replay(@facts, @opts)
+
+    assert result.unreadable == ["test/sabotage_records/a.md (:eacces)"]
+    assert Replay.exit_code(result) == 3
+  end
+
   test "1: the killers fail with no mutant: exit 3, main is red; nothing is written" do
     [first | _rest] = mutants()
     expect_until_plan(%{"test/sabotage_records/a.md" => record([first])})
