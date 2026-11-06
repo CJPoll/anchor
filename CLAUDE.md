@@ -487,17 +487,24 @@ VM. The flow is in `Anchor.Managers.Sabotage.Runner`'s moduledoc.
 
 `mix anchor.sabotage coverage` builds the map test -> project functions it
 executed, CI only unless `--local` (`.github/workflows/coverage-map.yml`,
-artifact `anchor-coverage`). Windows come from traced
-`ExUnit.EventManager.test_started/2`/`test_finished/2` calls with strict
-monotonic stamps, never from a formatter (formatter events are async). The
-windowing is pure (`Anchor.Domain.Sabotage.CoverageMap`); the collector
-process (`Anchor.Sabotage.CoverageCollector`, Framework) is started by the
-Mix task and reached by the Manager only through the `Tracing` port. The
-`:arity` trace flag keeps every traced argument out of the collector. A test
-that turns VM-wide tracing on is tagged `@moduletag :global_tracing`, and the
-coverage build runs with `--exclude global_tracing`. `run --coverage PATH`
-selects a mutant's tests from the map first (source `coverage`), then the
-mirror.
+artifact `anchor-coverage`). It compiles every test file first, then runs the
+suite (`Anchor.Adapters.SuiteRunner`), and refuses a test argument that chooses
+files. A call is credited causally, never by arrival time (DND-5691): the match
+specs (`Anchor.Domain.Sabotage.LabelSpec`) read a window word and the seq_trace
+label at the call, and once the run is over `ProcessOwnership` resolves each pid to
+its owner and `Attribution` classifies each call. Ownership first, a label only
+inside its own window, else ambient. A call by an owned process past its window is
+a leak: exit 1, never a warning. Windows opened must equal ExUnit's `total`, and a
+private ExUnit function, Task shape or label it cannot read is COULD NOT MEASURE.
+No gate or silencing: every call is traced, because DND-5691's measurement found
+the slowest test at 3.9 s. The collector process
+(`Anchor.Sabotage.CoverageCollector`, Framework) is started by the Mix task and
+reached by the Manager only through the `Tracing` port. The `:arity` trace flag
+keeps every call's arguments out of the collector, and the collector reduces a spawn
+event's arguments to the one pid they name. A test that turns VM-wide
+tracing on is tagged `@moduletag :global_tracing`, and the coverage build runs
+with `--exclude global_tracing`. `run --coverage PATH` selects a mutant's tests
+from the map first (source `coverage`), then the mirror.
 
 ## Sabotage records (DND-5484)
 

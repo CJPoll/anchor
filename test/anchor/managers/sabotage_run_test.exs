@@ -834,7 +834,7 @@ defmodule Anchor.Managers.SabotageRunTest do
 
     defp coverage_map(commit \\ "c0ffee0000000000000000000000000000000000") do
       %{
-        version: 1,
+        version: 2,
         commit: commit,
         elixir: "1.19.4",
         otp: "28",
@@ -847,9 +847,9 @@ defmodule Anchor.Managers.SabotageRunTest do
             functions: ["Calc.add/2"]
           }
         ],
+        leaks: [],
+        ambient: [],
         modules_traced: 3,
-        outside_windows: 0,
-        late_events: 0,
         suite_exit: 0
       }
     end
@@ -1034,18 +1034,18 @@ defmodule Anchor.Managers.SabotageRunTest do
 
       assert {2, message} = run.refusal
       assert message =~ ~s|({:commit, "--output=/tmp/x"})|
-      assert message =~ "Fix: download the anchor-coverage artifact again"
+      assert message =~ "Fix: download a current anchor-coverage artifact"
     end
 
     test "a map of another version is exit 2 with a Fix:" do
       expect_until_plan()
-      expect_map({:ok, %{coverage_map() | version: 2}})
+      expect_map({:ok, %{coverage_map() | version: 1}})
 
       run = Sabotage.run(%{@facts | dry_run: true} |> Map.put(:coverage, "cov.etf"), @cov_opts)
 
       assert {2, message} = run.refusal
-      assert message =~ "is not a usable version-1 coverage map ({:version, 2})"
-      assert message =~ "Fix: download the anchor-coverage artifact again"
+      assert message =~ "is not a usable version-2 coverage map ({:version, 1})"
+      assert message =~ "Fix: download a current anchor-coverage artifact"
     end
   end
 
@@ -1618,7 +1618,7 @@ defmodule Anchor.Managers.SabotageRunTest do
 
     test "T2: positive control: two targets with different test sets run twice" do
       map = %{
-        version: 1,
+        version: 2,
         commit: "c0ffee0000000000000000000000000000000000",
         elixir: "1.19.4",
         otp: "28",
@@ -1631,9 +1631,9 @@ defmodule Anchor.Managers.SabotageRunTest do
             functions: ["String.Chars.Calc.to_string/1"]
           }
         ],
+        leaks: [],
+        ambient: [],
         modules_traced: 3,
-        outside_windows: 0,
-        late_events: 0,
         suite_exit: 0
       }
 

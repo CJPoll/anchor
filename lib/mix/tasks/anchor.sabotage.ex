@@ -96,16 +96,19 @@ defmodule Mix.Tasks.Anchor.Sabotage do
 
       MIX_ENV=test mix anchor.sabotage coverage [--out PATH] [--local] [-- TEST_ARGS]
 
-  Runs the whole suite in this VM, one test at a time (`--max-cases 1`), with
-  every call of the project's own modules traced, and writes the map test ->
-  functions it executed (default `_build/test/anchor/coverage.etf`;
-  `Anchor.Domain.Sabotage.CoverageMap`). `TEST_ARGS` go to `mix test`.
+  Compiles every test file, then runs the whole suite in this VM, one test at a
+  time (`--max-cases 1`), with every call of the project's own modules traced, and
+  writes the map test -> functions it executed (default
+  `_build/test/anchor/coverage.etf`; `Anchor.Domain.Sabotage.CoverageMap`).
+  `TEST_ARGS` go to `mix test`; one that chooses files is refused.
 
   It is CI-only by default: without `CI=true` it refuses (exit 2) unless
-  `--local` is given. Exit codes: 0 written; 1 written, but the suite failed;
-  2 a refusal (not CI, MIX_ENV not test, `TEST_ARGS` that set
-  `--max-cases`, another tracer on, the map not writable); 3 `COULD NOT MEASURE` (zero modules or zero tests, or a
-  project module that cannot load: no map written).
+  `--local` is given. Exit codes: 0 written; 1 written, but a test leaked (a
+  process it owned called project code after it ended, DND-5691) or the suite
+  failed; 2 a refusal (not CI, MIX_ENV not test, `TEST_ARGS` that set
+  `--max-cases` or choose files, another tracer on, the map not writable); 3 `COULD
+  NOT MEASURE` (zero modules or zero tests, a project module that cannot load, or a
+  run that cannot be believed, such as fewer windows than tests: no map written).
   """
 
   use Mix.Task
