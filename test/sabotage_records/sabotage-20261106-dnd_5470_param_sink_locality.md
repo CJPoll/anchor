@@ -1432,3 +1432,124 @@ Run summary: `34 tests, 2 failures`
 
 ....................
 ```
+
+## Seventh run
+
+The workflow's trigger and permissions had no test. These mutate the workflow file itself, against `0deeb94`.
+
+| # | Mutation | Tests run | Result | Failing tests |
+|---|---|---|---|---|
+| BZ-A | a pull request's run reaches the job (`.github/workflows/behaviour-locality.yml`) | `behaviour_locality_workflow_test.exs` | `4 tests, 1 failure` (red) | it runs on a success that is no pull request's, or by hand |
+| BZ-B | the job runs on a failed coverage map (`.github/workflows/behaviour-locality.yml`) | `behaviour_locality_workflow_test.exs` | `4 tests, 1 failure` (red) | it runs on a success that is no pull request's, or by hand |
+| BZ-C | the workflow may write (`.github/workflows/behaviour-locality.yml`) | `behaviour_locality_workflow_test.exs` | `4 tests, 1 failure` (red) | it can write nothing |
+| BZ-D | a red run cannot fail the job (`.github/workflows/behaviour-locality.yml`) | `behaviour_locality_workflow_test.exs` | `4 tests, 1 failure` (red) | report mode's own command reads the downloaded map |
+
+### BZ-A — a pull request's run reaches the job
+
+Run summary: `4 tests, 1 failure`
+
+```text
+1) test it runs on a success that is no pull request's, or by hand (Anchor.BehaviourLocalityWorkflowTest)
+     test/anchor/behaviour_locality_workflow_test.exs:26
+     Assertion with =~ failed
+     code:  assert condition =~ "github.event.workflow_run.event != 'pull_request'"
+     left:  "github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'"
+     right: "github.event.workflow_run.event != 'pull_request'"
+     stacktrace:
+       test/anchor/behaviour_locality_workflow_test.exs:30: (test)
+
+..
+```
+
+### BZ-B — the job runs on a failed coverage map
+
+Run summary: `4 tests, 1 failure`
+
+```text
+1) test it runs on a success that is no pull request's, or by hand (Anchor.BehaviourLocalityWorkflowTest)
+     test/anchor/behaviour_locality_workflow_test.exs:26
+     Assertion with =~ failed
+     code:  assert condition =~ "github.event.workflow_run.conclusion == 'success'"
+     left:  "github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion != 'cancelled' && github.event.workflow_run.event != 'pull_request')"
+     right: "github.event.workflow_run.conclusion == 'success'"
+     stacktrace:
+       test/anchor/behaviour_locality_workflow_test.exs:29: (test)
+```
+
+### BZ-C — the workflow may write
+
+Run summary: `4 tests, 1 failure`
+
+```text
+1) test it can write nothing (Anchor.BehaviourLocalityWorkflowTest)
+     test/anchor/behaviour_locality_workflow_test.exs:34
+     Assertion with == failed
+     code:  assert workflow["permissions"] == %{"contents" => "read", "actions" => "read"}
+     left:  %{"actions" => "write", "contents" => "read"}
+     right: %{"actions" => "read", "contents" => "read"}
+     stacktrace:
+       test/anchor/behaviour_locality_workflow_test.exs:35: (test)
+
+...
+```
+
+### BZ-D — a red run cannot fail the job
+
+Run summary: `4 tests, 1 failure`
+
+```text
+1) test report mode's own command reads the downloaded map (Anchor.BehaviourLocalityWorkflowTest)
+     test/anchor/behaviour_locality_workflow_test.exs:38
+     Expected false or nil, got true
+     code: refute Enum.any?(job["steps"], &Map.has_key?(&1, "continue-on-error"))
+     arguments:
+
+         # 1
+         [
+           %{
+             "name" => "Checkout",
+             "uses" => "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683"
+           },
+           %{
+             "id" => "beam",
+             "name" => "Set up Elixir",
+             "uses" => "erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124",
+             "with" => %{
+               "elixir-version" => "1.19.4",
+               "otp-version" => "28.2"
+             }
+           },
+           %{
+             "name" => "Restore deps and _build cache",
+             "uses" => "actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830",
+             "with" => %{
+               "key" => "${{ runner.os }}-mix-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-${{ hashFiles('mix.lock') }}",
+               "path" => "deps\n_build\n",
+               "restore-keys" => "${{ runner.os }}-mix-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-\n"
+             }
+           },
+           %{"name" => "Install dependencies", "run" => "mix deps.get"},
+           %{
+             "name" => "Download the coverage map",
+             "uses" => "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093",
+             "with" => %{
+               "github-token" => "${{ github.token }}",
+               "name" => "anchor-coverage",
+               "run-id" => "${{ github.event.workflow_run.id || inputs.run_id }}"
+             }
+           },
+           %{
+             "continue-on-error" => true,
+             "name" => "Behaviours (mix anchor.sabotage behaviours)",
+             "run" => "mix anchor.sabotage behaviours --coverage anchor-coverage.etf"
+           }
+         ]
+
+         # 2
+         #Function<1.101309666/1 in Anchor.BehaviourLocalityWorkflowTest."test report mode's own command reads the downloaded map"/1>
+
+     stacktrace:
+       test/anchor/behaviour_locality_workflow_test.exs:44: (test)
+
+...
+```
