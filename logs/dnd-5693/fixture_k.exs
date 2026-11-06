@@ -27,13 +27,29 @@ defmodule Spike.Srv do
   end
 end
 
-ExUnit.start(autorun: false, max_cases: 1, seed: 0, formatters: [])
+ExUnit.start(autorun: false, max_cases: 1, seed: 0, formatters: [ExUnit.CLIFormatter])
 
 defmodule Spike.KCase do
   use ExUnit.Case, async: false
   alias Spike.Hot
 
   @hot 10_000
+
+  defp settle(srv) do
+    for pid <- [self(), srv] do
+      ref = :erlang.trace_delivered(pid)
+
+      receive do
+        {:trace_delivered, ^pid, ^ref} -> :ok
+      end
+    end
+
+    send(:persistent_term.get(:spike_k_gate), {:sync, self()})
+
+    receive do
+      :synced -> :ok
+    end
+  end
 
   defp wait_flag(flag, slot) do
     if :atomics.get(flag, slot) == 1 do
@@ -70,6 +86,9 @@ defmodule Spike.KCase do
     go = :persistent_term.get(:spike_k_flag)
     for n <- 1..@hot, do: Hot.f(n)
     :ok = GenServer.call(srv, {:g, @hot})
+    # Every message so far has reached the gate and each suppression is installed,
+    # so what follows runs against a silenced f and g: no scheduling decides this.
+    settle(srv)
     :atomics.put(go, 1, 1)
     wait_flag(go, 2)
     # The server's message came and went: block until the leak process has run.
@@ -110,6 +129,7 @@ mode = hd(System.argv())
 :persistent_term.put(:spike_k_srv, srv)
 collector = Spike.Collector.start()
 gate = Spike.Gate.start(collector, k, shape)
+:persistent_term.put(:spike_k_gate, gate)
 Spike.Trace.on([Spike.Hot], gate, collector, [:procs])
 results = ExUnit.run()
 Spike.Trace.off()
@@ -137,7 +157,7 @@ name = fn word -> state.windows[word] && state.windows[word].name end
 canonical = :erlang.term_to_binary({Enum.sort(map), Enum.sort(leaks)})
 hash = :crypto.hash(:sha256, canonical) |> Base.encode16() |> binary_part(0, 16)
 
-IO.puts("KFIX mode=#{mode} results=#{inspect(results)} canonical=#{hash} messages=#{stats.received} forwarded=#{stats.forwarded} silences=#{stats.silences}")
+IO.puts("KFIX mode=#{mode} forwarded_keys=#{map_size(state.keys)} results=#{inspect(results)} canonical=#{hash} messages=#{stats.received} forwarded=#{stats.forwarded} silences=#{stats.silences}")
 IO.puts("KFIX mode=#{mode} map=#{inspect(Enum.sort(map), limit: :infinity)}")
 IO.puts("KFIX mode=#{mode} leaks=#{inspect(Enum.sort(leaks), limit: :infinity)}")
 System.halt(0)

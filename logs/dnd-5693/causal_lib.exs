@@ -211,6 +211,10 @@ defmodule Spike.Gate do
       {:trace, _pid, _proc_event, _a, _b} ->
         loop(%{state | procs: state.procs + 1})
 
+      {:sync, from} ->
+        send(from, :synced)
+        loop(state)
+
       {:finish, from} ->
         flush_counts(state)
 

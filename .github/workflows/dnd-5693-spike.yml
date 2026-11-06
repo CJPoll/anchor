@@ -35,7 +35,7 @@ jobs:
       - name: Silencing exactness on the fixture, each mode twice
         shell: bash
         run: |
-          for mode in every label_body:1 label_body:64 pid_word:64 word:64 fallthrough:64 every label_body:64; do
+          for mode in every label_body:1 label_body:64 pid_word:64 word:64 fallthrough:64 pr63:64 every label_body:64; do
             elixir logs/dnd-5693/fixture_k.exs "$mode"
           done
 
