@@ -22,7 +22,8 @@ defmodule Anchor.Domain.Aggregates.WriteSource do
        the same over its body and its handler;
     4. a call `S.f(...)` on a schema module: what `f` returns when that traces,
        else `{:schema, S}`;
-    5. a call into `Ecto.Changeset`: its first argument;
+    5. a call into `Ecto.Changeset`: its first argument, or unresolved for a
+       call that reads a value out of the changeset (`get_change/2` and the like);
     6. a call into `Ecto.Query`, `Ecto.Query.Builder.*` or `Ecto.Queryable`:
        the first argument that traces to a schema or table, a string (a
        prefix), written there or reaching it through a variable, never counting
@@ -56,6 +57,20 @@ defmodule Anchor.Domain.Aggregates.WriteSource do
   @raising [{:erlang, :error}, {:erlang, :raise}, {:erlang, :throw}, {:erlang, :exit}]
 
   @query_string "a string argument of a query call"
+
+  # What these return comes out of the changeset: it is not the changeset's data.
+  @changeset_reads [
+    :fetch_change,
+    :fetch_change!,
+    :fetch_field,
+    :fetch_field!,
+    :get_assoc,
+    :get_change,
+    :get_embed,
+    :get_field,
+    :traverse_errors,
+    :traverse_validations
+  ]
 
   @type source :: {:schema, module()} | {:table, String.t()}
   @type result :: {:ok, [source()]} | {:unresolved, String.t()}
@@ -282,6 +297,10 @@ defmodule Anchor.Domain.Aggregates.WriteSource do
 
       MapSet.member?(ctx.schemas, module) ->
         schema_call(module, {module, name, length(args)}, ctx)
+
+      module == Ecto.Changeset and name in @changeset_reads ->
+        {:unresolved,
+         "a value read out of a changeset (#{ViolationKey.mfa({module, name, length(args)})})"}
 
       module == Ecto.Changeset and args != [] ->
         trace(hd(args), env, ctx)

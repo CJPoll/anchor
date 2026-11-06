@@ -531,6 +531,10 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
       :cerl.type(node) == :call ->
         multi_call(node, env, call(node, env), mfa, ctx, depth)
 
+      :cerl.type(node) == :apply and fname?(:cerl.apply_op(node)) ->
+        {f, a} = :cerl.var_name(:cerl.apply_op(node))
+        multi_helper(node, :cerl.apply_args(node), {elem(mfa, 0), f, a}, env, mfa, ctx, depth)
+
       true ->
         :error
     end
@@ -585,18 +589,23 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   defp multi_call(node, env, {:ok, {@multi, _name, arity}}, mfa, ctx, depth) when arity > 0,
     do: step(node, hd(:cerl.call_args(node)), env, mfa, ctx, depth)
 
+  defp multi_call(node, env, {:ok, callee}, mfa, ctx, depth),
+    do: multi_helper(node, :cerl.call_args(node), callee, env, mfa, ctx, depth)
+
+  defp multi_call(_node, _env, _call, _mfa, _ctx, _depth), do: :error
+
   # A project function on the trace builds (part of) the Multi: the call is
   # in the body, so its closure is; its arguments are traced when they can be.
-  # When some argument is not a literal and none traces, the Multi it was given
-  # may be the one Anchor cannot read: a gap.
-  defp multi_call(node, env, {:ok, {module, name, arity}}, mfa, ctx, depth) do
+  # When some argument is not a literal, none traces, and the function makes no
+  # Multi of its own, the Multi it was given is one Anchor cannot read: a gap.
+  defp multi_helper(node, args, {module, name, arity}, env, mfa, ctx, depth) do
     if project_function?(ctx.graph, {module, name, arity}) do
-      args = :cerl.call_args(node)
       traced = Enum.map(args, &multi(&1, env, mfa, ctx, depth + 1))
 
       unknown? =
         Enum.all?(traced, &(&1 == :error)) and
-          Enum.any?(args, &(not plain_literal?(FunctionWalk.deref_value(&1, env))))
+          Enum.any?(args, &(not plain_literal?(FunctionWalk.deref_value(&1, env)))) and
+          not makes_multi?(Graph.function(ctx.graph, {module, name, arity}))
 
       traced
       |> Enum.reduce({:ok, :multi, [FunctionWalk.id(node)], [], []}, fn
@@ -618,7 +627,14 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
     end
   end
 
-  defp multi_call(_node, _env, _call, _mfa, _ctx, _depth), do: :error
+  defp makes_multi?(%FunctionNode{core: core}) do
+    core
+    |> FunctionWalk.events()
+    |> Enum.any?(fn
+      {:call, node, env, _tags} -> call(node, env) == {:ok, {@multi, :new, 0}}
+      _event -> false
+    end)
+  end
 
   defp step(node, previous, env, mfa, ctx, depth) do
     case multi(previous, env, mfa, ctx, depth + 1) do
@@ -821,7 +837,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   defp handed(acc, nil, what, _env, tags, line, _ctx), do: dynamic(acc, line, what, tags)
 
   defp handed(acc, arg, what, env, tags, line, ctx) do
-    if plain_literal?(arg) do
+    if plain_literal?(FunctionWalk.deref_value(arg, env)) do
       acc
     else
       case FunctionWalk.deref(arg, env) do

@@ -176,6 +176,25 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
     def s52, do: Repo.transaction(Builder.named(:a))
     def s53(mod, f), do: Repo.transaction(Builder.add_run5(Multi.new(), mod, f))
 
+    defp local_build(attrs), do: Multi.insert(Multi.new(), {:c, attrs}, %T{})
+    defp local_add(m), do: Multi.insert(m, :b, %T{})
+    def s54(attrs), do: Repo.transaction(local_build(attrs))
+
+    def s55 do
+      Multi.new()
+      |> Multi.insert(:a, %S{})
+      |> local_add()
+      |> Repo.transaction()
+    end
+
+    def s56(attrs), do: Repo.transaction(Builder.build(attrs))
+    def s57(m), do: Repo.transaction(local_add(m))
+
+    def s58(xs) do
+      sorter = :desc
+      Repo.transaction(fn -> Enum.sort(xs, sorter) end)
+    end
+
     def s35 do
       Multi.new()
       |> Multi.run(:a, fn repo, _ -> repo.get(S, 1); repo.insert(%S{}) end)
@@ -216,6 +235,7 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
             defmodule #{inspect(@builder)} do
               def add_t(m), do: Ecto.Multi.insert(m, :b, %#{inspect(@t)}{})
               def add_merge(m, f), do: Ecto.Multi.merge(m, f)
+              def build(attrs), do: Ecto.Multi.insert(Ecto.Multi.new(), {:d, attrs}, %#{inspect(@t)}{})
               def add_run(m, f), do: Ecto.Multi.run(m, :r, f)
               def add_run5(m, mod, f), do: Ecto.Multi.run(m, :r, mod, f, [])
               def add_attrs(m, attrs), do: Ecto.Multi.insert(m, {:c, attrs}, %#{inspect(@t)}{})
@@ -272,7 +292,7 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
             ],
        do: 1
 
-  defp arity(name) when name in [:s48, :s49, :s50, :s51], do: 1
+  defp arity(name) when name in [:s48, :s49, :s50, :s51, :s54, :s56, :s57, :s58], do: 1
   defp arity(_name), do: 0
 
   defp one(analysis, name) do
@@ -499,6 +519,27 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
       assert %Scope{complete?: true} = one(a, :s51)
       assert %Scope{complete?: true} = scope = one(a, :s52)
       assert scope.keys == keys([@t])
+    end
+
+    test "a Multi built by a local helper is traced, its helper's writes in the scope", %{
+      analysis: a
+    } do
+      assert %Scope{kind: :multi, complete?: true} = scope = one(a, :s54)
+      assert scope.keys == keys([@t])
+      assert %Scope{kind: :multi, complete?: true} = scope = one(a, :s55)
+      assert scope.keys == keys([@s, @t])
+    end
+
+    test "a helper that makes its own Multi from data is complete; one given a Multi is not", %{
+      analysis: a
+    } do
+      assert %Scope{complete?: true} = scope = one(a, :s56)
+      assert scope.keys == keys([@t])
+      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s57, 1}, _}]} = one(a, :s57)
+    end
+
+    test "a literal reaching a function-taking call through a variable is no gap", %{analysis: a} do
+      assert %Scope{complete?: true} = one(a, :s58)
     end
 
     test "a function-taking call's first argument is data (positive control)", %{analysis: a} do
