@@ -6,7 +6,7 @@
 - **Code under test:** `Anchor.Managers.Graph` (`rule_findings/3`, `artifact_inputs/2`), `Anchor.Managers.Explain`, `Anchor.Domain.Explain`
 - **Suite run:** each mutation ran `mix test --force --timeout 2000 --max-cases 2 <its test files>` inside one `test-slot`, by a driver that applied it, ran the files and restored the source. The checkout's absolute path in the output reads `<worktree>`.
 
-RF-A and RF-B are regression tests of explain's missing analyses and floors. AI-A restores the absolute-apps_path crash, EX-M the re-classification with no source facts. Each red is the regression red in its fix commit. A first AI-A dropped the `with` altogether: Elixir type-checked the result, warned that Explain's refusal clause could never match, and the run did not compile, so the row is the `with` over the raw request.
+RF-A and RF-B are regression tests of explain's missing analyses and floors. AI-A restores the absolute-apps_path crash, EX-M the re-classification with no source facts, EX-N the beam facts of a compiled module called unknown. Each red is the regression red in its fix commit. A first AI-A dropped the `with` altogether: Elixir type-checked the result, warned that Explain's refusal clause could never match, and the run did not compile, so the row is the `with` over the raw request.
 
 | # | Mutation | Tests run | Result | Failing tests |
 |---|---|---|---|---|
@@ -20,6 +20,7 @@ RF-A and RF-B are regression tests of explain's missing analyses and floors. AI-
 | EX-K | text findings name the wrong field (`lib/anchor/domain/explain.ex`) | `explain_test.exs` | `10 tests, 1 failure` (red) | build/3 with the model the findings it was given are kept |
 | EX-L | JSON findings carry the label as their file (`lib/anchor/domain/explain.ex`) | `explain_test.exs` | `10 tests, 1 failure` (red) | build/3 with the model the findings it was given are kept |
 | EX-M | an unplaced module is re-classified with no source facts (`lib/anchor/domain/explain.ex`) | `explain_test.exs` | `12 tests, 2 failures` (red) | build/3 with the model a module in two buckets, both through its source's `use`, is ambiguous; build/3 with the model a module in two buckets, one through its source's `use`, is ambiguous |
+| EX-N | a compiled but unplaced module's beam facts are called unknown (`lib/anchor/domain/explain.ex`) | `explain_test.exs` | `12 tests, 2 failures` (red) | build/3 with the model a module in two buckets, one through its source's `use`, is ambiguous; build/3 with the model a module in the graph but in no bucket is unclassified, with every bucket's selectors and the Fix |
 
 ## RF-A — rule_findings gives the rules no analyses
 
@@ -438,4 +439,32 @@ Run summary: `12 tests, 2 failures`
        test/anchor/domain/explain_test.exs:257: (test)
 
 ......
+```
+
+## EX-N — a compiled but unplaced module's beam facts are called unknown
+
+Run summary: `12 tests, 2 failures`
+
+```text
+  1) test build/3 with the model a module in two buckets, one through its source's `use`, is ambiguous (Anchor.Domain.ExplainTest)
+     test/anchor/domain/explain_test.exs:258
+     Assertion with == failed
+     code:  assert explain.unknown == []
+     left:  ["app", "behaviours", "exports_function", "uses_module"]
+     right: []
+     stacktrace:
+       test/anchor/domain/explain_test.exs:262: (test)
+
+....
+
+  2) test build/3 with the model a module in the graph but in no bucket is unclassified, with every bucket's selectors and the Fix (Anchor.Domain.ExplainTest)
+     test/anchor/domain/explain_test.exs:239
+     Assertion with == failed
+     code:  assert explain.unknown == []
+     left:  ["app", "behaviours", "exports_function", "uses_module"]
+     right: []
+     stacktrace:
+       test/anchor/domain/explain_test.exs:250: (test)
+
+.
 ```

@@ -246,6 +246,8 @@ defmodule Anchor.Domain.ExplainTest do
 
       assert explain.classification["status"] == "unclassified"
       assert explain.classification["fix"] =~ "App.Stray is in no architecture bucket. Fix:"
+      # It compiled: its beam facts are known, however the buckets judged it.
+      assert explain.unknown == []
       assert length(explain.classification["selectors"]) == 3
       assert explain.may_call == []
       assert explain.must_not_call == []
@@ -257,6 +259,7 @@ defmodule Anchor.Domain.ExplainTest do
       explain = explain_of_worker(config())
 
       assert explain.classification["status"] == "ambiguous"
+      assert explain.unknown == []
 
       assert explain.classification["fix"] =~
                "App.Worker is in buckets domain (by paths [\"lib/**/domain/**/*.ex\"]) and " <>

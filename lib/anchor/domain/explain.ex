@@ -102,7 +102,7 @@ defmodule Anchor.Domain.Explain do
       must_not_call: must_not_call(arch, classification),
       rules: rules(config, subject, classification),
       findings: subject.findings,
-      unknown: unknown(model, classification),
+      unknown: unknown(model, classification, subject),
       notes: notes(subject)
     }
   end
@@ -373,8 +373,14 @@ defmodule Anchor.Domain.Explain do
 
   # ---- unknown ----
 
-  defp unknown(%Model{}, %{"status" => "classified"}), do: []
-  defp unknown(_model, _class), do: @beam_facts
+  # A module the graph holds compiled, however the buckets judged it.
+  defp unknown(%Model{}, %{"status" => "classified"}, _subject), do: []
+
+  defp unknown(%Model{graph: graph}, _class, %{module: module})
+       when is_map_key(graph.modules, module),
+       do: []
+
+  defp unknown(_model, _class, _subject), do: @beam_facts
 
   defp notes(%{compiled?: false}), do: ["compile failed; beam facts unknown"]
   defp notes(_subject), do: []
