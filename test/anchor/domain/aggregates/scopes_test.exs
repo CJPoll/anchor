@@ -195,6 +195,27 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
       Repo.transaction(fn -> Enum.sort(xs, sorter) end)
     end
 
+    def s59(other), do: Repo.transaction(Builder.add_append(Multi.new(), other))
+
+    def s60 do
+      Multi.new()
+      |> Multi.append(Multi.insert(Multi.new(), :a, %S{}))
+      |> Repo.transaction()
+    end
+
+    def s61 do
+      Multi.new()
+      |> Multi.insert(:a, %T{})
+      |> Multi.prepend(Multi.insert(Multi.new(), :b, %S{}))
+      |> Repo.transaction()
+    end
+
+    def s62(other), do: Repo.transaction(Multi.append(Multi.new(), other))
+
+    def s63, do: Repo.transaction(fn -> Task.async(fn -> Repo.insert(%S{}) end) end)
+    def s64, do: Repo.transaction(fn -> spawn(fn -> Repo.insert(%S{}) end) end)
+    def s65, do: Task.async(fn -> Repo.insert(%S{}) end)
+
     def s35 do
       Multi.new()
       |> Multi.run(:a, fn repo, _ -> repo.get(S, 1); repo.insert(%S{}) end)
@@ -235,6 +256,7 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
             defmodule #{inspect(@builder)} do
               def add_t(m), do: Ecto.Multi.insert(m, :b, %#{inspect(@t)}{})
               def add_merge(m, f), do: Ecto.Multi.merge(m, f)
+              def add_append(m, other), do: Ecto.Multi.append(m, other)
               def build(attrs), do: Ecto.Multi.insert(Ecto.Multi.new(), {:d, attrs}, %#{inspect(@t)}{})
               def add_run(m, f), do: Ecto.Multi.run(m, :r, f)
               def add_run5(m, mod, f), do: Ecto.Multi.run(m, :r, mod, f, [])
@@ -292,7 +314,10 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
             ],
        do: 1
 
-  defp arity(name) when name in [:s48, :s49, :s50, :s51, :s54, :s56, :s57, :s58], do: 1
+  defp arity(name)
+       when name in [:s48, :s49, :s50, :s51, :s54, :s56, :s57, :s58, :s59, :s62],
+       do: 1
+
   defp arity(_name), do: 0
 
   defp one(analysis, name) do
@@ -540,6 +565,27 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
 
     test "a literal reaching a function-taking call through a variable is no gap", %{analysis: a} do
       assert %Scope{complete?: true} = one(a, :s58)
+    end
+
+    test "Multi.append and prepend hold both sides' writes", %{analysis: a} do
+      assert %Scope{kind: :multi, complete?: true} = scope = one(a, :s60)
+      assert scope.keys == keys([@s])
+      assert %Scope{kind: :multi, complete?: true} = scope = one(a, :s61)
+      assert scope.keys == keys([@s, @t])
+    end
+
+    test "Multi.append of a Multi Anchor cannot trace is a gap, written here or in a helper", %{
+      analysis: a
+    } do
+      assert %Scope{complete?: false} = one(a, :s62)
+
+      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@builder, :add_append, 2}, _}]} =
+               one(a, :s59)
+    end
+
+    test "a function run in another process is outside the transaction: a gap", %{analysis: a} do
+      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s63, 0}, _}]} = one(a, :s63)
+      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s64, 0}, _}]} = one(a, :s64)
     end
 
     test "a function-taking call's first argument is data (positive control)", %{analysis: a} do

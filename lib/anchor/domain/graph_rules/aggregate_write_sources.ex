@@ -60,18 +60,18 @@ defmodule Anchor.Domain.GraphRules.AggregateWriteSources do
     sites = Enum.filter(analysis.sites, &selected?.(&1.mfa))
     unattributed = Enum.filter(analysis.unattributed, &selected?.(&1.mfa))
 
-    if sites == [] and unattributed == [] do
+    incomplete =
+      for %Scope{complete?: false} = scope <- analysis.scopes,
+          selected?.(scope.mfa),
+          do: incomplete(scope, model, rule)
+
+    if sites == [] and unattributed == [] and incomplete == [] do
       [Failures.aggregate_writes_none(rule, selector(rule), config_file(model))]
     else
       unresolved =
         for %WriteSite{unresolved: seen} = site <- sites,
             seen != nil,
             do: unresolved(site, model, rule)
-
-      incomplete =
-        for %Scope{complete?: false} = scope <- analysis.scopes,
-            selected?.(scope.mfa),
-            do: incomplete(scope, model, rule)
 
       unresolved ++ incomplete ++ Enum.map(unattributed, &unattributed(&1, model, rule))
     end

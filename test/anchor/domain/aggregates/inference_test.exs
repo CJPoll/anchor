@@ -12,6 +12,7 @@ defmodule Anchor.Domain.Aggregates.InferenceTest do
   alias Anchor.Domain.Aggregates.Config
   alias Anchor.Domain.Aggregates.Inference
   alias Anchor.Domain.Aggregates.Scope
+  alias Anchor.Domain.Aggregates.WriteSite
 
   defp scope(ordinal, keys, complete? \\ true) do
     %Scope{
@@ -152,6 +153,20 @@ defmodule Anchor.Domain.Aggregates.InferenceTest do
     assert {:error, why} = Inference.render_yaml(%Analysis{no_repo?: true})
     assert why =~ "no Ecto repo"
     assert why =~ "write declare: none by hand"
+  end
+
+  test "a resolved write in no scope and no nontx entry is still a vertex" do
+    site = %WriteSite{
+      line: 5,
+      mfa: {App.Wrap, :run, 0},
+      op: :insert,
+      via: :multi,
+      sources: [{:schema, App.Z}]
+    }
+
+    analysis = %{analysis([], []) | sites: [site]}
+
+    assert Inference.components(analysis) == [MapSet.new(schema: App.Z)]
   end
 
   test "F8: a proposal beside an incomplete transaction says so in the YAML" do

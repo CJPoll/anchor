@@ -140,6 +140,12 @@ defmodule Anchor.Domain.GraphRules.AggregateWriteSourcesTest do
       assert [%{line: 40}] = AggregateWriteSources.check(model(analysis), @rule)
     end
 
+    test "selected modules holding only an incomplete transaction: no checks-nothing failure" do
+      analysis = %Analysis{scopes: [@incomplete]}
+
+      assert [%{line: 30}] = AggregateWriteSources.check(model(analysis), @rule)
+    end
+
     test "V1: a finding outside the selector is not reported" do
       outside = %{@unresolved | mfa: {Other.Thing, :save, 1}}
 

@@ -57,6 +57,7 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
               def n14, do: Repo.transaction(fn -> Repo.query!("DELETE FROM s") end)
               def n15(mod), do: Repo.transaction(fn -> mod.insert(%S{}) end)
               def n16, do: n11()
+              def n26, do: Task.async(fn -> Repo.get(S, 1) end)
               def n25(m, f), do: Ecto.Multi.merge(m, f)
 
               def n22(xs), do: Enum.each(xs, &Repo.insert/1)
@@ -206,6 +207,7 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
       |> Enum.uniq()
 
     refute Enum.any?(gaps, &match?({:dynamic_call, {@n, :n17h, 0}, _line}, &1))
+    refute Enum.any?(gaps, &match?({:dynamic_call, {@n, :n26, 0}, _line}, &1))
     refute Enum.any?(gaps, &match?({:dynamic_call, {@n, :n25, 2}, _line}, &1))
 
     assert a.counts.outside_gaps == length(gaps)

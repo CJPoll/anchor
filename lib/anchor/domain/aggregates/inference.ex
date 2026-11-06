@@ -3,8 +3,8 @@ defmodule Anchor.Domain.Aggregates.Inference do
   Aggregates inferred from co-writes (DND-5459) — a **Domain** module
   (ADR 001). Pure.
 
-  Every key written anywhere (in a scope, or outside every transaction) is a
-  vertex. Each scope's resolved keys are one hyperedge, joined as a star from
+  Every key written anywhere (in a scope, outside every transaction, or a Multi
+  no transaction Anchor sees runs) is a vertex. Each scope's resolved keys are one hyperedge, joined as a star from
   its smallest key; an incomplete scope's resolved keys count too, since they
   are certainly written together (its unresolved writes add nothing). The
   connected components (`Anchor.Domain.GraphAlgorithms.components/1`) are the
@@ -24,6 +24,7 @@ defmodule Anchor.Domain.Aggregates.Inference do
 
   alias Anchor.Domain.Aggregates.Analysis
   alias Anchor.Domain.Aggregates.Scope
+  alias Anchor.Domain.Aggregates.Scopes
   alias Anchor.Domain.Aggregates.WriteSource
   alias Anchor.Domain.Digraph
   alias Anchor.Domain.GraphAlgorithms
@@ -141,7 +142,8 @@ defmodule Anchor.Domain.Aggregates.Inference do
   defp vertices(analysis) do
     scoped = Enum.flat_map(analysis.scopes, &MapSet.to_list(&1.keys))
     outside = analysis.nontx |> Map.values() |> Enum.flat_map(&MapSet.to_list(&1.keys))
-    Enum.uniq(scoped ++ outside)
+    anywhere = analysis.sites |> Scopes.keys(analysis.tables) |> MapSet.to_list()
+    Enum.uniq(scoped ++ outside ++ anywhere)
   end
 
   defp proposal(component, analysis) do
