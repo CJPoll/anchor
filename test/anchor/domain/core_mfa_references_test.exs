@@ -33,6 +33,7 @@ defmodule Anchor.Domain.CoreMfaReferencesTest do
     def both_computed(mod, name, x), do: {mod, name, [x]}
     defp run(m, f, a), do: apply(m, f, a)
     def a_number, do: {M, :f, 3}
+    def number_beside(mod), do: {mod, :f, 3}
     def computed(mod, x), do: {mod, :f, [x]}
     def computed_name(name, x), do: {M, name, [x]}
     def strings(x), do: {"M", "f", [x]}
@@ -60,6 +61,7 @@ defmodule Anchor.Domain.CoreMfaReferencesTest do
         {:tuple_var, 1, [{M, :f, nil}]},
         {:later_args, 1, [{M, :f, 1}]},
         {:a_number, 0, []},
+        {:number_beside, 1, []},
         {:computed, 2, [{nil, :f, 1}]},
         {:computed_name, 2, [{M, nil, 1}]},
         {:both_computed, 3, []},

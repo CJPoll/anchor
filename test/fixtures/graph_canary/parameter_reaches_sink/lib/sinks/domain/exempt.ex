@@ -63,6 +63,10 @@ defmodule AnchorFixtures.ParameterSinks.Started do
   def spawned_tail(x, rest), do: spawn(__MODULE__, :tail_worker, [x | rest])
   def tail_worker(_x, _y), do: :ok
 
+  # A variable for the module: every exporter of the name.
+  def spawned_mod(mod, x), do: spawn(mod, :via_var, [x])
+  def via_var(_x), do: :ok
+
   # A module outside the project names nothing the rule judges.
   def outside_spec, do: {GenServer, :start, [:fixed]}
 end
