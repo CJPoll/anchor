@@ -4,3 +4,4 @@
 # `mix anchor.sabotage run` fails on a survivor not listed here (NEW) and on
 # an entry whose mutant is now killed or no longer generated (STALE). A line
 # a branch adds is shown for review; this list only shrinks without one.
+afbc924211f0 lib/anchor/adapters/record_file.ex Anchor.Adapters.RecordFile.write_report/4 with_passthrough  # equivalent: when mkdir_p fails the directory is absent, so the next File.write fails with the same error the with would have returned

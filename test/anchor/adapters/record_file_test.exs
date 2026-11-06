@@ -61,4 +61,17 @@ defmodule Anchor.Adapters.RecordFileTest do
     absolute = Path.join(root, "abs/scan.md")
     assert {:ok, [^absolute, _etf]} = RecordFile.write_report("/elsewhere", absolute, "x", term)
   end
+
+  test "DND-5490: write_report says why it could not write, at each step", %{tmp_dir: root} do
+    # Sabotage record: ../../sabotage_records/sabotage-20261106-dnd_5490_scan.md
+    File.write!(Path.join(root, "file"), "x")
+    # The directory cannot be made: a file is in its place.
+    assert RecordFile.write_report(root, "file/scan.md", "m", "t") == {:error, :enotdir}
+    # The markdown cannot be written: a directory is at its path.
+    File.mkdir_p!(Path.join(root, "a/scan.md"))
+    assert RecordFile.write_report(root, "a/scan.md", "m", "t") == {:error, :eisdir}
+    # The .etf cannot be written: a directory is at its path.
+    File.mkdir_p!(Path.join(root, "b/scan.etf"))
+    assert RecordFile.write_report(root, "b/scan.md", "m", "t") == {:error, :eisdir}
+  end
 end
