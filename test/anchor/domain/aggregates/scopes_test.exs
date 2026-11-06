@@ -228,6 +228,16 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
 
     def s71(fun), do: Repo.transaction(fn -> Helper.tx_any(fun) end)
     def s72(fun), do: Repo.transaction(fn -> Repo.transaction(fun) end)
+    def wrapper_tx(fun), do: Repo.transaction(fun)
+    def s82, do: Repo.transaction(fn -> atomically(fn -> Repo.insert(%S{}) end) end)
+    def s83, do: Repo.transaction(fn -> wrapper_tx(fn -> Repo.insert(%S{}) end) end)
+    def s84(fun), do: Repo.transaction(fn -> Repo.checkout(fun) end)
+    def s85(fun), do: Repo.transaction(Multi.run(Multi.new(), :a, fn repo, _ -> repo.transaction(fun) end))
+    def s86, do: Repo.transaction(fn -> Repo.checkout(fn -> Repo.insert(%S{}) end) end)
+    def s87, do: Repo.transaction(Multi.run(Multi.new(), :a, fn repo, _ -> repo.checkout(&s87_step/0) end))
+    def s87_step, do: Repo.insert(%S{})
+    def s88(m), do: Repo.transaction(Multi.run(Multi.new(), :a, fn repo, _ -> repo.transaction(m, []) end))
+    def s89, do: Repo.transaction(fn -> Repo.checkout(&s87_step/0) end)
     def s80, do: Repo.transaction(fn -> #{inspect(@custom_repo)}.transact(fn -> :ok end) end)
     def s74(sqls), do: Repo.transaction(fn -> Enum.each(sqls, &Repo.query!/1) end)
     def s75(sqls), do: Repo.transaction(fn -> Enum.map(sqls, &Ecto.Adapters.SQL.query!(Repo, &1)) end)
@@ -316,7 +326,8 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
       ],
       transaction_functions: [
         elem(FunctionRef.parse("#{inspect(@uow)}.transaction/2"), 1),
-        elem(FunctionRef.parse("#{inspect(@x)}.atomically/1"), 1)
+        elem(FunctionRef.parse("#{inspect(@x)}.atomically/1"), 1),
+        elem(FunctionRef.parse("#{inspect(@x)}.wrapper_tx/1"), 1)
       ]
     }
 
@@ -365,6 +376,9 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
               :s71,
               :s72,
               :s73,
+              :s84,
+              :s85,
+              :s88,
               :s74,
               :s75,
               :s76,
@@ -693,6 +707,34 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
       analysis: a
     } do
       assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s80, 0}, _}]} = one(a, :s80)
+    end
+
+    test "a listed wrapper runs what it is given: no gap of its own", %{analysis: a} do
+      assert scopes(a, :wrapper_tx) == []
+
+      for name <- [:s82, :s83] do
+        assert [%Scope{complete?: true} = inner, %Scope{complete?: true} = outer] =
+                 scopes(a, name)
+
+        assert inner.keys == keys([@s])
+        assert outer.keys == keys([@s])
+      end
+
+      refute Enum.any?(a.unattributed, &(&1.mfa == {@uow, :transaction, 2}))
+    end
+
+    test "Repo.checkout and a callback repo's transaction read the function they are given", %{
+      analysis: a
+    } do
+      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s84, 1}, _}]} = one(a, :s84)
+      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s85, 1}, _}]} = one(a, :s85)
+      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s88, 1}, _}]} = one(a, :s88)
+      assert %Scope{complete?: true} = scope = one(a, :s86)
+      assert scope.keys == keys([@s])
+      assert %Scope{complete?: true} = scope = one(a, :s87)
+      assert scope.keys == keys([@s])
+      assert %Scope{complete?: true} = scope = one(a, :s89)
+      assert scope.keys == keys([@s])
     end
 
     test "a transaction nested in a body: its gap is a gap of the outer one", %{analysis: a} do

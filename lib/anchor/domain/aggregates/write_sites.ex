@@ -111,6 +111,9 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   # Raw SQL writes what no schema or table names: a gap, never a missed write.
   @raw_sql [:query, :query!, :query_many, :query_many!]
 
+  # A callback's repo: Anchor opens no scope on these, so it reads their function.
+  @given_a_function [:checkout, :transact, :transaction]
+
   # What `use Ecto.Repo` generates beside the writes and the raw SQL: the
   # analysis does not walk these. A test holds this to Ecto.Repo's callbacks.
   @repo_functions [
@@ -447,12 +450,22 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
     end
   end
 
-  defp transaction_call({module, name, arity} = callee, args, node, env, mfa, ctx) do
+  # A listed wrapper runs what it is given: the transaction is its caller's call,
+  # read there, and an unread body here is the wrapper's own parameter.
+  defp transaction_call(callee, args, node, env, mfa, ctx) do
+    txs = opened(callee, args, node, env, mfa, ctx)
+    if listed_transaction?(mfa, ctx), do: Enum.filter(txs, &(&1.gaps == [])), else: txs
+  end
+
+  defp listed_transaction?({module, name, arity}, ctx),
+    do: Enum.any?(ctx.transaction_functions, &FunctionRef.matches?(&1, module, name, arity))
+
+  defp opened({module, name, arity} = callee, args, node, env, mfa, ctx) do
     cond do
       repo_transaction?(ctx, module, name, arity) ->
         [tx_body(hd(args), node, env, mfa, ctx)]
 
-      Enum.any?(ctx.transaction_functions, &FunctionRef.matches?(&1, module, name, arity)) ->
+      listed_transaction?(callee, ctx) ->
         [transaction_function(args, node, env, mfa, ctx, callee)]
 
       true ->
@@ -673,6 +686,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
       ctx
       |> Map.put(:defined_in, defined_in)
       |> Map.put(:module, elem(mfa, 0))
+      |> Map.put(:wrapper?, listed_transaction?(mfa, ctx))
       |> Map.put(:capture_tags, prescan.capture_tags)
 
     acc =
@@ -743,12 +757,18 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
           name in @raw_sql ->
             dynamic(acc, line, raw_sql({:repo, name}, length(args)), tags, true)
 
+          name in @given_a_function ->
+            given_function(acc, "repo.#{name}/#{length(args)}", args, env, tags, line, ctx)
+
           name in @repo_functions ->
             acc
 
           true ->
             dynamic(acc, line, "repo.#{name}/#{length(args)} in a Multi.run callback", tags)
         end
+
+      {:error, name} when name in [:transaction, :transact] and ctx.wrapper? ->
+        acc
 
       {:error, name} ->
         dynamic(
@@ -809,10 +829,34 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
           :error -> dynamic(acc, line, "a call of a fun value Anchor cannot resolve", tags)
         end
 
+      {:binding, _binding} when ctx.wrapper? ->
+        acc
+
       {:binding, _binding} ->
         dynamic(acc, line, "a call of a fun value Anchor cannot resolve", tags)
     end
   end
+
+  # The function a repo call runs, in this process: read like a body, or a gap.
+  defp given_function(acc, what, [arg | _rest], env, tags, line, ctx) do
+    mfa = {ctx.module, nil, nil}
+
+    case callback(arg, env, mfa) do
+      {:lambda, _id} ->
+        acc
+
+      {:capture, callee} ->
+        project_call(acc, ctx, callee, :capture, [], env, tags, line)
+
+      :error ->
+        if multi(arg, env, mfa, ctx) == :error,
+          do: dynamic(acc, line, "#{what} is given a value Anchor cannot read", tags),
+          else: acc
+    end
+  end
+
+  defp given_function(acc, what, [], _env, tags, line, _ctx),
+    do: dynamic(acc, line, "#{what} is given a value Anchor cannot read", tags)
 
   defp capture_of_write_name?([_module, name, arity], env) do
     with {:ok, name} <- FunctionWalk.atom(name, env),
@@ -945,8 +989,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   defp unread_apply?({@multi, name, _arity}, _ctx), do: name in [:append, :merge, :prepend, :run]
 
   defp unread_apply?({module, name, arity}, ctx) do
-    repo_transaction?(ctx, module, name, arity) or
-      Enum.any?(ctx.transaction_functions, &FunctionRef.matches?(&1, module, name, arity))
+    repo_transaction?(ctx, module, name, arity) or listed_transaction?({module, name, arity}, ctx)
   end
 
   defp literal_call(acc, {module, name, arity} = callee, args, env, tags, line, ctx) do
@@ -990,6 +1033,9 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
 
   defp repo_function(acc, {module, name, _arity} = callee, args, env, tags, line, ctx) do
     cond do
+      name == :checkout ->
+        given_function(acc, ViolationKey.mfa(callee), args, env, tags, line, ctx)
+
       name == :transact and not MapSet.member?(ctx.transact, module) ->
         what = "#{ViolationKey.mfa(callee)}, which this repo's code does not define"
         dynamic(acc, line, what, tags, true)
