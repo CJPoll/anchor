@@ -228,6 +228,13 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
 
     def s71(fun), do: Repo.transaction(fn -> Helper.tx_any(fun) end)
     def s72(fun), do: Repo.transaction(fn -> Repo.transaction(fun) end)
+    def s90, do: Repo.transaction(&#{inspect(@lib)}.flush/0)
+
+    def s91 do
+      Repo.transaction(&#{inspect(@lib)}.flush/0)
+      Task.start(&#{inspect(@lib)}.flush/0)
+    end
+
     def wrapper_tx(fun), do: Repo.transaction(fun)
     def s82, do: Repo.transaction(fn -> atomically(fn -> Repo.insert(%S{}) end) end)
     def s83, do: Repo.transaction(fn -> wrapper_tx(fn -> Repo.insert(%S{}) end) end)
@@ -735,6 +742,18 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
       assert scope.keys == keys([@s])
       assert %Scope{complete?: true} = scope = one(a, :s89)
       assert scope.keys == keys([@s])
+    end
+
+    test "a write captured as a body is a gap of its transaction, and no write outside one", %{
+      analysis: a
+    } do
+      assert %Scope{complete?: false} = one(a, :s90)
+      refute Enum.any?(a.unattributed, &(&1.mfa == {@x, :s90, 0}))
+    end
+
+    test "a write captured as a body and elsewhere is a gap and a write outside", %{analysis: a} do
+      assert %Scope{complete?: false} = one(a, :s91)
+      assert Enum.any?(a.unattributed, &(&1.mfa == {@x, :s91, 0}))
     end
 
     test "a transaction nested in a body: its gap is a gap of the outer one", %{analysis: a} do

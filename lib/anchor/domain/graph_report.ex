@@ -240,7 +240,8 @@ defmodule Anchor.Domain.GraphReport do
   counted when there are any, and so are declared aggregates (DND-5476:
   `; aggregates: <N> declared, <U> tables unknown`) and the write analysis
   (DND-5459: `; writes: <W> found, <R> resolved, <U> unresolved;
-  transactions: <S>, <C> complete, <I> incomplete`).
+  transactions: <S>, <C> complete, <I> incomplete; <G> gaps outside a
+  transaction`).
   """
   @spec summary(t()) :: String.t()
   def summary(%__MODULE__{counts: counts} = report) do

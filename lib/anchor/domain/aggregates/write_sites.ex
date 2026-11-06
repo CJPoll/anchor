@@ -187,7 +187,13 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
           txs: [raw_tx()],
           calls: [raw_call()],
           dynamic: [
-            %{line: non_neg_integer() | nil, what: String.t(), tags: [term()], write?: boolean()}
+            %{
+              required(:line) => non_neg_integer() | nil,
+              required(:what) => String.t(),
+              required(:tags) => [term()],
+              required(:write?) => boolean(),
+              optional(:capture) => mfa()
+            }
           ],
           computed: [{atom(), non_neg_integer() | :any}],
           def_line: non_neg_integer() | nil,
@@ -522,9 +528,14 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   defp body(arg, env, mfa, ctx) do
     case callback(arg, env, mfa) do
       {:lambda, id} -> {:ok, :fun, [id], [], []}
-      {:capture, callee} -> {:ok, :fun, [], [callee], []}
+      {:capture, callee} -> {:ok, :fun, [], [callee], captured_write_gap(callee, ctx)}
       :error -> multi(arg, env, mfa, ctx)
     end
+  end
+
+  # A write taken as a body has no closure to read it from.
+  defp captured_write_gap(callee, ctx) do
+    if write?(callee, ctx), do: ["a capture of the write #{ViolationKey.mfa(callee)}"], else: []
   end
 
   # The trace of an Ecto.Multi value: every step, callback and helper on it.
@@ -695,10 +706,12 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
         unread_transaction(event, mfa, def_line, ctx, classify(event, mfa, def_line, ctx, acc))
       end)
 
+    mixed = mixed_captures(acc, prescan)
+
     %{
       sites: Enum.reverse(acc.sites),
-      calls: acc.calls |> Enum.reverse() |> untag_mixed_captures(prescan),
-      dynamic: Enum.reverse(acc.dynamic),
+      calls: acc.calls |> Enum.reverse() |> Enum.map(&untag_capture(&1, mixed, prescan)),
+      dynamic: acc.dynamic |> Enum.reverse() |> Enum.map(&untag_capture(&1, mixed, prescan)),
       computed: acc.computed,
       txs: prescan.txs,
       def_line: def_line
@@ -708,19 +721,30 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   # One capture of a function can be a body and another not, and Core does not say
   # which is which: more captures than bodies, and none reads as inside (each
   # transaction still holds its body's closure through its own `captures`).
-  defp untag_mixed_captures(calls, prescan) do
+  defp mixed_captures(acc, prescan) do
     bodies = prescan.txs |> Enum.flat_map(& &1.captures) |> Enum.frequencies()
-    seen = for(%{kind: :capture, to: to} <- calls, do: to) |> Enum.frequencies()
 
-    Enum.map(calls, fn
-      %{kind: :capture, to: to, tags: tags} = call when is_map_key(bodies, to) ->
-        if seen[to] > bodies[to],
-          do: %{call | tags: tags -- Map.get(prescan.capture_tags, to, [])},
-          else: call
+    seen =
+      Enum.frequencies(
+        for(%{kind: :capture, to: to} <- acc.calls, do: to) ++
+          for(%{capture: to} <- acc.dynamic, do: to)
+      )
 
-      call ->
-        call
-    end)
+    for {to, count} <- bodies, seen[to] > count, into: MapSet.new(), do: to
+  end
+
+  defp untag_capture(%{kind: :capture, to: to} = call, mixed, prescan),
+    do: untag(call, to, mixed, prescan)
+
+  defp untag_capture(%{capture: to} = entry, mixed, prescan),
+    do: untag(entry, to, mixed, prescan)
+
+  defp untag_capture(other, _mixed, _prescan), do: other
+
+  defp untag(entry, to, mixed, prescan) do
+    if MapSet.member?(mixed, to),
+      do: %{entry | tags: entry.tags -- Map.get(prescan.capture_tags, to, [])},
+      else: entry
   end
 
   # A transaction whose body Anchor cannot read is a gap of whatever reaches it:
@@ -1100,7 +1124,10 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   defp project_call(acc, ctx, callee, kind, args, env, tags, line) do
     cond do
       kind == :capture and write?(callee, ctx) ->
-        dynamic(acc, line, "a capture of the write #{ViolationKey.mfa(callee)}", tags, true)
+        what = "a capture of the write #{ViolationKey.mfa(callee)}"
+        tags = tags ++ Map.get(ctx.capture_tags, callee, [])
+        entry = %{line: line, what: what, tags: tags, write?: true, capture: callee}
+        %{acc | dynamic: [entry | acc.dynamic]}
 
       project_function?(ctx.graph, callee) ->
         tags = if kind == :capture, do: tags ++ Map.get(ctx.capture_tags, callee, []), else: tags
