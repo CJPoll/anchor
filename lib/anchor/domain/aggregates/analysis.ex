@@ -46,8 +46,10 @@ defmodule Anchor.Domain.Aggregates.Analysis do
               unresolved: 0,
               scopes: 0,
               complete: 0,
-              incomplete: 0
-            }
+              incomplete: 0,
+              outside_gaps: 0
+            },
+            unattributed: []
 
   @type counts :: %{
           writes: non_neg_integer(),
@@ -55,7 +57,8 @@ defmodule Anchor.Domain.Aggregates.Analysis do
           unresolved: non_neg_integer(),
           scopes: non_neg_integer(),
           complete: non_neg_integer(),
-          incomplete: non_neg_integer()
+          incomplete: non_neg_integer(),
+          outside_gaps: non_neg_integer()
         }
 
   @type t :: %__MODULE__{
@@ -66,7 +69,8 @@ defmodule Anchor.Domain.Aggregates.Analysis do
           tables: %{String.t() => [module()]},
           repos: [module()],
           no_repo?: boolean(),
-          counts: counts()
+          counts: counts(),
+          unattributed: [%{mfa: mfa(), line: pos_integer(), what: String.t()}]
         }
 
   @doc """
@@ -103,19 +107,33 @@ defmodule Anchor.Domain.Aggregates.Analysis do
       |> Enum.sort_by(&elem(&1, 0))
       |> Enum.flat_map(fn {_mfa, function} -> function.sites end)
 
+    nontx = NonTransactional.build(functions, tables, facts.run_callbacks)
+
     %__MODULE__{
       sites: sites,
       scopes: scopes,
-      nontx: NonTransactional.build(functions, tables, facts.run_callbacks),
+      unattributed: unattributed(functions),
+      nontx: nontx,
       always_in_transaction:
         NonTransactional.always_in_transaction(functions, roots, facts.run_callbacks),
       tables: tables,
       repos: repos |> MapSet.to_list() |> Enum.sort(),
-      counts: counts(sites, scopes)
+      counts: counts(sites, scopes, nontx)
     }
   end
 
-  defp counts(sites, scopes) do
+  # Raw SQL, or a write on a computed module, outside every transaction: no
+  # scope holds it, so nothing else reports it.
+  defp unattributed(functions) do
+    rows =
+      for {mfa, function} <- functions,
+          %{write?: true, tags: [], line: line, what: what} <- function.dynamic,
+          do: %{mfa: mfa, line: line, what: what}
+
+    rows |> Enum.uniq_by(&{&1.mfa, &1.what}) |> Enum.sort_by(&{&1.mfa, &1.line})
+  end
+
+  defp counts(sites, scopes, nontx) do
     unresolved = Enum.count(sites, &(not WriteSite.resolved?(&1)))
     incomplete = Enum.count(scopes, &(not &1.complete?))
 
@@ -125,7 +143,8 @@ defmodule Anchor.Domain.Aggregates.Analysis do
       unresolved: unresolved,
       scopes: length(scopes),
       complete: length(scopes) - incomplete,
-      incomplete: incomplete
+      incomplete: incomplete,
+      outside_gaps: nontx |> Map.values() |> Enum.flat_map(& &1.gaps) |> Enum.uniq() |> length()
     }
   end
 end

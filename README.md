@@ -1172,12 +1172,15 @@ alias, a pipe and an `@repo` attribute are already resolved):
   writes in its body and those of every project function it calls,
   transitively. A call Anchor cannot resolve, a function value it cannot follow
   (a `fn` defined outside the body, a capture of a write, an unknown function
-  handed to `Enum`, `Stream`, `List`, `Map` or `Keyword`), or an unresolved write, makes it
-  **incomplete**. Calls into dependencies are not followed.
+  handed to a library function that invokes it), or an unresolved write, makes
+  it **incomplete**. Calls into dependencies are not followed.
+- **Outside a transaction,** raw SQL or a write on a computed module is reported:
+  no schema or table names what it writes.
 
 The summary line ends `; writes: <W> found, <R> resolved, <U> unresolved;
-transactions: <S>, <C> complete, <I> incomplete` (the JSON's `writes`), so an
-unresolved write or an incomplete transaction is always counted.
+transactions: <S>, <C> complete, <I> incomplete; <G> gaps outside a transaction`
+(the JSON's `writes`), so an unresolved write, an incomplete transaction and a
+call Anchor could not follow outside one are always counted.
 
 ```yaml
 rules:

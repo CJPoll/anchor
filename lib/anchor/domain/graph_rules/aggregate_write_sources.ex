@@ -12,6 +12,7 @@ defmodule Anchor.Domain.GraphRules.AggregateWriteSources do
   |---|---|---|
   | a write whose source is unresolved | the write's line | `<id>\\|<M.f/a>\\|unresolved <op> <seen>` |
   | a transaction whose write set is incomplete | the transaction's line | `<id>\\|<M.f/a>\\|incomplete <ordinal>` |
+  | raw SQL, or a write on a computed module, outside every transaction | its line | `<id>\\|<M.f/a>\\|unattributed <what>` |
 
   No key holds a line. Two cases are fail-closed (`Anchor.Domain.Failures`),
   on the config, never baselined and never report-only: the project has no
@@ -57,8 +58,9 @@ defmodule Anchor.Domain.GraphRules.AggregateWriteSources do
     selected = model |> GraphRules.select(rule) |> MapSet.new()
     selected? = fn {module, _name, _arity} -> MapSet.member?(selected, module) end
     sites = Enum.filter(analysis.sites, &selected?.(&1.mfa))
+    unattributed = Enum.filter(analysis.unattributed, &selected?.(&1.mfa))
 
-    if sites == [] do
+    if sites == [] and unattributed == [] do
       [Failures.aggregate_writes_none(rule, selector(rule), config_file(model))]
     else
       unresolved =
@@ -71,7 +73,7 @@ defmodule Anchor.Domain.GraphRules.AggregateWriteSources do
             selected?.(scope.mfa),
             do: incomplete(scope, model, rule)
 
-      unresolved ++ incomplete
+      unresolved ++ incomplete ++ Enum.map(unattributed, &unattributed(&1, model, rule))
     end
   end
 
@@ -89,6 +91,21 @@ defmodule Anchor.Domain.GraphRules.AggregateWriteSources do
           "or table (#{site.unresolved}). Fix: pass a struct, changeset or schema the call can " <>
           "see; add @spec with Schema.t() for the parameter; or list a wrapper under " <>
           "aggregates.write_functions."
+    }
+  end
+
+  defp unattributed(%{mfa: mfa, line: line, what: what}, model, rule) do
+    subject = ViolationKey.mfa(mfa)
+
+    %Violation{
+      filename: file(model, mfa),
+      line: line,
+      trigger: what,
+      rule_id: Map.get(rule, :id),
+      key: ViolationKey.graph_key(rule, subject, "unattributed #{what}"),
+      message:
+        "#{subject} writes, or may write, outside any transaction in a way no schema or table " <>
+          "names: #{what}. Fix: write through a schema with Repo, or name the module the call is on."
     }
   end
 

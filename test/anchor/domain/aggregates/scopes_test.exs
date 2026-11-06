@@ -134,6 +134,23 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
 
     def s37, do: Repo.transaction(fn -> #{inspect(@custom_repo)}.one(%S{}) end)
 
+    def s38(xs) do
+      f = &Helper.write_s/1
+      Repo.transaction(fn -> Enum.each(xs, f) end)
+    end
+
+    def s39(xs) do
+      f = &Repo.insert/1
+      Repo.transaction(fn -> Enum.each(xs, f) end)
+    end
+
+    def s40(xs, fun), do: Repo.transaction(fn -> Enum.into(xs, %{}, fun) end)
+
+    def s41(xs, fun) do
+      m = Enum
+      Repo.transaction(fn -> apply(m, :each, [xs, fun]) end)
+    end
+
     def s35 do
       Multi.new()
       |> Multi.run(:a, fn repo, _ -> repo.get(S, 1); repo.insert(%S{}) end)
@@ -193,10 +210,26 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
   defp scopes(analysis, name),
     do: Enum.filter(analysis.scopes, &(&1.mfa == {@x, name, arity(name)}))
 
-  defp arity(name) when name in [:s20, :s21, :s29, :s31], do: 2
+  defp arity(name) when name in [:s20, :s21, :s29, :s31, :s40, :s41], do: 2
 
   defp arity(name)
-       when name in [:s6, :s7, :s10, :s12, :s13, :s22, :s23, :s24, :s30, :s32, :s33, :s34, :s36],
+       when name in [
+              :s6,
+              :s7,
+              :s10,
+              :s12,
+              :s13,
+              :s22,
+              :s23,
+              :s24,
+              :s30,
+              :s32,
+              :s33,
+              :s34,
+              :s36,
+              :s38,
+              :s39
+            ],
        do: 1
 
   defp arity(_name), do: 0
@@ -343,6 +376,26 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
 
     test "a function Ecto generates needs no body in the beam: no gap", %{analysis: a} do
       assert %Scope{complete?: true} = one(a, :s37)
+    end
+
+    test "a capture from outside the body, handed to Enum in it, is followed", %{analysis: a} do
+      assert %Scope{complete?: true} = scope = one(a, :s38)
+      assert scope.keys == keys([@s])
+    end
+
+    test "a capture of a write from outside the body, handed in it, is a gap", %{analysis: a} do
+      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s39, 1}, _line}]} =
+               one(a, :s39)
+    end
+
+    test "every function HigherOrder knows takes a function: Enum.into/3", %{analysis: a} do
+      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s40, 2}, _line}]} =
+               one(a, :s40)
+    end
+
+    test "an apply of a function-taking call hides its arguments, so it is a gap", %{analysis: a} do
+      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s41, 2}, _line}]} =
+               one(a, :s41)
     end
 
     test "a function-taking call's first argument is data (positive control)", %{analysis: a} do

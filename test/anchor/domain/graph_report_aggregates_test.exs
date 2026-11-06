@@ -40,18 +40,28 @@ defmodule Anchor.Domain.GraphReportAggregatesTest do
   end
 
   test "the write analysis's counts are in the summary and the JSON" do
-    writes = %{writes: 7, resolved: 5, unresolved: 2, scopes: 3, complete: 2, incomplete: 1}
+    writes = %{
+      writes: 7,
+      resolved: 5,
+      unresolved: 2,
+      scopes: 3,
+      complete: 2,
+      incomplete: 1,
+      outside_gaps: 4
+    }
+
     report = GraphReport.new([], [], Map.put(@counts, :writes, writes))
 
     assert GraphReport.summary(report) ==
              "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 " <>
                "baselined); writes: 7 found, 5 resolved, 2 unresolved; transactions: 3, 2 " <>
-               "complete, 1 incomplete"
+               "complete, 1 incomplete; 4 gaps outside a transaction"
 
     assert JSON.decode!(GraphReport.render(report, :json))["writes"] == %{
              "writes" => 7,
              "resolved" => 5,
              "unresolved" => 2,
+             "outside_gaps" => 4,
              "scopes" => 3,
              "complete" => 2,
              "incomplete" => 1

@@ -51,6 +51,12 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
 
               def n8, do: Repo.transaction(fn -> Repo.insert(%S{}) end)
 
+              def n11, do: Repo.query!("DELETE FROM s")
+              def n12(mod), do: mod.insert(%S{})
+              def n13(mod), do: mod.get(S, 1)
+              def n14, do: Repo.transaction(fn -> Repo.query!("DELETE FROM s") end)
+              def n15(mod), do: Repo.transaction(fn -> mod.insert(%S{}) end)
+
               def n9, do: Repo.soft_delete(%S{}, [])
               def n10, do: Repo.transaction(fn -> Repo.soft_delete(%S{}, []) end)
             end
@@ -111,6 +117,28 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
 
     assert nontx(analysis, :n9).keys == keys([@s])
     assert nontx(analysis, :n10).keys == MapSet.new()
+  end
+
+  test "unattributed: raw SQL and a write on a computed module, outside a transaction", %{
+    analysis: a
+  } do
+    assert [
+             %{mfa: {@n, :n11, 0}, what: raw, line: line},
+             %{mfa: {@n, :n12, 1}, what: computed}
+           ] = a.unattributed
+
+    assert raw == "raw SQL (#{inspect(@repo)}.query!/1) Anchor cannot attribute"
+    assert computed == "a call of insert/1 on a module held in a variable"
+    assert is_integer(line)
+  end
+
+  test "the gaps outside every transaction are counted", %{analysis: a} do
+    gaps = a.nontx |> Map.values() |> Enum.flat_map(& &1.gaps) |> Enum.uniq()
+
+    assert a.counts.outside_gaps == length(gaps)
+    assert Enum.any?(gaps, &match?({:dynamic_call, {@n, :n13, 1}, _line}, &1))
+    assert Enum.any?(gaps, &match?({:dynamic_call, {@n, :n11, 0}, _line}, &1))
+    refute Enum.any?(gaps, &match?({:dynamic_call, {@n, :n14, 0}, _line}, &1))
   end
 
   test "a Multi step is never a non-transactional write", %{analysis: a} do

@@ -37,9 +37,9 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   are found where it is defined, so they do not count as the body's); a capture
   on a computed module or name; a capture of a write itself (`&Repo.insert/1`:
   its source argument is never seen); and an unknown function handed to a
-  function-taking call of `Enum`, `Stream`, `List`, `Map` or `Keyword`. A
-  function handed to any other library is not read: Anchor cannot tell it from
-  data there.
+  library function that `Anchor.Domain.HigherOrder` says invokes it. A function
+  handed to any other library is not read: Anchor cannot tell it from data
+  there.
 
   A call on a repo that is no write and no function `use Ecto.Repo` generates
   (`repo_functions/0`) is a project function, followed like any other: a call
@@ -77,6 +77,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   alias Anchor.Domain.Graph
   alias Anchor.Domain.Graph.FunctionNode
   alias Anchor.Domain.Graph.ModuleNode
+  alias Anchor.Domain.HigherOrder
   alias Anchor.Domain.ViolationKey
 
   @repo_writes %{
@@ -148,22 +149,6 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
     :transaction
   ]
 
-  # The library calls that take a function, as their last non-literal argument.
-  @function_taking %{
-    Enum =>
-      ~w(all? any? chunk_by chunk_while count dedup_by drop_while each filter find find_index
-         find_value flat_map flat_map_reduce frequencies_by group_by map map_every map_intersperse
-         map_join map_reduce max_by min_by min_max_by product_by reduce reduce_while reject scan
-         sort sort_by split_while split_with sum_by take_while uniq_by zip_with)a,
-    Stream =>
-      ~w(chunk_by chunk_while dedup_by drop_while each filter flat_map map map_every reject scan
-         take_while transform uniq_by zip_with)a,
-    List => ~w(foldl foldr)a,
-    Map =>
-      ~w(filter get_and_update get_and_update! get_lazy new put_new_lazy reject update update!)a,
-    Keyword =>
-      ~w(filter get_and_update get_and_update! get_lazy new put_new_lazy reject update update!)a
-  }
   @raw_sql_module Ecto.Adapters.SQL
 
   @type raw_site :: %{
@@ -667,7 +652,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
             add_site(acc, name, :run_callback_repo, Enum.at(args, 0), env, tags, line)
 
           name in @raw_sql ->
-            dynamic(acc, line, raw_sql({:repo, name}, length(args)), tags)
+            dynamic(acc, line, raw_sql({:repo, name}, length(args)), tags, true)
 
           name in @repo_functions ->
             acc
@@ -681,7 +666,8 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
           acc,
           line,
           "a call of #{name}/#{length(args)} on a module held in a variable",
-          tags
+          tags,
+          repo_write?(name, length(args))
         )
     end
   end
@@ -745,27 +731,36 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
       else: dynamic(acc, line, "a fn run in a transaction body it is not defined in", tags)
   end
 
-  # The function handed to a function-taking library call: an inline fn or a
-  # capture is walked; anything else is a call Anchor cannot resolve.
-  defp handed_function(acc, {module, name, arity}, args, env, tags, line, ctx) do
-    what = "the function handed to #{ViolationKey.mfa({module, name, arity})}"
+  # The functions handed to a library call `HigherOrder` knows: an inline fn or
+  # a capture is followed from here, under this call's tags; anything else is a
+  # call Anchor cannot resolve. No arguments to read (an apply) is one too.
+  defp handed_functions(acc, callee, args, env, tags, line, ctx) do
+    what = "the function handed to #{ViolationKey.mfa(callee)}"
 
-    case args |> Enum.drop(1) |> Enum.reverse() |> Enum.find(&(not plain_literal?(&1))) do
-      nil -> acc
-      arg -> handed(acc, FunctionWalk.deref(arg, env), what, tags, line, ctx)
+    for {index, _arity} <- HigherOrder.invocations(callee), reduce: acc do
+      acc -> handed(acc, Enum.at(args, index), what, env, tags, line, ctx)
     end
   end
 
-  defp handed(acc, {:node, value, value_env}, what, tags, line, ctx) do
-    case fun_value(value, value_env, ctx.module) do
-      {:lambda, id} -> lambda_run(acc, id, tags, line, ctx)
-      {:capture, _callee} -> acc
-      :error -> dynamic(acc, line, what, tags)
+  defp handed(acc, nil, what, _env, tags, line, _ctx), do: dynamic(acc, line, what, tags)
+
+  defp handed(acc, arg, what, env, tags, line, ctx) do
+    if plain_literal?(arg) do
+      acc
+    else
+      case FunctionWalk.deref(arg, env) do
+        {:node, value, value_env} ->
+          case fun_value(value, value_env, ctx.module) do
+            {:lambda, id} -> lambda_run(acc, id, tags, line, ctx)
+            {:capture, callee} -> project_call(acc, ctx, callee, :capture, [], %{}, tags, line)
+            :error -> dynamic(acc, line, what, tags)
+          end
+
+        {:binding, _binding} ->
+          dynamic(acc, line, what, tags)
+      end
     end
   end
-
-  defp handed(acc, {:binding, _binding}, what, tags, line, _ctx),
-    do: dynamic(acc, line, what, tags)
 
   defp plain_literal?(node), do: :cerl.is_literal(node) and not is_function(:cerl.concrete(node))
 
@@ -799,13 +794,13 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
         add_site(acc, name, :write_function, Enum.at(args, 0), env, tags, line)
 
       name in @raw_sql and (module == @raw_sql_module or MapSet.member?(ctx.repos, module)) ->
-        dynamic(acc, line, raw_sql(module, name, arity), tags)
+        dynamic(acc, line, raw_sql(module, name, arity), tags, true)
 
       MapSet.member?(ctx.repos, module) ->
         repo_function(acc, callee, args, env, tags, line, ctx)
 
-      name in Map.get(@function_taking, module, []) ->
-        handed_function(acc, callee, args, env, tags, line, ctx)
+      HigherOrder.invocations(callee) != [] ->
+        handed_functions(acc, callee, args, env, tags, line, ctx)
 
       true ->
         project_call(acc, ctx, callee, :remote, args, env, tags, line)
@@ -855,8 +850,10 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   defp raw_sql(module, name, arity),
     do: "raw SQL (#{inspect(module)}.#{name}/#{arity}) Anchor cannot attribute"
 
-  defp dynamic(acc, line, what, tags),
-    do: %{acc | dynamic: [%{line: line, what: what, tags: tags} | acc.dynamic]}
+  # `write?`: the call writes, or may, in a way Anchor cannot attribute.
+  defp dynamic(acc, line, what, tags, write? \\ false) do
+    %{acc | dynamic: [%{line: line, what: what, tags: tags, write?: write?} | acc.dynamic]}
+  end
 
   # --- helpers ----------------------------------------------------------------
 

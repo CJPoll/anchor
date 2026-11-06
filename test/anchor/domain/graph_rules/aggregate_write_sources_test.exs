@@ -45,6 +45,12 @@ defmodule Anchor.Domain.GraphRules.AggregateWriteSourcesTest do
 
   @complete %Scope{mfa: {App.Store, :put, 0}, ordinal: 1, line: 19, kind: :fun}
 
+  @raw %{
+    mfa: {App.Store, :purge, 0},
+    line: 40,
+    what: "raw SQL (App.Repo.query!/1) Anchor cannot attribute"
+  }
+
   defp model(analysis) do
     classification = %{
       App.Store => %Classification{
@@ -103,6 +109,34 @@ defmodule Anchor.Domain.GraphRules.AggregateWriteSourcesTest do
 
       refute unresolved.key =~ "12"
       refute incomplete.key =~ "30"
+    end
+
+    test "raw SQL outside a transaction is reported, keyed without its line, with a Fix" do
+      analysis = %Analysis{sites: [@resolved], unattributed: [@raw]}
+
+      assert [finding] = AggregateWriteSources.check(model(analysis), @rule)
+      assert finding.line == 40
+      assert finding.filename == "lib/app/store.ex"
+
+      assert finding.key ==
+               "writes|App.Store.purge/0|unattributed raw SQL (App.Repo.query!/1) Anchor cannot " <>
+                 "attribute"
+
+      assert finding.message =~ "App.Store.purge/0"
+      assert finding.message =~ "Fix:"
+    end
+
+    test "unattributed writes outside the selector are not reported" do
+      other = %{@raw | mfa: {Other.Thing, :purge, 0}}
+      analysis = %Analysis{sites: [@resolved], unattributed: [other]}
+
+      assert AggregateWriteSources.check(model(analysis), @rule) == []
+    end
+
+    test "selected modules holding only raw SQL have writes: no checks-nothing failure" do
+      analysis = %Analysis{unattributed: [@raw]}
+
+      assert [%{line: 40}] = AggregateWriteSources.check(model(analysis), @rule)
     end
 
     test "V1: a finding outside the selector is not reported" do

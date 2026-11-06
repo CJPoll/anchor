@@ -105,7 +105,8 @@ defmodule Anchor.Domain.GraphReport do
             unresolved: non_neg_integer(),
             scopes: non_neg_integer(),
             complete: non_neg_integer(),
-            incomplete: non_neg_integer()
+            incomplete: non_neg_integer(),
+            outside_gaps: non_neg_integer()
           }
         }
 
@@ -261,7 +262,8 @@ defmodule Anchor.Domain.GraphReport do
   defp writes_note(writes) do
     "; writes: #{writes.writes} found, #{writes.resolved} resolved, " <>
       "#{writes.unresolved} unresolved; transactions: #{writes.scopes}, " <>
-      "#{writes.complete} complete, #{writes.incomplete} incomplete"
+      "#{writes.complete} complete, #{writes.incomplete} incomplete; " <>
+      "#{writes.outside_gaps} gaps outside a transaction"
   end
 
   defp writes_json(nil), do: nil
