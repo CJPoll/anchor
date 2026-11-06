@@ -1,5 +1,5 @@
 defmodule Mix.Tasks.Anchor.Sabotage do
-  @shortdoc "Generated sabotage: scope, run, restore, replay, coverage and behaviours"
+  @shortdoc "Generated sabotage: scope, run, restore, verify, replay, coverage and behaviours"
 
   @moduledoc """
   Generated sabotage for the functions a change touched, the **Framework**
@@ -72,6 +72,29 @@ defmodule Mix.Tasks.Anchor.Sabotage do
   read, or mutants were run and none was measured: all invalid, crashed or
   without a test; the survivors file, or its copy at `--base`, cannot be
   read).
+
+  ## verify (DND-5516)
+
+      mix anchor.sabotage verify --base REF [--format text|json]
+
+  Checks, in seconds and with no load, that the mutants of the functions the
+  diff since `REF` changes are covered: each mutant id the current source
+  generates has a `killed`, `timeout` or `invalid` row in a sabotage record the
+  branch added or appended to, or an entry in the survivors list with a real
+  reason (`Anchor.Domain.Sabotage.Verify`). It compiles nothing, runs no test,
+  applies no mutant and writes nothing: a gate runs it after the captain's
+  `run` committed its record. A row of a changed function's latest run whose id
+  is no longer generated is a STALE RECORD; a landed record the branch deleted
+  is RECORD REMOVED; survivors the branch added are printed for review.
+
+  Exit codes: 0 every mutant covered, or no changed function
+  (`sabotage verify: no changed functions`); 1 UNCOVERED, STALE RECORD, BAD
+  SURVIVOR, BAD RECORD (a kill map that does not parse) or RECORD REMOVED,
+  each with one `Fix:`; 2 usage (no `--base`, a `REF` git cannot read or
+  Anchor refuses to pass to git, an unknown flag); 3 `COULD NOT MEASURE` (no
+  `sabotage:` config, the scope or a record or the survivors list could not be
+  read, changed source files in which nothing was found, one mutant id
+  generated twice).
 
   ## replay (DND-5485)
 
@@ -153,6 +176,7 @@ defmodule Mix.Tasks.Anchor.Sabotage do
   alias Anchor.Domain.Sabotage.Replay
   alias Anchor.Domain.Sabotage.Report
   alias Anchor.Domain.Sabotage.Scope
+  alias Anchor.Domain.Sabotage.Verify
   alias Anchor.Managers.Sabotage
   alias Anchor.Sabotage.CoverageCollector
 
@@ -163,6 +187,7 @@ defmodule Mix.Tasks.Anchor.Sabotage do
                                  [--coverage PATH] [--no-record] [--domain D]
                                  [--ticket KEY] [--slot S] [--print-survivor-lines]
          mix anchor.sabotage restore
+         mix anchor.sabotage verify --base REF [--format text|json]
          mix anchor.sabotage replay [--max N|all] [--records DIR_GLOB]...
          MIX_ENV=test mix anchor.sabotage coverage [--out PATH] [--local] [-- TEST_ARGS]
          mix anchor.sabotage behaviours [--coverage PATH] [--format text|json]
@@ -197,6 +222,13 @@ defmodule Mix.Tasks.Anchor.Sabotage do
   end
 
   def run(["restore"], opts), do: report(Sabotage.restore(%{root: File.cwd!()}, opts))
+
+  def run(["verify" | argv], opts) do
+    case OptionParser.parse(argv, strict: [base: :string, format: :string]) do
+      {parsed, [], []} -> verify(parsed, format(parsed[:format]), opts)
+      _invalid -> usage()
+    end
+  end
 
   def run(["replay" | argv], opts) do
     case replay_facts(argv) do
@@ -393,6 +425,25 @@ defmodule Mix.Tasks.Anchor.Sabotage do
       0 -> :ok
       code -> exit({:shutdown, code})
     end
+  end
+
+  defp verify(_parsed, :invalid, _opts), do: usage()
+
+  defp verify(parsed, format, opts) do
+    with base when is_binary(base) <- parsed[:base],
+         true <- Baseline.valid_ref?(base),
+         {:ok, verdict} <- Sabotage.verify(%{root: File.cwd!(), base: base}, opts) do
+      emit(Verify.exit_code(verdict), [Verify.render(verdict, format)])
+    else
+      nil -> refuse(Verify.usage_message(:no_base))
+      false -> refuse(Verify.usage_message({:bad_ref, parsed[:base]}))
+      {:error, reason} -> refuse(Verify.usage_message(reason))
+    end
+  end
+
+  defp refuse(message) do
+    Mix.shell().error(message)
+    exit({:shutdown, 2})
   end
 
   defp scope(_base, :invalid, _opts), do: usage()

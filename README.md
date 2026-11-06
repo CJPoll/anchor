@@ -2142,6 +2142,42 @@ it. A base copy that cannot be read for any reason but its absence is exit 3.
 survivor, with the placeholder reason to replace. The run never writes the
 list.
 
+### Sabotage: verifying a branch's records
+
+```bash
+mix anchor.sabotage verify --base REF [--format text|json]
+```
+
+The cheap check a gate runs once a branch's `run` has committed its record
+(DND-5516). For the functions the diff since `REF` changes (the scope above),
+it regenerates every mutant id from the working tree's source and checks each
+is covered: by a `killed`, `timeout` or `invalid` row of an `anchor-kills`
+block in a record the branch added or appended to, or by a survivors entry
+with that id, file, function and operator. It compiles nothing, runs no test,
+applies no mutant and writes nothing, so it takes seconds and loads nothing.
+
+A record is append-only, a block per run. A changed function's latest block
+(records in path order, blocks in file order) is its last run; a row of that
+block whose id the current source no longer generates means the function
+changed after it was sabotaged. Older blocks are history.
+
+| Finding | Line | Exit |
+|---|---|---|
+| a mutant with no covering row and no survivors entry | `UNCOVERED <id> <file> <M.f/a> <operator>: ...` | 1 |
+| a row of a changed function's last run that is no longer generated | `STALE RECORD <path>: <M.f/a> changed after it was sabotaged ...` | 1 |
+| a survivors entry with an empty, `TODO` or placeholder reason, a duplicate id, a malformed line, or an id that names another file, function or operator; a survivors file `sabotage.survivors` names that is absent | `BAD SURVIVOR <path>, entry N: ...` | 1 |
+| a record the branch added or appended to whose kill map does not parse (it covers nothing) | `BAD RECORD <path>:<line>: ...` | 1 |
+| a landed record the branch deleted | `RECORD REMOVED <path>: ...` | 1 |
+| a changed function no literal clause defines | `NOT IN SOURCE <M.f/a>: ...` | unchanged |
+| a survivors entry the branch added against `REF` | `REVIEW survivor added: ...` | unchanged |
+| every mutant covered | `sabotage verify: F functions, M mutants, all covered (K killed, S survivors, I invalid)` (`K` counts timeouts too) | 0 |
+| no changed function | `sabotage verify: no changed functions` | 0 |
+| no `--base`, a `REF` git cannot read or Anchor refuses, an unknown flag | the usage, with a `Fix:` | 2 |
+| no `sabotage:` config; the scope, a record or the survivors list (or its copy at `REF`) cannot be read; changed source files in which no function, outside hunk or macro was found; one mutant id generated twice | `COULD NOT MEASURE: ...` with a `Fix:` | 3 |
+
+Every failure line ends with exactly one `Fix:`. `--format json` prints the
+verdict's fields, and its exit code, for agents.
+
 ### Sabotage: replaying landed records
 
 ```bash

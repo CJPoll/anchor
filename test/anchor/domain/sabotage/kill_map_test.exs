@@ -131,6 +131,32 @@ defmodule Anchor.Domain.Sabotage.KillMapTest do
     end
   end
 
+  describe "parse_blocks/1 (DND-5516)" do
+    # Sabotage record: ../../../sabotage_records/sabotage-20261106-dnd_5516_verify.md
+    test "each block of an appended record is its own list, oldest first" do
+      text =
+        KillMap.render_block(outcomes()) <>
+          "\n## Run 10:00 UTC\n\n" <>
+          KillMap.render_block([]) <>
+          "\n## Run 11:00 UTC\n\n" <>
+          KillMap.render_block([outcome("eee", :killed, ["t_test.exs:1 x"])])
+
+      assert {:ok, [first, [], [last]]} = KillMap.parse_blocks(text)
+      assert Enum.map(first, & &1.id) == ~w(aaa bbb ccc ddd)
+      assert last.id == "eee"
+    end
+
+    test "it refuses what parse/1 refuses, naming the line" do
+      assert KillMap.parse_blocks("```anchor-kills\n") ==
+               {:error, {1, "the anchor-kills block opened here is never closed"}}
+
+      assert KillMap.parse_blocks("```anchor-kills\na\tb\n```\n") ==
+               {:error, {2, "a row has 2 fields, not 6"}}
+
+      assert KillMap.parse_blocks("no block\n") == {:ok, []}
+    end
+  end
+
   describe "killers_by_function/1" do
     test "1: killed rows map their function to the killers; a survived function is absent" do
       rows = [

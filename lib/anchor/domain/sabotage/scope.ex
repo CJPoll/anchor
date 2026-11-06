@@ -98,6 +98,10 @@ defmodule Anchor.Domain.Sabotage.Scope do
     end)
   end
 
+  @doc "The scope, with the merge-base `sha` it was read against."
+  @spec put_base_sha(t(), String.t()) :: t()
+  def put_base_sha(%__MODULE__{} = scope, sha) when is_binary(sha), do: %{scope | base_sha: sha}
+
   @doc """
   The changed `_test.exs` files that still exist, each with its hunks' new
   side (`{start, count}`): the lines a sabotage record's "tests still lacking

@@ -28,6 +28,12 @@ defmodule Anchor.Managers.Sabotage do
   Delegated to `Anchor.Managers.Sabotage.Behaviours`: each test's confirmed causes
   and the directories they spread over, ratcheted by a baseline.
 
+  ## verify/2 (DND-5516)
+
+  Delegated to `Anchor.Managers.Sabotage.Verify`: whether the committed
+  records and the survivors list cover every mutant of the changed functions,
+  with no test run.
+
   ## scope/2 (DND-5472)
 
   The functions the working tree changed relative to the merge-base of `base`
@@ -56,12 +62,14 @@ defmodule Anchor.Managers.Sabotage do
   alias Anchor.Domain.Sabotage.FunctionSpans
   alias Anchor.Domain.Sabotage.Run
   alias Anchor.Domain.Sabotage.Scope
+  alias Anchor.Domain.Sabotage.Verify.Verdict
   alias Anchor.Domain.Sabotage.Replay.Result
   alias Anchor.Managers.Sabotage.Behaviours
   alias Anchor.Managers.Sabotage.Coverage
   alias Anchor.Managers.Sabotage.CoverageCompare
   alias Anchor.Managers.Sabotage.Replay
   alias Anchor.Managers.Sabotage.Runner
+  alias Anchor.Managers.Sabotage.Verify
 
   @doc """
   Applies the mutants of the functions `root` changed against `base`, one at
@@ -108,7 +116,25 @@ defmodule Anchor.Managers.Sabotage do
   """
   @spec scope(%{root: String.t(), base: String.t()}, keyword()) ::
           {:ok, Scope.t()} | {:error, term()}
-  def scope(%{root: root, base: base}, opts \\ []) do
+  def scope(args, opts \\ []) do
+    with {:ok, scope, _files} <- changes(args, opts), do: {:ok, scope}
+  end
+
+  @doc """
+  Verifies that the committed sabotage records, or the survivors list, cover
+  every mutant of the functions `root` changed against `base`, running no test
+  (DND-5516). See `Anchor.Managers.Sabotage.Verify`.
+  """
+  @spec verify(map(), keyword()) ::
+          {:ok, Verdict.t()} | {:error, :no_base | {:bad_ref, String.t()}}
+  def verify(facts, opts \\ []), do: Verify.run(facts, opts)
+
+  @doc false
+  # `scope/2`, with every changed file of the diff beside it (DND-5516: the
+  # verify reads the records the branch added, appended to or deleted).
+  @spec changes(%{root: String.t(), base: String.t()}, keyword()) ::
+          {:ok, Scope.t(), DiffHunks.t()} | {:error, term()}
+  def changes(%{root: root, base: base}, opts \\ []) do
     source = Keyword.get(opts, :change_source, GitChangeSource)
 
     with {:ok, sha} <- merge_base(source, root, base),
@@ -119,7 +145,7 @@ defmodule Anchor.Managers.Sabotage do
          {:ok, spans} <- spans(Scope.source_files(files), &read_spans(source, root, &1)),
          {:ok, old_spans} <-
            spans(Scope.old_source_files(files), &base_spans(source, root, sha, &1)) do
-      {:ok, %{Scope.build(files, spans, old_spans) | base_sha: sha}}
+      {:ok, files |> Scope.build(spans, old_spans) |> Scope.put_base_sha(sha), files}
     end
   end
 
