@@ -6,7 +6,7 @@
 - **Code under test:** `Anchor.Domain.GraphRules.ParameterReachesSink`, `Anchor.Domain.Core.mfa_references/1`, `Anchor.Domain.DynamicCalls.computed_name_count/1`, the `:demand` wiring in `Anchor.Managers.Graph`, `Anchor.Domain.GraphReport.parameter_sinks/4` and its note, and the two rows of `Anchor.Domain.Demand.Transfer` the QA plan names.
 - **Suite run:** each mutation ran `mix test --timeout 2000 --max-cases 2 <its test files>` inside one `test-slot`, by a driver that applied it, ran the files and restored the source. The checkout's absolute path in the output reads `<worktree>`.
 
-The first table holds the last full run, and each of its sections shows the first failure, cut at 70 lines. It was rewritten in place through the critic's rounds, so `## Measured zeros` and `## Retired mutants` keep what those rewrites dropped, and `## Second run` to `## Fifth run` are appended after it.
+The first table holds the last full run, and each of its sections shows the first failure, cut at 70 lines. It was rewritten in place through the critic's rounds, so `## Measured zeros` and `## Retired mutants` keep what those rewrites dropped, and `## Second run` to `## Sixth run` are appended after it.
 
 **Not run on purpose, and then run by mistake (`## Fourth run`, PW-A; the trap is in `## Fifth run`):** the chain's recursion guard (`MapSet.member?(seen, step)` read as `false`). Without it `steps/3` does not terminate, so its mutant spins and allocates for the whole 2000 ms bound on the desktop (the sabotage load rule). `count/2` in the canary and `D.rec/1` in the Domain test are the rows it would fail.
 
@@ -1977,4 +1977,66 @@ Run summary: `37 tests, 1 failure`
        test/anchor/domain/graph_rules/parameter_reaches_sink_test.exs:119: (test)
 
 ...........
+```
+
+## Sixth run
+
+The merge of `origin/main` (`072bfa6`) took DND-5715's `:demand` wiring and read the callbacks beside it only for this rule. PW-F's line was replaced with that wiring. PX-A stayed green against `35bfb96`: no test had a rule that needs the analysis and not the callbacks. `53b273b` adds it, and PX-A is the re-run. PX-B ran against `35bfb96`.
+
+| # | Mutation | Tests run | Result | Failing tests |
+|---|---|---|---|---|
+| PX-B | the callbacks are never read (`lib/anchor/managers/graph.ex`) | `graph_parameter_sinks_test.exs` | `12 tests, 7 failures` (red) | the analysis runs once for two rules, with the config's effect tokens; a behaviour read that raises is the same one issue; an analysis that returns no %Demand{}: the rule that needs it is one issue and is not run; the others run; the rule reads the callbacks the behaviour port read; an analysis that raises: the rule that needs it is one issue and is not run; the others run; a needing rule over code with no apply sites: a measured zero, never null; a rule that crashes while it counts is one issue: the run still reports the others |
+
+### PX-B — the callbacks are never read
+
+Run summary: `12 tests, 7 failures`
+
+```text
+1) test the analysis runs once for two rules, with the config's effect tokens (Anchor.Managers.GraphParameterSinksTest)
+     test/anchor/managers/graph_parameter_sinks_test.exs:158
+     ** (Mox.VerificationError) error while verifying mocks for #PID<0.1260.0>:
+
+       * expected Anchor.BehaviourSourceMock.callbacks/1 to be invoked once but it was invoked 0 times
+     stacktrace:
+       (mox 1.2.0) lib/mox.ex:862: Mox.__verify_mock_or_all__/2
+       (mox 1.2.0) lib/mox.ex:819: anonymous fn/1 in Mox.verify_on_exit!/1
+       (ex_unit 1.19.4) lib/ex_unit/on_exit_handler.ex:140: ExUnit.OnExitHandler.exec_callback/1
+       (ex_unit 1.19.4) lib/ex_unit/on_exit_handler.ex:126: ExUnit.OnExitHandler.on_exit_runner_loop/0
+```
+
+| # | Mutation | Tests run | Result | Failing tests |
+|---|---|---|---|---|
+| PX-A | the callbacks are read for any rule needing demand (`lib/anchor/managers/graph.ex`) | `graph_parameter_sinks_test.exs` | `13 tests, 1 failure` (red) | a rule that needs the analysis but is no parameter_reaches_sink reads no behaviour |
+
+### PX-A — the callbacks are read for any rule needing demand
+
+Run summary: `13 tests, 1 failure`
+
+```text
+1) test a rule that needs the analysis but is no parameter_reaches_sink reads no behaviour (Anchor.Managers.GraphParameterSinksTest)
+     test/anchor/managers/graph_parameter_sinks_test.exs:110
+     Expected truthy, got false
+     code: assert Map.has_key?(report.counts, :demand)
+     arguments:
+
+         # 1
+         %{
+           modules: 1,
+           opaque: 0,
+           apps: 1,
+           rules: 0,
+           no_core: 0,
+           outside_root: 0,
+           apply_sites: nil,
+           interface_width: nil,
+           dynamic_calls: %{narrowed: [], fanned_out: []}
+         }
+
+         # 2
+         :demand
+
+     stacktrace:
+       test/anchor/managers/graph_parameter_sinks_test.exs:126: (test)
+
+..
 ```

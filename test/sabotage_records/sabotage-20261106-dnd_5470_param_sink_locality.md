@@ -1362,3 +1362,49 @@ Run summary: `7 tests, 2 failures`
 
 .
 ```
+
+## Fifth run
+
+The merge of `origin/main` (`072bfa6`) took `CoverageMap.check/1` back to main's: a test's name is checked where the key is built, so BK-A is retired with the clause it mutated. These ran against `35bfb96`.
+
+| # | Mutation | Tests run | Result | Failing tests |
+|---|---|---|---|---|
+| BX-A | a nameless test is not found (`lib/anchor/domain/sabotage/behaviour_map.ex`) | `behaviour_map_test.exs` | `26 tests, 1 failure` (red) | named/1 every test needs a string name |
+| BX-B | the Manager does not ask (`lib/anchor/managers/sabotage/behaviours.ex`) | `sabotage_behaviours_test.exs` | `33 tests, 1 failure` (red) | what cannot be measured is exit 3, never a clean report a map with a test that has no name is refused, not a crash |
+
+### BX-A — a nameless test is not found
+
+Run summary: `26 tests, 1 failure`
+
+```text
+1) test named/1 every test needs a string name (Anchor.Domain.Sabotage.BehaviourMapTest)
+     test/anchor/domain/sabotage/behaviour_map_test.exs:192
+     Assertion with == failed
+     code:  assert BehaviourMap.named(map([test_ref([]), test_ref([], %{name: :atom})])) ==
+              {:error, {:test_name, @t_file}}
+     left:  :ok
+     right: {:error, {:test_name, "test/t_test.exs"}}
+     stacktrace:
+       test/anchor/domain/sabotage/behaviour_map_test.exs:195: (test)
+
+........
+```
+
+### BX-B — the Manager does not ask
+
+Run summary: `33 tests, 1 failure`
+
+```text
+1) test what cannot be measured is exit 3, never a clean report a map with a test that has no name is refused, not a crash (Anchor.Managers.SabotageBehavioursTest)
+     test/anchor/managers/sabotage_behaviours_test.exs:152
+     ** (Mox.UnexpectedCallError) no expectation defined for Anchor.RecordStoreMock.list/2 in process #PID<0.1292.0> with args ["/repo", "test/sabotage_records"]
+     code: assert {3, [line]} = Sabotage.behaviours(facts(), @opts)
+     stacktrace:
+       (mox 1.2.0) lib/mox.ex:903: Mox.__dispatch__/4
+       (anchor 0.1.0) lib/anchor/managers/sabotage/behaviours.ex:126: Anchor.Managers.Sabotage.Behaviours.kill_rows/3
+       (anchor 0.1.0) lib/anchor/managers/sabotage/behaviours.ex:67: Anchor.Managers.Sabotage.Behaviours.run/2
+       test/anchor/managers/sabotage_behaviours_test.exs:156: (test)
+
+.................
+```
+
