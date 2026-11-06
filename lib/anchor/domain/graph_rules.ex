@@ -39,6 +39,7 @@ defmodule Anchor.Domain.GraphRules do
 
   alias Anchor.Domain.GlobPattern
   alias Anchor.Domain.GraphRules.AggregateDeclarations
+  alias Anchor.Domain.GraphRules.AnalysesComplete
   alias Anchor.Domain.GraphRules.ContextAcyclic
   alias Anchor.Domain.GraphRules.EffectsMatchBucket
   alias Anchor.Domain.GraphRules.Interface
@@ -49,7 +50,7 @@ defmodule Anchor.Domain.GraphRules do
   @default_min_modules 1
 
   # What the runner computes on demand (`Anchor.Managers.Graph`).
-  @provided_needs [:cfa, :effects]
+  @provided_needs [:cfa, :effects, :demand]
 
   # Every module implementing `Anchor.Domain.GraphRule`. The rule tickets add
   # theirs here (see the moduledoc).
@@ -59,7 +60,8 @@ defmodule Anchor.Domain.GraphRules do
     AggregateDeclarations,
     EffectsMatchBucket,
     Interface,
-    StructOwnedByModuleFlow
+    StructOwnedByModuleFlow,
+    AnalysesComplete
   ]
 
   @doc "Every graph rule module."
@@ -79,7 +81,7 @@ defmodule Anchor.Domain.GraphRules do
   without duplicates. Raises `ArgumentError` when it names one
   the runner does not compute (#{inspect(@provided_needs)}) or is not a list.
   """
-  @spec needs(module()) :: [:cfa | :effects]
+  @spec needs(module()) :: [:cfa | :effects | :demand]
   def needs(module) do
     module
     |> declared_needs()

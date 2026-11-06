@@ -35,7 +35,9 @@ defmodule Anchor.Managers.Graph do
        guard) and store it on `Model.cfa` (DND-5574). When none does, it is
        not run: rules that do not need it pay nothing. Likewise `:effects`:
        the effect inference (`Anchor.Domain.Effects.infer/2`, DND-5447) runs
-       once after the flow analysis, under the guard, onto `Model.effects`;
+       once after the flow analysis, under the guard, onto `Model.effects`.
+       Likewise `:demand`: the demand analysis (`Anchor.Domain.Demand.analyze/3`
+       with `architecture.effects`, DND-5715), onto `Model.demand`;
     7. for each enabled graph rule (narrowed by `--only`): its floor
        (`min_modules`), then its `check/2` under a guard (`try` with `rescue`, `catch :throw` and
        `catch :exit`, DND-1312's lesson): a rule that crashes is one issue,
@@ -79,7 +81,10 @@ defmodule Anchor.Managers.Graph do
   (a one-argument function from the graph to its `%Anchor.Domain.Cfa{}`,
   default `Cfa.analyze(graph, Cfa.default_seed(graph))`; tests pass one that
   crashes), `:effects` (a two-argument function from the model and its
-  options to its `%Anchor.Domain.Effects{}`, default `Effects.infer/2`), and
+  options to its `%Anchor.Domain.Effects{}`, default `Effects.infer/2`),
+  `:demand` (a three-argument function from the graph, the flow analysis and
+  the extra effect tokens to its `%Anchor.Domain.Demand{}`, default
+  `Demand.analyze/3`), and
   `:behaviour_source` (`Anchor.Adapters.BehaviourReader`, the external
   behaviours' callbacks the inference's roots read).
   """
@@ -96,6 +101,7 @@ defmodule Anchor.Managers.Graph do
   alias Anchor.Domain.Baseline
   alias Anchor.Domain.BaselineBase
   alias Anchor.Domain.Cfa
+  alias Anchor.Domain.Demand
   alias Anchor.Domain.DynamicCalls
   alias Anchor.Domain.Effects
   alias Anchor.Domain.Enforcement
@@ -180,6 +186,7 @@ defmodule Anchor.Managers.Graph do
       graph_rules: Keyword.get(deps, :graph_rules, GraphRules.all()),
       cfa: Keyword.get(deps, :cfa, &analyze_cfa/1),
       effects: Keyword.get(deps, :effects, &Effects.infer/2),
+      demand: Keyword.get(deps, :demand, &Demand.analyze/3),
       behaviour_source: Keyword.get(deps, :behaviour_source, BehaviourReader)
     }
   end
@@ -278,6 +285,7 @@ defmodule Anchor.Managers.Graph do
       |> Map.put(:interface_width, interface_width(rules, model))
       |> Map.put(:dynamic_calls, DynamicCalls.tally(graph))
       |> put_effects(GraphReport.effects(model.effects))
+      |> put_demand(GraphReport.demand(model.demand))
       |> put_aggregates(model.aggregates),
       held: Enum.flat_map(ran, & &1.held),
       refused: Enum.flat_map(ran, & &1.refused)
@@ -321,8 +329,10 @@ defmodule Anchor.Managers.Graph do
     cfa = cfa(rules, model.graph, deps.cfa)
     model = %{model | cfa: analysis(cfa)}
     effects = effects(rules, model, cfa, deps)
+    model = %{model | effects: effects_analysis(effects)}
+    demand = demand(rules, model, cfa, deps.demand)
 
-    {%{model | effects: effects_analysis(effects)}, %{cfa: cfa, effects: effects}}
+    {%{model | demand: demand_analysis(demand)}, %{cfa: cfa, effects: effects, demand: demand}}
   end
 
   # DND-5476: the declared aggregates and their unknown tables are counted
@@ -374,12 +384,45 @@ defmodule Anchor.Managers.Graph do
   defp effects!(other),
     do: raise(ArgumentError, "the inference returned #{inspect(other, limit: 5)}, not %Effects{}")
 
+  # The demand counts appear only when the analysis ran (DND-5715).
+  defp put_demand(counts, nil), do: counts
+  defp put_demand(counts, demand), do: Map.put(counts, :demand, demand)
+
   # The effect counts appear only when the inference ran (DND-5447).
   defp put_effects(counts, nil), do: counts
   defp put_effects(counts, effects), do: Map.put(counts, :effects, effects)
 
   defp effects_analysis({:ok, %Effects{} = effects}), do: effects
   defp effects_analysis(_none_or_crashed), do: nil
+
+  # DND-5715: the demand analysis runs once, after the flow analysis it reads,
+  # and only when a rule that runs needs it: `nil` when none does or when the
+  # flow analysis crashed (that rule then reports the flow analysis), else the
+  # guarded result.
+  defp demand(rules, model, cfa, analyze) do
+    needed? = Enum.any?(rules, fn {_rule, _module, needs} -> needs?(needs, :demand) end)
+
+    case {needed?, cfa} do
+      {true, {:crashed, _kind, _reason, _stacktrace}} ->
+        nil
+
+      {true, _ok_or_not_run} ->
+        guarded(fn -> demand!(analyze.(model.graph, model.cfa, model.architecture.effects)) end)
+
+      {false, _cfa} ->
+        nil
+    end
+  end
+
+  # An analysis that returns anything but a `%Demand{}` is reported like one
+  # that raised.
+  defp demand!(%Demand{} = demand), do: demand
+
+  defp demand!(other),
+    do: raise(ArgumentError, "the analysis returned #{inspect(other, limit: 5)}, not a %Demand{}")
+
+  defp demand_analysis({:ok, %Demand{} = demand}), do: demand
+  defp demand_analysis(_none_or_crashed), do: nil
 
   # The analysis runs once, and only when a rule that runs needs it: `nil`
   # when none does, else the guarded result.
@@ -643,7 +686,7 @@ defmodule Anchor.Managers.Graph do
 
   defp run_check(
          {:ok, needs},
-         %{effects: {:crashed, kind, reason, stacktrace}},
+         %{effects: {:crashed, kind, reason, stacktrace}} = analyses,
          rule,
          module,
          model,
@@ -653,7 +696,22 @@ defmodule Anchor.Managers.Graph do
       do:
         {:crashed,
          rule |> Failures.rule_effects_crashed(kind, reason, stacktrace, path) |> fail_closed()},
-      else: check(rule, module, model, path)
+      else: run_check({:ok, needs}, %{analyses | effects: nil}, rule, module, model, path)
+  end
+
+  defp run_check(
+         {:ok, needs},
+         %{demand: {:crashed, kind, reason, stacktrace}} = analyses,
+         rule,
+         module,
+         model,
+         path
+       ) do
+    if :demand in needs,
+      do:
+        {:crashed,
+         rule |> Failures.rule_demand_crashed(kind, reason, stacktrace, path) |> fail_closed()},
+      else: run_check({:ok, needs}, %{analyses | demand: nil}, rule, module, model, path)
   end
 
   defp run_check({:ok, _needs}, _analyses, rule, module, model, path),

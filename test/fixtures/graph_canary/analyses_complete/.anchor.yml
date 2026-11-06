@@ -1,0 +1,23 @@
+# The analyses_complete canary (DND-5715): its own root, so the shared canary
+# tree's counts do not move. The integration test compiles lib/ to beams on disk
+# and runs the Manager over them. Compliant only: no small module can hit a
+# default bound, so the test injects a bounded analysis for a violating run.
+rules:
+  - type: analyses_complete
+    id: analyses_complete
+    paths: ["lib/analyses/**/*.ex"]
+    min_modules: 2
+    min_functions: 2
+    min_apply_sites: 1
+    min_absent_parameters: 1
+
+architecture:
+  contexts:
+    depth: 2
+  buckets:
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/analyses/**/*.ex"]
+  calls:
+    domain: [domain]

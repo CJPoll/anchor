@@ -119,6 +119,22 @@ rules:
   # declares no aggregate, so the rule could only say it checks nothing, a
   # fail-closed issue that fails the run in any enforcement mode.)
 
+  # --- Rule: the whole-program analyses finish over Anchor itself (DND-5715) ---
+  #
+  # CI's `mix anchor.graph` runs the 0-CFA and the demand analysis over every
+  # module of lib/: a hit bound or a function left unsummarised fails the run.
+  # This is the one whole-Anchor run of them (no test reads Anchor's own beams,
+  # see CLAUDE.md), and its floors are the positive controls of the self tests
+  # it replaced: hundreds of functions, hundreds of apply sites, and some
+  # parameter judged unused.
+  - type: analyses_complete
+    id: analyses_complete
+    paths: ["lib/**/*.ex"]
+    min_modules: 208
+    min_functions: 501
+    min_apply_sites: 101
+    min_absent_parameters: 1
+
   # --- Rule: the calls matrix over compiled code (DND-5442) ---
   #
   # `mix anchor.graph` judges every call between two of Anchor's own modules

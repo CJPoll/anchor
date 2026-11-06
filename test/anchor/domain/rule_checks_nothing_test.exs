@@ -18,6 +18,7 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
   # `Anchor.Managers.LintTest` and the e2e suite.
   #
   # Sabotage record: ../../sabotage_records/rule_schema-20260929-dnd_1290_empty_relation_list.md
+  # Sabotage record (DND-5715): ../../sabotage_records/analyses_complete-20261106-dnd_5715_bucket_split.md
   # Sabotage record (DND-5632): ../../sabotage_records/baseline-20261103-dnd_5648_graph_followups.md
   # Sabotage record (DND-5447, DND-5454 rows): ../../sabotage_records/rule_schema-20261103-dnd_5447_graph_rules_c.md
   # The DND-1292 rows (glob metacharacters, the `***` match-all, `*?`):
@@ -445,6 +446,22 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
               :effects_match_bucket
             ],
        do: graph_rows(type)
+
+  # DND-5715: analyses_complete's three floors, each a positive integer like
+  # `min_modules`; each is a positive control, so 0 would judge nothing.
+  defp table(:analyses_complete) do
+    base = %{"type" => "analyses_complete", "bucket" => "domain"}
+
+    graph_rows(:analyses_complete) ++
+      for key <- ~w(min_absent_parameters min_apply_sites min_functions),
+          {label, value, expected} <- [
+            {"positive: #{key}", 5, :accepted},
+            {"#{key}: 0 (no floor)", 0, {:refused, "`#{key}` must be a positive integer"}},
+            {"#{key} that is not an integer", "5",
+             {:refused, "`#{key}` must be a positive integer"}}
+          ],
+          do: {label, Map.put(base, key, value), expected}
+  end
 
   # DND-5454: the graph half of struct ownership reads the AST half's one
   # optional key, `owned_namespaces`, under the same rules.

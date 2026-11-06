@@ -3,6 +3,7 @@ defmodule Anchor.Domain.ConfigTest do
   # file-boundary tests.
   #
   # Sabotage record: ../../sabotage_records/config-20260913-dnd_123_t3_config_split.md
+  # Sabotage record (DND-5715): ../../sabotage_records/analyses_complete-20261106-dnd_5715_bucket_split.md
   # Sabotage record (rows DND-1265 rewrote: unknown mode/match, empty or
   # rules-less document): ../../sabotage_records/config-20260929-dnd_1265_anchor_fail_closed.md
   # Sabotage record (DND-1286 selector fixtures and schema wiring):
@@ -101,6 +102,25 @@ defmodule Anchor.Domain.ConfigTest do
     end
 
     # Row 8 (BUG 2)
+    test "analyses_complete's floors surfaced as atom-keyed integers, nil when absent" do
+      rule =
+        parse_rule(%{
+          "type" => "analyses_complete",
+          "paths" => ["lib/**/*.ex"],
+          "min_functions" => 501,
+          "min_apply_sites" => 101,
+          "min_absent_parameters" => 1
+        })
+
+      assert {rule.min_functions, rule.min_apply_sites, rule.min_absent_parameters} ==
+               {501, 101, 1}
+
+      bare = parse_rule(%{"type" => "analyses_complete", "paths" => ["lib/**"]})
+
+      assert {bare.min_functions, bare.min_apply_sites, bare.min_absent_parameters} ==
+               {nil, nil, nil}
+    end
+
     test "max_lines surfaced as an atom-keyed integer" do
       rule =
         parse_rule(%{

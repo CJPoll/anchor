@@ -541,6 +541,88 @@ defmodule Anchor.Domain.Failures do
   end
 
   @doc """
+  The issue for a graph rule whose needed demand analysis
+  (`Anchor.Domain.Demand`, DND-5715) crashed: it is not run, since without the
+  summaries it would check nothing.
+  """
+  @spec rule_demand_crashed(map(), atom(), term(), Exception.stacktrace(), String.t() | nil) ::
+          Violation.t()
+  def rule_demand_crashed(rule, kind, reason, stacktrace, config_path) do
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "#{rule_label(rule)} could not run: the demand analysis it needs " <>
+        "(Anchor.Domain.Demand) crashed: #{crash_summary(kind, reason, stacktrace)}, so it " <>
+        "checked nothing. Fix: this is an Anchor bug; file it with this line."
+    )
+  end
+
+  @doc """
+  The `analyses_complete` issue when the higher-order flow analysis hit its
+  step bound (DND-5715): every apply site reads `any`.
+  """
+  @spec analyses_cfa_bound_hit(map(), non_neg_integer(), String.t() | nil) :: Violation.t()
+  def analyses_cfa_bound_hit(rule, steps, config_path) do
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "#{rule_label(rule)}: the higher-order flow analysis (Anchor.Domain.Cfa) hit its step " <>
+        "bound after #{steps} steps, so every apply site reads any and no closure was " <>
+        "resolved. Fix: this is a scale limit of Anchor; file it with this line. Raising the " <>
+        "bound is the owner's call."
+    )
+  end
+
+  @doc """
+  The `analyses_complete` issue when the demand analysis hit its round bound
+  (DND-5715): each member's parameters read as used. `members` is the sorted
+  `Demand.bound_hit`.
+  """
+  @spec analyses_demand_bound_hit(map(), [mfa()], String.t() | nil) :: Violation.t()
+  def analyses_demand_bound_hit(rule, members, config_path) do
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "#{rule_label(rule)}: the demand analysis (Anchor.Domain.Demand) hit its round bound on " <>
+        "#{length(members)} function(s) (#{some_functions(members)}), so their parameters read " <>
+        "as used without being judged. Fix: this is a scale limit of Anchor; file it with this " <>
+        "line. Raising the bound is the owner's call."
+    )
+  end
+
+  @doc """
+  The `analyses_complete` issue when functions with a Core body have no demand
+  summary (DND-5715). `missing` is sorted.
+  """
+  @spec analyses_unsummarised(map(), [mfa()], String.t() | nil) :: Violation.t()
+  def analyses_unsummarised(rule, missing, config_path) do
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "#{rule_label(rule)}: #{length(missing)} function(s) have a Core body and no demand " <>
+        "summary (#{some_functions(missing)}), so the analysis judged none of their " <>
+        "parameters. Fix: this is an Anchor bug; file it with this line."
+    )
+  end
+
+  @doc """
+  The `analyses_complete` issue when the analyses judged fewer than a floor the
+  rule declares (DND-5715): `key` is the floor, `judged` the count, `min` its
+  value.
+  """
+  @spec analyses_below_floor(map(), atom(), non_neg_integer(), pos_integer(), String.t() | nil) ::
+          Violation.t()
+  def analyses_below_floor(rule, key, judged, min, config_path) do
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "#{rule_label(rule)}: the whole-program analyses judged #{judged}, below #{key} #{min}, " <>
+        "so they may be judging nothing. Fix: find what stopped them reading this code; " <>
+        "lowering the floor is the owner's call."
+    )
+  end
+
+  @doc """
   The issue for a graph rule whose needed effect inference
   (`Anchor.Domain.Effects`, DND-5447) crashed: it is not run, since without
   the roles it would check nothing.
@@ -1051,6 +1133,20 @@ defmodule Anchor.Domain.Failures do
   defp unreadable_text(reason, _path) do
     "could not be read (#{capped(inspect(reason))}). Fix: this is an Anchor bug; file it " <>
       "with this line."
+  end
+
+  # The first five of `mfas`, and how many more: a list of hundreds is no use
+  # in one line, and the count before it says how many there are.
+  defp some_functions(mfas) do
+    {shown, rest} = Enum.split(mfas, 5)
+
+    names =
+      Enum.map_join(shown, ", ", &Exception.format_mfa(elem(&1, 0), elem(&1, 1), elem(&1, 2)))
+
+    case rest do
+      [] -> names
+      _more -> "#{names} and #{length(rest)} more"
+    end
   end
 
   defp graph_issue(file, line, message) do

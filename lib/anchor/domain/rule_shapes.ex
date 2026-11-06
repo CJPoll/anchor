@@ -24,6 +24,7 @@ defmodule Anchor.Domain.RuleShapes do
   @modules %{
     aggregate_declarations: GraphRules.AggregateDeclarations,
     alphabetized_functions: Checks.AlphabetizedFunctions,
+    analyses_complete: GraphRules.AnalysesComplete,
     case_on_bare_arg: Checks.CaseOnBareArg,
     context_acyclic: GraphRules.ContextAcyclic,
     effects_match_bucket: GraphRules.EffectsMatchBucket,

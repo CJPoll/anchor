@@ -261,6 +261,7 @@ defmodule Anchor.Integration.GraphCanaryTest do
   # holds that rule's findings to exactly one Fix:.
   @own_canary %{
     aggregate_declarations: "test/anchor/integration/aggregate_declarations_integration_test.exs",
+    analyses_complete: "test/anchor/integration/analyses_complete_integration_test.exs",
     effects_match_bucket: "test/anchor/integration/effects_canary_test.exs"
   }
 
