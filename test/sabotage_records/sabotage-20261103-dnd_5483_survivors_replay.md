@@ -705,3 +705,25 @@ green. Rows F1-F20 cover each, with the same driver. F10's first form
 | F20 | the Manager: the run lock not taken | 1 of 11: "the run lock is taken before anything else and released after; held, exit 2, nothing touched" | `code:  assert calls() == [:take_lock, :read_journal, :release_lock]` `left:  [:read_journal]` |
 
 After every row was restored, each file named above was green.
+
+## The move to Domain (`effects_match_bucket`, on main from 4930a78)
+
+CI's graph check on the merged tree flagged `Runner.runner_error/1`,
+`runner_error_code/1` and `ports/1` as public and pure in a Manager. The
+refusal moved to `TestRunRefusal`; `ports/1` is private, and the replay names
+its own. T7's first form (`RecordFile` alone) did not compile: it left the
+`TestRunner` alias unused. Each row ran `mix test --force --timeout 2000
+--max-cases 2`.
+
+| # | Mutation | Tests failed | First failure, verbatim |
+|---|---|---|---|
+| T1 | `code(:timeout_not_found)` is 3 | 1 of 3: "a missing timeout binary is exit 2, a tool to install" | `left:  3` |
+| T2 | `code({:results_not_removed, ...})` is 2 | 1 of 3: "a results file not removed is exit 3, naming the file and the posix" | `left:  2` |
+| T3 | `code({:results_dir_not_created, ...})` is 2 | 1 of 3: "a results directory not made is exit 3, naming the directory and the posix" | `left:  2` |
+| T4 | the timeout message's `Fix:` reworded | 1 of 3: "a missing timeout binary ..." | ``left:  "the `timeout` binary was not found, so a test run could not be bounded. Fix: install timeout"`` |
+| T5 | the results-file message loses its posix | 1 of 3: "a results file not removed ..." | `left:  "COULD NOT MEASURE: the previous results file _build/r.bin could not be removed (:x) false, so a test run's failures could be an earlier run's. Fix: remove _build/r.bin by hand"` |
+| T6 | the results-directory message's `Fix:` loses the directory | 1 of 3: "a results directory not made ..." | `left:  "COULD NOT MEASURE: the results directory _build/d could not be made (:eacces), so no test run's failures can be read. Fix: make it (or its parent) a writable directory"` |
+| T7 | the replay's default test port is the wrong adapter | 1 of 1: integration "1-2: a recorded killer still kills (by name alone), then loses its power" | `** (UndefinedFunctionError) function Anchor.Adapters.RecordFile.run/3 is undefined or private` |
+| T8 | the replay's ports have no `records:` (seen while writing them) | 11 of 18: every `SabotageReplayTest` row past the lock | `** (FunctionClauseError) no function clause matching in Anchor.Managers.Sabotage.Replay.records/4` |
+
+After every row was restored, each file named above was green.
