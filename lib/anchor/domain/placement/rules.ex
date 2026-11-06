@@ -41,6 +41,7 @@ defmodule Anchor.Domain.Placement.Rules do
   """
 
   alias Anchor.Domain.Classification
+  alias Anchor.Domain.EffectPrimitives
   alias Anchor.Domain.Effects
   alias Anchor.Domain.Graph.Inlines
   alias Anchor.Domain.Graph.ModuleNode
@@ -247,12 +248,21 @@ defmodule Anchor.Domain.Placement.Rules do
 
   defp unresolved_hint(_step), do: []
 
-  defp step_text({:primitive, mfa}), do: Inlines.describe(mfa)
+  defp step_text({:primitive, mfa}), do: Inlines.describe(mfa) <> kind_text(mfa)
 
   defp step_text({:unresolved, %{text: text, line: line} = info}),
     do: "unresolved dynamic call (#{text}) at #{Map.get(info, :file) || "?"}:#{line || "?"}"
 
   defp step_text({_m, _f, _a} = mfa), do: ViolationKey.mfa(mfa)
+
+  # DND-5677: a clock or randomness read says so, since it looks like a pure call.
+  defp kind_text(mfa) do
+    case EffectPrimitives.inference_kind(mfa) do
+      :clock -> " (reads the clock)"
+      :random -> " (draws a random value)"
+      _other -> ""
+    end
+  end
 
   @doc "Whether an author wrote the function `facts`: not generated, and no compiler-named function."
   @spec authored?(FunctionFacts.t()) :: boolean()

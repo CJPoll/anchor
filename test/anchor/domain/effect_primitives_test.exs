@@ -3,6 +3,7 @@ defmodule Anchor.Domain.EffectPrimitivesTest do
   # the demand analysis, keyed by the callee as Core names it.
   #
   # Sabotage record: ../../sabotage_records/demand-20261103-dnd_5498_demand.md
+  # Sabotage record (DND-5677): ../../sabotage_records/effects-20261106-dnd_5676_effects_cfa_batch.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.EffectPrimitives
@@ -135,6 +136,86 @@ defmodule Anchor.Domain.EffectPrimitivesTest do
     test "the demand table is unchanged: a file read is no demand effect" do
       refute EffectPrimitives.effect?({File, :read, 1}, [])
       assert EffectPrimitives.effect?({File, :write, 2}, [])
+    end
+  end
+
+  describe "the clock and randomness families (DND-5677)" do
+    @clock [
+      {DateTime, :utc_now, 0},
+      {DateTime, :now, 1},
+      {DateTime, :now!, 1},
+      {NaiveDateTime, :utc_now, 0},
+      {NaiveDateTime, :local_now, 0},
+      {Time, :utc_now, 0},
+      {Date, :utc_today, 0},
+      {System, :system_time, 1},
+      {System, :monotonic_time, 0},
+      {System, :os_time, 0},
+      {:os, :timestamp, 0},
+      {:os, :system_time, 1},
+      {:erlang, :timestamp, 0},
+      {:erlang, :now, 0},
+      {:erlang, :time, 0},
+      {:erlang, :date, 0},
+      {:erlang, :localtime, 0},
+      {:erlang, :universaltime, 0},
+      {:erlang, :system_time, 0},
+      {:erlang, :monotonic_time, 1},
+      {:erlang, :time_offset, 0},
+      {:calendar, :local_time, 0},
+      {:calendar, :universal_time, 0}
+    ]
+
+    @random [
+      {:rand, :uniform, 1},
+      {:rand, :seed, 1},
+      {:random, :uniform, 0},
+      {Enum, :random, 1},
+      {Enum, :take_random, 2},
+      {Enum, :shuffle, 1},
+      {:crypto, :strong_rand_bytes, 1},
+      {:crypto, :rand_seed, 0},
+      {System, :unique_integer, 1},
+      {:erlang, :unique_integer, 0}
+    ]
+
+    test "every clock read is a primitive of kind :clock" do
+      for mfa <- @clock do
+        assert EffectPrimitives.primitive?(primitives(), mfa), inspect(mfa)
+        assert EffectPrimitives.inference_kind(mfa) == :clock, inspect(mfa)
+      end
+    end
+
+    test "every random draw is a primitive of kind :random" do
+      for mfa <- @random do
+        assert EffectPrimitives.primitive?(primitives(), mfa), inspect(mfa)
+        assert EffectPrimitives.inference_kind(mfa) == :random, inspect(mfa)
+      end
+    end
+
+    test "control: their pure neighbours are no primitive and have no kind" do
+      for mfa <- [
+            {DateTime, :add, 3},
+            {DateTime, :to_unix, 1},
+            {NaiveDateTime, :compare, 2},
+            {Time, :new, 3},
+            {Date, :new, 3},
+            {Enum, :sort, 1},
+            {Enum, :take, 2},
+            {Enum, :at, 2},
+            {:crypto, :hash, 2},
+            {:calendar, :valid_date, 1},
+            {:erlang, :phash2, 1}
+          ] do
+        refute EffectPrimitives.primitive?(primitives(), mfa), inspect(mfa)
+        assert EffectPrimitives.inference_kind(mfa) == nil, inspect(mfa)
+      end
+    end
+
+    test "any other default row is of kind :effect; an extra token has none" do
+      assert EffectPrimitives.inference_kind({File, :read, 1}) == :effect
+      assert EffectPrimitives.inference_kind({System, :get_env, 1}) == :effect
+      assert EffectPrimitives.inference_kind({Req, :get, 1}) == nil
     end
   end
 end

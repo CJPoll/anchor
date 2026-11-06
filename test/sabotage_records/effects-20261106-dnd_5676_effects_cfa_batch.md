@@ -982,3 +982,230 @@ d74e4c358550	lib/anchor/domain/effects.ex	Anchor.Domain.Effects.opaque_text/2	na
 3f8ed75f224b	lib/anchor/domain/effects.ex	Anchor.Domain.Effects.static/3	force_condition	killed	test/anchor/domain/effects_test.exs:67 test a direct primitive call is adapters ; test/anchor/domain/effects_test.exs:177 test counts per role are reported ; test/anchor/domain/effects_test.exs:102 test recursion between modules reaches the fixpoint ; test/anchor/domain/effects_test.exs:154 test a dynamic call resolved to an effectful implementation reaches its effect ; test/anchor/domain/effects_test.exs:298 test apply sites read from the flow analysis (compiled, Model.cfa set) a closure the analysis resolves to an effect capture reaches that effect ; test/anchor/domain/effects_test.exs:82 test an effect reached only through another module is managers, with the chain ; test/anchor/domain/effects_test.exs:164 test a dynamic call whose candidate is a declared effect reaches that effect ; test/anchor/domain/effects_test.exs:74 test a primitive reached through the module's own private helper is adapters
 82ae7e02b8fe	lib/anchor/domain/effects.ex	Anchor.Domain.Effects.static/3	force_condition	killed	test/anchor/domain/effects_test.exs:177 test counts per role are reported ; test/anchor/domain/effects_test.exs:102 test recursion between modules reaches the fixpoint ; test/anchor/domain/effects_test.exs:246 test a call into a project function whose body was not read (DND-5679) compiled: an Erlang module that writes a file, called from a Domain function, is not pure ; test/anchor/domain/effects_test.exs:74 test a primitive reached through the module's own private helper is adapters ; test/anchor/domain/effects_test.exs:307 test apply sites read from the flow analysis (compiled, Model.cfa set) a closure the analysis resolves to a pure capture reaches nothing ; test/anchor/domain/effects_test.exs:214 test a call into a project function whose body was not read (DND-5679) control: the same call into a module outside the project reaches nothing ; test/anchor/domain/effects_test.exs:154 test a dynamic call resolved to an effectful implementation reaches its effect ; test/anchor/domain/effects_test.exs:232 test a call into a project function whose body was not read (DND-5679) a call of a public function with no Core body is unresolved, named ; test/anchor/domain/effects_test.exs:221 test a call into a project function whose body was not read (DND-5679) a module both read and listed unread (a duplicate beam) is read: its functions decide ; test/anchor/domain/effects_test.exs:60 test a function with no effect reachable is domain, with no evidence ; test/anchor/domain/effects_test.exs:197 test a call into a project function whose body was not read (DND-5679) a call of an unread project module (an Erlang module) is unresolved, named, never pure ; test/anchor/domain/effects_test.exs:138 test a dynamic call resolved to pure implementations stays pure ; test/anchor/domain/effects_test.exs:82 test an effect reached only through another module is managers, with the chain
 ```
+
+## Second run — clock and random primitives, with a kind (DND-5677)
+
+- **Domain:** effects
+- **Branch:** dnd-5676-effects-cfa-batch
+- **Date:** 2026-11-06
+- **Ticket:** DND-5677
+- **Code under test:** `Anchor.Domain.EffectPrimitives` (@clock_functions, @random_functions, inference_kind/1), `Anchor.Domain.Placement.Rules` (kind_text/1)
+- **Suite run:** `mix test --timeout 2000 --max-cases 2 <files>` per mutation, through test-slot; files: `test/anchor/domain/effect_primitives_test.exs`, `test/anchor/domain/graph_rules/effects_match_bucket_test.exs`
+
+Each mutation was applied to the committed tree, the named test files run, and the file restored with `git checkout --`.
+
+| Mutation | File | Change | Result |
+|---|---|---|---|
+| A | `lib/anchor/domain/effect_primitives.ex` | `{"Time", :utc_now, :*},` -> `` | 40 tests, 2 failures |
+| B | `lib/anchor/domain/effect_primitives.ex` | `{"Enum", :random, 1},` -> `` | 40 tests, 2 failures |
+| C | `lib/anchor/domain/effect_primitives.ex` | `Enum.any?(candidates, &listed?(@clock_functions, &1)) -> :clock` -> `Enum.any?(candidates, &listed?(@random_functions, &1)) -> :clock` | 40 tests, 3 failures |
+| D | `lib/anchor/domain/placement/rules.ex` | `:random -> " (draws a random value)"` -> `:random -> ""` | 19 tests, 1 failure |
+| E | `lib/anchor/domain/effect_primitives.ex` | `{":erlang", :timestamp, 0},` -> `` | 21 tests, 1 failure |
+| F | `lib/anchor/domain/effect_primitives.ex` | `{":rand", :*, :*},` -> `` | 21 tests, 2 failures |
+| G | `lib/anchor/domain/effect_primitives.ex` | `Enum.any?(candidates, &listed?(@inference_rows, &1)) -> :effect` -> `Enum.any?(candidates, &listed?(@inference_rows, &1)) -> nil` | 21 tests, 1 failure |
+
+### A
+
+```
+1) test the clock and randomness families (DND-5677) every clock read is a primitive of kind :clock (Anchor.Domain.EffectPrimitivesTest)
+     test/anchor/domain/effect_primitives_test.exs:182
+     {Time, :utc_now, 0}
+     code: for mfa <- @clock do
+     stacktrace:
+       test/anchor/domain/effect_primitives_test.exs:184: anonymous fn/2 in Anchor.Domain.EffectPrimitivesTest."test the clock and randomness families (DND-5677) every clock read is a primitive of kind :clock"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/effect_primitives_test.exs:183: (test)
+
+..................
+
+  2) test clock and randomness reads (DND-5677) a domain function that reads the clock or draws a random value is an issue saying so (Anchor.Domain.GraphRules.EffectsMatchBucketTest)
+     test/anchor/domain/graph_rules/effects_match_bucket_test.exs:196
+     ** (MatchError) no match of right hand side value:
+
+         [
+           %Anchor.Domain.Violation{
+             line: 11,
+             trigger: "D.pick/1",
+             message: "D.pick/1 is in bucket domain (domain) but reaches an effect. Fix: move D.pick/1 to the adapters bucket: D.pick/1 -> Enum.random/1 (draws a random value)",
+             filename: "lib/domain/D.ex",
+             kind: :rule,
+             key: "effects|D.pick/1|adapters",
+             rule_id: "effects",
+             enfor
+```
+
+### B
+
+```
+1) test the clock and randomness families (DND-5677) every random draw is a primitive of kind :random (Anchor.Domain.EffectPrimitivesTest)
+     test/anchor/domain/effect_primitives_test.exs:189
+     {Enum, :random, 1}
+     code: for mfa <- @random do
+     stacktrace:
+       test/anchor/domain/effect_primitives_test.exs:191: anonymous fn/2 in Anchor.Domain.EffectPrimitivesTest."test the clock and randomness families (DND-5677) every random draw is a primitive of kind :random"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/effect_primitives_test.exs:190: (test)
+
+............
+
+  2) test clock and randomness reads (DND-5677) a domain function that reads the clock or draws a random value is an issue saying so (Anchor.Domain.GraphRules.EffectsMatchBucketTest)
+     test/anchor/domain/graph_rules/effects_match_bucket_test.exs:196
+     ** (MatchError) no match of right hand side value:
+
+         [
+           %Anchor.Domain.Violation{
+             line: 10,
+             trigger: "D.now/0",
+             message: "D.now/0 is in bucket domain (domain) but reaches an effect. Fix: move D.now/0 to the adapters bucket: D.now/0 -> Time.utc_now/0 (reads the clock)",
+             filename: "lib/domain/D.ex",
+             kind: :rule,
+             key: "effects|D.now/0|adapters",
+             rule_id: "effects",
+             enforcement: :en
+```
+
+### C
+
+```
+1) test the clock and randomness families (DND-5677) every clock read is a primitive of kind :clock (Anchor.Domain.EffectPrimitivesTest)
+     test/anchor/domain/effect_primitives_test.exs:182
+     {DateTime, :utc_now, 0}
+     code: for mfa <- @clock do
+     stacktrace:
+       test/anchor/domain/effect_primitives_test.exs:185: anonymous fn/2 in Anchor.Domain.EffectPrimitivesTest."test the clock and randomness families (DND-5677) every clock read is a primitive of kind :clock"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/effect_primitives_test.exs:183: (test)
+
+........
+
+  2) test the clock and randomness families (DND-5677) every random draw is a primitive of kind :random (Anchor.Domain.EffectPrimitivesTest)
+     test/anchor/domain/effect_primitives_test.exs:189
+     {:rand, :uniform, 1}
+     code: for mfa <- @random do
+     stacktrace:
+       test/anchor/domain/effect_primitives_test.exs:192: anonymous fn/2 in Anchor.Domain.EffectPrimitivesTest."test the clock and randomness families (DND-5677) every random draw is a primitive of kind :random"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/effect_primitives_test.exs:190: (test)
+
+...........
+
+  3) test clock and randomness reads (DND-5677) a domain function that reads the clock or draws a random value is an issue
+```
+
+### D
+
+```
+1) test clock and randomness reads (DND-5677) a domain function that reads the clock or draws a random value is an issue saying so (Anchor.Domain.GraphRules.EffectsMatchBucketTest)
+     test/anchor/domain/graph_rules/effects_match_bucket_test.exs:196
+     Assertion with =~ failed
+     code:  assert pick.message =~ "D.pick/1 -> Enum.random/1 (draws a random value)"
+     left:  "D.pick/1 is in bucket domain (domain) but reaches an effect. Fix: move D.pick/1 to the adapters bucket: D.pick/1 -> Enum.random/1"
+     right: "D.pick/1 -> Enum.random/1 (draws a random value)"
+     stacktrace:
+       test/anchor/domain/graph_rules/effects_match_bucket_test.exs:210: (test)
+
+.
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+19 tests, 1 failure
+```
+
+### E
+
+```
+1) test the clock and randomness families (DND-5677) every clock read is a primitive of kind :clock (Anchor.Domain.EffectPrimitivesTest)
+     test/anchor/domain/effect_primitives_test.exs:182
+     {:erlang, :timestamp, 0}
+     code: for mfa <- @clock do
+     stacktrace:
+       test/anchor/domain/effect_primitives_test.exs:184: anonymous fn/2 in Anchor.Domain.EffectPrimitivesTest."test the clock and randomness families (DND-5677) every clock read is a primitive of kind :clock"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/effect_primitives_test.exs:183: (test)
+
+...................
+Finished in 0.08 seconds (0.08s async, 0.00s sync)
+21 tests, 1 failure
+```
+
+### F
+
+```
+1) test the clock and randomness families (DND-5677) every random draw is a primitive of kind :random (Anchor.Domain.EffectPrimitivesTest)
+     test/anchor/domain/effect_primitives_test.exs:189
+     {:rand, :uniform, 1}
+     code: for mfa <- @random do
+     stacktrace:
+       test/anchor/domain/effect_primitives_test.exs:191: anonymous fn/2 in Anchor.Domain.EffectPrimitivesTest."test the clock and randomness families (DND-5677) every random draw is a primitive of kind :random"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/effect_primitives_test.exs:190: (test)
+
+
+
+  2) test primitive?/2 (DND-5447) a clock or randomness read is a primitive (Anchor.Domain.EffectPrimitivesTest)
+     test/anchor/domain/effect_primitives_test.exs:103
+     Expected truthy, got false
+     code: assert EffectPrimitives.primitive?(primitives(), {:rand, :uniform, 1})
+     arguments:
+
+         # 1
+         %{extra: [], repos: MapSet.new([])}
+
+         # 2
+         {:rand, :uniform, 1}
+
+     stacktrace:
+       test/anchor/domain/effect_primitives_test.exs:105: (test)
+
+...
+Finished in 0.08 seconds (0.08s async, 0.00s sync)
+21 tests, 2 failures
+```
+
+### G
+
+```
+1) test the clock and randomness families (DND-5677) any other default row is of kind :effect; an extra token has none (Anchor.Domain.EffectPrimitivesTest)
+     test/anchor/domain/effect_primitives_test.exs:215
+     Assertion with == failed
+     code:  assert EffectPrimitives.inference_kind({File, :read, 1}) == :effect
+     left:  nil
+     right: :effect
+     stacktrace:
+       test/anchor/domain/effect_primitives_test.exs:216: (test)
+
+
+Finished in 0.09 seconds (0.09s async, 0.00s sync)
+21 tests, 1 failure
+     warning: comparison between distinct types found:
+
+         left == right
+
+     given types:
+
+         dynamic(:clock or nil or :random) == :effect
+
+     where "left" (context ExUnit.Assertions) was given the type:
+
+         # type: dynamic(:clock or nil or :random)
+         # from: test/anchor/domain/effect_primitives_test.exs:216
+         left = Anchor.Domain.EffectPrimitives.inference_kind({File, :read, 1})
+
+     where "right" (context ExUnit.Assertions) was given the type:
+
+         # type: :effect
+         # from: test/anchor/domain/effect_primitives_test.exs:216
+         right = :effect
+
+     While Elixir can compare across all types, you are comparing across types which are always disjoint, and the result is either always true or always false
+
+     typing violation found at:
+     │
+ 216 │       assert EffectPrimitives.inference_kind({File, :read, 1}) == :effect
+```
+
+### Traps
+
+- C was first written as `-> :clock` replaced by `-> :effect`; Elixir's type checker then proved `kind_text/1`'s `:clock` clause unreachable and, under `warnings_as_errors`, the mutant did not compile. Rewritten to test the random rows in the clock branch (both kinds stay reachable) and re-run; the row above is the re-run.
+
+### Rows that stayed green
+
+- Each row removal (A, B, E, F) reddened only the family test that lists it, and the rule test where the chain names it: the controls (pure neighbours, `File.read/1` with no kind) are about the other side of the boundary.

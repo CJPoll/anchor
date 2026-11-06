@@ -1032,11 +1032,17 @@ every function's role from the compiled code (`Anchor.Domain.Effects`):
 The effect primitives are every function of `File`, `IO`, `Logger`,
 `:logger`, `:telemetry`, `System`, `Process`, `Port`, `Node`, `GenServer`,
 `Agent`, `Task`, `Task.Supervisor`, `Registry`, `:ets`, `:dets`,
-`:persistent_term`, `:gen_tcp`, `:gen_udp`, `:ssl`, `:httpc`, `:os`, `:file`
-and `:rand`; `send`, `spawn*`, the process dictionary, the clocks
-(`DateTime.utc_now`, `NaiveDateTime.utc_now`, `Date.utc_today`,
-`:erlang.system_time`, `:erlang.monotonic_time`) and
-`:crypto.strong_rand_bytes/1`; and every project module declaring `@behaviour
+`:persistent_term`, `:gen_tcp`, `:gen_udp`, `:ssl`, `:httpc`, `:os` and
+`:file`; `send`, `spawn*`, the process dictionary; the clock reads
+(`DateTime.utc_now/now/now!`, `NaiveDateTime.utc_now/local_now`,
+`Time.utc_now`, `Date.utc_today`, `System.system_time/monotonic_time/os_time`,
+`:os.timestamp/system_time/perf_counter`, `:erlang.timestamp/now/time/date/
+localtime/universaltime/system_time/monotonic_time/time_offset`,
+`:calendar.local_time/universal_time`) and the random draws (every function of
+`:rand` and `:random`, `Enum.random/1`, `Enum.take_random/2`, `Enum.shuffle/1`,
+`:crypto.strong_rand_bytes/1`, `:crypto.rand_seed`, `System.unique_integer`),
+DND-5677: a chain that ends in one says so in the `Fix:` ("reads the clock",
+"draws a random value"); and every project module declaring `@behaviour
 Ecto.Repo`. `architecture.effects` adds to them; nothing removes one. A call is
 matched by every name it may have been written as (`System.unique_integer/0`
 reaches Core as `:erlang.unique_integer/0`, DND-5613).

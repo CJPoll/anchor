@@ -38,14 +38,26 @@ defmodule Anchor.Domain.EffectPrimitives do
   function of `File`, `IO`, `Logger`, `:logger`, `:telemetry`, `System`,
   `Process`, `Port`, `Node`, `GenServer`, `Agent`, `Task`,
   `Task.Supervisor`, `Registry`, `:ets`, `:dets`, `:persistent_term`,
-  `:gen_tcp`, `:gen_udp`, `:ssl`, `:httpc`, `:os`, `:file`, `:rand`; and
+  `:gen_tcp`, `:gen_udp`, `:ssl`, `:httpc`, `:os`, `:file`; and
   `:erlang.send/2,3`, `:erlang.spawn*`, `:erlang.put/2`, `:erlang.get/0,1`,
-  `:erlang.erase/0,1`, `:crypto.strong_rand_bytes/1`,
-  `:erlang.system_time/*`, `:erlang.monotonic_time/*`, `DateTime.utc_now/*`,
-  `NaiveDateTime.utc_now/*`, `Date.utc_today/*`. A clock or randomness read is
-  an effect: it makes a function non-deterministic. `build/2` adds
-  `architecture.effects` and every project module that declares `@behaviour
-  Ecto.Repo`; nothing removes a default.
+  `:erlang.erase/0,1`; and the clock and randomness families (DND-5677). A
+  clock or randomness read is an effect: it makes a function
+  non-deterministic. Each row has a kind (`inference_kind/1`):
+
+    * `:clock`: `DateTime.utc_now/now/now!`, `NaiveDateTime.utc_now/local_now`,
+      `Time.utc_now`, `Date.utc_today`, `System.system_time/monotonic_time/
+      os_time`, `:os.timestamp/system_time/perf_counter`,
+      `:erlang.timestamp/now/time/date/localtime/universaltime/system_time/
+      monotonic_time/time_offset`, `:calendar.local_time/universal_time`;
+    * `:random`: every function of `:rand` and `:random`, `Enum.random/1`,
+      `Enum.take_random/2`, `Enum.shuffle/1`, `:crypto.strong_rand_bytes/1`,
+      `:crypto.rand_seed`, `System.unique_integer`/`:erlang.unique_integer`;
+    * `:effect`: every other row.
+
+  `Enum.random/1` and its kin are stdlib functions that call `:rand` inside
+  `Enum`, where the graph does not look, so they are rows of their own.
+  `build/2` adds `architecture.effects` and every project module that
+  declares `@behaviour Ecto.Repo`; nothing removes a default.
 
   `primitive?/2` matches a Core call through every source name it may have
   been written as (`Anchor.Domain.Graph.Inlines.candidates/1`, DND-5613):
@@ -156,7 +168,7 @@ defmodule Anchor.Domain.EffectPrimitives do
   # Effect inference (DND-5447): whole modules, then single functions.
   @inference_modules ~w(File IO Logger :logger :telemetry System Process Port Node GenServer
                         Agent Task Task.Supervisor Registry :ets :dets :persistent_term :gen_tcp
-                        :gen_udp :ssl :httpc :os :file :rand)
+                        :gen_udp :ssl :httpc :os :file)
 
   @inference_functions [
     {":erlang", :send, :*},
@@ -169,16 +181,52 @@ defmodule Anchor.Domain.EffectPrimitives do
     {":erlang", :get, 0},
     {":erlang", :get, 1},
     {":erlang", :erase, 0},
-    {":erlang", :erase, 1},
-    {":erlang", :system_time, :*},
-    {":erlang", :monotonic_time, :*},
-    {":crypto", :strong_rand_bytes, 1},
-    {"DateTime", :utc_now, :*},
-    {"NaiveDateTime", :utc_now, :*},
-    {"Date", :utc_today, :*}
+    {":erlang", :erase, 1}
   ]
 
-  @inference_rows Enum.map(@inference_modules, &{&1, :*, :*}) ++ @inference_functions
+  # DND-5677: reading the clock.
+  @clock_functions [
+    {"DateTime", :utc_now, :*},
+    {"DateTime", :now, :*},
+    {"DateTime", :now!, :*},
+    {"NaiveDateTime", :utc_now, :*},
+    {"NaiveDateTime", :local_now, :*},
+    {"Time", :utc_now, :*},
+    {"Date", :utc_today, :*},
+    {"System", :system_time, :*},
+    {"System", :monotonic_time, :*},
+    {"System", :os_time, :*},
+    {":os", :timestamp, 0},
+    {":os", :system_time, :*},
+    {":os", :perf_counter, :*},
+    {":erlang", :timestamp, 0},
+    {":erlang", :now, 0},
+    {":erlang", :time, 0},
+    {":erlang", :date, 0},
+    {":erlang", :localtime, 0},
+    {":erlang", :universaltime, 0},
+    {":erlang", :system_time, :*},
+    {":erlang", :monotonic_time, :*},
+    {":erlang", :time_offset, :*},
+    {":calendar", :local_time, 0},
+    {":calendar", :universal_time, 0}
+  ]
+
+  # DND-5677: drawing a random or unique value.
+  @random_functions [
+    {":rand", :*, :*},
+    {":random", :*, :*},
+    {"Enum", :random, 1},
+    {"Enum", :take_random, 2},
+    {"Enum", :shuffle, 1},
+    {":crypto", :strong_rand_bytes, 1},
+    {":crypto", :rand_seed, :*},
+    {"System", :unique_integer, :*},
+    {":erlang", :unique_integer, :*}
+  ]
+
+  @inference_rows Enum.map(@inference_modules, &{&1, :*, :*}) ++
+                    @inference_functions ++ @clock_functions ++ @random_functions
 
   @typedoc """
   The effect primitives of one run (`build/2`): the extra tokens of
@@ -254,6 +302,25 @@ defmodule Anchor.Domain.EffectPrimitives do
     MapSet.member?(repos, module) or
       Enum.any?(extra, &extra_matches?(&1, module, function, arity)) or
       mfa |> Inlines.candidates() |> Enum.any?(&listed?(@inference_rows, &1))
+  end
+
+  @doc """
+  The kind of effect the Core call `mfa` is among the default inference
+  rows (DND-5677), through every name it may have been written as
+  (`Inlines.candidates/1`): `:clock` (it reads the clock), `:random` (it draws
+  a random or unique value), `:effect` (any other default row), or `nil` when
+  no default row names it (an extra token or a project `Repo` has no kind).
+  """
+  @spec inference_kind(mfa()) :: :clock | :random | :effect | nil
+  def inference_kind(mfa) do
+    candidates = Inlines.candidates(mfa)
+
+    cond do
+      Enum.any?(candidates, &listed?(@clock_functions, &1)) -> :clock
+      Enum.any?(candidates, &listed?(@random_functions, &1)) -> :random
+      Enum.any?(candidates, &listed?(@inference_rows, &1)) -> :effect
+      true -> nil
+    end
   end
 
   @doc "Whether a call of `mfa` lets its arguments leave the process or outlive the call."
