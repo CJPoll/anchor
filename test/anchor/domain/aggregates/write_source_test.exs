@@ -71,6 +71,21 @@ defmodule Anchor.Domain.Aggregates.WriteSourceTest do
               def r13, do: Repo.insert(build())
               def r14, do: Repo.insert(Map.new())
               def r15, do: Repo.insert(#{inspect(@c)}.make())
+              def r40(x), do: Repo.insert(x)
+              def r40_static, do: r40(%S{})
+              def r40_computed(mod), do: mod.r40(%T{})
+              def r41(x), do: Repo.insert(x)
+              def r41_static, do: r41(%S{})
+              def r41_computed(mod), do: apply(mod, :r41, [%T{}])
+              def r42(x), do: Repo.insert(x)
+              def r42_static, do: r42(%S{})
+              def r42_computed(mod, args), do: apply(mod, :r42, args)
+              def r43(x), do: Repo.insert(x)
+              def r43_static, do: r43(%S{})
+              def r43_computed(mod), do: &mod.r43/1
+              def r44(x), do: Repo.insert(x)
+              def r44_static, do: r44(%T{})
+              def r44_other_arity(mod), do: mod.r44(%S{}, 1)
               def r16(r), do: Repo.insert(r)
               def r16_use(xs), do: Enum.each(xs, &r16/1)
 
@@ -226,14 +241,25 @@ defmodule Anchor.Domain.Aggregates.WriteSourceTest do
       assert %{sources: [{:schema, @t}], unresolved: nil} = site(sites, :r15)
     end
 
+    test "a parameter of a function a computed call may reach has callers Anchor cannot see", %{
+      sites: sites
+    } do
+      for name <- [:r40, :r41, :r42, :r43] do
+        assert %{sources: [], unresolved: seen} = site(sites, name)
+        assert seen =~ "callers are not known"
+      end
+
+      assert %{sources: [{:schema, @t}], unresolved: nil} = site(sites, :r44)
+    end
+
     test "R10: a parameter of a captured function has callers Anchor cannot see", %{
       sites: sites
     } do
       assert %{sources: [], unresolved: seen} = site(sites, :r16)
 
       assert seen ==
-               "parameter 1 of #{inspect(@x)}.r16/1 is passed as a function value, so its " <>
-                 "callers are not known"
+               "parameter 1 of #{inspect(@x)}.r16/1 is passed as a function value or called on a " <>
+                 "computed module, so its callers are not known"
     end
 
     test "R10: a Multi.run callback given by module and name has callers Anchor cannot see", %{
@@ -242,8 +268,8 @@ defmodule Anchor.Domain.Aggregates.WriteSourceTest do
       assert %{sources: [], unresolved: seen} = site(sites, :r17)
 
       assert seen ==
-               "parameter 3 of #{inspect(@x)}.r17/3 is passed as a function value, so its " <>
-                 "callers are not known"
+               "parameter 3 of #{inspect(@x)}.r17/3 is passed as a function value or called on a " <>
+                 "computed module, so its callers are not known"
     end
 
     test "a try's value is its body's and its handler's, like the clauses of a case", %{

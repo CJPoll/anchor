@@ -410,8 +410,8 @@ defmodule Anchor.Domain.Aggregates.WriteSource do
 
       MapSet.member?(ctx.captured, mfa) ->
         {:unresolved,
-         "parameter #{i} of #{ViolationKey.mfa(mfa)} is passed as a function value, so its " <>
-           "callers are not known"}
+         "parameter #{i} of #{ViolationKey.mfa(mfa)} is passed as a function value or called on a " <>
+           "computed module, so its callers are not known"}
 
       true ->
         callers(mfa, i, Map.get(ctx.callers, mfa, []), %{

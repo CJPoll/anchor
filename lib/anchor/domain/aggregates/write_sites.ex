@@ -67,7 +67,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   `Anchor.Domain.Aggregates.WriteSource`), the transactions, the calls into
   project functions, and the dynamic calls; plus every call site of each
   project function (`callers`, for trace rule 7b) and the functions used as
-  values (`captured`).
+  values or reached by name from a computed module (`captured`).
   """
 
   alias Anchor.Domain.Aggregates.Config
@@ -189,6 +189,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
           dynamic: [
             %{line: non_neg_integer() | nil, what: String.t(), tags: [term()], write?: boolean()}
           ],
+          computed: [{atom(), non_neg_integer() | :any}],
           def_line: non_neg_integer() | nil,
           public?: boolean()
         }
@@ -678,7 +679,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
         repo_param?: MapSet.member?(run_callbacks, mfa)
       )
 
-    acc = %{sites: [], calls: [], dynamic: []}
+    acc = %{sites: [], calls: [], dynamic: [], computed: []}
 
     defined_in = for {:fun, id, tags} <- events, into: %{}, do: {id, tags}
 
@@ -698,6 +699,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
       sites: Enum.reverse(acc.sites),
       calls: Enum.reverse(acc.calls),
       dynamic: Enum.reverse(acc.dynamic),
+      computed: acc.computed,
       txs: prescan.txs,
       def_line: def_line
     }
@@ -740,7 +742,10 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
 
           :error ->
             what = "a capture on a computed module or name"
-            dynamic(acc, line, what, tags, capture_of_write_name?(args, env))
+
+            acc
+            |> computed_capture(args, env)
+            |> dynamic(line, what, tags, capture_of_write_name?(args, env))
         end
 
       {{:ok, :erlang}, :apply} ->
@@ -771,8 +776,9 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
         acc
 
       {:error, name} ->
-        dynamic(
-          acc,
+        acc
+        |> computed_call(name, length(args))
+        |> dynamic(
           line,
           "a call of #{name}/#{length(args)} on a module held in a variable",
           tags,
@@ -849,6 +855,29 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
 
   defp given_function(acc, what, [], _env, tags, line, _ctx),
     do: dynamic(acc, line, "#{what} is given a value Anchor cannot read", tags)
+
+  # What a computed module may reach, by name: its parameters have callers Anchor
+  # cannot see. A computed name too is a report at the call itself.
+  defp computed_call(acc, name, arity), do: %{acc | computed: [{name, arity} | acc.computed]}
+
+  defp computed_capture(acc, [_module, name, arity], env) do
+    with {:ok, name} <- FunctionWalk.atom(name, env),
+         true <- :cerl.is_literal(arity) and is_integer(:cerl.concrete(arity)) do
+      computed_call(acc, name, :cerl.concrete(arity))
+    else
+      _computed -> acc
+    end
+  end
+
+  defp computed_capture(acc, _args, _env), do: acc
+
+  defp computed_apply(acc, f, args, env) do
+    case {FunctionWalk.atom(f, env), list_length(args, env)} do
+      {{:ok, name}, {:ok, arity}} -> computed_call(acc, name, arity)
+      {{:ok, name}, _unknown} -> computed_call(acc, name, :any)
+      _computed -> acc
+    end
+  end
 
   defp capture_of_write_name?([_module, name, arity], env) do
     with {:ok, name} <- FunctionWalk.atom(name, env),
@@ -951,7 +980,9 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
       end
     else
       _other ->
-        dynamic(acc, line, "an apply/3 Anchor cannot resolve", tags, apply_write?(m, f, env, ctx))
+        acc
+        |> computed_apply(f, args, env)
+        |> dynamic(line, "an apply/3 Anchor cannot resolve", tags, apply_write?(m, f, env, ctx))
     end
   end
 
@@ -1101,7 +1132,16 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
           into: MapSet.new(),
           do: to
 
-    MapSet.union(run_callbacks, captures)
+    computed =
+      for {_from, %{computed: computed}} <- facts, pair <- computed, into: MapSet.new(), do: pair
+
+    reachable =
+      for {{_module, name, arity} = mfa, _function} <- facts,
+          MapSet.member?(computed, {name, arity}) or MapSet.member?(computed, {name, :any}),
+          into: MapSet.new(),
+          do: mfa
+
+    run_callbacks |> MapSet.union(captures) |> MapSet.union(reachable)
   end
 
   defp transact_repos(graph, repos) do
