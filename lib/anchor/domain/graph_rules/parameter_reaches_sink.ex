@@ -27,15 +27,14 @@ defmodule Anchor.Domain.GraphRules.ParameterReachesSink do
   an unknown library call is used. The run prints the precision counts
   (`Anchor.Domain.GraphReport`).
 
-  Who calls a function is another question, and there one kind of call stays
-  unseen: with both the module and the name computed (`apply(mod, action, args)`),
-  or an `apply(fun, args)`, it can reach any public function. Exempting them all
-  would let one such call silence the rule across the project, so they stay judged
-  and the run prints how many calls compute a name
+  Who calls a function is another question, and there a false finding is possible.
+  A caller whose module is computed too (`apply(mod, name, args)`,
+  `spawn(mod, :f, [a])`), or an `apply(fun, args)`, names nothing. Reading such a
+  call as naming every candidate would let one of them silence the rule, so what
+  they might reach stays judged. The run prints how many calls compute a name
   (`Anchor.Domain.DynamicCalls.computed_name_count/1`). When that count is not
   zero, check a public function's finding against those calls before dropping the
-  parameter: a signature one of them relies on is a false finding this rule
-  cannot rule out.
+  parameter.
 
   ## What is not judged
 
@@ -51,13 +50,12 @@ defmodule Anchor.Domain.GraphRules.ParameterReachesSink do
       `Anchor.Domain.DynamicCalls.targets/2`): the unseen receiver fixes the
       arity. A call whose function name is computed as well names no target,
       so it exempts nothing;
-    * a public function a `{M, :f, args}` names, in a term or as three arguments
-      of a call (a child spec's `start:`, `spawn(M, :f, [a])`,
-      `Anchor.Domain.Core.mfa_references/1`): the args fix the arity. Args that
-      are not a list of known length reach every arity of the name; a variable
-      for the name (`apply(__MODULE__, action, [conn, params])`) reaches every
-      public function of that arity in `M`, and a variable for the module every
-      exporter of `f`;
+    * a public function the code names (`Anchor.Domain.Core.mfa_references/1`): a
+      literal `{M, :f, args}`, in a term or as three arguments of a call (a child
+      spec's `start:`, `spawn(M, :f, [a])`), where the args fix the arity, and a
+      list of unknown length reaches every arity of the name; and each public
+      function of `M`, of that arity if it is known, for an
+      `apply(M, name, args)` with a computed name;
     * a generated function: its module has no literal `defmodule`
       (`ModuleNode.generated?`), its name is `__name__`, or a macro wrote it (a
       clause meta with `generated` or `context`, the argument Elixir generates
@@ -228,13 +226,6 @@ defmodule Anchor.Domain.GraphRules.ParameterReachesSink do
     end
   end
 
-  # No module named: the exporters of the name, as a dynamic call reaches them.
-  defp add_named({nil, name, arity}, reached, graph) do
-    graph
-    |> DynamicCalls.candidates({name, arity})
-    |> Enum.reduce(reached, &add_named({&1, name, arity}, &2, graph))
-  end
-
   defp add_named({module, name, arity}, reached, %Graph{modules: modules}) do
     case Map.get(modules, module) do
       nil -> reached
@@ -265,9 +256,10 @@ defmodule Anchor.Domain.GraphRules.ParameterReachesSink do
   defp add_reached(_call, reached, _graph), do: reached
 
   defp floor_issue(verdicts, model, rule) do
-    if verdicts != [] and not Enum.any?(verdicts, &(elem(&1, 2) == :judged)),
-      do: [Failures.parameter_sink_unjudged(rule, model.config.path)],
-      else: []
+    if GraphRules.select(model, rule) != [] and
+         not Enum.any?(verdicts, &(elem(&1, 2) == :judged)),
+       do: [Failures.parameter_sink_unjudged(rule, model.config.path)],
+       else: []
   end
 
   # -- the violation ----------------------------------------------------------

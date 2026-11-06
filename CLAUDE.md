@@ -151,8 +151,8 @@ Every rule type has exactly one engine, `@engine_by_type` in
 `Anchor.Domain.RuleSchema` (DND-5437): `:ast` (a Credo check) or `:graph`
 (`mix anchor.graph`, DND-5440; the graph types are `layering`, DND-5442,
 `context_acyclic`, DND-5445, `aggregate_declarations`, DND-5476,
-`effects_match_bucket`, DND-5447, `struct_owned_by_module_flow`, DND-5454, and
-`interface`, DND-5443). A new rule type adds its entry there too (compilation
+`effects_match_bucket`, DND-5447, `parameter_reaches_sink`, DND-5470,
+`struct_owned_by_module_flow`, DND-5454, and `interface`, DND-5443). A new rule type adds its entry there too (compilation
 fails without it) and to the README table's Engine column (a test compares
 them). Credo never reports a `:graph` rule as unchecked
 (`RuleCoverage.unchecked/3`).
@@ -440,14 +440,15 @@ chain rebuilt from `Demand.Param.passes`. It needs `[:cfa, :demand]`: the runner
 stores `Model.demand` and, under the same guard, `Model.callbacks` (the external
 behaviours' callbacks, the same port the effect inference reads). Patterns and
 guards need no code here: they are uses in the summary. Exempt: callbacks,
-captures, a public function a dynamic call or a `{M, :f, args}`
-(`Core.mfa_references/1`) can reach, generated functions (a
+captures, a public function a dynamic call or a function the code names
+(`Core.mfa_references/1`: a literal `{M, :f, args}`, or `apply(M, name, args)`) can reach, generated functions (a
 clause meta with `context` or `generated` is a macro's output, and a default's
 head has only generated arguments). Not analysed: no Core, `generated?: :unknown`,
-an external behaviour with no callbacks read. A call with module and name both computed
-(`apply(mod, name, args)`) stays unseen: one would exempt everything, so it is
-counted (`DynamicCalls.computed_name_count/1`), and a public finding is checked
-against those calls by hand. `GraphReport.parameter_sinks/4` is the summary's
+an external behaviour with no callbacks read. A caller with its module computed too
+(`apply(mod, name, args)`, `spawn(mod, :f, [a])`) names nothing: reading it as naming
+every candidate would let one silence the rule, so what it might reach stays judged,
+the calls that compute a name are counted (`DynamicCalls.computed_name_count/1`), and
+a public finding is checked against them by hand. `GraphReport.parameter_sinks/4` is the summary's
 precision count. Its `Fix:` is the rule's own text until
 `Anchor.Domain.Placement` lands (DND-5448).
 

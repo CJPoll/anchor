@@ -144,19 +144,21 @@ defmodule Anchor.Domain.Core do
   def site_ordinals(node), do: label_value(node, :anchor_sites, [])
 
   @doc """
-  The functions `core_fun` names beside an args list, which call them where no
-  call edge shows it: a tuple or literal term `{M, :f, [a]}` (a child spec's
-  `start:`), and three arguments in a row of a call, remote or local,
-  `spawn(M, :f, [a])`. Each is `{module, name, arity}`, listed once:
+  The functions `core_fun` names, which call them where no call edge shows it.
+  A function is named only by what the code spells out, so an ordinary call can
+  never read as one (`GenServer.call(M, msg, timeout)`, `run(M, a, b)`):
 
-    * `module` is `nil` when a variable holds it, `name` is `nil` when a variable
-      holds it, and a triple with neither literal is no reference: it names nothing;
-    * `arity` is `nil` when the args are a variable or a list of unknown length.
+    * a literal module and a literal name beside an args list, in a tuple or a
+      literal term (a child spec's `start:`) or as three arguments in a row of a
+      call, remote or local (`spawn(M, :f, [a])`): `{M, :f, arity}`, with `arity`
+      `nil` when the args are a variable or a list of unknown length;
+    * a real `apply/3` on a literal module with a computed name
+      (`apply(M, name, [a])`), which can reach that module's public functions:
+      `{M, nil, arity}`.
 
-  Anything of that shape counts: what reads it decides whether it names a function,
-  so `Map.put(acc, :f, [x])` can only over-approximate.
+  Each is listed once. An MFA held in variables names nothing, and is not here.
   """
-  @spec mfa_references(:cerl.cerl()) :: [{module() | nil, atom() | nil, arity() | nil}]
+  @spec mfa_references(:cerl.cerl()) :: [{module(), atom() | nil, arity() | nil}]
   def mfa_references(core_fun) do
     core_fun |> collect(&node_references/1) |> Enum.uniq()
   end
@@ -234,23 +236,39 @@ defmodule Anchor.Domain.Core do
   defp node_references(node) do
     case :cerl.type(node) do
       :tuple -> node |> :cerl.tuple_es() |> triple_reference()
-      :call -> node |> :cerl.call_args() |> call_references()
-      :apply -> node |> :cerl.apply_args() |> call_references()
+      :call -> call_references(node)
+      :apply -> node |> :cerl.apply_args() |> window_references()
       :literal -> node |> :cerl.concrete() |> term_references()
       _other -> []
     end
   end
 
-  defp call_references(args) do
+  defp call_references(node) do
+    args = :cerl.call_args(node)
+
+    case call_mfa(node) do
+      {:erlang, :apply, 3} -> apply_reference(args) ++ window_references(args)
+      _other -> window_references(args)
+    end
+  end
+
+  defp window_references(args) do
     args |> Enum.chunk_every(3, 1, :discard) |> Enum.flat_map(&triple_reference/1)
   end
 
-  defp triple_reference([module, name, args]) do
-    with {:ok, m} <- atom_or_unknown(module),
-         {:ok, f} <- atom_or_unknown(name),
-         true <- m != nil or f != nil,
+  defp apply_reference([module, name, args]) do
+    with true <- literal_atom?(module) and :cerl.is_c_var(name),
          {:ok, arity} <- args_arity(args) do
-      [{m, f, arity}]
+      [{:cerl.concrete(module), nil, arity}]
+    else
+      _not_a_reference -> []
+    end
+  end
+
+  defp triple_reference([module, name, args]) do
+    with true <- literal_atom?(module) and literal_atom?(name),
+         {:ok, arity} <- args_arity(args) do
+      [{:cerl.concrete(module), :cerl.concrete(name), arity}]
     else
       _not_a_reference -> []
     end
@@ -258,13 +276,7 @@ defmodule Anchor.Domain.Core do
 
   defp triple_reference(_elements), do: []
 
-  defp atom_or_unknown(node) do
-    cond do
-      :cerl.is_c_var(node) -> {:ok, nil}
-      :cerl.is_literal(node) and is_atom(:cerl.concrete(node)) -> {:ok, :cerl.concrete(node)}
-      true -> :error
-    end
-  end
+  defp literal_atom?(node), do: :cerl.is_literal(node) and is_atom(:cerl.concrete(node))
 
   defp args_arity(args) do
     cond do

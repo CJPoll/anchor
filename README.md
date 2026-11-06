@@ -443,8 +443,7 @@ The Engine column is the one engine that runs the type: `ast` rules run as
 Credo checks over source, `graph` rules run under `mix anchor.graph` over the
 compiled code (DND-5440; `layering`, DND-5442, `context_acyclic`, DND-5445,
 `aggregate_declarations`, DND-5476, `effects_match_bucket`, DND-5447,
-`parameter_reaches_sink`, DND-5470,
-`struct_owned_by_module_flow`, DND-5454, and `interface`, DND-5443). Credo never reports a
+`parameter_reaches_sink`, DND-5470, `struct_owned_by_module_flow`, DND-5454, and `interface`, DND-5443). Credo never reports a
 `graph` rule as unchecked.
 
 | Rule type | Keys beyond the common ones | Relation (needs one, non-empty) | Engine |
@@ -1167,10 +1166,10 @@ guard that reads the parameter.
 **Exempt**, because something else fixes the signature: a callback of a
 behaviour the module declares; a function captured anywhere in the project
 (`&M.f/2`); a public function a dynamic call can reach (`mod.f(x)`, by
-`Anchor.Domain.DynamicCalls`); a public function a `{M, :f, args}` names (a child
-spec's `start:`, `spawn(M, :f, [a])`, and with a variable name
-`apply(__MODULE__, action, [conn, params])` every public function of that arity in
-`M`); and a generated function (a module with no literal
+`Anchor.Domain.DynamicCalls`); a public function the code names, by a literal
+`{M, :f, args}` in a term or a call (a child spec's `start:`, `spawn(M, :f, [a])`) or
+by an `apply(M, name, args)` on a literal module, which reaches every public function
+of that arity in `M`); and a generated function (a module with no literal
 `defmodule`, a `__name__`, a macro's output, the head a default argument
 generates).
 
@@ -1181,11 +1180,12 @@ read. If nothing the rule selects could be judged, that is one fail-closed issue
 
 Demand over-approximates what a function does with a parameter, so its imprecision
 only hides a finding: a parameter passed to an unresolved call is used. Who calls a
-function is another question. A call with both the module and the name computed
-(`apply(mod, action, args)`) can reach any public function; exempting them all would
-let one such call silence the rule, so they stay judged and the run counts the calls
-that compute a name. When that count is not zero, check a public function's finding against them before you drop the parameter: a
-signature one of them relies on is a false finding this rule cannot rule out. Each
+function is another question. A caller whose module is computed too
+(`apply(mod, action, args)`, `spawn(mod, :f, [a])`), or an `apply(fun, args)`, names
+nothing; reading it as naming every candidate would let one such call silence the
+rule, so what it might reach stays judged, and the run counts the calls that compute
+a name. When that count is not zero, check a public function's finding against those
+calls before you drop the parameter: a signature one of them relies on is a false finding this rule cannot rule out. Each
 run prints all of it:
 
 ```text
@@ -1195,7 +1195,8 @@ run prints all of it:
 An `apply/3` whose target Core does not name is no apply site; a parameter passed
 to one is counted in the imprecise parameters. The JSON's `parameter_sinks` holds
 `precise`, `any`, `imprecise`, `computed_names`, `judged`, `exempt` and `not_analysed`. A zero there
-was measured; `null` means no such rule ran.
+was measured; `null` means no such rule ran, or that its analysis crashed, which the
+run reports as an issue.
 
 ### Aggregates: the `aggregates:` section and the `aggregate_declarations` rule (DND-5476)
 

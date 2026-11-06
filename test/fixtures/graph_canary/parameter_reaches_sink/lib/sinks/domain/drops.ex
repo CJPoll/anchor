@@ -19,6 +19,14 @@ defmodule AnchorFixtures.ParameterSinks.Drops do
   # too, but no author wrote it to drop it.
   def drop_first(_unused, n \\ :none), do: n
 
+  # An ordinary three-argument call on this module silences nothing here.
+  def asks(msg, timeout), do: GenServer.call(__MODULE__, msg, timeout)
+
+  # Violating, and a false finding this rule cannot rule out: an MFA held in
+  # variables names no function. The README says to check these by hand.
+  def spawned_mod(mod, x), do: spawn(mod, :via_var, [x])
+  def via_var(_x), do: :ok
+
   # Violating: a lambda that ignores what it is applied to.
   def via_lambda(unused) do
     ignore = fn _value -> :ok end

@@ -373,6 +373,13 @@ defmodule Anchor.Domain.GraphRules.ParameterReachesSinkTest do
       assert issue.message =~ "Fix:"
     end
 
+    test "selected modules with no def or defp at all: the same issue" do
+      model = built(domain([{:m, 1, :defmacro}]), [], %{})
+
+      assert [%{kind: :fail_closed} = issue] = ParameterReachesSink.check(model, @rule)
+      assert issue.message =~ "judged no function"
+    end
+
     test "a rule that selects no module leaves it to the selection floor" do
       model = built(domain([{:f, 1}]), [], %{{D, :f, 1} => [:all]})
       assert ParameterReachesSink.check(model, %{@rule | bucket: "managers"}) == []
