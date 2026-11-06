@@ -169,16 +169,32 @@ defmodule Anchor.Managers.BackstopTest do
       assert Backstop.install(session) == :ok
     end
 
+    test "a second session is refused with Fix:, its recorder detached" do
+      session = session()
+      expect(WriteRecorderMock, :install_session, fn ^session -> {:error, :already_installed} end)
+      expect(WriteRecorderMock, :detach_recorder, fn @recorder -> :ok end)
+
+      error = assert_raise ArgumentError, fn -> Backstop.install(session) end
+
+      assert error.message ==
+               "anchor backstop: attach!/1 was called twice in this test VM; the backstop " <>
+                 "watches one repo. Fix: call Anchor.Backstop.attach!/1 once, in test_helper.exs."
+    end
+
     test "installed! returns the kept session" do
       session = session()
       expect(WriteRecorderMock, :installed_session, fn -> {:ok, session} end)
-      assert Backstop.installed!(WriteRecorderMock) == session
+      assert Backstop.installed!(write_recorder: WriteRecorderMock) == session
     end
 
     test "F1: installed! before any attach raises: call attach!/1 in test_helper.exs" do
       expect(WriteRecorderMock, :installed_session, fn -> :error end)
 
-      error = assert_raise ArgumentError, fn -> Backstop.installed!(WriteRecorderMock) end
+      error =
+        assert_raise ArgumentError, fn ->
+          Backstop.installed!(write_recorder: WriteRecorderMock)
+        end
+
       assert error.message =~ "Fix: call Anchor.Backstop.attach!/1 in test_helper.exs."
     end
 

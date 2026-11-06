@@ -33,10 +33,14 @@ defmodule Anchor.Adapters.TelemetryRecorder do
   `attach_recorder/2` (`test_helper.exs`'s, which lives for the whole suite):
   `{:watched, pid}`, `{:event, test_pid, seq}` (seq is a monotonic integer,
   so `take_events/2` returns events in the order they came) and
-  `{:count, key}`. `take_events/2` deletes the test's rows.
+  `{:count, key}`. `take_events/2` unwatches the pid, then deletes the rows
+  it read.
   """
 
   @behaviour Anchor.Adapters.WriteRecorder
+
+  # :telemetry is an optional dependency: a project with Ecto has it.
+  @compile {:no_warn_undefined, :telemetry}
 
   alias Anchor.Domain.Aggregates.Backstop
   alias Anchor.Domain.Aggregates.BackstopEvent
@@ -78,14 +82,18 @@ defmodule Anchor.Adapters.TelemetryRecorder do
     :ok
   end
 
-  @doc "The test's events in the order they came; they and the pid are forgotten."
+  @doc """
+  The test's events in the order they came; they and the pid are forgotten.
+  The pid is unwatched first, so a write that arrives during the take is
+  the suite's (`unattributed`), and only the rows read are deleted: a row a
+  handler wrote after the read stays, and `read_totals/1` counts it.
+  """
   @impl Anchor.Adapters.WriteRecorder
   def take_events(%{table: table}, pid) when is_pid(pid) do
-    pattern = {{:event, pid, :"$1"}, :"$2"}
-    events = :ets.select(table, [{pattern, [], [{{:"$1", :"$2"}}]}])
-    :ets.select_delete(table, [{{{:event, pid, :_}, :_}, [], [true]}])
     :ets.delete(table, {:watched, pid})
-    events |> Enum.sort_by(&elem(&1, 0)) |> Enum.map(&elem(&1, 1))
+    rows = :ets.select(table, [{{{:event, pid, :"$1"}, :"$2"}, [], [{{:"$1", :"$2"}}]}])
+    Enum.each(rows, fn {seq, _event} -> :ets.delete(table, {:event, pid, seq}) end)
+    rows |> Enum.sort_by(&elem(&1, 0)) |> Enum.map(&elem(&1, 1))
   end
 
   @doc "Whether the handler is still attached and the table still exists."
@@ -101,20 +109,36 @@ defmodule Anchor.Adapters.TelemetryRecorder do
     Enum.each(counts, fn {key, n} -> count(table, key, n) end)
   end
 
-  @doc "The suite's totals, every key of `Backstop.total_keys/0` (0 when never counted)."
+  @doc """
+  The suite's totals, every key of `Backstop.total_keys/0` (0 when never
+  counted). An event row no take read (written after its test's take) is
+  counted `unattributed`: it belongs to no verdict.
+  """
   @impl Anchor.Adapters.WriteRecorder
   def read_totals(%{table: table}) do
-    Map.new(Backstop.total_keys(), fn key ->
+    leftover = :ets.select_count(table, [{{{:event, :_, :_}, :_}, [], [true]}])
+
+    Backstop.total_keys()
+    |> Map.new(fn key ->
       case :ets.lookup(table, {:count, key}) do
         [{_key, n}] -> {key, n}
         [] -> {key, 0}
       end
     end)
+    |> Map.update!(:unattributed, &(&1 + leftover))
   end
 
-  @doc "Keeps `session` for `installed_session/0` (one per VM)."
+  @doc """
+  Keeps `session` for `installed_session/0`: one per VM, so a second is
+  refused (`{:error, :already_installed}`) and the first kept.
+  """
   @impl Anchor.Adapters.WriteRecorder
-  def install_session(session) when is_map(session), do: :persistent_term.put(@session, session)
+  def install_session(session) when is_map(session) do
+    case :persistent_term.get(@session, nil) do
+      nil -> :persistent_term.put(@session, session)
+      _installed -> {:error, :already_installed}
+    end
+  end
 
   @doc "The session `install_session/1` kept, or `:error` when none was."
   @impl Anchor.Adapters.WriteRecorder

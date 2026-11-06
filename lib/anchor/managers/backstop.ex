@@ -92,17 +92,36 @@ defmodule Anchor.Managers.Backstop do
     end
   end
 
-  @doc "Keeps `session` as the test VM's one session, for `installed!/1`."
+  @doc """
+  Keeps `session` as the test VM's one session, for `installed!/1`. A second
+  session is refused: `ArgumentError` with `Fix:`, and its recorder detached
+  (one repo per test VM; a second `attach!/1` would leave the first repo's
+  writes unwatched).
+  """
   @spec install(session()) :: :ok
-  def install(%{write_recorder: write_recorder} = session),
-    do: write_recorder.install_session(session)
+  def install(%{write_recorder: write_recorder, recorder: recorder} = session) do
+    case write_recorder.install_session(session) do
+      :ok ->
+        :ok
+
+      {:error, :already_installed} ->
+        :ok = write_recorder.detach_recorder(recorder)
+
+        raise ArgumentError,
+              "anchor backstop: attach!/1 was called twice in this test VM; the backstop " <>
+                "watches one repo. Fix: call Anchor.Backstop.attach!/1 once, in test_helper.exs."
+    end
+  end
 
   @doc """
   The session `install/1` kept. Raises `ArgumentError` with `Fix:` when none
-  was: `watch/1` before `attach!/1` would check nothing.
+  was: `watch/1` before `attach!/1` would check nothing. `deps` doubles the
+  `:write_recorder` port.
   """
-  @spec installed!(module()) :: session()
-  def installed!(write_recorder \\ TelemetryRecorder) do
+  @spec installed!(keyword()) :: session()
+  def installed!(deps \\ []) do
+    write_recorder = Keyword.get(deps, :write_recorder, TelemetryRecorder)
+
     case write_recorder.installed_session() do
       {:ok, session} ->
         session

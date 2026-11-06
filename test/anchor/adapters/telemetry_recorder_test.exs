@@ -34,7 +34,7 @@ defmodule Anchor.Adapters.TelemetryRecorderTest do
     parent = self()
 
     pid =
-      spawn(fn ->
+      spawn_link(fn ->
         Process.put(:"$callers", callers)
         fun.()
         send(parent, {:done, self()})
@@ -143,7 +143,7 @@ defmodule Anchor.Adapters.TelemetryRecorderTest do
     parent = self()
 
     b =
-      spawn(fn ->
+      spawn_link(fn ->
         receive do
           :go ->
             emit(event, Meta.insert("invoices"))
@@ -224,5 +224,23 @@ defmodule Anchor.Adapters.TelemetryRecorderTest do
     assert Recorder.install_session(session) == :ok
 
     assert Recorder.installed_session() == {:ok, session}
+  end
+
+  test "a second session is refused, and the first kept" do
+    on_exit(fn -> :persistent_term.erase({Recorder, :session}) end)
+    first = %{marker: make_ref()}
+    :ok = Recorder.install_session(first)
+
+    assert Recorder.install_session(%{marker: make_ref()}) == {:error, :already_installed}
+    assert Recorder.installed_session() == {:ok, first}
+  end
+
+  test "an event row no take read is counted unattributed", %{recorder: recorder, event: event} do
+    :ok = Recorder.watch_pid(recorder, self())
+    emit(event, Meta.insert("orders"))
+
+    assert Recorder.read_totals(recorder).unattributed == 1
+    assert [%{table: "orders"}] = Recorder.take_events(recorder, self())
+    assert Recorder.read_totals(recorder).unattributed == 0
   end
 end

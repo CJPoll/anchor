@@ -1734,7 +1734,8 @@ dependency of Anchor, and one every Ecto project has).
 How it reads the events (DND-5479's spike, pinned in gen_saas's
 `Todos.RepoTelemetryFactsTest`): `"begin"` opens a transaction in the
 emitting process and `"commit"` or `"rollback"` closes it (only the outermost
-`Repo.transaction` emits them); a write's table is the event's `source`. An
+`Repo.transaction` emits them; a `BEGIN ...` or `START TRANSACTION` spelling
+opens one too); a write's table is the event's `source`. An
 event belongs to a test when the emitting process is the test or has it in
 `$callers`, so async tests never see each other's writes. It records table
 names, statement kinds and pids, never `params`, `cast_params` or a result.
@@ -1760,7 +1761,7 @@ one line when the suite ends; the first four fail the test under
 | `no-source` | a write with no table (`Repo.query/2` raw SQL) |
 | `undeclared` | a table no aggregate declares |
 | `outside a transaction` | a write with no transaction open in its process: one statement, one table, so it cannot cross; counted only |
-| `unattributed` | a write from a process with no watched test in itself or its `$callers` (a sandbox allowance, an unwatched test): counted for the whole suite |
+| `unattributed` | a write from a process with no watched test in itself or its `$callers` (a sandbox allowance, a GenServer the test called, an unwatched test), or one that landed after its test's verdict: counted for the whole suite, never failing a test. A transaction a GenServer runs for the test is therefore not judged here |
 
 ```
 anchor backstop: 120 tests watched, 0 crossings; escapes: 2 other-process, 0 no-source, 1 undeclared, 0 unclassified; not judged: 40 outside a transaction, 3 unattributed
@@ -1777,6 +1778,8 @@ nothing.
 | zero beams read from `ebins` | raises, naming the paths |
 | `repo:` with no `telemetry_prefix` | raises, naming the repo |
 | `escapes:` other than `:report` or `:fail` | raises, naming the value |
+| no `repo:`, or an option `attach!/1` does not know (`escape: :fail`) | raises with `Fix:`, never read as the default |
+| `attach!/1` called a second time in one test VM | raises: `the backstop watches one repo. Fix: call Anchor.Backstop.attach!/1 once, in test_helper.exs.` |
 | `watch/1` before `attach!/1` | raises: `Fix: call Anchor.Backstop.attach!/1 in test_helper.exs.` |
 | the handler raised (`:telemetry` detached it) | every later verdict fails its test: `the backstop handler was detached` |
 

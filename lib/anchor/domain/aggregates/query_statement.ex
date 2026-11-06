@@ -24,6 +24,7 @@ defmodule Anchor.Domain.Aggregates.QueryStatement do
   | Query text | Result |
   |---|---|
   | exactly `begin`, `commit`, `rollback` (any case, trimmed, a trailing `;` dropped) | `:begin`, `:commit`, `:rollback` |
+  | first word `BEGIN` (`BEGIN TRANSACTION`, `BEGIN IMMEDIATE`), or first words `START TRANSACTION` | `:begin`: another adapter's spelling, never an unknown write that would leave every write outside a transaction |
   | first word `INSERT`, `UPDATE`, `DELETE` | `{:write, :insert \\| :update \\| :delete, source}` |
   | first word `SELECT` | `:read` |
   | first word `SAVEPOINT` or `RELEASE`, or first words `ROLLBACK TO` | `:savepoint`: inside a transaction already open, never a boundary |
@@ -72,6 +73,8 @@ defmodule Anchor.Domain.Aggregates.QueryStatement do
     |> Enum.map(&String.upcase/1)
   end
 
+  defp statement(["BEGIN" | _rest], _source), do: :begin
+  defp statement(["START", "TRANSACTION"], _source), do: :begin
   defp statement(["SELECT" | _rest], _source), do: :read
   defp statement(["SAVEPOINT" | _rest], _source), do: :savepoint
   defp statement(["RELEASE" | _rest], _source), do: :savepoint

@@ -17,6 +17,12 @@ defmodule Anchor.Domain.Aggregates.QueryStatementTest do
     assert QueryStatement.classify(%{query: "Rollback;", source: nil}) == :rollback
   end
 
+  test "another adapter's begin spelling opens a transaction too" do
+    assert QueryStatement.classify(%{query: "BEGIN TRANSACTION", source: nil}) == :begin
+    assert QueryStatement.classify(%{query: "begin immediate", source: nil}) == :begin
+    assert QueryStatement.classify(%{query: "START TRANSACTION", source: nil}) == :begin
+  end
+
   test "an insert, update and delete are writes of their source table" do
     assert QueryStatement.classify(Meta.insert("orders")) == {:write, :insert, "orders"}
     assert QueryStatement.classify(Meta.update("orders")) == {:write, :update, "orders"}

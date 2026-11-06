@@ -44,39 +44,72 @@ defmodule Anchor.Backstop do
 
   alias Anchor.Managers.Backstop
 
-  @doc "Starts the backstop for the suite; see the moduledoc. Raises with `Fix:`."
+  @keys [:repo, :ebins, :root, :escapes, :deps]
+
+  @doc """
+  Starts the backstop for the suite; see the moduledoc. Raises
+  `ArgumentError` with `Fix:` on a missing `repo:`, an unknown option, and
+  every case `Anchor.Managers.Backstop` refuses. `deps:` is the test seam:
+  the Manager's ports, and `:after_suite` (default `ExUnit.after_suite/1`).
+  """
   @spec attach!(keyword()) :: :ok
   def attach!(opts) when is_list(opts) do
-    repo = Keyword.fetch!(opts, :repo)
-    escapes = escapes!(Keyword.get(opts, :escapes, :report))
+    opts = options!(opts)
+    deps = Keyword.get(opts, :deps, [])
     app = Keyword.get(Mix.Project.config(), :app) || :project
     ebins = Keyword.get_lazy(opts, :ebins, fn -> [Mix.Project.compile_path()] end)
 
     session =
-      Backstop.start(%{
-        event: query_event!(repo),
-        root: Keyword.get_lazy(opts, :root, &File.cwd!/0),
-        apps: Enum.map(ebins, &{app, &1}),
-        escapes: escapes
-      })
+      Backstop.start(
+        %{
+          event: query_event!(Keyword.fetch!(opts, :repo)),
+          root: Keyword.get_lazy(opts, :root, &File.cwd!/0),
+          apps: Enum.map(ebins, &{app, &1}),
+          escapes: escapes!(Keyword.get(opts, :escapes, :report))
+        },
+        deps
+      )
 
     :ok = Backstop.install(session)
-    ExUnit.after_suite(fn _result -> Mix.shell().info(Backstop.summary(session)) end)
+    after_suite = Keyword.get(deps, :after_suite, &ExUnit.after_suite/1)
+    after_suite.(fn _result -> Mix.shell().info(Backstop.summary(session)) end)
     :ok
   end
 
   @doc """
   Watches the current test (call it in a `setup` block with the test's
   `tags`): its writes are recorded, and its `on_exit` judges them. Raises
-  with `Fix:` when `attach!/1` has not run.
+  with `Fix:` when `attach!/1` has not run. `deps` is the test seam: the
+  Manager's `:write_recorder`, and `:on_exit` (default
+  `ExUnit.Callbacks.on_exit/1`).
   """
-  @spec watch(map()) :: :ok
-  def watch(%{} = tags) do
-    session = Backstop.installed!()
+  @spec watch(map(), keyword()) :: :ok
+  def watch(%{} = tags, deps \\ []) do
+    session = Backstop.installed!(deps)
     test_pid = self()
     test = "#{inspect(Map.get(tags, :module))} #{Map.get(tags, :test)}"
     :ok = Backstop.watch(session, test_pid)
-    ExUnit.Callbacks.on_exit(fn -> Backstop.verdict!(session, test_pid, test) end)
+    on_exit = Keyword.get(deps, :on_exit, &ExUnit.Callbacks.on_exit/1)
+    on_exit.(fn -> Backstop.verdict!(session, test_pid, test) end)
+    :ok
+  end
+
+  defp options!(opts) do
+    case {Keyword.keys(opts) -- @keys, Keyword.has_key?(opts, :repo)} do
+      {[], true} ->
+        opts
+
+      {[], false} ->
+        raise ArgumentError,
+              "anchor backstop: attach!/1 needs repo:. Fix: pass repo: the Ecto repo the " <>
+                "tests write through (Anchor.Backstop.attach!(repo: MyApp.Repo))."
+
+      {unknown, _repo?} ->
+        raise ArgumentError,
+              "anchor backstop: attach!/1 does not know the option(s) " <>
+                "#{Enum.map_join(unknown, ", ", &inspect/1)}. Fix: pass only " <>
+                "#{Enum.map_join(@keys -- [:deps], ", ", &"#{&1}:")}."
+    end
   end
 
   defp escapes!(mode) when mode in [:report, :fail], do: mode

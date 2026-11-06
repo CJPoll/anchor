@@ -17,7 +17,8 @@ defmodule Anchor.Adapters.WriteRecorder do
       (`Anchor.Domain.Aggregates.Backstop.total_keys/0`), `unattributed`
       included, which the recorder counts itself;
     * `install_session/1` and `installed_session/0` keep the one session a
-      test VM's `Anchor.Backstop.attach!/1` started, for `watch/1` to find;
+      test VM's `Anchor.Backstop.attach!/1` started, for `watch/1` to find
+      (a second is refused);
     * `detach_recorder/1` detaches the handler and drops the table.
 
   Nothing it keeps holds a parameter or a row value: table names, kinds and
@@ -36,7 +37,7 @@ defmodule Anchor.Adapters.WriteRecorder do
   @callback recorder_attached?(recorder()) :: boolean()
   @callback add_counts(recorder(), %{atom() => non_neg_integer()}) :: :ok
   @callback read_totals(recorder()) :: %{atom() => non_neg_integer()}
-  @callback install_session(session :: map()) :: :ok
+  @callback install_session(session :: map()) :: :ok | {:error, :already_installed}
   @callback installed_session() :: {:ok, map()} | :error
   @callback detach_recorder(recorder()) :: :ok
 end

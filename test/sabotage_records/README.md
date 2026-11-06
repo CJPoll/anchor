@@ -279,7 +279,9 @@ before coining a synonym.
 - `backstop` — the test-time aggregate backstop (DND-5480): `Anchor.Backstop`,
   `Anchor.Managers.Backstop`, `TelemetryRecorder`, `EctoTransactionProbe` and
   the Domain modules `Aggregates.Backstop`, `BackstopEvent` and
-  `QueryStatement`.
+  `QueryStatement`. The generated runs name records by module instead
+  (`domain_from: module`): `telemetry_recorder`, `ecto_transaction_probe`,
+  and `aggregates` for the Domain modules.
 - `context_acyclic` — the `context_acyclic` graph rule (DND-5445):
   `Anchor.Domain.ContextGraph`, `GraphRules.ContextAcyclic`,
   `ViolationKey.graph_key/2` and its registration.
