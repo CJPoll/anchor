@@ -3432,3 +3432,273 @@ a local call in a function written on a repo is not read (`lib/anchor/domain/agg
 
 ...........................
 ```
+
+# Sixth run: local calls, captured bodies, the outside count
+
+8 mutations for critic round 8's findings. WSI-LOCALTX's first form was a compile error under `warnings_as_errors` (an unused function) and was re-anchored. A ninth, WSI-LETREC (reading a letrec's own apply as a transaction call), survived with 48 tests, 0 failures: a letrec's compiler-made name cannot match a configured function, so the check was deleted.
+
+| # | Mutation | Tests run | Result |
+|---|---|---|---|
+| WSI-LOCALTX | a local call of a transaction function is no scope (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `48 tests, 2 failures` (red) |
+| WSI-CAPTURETAG | a capture of a body stays outside it (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs`, `scopes_test.exs` | `65 tests, 2 failures` (red) |
+| WSI-LOCALWRITE | a local call of a write function is no write (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `48 tests, 1 failure` (red) |
+| WSI-ZERO | a zero-arity write function in a library is dropped (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `48 tests, 2 failures` (red) |
+| WSI-ZEROPROJECT | a zero-arity write function in the project is not followed (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `48 tests, 2 failures` (red) |
+| AN-ALWAYSCOUNT | gaps of functions always in a transaction are counted (`lib/anchor/domain/aggregates/analysis.ex`) | `non_transactional_test.exs` | `17 tests, 1 failure` (red) |
+| IN-INCOMPLETENOTE | a proposal beside an incomplete transaction carries no note (`lib/anchor/domain/aggregates/inference.ex`) | `inference_test.exs` | `15 tests, 1 failure` (red) |
+| IN-EVIDENCECOUNT | the error does not name the gaps outside a transaction (`lib/anchor/domain/aggregates/inference.ex`) | `inference_test.exs` | `15 tests, 1 failure` (red) |
+
+## WSI-LOCALTX
+
+a local call of a transaction function is no scope (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `48 tests, 2 failures`.
+
+```
+
+  1) test build/3 a local call of a transaction function is a scope (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:423
+     expected one scope in s42, got []
+     code: assert %Scope{kind: :transaction_function, complete?: true} = scope = one(a, :s42)
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:424: (test)
+
+.......
+
+
+  2) test build/3 a local Repo.transaction, in a function written on the repo, is a scope (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:428
+     match (=) failed
+     code:  assert [%Scope{kind: :fun} = scope] = Enum.filter(a.scopes, &(&1.mfa == {@custom_repo, :with_tx, 0}))
+     left:  [%Anchor.Domain.Aggregates.Scope{kind: :fun} = scope]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:431: (test)
+
+..........
+```
+
+## WSI-CAPTURETAG
+
+a capture of a body stays outside it (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `65 tests, 2 failures`.
+
+```
+
+  1) test unattributed: raw SQL and a write on a computed module, outside a transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:139
+     match (=) failed
+     code:  assert [%{mfa: {@n, :n11, 0}, what: raw, line: line}, %{mfa: {@n, :n12, 1}, what: computed}] =
+              a.unattributed
+     left:  [
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n11, 0}, what: raw, line: line},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n12, 1}, what: computed}
+            ]
+     right: [
+              %{
+                line: 58,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n11,
+                 0},
+                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
+              },
+              %{
+                line: 59,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n12,
+                 1},
+                what: "a call of insert/1 on a module held in a variable"
+              },
+              %{
+                line: 69,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n21g,
+                 0},
+                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
+              }
+            ]
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:142: (test)
+
+.
+
+
+  2) test a function captured as a transaction's body is inside it (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:185
+     Assertion with == failed
+     code:  assert nontx(a, :n20).keys == MapSet.new()
+     left:  MapSet.new([schema: AnchorFixtures.NonTransactionalTest.S])
+     right: MapSet.new([])
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:186: (test)
+
+............................................................
+```
+
+## WSI-LOCALWRITE
+
+a local call of a write function is no write (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `48 tests, 1 failure`.
+
+```
+
+  1) test build/3 a local call of a write function is a write (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:437
+     Assertion with == failed
+     code:  assert scope.keys == keys([@t])
+     left:  MapSet.new([])
+     right: MapSet.new([schema: AnchorFixtures.ScopesTest.T])
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:439: (test)
+
+................
+```
+
+## WSI-ZERO
+
+a zero-arity write function in a library is dropped (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `48 tests, 2 failures`.
+
+```
+
+  1) test build/3 a zero-arity write function in a library is an unresolved write, never dropped (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:442
+     match (=) failed
+     code:  assert %Scope{complete?: false, gaps: [unresolved_write: site]} = one(a, :s45)
+     left:  %Anchor.Domain.Aggregates.Scope{complete?: false, gaps: [unresolved_write: site]}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s45, 0},
+              ordinal: 1,
+              line: 197,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              complete?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:445: (test)
+
+........................
+
+
+  2) test counts: writes found, resolved, unresolved; scopes, complete, incomplete (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:555
+     Assertion with == failed
+     code:  assert a.counts.unresolved == 3
+     left:  2
+     right: 3
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:560: (test)
+
+....................
+```
+
+## WSI-ZEROPROJECT
+
+a zero-arity write function in the project is not followed (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `48 tests, 2 failures`.
+
+```
+
+  1) test counts: writes found, resolved, unresolved; scopes, complete, incomplete (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:555
+     Assertion with == failed
+     code:  assert a.counts.unresolved == 3
+     left:  4
+     right: 3
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:560: (test)
+
+.
+
+
+  2) test build/3 a zero-arity write function in the project is followed (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:449
+     match (=) failed
+     code:  assert %Scope{complete?: true} = scope = one(a, :s46)
+     left:  %Anchor.Domain.Aggregates.Scope{complete?: true} = scope
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s46, 0},
+              ordinal: 1,
+              line: 200,
+              kind: :fun,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.ScopesTest.X, :s46, 0},
+                  line: 200,
+                  op: :flush_here,
+                  via: :write_function,
+                  sources: [],
+                  unresolved: "a write with no source argument",
+                  scopes: [1],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([]),
+              complete?: false,
+              gaps: [
+                unresolved_write: %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.ScopesTest.X, :s46, 0},
+                  line: 200,
+                  op: :flush_here,
+                  via: :write_function,
+                  sources: [],
+                  unresolved: "a write with no source argument",
+                  scopes: [1],
+                  run_callback?: false
+                }
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:450: (test)
+
+.............................
+```
+
+## AN-ALWAYSCOUNT
+
+gaps of functions always in a transaction are counted (`lib/anchor/domain/aggregates/analysis.ex`). Result: `17 tests, 1 failure`.
+
+```
+
+
+
+  1) test the gaps outside every transaction are counted (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:191
+     Assertion with == failed
+     code:  assert a.counts.outside_gaps == length(gaps)
+     left:  6
+     right: 4
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:200: (test)
+
+................
+```
+
+## IN-INCOMPLETENOTE
+
+a proposal beside an incomplete transaction carries no note (`lib/anchor/domain/aggregates/inference.ex`). Result: `15 tests, 1 failure`.
+
+```
+
+  1) test F8: a proposal beside an incomplete transaction says so in the YAML (Anchor.Domain.Aggregates.InferenceTest)
+     test/anchor/domain/aggregates/inference_test.exs:157
+     Assertion with =~ failed
+     code:  assert yaml =~ "# 1 of 2 transaction(s) incomplete: this proposal may miss tables"
+     left:  "aggregates:\n  declare:\n    - name: App.S\n      schemas: [App.S]\n      tables: []\n      # owners: proposed by aggregate_owner_writes\n"
+     right: "# 1 of 2 transaction(s) incomplete: this proposal may miss tables"
+     stacktrace:
+       test/anchor/domain/aggregates/inference_test.exs:164: (test)
+
+.........
+```
+
+## IN-EVIDENCECOUNT
+
+the error does not name the gaps outside a transaction (`lib/anchor/domain/aggregates/inference.ex`). Result: `15 tests, 1 failure`.
+
+```
+
+  1) test F8: a gap outside every transaction is an error, never declare: none (Anchor.Domain.Aggregates.InferenceTest)
+     test/anchor/domain/aggregates/inference_test.exs:144
+     Assertion with =~ failed
+     code:  assert why =~ "1 call(s) Anchor cannot attribute"
+     left:  "nothing traced to a schema or table (repo(s) ), so there is nothing to propose; a repo means the project persists, so declare: none does not fit. Fix: resolve the writes (aggregate_write_sources lists them) and propose again"
+     right: "1 call(s) Anchor cannot attribute"
+     stacktrace:
+       test/anchor/domain/aggregates/inference_test.exs:148: (test)
+
+.......
+```
