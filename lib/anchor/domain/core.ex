@@ -144,21 +144,17 @@ defmodule Anchor.Domain.Core do
   def site_ordinals(node), do: label_value(node, :anchor_sites, [])
 
   @doc """
-  The functions `core_fun` names, which call them where no call edge shows it.
-  A function is named only by what the code spells out, so an ordinary call can
-  never read as one (`GenServer.call(M, msg, timeout)`, `run(M, a, b)`):
+  The functions `core_fun` names in full, which call them where no call edge shows
+  it: a literal module, a literal name and an args list of known length, in a tuple
+  or a literal term (a child spec's `start:`) or as three arguments in a row of a
+  call, remote or local (`spawn(M, :f, [a])`). Each is `{M, :f, arity}`, listed once.
 
-    * a literal module and a literal name beside an args list, in a tuple or a
-      literal term (a child spec's `start:`) or as three arguments in a row of a
-      call, remote or local (`spawn(M, :f, [a])`): `{M, :f, arity}`, with `arity`
-      `nil` when the args are a variable or a list of unknown length;
-    * a real `apply/3` on a literal module with a computed name
-      (`apply(M, name, [a])`), which can reach that module's public functions:
-      `{M, nil, arity}`.
-
-  Each is listed once. An MFA held in variables names nothing, and is not here.
+  That shape is all it reads. Anything less names nothing and is not here: a
+  variable for the module, the name or the args, and a list of unknown length. A
+  call that merely has the shape (`foo(M, :f, [a])`) reads as one, which can only
+  exempt that exact name and arity.
   """
-  @spec mfa_references(:cerl.cerl()) :: [{module(), atom() | nil, arity() | nil}]
+  @spec mfa_references(:cerl.cerl()) :: [mfa()]
   def mfa_references(core_fun) do
     core_fun |> collect(&node_references/1) |> Enum.uniq()
   end
@@ -236,19 +232,10 @@ defmodule Anchor.Domain.Core do
   defp node_references(node) do
     case :cerl.type(node) do
       :tuple -> node |> :cerl.tuple_es() |> triple_reference()
-      :call -> call_references(node)
+      :call -> node |> :cerl.call_args() |> window_references()
       :apply -> node |> :cerl.apply_args() |> window_references()
       :literal -> node |> :cerl.concrete() |> term_references()
       _other -> []
-    end
-  end
-
-  defp call_references(node) do
-    args = :cerl.call_args(node)
-
-    case call_mfa(node) do
-      {:erlang, :apply, 3} -> apply_reference(args) ++ window_references(args)
-      _other -> window_references(args)
     end
   end
 
@@ -256,42 +243,20 @@ defmodule Anchor.Domain.Core do
     args |> Enum.chunk_every(3, 1, :discard) |> Enum.flat_map(&triple_reference/1)
   end
 
-  defp apply_reference([module, name, args]) do
-    with true <- literal_atom?(module) and :cerl.is_c_var(name),
-         {:ok, arity} <- args_arity(args) do
-      [{:cerl.concrete(module), nil, arity}]
-    else
-      _not_a_reference -> []
-    end
-  end
-
   defp triple_reference([module, name, args]) do
-    with true <- literal_atom?(module) and literal_atom?(name),
-         {:ok, arity} <- args_arity(args) do
-      [{:cerl.concrete(module), :cerl.concrete(name), arity}]
-    else
-      _not_a_reference -> []
-    end
+    if literal_atom?(module) and literal_atom?(name) and :cerl.is_c_list(args),
+      do: [{:cerl.concrete(module), :cerl.concrete(name), :cerl.list_length(args)}],
+      else: []
   end
 
   defp triple_reference(_elements), do: []
 
   defp literal_atom?(node), do: :cerl.is_literal(node) and is_atom(:cerl.concrete(node))
 
-  defp args_arity(args) do
-    cond do
-      :cerl.is_c_list(args) -> {:ok, :cerl.list_length(args)}
-      :cerl.is_c_var(args) or :cerl.is_c_cons(args) -> {:ok, nil}
-      true -> :error
-    end
-  end
-
   defp term_references({module, name, args} = term)
        when is_atom(module) and is_atom(name) and is_list(args) do
-    [
-      {module, name, term_arity(args)}
-      | term |> Tuple.to_list() |> Enum.flat_map(&term_references/1)
-    ]
+    inner = term |> Tuple.to_list() |> Enum.flat_map(&term_references/1)
+    if List.improper?(args), do: inner, else: [{module, name, length(args)} | inner]
   end
 
   defp term_references(term) when is_tuple(term),
@@ -304,8 +269,6 @@ defmodule Anchor.Domain.Core do
     do: term_references(head) ++ term_references(tail)
 
   defp term_references(_term), do: []
-
-  defp term_arity(args), do: if(List.improper?(args), do: nil, else: length(args))
 
   # --- reading -----------------------------------------------------------------
 

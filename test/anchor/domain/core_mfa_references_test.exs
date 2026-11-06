@@ -32,6 +32,7 @@ defmodule Anchor.Domain.CoreMfaReferencesTest do
     def local(x), do: run(M, :f, [x])
     def both_computed(mod, name, x), do: {mod, name, [x]}
     def applied_literal_name(args), do: apply(M, :f, args)
+    def message_call(timeout), do: GenServer.call(M, :f, timeout)
     def timeout_arg, do: GenServer.call(M, :f, 5000)
     def applied_name(name, x), do: apply(M, name, [x])
     def applied_any(name, args), do: apply(M, name, args)
@@ -67,17 +68,18 @@ defmodule Anchor.Domain.CoreMfaReferencesTest do
         {:list_in_map, 0, [{M, :f, 1}]},
         {:literal_list, 0, [{M, :f, 1}, {M, :g, 0}]},
         {:spawned, 1, [{M, :f, 1}]},
-        {:args_var, 1, [{M, :f, nil}]},
-        {:tuple_var, 1, [{M, :f, nil}]},
+        {:args_var, 1, []},
+        {:tuple_var, 1, []},
         {:later_args, 1, [{M, :f, 1}]},
         {:a_number, 0, []},
         {:number_beside, 1, []},
         {:computed, 2, []},
         {:computed_name, 2, []},
-        {:applied_literal_name, 1, [{M, :f, nil}]},
+        {:applied_literal_name, 1, []},
         {:timeout_arg, 0, []},
-        {:applied_name, 2, [{M, nil, 1}]},
-        {:applied_any, 2, [{M, nil, nil}]},
+        {:message_call, 1, []},
+        {:applied_name, 2, []},
+        {:applied_any, 2, []},
         {:applied_computed, 3, []},
         {:generic_call, 2, []},
         {:local_vars, 2, []},
@@ -85,9 +87,9 @@ defmodule Anchor.Domain.CoreMfaReferencesTest do
         {:atom_key, 2, []},
         {:spawn_var_module, 2, []},
         {:both_computed, 3, []},
-        {:improper, 2, [{M, :f, nil}]},
-        {:literal_improper, 0, [{M, :f, nil}]},
-        {:spawn_improper, 2, [{M, :f, nil}]},
+        {:improper, 2, []},
+        {:literal_improper, 0, []},
+        {:spawn_improper, 2, []},
         {:local, 1, [{M, :f, 1}]},
         {:strings, 1, []},
         {:none, 1, []}

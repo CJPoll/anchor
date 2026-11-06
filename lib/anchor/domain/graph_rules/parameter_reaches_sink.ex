@@ -28,13 +28,13 @@ defmodule Anchor.Domain.GraphRules.ParameterReachesSink do
   (`Anchor.Domain.GraphReport`).
 
   Who calls a function is another question, and there a false finding is possible.
-  A caller whose module is computed too (`apply(mod, name, args)`,
-  `spawn(mod, :f, [a])`), or an `apply(fun, args)`, names nothing. Reading such a
-  call as naming every candidate would let one of them silence the rule, so what
-  they might reach stays judged. The run prints how many calls compute a name
-  (`Anchor.Domain.DynamicCalls.computed_name_count/1`). When that count is not
-  zero, check a public function's finding against those calls before dropping the
-  parameter.
+  A caller with no edge and no full name is unseen: `apply(M, name, args)`,
+  `spawn(M, :f, args)`, `spawn(mod, :f, [a])`, an MFA in variables. Reading any of
+  them as naming every candidate would let one such call silence the rule, so what
+  they might reach stays judged. Before dropping a public function's parameter,
+  check that no such caller relies on it. The run counts the `apply`s that compute a
+  name (`Anchor.Domain.DynamicCalls.computed_name_count/1`) as a hint; a zero there
+  does not rule out the other shapes.
 
   ## What is not judged
 
@@ -50,12 +50,9 @@ defmodule Anchor.Domain.GraphRules.ParameterReachesSink do
       `Anchor.Domain.DynamicCalls.targets/2`): the unseen receiver fixes the
       arity. A call whose function name is computed as well names no target,
       so it exempts nothing;
-    * a public function the code names (`Anchor.Domain.Core.mfa_references/1`): a
-      literal `{M, :f, args}`, in a term or as three arguments of a call (a child
-      spec's `start:`, `spawn(M, :f, [a])`), where the args fix the arity, and a
-      list of unknown length reaches every arity of the name; and each public
-      function of `M`, of that arity if it is known, for an
-      `apply(M, name, args)` with a computed name;
+    * a public function the code names in full: a literal `{M, :f, args}` with a
+      list of known length, in a term or as three arguments of a call (a child
+      spec's `start:`, `spawn(M, :f, [a])`, `Anchor.Domain.Core.mfa_references/1`);
     * a generated function: its module has no literal `defmodule`
       (`ModuleNode.generated?`), its name is `__name__`, or a macro wrote it (a
       clause meta with `generated` or `context`, the argument Elixir generates
@@ -234,11 +231,10 @@ defmodule Anchor.Domain.GraphRules.ParameterReachesSink do
   end
 
   defp add_exports(functions, {module, name, arity}, reached) do
-    for {{candidate_name, candidate}, %FunctionNode{kind: :def}} <- functions,
-        name in [nil, candidate_name],
+    for {{^name, candidate}, %FunctionNode{kind: :def}} <- functions,
         arity in [nil, candidate],
         reduce: reached do
-      reached -> MapSet.put(reached, {module, candidate_name, candidate})
+      reached -> MapSet.put(reached, {module, name, candidate})
     end
   end
 

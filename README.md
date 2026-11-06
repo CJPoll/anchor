@@ -1166,10 +1166,9 @@ guard that reads the parameter.
 **Exempt**, because something else fixes the signature: a callback of a
 behaviour the module declares; a function captured anywhere in the project
 (`&M.f/2`); a public function a dynamic call can reach (`mod.f(x)`, by
-`Anchor.Domain.DynamicCalls`); a public function the code names, by a literal
-`{M, :f, args}` in a term or a call (a child spec's `start:`, `spawn(M, :f, [a])`) or
-by an `apply(M, name, args)` on a literal module, which reaches every public function
-of that arity in `M`); and a generated function (a module with no literal
+`Anchor.Domain.DynamicCalls`); a public function the code names in full, a literal
+`{M, :f, args}` with a list of known length, in a term or a call (a child spec's
+`start:`, `spawn(M, :f, [a])`); and a generated function (a module with no literal
 `defmodule`, a `__name__`, a macro's output, the head a default argument
 generates).
 
@@ -1180,13 +1179,13 @@ read. If nothing the rule selects could be judged, that is one fail-closed issue
 
 Demand over-approximates what a function does with a parameter, so its imprecision
 only hides a finding: a parameter passed to an unresolved call is used. Who calls a
-function is another question. A caller whose module is computed too
-(`apply(mod, action, args)`, `spawn(mod, :f, [a])`), or an `apply(fun, args)`, names
-nothing; reading it as naming every candidate would let one such call silence the
-rule, so what it might reach stays judged, and the run counts the calls that compute
-a name. When that count is not zero, check a public function's finding against those
-calls before you drop the parameter: a signature one of them relies on is a false finding this rule cannot rule out. Each
-run prints all of it:
+function is another question, and there a finding can be false. A caller with no call
+edge and no full name is unseen: `apply(M, name, args)`, `spawn(M, :f, args)`,
+`spawn(mod, :f, [a])`, an MFA in variables. Reading any of them as naming every
+candidate would let one such call silence the rule, so what they might reach stays
+judged. Before you drop a public function's parameter, check that no such caller
+relies on it. The run counts the `apply`s that compute a name, as a hint; a zero there
+does not rule out the other shapes. Each run prints all of it:
 
 ```text
 ; parameter_reaches_sink: 1900 apply sites precise, 74 fell to any, 724 imprecise parameters, 7 calls of a computed name, 2142 functions judged, 906 exempt, 15 not analysed

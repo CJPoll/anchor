@@ -80,6 +80,8 @@ defmodule Anchor.Integration.ParameterReachesSinkCanaryTest do
              "sinks|#{@drops}.drop_first/2|param 1",
              "sinks|#{@drops}.f/2|param 2",
              "sinks|#{@drops}.g/1|param 1",
+             "sinks|#{@drops}.index/1|param 1",
+             "sinks|#{@drops}.ping/2|param 1",
              "sinks|#{@drops}.price/2|param 2",
              "sinks|#{@drops}.via_lambda/1|param 1",
              "sinks|#{@drops}.via_var/1|param 1"

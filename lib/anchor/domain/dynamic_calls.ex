@@ -85,9 +85,10 @@ defmodule Anchor.Domain.DynamicCalls do
 
   @doc """
   How many calls compute their function's name (`apply(mod, name, args)`,
-  `apply(fun, args)`), one per caller and call shape (DND-5470): any public function
-  could be the target, so a rule that asks who calls a function says how many
-  there were. A `fun.(x)` is an apply site, not one of these.
+  `apply(fun, args)`, and an operator that is no variable, such as an immediately
+  applied `fn`), one per caller and call shape (DND-5470): any public function could
+  be the target, so a rule that asks who calls a function says how many there were.
+  A `fun.(x)` on a variable is an apply site, not one of these.
   """
   @spec computed_name_count(Graph.t()) :: non_neg_integer()
   def computed_name_count(%Graph{calls: calls}) do

@@ -440,15 +440,15 @@ chain rebuilt from `Demand.Param.passes`. It needs `[:cfa, :demand]`: the runner
 stores `Model.demand` and, under the same guard, `Model.callbacks` (the external
 behaviours' callbacks, the same port the effect inference reads). Patterns and
 guards need no code here: they are uses in the summary. Exempt: callbacks,
-captures, a public function a dynamic call or a function the code names
-(`Core.mfa_references/1`: a literal `{M, :f, args}`, or `apply(M, name, args)`) can reach, generated functions (a
+captures, a public function a dynamic call or a literal `{M, :f, [args]}`
+(`Core.mfa_references/1`) can reach, generated functions (a
 clause meta with `context` or `generated` is a macro's output, and a default's
 head has only generated arguments). Not analysed: no Core, `generated?: :unknown`,
-an external behaviour with no callbacks read. A caller with its module computed too
-(`apply(mod, name, args)`, `spawn(mod, :f, [a])`) names nothing: reading it as naming
-every candidate would let one silence the rule, so what it might reach stays judged,
-the calls that compute a name are counted (`DynamicCalls.computed_name_count/1`), and
-a public finding is checked against them by hand. `GraphReport.parameter_sinks/4` is the summary's
+an external behaviour with no callbacks read. A caller with no edge and no full name
+(`apply(M, name, args)`, `spawn(mod, :f, [a])`) is unseen: reading it as naming every
+candidate would let one silence the rule, so what it might reach stays judged, and a
+public finding is checked by hand. `DynamicCalls.computed_name_count/1` counts the
+`apply`s, as a hint only. `GraphReport.parameter_sinks/4` is the summary's
 precision count. Its `Fix:` is the rule's own text until
 `Anchor.Domain.Placement` lands (DND-5448).
 

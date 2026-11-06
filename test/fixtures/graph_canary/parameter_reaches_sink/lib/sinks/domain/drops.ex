@@ -22,10 +22,18 @@ defmodule AnchorFixtures.ParameterSinks.Drops do
   # An ordinary three-argument call on this module silences nothing here.
   def asks(msg, timeout), do: GenServer.call(__MODULE__, msg, timeout)
 
+  # An ordinary call with a literal message and a variable third argument too: the
+  # message's name is no reference. ping/2 drops its first parameter.
+  def ping(_unused, timeout), do: GenServer.call(__MODULE__, :ping, timeout)
+
   # Violating, and a false finding this rule cannot rule out: an MFA held in
   # variables names no function. The README says to check these by hand.
   def spawned_mod(mod, x), do: spawn(mod, :via_var, [x])
   def via_var(_x), do: :ok
+
+  # Violating, and false the same way: Exempt.dispatch/2 computes the name it calls.
+  # A controller action reached by `apply(__MODULE__, action, [conn, params])` reads so.
+  def index(_params), do: :ok
 
   # Violating: a lambda that ignores what it is applied to.
   def via_lambda(unused) do
