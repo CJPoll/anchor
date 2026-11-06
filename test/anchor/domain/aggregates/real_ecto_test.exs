@@ -57,6 +57,8 @@ defmodule Anchor.Domain.Aggregates.RealEctoTest do
     def e6_scoped(q), do: e6_prefix(q, "tenant_a")
     defp e6_prefix(q, prefix), do: Repo.delete_all(put_query_prefix(q, prefix))
     def e6_table(v), do: Repo.delete_all(where(from(t in "threads"), [t], t.x == ^v))
+    def e6_join(q), do: Repo.delete_all(join(q, :inner, [t], o in Post, on: true))
+    def e6_where(q, v), do: Repo.delete_all(where(q, [t], t.x == ^v))
     def e6_prefixed, do: Repo.delete_all(put_query_prefix(from(t in "threads"), "tenant_a"))
     def e6_prefixed_pin(v) do
       Repo.delete_all(put_query_prefix(from(t in "threads", where: t.x == ^v), "tenant_a"))
@@ -120,6 +122,14 @@ defmodule Anchor.Domain.Aggregates.RealEctoTest do
   } do
     assert %{sources: [], unresolved: seen} = site(a, :e6_prefix)
     refute seen =~ "tenant_a"
+  end
+
+  test "E6: a query that cannot be traced is never named by what it joins or filters on", %{
+    analysis: a
+  } do
+    assert %{sources: [], unresolved: seen} = site(a, :e6_join)
+    assert is_binary(seen)
+    assert %{sources: [], unresolved: _seen} = site(a, :e6_where)
   end
 
   test "E6: a table named by from/2 still reaches through a query call", %{analysis: a} do

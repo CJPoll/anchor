@@ -27,7 +27,8 @@ defmodule Anchor.Domain.GraphReport do
       of it; `aggregates` (optional, DND-5476) is
       `%{declared, tables_unknown}` when any aggregate is declared, and the
       JSON's `aggregates` is `null` otherwise; `writes` (optional, DND-5459)
-      is the write analysis's counts (`Anchor.Domain.Aggregates.Analysis`)
+      is the write analysis's counts, its gaps outside a transaction among them
+      (`Anchor.Domain.Aggregates.Analysis`),
       when the run made one with a repo, and the JSON's `writes` is `null`
       otherwise.
     * `exit_code` — `exit_code/1`.

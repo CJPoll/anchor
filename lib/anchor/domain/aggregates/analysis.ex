@@ -21,7 +21,10 @@ defmodule Anchor.Domain.Aggregates.Analysis do
       then nothing else is computed, and the `aggregate_write_sources` rule
       reports it;
     * `counts` — `%{writes: W, resolved: R, unresolved: U, scopes: S,
-      complete: C, incomplete: I}`, the run summary's numbers.
+      complete: C, incomplete: I, outside_gaps: G}`, the run summary's numbers
+      (`G`: the gaps outside every transaction);
+    * `unattributed` — raw SQL, or a write on a computed module, in a function
+      not always in a transaction: no scope holds it, so the rule reports it.
   """
 
   alias Anchor.Domain.Aggregates.Config
@@ -108,25 +111,26 @@ defmodule Anchor.Domain.Aggregates.Analysis do
       |> Enum.flat_map(fn {_mfa, function} -> function.sites end)
 
     nontx = NonTransactional.build(functions, tables, facts.run_callbacks)
+    always = NonTransactional.always_in_transaction(functions, roots, facts.run_callbacks)
 
     %__MODULE__{
       sites: sites,
       scopes: scopes,
-      unattributed: unattributed(functions),
+      unattributed: unattributed(functions, always),
       nontx: nontx,
-      always_in_transaction:
-        NonTransactional.always_in_transaction(functions, roots, facts.run_callbacks),
+      always_in_transaction: always,
       tables: tables,
       repos: repos |> MapSet.to_list() |> Enum.sort(),
       counts: counts(sites, scopes, nontx)
     }
   end
 
-  # Raw SQL, or a write on a computed module, outside every transaction: no
-  # scope holds it, so nothing else reports it.
-  defp unattributed(functions) do
+  # Raw SQL, or a write on a computed module, outside a body in a function that
+  # is not always called inside one: no scope holds it for certain.
+  defp unattributed(functions, always) do
     rows =
       for {mfa, function} <- functions,
+          not MapSet.member?(always, mfa),
           %{write?: true, tags: [], line: line, what: what} <- function.dynamic,
           do: %{mfa: mfa, line: line, what: what}
 

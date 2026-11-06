@@ -58,6 +58,16 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
               def n15(mod), do: Repo.transaction(fn -> mod.insert(%S{}) end)
               def n16, do: n11()
 
+              def n17, do: Repo.transaction(fn -> n17h() end)
+              defp n17h, do: Repo.query!("DELETE FROM s")
+
+              def n18, do: Ecto.Multi.run(Ecto.Multi.new(), :a, &n18_step/2)
+              def n18_step(repo, _changes), do: repo.query!("DELETE FROM s")
+
+              def n19, do: Ecto.Multi.run(Ecto.Multi.new(), :a, &n19_step/2)
+              def n19_step(_repo, _changes), do: Repo.insert(%S{})
+              def n19_direct, do: n19_step(nil, nil)
+
               def n9, do: Repo.soft_delete(%S{}, [])
               def n10, do: Repo.transaction(fn -> Repo.soft_delete(%S{}, []) end)
             end
@@ -131,6 +141,39 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
     assert raw == "raw SQL (#{inspect(@repo)}.query!/1) Anchor cannot attribute"
     assert computed == "a call of insert/1 on a module held in a variable"
     assert is_integer(line)
+  end
+
+  test "a captured run callback's own entry is empty; a direct caller still has its writes",
+       %{analysis: a} do
+    assert nontx(a, :n7_step, 2).keys == MapSet.new()
+    assert nontx(a, :n19_direct).keys == keys([@s])
+  end
+
+  test "a function written on a repo is read; what Ecto generates on it is not" do
+    sql_repo = Module.concat(@ns, SqlRepo)
+
+    source =
+      @source <>
+        """
+        defmodule #{inspect(sql_repo)} do
+          def query!(sql), do: Ecto.Adapters.SQL.query!(__MODULE__, sql, [])
+          def get(mod, id), do: mod.lookup(id)
+          def insert(x, opts \\\\ []), do: insert_all(x, opts)
+          def insert_all(x, _opts), do: x
+          def purge, do: query!("DELETE FROM s")
+        end
+        """
+
+    config = %Config{repos: [@repo, sql_repo]}
+    analysis = Analysis.build(graph!(source), config)
+
+    assert [%{mfa: {^sql_repo, :purge, 0}}] =
+             Enum.filter(analysis.unattributed, &(elem(&1.mfa, 0) == sql_repo))
+
+    refute Map.has_key?(analysis.nontx, {sql_repo, :get, 2})
+    refute Map.has_key?(analysis.nontx, {sql_repo, :query!, 1})
+    refute Map.has_key?(analysis.nontx, {sql_repo, :insert, 1})
+    assert Map.has_key?(analysis.nontx, {sql_repo, :purge, 0})
   end
 
   test "the gaps outside every transaction are counted", %{analysis: a} do

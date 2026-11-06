@@ -181,7 +181,9 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
           sites: [raw_site()],
           txs: [raw_tx()],
           calls: [raw_call()],
-          dynamic: [%{line: non_neg_integer() | nil, what: String.t(), tags: [term()]}],
+          dynamic: [
+            %{line: non_neg_integer() | nil, what: String.t(), tags: [term()], write?: boolean()}
+          ],
           def_line: non_neg_integer() | nil,
           public?: boolean()
         }
@@ -278,6 +280,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
           {{name, arity}, %FunctionNode{core: core} = node} <- fns,
           core != nil,
           node.kind in [:def, :defp],
+          not generated_on_repo?({module, name, arity}, repos),
           do: {{module, name, arity}, FunctionWalk.label(core), node}
 
     prescans = Map.new(functions, fn {mfa, core, _node} -> {mfa, prescan(core, mfa, ctx)} end)
@@ -684,7 +687,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
         {f, a} = :cerl.var_name(op)
         args = :cerl.apply_args(node)
 
-        if written_on_repo?(mfa, ctx),
+        if MapSet.member?(ctx.repos, elem(mfa, 0)),
           do: literal_call(acc, {module, f, a}, args, env, tags, line, ctx),
           else: project_call(acc, ctx, {module, f, a}, :local, args, env, tags, line)
 
@@ -764,9 +767,11 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
 
   defp plain_literal?(node), do: :cerl.is_literal(node) and not is_function(:cerl.concrete(node))
 
-  defp written_on_repo?({module, name, arity}, ctx) do
-    MapSet.member?(ctx.repos, module) and not repo_write?(name, arity) and
-      name not in @raw_sql and name not in @repo_functions
+  # What `use Ecto.Repo` generates is not the project's code: its raw SQL and its
+  # dynamic calls would be reported against every project with a repo.
+  defp generated_on_repo?({module, name, arity}, repos) do
+    MapSet.member?(repos, module) and
+      (repo_write?(name, arity) or name in @raw_sql or name in @repo_functions)
   end
 
   defp erlang_apply(acc, [m, f, args], env, tags, line, ctx) do

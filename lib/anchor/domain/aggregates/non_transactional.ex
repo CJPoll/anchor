@@ -49,6 +49,13 @@ defmodule Anchor.Domain.Aggregates.NonTransactional do
     |> without_run_captures(run_callbacks)
     |> Scopes.summarise(:outside)
     |> Map.new(fn {mfa, summary} ->
+      # A run callback's own writes are inside the Multi's transaction; a direct
+      # caller's entry still holds them, through its call.
+      summary =
+        if MapSet.member?(run_callbacks, mfa),
+          do: %{sites: MapSet.new(), gaps: MapSet.new()},
+          else: summary
+
       gaps = Scopes.sort_gaps(summary.gaps)
 
       {mfa,
