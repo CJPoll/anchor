@@ -104,7 +104,7 @@ defmodule Anchor.Managers.SabotageBehavioursTest do
       config()
       assert {3, [line]} = Sabotage.behaviours(facts(%{coverage: nil}), @opts)
       assert line =~ "no coverage map was given"
-      assert line =~ "Fix: download the anchor-coverage artifact (CI) and pass --coverage"
+      assert line =~ "Fix: download a current anchor-coverage artifact (CI) and pass --coverage"
     end
 
     test "the configured map is used when none is given" do
@@ -112,7 +112,7 @@ defmodule Anchor.Managers.SabotageBehavioursTest do
       coverage_read({:error, :enoent})
       assert {3, [line]} = Sabotage.behaviours(facts(%{coverage: nil}), @opts)
       assert line =~ "the coverage map cov.etf cannot be read (:enoent)"
-      assert line =~ "Fix: download the anchor-coverage artifact (CI) and pass --coverage"
+      assert line =~ "Fix: download a current anchor-coverage artifact (CI) and pass --coverage"
     end
 
     test "--coverage wins over the configured map" do
@@ -125,7 +125,7 @@ defmodule Anchor.Managers.SabotageBehavioursTest do
       config()
       coverage_read({:ok, :nope})
       assert {3, [line]} = Sabotage.behaviours(facts(), @opts)
-      assert line =~ "is not a usable version-1 map (:not_a_map)"
+      assert line =~ "is not a usable coverage map (:not_a_map)"
     end
 
     test "a map with zero tests" do
@@ -145,7 +145,7 @@ defmodule Anchor.Managers.SabotageBehavioursTest do
         coverage_read({:ok, bad})
         assert {3, [line]} = Sabotage.behaviours(facts(), @opts)
         assert line =~ "measured nothing (:no_modules)"
-        assert line =~ "Fix: download the anchor-coverage artifact (CI) and pass --coverage"
+        assert line =~ "Fix: download a current anchor-coverage artifact (CI) and pass --coverage"
       end
     end
 
@@ -155,7 +155,14 @@ defmodule Anchor.Managers.SabotageBehavioursTest do
       coverage_read({:ok, %{@map | tests: [Map.delete(first, :name) | rest]}})
       assert {3, [line]} = Sabotage.behaviours(facts(), @opts)
       assert line =~ "names no test"
-      assert line =~ "Fix: download the anchor-coverage artifact (CI) and pass --coverage"
+      assert line =~ "Fix: download a current anchor-coverage artifact (CI) and pass --coverage"
+    end
+
+    test "a map of an old version says so, and names no version of its own" do
+      config()
+      coverage_read({:ok, %{@map | version: 1}})
+      assert {3, [line]} = Sabotage.behaviours(facts(), @opts)
+      assert line =~ "is not a usable coverage map ({:version, 1})"
     end
 
     test "no sabotage section" do

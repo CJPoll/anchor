@@ -3,7 +3,7 @@ name: Behaviour locality
 # DND-5489: joins the coverage map to the sabotage records and prints each test's
 # confirmed causes and the directories they spread over, in report mode. It needs
 # the map, which only the Coverage map workflow builds, so it runs when that
-# workflow succeeds on main, and by hand with a run id. A map or a record it cannot
+# workflow succeeds on main, never for a pull request's run, and by hand with a run id. A map or a record it cannot
 # use fails the job (exit 3), never green. It reads the artifact as a safe term and
 # checks every field (`CoverageMap.check/1`), and this file runs from main.
 
@@ -32,7 +32,10 @@ concurrency:
 jobs:
   behaviours:
     name: Behaviour locality
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event != 'pull_request')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

@@ -1986,7 +1986,7 @@ no file is an empty baseline, and says so.
 | in `enforce` mode: NEW, STALE or GREW | 1 |
 | in either mode: a baseline named in the config that is absent, or a malformed one | 1 |
 | usage; `--write-baseline` over an existing file | 2 |
-| no `sabotage:` config; no usable coverage map (`Fix: download the anchor-coverage artifact (CI) and pass --coverage`) or one with no tests; a record that cannot be read; no `killed` row anywhere, or none that confirms a behaviour (`nothing confirms any cause yet`); the baseline unreadable, here or at `--base` | 3 |
+| no `sabotage:` config; no usable coverage map (`Fix: download a current anchor-coverage artifact (CI) and pass --coverage`) or one with no tests; a record that cannot be read; no `killed` row anywhere, or none that confirms a behaviour (`nothing confirms any cause yet`); the baseline unreadable, here or at `--base` | 3 |
 
 Anchor runs it in report mode after each successful coverage map on main
 (`.github/workflows/behaviour-locality.yml`).

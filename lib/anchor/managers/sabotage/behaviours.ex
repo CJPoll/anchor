@@ -6,7 +6,7 @@ defmodule Anchor.Managers.Sabotage.Behaviours do
 
     1. The `sabotage:` config; none is exit 3.
     2. The coverage map, from `--coverage` or the config's `coverage_map`. None, one
-       that cannot be read or is no version-1 map, or one with no tests or modules is
+       that cannot be read or is no map of the current version, or one with no tests or modules is
        exit 3, naming the artifact to download.
     3. Every record's kill map. A record that cannot be read or parsed is exit 3, and
        so is no `killed` row at all: nothing confirms any cause yet.
@@ -48,7 +48,7 @@ defmodule Anchor.Managers.Sabotage.Behaviours do
 
   @baseline_id "behaviour-locality"
   @default_baseline ".anchor/baselines/behaviour-locality.txt"
-  @download_fix "Fix: download the anchor-coverage artifact (CI) and pass --coverage"
+  @download_fix "Fix: download a current anchor-coverage artifact (CI) and pass --coverage"
 
   @type facts :: %{
           required(:root) => String.t(),
@@ -115,7 +115,7 @@ defmodule Anchor.Managers.Sabotage.Behaviours do
   end
 
   defp coverage_problem(:read, reason), do: "cannot be read (#{inspect(reason)})"
-  defp coverage_problem(:check, reason), do: "is not a usable version-1 map (#{inspect(reason)})"
+  defp coverage_problem(:check, reason), do: "is not a usable coverage map (#{inspect(reason)})"
   defp coverage_problem(:validate, reason), do: "measured nothing (#{inspect(reason)})"
   defp coverage_problem(:named, reason), do: "names no test (#{inspect(reason)})"
 

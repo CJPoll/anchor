@@ -102,7 +102,7 @@ defmodule Anchor.Managers.GraphParameterSinksTest do
         source_source: SourceSourceMock,
         graph_store: GraphStoreMock,
         behaviour_source: BehaviourSourceMock,
-        graph_rules: [ParameterReachesSink, EffectsMatchBucket | Rules.all()]
+        graph_rules: [ParameterReachesSink, EffectsMatchBucket, NeedsDemand | Rules.all()]
       ] ++ opts
     )
   end
@@ -117,9 +117,7 @@ defmodule Anchor.Managers.GraphParameterSinksTest do
     end)
 
     report =
-      run([rule(:stub_needs_demand, "needs_demand", 1)], beams,
-        graph_rules: [NeedsDemand | Rules.all()]
-      )
+      run([rule(:stub_needs_demand, "needs_demand", 1)], beams)
 
     refute_received :read_behaviours
     assert report.findings == []

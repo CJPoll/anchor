@@ -36,7 +36,7 @@ defmodule Mix.Tasks.Anchor.SabotageBehavioursTest do
                  {:shutdown, 3}
       end)
 
-    assert stderr =~ "Fix: download the anchor-coverage artifact (CI) and pass --coverage"
+    assert stderr =~ "Fix: download a current anchor-coverage artifact (CI) and pass --coverage"
   end
 
   test "the facts: each flag, and what its absence means" do
