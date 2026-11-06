@@ -23,6 +23,10 @@ Mox.defmock(Anchor.BeamSourceMock, for: Anchor.Adapters.BeamSource)
 Hammox.defmock(Anchor.SourceSourceMock, for: Anchor.Adapters.SourceSource)
 Hammox.defmock(Anchor.GraphStoreMock, for: Anchor.Adapters.GraphStore)
 
+# DND-5447: the behaviour-callback port the graph runner reads before the
+# effect inference (`:behaviour_source`).
+Hammox.defmock(Anchor.BehaviourSourceMock, for: Anchor.Adapters.BehaviourSource)
+
 # DND-5473: the sabotage runner's ports (`Anchor.Managers.Sabotage.run/2`
 # takes them as the `:source_mutation`, `:git_worktree` and `:test_execution`
 # options).
@@ -45,3 +49,7 @@ Hammox.defmock(Anchor.CoverageStoreMock, for: Anchor.Adapters.CoverageStore)
 
 # DND-5484: the sabotage record files (`:record_store`).
 Hammox.defmock(Anchor.RecordStoreMock, for: Anchor.Adapters.RecordStore)
+
+# DND-5632: `mix anchor.baseline --write` runs Credo through this port
+# (`Anchor.Managers.AstBaseline.write/2` takes it as `:lint_keys`).
+Hammox.defmock(Anchor.LintKeysMock, for: Anchor.Adapters.LintKeys)

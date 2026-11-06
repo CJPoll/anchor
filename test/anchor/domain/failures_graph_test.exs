@@ -6,11 +6,14 @@ defmodule Anchor.Domain.FailuresGraphTest do
   # Sabotage record: ../../sabotage_records/failures-20261103-dnd_5440_graph_runner.md
   # Sabotage record: ../../sabotage_records/failures-20261103-dnd_5551_graph_hardening.md
   # (rule_cfa_crashed, DND-5574: ../../sabotage_records/failures-20261103-dnd_5574_cfa_wiring.md)
+  # (rule_effects_crashed, effects_bucket_unanalysed, DND-5447:
+  #   ../../sabotage_records/effects-20261103-dnd_5447_graph_rules_c.md)
   # Sabotage record: ../../sabotage_records/failures-20261103-dnd_5581_hardening_batch.md
   # DND-5441 (the baseline_* messages):
   #   ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
   # DND-5584 (graph_app_no_modules): ../../sabotage_records/graph_runner-20261103-dnd_5441_graph_rules_a.md
   # DND-5628 (the symlink rows): ../../sabotage_records/baseline_symlink-20261103-dnd_5441_graph_rules_a.md
+  # Sabotage record (DND-5647, DND-5648, DND-5655): ../../sabotage_records/failures-20261103-dnd_5648_graph_followups.md
   # DND-5476 (aggregate_declarations rows): ../../sabotage_records/aggregates-20261103-dnd_5476_aggregate_decls.md
   use ExUnit.Case, async: true
 
@@ -84,6 +87,8 @@ defmodule Anchor.Domain.FailuresGraphTest do
     rule = %{type: :layering, id: "web", index: 2}
     baselined = Map.put(rule, :baseline, "b.txt")
 
+    ast_baselined = %{type: :no_direct_dependency, id: "pure", index: 1, baseline: "a.txt"}
+
     crashed =
       try do
         raise "rule blew up"
@@ -96,6 +101,13 @@ defmodule Anchor.Domain.FailuresGraphTest do
         raise "cfa blew up"
       rescue
         e -> Failures.rule_cfa_crashed(rule, :error, e, __STACKTRACE__, nil)
+      end
+
+    effects_crashed =
+      try do
+        raise "effects blew up"
+      rescue
+        e -> Failures.rule_effects_crashed(rule, :error, e, __STACKTRACE__, nil)
       end
 
     [
@@ -113,6 +125,14 @@ defmodule Anchor.Domain.FailuresGraphTest do
        [
          "COULD NOT MEASURE: read 0 modules from _build/dev/lib/a/ebin, _build/dev/lib/b/ebin.",
          "Fix: run mix compile in this project"
+       ]},
+      # DND-5655: an umbrella app outside the root, refused with a Fix:.
+      {"graph_apps_path_outside",
+       Failures.graph_apps_path_outside([{:alpha, "/elsewhere/alpha"}], "/proj", nil),
+       ".anchor.yml",
+       [
+         "COULD NOT MEASURE: the apps_path of :alpha is /elsewhere/alpha, outside the project root /proj",
+         "Fix: set apps_path in the umbrella's mix.exs to a directory under the project root"
        ]},
       {"graph_app_no_modules", Failures.graph_app_no_modules(:other, "_build/dev/lib/other/ebin"),
        "_build/dev/lib/other/ebin",
@@ -136,6 +156,15 @@ defmodule Anchor.Domain.FailuresGraphTest do
          "could not read b.txt at main (:boom)",
          "(GREW) could not be judged",
          "Fix: pass a --base"
+       ]},
+      # DND-5648: one issue for the config, naming every rule it left unjudged.
+      {"baseline_base_config_unreadable",
+       Failures.baseline_base_config_unreadable(".anchor.yml", "main", :boom, ["web", "core"]),
+       ".anchor.yml",
+       [
+         "Anchor could not read .anchor.yml at main (:boom)",
+         ~s|GREW could not be judged for rules "web", "core"|,
+         "Fix: pass a --base ref whose .anchor.yml loads"
        ]},
       {"baseline_first_landing", Failures.baseline_first_landing("b.txt", "main"), "b.txt",
        ["NOTE: first landing of b.txt (absent at main); review is the gate.", "Fix: review"]},
@@ -165,6 +194,38 @@ defmodule Anchor.Domain.FailuresGraphTest do
          "b/x.txt at main was not read: b is a symlink there",
          "(GREW) could not be judged",
          "Fix: replace the symlink b with a real directory or file inside the project"
+       ]},
+      # DND-5647: the write escaped the root after the check, and was removed.
+      {"baseline_not_written escaped",
+       Failures.baseline_not_written("b/x.txt", {:escaped_root, "/elsewhere/x.txt"}), "b/x.txt",
+       [
+         "Anchor did not create b/x.txt: a directory on its path became a symlink",
+         "landed at /elsewhere/x.txt, outside the project root, and was removed there",
+         "Fix: find what is replacing directories"
+       ]},
+      # DND-5632: the ast engine's baseline issues name its writer.
+      {"ast_baseline_unreadable",
+       Failures.ast_baseline_unreadable(ast_baselined, "a.txt", :enoent), "a.txt",
+       [
+         ~s|rule 1 (id: "pure", no_direct_dependency)'s baseline a.txt could not be read (:enoent)|,
+         "Fix: create it with mix anchor.baseline --write pure"
+       ]},
+      {"ast_baseline_unreadable not UTF-8",
+       Failures.ast_baseline_unreadable(ast_baselined, "a.txt", {:line, 2, :invalid_utf8}),
+       "a.txt", ["a.txt line 2 is not UTF-8", "Fix: rewrite that line as UTF-8"]},
+      {"ast_baseline_unreadable symlink",
+       Failures.ast_baseline_unreadable(ast_baselined, "a/x.txt", {:symlink, "a"}), "a/x.txt",
+       ["baseline a/x.txt was not read: a is a symlink", "Fix: replace the symlink a"]},
+      {"ast_baseline_exists", Failures.ast_baseline_exists("a.txt"), "a.txt",
+       [
+         "a.txt exists; mix anchor.baseline --write only creates",
+         "Fix: delete the lines of fixed findings"
+       ]},
+      {"ast_write_unknown", Failures.ast_write_unknown("pure", "p/.anchor.yml"), "p/.anchor.yml",
+       [
+         ~s|mix anchor.baseline --write "pure" names no ast rule of p/.anchor.yml|,
+         "Fix: give that rule an id: and a baseline: path",
+         "a graph rule's baseline is written by mix anchor.graph --write-baseline"
        ]},
       {"write_baseline_unknown", Failures.write_baseline_unknown("web", nil), ".anchor.yml",
        [~s|--write-baseline "web" names no graph rule of .anchor.yml|, "Fix: give that rule"]},
@@ -237,6 +298,21 @@ defmodule Anchor.Domain.FailuresGraphTest do
            "needs (Anchor.Domain.Cfa) crashed: RuntimeError: cfa blew up",
          "so it checked nothing. Fix: this is an Anchor bug; file it with this line."
        ]},
+      {"rule_effects_crashed", effects_crashed, ".anchor.yml",
+       [
+         ~s|rule 2 (id: "web", layering) could not run: the effect inference it needs | <>
+           "(Anchor.Domain.Effects) crashed: RuntimeError: effects blew up",
+         "so it checked nothing. Fix: this is an Anchor bug; file it with this line."
+       ]},
+      {"effects_bucket_unanalysed",
+       Failures.effects_bucket_unanalysed(rule, "domain", "proj/.anchor.yml"), "proj/.anchor.yml",
+       [
+         ~s|rule 2 (id: "web", layering) judged no public function of bucket domain: the | <>
+           "modules it selects there have none that was analysed (every one is a root, " <>
+           "generated, or has no Core body), so the bucket is below the rule's floor.",
+         "Fix: select modules of domain with public functions, or set infer: false on domain " <>
+           "in a reviewed change."
+       ]},
       {"interface_export_missing",
        Failures.interface_export_missing(MyApp.Gone, "proj/.anchor.yml"), "proj/.anchor.yml",
        [
@@ -273,5 +349,18 @@ defmodule Anchor.Domain.FailuresGraphTest do
     assert stale.message =~ "web|A|x in b.txt matches no finding (it was fixed). Fix: delete"
     assert %Violation{kind: :rule, filename: "b.txt", key: "web|B|y"} = grew
     assert grew.message =~ "web|B|y was added to b.txt since main. Fix: fix the finding instead"
+  end
+
+  # DND-5632: the unjudged entries of a narrowed run are a report-only note,
+  # never a failure.
+  test "ast_baseline_unjudged is a report-only note on the baseline path, counting the entries" do
+    one = Failures.ast_baseline_unjudged("a.txt", ["pure|lib/b.ex|File"])
+    two = Failures.ast_baseline_unjudged("a.txt", ["pure|lib/b.ex|File", "pure|lib/c.ex|IO"])
+
+    assert %Violation{kind: :rule, filename: "a.txt", enforcement: :report} = one
+    assert one.message =~ "NOTE: 1 entry of a.txt names a file this run did not read"
+    assert one.message =~ "so it was not judged STALE. Fix: run mix credo over the whole project"
+    assert two.message =~ "NOTE: 2 entries of a.txt name a file"
+    assert two.message =~ "so they were not judged STALE"
   end
 end

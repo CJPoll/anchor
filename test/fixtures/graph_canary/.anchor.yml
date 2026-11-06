@@ -11,6 +11,9 @@ rules:
   - type: interface
     id: interface
     paths: ["lib/canary/managers/iface_left/**/*.ex"]
+  - type: struct_owned_by_module_flow
+    id: struct_owned_by_module_flow
+    paths: ["lib/canary/**/*.ex"]
 
 architecture:
   contexts:

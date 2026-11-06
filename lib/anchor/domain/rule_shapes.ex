@@ -26,6 +26,7 @@ defmodule Anchor.Domain.RuleShapes do
     alphabetized_functions: Checks.AlphabetizedFunctions,
     case_on_bare_arg: Checks.CaseOnBareArg,
     context_acyclic: GraphRules.ContextAcyclic,
+    effects_match_bucket: GraphRules.EffectsMatchBucket,
     interface: GraphRules.Interface,
     layering: GraphRules.Layering,
     max_file_length: Checks.MaxFileLength,
@@ -40,7 +41,8 @@ defmodule Anchor.Domain.RuleShapes do
     no_tuple_match_in_head: Checks.NoTupleMatchInHead,
     single_control_flow: Checks.SingleControlFlow,
     struct_getter_convention: Checks.StructGetterConvention,
-    struct_owned_by_module: Checks.StructOwnedByModule
+    struct_owned_by_module: Checks.StructOwnedByModule,
+    struct_owned_by_module_flow: GraphRules.StructOwnedByModuleFlow
   }
 
   @fix "Fix:"

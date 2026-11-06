@@ -32,6 +32,7 @@ defmodule Anchor.Managers.ExplainTest do
     @moduledoc false
     @behaviour Anchor.Domain.GraphRule
     def rule_type, do: :layering
+    def narrows?(_base_key, _key), do: false
 
     def check(model, rule) do
       for module <- Anchor.Domain.GraphRules.select(model, rule) do
@@ -49,6 +50,7 @@ defmodule Anchor.Managers.ExplainTest do
     @moduledoc false
     @behaviour Anchor.Domain.GraphRule
     def rule_type, do: :context_acyclic
+    def narrows?(_base_key, _key), do: false
     def check(_model, _rule), do: raise("rule blew up")
   end
 
@@ -56,6 +58,7 @@ defmodule Anchor.Managers.ExplainTest do
     @moduledoc false
     @behaviour Anchor.Domain.GraphRule
     def rule_type, do: :context_acyclic
+    def narrows?(_base_key, _key), do: false
     def check(_model, _rule), do: throw(:thrown)
   end
 

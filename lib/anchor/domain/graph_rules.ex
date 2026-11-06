@@ -40,18 +40,27 @@ defmodule Anchor.Domain.GraphRules do
   alias Anchor.Domain.GlobPattern
   alias Anchor.Domain.GraphRules.AggregateDeclarations
   alias Anchor.Domain.GraphRules.ContextAcyclic
+  alias Anchor.Domain.GraphRules.EffectsMatchBucket
   alias Anchor.Domain.GraphRules.Interface
   alias Anchor.Domain.GraphRules.Layering
+  alias Anchor.Domain.GraphRules.StructOwnedByModuleFlow
   alias Anchor.Domain.Model
 
   @default_min_modules 1
 
   # What the runner computes on demand (`Anchor.Managers.Graph`).
-  @provided_needs [:cfa]
+  @provided_needs [:cfa, :effects]
 
   # Every module implementing `Anchor.Domain.GraphRule`. The rule tickets add
   # theirs here (see the moduledoc).
-  @rules [Layering, ContextAcyclic, AggregateDeclarations, Interface]
+  @rules [
+    Layering,
+    ContextAcyclic,
+    AggregateDeclarations,
+    EffectsMatchBucket,
+    Interface,
+    StructOwnedByModuleFlow
+  ]
 
   @doc "Every graph rule module."
   @spec all() :: [module()]
@@ -70,7 +79,7 @@ defmodule Anchor.Domain.GraphRules do
   without duplicates. Raises `ArgumentError` when it names one
   the runner does not compute (#{inspect(@provided_needs)}) or is not a list.
   """
-  @spec needs(module()) :: [:cfa]
+  @spec needs(module()) :: [:cfa | :effects]
   def needs(module) do
     module
     |> declared_needs()
@@ -98,6 +107,14 @@ defmodule Anchor.Domain.GraphRules do
     |> Enum.map(&{&1, length(select(model, &1))})
     |> Enum.filter(fn {rule, selected} -> selected < min_modules(rule) end)
   end
+
+  @doc """
+  Whether `key` narrows `base_key` under `module`'s `narrows?/2` (DND-5633), a
+  callback every rule has; `false` for no rule (`nil`).
+  """
+  @spec narrows?(module() | nil, String.t(), String.t()) :: boolean()
+  def narrows?(nil, _base_key, _key), do: false
+  def narrows?(module, base_key, key) when is_atom(module), do: module.narrows?(base_key, key)
 
   defp declared_needs(module) do
     if Code.ensure_loaded?(module) and function_exported?(module, :needs, 0),

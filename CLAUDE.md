@@ -42,8 +42,8 @@ never an adapter.
 | Bucket | Modules |
 |---|---|
 | Framework | `Anchor.Check.*` (Credo checks, `Anchor.Check.Base`, `Anchor.Check.Source`), `Anchor.Aggregate` (the compile-time macro, DND-5476), `Mix.Tasks.Anchor.*` (`lib/mix/tasks/`; `Mix.Tasks.Anchor.Sabotage`, `.Graph`, `.Explain`), the `Anchor` module (by name), `Anchor.Sabotage.CoverageCollector` (an OTP process, in `lib/mix/tasks/anchor/sabotage/` so `mix anchor.graph` buckets it as Framework) |
-| Managers | `Anchor.Managers.Lint`, `Anchor.Managers.Sabotage` (`.Runner`, `.Coverage`), `Anchor.Managers.Graph` (`.Request`), `Anchor.Managers.Explain` |
-| Side Effects | ports: `Anchor.Adapters.ConfigLoader`, `ChangeSource`, `BeamSource`, `Tracing`, `InProcessTests`, `ProjectModuleSource`, `CoverageStore`, `BaselineStore`, `GitBase`, `SourceSource`, `GraphStore`, `TestExecution`, `SourceMutation`; adapters: `ConfigFile`, `GitChangeSource`, `BeamReader`, `CallTracer`, `SuiteRunner`, `ProjectModules`, `CoverageFile`, `RecordFile` (port `RecordStore`), `BaselineFile`, `GitShow`, `SourceReader`, `GraphArtifact`, `TestRunner`, `SourcePatcher`, `GitStatus`, `GitWorktree` (`lib/anchor/adapters/`); `GitEnv`, the environment the git adapters run git with (DND-5581); `Anchor.Sabotage.ExUnitFormatter` (`lib/anchor/sabotage/`) |
+| Managers | `Anchor.Managers.Lint`, `Anchor.Managers.AstBaseline`, `Anchor.Managers.Sabotage` (`.Runner`, `.Coverage`), `Anchor.Managers.Graph` (`.Request`), `Anchor.Managers.Explain` |
+| Side Effects | ports: `Anchor.Adapters.ConfigLoader`, `ChangeSource`, `BeamSource`, `Tracing`, `InProcessTests`, `ProjectModuleSource`, `CoverageStore`, `BaselineStore`, `GitBase`, `LintKeys`, `SourceSource`, `GraphStore`, `TestExecution`, `SourceMutation`; adapters: `ConfigFile`, `CredoKeys`, `GitChangeSource`, `BeamReader`, `CallTracer`, `SuiteRunner`, `ProjectModules`, `CoverageFile`, `RecordFile` (port `RecordStore`), `BaselineFile`, `GitShow`, `SourceReader`, `GraphArtifact`, `TestRunner`, `SourcePatcher`, `GitStatus`, `GitWorktree` (`lib/anchor/adapters/`); `GitEnv`, the environment the git adapters run git with (DND-5581); `Anchor.Sabotage.ExUnitFormatter` (`lib/anchor/sabotage/`) |
 | Domain | everything under `lib/anchor/domain/`, including `Anchor.Domain.Sabotage.*` (`Mutator`, `Operators`, `DiffHunks`, `FunctionSpans`, `Scope`, `CoverageMap`, `Record`, `RecordNaming`, `KillMap`, `ChangedTests`, `TestPath`: the one rule for a path handed to `mix test`, DND-5640) and `Anchor.Domain.Graph.*`, the graph rules (`GraphRules.*`), `Model`, `Classification`, `Interfaces`, `Explain`, `Subject`, `RuleShapes` |
 
 ADR 001's module map (*How this maps to Anchor*) lists every `lib/` module
@@ -147,7 +147,8 @@ Extension rule:
 Every rule type has exactly one engine, `@engine_by_type` in
 `Anchor.Domain.RuleSchema` (DND-5437): `:ast` (a Credo check) or `:graph`
 (`mix anchor.graph`, DND-5440; the graph types are `layering`, DND-5442,
-`context_acyclic`, DND-5445, and `aggregate_declarations`, DND-5476). A new rule type adds its entry there too (compilation
+`context_acyclic`, DND-5445, `aggregate_declarations`, DND-5476,
+`effects_match_bucket`, DND-5447, and `struct_owned_by_module_flow`, DND-5454). A new rule type adds its entry there too (compilation
 fails without it) and to the README table's Engine column (a test compares
 them). Credo never reports a `:graph` rule as unchecked
 (`RuleCoverage.unchecked/3`).
@@ -194,7 +195,13 @@ update, read back as `:maps.put/3`), so an edge names the Erlang function.
 `Anchor.Domain.Graph.Inlines` carries the table, derived from Elixir's own
 rewrite rules when Anchor compiles, never copied by hand (DND-5551). A rule
 that names a stdlib function matches every spelling, through
-`Inlines.spellings/1` (`Graph.calls_to/2` already does). A function with no Core
+`Inlines.spellings/1` (`Graph.calls_to/2` already does), and the AST engine
+matches the same set through `Anchor.Domain.FunctionRef.names/1` (DND-5613). A
+rewrite that adds a literal tag (`Process.monitor/1` is `:erlang.monitor(:process,
+_)`) is read back into its Elixir name by the walker, and a tagged name's
+spellings leave out a sibling with another tag; an inline no tag tells apart
+stays ambiguous; `Inlines.describe/1` names every candidate, for the rule that
+renders such a call edge in a finding. A function with no Core
 body (`core: nil`: a `defmacrop`, a `defp` nothing calls) has no edges read
 from it; `Graph.functions_without_core/1` counts them per module for the
 runner's summary, and a public one is also an `unreadable` entry
@@ -251,16 +258,30 @@ Every rule takes `enforcement: report | enforce`. A report finding is
 `Violation.enforcement: :report`: `Anchor.Managers.Lint.detect_file/5`
 detects report rules apart from enforced ones (one call as before when there
 are none), and `Anchor.Check.Base` gives their issues exit status 0 and low
-priority. Graph rules also take `baseline:`: `Anchor.Managers.Graph` reads it
+priority. A violation both passes found (a check's once-per-file report, such
+as an unresolvable `alias`) is kept once, enforced, naming both modes
+(`Anchor.Domain.EnforcementPasses.merge/2`, DND-5631). Graph rules also take `baseline:`: `Anchor.Managers.Graph` reads it
 through `Anchor.Adapters.BaselineStore` (`BaselineFile`; `create/3` opens
-`:exclusive`, never overwriting), and under `--base REF` its copy at `REF`
+`:exclusive`, never overwriting; after the write the file's real path must be
+under the root's, or it is removed and an issue, DND-5647, with `create/4`'s
+`before_write:` as the test seam), and under `--base REF` its copy at `REF`
 through `Anchor.Adapters.GitBase` (`GitShow`: argv only, the ref checked by
 `Anchor.Domain.Baseline.valid_ref?/1` first). `Anchor.Domain.Baseline` parses
 and compares (multisets: NEW, STALE, held; GREW against base), and
 `Anchor.Domain.Enforcement.judge/4` turns the result into findings. A key is
 `Anchor.Domain.ViolationKey.graph_key/3`: `<id or type>|<subject>|<detail>`,
-no line, no message. `baseline` on an `ast` rule is refused at load until
-Credo compares baselines.
+no line, no message.
+
+An `ast` rule takes `baseline:` too (DND-5632). `Anchor.Managers.Lint`
+detects each baselined rule on its own pass (so each finding carries
+`rule_id` and `ViolationKey.ast_key/3`, `<id>|<file>|<trigger>`), then
+`Anchor.Domain.AstBaseline.judge/4` compares it with the file over the files
+the run read (a narrowed run, `Check.Base.whole_file_set?/2` false, never
+reads an unread file's entry as STALE, and notes them). `Check.Base` puts
+`anchor_key`/`anchor_rule_id` on the Credo issue's `meta`. `mix
+anchor.baseline` (`Anchor.Managers.AstBaseline`) writes a baseline (`--write
+ID`, through the `Anchor.Adapters.LintKeys` port, `CredoKeys`: a muted
+`Credo.run/1`) and judges GREW (`--base REF`).
 
 ## The layering rule (DND-5442)
 
@@ -272,7 +293,16 @@ by default: a bucket and scope the caller's `calls` row lists).
 `Anchor.Domain.DynamicCalls.candidates/2`: every project module with a `def`
 of that name and arity (any arity for `nil`), behaviour or not, each judged
 as a static call; none means the call reaches no project module, and nothing
-is judged. A call with a computed function name (`{:dynamic, nil, ...}`) is
+is judged. `DynamicCalls.targets/2` narrows only on declared evidence
+(DND-5633, `Anchor.Domain.BehaviourReceiver`): a receiver parameter the
+caller's one `@spec` types as `B.t()` (`B` a project behaviour with `@type t
+:: module()` and the callback) reaches `B`'s implementers only; the summary
+counts the narrowed and fanned-out calls (`DynamicCalls.tally/1`). A port
+held in a Manager's options map gets that type through a small function with
+the spec (`Sabotage.Coverage.run_suite/2`). Every rule answers `narrows?/2`
+(a required callback, so asking never depends on what is loaded); a rule whose
+key can narrow (a cycle) says yes, so the narrower entry is a NOTE under
+`--base`, not GREW. A call with a computed function name (`{:dynamic, nil, ...}`) is
 one unresolved violation (`DynamicCalls.computed_name_message/2`), except a
 variable application
 (`kind: :apply`, receiver `:variable`: `fun.(x)`), the one closure form,
@@ -283,6 +313,14 @@ pair, at its first line. The canary has a framework bucket with
 `.anchor.yml` runs the rule with a baseline (Lint's calls into
 `Anchor.Check`, DND-1288, most of them dynamic calls fanned out to every
 check module exporting the function).
+
+
+The engine split (DND-5491): `layering` is the authority, and
+`RuleSchema.early_warning_of/1` names `no_direct_dependency` and
+`no_transitive_dependency` its write-time early warnings (a compile-time
+check: ast type to graph type). `Anchor.Domain.Parity` and
+`test/anchor/integration/layering_parity_test.exs` hold them equal over the
+macro-free `test/fixtures/parity/`; its divergence list only shrinks.
 
 ## The context_acyclic rule (DND-5445)
 
@@ -301,6 +339,46 @@ invert (fewest witnesses, ties lexical). The canary's cycle pair is
 contexts). Anchor's own `.anchor.yml` runs it with a baseline holding one
 five-context cycle through Lint's dynamic calls on the checks (DND-1288),
 and `Mutator`'s `apply/3`.
+
+## The effects_match_bucket rule (DND-5447)
+
+`Anchor.Domain.Effects.infer/2` gives every `def`/`defp` a role from what it
+causes: a root (`Anchor.Domain.Roots`: framework-bucket public functions,
+`architecture.roots`, external behaviour callbacks, which the runner reads
+through the `Anchor.Adapters.BehaviourSource` port (`BehaviourReader`) for
+`Roots.external_behaviours/1` and passes in as `:callbacks`, so `Roots` stays
+pure; the result keeps them as `Effects.roots`) is framework; a call of an effect primitive
+(`EffectPrimitives.primitive?/2`, its inference list, not demand's) itself or
+through its own module is adapters; reaching one through another module, or
+an unresolved call, is managers; else domain. Apply sites are read from
+`Model.cfa`, so the rule `needs: [:cfa, :effects]`; the runner computes
+`Model.effects` once and prints its counts in the summary. The rule judges
+public, non-root, non-`__name__` functions of `domain`/`adapters`/`managers`
+buckets with `infer: true`. Its canary is its own tree,
+`test/fixtures/graph_canary/effects/`, run by
+`test/anchor/integration/effects_canary_test.exs`. Anchor's own config
+declares its extra effects (tracing, `Path.wildcard`, `Mix.Task.run`) and a
+first-landing baseline.
+
+## The struct_owned_by_module_flow rule (DND-5454)
+
+The graph half of struct ownership; the AST rule `struct_owned_by_module`
+(DND-5453) is the literal half, and both read their scope from
+`Anchor.Domain.StructOwnership` (`owned_namespaces`, exact names with a
+prefix rule). `Anchor.Domain.StructTypes.index/1` reads `@type t` fields and
+`@spec` returns from `ModuleNode.types`/`specs` (one project struct, named
+exactly, or unknown). `Anchor.Domain.StructFlow` walks one function's Core
+with a lexical environment (a `case` body is evaluated in its clause's
+scope), finds a `fun`'s parameter from the `Map.update!/3`/`update/4` it is
+handed to by a fixpoint over seeds, and returns writes `%{struct, op, line,
+how}`. The rule owns a `defimpl` by its `__impl__(:for)` spec, or by its
+protocol when several impls share protocol, file and line (`for: [A, B]`).
+It skips the AST rule's sites: a line with another struct's `:build` or
+`:update` struct use, and a `:matched` write in a function whose clauses
+carry no macro `:context`. One violation per (function, line). In a `for`
+comprehension a `x = expr` line is a filter: bind a value that may be false
+with `x <- [expr]`. Fixtures that hold a `defimpl` put `@compile {:debug_info,
+true}` in its body (BeamFixtures adds it to `defmodule`s only).
 
 ## Higher-order flow (DND-5497)
 

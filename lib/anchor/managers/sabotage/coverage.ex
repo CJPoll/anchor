@@ -38,6 +38,7 @@ defmodule Anchor.Managers.Sabotage.Coverage do
   alias Anchor.Adapters.CallTracer
   alias Anchor.Adapters.CoverageFile
   alias Anchor.Adapters.GitStatus
+  alias Anchor.Adapters.InProcessTests
   alias Anchor.Adapters.ProjectModules
   alias Anchor.Adapters.SuiteRunner
   alias Anchor.Domain.Sabotage.CoverageMap
@@ -133,7 +134,7 @@ defmodule Anchor.Managers.Sabotage.Coverage do
       :ok ->
         result =
           try do
-            suite.run(Map.get(facts, :test_args, []))
+            run_suite(suite, Map.get(facts, :test_args, []))
           after
             :ok = tracer.stop()
           end
@@ -148,6 +149,12 @@ defmodule Anchor.Managers.Sabotage.Coverage do
          ]}
     end
   end
+
+  # The suite port is typed by its behaviour, so `mix anchor.graph` judges
+  # this call against InProcessTests' implementers only, never every module
+  # exporting run/1 (the Mix tasks among them; DND-5633).
+  @spec run_suite(InProcessTests.t(), [String.t()]) :: :passed | {:failed, String.t()}
+  defp run_suite(suite, args), do: suite.run(args)
 
   defp collected(tracer, collector, result) do
     case tracer.collected(collector) do
@@ -212,14 +219,18 @@ defmodule Anchor.Managers.Sabotage.Coverage do
     end
   end
 
-  defp finished(map, :passed, facts), do: {0, [CoverageMap.summary(map, facts.out)]}
+  # DND-5642: each window-leak warning follows the summary; it never changes
+  # the exit code.
+  defp finished(map, :passed, facts),
+    do: {0, [CoverageMap.summary(map, facts.out) | CoverageMap.leak_warnings(map)]}
 
   defp finished(map, {:failed, message}, facts) do
     {1,
-     [
-       CoverageMap.summary(map, facts.out),
-       "the suite failed (#{message}), so the map (written, suite_exit: 1) describes a " <>
-         "broken suite. Fix: make the suite green first"
-     ]}
+     [CoverageMap.summary(map, facts.out)] ++
+       CoverageMap.leak_warnings(map) ++
+       [
+         "the suite failed (#{message}), so the map (written, suite_exit: 1) describes a " <>
+           "broken suite. Fix: make the suite green first"
+       ]}
   end
 end

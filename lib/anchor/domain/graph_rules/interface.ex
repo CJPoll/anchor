@@ -59,6 +59,9 @@ defmodule Anchor.Domain.GraphRules.Interface do
   @impl Anchor.Domain.GraphRule
   def rule_type, do: :interface
 
+  @impl Anchor.Domain.GraphRule
+  def narrows?(_base_key, _key), do: false
+
   @impl Anchor.Domain.RuleShape
   def shape(_rule) do
     "a call into another context goes to that context's interface: a module of an " <>

@@ -18,6 +18,8 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
   # `Anchor.Managers.LintTest` and the e2e suite.
   #
   # Sabotage record: ../../sabotage_records/rule_schema-20260929-dnd_1290_empty_relation_list.md
+  # Sabotage record (DND-5632): ../../sabotage_records/baseline-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (DND-5447, DND-5454 rows): ../../sabotage_records/rule_schema-20261103-dnd_5447_graph_rules_c.md
   # The DND-1292 rows (glob metacharacters, the `***` match-all, `*?`):
   #   ../../sabotage_records/rule_schema-20260929-dnd_1292_glob_escape.md
   # The DND-1267 `forbidden_functions` rows:
@@ -168,11 +170,15 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
       {"positive: enforcement: :enforce", Map.put(base, "enforcement", ":enforce"), :accepted},
       {"enforcement: warn (neither)", Map.put(base, "enforcement", "warn"),
        {:refused, "`enforcement` must be report or enforce"}},
-      # An ast rule's findings are not compared with a baseline (Credo has no
-      # ratchet yet), so `baseline` there would ratchet nothing.
-      {"baseline on an ast rule (nothing reads it)",
+      # DND-5632: an ast rule's Credo check compares its findings with its
+      # baseline, under the same path rules as a graph rule's.
+      {"positive: baseline with an id",
+       Map.merge(base, %{"id" => "r", "baseline" => ".anchor/baselines/r.txt"}), :accepted},
+      {"baseline without id (entries start with it)",
        Map.put(base, "baseline", ".anchor/baselines/r.txt"),
-       {:refused, "`baseline` is read by graph rules only"}},
+       {:refused, "`baseline` needs the rule's `id`"}},
+      {"an absolute baseline path", Map.merge(base, %{"id" => "r", "baseline" => "/tmp/r.txt"}),
+       {:refused, "must be a path relative to the project root with no `..`"}},
       {"bucket on an ast rule (a graph selector)", Map.put(base, "bucket", "domain"),
        {:refused, "`bucket` applies to graph rules only"}}
     ]
@@ -427,11 +433,54 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
 
   # The types with no relation and no key of their own: they check every file
   # they select, so only the common rows apply.
-  # DND-5442, DND-5445, DND-5476: the graph types, none reading a key of its own.
+  # DND-5442, DND-5445, DND-5447, DND-5476: the graph types, none reading a key of its own.
   # Their rows are the graph common rows, loaded through
   # `Config.parse_config/1` with an `architecture:` section (`parse_one/1`),
   # plus what only a whole document decides.
-  defp table(type) when type in [:aggregate_declarations, :layering, :context_acyclic] do
+  defp table(type)
+       when type in [
+              :aggregate_declarations,
+              :layering,
+              :context_acyclic,
+              :effects_match_bucket
+            ],
+       do: graph_rows(type)
+
+  # DND-5454: the graph half of struct ownership reads the AST half's one
+  # optional key, `owned_namespaces`, under the same rules.
+  defp table(:struct_owned_by_module_flow) do
+    base = %{"type" => "struct_owned_by_module_flow", "bucket" => "domain"}
+    not_a_module = "is not an exact Elixir module name"
+
+    graph_rows(:struct_owned_by_module_flow) ++
+      [
+        {"positive: owned_namespaces", Map.put(base, "owned_namespaces", ["App"]), :accepted},
+        {"owned_namespaces: [] checks no struct", Map.put(base, "owned_namespaces", []),
+         {:refused, "`owned_namespaces: []` checks no struct"}},
+        {"an owned_namespaces glob", Map.put(base, "owned_namespaces", ["App.*"]),
+         {:refused, not_a_module}},
+        {"owned_namespaces that is a string", Map.put(base, "owned_namespaces", "App"),
+         {:refused, "`owned_namespaces` must be a list of non-empty strings"}}
+      ]
+  end
+
+  # DND-5443: interface's own key, `max_width`, a positive integer.
+  defp table(:interface) do
+    base = %{"type" => "interface", "bucket" => "domain"}
+
+    graph_rows(:interface)
+    |> Enum.concat([
+      {"positive: max_width", Map.put(base, "max_width", 12), :accepted},
+      {"max_width: 0 (fails every context with an interface)", Map.put(base, "max_width", 0),
+       {:refused, "`max_width` must be a positive integer"}},
+      {"max_width that is not an integer", Map.put(base, "max_width", "12"),
+       {:refused, "`max_width` must be a positive integer"}}
+    ])
+  end
+
+  defp table(type), do: common_rows(type)
+
+  defp graph_rows(type) do
     name = Atom.to_string(type)
     base = %{"type" => name, "bucket" => "domain"}
 
@@ -446,26 +495,6 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
        %{"type" => name, "pattern" => "MyApp.*"}, :accepted}
     ])
   end
-
-  # DND-5443: interface's own key, `max_width`, a positive integer.
-  defp table(:interface) do
-    base = %{"type" => "interface", "bucket" => "domain"}
-
-    :layering
-    |> table()
-    |> Enum.map(fn {label, rule, expected} ->
-      {label, Map.put(rule, "type", "interface"), expected}
-    end)
-    |> Enum.concat([
-      {"positive: max_width", Map.put(base, "max_width", 12), :accepted},
-      {"max_width: 0 (fails every context with an interface)", Map.put(base, "max_width", 0),
-       {:refused, "`max_width` must be a positive integer"}},
-      {"max_width that is not an integer", Map.put(base, "max_width", "12"),
-       {:refused, "`max_width` must be a positive integer"}}
-    ])
-  end
-
-  defp table(type), do: common_rows(type)
 
   defp extra_rows(:no_direct_dependency) do
     base = base(:no_direct_dependency)

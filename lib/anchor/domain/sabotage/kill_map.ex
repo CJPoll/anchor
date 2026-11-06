@@ -22,7 +22,9 @@ defmodule Anchor.Domain.Sabotage.KillMap do
   `mix test`'s argv, so `--opt`, `/abs`, `../x` and a non-test file are
   refused), naming the line (`{:error, {line, message}}`): a record it cannot
   read is never read as an empty map. Only `killed` rows are selected from;
-  a `timeout` row's killer is `(timeout)`, not a file.
+  a `timeout` row's killer is `(timeout)` (the run's bound) or
+  `(test timeout) file:line name` (an ExUnit per-test timeout, DND-5653),
+  never a bare file: no test killed it by an assertion.
   """
 
   alias Anchor.Domain.Sabotage.TestPath

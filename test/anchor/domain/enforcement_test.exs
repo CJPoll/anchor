@@ -4,10 +4,13 @@ defmodule Anchor.Domain.EnforcementTest do
   #
   # Sabotage record: ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
   # DND-5629 (a new rule id): ../../sabotage_records/baseline_rename-20261103-dnd_5441_graph_rules_a.md
+  # Sabotage record (DND-5633): ../../sabotage_records/baseline-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (FX-B, FX-D): ../../sabotage_records/graph_runner-20261103-dnd_5648_graph_followups.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Enforcement
   alias Anchor.Domain.GraphReport.Finding
+  alias Anchor.Domain.GraphRules.ContextAcyclic
 
   @path ".anchor/baselines/r.txt"
 
@@ -121,6 +124,46 @@ defmodule Anchor.Domain.EnforcementTest do
 
       assert note.message =~
                ~s|rules with a baseline at main that this config no longer has: "old_r"|
+    end
+
+    # DND-5633: a cycle that lost a context changes its key; the narrower
+    # entry replacing the removed one is a NOTE, not GREW.
+    test "an added entry narrowing a removed one is a report NOTE, not GREW" do
+      context = Map.put(context(rule(), "main"), :rule_module, ContextAcyclic)
+
+      {[note], _held} =
+        Enforcement.judge([finding("r|A,B")], ["r|A,B"], {:ok, ["r|A,B,C"]}, context)
+
+      assert note.enforcement == :report
+      assert note.file == @path
+      assert note.message =~ "NOTE: r|A,B in #{@path} narrows r|A,B,C"
+
+      # Positive control: the same files with no narrowing are GREW.
+      {[grew], _held} =
+        Enforcement.judge(
+          [finding("r|A,B")],
+          ["r|A,B"],
+          {:ok, ["r|A,B,C"]},
+          context(rule(), "main")
+        )
+
+      assert grew.enforcement == :enforce
+      assert grew.message =~ "was added to"
+    end
+
+    test "a narrowing of an entry still there is GREW (it replaced nothing)" do
+      context = Map.put(context(rule(), "main"), :rule_module, ContextAcyclic)
+
+      {standing, _held} =
+        Enforcement.judge(
+          [finding("r|A,B"), finding("r|A,B,C")],
+          ["r|A,B", "r|A,B,C"],
+          {:ok, ["r|A,B,C"]},
+          context
+        )
+
+      assert [%{enforcement: :enforce, message: message}] = standing
+      assert message =~ "r|A,B was added to"
     end
 
     test "a new rule id with nothing gone says so" do

@@ -50,6 +50,9 @@ defmodule Anchor.Domain.GraphRules.Layering do
   @impl Anchor.Domain.GraphRule
   def rule_type, do: :layering
 
+  @impl Anchor.Domain.GraphRule
+  def narrows?(_base_key, _key), do: false
+
   @impl Anchor.Domain.RuleShape
   def shape(_rule) do
     "every call between two project modules is one the architecture: calls matrix allows; " <>
@@ -78,7 +81,7 @@ defmodule Anchor.Domain.GraphRules.Layering do
 
   defp judge(%Call{from: from, to: {:dynamic, name, arity, _receiver}} = call, model) do
     model.graph
-    |> DynamicCalls.candidates({name, arity})
+    |> DynamicCalls.targets(call)
     |> Enum.flat_map(&static(from, {&1, name, arity}, call, model))
   end
 

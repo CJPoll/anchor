@@ -1,0 +1,29 @@
+# The effects_match_bucket canary tree (DND-5447): one compliant and one
+# violating module per judged bucket. The integration test
+# (test/anchor/integration/effects_canary_test.exs) compiles lib/ in the test
+# and runs the Manager over it.
+rules:
+  - type: effects_match_bucket
+    id: effects
+    paths: ["lib/effects/**/*.ex"]
+
+architecture:
+  contexts:
+    depth: 2
+  buckets:
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/effects/domain/**/*.ex"]
+    - name: managers
+      role: managers
+      select:
+        - paths: ["lib/effects/managers/**/*.ex"]
+    - name: adapters
+      role: adapters
+      select:
+        - paths: ["lib/effects/adapters/**/*.ex"]
+  calls:
+    domain: [domain]
+    managers: [managers, adapters, domain]
+    adapters: [adapters, domain]

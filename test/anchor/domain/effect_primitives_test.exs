@@ -76,4 +76,65 @@ defmodule Anchor.Domain.EffectPrimitivesTest do
       assert length(rows) == length(Enum.uniq(rows))
     end
   end
+
+  # DND-5447: effect inference reads a wider list (reads, clocks, randomness),
+  # matched through every source name of a Core call (DND-5613).
+  # Sabotage record: ../../sabotage_records/effects-20261103-dnd_5447_graph_rules_c.md
+  describe "primitive?/2 (DND-5447)" do
+    defp primitives(effects \\ [], modules \\ %{}),
+      do: EffectPrimitives.build(%{effects: effects}, %{modules: modules})
+
+    test "a default module primitive matches any of its functions" do
+      assert EffectPrimitives.primitive?(primitives(), {File, :read, 1})
+      assert EffectPrimitives.primitive?(primitives(), {:ets, :lookup, 2})
+    end
+
+    test "a function-level primitive matches only that function" do
+      assert EffectPrimitives.primitive?(primitives(), {:erlang, :send, 2})
+      refute EffectPrimitives.primitive?(primitives(), {:erlang, :element, 2})
+    end
+
+    test "a pure stdlib call is not a primitive (positive control for the module rows)" do
+      refute EffectPrimitives.primitive?(primitives(), {Enum, :map, 2})
+      refute EffectPrimitives.primitive?(primitives(), {Map, :put, 3})
+    end
+
+    test "a clock or randomness read is a primitive" do
+      assert EffectPrimitives.primitive?(primitives(), {DateTime, :utc_now, 0})
+      assert EffectPrimitives.primitive?(primitives(), {:rand, :uniform, 1})
+      assert EffectPrimitives.primitive?(primitives(), {:crypto, :strong_rand_bytes, 1})
+    end
+
+    test "a call Elixir inlined matches through its source name" do
+      # System.unique_integer/0 reaches Core as :erlang.unique_integer/0.
+      assert EffectPrimitives.primitive?(primitives(), {:erlang, :unique_integer, 0})
+      refute EffectPrimitives.primitive?(primitives(), {:erlang, :element, 2})
+    end
+  end
+
+  describe "build/2 (DND-5447)" do
+    test "config effects add to the defaults" do
+      primitives = EffectPrimitives.build(%{effects: ["Req"]}, %{modules: %{}})
+      assert EffectPrimitives.primitive?(primitives, {Req, :get, 1})
+      assert EffectPrimitives.primitive?(primitives, {File, :read, 1})
+    end
+
+    test "a module declaring the Ecto.Repo behaviour is a primitive" do
+      modules = %{App.Repo => %{behaviours: [Ecto.Repo]}, App.Other => %{behaviours: []}}
+      primitives = EffectPrimitives.build(%{effects: []}, %{modules: modules})
+
+      assert EffectPrimitives.primitive?(primitives, {App.Repo, :insert, 1})
+      refute EffectPrimitives.primitive?(primitives, {App.Other, :insert, 1})
+    end
+
+    test "config cannot remove a default" do
+      primitives = EffectPrimitives.build(%{effects: []}, %{modules: %{}})
+      assert EffectPrimitives.primitive?(primitives, {File, :read, 1})
+    end
+
+    test "the demand table is unchanged: a file read is no demand effect" do
+      refute EffectPrimitives.effect?({File, :read, 1}, [])
+      assert EffectPrimitives.effect?({File, :write, 2}, [])
+    end
+  end
 end

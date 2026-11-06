@@ -14,13 +14,16 @@ defmodule Anchor.Domain.Graph.Beam do
       backend's `debug_info(:core_v1, ...)`, the way Dialyzer reads it.
     * `:specs`, `:types` — `Code.Typespec.fetch_specs/1` and `fetch_types/1` of
       the binary, in Erlang abstract format (`[]` when the module has none).
+    * `:callbacks` — the `{name, arity}` of each `@callback` and
+      `@macrocallback` the module declares (`Code.Typespec.fetch_callbacks/1`,
+      sorted; `[]` for none), DND-5633.
 
   A beam that cannot be decoded is a `t:decode_error/0`, never a `%Beam{}`
   with empty fields.
   """
 
   @enforce_keys [:module, :app, :path]
-  defstruct [:module, :app, :path, :elixir, :core, specs: [], types: []]
+  defstruct [:module, :app, :path, :elixir, :core, specs: [], types: [], callbacks: []]
 
   @type t :: %__MODULE__{
           module: module(),
@@ -29,7 +32,8 @@ defmodule Anchor.Domain.Graph.Beam do
           elixir: map() | nil,
           core: :cerl.cerl() | nil,
           specs: [{{atom(), arity()}, [tuple()]}],
-          types: [{:type | :typep | :opaque, tuple()}]
+          types: [{:type | :typep | :opaque, tuple()}],
+          callbacks: [{atom(), arity()}]
         }
 
   @typedoc """

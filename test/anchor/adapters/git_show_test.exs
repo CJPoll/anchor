@@ -5,6 +5,7 @@ defmodule Anchor.Adapters.GitShowTest do
   #
   # Sabotage record: ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
   # DND-5628 (symlinks): ../../sabotage_records/baseline_symlink-20261103-dnd_5441_graph_rules_a.md
+  # Sabotage record (DND-5634): ../../sabotage_records/baseline-20261103-dnd_5648_graph_followups.md
   use ExUnit.Case, async: true
 
   alias Anchor.Adapters.GitShow
@@ -91,8 +92,19 @@ defmodule Anchor.Adapters.GitShowTest do
     {dir, file} = String.split_at(tree, 2)
     File.rm!(Path.join([root, ".git", "objects", dir, file]))
 
-    assert {:error, {:git, status, _out}} = GitShow.show(root, "main", ".anchor/baselines/r.txt")
-    assert status != 0
+    # DND-5634: git says why on its stderr, the OS process's, which reached
+    # the suite's output. The read runs in a child VM whose stderr this test
+    # reads and asserts, so the suite stays quiet.
+    ebin = Path.dirname(:code.which(GitShow))
+
+    code =
+      "IO.inspect(Anchor.Adapters.GitShow.show(#{inspect(root)}, \"main\", " <>
+        "\".anchor/baselines/r.txt\"))"
+
+    {out, 0} = System.cmd("elixir", ["-pa", ebin, "-e", code], stderr_to_stdout: true)
+    assert [message, result] = String.split(out, "\n", trim: true)
+    assert message == "error: Could not read #{tree}"
+    assert result =~ ~r/^\{:error, \{:git, [1-9]\d*, ""\}\}$/
   end
 
   # Review floor on d9a61de: with no git on the PATH, System.cmd raised and

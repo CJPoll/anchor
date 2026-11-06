@@ -1,0 +1,252 @@
+defmodule Anchor.Domain.BehaviourReceiver do
+  @moduledoc """
+  The behaviour a dynamic call's receiver is declared to implement (DND-5633)
+  — a **Domain** module (ADR 001), pure over the graph.
+
+  A dynamic call `recv.f(args)` reaches whatever module `recv` holds at run
+  time, so `Anchor.Domain.DynamicCalls` judges it against every project module
+  exporting `f/arity`. The 0-CFA (`Anchor.Domain.Cfa`) follows closures, not
+  module atoms, so it leaves a module receiver `any`; a receiver that is a port
+  read from options (`Keyword.get(opts, :port, Default)`) is `any` in any case,
+  since the options come from outside. This module is the second way to narrow
+  such a call, and it narrows only on declared evidence, never on the function
+  name alone:
+
+    * `recv` is a parameter of the calling function, used as nothing but that
+      parameter: no other binding in the function (a nested `fn`, a `let`, a
+      clause pattern) has its name, and every call or capture of `f/arity` in
+      the function on a variable receiver is on such a parameter;
+    * the function has exactly one `@spec`, and it types each of those
+      parameters as `B.t()` for one module `B` of the project;
+    * `B` declares `@type t :: module()` and `f/arity` among its
+      `@callback`s;
+    * at least one project module implements it. A behaviour whose only
+      implementers are test doubles or dependencies says nothing about which
+      project module the call reaches, and an empty target list would judge
+      the call against nothing.
+
+  A parameter's name must also hold one position in every clause: Elixir
+  names a variable alike in each clause, so `def f(x, suite)` and
+  `def f(suite, x)` share `suite` at two positions, and neither is evidence.
+
+  Then the call's targets are the project modules that declare `@behaviour B`
+  and export `f/arity` (`implementers/3`). Anything short of that is `:none`,
+  and the call keeps the full over-approximation. A `@spec` is a declaration,
+  not a proof: a caller can still pass any module, and Dialyzer, not Anchor,
+  checks the spec against its callers.
+  """
+
+  alias Anchor.Domain.Graph
+  alias Anchor.Domain.Graph.Call
+  alias Anchor.Domain.Graph.FunctionNode
+  alias Anchor.Domain.Graph.ModuleNode
+
+  @doc """
+  `{:ok, behaviour}` when `call` (a dynamic call on a variable, with a known
+  name and arity) is on a parameter the caller's `@spec` types as
+  `behaviour.t()`, a project behaviour with that callback; `:none` otherwise.
+  """
+  @spec behaviour(Graph.t(), Call.t()) :: {:ok, module()} | :none
+  def behaviour(%Graph{} = graph, %Call{from: from, to: {:dynamic, name, arity, :variable}})
+      when is_atom(name) and name != nil and is_integer(arity) do
+    with {:ok, node, function} <- caller(graph, from),
+         {:ok, indexes} <- receiver_params(function.core, name, arity),
+         {:ok, behaviour} <- spec_behaviour(node, from, indexes),
+         true <- contract?(Map.get(graph.modules, behaviour), name, arity),
+         [_ | _] <- implementers(graph, behaviour, {name, arity}) do
+      {:ok, behaviour}
+    else
+      _no_evidence -> :none
+    end
+  end
+
+  def behaviour(%Graph{}, %Call{}), do: :none
+
+  @doc "The project modules declaring `@behaviour behaviour` that export `name/arity`, sorted."
+  @spec implementers(Graph.t(), module(), {atom(), arity()}) :: [module()]
+  def implementers(%Graph{modules: modules}, behaviour, {name, arity}) do
+    modules
+    |> Enum.filter(fn {_module, %ModuleNode{behaviours: behaviours, functions: functions}} ->
+      behaviour in behaviours and
+        match?(%FunctionNode{kind: :def}, Map.get(functions, {name, arity}))
+    end)
+    |> Enum.map(fn {module, _node} -> module end)
+    |> Enum.sort()
+  end
+
+  defp caller(graph, {module, name, arity}) do
+    with %ModuleNode{functions: functions} = node <- Map.get(graph.modules, module),
+         %FunctionNode{core: core} = function when core != nil <-
+           Map.get(functions, {name, arity}) do
+      {:ok, node, function}
+    else
+      _missing -> :none
+    end
+  end
+
+  # The parameter positions of the function's every `call V:'name'(args)` on
+  # a variable `V` with `arity` arguments, and every capture `&V.name/arity`
+  # (`Anchor.Domain.Graph.CoreWalker` records both as the one edge); `:none`
+  # when one is on a variable that is not a parameter, or a parameter's name
+  # is bound again inside.
+  defp receiver_params(core, name, arity) do
+    {aliases, nested, inner} = parameters(core)
+    rebound = inner |> Enum.map(&rebound/1) |> Enum.reduce(nested, &MapSet.union/2)
+
+    receivers =
+      Enum.flat_map(inner, fn tree ->
+        :cerl_trees.fold(
+          fn node, acc ->
+            case receiver_var(node, name, arity) do
+              nil -> acc
+              receiver -> [receiver | acc]
+            end
+          end,
+          [],
+          tree
+        )
+      end)
+
+    indexes = Enum.map(receivers, &Map.get(aliases, &1))
+
+    cond do
+      receivers == [] -> :none
+      nil in indexes -> :none
+      Enum.any?(receivers, &MapSet.member?(rebound, &1)) -> :none
+      true -> {:ok, Enum.uniq(indexes)}
+    end
+  end
+
+  # The names that hold parameter `i`, `%{name => i}`: the Core parameters
+  # themselves and, since Elixir compiles a function's clauses into one
+  # `case <_0, _1> of <Suite, Args> -> ...`, a clause pattern that is a bare
+  # variable at position `i`. A name that is a bare variable at different
+  # positions in different clauses holds no one parameter, so it is left out
+  # (and a call on it is `:none`). Also the variables nested deeper in those
+  # patterns (bound, so never a parameter's alias) and the trees left to walk
+  # (each clause's guard and body, or the whole body).
+  defp parameters(core) do
+    params = core |> :cerl.fun_vars() |> Enum.map(&:cerl.var_name/1)
+    direct = params |> Enum.with_index() |> Map.new()
+    body = :cerl.fun_body(core)
+
+    if dispatch?(body, params) do
+      clauses = :cerl.case_clauses(body)
+
+      positions =
+        for clause <- clauses,
+            {pattern, index} <- Enum.with_index(:cerl.clause_pats(clause)),
+            :cerl.is_c_var(pattern),
+            reduce: %{} do
+          acc -> Map.update(acc, :cerl.var_name(pattern), [index], &Enum.uniq([index | &1]))
+        end
+
+      aliases = for {name, [index]} <- positions, into: direct, do: {name, index}
+
+      nested =
+        for clause <- clauses,
+            pattern <- :cerl.clause_pats(clause),
+            not :cerl.is_c_var(pattern),
+            name <- :cerl_trees.variables(pattern),
+            into: MapSet.new(),
+            do: name
+
+      inner = Enum.flat_map(clauses, &[:cerl.clause_guard(&1), :cerl.clause_body(&1)])
+      {aliases, nested, inner}
+    else
+      {direct, MapSet.new(), [body]}
+    end
+  end
+
+  # `case <_0, ..., _n> of ...` over exactly the parameters, in order.
+  defp dispatch?(body, params) do
+    :cerl.is_c_case(body) and
+      body |> :cerl.case_arg() |> argument_names() == params
+  end
+
+  defp argument_names(arg) do
+    vars = if :cerl.is_c_values(arg), do: :cerl.values_es(arg), else: [arg]
+    if Enum.all?(vars, &:cerl.is_c_var/1), do: Enum.map(vars, &:cerl.var_name/1), else: nil
+  end
+
+  # The variable a direct call or a capture of `name/arity` is on, or nil.
+  defp receiver_var(node, name, arity) do
+    if :cerl.is_c_call(node),
+      do: call_receiver(:cerl.call_module(node), :cerl.call_name(node), node, name, arity),
+      else: nil
+  end
+
+  defp call_receiver(module, called, node, name, arity) do
+    cond do
+      :cerl.is_c_var(module) and literal?(called, name) and :cerl.call_arity(node) == arity ->
+        :cerl.var_name(module)
+
+      literal?(module, :erlang) and literal?(called, :make_fun) ->
+        capture_receiver(:cerl.call_args(node), name, arity)
+
+      true ->
+        nil
+    end
+  end
+
+  defp capture_receiver([module, fun, fun_arity], name, arity) do
+    if :cerl.is_c_var(module) and literal?(fun, name) and literal?(fun_arity, arity),
+      do: :cerl.var_name(module),
+      else: nil
+  end
+
+  defp capture_receiver(_args, _name, _arity), do: nil
+
+  defp literal?(node, value), do: :cerl.is_literal(node) and :cerl.concrete(node) == value
+
+  # Every variable name bound inside the body: a nested fun's parameters, a
+  # let's variables, a clause's pattern variables, a try's and a receive's.
+  defp rebound(body) do
+    :cerl_trees.fold(
+      fn node, acc -> Enum.reduce(bound_by(node), acc, &MapSet.put(&2, &1)) end,
+      MapSet.new(),
+      body
+    )
+  end
+
+  defp bound_by(node) do
+    case :cerl.type(node) do
+      :fun -> names(:cerl.fun_vars(node))
+      :let -> names(:cerl.let_vars(node))
+      :clause -> node |> :cerl.clause_pats() |> Enum.flat_map(&:cerl_trees.variables/1)
+      :try -> names(:cerl.try_vars(node) ++ :cerl.try_evars(node))
+      :catch -> []
+      _other -> []
+    end
+  end
+
+  defp names(vars), do: Enum.map(vars, &:cerl.var_name/1)
+
+  # The one module `B` the function's one spec types every receiver position
+  # as `B.t()`.
+  defp spec_behaviour(%ModuleNode{specs: specs}, {_module, name, arity}, indexes) do
+    with [{:"::", _meta, [{^name, _call_meta, args}, _return]}] when length(args) == arity <-
+           Map.get(specs, {name, arity}),
+         [behaviour] <- indexes |> Enum.map(&remote_t(Enum.at(args, &1))) |> Enum.uniq(),
+         true <- is_atom(behaviour) and behaviour != nil do
+      {:ok, behaviour}
+    else
+      _other -> :none
+    end
+  end
+
+  defp remote_t({{:., _dot_meta, [module, :t]}, _meta, []}) when is_atom(module), do: module
+  defp remote_t(_type), do: nil
+
+  # A project module declaring `@type t :: module()` and the callback.
+  defp contract?(%ModuleNode{types: types, callbacks: callbacks}, name, arity) do
+    {name, arity} in callbacks and module_type?(Map.get(types, {:t, 0}))
+  end
+
+  defp contract?(nil, _name, _arity), do: false
+
+  defp module_type?({:type, {:"::", _meta, [{:t, _t_meta, []}, {:module, _m_meta, []}]}}),
+    do: true
+
+  defp module_type?(_other), do: false
+end
