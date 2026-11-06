@@ -449,7 +449,8 @@ defmodule Anchor.Domain.Sabotage.Report do
 
       view.mode == :enforce ->
         "behaviour locality: FAILED, #{counts} against #{view.path}. Fix: bring a NEW behaviour " <>
-          "back to fewer directories, and delete the lines of a STALE one"
+          "back to fewer directories, delete the lines of a STALE one, and remove the lines " <>
+          "a GREW one added"
 
       true ->
         "behaviour locality: #{counts} against #{view.path} (report mode, not failing)"

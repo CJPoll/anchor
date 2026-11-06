@@ -13,7 +13,8 @@ defmodule Anchor.Managers.Sabotage.Behaviours do
     4. The module-to-file index from the `lib` sources. It only names a directory
        where a kill row names no file, and for display, so an unreadable source file
        is a note, never a failure.
-    5. `Anchor.Domain.Sabotage.BehaviourMap.build/3`.
+    5. `Anchor.Domain.Sabotage.BehaviourMap.build/3`. No behaviour confirmed, whatever
+       the rows said, is exit 3 too, before any baseline is read or written.
     6. `--write-baseline` creates the baseline (exit 0), or exits 2 over an existing
        one, leaving it as it was.
     7. Otherwise the baseline is read and compared. A file named in the config that is
@@ -65,9 +66,12 @@ defmodule Anchor.Managers.Sabotage.Behaviours do
          {:ok, coverage} <- coverage(facts, config, ports),
          {:ok, rows} <- kill_rows(facts.root, config, ports) do
       {index, notes} = source_index(facts.root, ports)
-      map = BehaviourMap.build(coverage, rows, index)
       path = config.behaviour_locality_baseline || @default_baseline
-      judged(facts, config, ports, %{map: map, path: path, notes: notes})
+
+      case BehaviourMap.build(coverage, rows, index) do
+        %{behaviours: []} = map -> nothing_confirmed(map)
+        map -> judged(facts, config, ports, %{map: map, path: path, notes: notes})
+      end
     else
       {:refuse, code, message} -> {code, [message]}
     end
@@ -172,6 +176,20 @@ defmodule Anchor.Managers.Sabotage.Behaviours do
       "behaviours: #{length(unread)} source files could not be read (first: #{first}); " <>
         "their modules show as #{BehaviourMap.generated()} where no kill row names a file"
     ]
+  end
+
+  # -- 5. nothing to judge -------------------------------------------------------
+
+  # Killed rows that line up with no test measure nothing: an empty ratchet would read
+  # clean, a full one all STALE, and --write-baseline would write it empty.
+  defp nothing_confirmed(map) do
+    {3,
+     [
+       "COULD NOT MEASURE: nothing confirms any cause yet: " <>
+         "#{length(map.unmatched_killers)} killers name no test of the map, and " <>
+         "#{map.not_executed} kills are of a function the map says their test never executed. " <>
+         "Fix: rebuild the map from the current tree, or run mix anchor.sabotage run and land its record"
+     ]}
   end
 
   # -- 6..8. the baseline --------------------------------------------------------

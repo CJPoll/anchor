@@ -244,19 +244,29 @@ defmodule Anchor.Domain.Sabotage.BehaviourMapTest do
     end
   end
 
-  describe "the ratchet, through Baseline.compare/2" do
-    test "a count that grew is one NEW" do
-      assert %{new: [@t_key], stale: []} =
-               Baseline.compare(List.duplicate(@t_key, 3), List.duplicate(@t_key, 2))
+  describe "the ratchet: a built map's keys, through Baseline.compare/2" do
+    setup do
+      rows = [
+        killed("A.f/0", "lib/a/a.ex"),
+        killed("B.g/0", "lib/b/b.ex"),
+        killed("C.h/0", "lib/c/c.ex")
+      ]
+
+      built = BehaviourMap.build(map([test_ref(["A.f/0", "B.g/0", "C.h/0"])]), rows, %{})
+      {:ok, keys: BehaviourMap.locality_keys(built)}
     end
 
-    test "a count that shrank is one STALE" do
-      assert %{new: [], stale: [@t_key]} = Baseline.compare([@t_key], List.duplicate(@t_key, 2))
+    test "a behaviour that reaches a third directory is one NEW", %{keys: keys} do
+      assert %{new: [@t_key], stale: []} = Baseline.compare(keys, List.duplicate(@t_key, 2))
     end
 
-    test "the same count is clean" do
-      keys = List.duplicate(@t_key, 2)
-      assert %{new: [], stale: [], held: ^keys} = Baseline.compare(keys, keys)
+    test "a behaviour that reaches one fewer is one STALE", %{keys: keys} do
+      assert %{new: [], stale: [@t_key]} = Baseline.compare(keys, List.duplicate(@t_key, 4))
+    end
+
+    test "the same reach is clean", %{keys: keys} do
+      assert %{new: [], stale: [], held: ^keys} =
+               Baseline.compare(keys, List.duplicate(@t_key, 3))
     end
   end
 

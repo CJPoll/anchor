@@ -243,15 +243,20 @@ defmodule Anchor.Managers.GraphDemandTest do
   test "a crashed flow analysis: the rule reports it and the demand analysis is not run", %{
     beams: beams
   } do
+    test = self()
+
     report =
       run([sinks()], beams,
         cfa: fn _graph -> raise "cfa blew up" end,
-        demand: fn _g, _c, _e -> raise "must not run" end
+        demand: fn _g, _c, _e ->
+          send(test, :demand_ran)
+          raise "must not run"
+        end
       )
 
     assert [issue] = report.findings
     assert issue.message =~ "the higher-order flow analysis it needs"
-    refute issue.message =~ "must not run"
+    refute_received :demand_ran
   end
 
   test "a crashed effect inference does not stop a rule that needs only demand", %{beams: beams} do

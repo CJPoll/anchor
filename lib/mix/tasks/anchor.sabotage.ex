@@ -112,8 +112,8 @@ defmodule Mix.Tasks.Anchor.Sabotage do
   STALE or GREW, and in either mode a baseline named in the config that is absent,
   or a malformed one; 2 usage, or `--write-baseline` over an existing file;
   3 `COULD NOT MEASURE` (no loadable `sabotage:` config, no usable coverage map or
-  one with no tests, a record that cannot be read, no `killed` row anywhere, the
-  baseline unreadable here or at `--base`).
+  one with no tests, a record that cannot be read, no `killed` row anywhere or none
+  that confirms a behaviour, the baseline unreadable here or at `--base`).
 
   ## coverage (DND-5474)
 

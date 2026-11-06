@@ -3,7 +3,7 @@
 - **Domain:** sabotage
 - **Branch:** dnd-5470-param-sink-locality
 - **Date:** 2026-11-06
-- **Code under test:** `Anchor.Domain.Sabotage.BehaviourMap`, `Anchor.Domain.Sabotage.Report`'s behaviours view, `Anchor.Managers.Sabotage.Behaviours`, the `behaviour_locality_*` keys of `Anchor.Domain.Sabotage.Config`, `Anchor.Adapters.SourceReader.list/1`, `CoverageMap.check/1`'s name, and `Mix.Tasks.Anchor.Sabotage.behaviours_facts/1`
+- **Code under test:** `Anchor.Domain.Sabotage.BehaviourMap`, `Anchor.Domain.Sabotage.Report`'s behaviours view, `Anchor.Managers.Sabotage.Behaviours`, the `behaviour_locality_*` keys of `Anchor.Domain.Sabotage.Config`, `Anchor.Adapters.SourceReader.list/1`, `CoverageMap.check/1`'s name and `validate/1`'s refusal, and `Mix.Tasks.Anchor.Sabotage.behaviours_facts/1`
 - **Suite run:** each mutation ran `mix test --timeout 2000 --max-cases 2 <its test files>` inside one `test-slot`, by a driver that applied it, ran the files and restored the source. The checkout's absolute path in the output reads `<worktree>`.
 
 Every mutation in the first table reddens a test, and so does every row of `## Third run`; each section shows the first failure, cut at 70 lines. BH-A, BH-B and BH-C are the three breaks the QA plan requires: executed causes instead of confirmed ones, the line in the test key, a generated module counted as a directory.

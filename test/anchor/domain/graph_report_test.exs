@@ -12,6 +12,7 @@ defmodule Anchor.Domain.GraphReportTest do
   # DND-5443 (interface width):
   #   ../../sabotage_records/interface-20261103-dnd_5443_graph_rules_b.md
   # Sabotage record (DND-5633): ../../sabotage_records/graph_runner-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (DND-5470): ../../sabotage_records/parameter_reaches_sink-20261106-dnd_5470_param_sink_locality.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.GraphReport

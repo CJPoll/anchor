@@ -190,6 +190,45 @@ defmodule Anchor.Managers.SabotageBehavioursTest do
       assert line =~ "the record test/sabotage_records/r.md, line 2"
     end
 
+    test "killed rows that confirm no behaviour: exit 3 in both modes, never clean" do
+      gone = """
+      ```anchor-kills
+      # id\tfile\tmfa\toperator\tstatus\tkillers
+      a\tlib/a/a.ex\tA.f/0\top\tkilled\ttest/gone_test.exs:1 test gone
+      b\tlib/b/b.ex\tB.g/0\top\tkilled\ttest/u_test.exs:3 test u
+      ```
+      """
+
+      for overrides <- [%{}, %{behaviour_locality_enforcement: :enforce}] do
+        config(overrides)
+        coverage_read()
+        records(gone)
+        sources()
+
+        assert {3, [line]} = Sabotage.behaviours(facts(), @opts)
+        assert line =~ "COULD NOT MEASURE: nothing confirms any cause yet"
+        assert line =~ "1 killers name no test of the map"
+        assert line =~ "1 kills are of a function the map says their test never executed"
+        assert line =~ "Fix: rebuild the map from the current tree"
+      end
+    end
+
+    test "--write-baseline writes no empty ratchet when nothing confirms a behaviour" do
+      config()
+      coverage_read()
+
+      records("""
+      ```anchor-kills
+      # id\tfile\tmfa\toperator\tstatus\tkillers
+      a\tlib/a/a.ex\tA.f/0\top\tkilled\ttest/gone_test.exs:1 test gone
+      ```
+      """)
+
+      sources()
+
+      assert {3, [_line]} = Sabotage.behaviours(facts(%{write_baseline: true}), @opts)
+    end
+
     test "a baseline that cannot be read for another reason" do
       measured()
       baseline({:error, :outside_root})
