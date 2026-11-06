@@ -5,6 +5,7 @@ defmodule Anchor.Domain.Graph.InlinesTest do
   # and every stdlib name matches both spellings.
   #
   # Sabotage record: ../../../sabotage_records/inlines-20261103-dnd_5551_graph_hardening.md
+  # Sabotage record (DND-5613): ../../../sabotage_records/inlines-20261103-dnd_5447_graph_rules_c.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Graph.Inlines
@@ -80,6 +81,57 @@ defmodule Anchor.Domain.Graph.InlinesTest do
     test "a function with no other spelling is only itself" do
       assert Inlines.spellings({Map, :get, 2}) == [{Map, :get, 2}]
       assert Inlines.spellings({:maps, :get, 3}) == [{:maps, :get, 3}]
+    end
+  end
+
+  # DND-5613: an inline whose rewrite adds a literal argument (a tag) is told
+  # apart from its siblings by that tag.
+  describe "tags/0 and spellings/1 of tagged inlines (DND-5613)" do
+    test "the tag table holds each rewrite's literal arguments by position" do
+      assert Inlines.tag({Process, :monitor, 1}) == [{0, :process}]
+      assert Inlines.tag({Port, :monitor, 1}) == [{0, :port}]
+      assert Inlines.tag({Process, :monitor, 2}) == [{0, :process}]
+      assert Inlines.tag({Float, :to_string, 1}) == [{1, [:short]}]
+    end
+
+    test "the tag table is derived from Elixir's rules, not copied" do
+      exports =
+        for module <- Application.spec(:elixir, :modules),
+            String.starts_with?(Atom.to_string(module), "Elixir."),
+            do: {module, module.module_info(:exports)}
+
+      assert Inlines.tags() == Derive.tags(exports)
+    end
+
+    test "an untagged inline has no tag (positive control: Map.put/3, Bitwise.band/2)" do
+      assert Inlines.tag({Map, :put, 3}) == []
+      assert Inlines.tag({Bitwise, :band, 2}) == []
+      assert Derive.tag(Map, :put, 3) == []
+    end
+
+    test "a tagged name's spellings leave out a sibling with another tag" do
+      assert Inlines.spellings({Process, :monitor, 1}) ==
+               [{Process, :monitor, 1}, {:erlang, :monitor, 2}]
+
+      assert Inlines.spellings({Port, :monitor, 1}) ==
+               [{Port, :monitor, 1}, {:erlang, :monitor, 2}]
+    end
+
+    test "the Erlang name of a tagged inline spells every Elixir name" do
+      assert Inlines.spellings({:erlang, :monitor, 2}) ==
+               [{Port, :monitor, 1}, {Process, :monitor, 1}, {:erlang, :monitor, 2}]
+    end
+
+    test "tagged_source/2 names the one Elixir name whose tag the literal arguments hold" do
+      assert Inlines.tagged_source({:erlang, :monitor, 2}, [{:ok, :process}, :error]) ==
+               {Process, :monitor, 1}
+
+      assert Inlines.tagged_source({:erlang, :monitor, 2}, [{:ok, :port}, :error]) ==
+               {Port, :monitor, 1}
+
+      assert Inlines.tagged_source({:erlang, :monitor, 2}, [:error, :error]) == nil
+      assert Inlines.tagged_source({:erlang, :monitor, 2}, [{:ok, :time_offset}, :error]) == nil
+      assert Inlines.tagged_source({:maps, :put, 3}, [:error, :error, :error]) == nil
     end
   end
 

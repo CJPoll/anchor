@@ -5,6 +5,11 @@
 Accepted. Ported from walt_ui `backend/adrs/017-sabotage-records-one-file-per-run.md`
 on 2026-09-12, adapted for a single Mix library.
 
+Amended 2026-11-03 (DND-5643): records the runner generates open with a
+summary table above the per-mutant sections. Standard unchanged — see
+"Amendment: generated records open with a summary table" under Required
+content.
+
 ## Context
 
 ADR 002 states the rule that produces these records: *a test is not finished
@@ -147,6 +152,16 @@ record replayable:
   file: a mutation to `Anchor.DependencyAnalyzer` is frequently verified by a
   check's test file. Naming the suite here is what lets a later reader re-apply
   the mutation from the header alone.
+
+#### Amendment: generated records open with a summary table (2026-11-03, DND-5643)
+
+A record `mix anchor.sabotage run` generates carries both forms. A
+`## Summary` table under the header gives one row per mutant run (id,
+function, mutation, status, killer count), so a reader sees the whole run at
+once; the per-mutant sections below it keep the verbatim failure strings this
+section requires. Neither replaces the other, and a hand-written record still
+needs only the body above. The standard is unchanged: the table is an index
+over the sections, never a substitute for a verbatim string.
 
 ### No index file
 
