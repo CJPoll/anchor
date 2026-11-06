@@ -64,12 +64,15 @@ defmodule Spike.KCase do
   # relabels anything.
   test "a hot, leaves a process" do
     for n <- 1..@hot, do: Hot.f(n)
-    go = :atomics.new(2, [])
+    go = :atomics.new(3, [])
     :persistent_term.put(:spike_k_flag, go)
     srv = :persistent_term.get(:spike_k_srv)
 
     spawn(fn ->
       Hot.h(0)
+      # Test A ends only after this call: without the wait, a run where A closed first
+      # read h as a leak (run 42170921422), which is true of that run and of no other.
+      :atomics.put(go, 3, 1)
       wait_flag(go, 1)
       # QA row 4: f is silenced inside A and again inside B; this is a leak of A's.
       Hot.f(0)
@@ -78,6 +81,7 @@ defmodule Spike.KCase do
       wait_flag(go, 2)
     end)
 
+    wait_flag(go, 3)
     assert :atomics.get(go, 1) == 0
   end
 
