@@ -1,0 +1,287 @@
+defmodule Anchor.Domain.Aggregates.WriteSitesDefaultTest do
+  # DND-5889: the walker's default. Every call and apply it reaches is a site, a
+  # followed project call, a call the no-write list clears, or a gap at its line.
+  #
+  # Sabotage record: ../../../sabotage_records/aggregates-20261106-dnd_5889_default_deny_walker.md
+  use ExUnit.Case, async: true
+
+  import Anchor.Test.WriteFixtures
+
+  alias Anchor.Domain.Aggregates.Analysis
+  alias Anchor.Domain.Aggregates.Config
+  alias Anchor.Domain.Aggregates.Scope
+  alias Anchor.Domain.Aggregates.WriteSites
+  alias Anchor.Domain.FunctionRef
+  alias Anchor.Test.BeamFixtures
+
+  @ns AnchorFixtures.WriteSitesDefaultTest
+  @s Module.concat(@ns, S)
+  @repo Module.concat(@ns, Repo)
+  @d Module.concat(@ns, D)
+  @uow Module.concat(@ns, UoW)
+  # No module of this name exists: a dependency, as Anchor sees one.
+  @lib Module.concat(@ns, Lib)
+  @listed Module.concat(@ns, Listed)
+
+  @source """
+  defmodule #{inspect(@uow)} do
+    def transaction(_first, _second), do: :ok
+  end
+
+  defmodule #{inspect(@d)} do
+    alias #{inspect(@repo)}
+    alias #{inspect(@s)}
+    alias #{inspect(@lib)}
+    alias #{inspect(@listed)}
+    alias #{inspect(@uow)}
+    alias Ecto.Multi
+
+    def d4(x), do: Repo.transaction(fn -> Lib.save(x) end)
+    def d5(l), do: Repo.transaction(fn -> Enum.count(l) end)
+    def d6(pid), do: Repo.transaction(fn -> GenServer.call(pid, :save) end)
+    def d7a(m, f, a), do: Repo.transaction(fn -> apply(m, f, a) end)
+    def d7b(f), do: Repo.transaction(fn -> f.() end)
+    def d8a(m), do: Repo.transaction(fn -> Keyword.put(m, :k, fn -> :ok end) end)
+    def d8b(m), do: Repo.transaction(fn -> Keyword.put(m, :k, &own/0) end)
+    def d8c, do: Repo.transaction(fn -> Listed.run(fn -> :ok end) end)
+    def d8d(x), do: Repo.transaction(fn -> Listed.run(x) end)
+    def d8e(l), do: Repo.transaction(fn -> Enum.map(l, fn x -> x end) end)
+    def own, do: :ok
+
+    def d9, do: Repo.transaction(fn -> first() end)
+    def d9_clean, do: Repo.transaction(fn -> Repo.insert(%S{}) end)
+    defp first, do: second()
+    defp second, do: Lib.save(1)
+
+    def d10(x), do: Lib.save(x)
+    def d10_caller(x), do: d10(x)
+    def d10_clean(l), do: Enum.count(l)
+
+    def d11a, do: Repo.transaction(fn -> Repo.insert(%S{}) end)
+    def d11b, do: Multi.new() |> Multi.insert(:a, %S{}) |> Repo.transaction()
+    def d11c, do: Repo.transaction(fn -> Lib.soft_delete(%S{}) end)
+    def d11d, do: Repo.transaction(fn -> Repo.query!("DELETE FROM s") end)
+    def d11e(q), do: Repo.transaction(fn -> Repo.all(q) end)
+
+    def d12a(l), do: Repo.transaction(fn -> Enum.map(l, &Lib.save/1) end)
+    def d12b(l), do: Repo.transaction(fn -> Enum.map(l, &String.upcase/1) end)
+    def d12c, do: Repo.transaction(fn -> &Enum.map/2 end)
+    def d12d, do: Repo.transaction(fn -> &Multi.insert/3 end)
+    def d12e, do: Repo.transaction(fn -> &Repo.all/1 end)
+
+    def d13a(x), do: Repo.transaction(fn -> apply(Lib, :save, [x]) end)
+    def d13b(m), do: Repo.transaction(fn -> apply(Map, :put, [m, :k, 1]) end)
+    def d13c, do: Repo.transaction(fn -> apply(Enum, :to_list, []) end)
+
+    def d14a(g), do: UoW.transaction(fn -> Repo.insert(%S{}) end, g)
+    def d14b, do: UoW.transaction(fn -> Repo.insert(%S{}) end, :log)
+
+    def d15, do: Repo.transaction(fn -> Multi.new() |> Multi.not_a_function() end)
+    def d15b(m), do: Repo.transaction(fn -> Multi.put(m, :k, fn -> :ok end) end)
+    def d15c(m), do: Repo.transaction(fn -> {Multi.to_list(m), Multi.put(m, :k, 1)} end)
+
+    def d16, do: Repo.transaction(fn -> (fn -> Repo.insert(%S{}) end).() end)
+    def d16b, do: (fn -> Repo.insert(%S{}) end).()
+    def d17(pid), do: GenServer.call(pid, :save)
+    def d18, do: Task.async(fn -> :ok end)
+  end
+  """
+
+  setup_all do
+    source = schema(@s, "s") <> repo(@repo) <> @source
+    graph = graph!(source)
+
+    config = %Config{
+      repos: [@repo],
+      no_write_modules: [@listed],
+      write_functions: [ok!(FunctionRef.parse("#{inspect(@lib)}.soft_delete/1"))],
+      transaction_functions: [ok!(FunctionRef.parse("#{inspect(@uow)}.transaction/2"))]
+    }
+
+    %{
+      analysis: Analysis.build(graph, config),
+      source: source,
+      graph: graph,
+      config: config
+    }
+  end
+
+  defp ok!({:ok, value}), do: value
+
+  defp one(analysis, name) do
+    [scope] = Enum.filter(analysis.scopes, &(elem(&1.mfa, 1) == name))
+    scope
+  end
+
+  defp nontx(analysis, name, arity), do: Map.fetch!(analysis.nontx, {@d, name, arity})
+
+  defp whats(gaps), do: for({:unread, _mfa, _line, what} <- gaps, do: what)
+
+  defp lib_call(name), do: "unread: call of #{inspect(@lib)}.#{name}"
+
+  describe "a call the walker does not read" do
+    test "row 4: an unlisted dependency call is a gap at its line, naming it; the scope is incomplete",
+         %{analysis: a, source: source} do
+      line = BeamFixtures.line_of(source, "def d4(")
+
+      assert %Scope{
+               no_gap_noticed?: false,
+               gaps: [{:unread, {@d, :d4, 1}, ^line, what}]
+             } = one(a, :d4)
+
+      assert what == lib_call("save/1")
+    end
+
+    test "row 5: a call on the no-write list is no gap", %{analysis: a} do
+      assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :d5)
+    end
+
+    test "row 5: every cleared call is counted, none from a form read another way", %{
+      graph: graph,
+      config: config
+    } do
+      facts = WriteSites.facts(graph, config, WriteSites.repos(graph, config))
+
+      assert facts.functions[{@d, :d5, 1}].cleared == 1
+      assert facts.functions[{@d, :d11a, 0}].cleared == 0
+      assert facts.functions[{@d, :d11e, 1}].cleared == 0
+      assert facts.functions[{@d, :d4, 1}].cleared == 0
+    end
+
+    test "row 6: GenServer.call/2 is a gap", %{analysis: a} do
+      assert whats(one(a, :d6).gaps) == ["unread: call of GenServer.call/2"]
+    end
+
+    test "row 7: an apply of unknown values and a call of a parameter are gaps", %{analysis: a} do
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@d, :d7a, 3}, _}]} =
+               one(a, :d7a)
+
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@d, :d7b, 1}, _}]} =
+               one(a, :d7b)
+    end
+
+    test "row 8: a function given to a listed module where HigherOrder names no place is a gap",
+         %{analysis: a} do
+      assert whats(one(a, :d8a).gaps) == ["unread: a function handed to Keyword.put/3"]
+      assert whats(one(a, :d8b).gaps) == ["unread: a function handed to Keyword.put/3"]
+
+      assert whats(one(a, :d8c).gaps) ==
+               ["unread: a function handed to #{inspect(@listed)}.run/1"]
+    end
+
+    test "row 8: positive controls: data to a listed module, a function HigherOrder names", %{
+      analysis: a
+    } do
+      assert %Scope{no_gap_noticed?: true} = one(a, :d8d)
+      assert %Scope{no_gap_noticed?: true} = one(a, :d8e)
+    end
+
+    test "row 9: reached through two project calls, a gap on the scope that reaches it only", %{
+      analysis: a
+    } do
+      assert [{:unread, {@d, :second, 0}, _line, what}] = one(a, :d9).gaps
+      assert what == lib_call("save/1")
+      assert %Scope{no_gap_noticed?: true} = one(a, :d9_clean)
+    end
+
+    test "row 10: with no transaction, a gap on the root's nontx and on no scope", %{analysis: a} do
+      for {name, arity} <- [d10: 1, d10_caller: 1] do
+        assert [{:unread, {@d, :d10, 1}, _line, what}] = nontx(a, name, arity).gaps
+        assert what == lib_call("save/1")
+        refute nontx(a, name, arity).no_gap_noticed?
+      end
+
+      refute Enum.any?(a.scopes, &(&1.mfa == {@d, :d10, 1}))
+      assert nontx(a, :d10_clean, 1).gaps == []
+    end
+
+    test "a function run in another process is a gap with no transaction around it too", %{
+      analysis: a
+    } do
+      assert [{:dynamic_call, {@d, :d18, 0}, _line}] = nontx(a, :d18, 0).gaps
+      assert whats(nontx(a, :d17, 1).gaps) == ["unread: call of GenServer.call/2"]
+    end
+
+    test "the counts hold the cleared calls and the unread ones by callee", %{analysis: a} do
+      assert a.counts.cleared >= 1
+      assert a.counts.unread_by_callee["unread: call of GenServer.call/2"] == 2
+      assert a.counts.unread_by_callee[lib_call("save/1")] == 4
+    end
+  end
+
+  describe "the forms DND-5459 reads stay" do
+    test "row 11: a repo write, a Multi step, a listed write function, raw SQL: sites as before",
+         %{analysis: a} do
+      sites = fn name -> Enum.filter(a.sites, &(elem(&1.mfa, 1) == name)) end
+
+      assert [%{op: :insert, via: :repo}] = sites.(:d11a)
+      assert [%{op: :insert, via: :multi}] = sites.(:d11b)
+      assert [%{op: :soft_delete, via: :write_function}] = sites.(:d11c)
+
+      for name <- [:d11a, :d11b, :d11c, :d11e] do
+        assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
+      end
+
+      assert [{:dynamic_call, {@d, :d11d, 0}, _line}] = one(a, :d11d).gaps
+    end
+
+    test "the rest of Ecto.Multi reads; a name it does not know is a gap", %{analysis: a} do
+      assert whats(one(a, :d15).gaps) == ["unread: call of Ecto.Multi.not_a_function/1"]
+      assert whats(one(a, :d15b).gaps) == ["unread: a function handed to Ecto.Multi.put/3"]
+      assert %Scope{no_gap_noticed?: true} = one(a, :d15c)
+    end
+
+    test "a fn applied where it is written is read, inside a body or not", %{analysis: a} do
+      assert %Scope{no_gap_noticed?: true, keys: keys} = one(a, :d16)
+      assert keys == MapSet.new([{:schema, @s}])
+      assert nontx(a, :d16b, 0).keys == MapSet.new([{:schema, @s}])
+    end
+  end
+
+  describe "a capture" do
+    test "of an unlisted dependency is a gap; of a listed function it is cleared", %{analysis: a} do
+      assert whats(one(a, :d12a).gaps) == [
+               lib_call("save/1") |> String.replace("call of", "capture of")
+             ]
+
+      assert %Scope{no_gap_noticed?: true} = one(a, :d12b)
+    end
+
+    test "of a listed function that runs its argument is a gap", %{analysis: a} do
+      assert whats(one(a, :d12c).gaps) == ["unread: capture of Enum.map/2"]
+    end
+
+    test "of an Ecto.Multi step or a generated repo function is a gap", %{analysis: a} do
+      assert whats(one(a, :d12d).gaps) == ["unread: capture of Ecto.Multi.insert/3"]
+      assert whats(one(a, :d12e).gaps) == ["unread: capture of #{inspect(@repo)}.all/1"]
+    end
+  end
+
+  describe "an apply with a literal module and name" do
+    test "of an unlisted dependency is a gap", %{analysis: a} do
+      assert whats(one(a, :d13a).gaps) == [lib_call("save/1")]
+    end
+
+    test "of a listed function with arguments is a gap: Anchor has no argument nodes", %{
+      analysis: a
+    } do
+      assert whats(one(a, :d13b).gaps) == ["unread: a function handed to Map.put/3"]
+    end
+
+    test "of a listed function with no arguments is cleared", %{analysis: a} do
+      assert %Scope{no_gap_noticed?: true} = one(a, :d13c)
+    end
+  end
+
+  describe "a transaction_functions call" do
+    test "row 14: one argument traced and one not is a gap", %{analysis: a} do
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@d, :d14a, 1}, _}]} =
+               one(a, :d14a)
+    end
+
+    test "row 14: positive control: the other argument a literal is no gap", %{analysis: a} do
+      assert %Scope{no_gap_noticed?: true, keys: keys} = one(a, :d14b)
+      assert keys == MapSet.new([{:schema, @s}])
+    end
+  end
+end

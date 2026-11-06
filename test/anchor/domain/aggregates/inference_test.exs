@@ -171,9 +171,10 @@ defmodule Anchor.Domain.Aggregates.InferenceTest do
     assert Inference.components(analysis) == [MapSet.new(schema: App.Z)]
   end
 
-  test "every proposal says on its first line what it was read from" do
+  test "every proposal says on its first line what it does not read" do
     read_note =
-      "# read from the forms Anchor recognises; a write in any other form is not in this proposal\n"
+      "# not read: the modules under aggregates.no_write_modules, the built-in no-write list " <>
+        "and dependencies' own internals; a write there is not in this proposal\n"
 
     healthy = %{analysis([scope(1, [{:schema, App.S}])], []) | repos: [App.Repo]}
     assert {:ok, yaml} = Inference.render_yaml(healthy)

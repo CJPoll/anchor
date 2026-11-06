@@ -9,9 +9,9 @@ defmodule Anchor.Domain.Aggregates.Scopes do
   unresolved write). It is computed per strongly connected component of the
   call graph (`Anchor.Domain.GraphAlgorithms.sccs/1`, callees first), so
   recursion terminates and each component is summarised once. Calls into
-  modules outside the project are not followed: a dependency is assumed not
-  to write the project's tables through the project's repo (a library that
-  does is listed under `aggregates.write_functions`).
+  modules outside the project are not followed: `Anchor.Domain.Aggregates.WriteSites`
+  makes each a gap unless the no-write list clears it (a library that writes is
+  listed under `aggregates.write_functions`).
 
   `build/3` makes one `Anchor.Domain.Aggregates.Scope` per transaction found
   by `Anchor.Domain.Aggregates.WriteSites`: the writes tagged with its
@@ -145,10 +145,10 @@ defmodule Anchor.Domain.Aggregates.Scopes do
     sites = for site <- function.sites, keep_site?(selection, site), into: MapSet.new(), do: site
 
     dynamic =
-      for %{tags: tags, line: line} <- function.dynamic,
+      for %{tags: tags} = entry <- function.dynamic,
           keep_tags?(selection, tags),
           into: MapSet.new(),
-          do: {:dynamic_call, mfa, line}
+          do: gap(mfa, entry)
 
     unresolved =
       for %WriteSite{unresolved: seen} = site <- sites,
@@ -158,6 +158,9 @@ defmodule Anchor.Domain.Aggregates.Scopes do
 
     %{sites: sites, gaps: MapSet.union(dynamic, unresolved)}
   end
+
+  defp gap(mfa, %{unread: true, line: line, what: what}), do: {:unread, mfa, line, what}
+  defp gap(mfa, %{line: line}), do: {:dynamic_call, mfa, line}
 
   defp keep_tags?(:all, _tags), do: true
   defp keep_tags?(:outside, tags), do: tags == []
@@ -177,6 +180,8 @@ defmodule Anchor.Domain.Aggregates.Scopes do
     do: %{sites: MapSet.union(a.sites, b.sites), gaps: MapSet.union(a.gaps, b.gaps)}
 
   defp gap_order({:dynamic_call, mfa, line}), do: {0, mfa, line || 0, nil}
+
+  defp gap_order({:unread, mfa, line, what}), do: {0, mfa, line || 0, what}
 
   defp gap_order({:unresolved_write, %WriteSite{} = site}),
     do: {1, site.mfa, site.line || 0, {site.op, site.unresolved}}

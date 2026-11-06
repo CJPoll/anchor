@@ -14,9 +14,9 @@ defmodule Anchor.Domain.Aggregates.NonTransactional do
   and a capture passed as one (`run_callbacks`, from
   `Anchor.Domain.Aggregates.WriteSites.facts/3`) are inside, never outside.
   A function captured as a run callback is so wherever it is captured.
-  An entry has `no_gap_noticed?` when no dynamic call and no unresolved write
-  is reached. It says what was read: a caller's transaction may still hold a
-  function's writes, and a form not read is not in the entry.
+  An entry has `no_gap_noticed?` when no dynamic call, no call it does not read
+  and no unresolved write is reached. It says what was read: a caller's
+  transaction may still hold a function's writes.
   """
 
   alias Anchor.Domain.Aggregates.Scopes

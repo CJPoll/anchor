@@ -17,7 +17,7 @@ defmodule Anchor.Domain.Aggregates.Inference do
   `render_yaml/1` prints an analysis's proposals in the exact `aggregates:`
   shape of `.anchor.yml`, sorted by name, which
   `Anchor.Domain.Aggregates.Config.parse/1` reads back. Its first line is always
-  a comment that it was read from the forms Anchor recognises, and one more says
+  a comment naming what is not read by construction, and one more says
   when some writes are unresolved. With nothing to propose it is an error,
   never `declare: none`: the analysis exists only with a repo, and a repo
   means the project persists, so `none` is a person's call, made by hand.
@@ -30,7 +30,7 @@ defmodule Anchor.Domain.Aggregates.Inference do
   alias Anchor.Domain.Digraph
   alias Anchor.Domain.GraphAlgorithms
 
-  @read_note "# read from the forms Anchor recognises; a write in any other form is not in this proposal\n"
+  @read_note "# not read: the modules under aggregates.no_write_modules, the built-in no-write list and dependencies' own internals; a write there is not in this proposal\n"
 
   @type key :: Scope.key()
   @type proposal :: %{

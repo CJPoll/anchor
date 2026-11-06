@@ -863,10 +863,13 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
       assert one(a, :s12).no_gap_noticed?
     end
 
-    test "S13: a call into a dependency is not followed, and the scope stays complete", %{
-      analysis: a
-    } do
-      assert %Scope{no_gap_noticed?: true, gaps: []} = scope = one(a, :s13)
+    test "S13: a call into a dependency is not followed: a gap naming it, the write still read",
+         %{analysis: a} do
+      assert %Scope{
+               no_gap_noticed?: false,
+               gaps: [{:unread, {@x, :s13, 1}, _line, "unread: call of JSON.encode!/1"}]
+             } = scope = one(a, :s13)
+
       assert scope.keys == keys([@s])
     end
   end

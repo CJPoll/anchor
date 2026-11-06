@@ -105,6 +105,9 @@ defmodule Anchor.Domain.Aggregates.ConfigTest do
        "aggregates.write_functions: must be a list"},
       {"repos not module names", Map.put(@section, "repos", ["repo"]),
        "aggregates.repos must be a list of exact module names"},
+      {"no_write_modules not module names",
+       Map.put(@section, "no_write_modules", ["not a module"]),
+       "aggregates.no_write_modules must be a list of exact module names"},
       {"the second entry malformed", %{"declare" => [@entry, %{"name" => "B", "tables" => [1]}]},
        "aggregates.declare[2].tables"}
     ]
@@ -114,6 +117,22 @@ defmodule Anchor.Domain.Aggregates.ConfigTest do
       test "C3: refused: #{label}", %{section: section, expected: expected} do
         assert_refused(section, expected)
       end
+    end
+  end
+
+  describe "parse/1, no_write_modules (DND-5889)" do
+    test "the modules are stored, and absent is an empty list" do
+      assert {:ok, %AggregatesConfig{no_write_modules: [Jason, MyApp.Pure]}} =
+               AggregatesConfig.parse(%{"no_write_modules" => ["Jason", "MyApp.Pure"]})
+
+      assert {:ok, %AggregatesConfig{no_write_modules: []}} = AggregatesConfig.parse(%{})
+    end
+
+    test "it says something persists, so it cannot stand beside declare: none" do
+      assert_refused(
+        %{"declare" => "none", "reason" => "r", "no_write_modules" => ["Jason"]},
+        ~s(aggregates: declare: none says nothing persists, but it also sets "no_write_modules")
+      )
     end
   end
 

@@ -193,16 +193,19 @@ When a rule needs it (`needs: [:aggregate_analysis]`), the runner computes
 `Model.aggregate_analysis` (`Anchor.Domain.Aggregates.Analysis`): the database
 writes it recognises, what each writes, the write set of each transaction it
 recognises over its call closure, and the writes with no transaction read around
-them, all read from Core. A form it does not recognise is not in the result, so
-an absent write is not evidence of no write (README, *What it does not read*).
+them, all read from Core. Every `call` and `apply` is a site, a followed project
+function, a call `Aggregates.NoWrite` clears, or a gap at its line (DND-5889): a
+new case belongs in the default, never in a new reader. What is not read by
+construction is the no-write list, `aggregates.no_write_modules` and dependencies'
+own internals (README, *What it does not read*).
 `Aggregates.FunctionWalk` is the one walk over a function's Core (node ids,
 `let`/`case` bindings, transaction-body tags); `WriteSites` finds the repos,
 writes, transactions and calls; `WriteSource` traces a write's source (rules
 1-9 in its moduledoc; a new Core shape goes there with a row in
 `write_source_test.exs`); `Scopes` and `NonTransactional` summarise per SCC;
 `Inference` proposes aggregates and renders the `aggregates:` YAML. Nothing is
-loaded or called. An unresolved write or a dynamic call is a gap, counted in
-the summary (`; writes: ...; transactions: ...`), never dropped; no repo is a
+loaded or called. An unresolved write, a dynamic call or an `unread:` call is a
+gap, counted in the summary (`; writes: ...; transactions: ...`), never dropped; no repo is a
 fail-closed issue of the `aggregate_write_sources` rule, and a rule type in
 `RuleSchema.needs_aggregates?/1` with no `aggregates:` section is refused at
 load. Ecto is a test-only dependency: fixtures that pin real macro output

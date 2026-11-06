@@ -75,13 +75,13 @@ defmodule Anchor.Integration.AggregateWriteSourcesIntegrationTest do
              "; writes: 1 read, 1 resolved, 0 unresolved; transactions: 1 read, 1 no gap noticed, 0 incomplete"
   end
 
-  test "I1: the violating module gives exactly the unresolved write and the incomplete transaction",
+  test "I1: the violating module gives exactly the unresolved write and the incomplete transactions",
        %{beams: beams} do
     report = run(beams)
 
     assert %GraphReport{exit_code: 1, could_not_check: []} = report
 
-    assert [save, run] = Enum.sort_by(report.findings, & &1.line)
+    assert [save, run, ask] = Enum.sort_by(report.findings, & &1.line)
     assert save.file == @violating
     assert save.line == line_of(File.read!(Path.join(@root, @violating)), "def save(")
 
@@ -92,7 +92,11 @@ defmodule Anchor.Integration.AggregateWriteSourcesIntegrationTest do
     assert run.file == @violating
     assert run.key == "aggregate_write_sources|Aws.Violating.run/1|incomplete 1"
 
+    # DND-5889: the same transaction with an unlisted dependency call in it.
+    assert ask.key == "aggregate_write_sources|Aws.Violating.ask/1|incomplete 1"
+    assert ask.message =~ "unread: call of GenServer.call/2 in Aws.Violating.ask/1"
+
     assert GraphReport.summary(report) =~
-             "; writes: 2 read, 1 resolved, 1 unresolved; transactions: 2 read, 1 no gap noticed, 1 incomplete"
+             "; writes: 2 read, 1 resolved, 1 unresolved; transactions: 3 read, 1 no gap noticed, 2 incomplete"
   end
 end

@@ -21,13 +21,18 @@ defmodule Anchor.Domain.Aggregates.Analysis do
       then nothing else is computed, and the `aggregate_write_sources` rule
       reports it;
     * `counts` — `%{writes: W, resolved: R, unresolved: U, scopes: S,
-      no_gap_noticed: N, incomplete: I, outside_gaps: G}`, the run summary's
-      numbers (`G`: the gaps with no transaction read around them);
+      no_gap_noticed: N, incomplete: I, outside_gaps: G, cleared: D,
+      unread_by_callee: %{what => count}}`, the run summary's numbers (`G`: the
+      gaps with no transaction read around them; `D`: the dependency calls the
+      no-write list cleared). `unread_by_callee` goes to the JSON, so a run shows
+      what the list would have to hold;
     * `unattributed` — raw SQL, or a write on a computed module, with no
       transaction read around it in its function: the rule reports it.
 
-  A form `Anchor.Domain.Aggregates.WriteSites` does not read is in none of
-  these: an absent write is not evidence of no write.
+  A call `Anchor.Domain.Aggregates.WriteSites` does not read is a gap of what
+  reaches it. What is not read by construction: a module on the no-write list
+  (`Anchor.Domain.Aggregates.NoWrite`, `aggregates.no_write_modules`), and a
+  dependency's own internals. An absent write there is not evidence of no write.
   """
 
   alias Anchor.Domain.Aggregates.Config
@@ -52,7 +57,9 @@ defmodule Anchor.Domain.Aggregates.Analysis do
               scopes: 0,
               no_gap_noticed: 0,
               incomplete: 0,
-              outside_gaps: 0
+              outside_gaps: 0,
+              cleared: 0,
+              unread_by_callee: %{}
             },
             unattributed: []
 
@@ -63,7 +70,9 @@ defmodule Anchor.Domain.Aggregates.Analysis do
           scopes: non_neg_integer(),
           no_gap_noticed: non_neg_integer(),
           incomplete: non_neg_integer(),
-          outside_gaps: non_neg_integer()
+          outside_gaps: non_neg_integer(),
+          cleared: non_neg_integer(),
+          unread_by_callee: %{String.t() => pos_integer()}
         }
 
   @type t :: %__MODULE__{
@@ -117,7 +126,7 @@ defmodule Anchor.Domain.Aggregates.Analysis do
       nontx: nontx,
       tables: tables,
       repos: repos |> MapSet.to_list() |> Enum.sort(),
-      counts: counts(sites, scopes, nontx)
+      counts: counts(sites, scopes, nontx, functions)
     }
   end
 
@@ -135,7 +144,7 @@ defmodule Anchor.Domain.Aggregates.Analysis do
     rows |> Enum.uniq_by(&{&1.mfa, &1.what}) |> Enum.sort_by(&{&1.mfa, &1.line})
   end
 
-  defp counts(sites, scopes, nontx) do
+  defp counts(sites, scopes, nontx, functions) do
     unresolved = Enum.count(sites, &(not WriteSite.resolved?(&1)))
     incomplete = Enum.count(scopes, &(not &1.no_gap_noticed?))
 
@@ -150,7 +159,14 @@ defmodule Anchor.Domain.Aggregates.Analysis do
         nontx
         |> Enum.flat_map(fn {_mfa, entry} -> entry.gaps end)
         |> Enum.uniq()
-        |> length()
+        |> length(),
+      cleared: functions |> Map.values() |> Enum.map(& &1.cleared) |> Enum.sum(),
+      unread_by_callee:
+        Enum.frequencies(
+          for {_mfa, function} <- functions,
+              %{unread: true, what: what} <- function.dynamic,
+              do: what
+        )
     }
   end
 end

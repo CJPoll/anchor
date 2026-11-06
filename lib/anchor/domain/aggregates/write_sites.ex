@@ -3,8 +3,17 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   Reads the database writes, transactions and calls it recognises from the
   project's compiled code (DND-5459) — a **Domain** module (ADR 001). Pure:
   it reads each function's Core from the graph, and never loads or calls a
-  project module. A form not named here is not read, and the README lists the
-  known ones: an absent write is not evidence of no write.
+  project module.
+
+  ## The default (DND-5889)
+
+  Core has a closed set of node types, and only `call` and `apply` can reach
+  code that writes (a capture is a `call` of `erlang:make_fun`; `primop` is the
+  compiler's own). So every `call` and `apply` event is exactly one of: a site
+  or transaction form read below; a project function followed; a call
+  `Anchor.Domain.Aggregates.NoWrite` clears, counted in `cleared`; or a gap at
+  its line, in `dynamic`. A call nothing here names is `unread: call of M.f/a`,
+  never no write.
 
   ## Repos
 
@@ -39,10 +48,11 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   on a computed module or name; a function run in another process (`Task`,
   `Agent`, `spawn`), reached from a body, whose connection is not the
   transaction's; a capture of a write itself (`&Repo.insert/1`:
-  its source argument is never seen); and an unknown function handed to a
-  library function that `Anchor.Domain.HigherOrder` says invokes it. A function
-  handed to any other library is not read: Anchor cannot tell it from data
-  there.
+  its source argument is never seen); an unknown function handed to a
+  library function that `Anchor.Domain.HigherOrder` says invokes it; and a
+  function value handed to a listed module in a place `HigherOrder` does not
+  name. An unknown value handed to a listed module in such a place is not read:
+  Anchor cannot tell it from data there.
 
   A call on a repo that is no write and no function `use Ecto.Repo` generates
   (`repo_functions/0`) is a project function, followed like any other: a call
@@ -57,7 +67,9 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   bindings: an inline or let-bound `fn` (kind `:fun`), a capture (`:fun`), or
   an `Ecto.Multi` value (`:multi`): the Multi steps, `Multi.run` callbacks and
   project function on the value's trace (a helper that builds the Multi). An
-  argument that is none of these is a gap at the transaction's line. Each
+  argument that is none of these is a gap at the transaction's line, and so is
+  an untraced non-literal argument beside a traced one in an
+  `aggregates.transaction_functions` call. Each
   node of a body is tagged with its scope's ordinal (Core order, from 1), and
   each write, call and dynamic call read under it carries the tag.
 
@@ -66,13 +78,16 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   `facts/3` returns, per function with a Core body, the raw writes (the
   source argument's Core node with its bindings, for
   `Anchor.Domain.Aggregates.WriteSource`), the transactions, the calls into
-  project functions, and the dynamic calls; plus the call sites read of each
+  project functions, the dynamic calls and the count of calls the no-write list
+  cleared (a capture of a listed function is cleared too, but it is no call, so
+  it is not counted); plus the call sites read of each
   project function (`callers`, for trace rule 7b) and the functions used as
   values or reached by name from a computed module (`captured`).
   """
 
   alias Anchor.Domain.Aggregates.Config
   alias Anchor.Domain.Aggregates.FunctionWalk
+  alias Anchor.Domain.Aggregates.NoWrite
   alias Anchor.Domain.Aggregates.WriteSite
   alias Anchor.Domain.Aggregates.WriteSource
   alias Anchor.Domain.Core
@@ -108,6 +123,24 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   }
 
   @multi Ecto.Multi
+
+  # The rest of Ecto.Multi: a step's function is checked, and `run`, `append`,
+  # `prepend` and `merge` are read or are gaps (`unread_multi?/4`). Any other name
+  # is unread.
+  @multi_reads [
+    :all,
+    :append,
+    :error,
+    :exists?,
+    :inspect,
+    :merge,
+    :new,
+    :one,
+    :prepend,
+    :put,
+    :run,
+    :to_list
+  ]
 
   # Raw SQL writes what no schema or table names: a gap, never a missed write.
   @raw_sql [:query, :query!, :query_many, :query_many!]
@@ -193,9 +226,11 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
               required(:what) => String.t(),
               required(:tags) => [term()],
               required(:write?) => boolean(),
-              optional(:capture) => mfa()
+              optional(:capture) => mfa(),
+              optional(:unread) => true
             }
           ],
+          cleared: non_neg_integer(),
           computed: [{atom(), non_neg_integer() | :any} | {:module, module()}],
           def_line: non_neg_integer() | nil,
           public?: boolean()
@@ -285,7 +320,8 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
       repos: repos,
       transact: transact_repos(graph, repos),
       write_functions: config.write_functions,
-      transaction_functions: config.transaction_functions
+      transaction_functions: config.transaction_functions,
+      no_write_modules: config.no_write_modules
     }
 
     functions =
@@ -502,11 +538,16 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
     end
   end
 
+  # Anchor cannot tell an argument that is data from a function it cannot trace,
+  # so beside a traced body only a literal is known to be no second body.
   defp transaction_function(args, node, env, mfa, ctx, callee) do
-    bodies =
-      for arg <- args,
-          {:ok, _kind, _ids, _captures, _gaps} = found <- [body(arg, env, mfa, ctx)],
-          do: found
+    traced = Enum.map(args, &{&1, body(&1, env, mfa, ctx)})
+    bodies = for {_arg, {:ok, _kind, _ids, _captures, _gaps} = found} <- traced, do: found
+
+    untraced? =
+      Enum.any?(traced, fn {arg, found} ->
+        found == :error and not plain_literal?(FunctionWalk.deref_value(arg, env))
+      end)
 
     base = %{line: Core.line(node), ids: [], kind: :transaction_function}
 
@@ -518,10 +559,15 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
         })
 
       found ->
+        partly =
+          if untraced?,
+            do: ["#{format(callee)} is given an argument Anchor cannot trace beside its body"],
+            else: []
+
         Map.merge(base, %{
           ids: base.ids ++ Enum.flat_map(found, &elem(&1, 2)),
           captures: Enum.flat_map(found, &elem(&1, 3)),
-          gaps: Enum.flat_map(found, &elem(&1, 4))
+          gaps: Enum.flat_map(found, &elem(&1, 4)) ++ partly
         })
     end
   end
@@ -691,7 +737,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
         repo_param?: MapSet.member?(run_callbacks, mfa)
       )
 
-    acc = %{sites: [], calls: [], dynamic: [], computed: []}
+    acc = %{sites: [], calls: [], dynamic: [], computed: [], cleared: 0}
 
     defined_in = for {:fun, id, tags} <- events, into: %{}, do: {id, tags}
 
@@ -714,6 +760,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
       calls: acc.calls |> Enum.reverse() |> Enum.map(&untag_capture(&1, mixed, prescan)),
       dynamic: acc.dynamic |> Enum.reverse() |> Enum.map(&untag_capture(&1, mixed, prescan)),
       computed: acc.computed,
+      cleared: acc.cleared,
       txs: prescan.txs,
       def_line: def_line
     }
@@ -962,8 +1009,6 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
 
   defp unread_multi?(_name, _args, _env, _ctx), do: false
 
-  # Tagged so it is a gap of a transaction that reaches it, wherever it is
-  # written, and never one outside a transaction: there it changes nothing.
   defp other_process?({module, _name, _arity}) when module in [Agent, Task, Task.Supervisor],
     do: true
 
@@ -1095,7 +1140,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
         # traces through the arguments passed here.
         acc
         |> add_site(name, :write_function, Enum.at(args, 0), env, tags, line)
-        |> project_call(ctx, callee, :remote, args, env, tags, line)
+        |> written_function_call(ctx, callee, args, env, tags, line)
 
       name in @raw_sql and (module == @raw_sql_module or MapSet.member?(ctx.repos, module)) ->
         dynamic(acc, line, raw_sql(module, name, arity), tags, true)
@@ -1108,16 +1153,35 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
           acc,
           line,
           "a function run in another process, with no transaction read around it",
-          [
-            :other_process | tags
-          ]
+          tags
         )
 
+      module == @multi ->
+        multi_read(acc, callee, args, env, tags, line)
+
       HigherOrder.invocations(callee) != [] ->
-        handed_functions(acc, callee, args, env, tags, line, ctx)
+        acc
+        |> handed_functions(callee, args, env, tags, line, ctx)
+        |> project_call(ctx, callee, :remote, args, env, tags, line)
 
       true ->
         project_call(acc, ctx, callee, :remote, args, env, tags, line)
+    end
+  end
+
+  # The write is the site; a wrapper the project defines is followed too.
+  defp written_function_call(acc, ctx, callee, args, env, tags, line) do
+    if followed?(callee, ctx),
+      do: project_call(acc, ctx, callee, :remote, args, env, tags, line),
+      else: acc
+  end
+
+  defp multi_read(acc, {_module, name, _arity} = callee, args, env, tags, line) do
+    cond do
+      name not in @multi_reads -> unread(acc, line, "call of #{ViolationKey.mfa(callee)}", tags)
+      name == :run -> acc
+      unread_arguments?(callee, args, env) -> unread_arguments(acc, callee, tags, line)
+      true -> acc
     end
   end
 
@@ -1154,14 +1218,73 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
         entry = %{line: line, what: what, tags: tags, write?: true, capture: callee}
         %{acc | dynamic: [entry | acc.dynamic]}
 
-      project_function?(ctx.graph, callee) ->
+      followed?(callee, ctx) ->
         tags = if kind == :capture, do: tags ++ Map.get(ctx.capture_tags, callee, []), else: tags
         call = %{to: callee, kind: kind, args: args, env: env, tags: tags, line: line}
         %{acc | calls: [call | acc.calls]}
 
       true ->
-        acc
+        not_followed(acc, ctx, callee, kind, args, env, tags, line)
     end
+  end
+
+  # What the analysis walks: a project function with a body, def or defp, that
+  # `use Ecto.Repo` did not generate.
+  defp followed?({module, name, arity} = callee, ctx) do
+    match?(
+      %FunctionNode{core: core, kind: kind} when core != nil and kind in [:def, :defp],
+      Graph.function(ctx.graph, callee)
+    ) and not generated_on_repo?({module, name, arity}, ctx.repos)
+  end
+
+  # The default (DND-5889): a call nothing above read is a gap at its line, unless
+  # the no-write list clears it and every function it is given can be seen.
+  defp not_followed(acc, ctx, callee, :capture, _args, _env, tags, line) do
+    if NoWrite.member?(callee, ctx.no_write_modules) and HigherOrder.invocations(callee) == [],
+      do: acc,
+      else: unread(acc, line, "capture of #{ViolationKey.mfa(callee)}", tags)
+  end
+
+  defp not_followed(acc, ctx, callee, _kind, args, env, tags, line) do
+    cond do
+      not NoWrite.member?(callee, ctx.no_write_modules) ->
+        unread(acc, line, "call of #{ViolationKey.mfa(callee)}", tags)
+
+      unread_arguments?(callee, args, env) ->
+        unread_arguments(acc, callee, tags, line)
+
+      true ->
+        %{acc | cleared: acc.cleared + 1}
+    end
+  end
+
+  # An apply/3 has no argument nodes to look at (`handed_functions/7` has already
+  # reported a function-taking one); a function among the others, in a place
+  # `HigherOrder` does not name, is one Anchor cannot follow.
+  defp unread_arguments?({_module, _name, arity} = callee, [], _env) when arity > 0,
+    do: HigherOrder.invocations(callee) == []
+
+  defp unread_arguments?(callee, args, env) do
+    named = for {index, _arity} <- HigherOrder.invocations(callee), do: index
+
+    args
+    |> Enum.with_index()
+    |> Enum.any?(fn {arg, index} -> index not in named and function_value?(arg, env) end)
+  end
+
+  defp unread_arguments(acc, callee, tags, line),
+    do: unread(acc, line, "a function handed to #{ViolationKey.mfa(callee)}", tags)
+
+  defp function_value?(arg, env) do
+    case FunctionWalk.deref(arg, env) do
+      {:node, value, value_env} -> fun_value(value, value_env, nil) != :error
+      {:binding, _binding} -> false
+    end
+  end
+
+  defp unread(acc, line, what, tags) do
+    entry = %{line: line, what: "unread: #{what}", tags: tags, write?: false, unread: true}
+    %{acc | dynamic: [entry | acc.dynamic]}
   end
 
   defp write?({module, name, arity} = callee, ctx) do

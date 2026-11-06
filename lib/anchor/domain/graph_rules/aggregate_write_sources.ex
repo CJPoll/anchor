@@ -50,7 +50,7 @@ defmodule Anchor.Domain.GraphRules.AggregateWriteSources do
   def shape(_rule),
     do:
       "aggregates: repos: [<Repo>...], write_functions: [\"<Module.fun/arity>\"...], " <>
-        "transaction_functions: [\"<Module.fun/arity>\"...]"
+        "transaction_functions: [\"<Module.fun/arity>\"...], no_write_modules: [<Module>...]"
 
   @impl Anchor.Domain.GraphRule
   def check(%Model{} = model, rule) do
@@ -118,6 +118,7 @@ defmodule Anchor.Domain.GraphRules.AggregateWriteSources do
   defp incomplete(%Scope{} = scope, model, rule) do
     subject = ViolationKey.mfa(scope.mfa)
     calls = for {:dynamic_call, mfa, line} <- scope.gaps, do: {mfa, line}
+    unread = for {:unread, mfa, line, what} <- scope.gaps, do: {mfa, line, what}
     writes = for {:unresolved_write, site} <- scope.gaps, do: site
 
     %Violation{
@@ -128,17 +129,21 @@ defmodule Anchor.Domain.GraphRules.AggregateWriteSources do
       key: ViolationKey.graph_key(rule, subject, "incomplete #{scope.ordinal}"),
       message:
         "transaction #{scope.ordinal} in #{subject} reaches " <>
-          reaches(calls, writes) <>
+          reaches(calls, unread, writes) <>
           ", so its write set is incomplete. Fix: call a named function instead of a " <>
-          "variable, or declare the behaviour so the callee is known; trace each write to a " <>
-          "schema or table."
+          "variable, or declare the behaviour so the callee is known; list a dependency that " <>
+          "cannot write under aggregates.no_write_modules, or one that writes under " <>
+          "aggregates.write_functions; trace each write to a schema or table."
     }
   end
 
-  defp reaches(calls, writes) do
+  defp reaches(calls, unread, writes) do
     [
       if(calls != [],
         do: "#{length(calls)} call(s) Anchor cannot resolve (first: #{first_call(calls)})"
+      ),
+      if(unread != [],
+        do: "#{length(unread)} call(s) it does not read (first: #{first_unread(unread)})"
       ),
       if(writes != [],
         do: "#{length(writes)} write(s) it cannot trace (first: #{first_write(writes)})"
@@ -149,6 +154,9 @@ defmodule Anchor.Domain.GraphRules.AggregateWriteSources do
   end
 
   defp first_call([{mfa, line} | _rest]), do: "#{ViolationKey.mfa(mfa)} line #{line || "?"}"
+
+  defp first_unread([{mfa, line, what} | _rest]),
+    do: "#{what} in #{ViolationKey.mfa(mfa)} line #{line || "?"}"
 
   defp first_write([%WriteSite{} = site | _rest]),
     do: "#{via(site.via)}.#{site.op} in #{ViolationKey.mfa(site.mfa)} line #{site.line || "?"}"

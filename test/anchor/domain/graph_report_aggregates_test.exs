@@ -47,7 +47,9 @@ defmodule Anchor.Domain.GraphReportAggregatesTest do
       scopes: 3,
       no_gap_noticed: 2,
       incomplete: 1,
-      outside_gaps: 4
+      outside_gaps: 4,
+      cleared: 9,
+      unread_by_callee: %{"unread: call of Lib.save/1" => 2}
     }
 
     report = GraphReport.new([], [], Map.put(@counts, :writes, writes))
@@ -56,7 +58,9 @@ defmodule Anchor.Domain.GraphReportAggregatesTest do
              "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 " <>
                "baselined); writes: 7 read, 5 resolved, 2 unresolved; transactions: 3 read, 2 " <>
                "no gap noticed, 1 incomplete; 4 gaps with no transaction read around them; " <>
-               "forms not listed in the README are not read"
+               "9 dependency calls cleared by the no-write list; not read: the modules under " <>
+               "aggregates.no_write_modules, the built-in no-write list and dependencies' own " <>
+               "internals"
 
     assert JSON.decode!(GraphReport.render(report, :json))["writes"] == %{
              "writes" => 7,
@@ -65,7 +69,9 @@ defmodule Anchor.Domain.GraphReportAggregatesTest do
              "outside_gaps" => 4,
              "scopes" => 3,
              "no_gap_noticed" => 2,
-             "incomplete" => 1
+             "incomplete" => 1,
+             "cleared" => 9,
+             "unread_by_callee" => %{"unread: call of Lib.save/1" => 2}
            }
   end
 
