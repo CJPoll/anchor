@@ -943,3 +943,80 @@ Run summary: `6 tests, 1 failure`
 
 .....
 ```
+
+## Second run
+
+Against `7985167`, through the same driver and `test-slot`. The module of an mfa is no longer read by a regex, so BH-R here mutates what replaced it, and the first table's BH-R is retired with that code. BK-B and BT-B are new: a `modules_traced` that is no count, and a `--base` ref that reads as an option.
+
+| # | Mutation | Tests run | Result | Failing tests |
+|---|---|---|---|---|
+| BH-R | the module of an mfa is read wrong (`lib/anchor/domain/sabotage/behaviour_map.ex`) | `behaviour_map_test.exs` | `NO SUMMARY (exit 1)` (NO SUMMARY) |  |
+| BK-B | a modules_traced that is no count crashes (`lib/anchor/domain/sabotage/coverage_map.ex`) | `sabotage_behaviours_test.exs` | `30 tests, 1 failure` (red) | what cannot be measured is exit 3, never a clean report a map whose modules_traced is no count is refused, not a crash |
+| BT-B | a bad ref reaches the adapter (`lib/mix/tasks/anchor.sabotage.ex`) | `anchor_sabotage_behaviours_test.exs` | `NO SUMMARY (exit 1)` (NO SUMMARY) |  |
+
+### BH-R — the module of an mfa is read wrong
+
+Run summary: `NO SUMMARY (exit 1)`
+
+```text
+Compiling 1 file (.ex)
+warning: mtime (modified time) for "lib/anchor/domain/sabotage/behaviour_map.ex" was set to the future, resetting to now
+     warning: function alias_segment?/1 is unused
+     │
+ 210 │   defp alias_segment?(<<first, _rest::binary>> = segment),
+     │        ~
+     │
+     └─ lib/anchor/domain/sabotage/behaviour_map.ex:210:8: Anchor.Domain.Sabotage.BehaviourMap (module)
+
+Compilation failed due to warnings while using the --warnings-as-errors option
+```
+
+### BK-B — a modules_traced that is no count crashes
+
+Run summary: `30 tests, 1 failure`
+
+```text
+1) test what cannot be measured is exit 3, never a clean report a map whose modules_traced is no count is refused, not a crash (Anchor.Managers.SabotageBehavioursTest)
+     test/anchor/managers/sabotage_behaviours_test.exs:136
+     ** (FunctionClauseError) no function clause matching in Anchor.Domain.Sabotage.CoverageMap.validate/1
+
+     The following arguments were given to Anchor.Domain.Sabotage.CoverageMap.validate/1:
+
+         # 1
+         %{version: 1, commit: nil, tests: [%{functions: ["A.f/0", "B.g/0"], line: 3, module: "TTest", name: "test t", file: "test/t_test.exs"}, %{functions: ["A.f/0"], line: 3, module: "UTest", name: "test u", file: "test/u_test.exs"}]}
+
+     Attempted function clauses (showing 3 out of 3):
+
+         def validate(-%{tests: []}-)
+         def validate(-%{modules_traced: 0}-)
+         def validate(-%{tests: [_ | _], modules_traced: n}-) when -is_integer(n)- and -n > 0-
+
+     code: for bad <- [
+     stacktrace:
+       (anchor 0.1.0) lib/anchor/domain/sabotage/coverage_map.ex:185: Anchor.Domain.Sabotage.CoverageMap.validate/1
+       (anchor 0.1.0) lib/anchor/managers/sabotage/behaviours.ex:102: Anchor.Managers.Sabotage.Behaviours.read_coverage/3
+       (anchor 0.1.0) lib/anchor/managers/sabotage/behaviours.ex:65: Anchor.Managers.Sabotage.Behaviours.run/2
+       test/anchor/managers/sabotage_behaviours_test.exs:144: anonymous fn/2 in Anchor.Managers.SabotageBehavioursTest."test what cannot be measured is exit 3, never a clean report a map whose modules_traced is no count is refused, not a crash"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/managers/sabotage_behaviours_test.exs:137: (test)
+
+...............
+```
+
+### BT-B — a bad ref reaches the adapter
+
+Run summary: `NO SUMMARY (exit 1)`
+
+```text
+Compiling 2 files (.ex)
+warning: mtime (modified time) for "lib/mix/tasks/anchor.sabotage.ex" was set to the future, resetting to now
+warning: mtime (modified time) for "lib/anchor/domain/sabotage/coverage_map.ex" was set to the future, resetting to now
+     warning: unused alias Baseline
+     │
+ 136 │   alias Anchor.Domain.Baseline
+     │   ~
+     │
+     └─ lib/mix/tasks/anchor.sabotage.ex:136:3
+
+Compilation failed due to warnings while using the --warnings-as-errors option
+```
