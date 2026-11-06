@@ -18,14 +18,17 @@ defmodule Anchor.Domain.Aggregates.WriteSource do
        `{:schema, S}`);
     3. a variable bound by a `let`: its value. A variable bound by a `case`:
        the union of every clause's result; a clause that raises gives no value,
-       and an unresolvable clause makes the whole value unresolved;
-    4. a call `S.f(...)` on a schema module: `{:schema, S}`;
+       and an unresolvable clause makes the whole value unresolved. A `try` is
+       the same over its body and its handler;
+    4. a call `S.f(...)` on a schema module: what `f` returns when that traces,
+       else `{:schema, S}`;
     5. a call into `Ecto.Changeset`: its first argument;
     6. a call into `Ecto.Query`, `Ecto.Query.Builder.*` or `Ecto.Queryable`:
-       the first argument that traces to a schema or table, a string
-       argument (a prefix) never counting as a table;
+       the first argument that traces to a schema or table, a string (a
+       prefix), written there or reaching it through a variable, never counting
+       as a table;
     7. a parameter of the function: (a) its `@spec` type `S.t()` with `S` a
-       schema; else (b) the union, over every project call site of the
+       schema, when every clause names one (their union); else (b) the union, over every project call site of the
        function, of the argument there. A function used as a value (a
        capture) has callers Anchor cannot see; one with no spec and no caller
        is unresolved. A parameter that leads back to itself, or more than
@@ -156,7 +159,7 @@ defmodule Anchor.Domain.Aggregates.WriteSource do
       :let -> trace(:cerl.let_body(node), FunctionWalk.bind_let(node, env), ctx)
       :letrec -> letrec(node, env, ctx)
       :seq -> trace(:cerl.seq_body(node), env, ctx)
-      :try -> trace(:cerl.try_body(node), FunctionWalk.bind_try(node, env), ctx)
+      :try -> try_node(node, env, ctx)
       :primop -> primop(node)
       :fun -> {:unresolved, "an anonymous function"}
       kind -> {:unresolved, "a Core #{kind}"}
@@ -278,7 +281,7 @@ defmodule Anchor.Domain.Aggregates.WriteSource do
         :none
 
       MapSet.member?(ctx.schemas, module) ->
-        ok({:schema, module})
+        schema_call(module, {module, name, length(args)}, ctx)
 
       module == Ecto.Changeset and args != [] ->
         trace(hd(args), env, ctx)
@@ -291,6 +294,15 @@ defmodule Anchor.Domain.Aggregates.WriteSource do
 
       true ->
         {:unresolved, "the result of #{ViolationKey.mfa({module, name, length(args)})}"}
+    end
+  end
+
+  defp schema_call(schema, mfa, ctx) do
+    with true <- project_function?(ctx.graph, mfa),
+         {:ok, _sources} = traced <- return(mfa, ctx) do
+      traced
+    else
+      _none -> ok({:schema, schema})
     end
   end
 
@@ -347,6 +359,15 @@ defmodule Anchor.Domain.Aggregates.WriteSource do
     trace(:cerl.letrec_body(node), env, ctx)
   end
 
+  # A `try`'s value is its body's or its handler's, unioned as a `case`'s
+  # clauses are (rule 3); a handler that only raises adds nothing.
+  defp try_node(node, env, ctx) do
+    union([
+      trace(:cerl.try_body(node), FunctionWalk.bind_try(node, env), ctx),
+      trace(:cerl.try_handler(node), FunctionWalk.bind_handler(node, env), ctx)
+    ])
+  end
+
   defp primop(node) do
     case :cerl.atom_val(:cerl.primop_name(node)) do
       name when name in [:match_fail, :raise] -> :none
@@ -365,8 +386,8 @@ defmodule Anchor.Domain.Aggregates.WriteSource do
       key in ctx.stack or ctx.hops >= @max_hops ->
         {:unresolved, "parameter cycle"}
 
-      (schema = spec_schema(mfa, i, ctx)) != nil ->
-        ok({:schema, schema})
+      (schemas = spec_schemas(mfa, i, ctx)) != [] ->
+        {:ok, MapSet.new(schemas, &{:schema, &1})}
 
       MapSet.member?(ctx.captured, mfa) ->
         {:unresolved,
@@ -398,20 +419,25 @@ defmodule Anchor.Domain.Aggregates.WriteSource do
     |> union()
   end
 
-  defp spec_schema({module, name, arity}, i, ctx) do
+  # Every @spec clause must name a schema for the parameter; one that does not
+  # leaves it to the callers, so no clause's values are lost.
+  defp spec_schemas({module, name, arity}, i, ctx) do
     with %ModuleNode{specs: specs} <- Graph.module(ctx.graph, module),
          [_ | _] = forms <- Map.get(specs, {name, arity}) do
-      Enum.find_value(forms, fn form ->
-        with {:"::", _meta, [{^name, _call_meta, args}, _return]} when is_list(args) <- form,
-             {{:., _dot, [schema, :t]}, _type_meta, []} <- Enum.at(args, i - 1),
-             true <- is_atom(schema) and MapSet.member?(ctx.schemas, schema) do
-          schema
-        else
-          _other -> nil
-        end
-      end)
+      schemas = Enum.map(forms, &spec_schema(&1, name, i, ctx))
+      if Enum.all?(schemas), do: schemas, else: []
     else
-      _none -> nil
+      _none -> []
+    end
+  end
+
+  defp spec_schema(form, name, i, ctx) do
+    with {:"::", _meta, [{^name, _call_meta, args}, _return]} when is_list(args) <- form,
+         {{:., _dot, [schema, :t]}, _type_meta, []} <- Enum.at(args, i - 1),
+         true <- is_atom(schema) and MapSet.member?(ctx.schemas, schema) do
+      schema
+    else
+      _other -> nil
     end
   end
 

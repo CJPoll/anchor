@@ -19,11 +19,18 @@ defmodule Anchor.Domain.Aggregates.WriteSourceTest do
   @repo Module.concat(@ns, Repo)
   @x Module.concat(@ns, X)
   @c Module.concat(@ns, C)
+  @w Module.concat(@ns, W)
 
   @source schema(@s, "s") <>
             schema(@t, "t") <>
             repo(@repo) <>
             """
+            defmodule #{inspect(@w)} do
+              def __schema__(:source), do: "w"
+              def make_t, do: %#{inspect(@t)}{}
+              def opaque, do: Map.new()
+            end
+
             defmodule #{inspect(@x)} do
               alias #{inspect(@repo)}
               alias #{inspect(@s)}
@@ -67,6 +74,63 @@ defmodule Anchor.Domain.Aggregates.WriteSourceTest do
               def r16(r), do: Repo.insert(r)
               def r16_use(xs), do: Enum.each(xs, &r16/1)
 
+              def r23, do: Repo.insert(#{inspect(@w)}.make_t())
+              def r24, do: Repo.insert(#{inspect(@w)}.opaque())
+
+              def r18(x) do
+                source =
+                  try do
+                    build_for(x)
+                  rescue
+                    _ -> %T{}
+                  end
+
+                Repo.insert(source)
+              end
+
+              def r19(x) do
+                source =
+                  try do
+                    build_for(x)
+                  rescue
+                    _ -> opaque()
+                  end
+
+                Repo.insert(source)
+              end
+
+              def r20(x) do
+                source =
+                  try do
+                    build_for(x)
+                  after
+                    :ok
+                  end
+
+                Repo.insert(source)
+              end
+
+              def r20b(x) do
+                source =
+                  try do
+                    build_for(x)
+                  rescue
+                    e in ArgumentError -> reraise e, __STACKTRACE__
+                  end
+
+                Repo.insert(source)
+              end
+
+              defp build_for(_x), do: %S{}
+
+              @spec r21(S.t()) :: term()
+              @spec r21(T.t()) :: term()
+              def r21(r), do: Repo.insert(r)
+
+              @spec r22(S.t()) :: term()
+              @spec r22(binary()) :: term()
+              def r22(r), do: Repo.insert(r)
+
               def r17(_repo, _changes, x), do: Repo.insert(x)
               def r17_run, do: Ecto.Multi.run(Ecto.Multi.new(), :a, __MODULE__, :r17, [%S{}])
 
@@ -79,6 +143,7 @@ defmodule Anchor.Domain.Aggregates.WriteSourceTest do
               def c2, do: #{inspect(@x)}.r10(%#{inspect(@t)}{})
               def make, do: %#{inspect(@t)}{}
               def c3, do: #{inspect(@x)}.r16(%#{inspect(@s)}{})
+              def c5, do: #{inspect(@x)}.r22(%#{inspect(@t)}{})
               def c4, do: #{inspect(@x)}.r17(nil, %{}, %#{inspect(@s)}{})
             end
             """
@@ -179,6 +244,41 @@ defmodule Anchor.Domain.Aggregates.WriteSourceTest do
       assert seen ==
                "parameter 3 of #{inspect(@x)}.r17/3 is passed as a function value, so its " <>
                  "callers are not known"
+    end
+
+    test "a try's value is its body's and its handler's, like the clauses of a case", %{
+      sites: sites
+    } do
+      assert %{sources: [{:schema, @s}, {:schema, @t}], unresolved: nil} = site(sites, :r18)
+    end
+
+    test "a try handler that returns what Anchor cannot trace makes the write unresolved", %{
+      sites: sites
+    } do
+      assert %{sources: [], unresolved: "the result of Map.new/0"} = site(sites, :r19)
+    end
+
+    test "a handler that only raises adds nothing: after, and reraise", %{sites: sites} do
+      assert %{sources: [{:schema, @s}], unresolved: nil} = site(sites, :r20)
+      assert %{sources: [{:schema, @s}], unresolved: nil} = site(sites, :r20b)
+    end
+
+    test "every @spec clause counts: two schemas are both the parameter's", %{sites: sites} do
+      assert %{sources: [{:schema, @s}, {:schema, @t}], unresolved: nil} = site(sites, :r21)
+    end
+
+    test "a @spec clause naming no schema falls through to the callers", %{sites: sites} do
+      assert %{sources: [{:schema, @t}], unresolved: nil} = site(sites, :r22)
+    end
+
+    test "a schema's function that returns another schema is that schema, not its own", %{
+      sites: sites
+    } do
+      assert %{sources: [{:schema, @t}], unresolved: nil} = site(sites, :r23)
+    end
+
+    test "a schema's function Anchor cannot trace is the schema (rule 4)", %{sites: sites} do
+      assert %{sources: [{:schema, @w}], unresolved: nil} = site(sites, :r24)
     end
 
     test "R14: anything else is unresolved, naming what was seen and no line", %{sites: sites} do

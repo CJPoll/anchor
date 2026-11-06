@@ -174,6 +174,14 @@ defmodule Anchor.Domain.Aggregates.FunctionWalk do
   @spec bind_try(:cerl.cerl(), env()) :: env()
   def bind_try(node, env), do: bind_values(:cerl.try_vars(node), :cerl.try_arg(node), env)
 
+  @doc "`env` with the `try` node's exception variables bound for its handler."
+  @spec bind_handler(:cerl.cerl(), env()) :: env()
+  def bind_handler(node, env) do
+    Enum.reduce(:cerl.try_evars(node), env, fn var, env ->
+      Map.put(env, :cerl.var_name(var), {:pattern, "a caught exception"})
+    end)
+  end
+
   # --- the walk ----------------------------------------------------------------
 
   defp tags(node, tags, ctx) do
@@ -271,12 +279,7 @@ defmodule Anchor.Domain.Aggregates.FunctionWalk do
     acc = visit(arg, env, tags, ctx, acc)
     acc = visit(:cerl.try_body(node), bind_try(node, env), tags, ctx, acc)
 
-    handler_env =
-      Enum.reduce(:cerl.try_evars(node), env, fn var, env ->
-        Map.put(env, :cerl.var_name(var), {:pattern, "a caught exception"})
-      end)
-
-    visit(:cerl.try_handler(node), handler_env, tags, ctx, acc)
+    visit(:cerl.try_handler(node), bind_handler(node, env), tags, ctx, acc)
   end
 
   # A function name used as a value (`&f/a`): an apply's operator is never
