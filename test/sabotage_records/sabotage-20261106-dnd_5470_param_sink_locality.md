@@ -1066,3 +1066,299 @@ Run summary: `7 tests, 1 failure`
        (ex_unit 1.19.4) lib/ex_unit/capture_io.ex:166: ExUnit.CaptureIO.capture_io/2
        test/mix/tasks/anchor_sabotage_behaviours_test.exs:74: (test)
 ```
+
+## Fourth run
+
+From the review floor: the new "no behaviour confirmed" exit 3 (BW-A), and tests no mutation had been aimed at. BW-C and BW-D name the integration file, the one path with no double. These ran against `705588e`, through the same driver and `test-slot`.
+
+| # | Mutation | Tests run | Result | Failing tests |
+|---|---|---|---|---|
+| BW-A | no confirmed behaviour reads as measured (`lib/anchor/managers/sabotage/behaviours.ex`) | `sabotage_behaviours_test.exs` | `32 tests, 2 failures` (red) | what cannot be measured is exit 3, never a clean report --write-baseline writes no empty ratchet when nothing confirms a behaviour; what cannot be measured is exit 3, never a clean report killed rows that confirm no behaviour: exit 3 in both modes, never clean |
+| BW-B | the ratchet: a key once per behaviour (`lib/anchor/domain/sabotage/behaviour_map.ex`) | `behaviour_map_test.exs` | `25 tests, 5 failures` (red) | locality_keys/1 a behaviour's key once per directory; the ratchet: a built map's keys, through Baseline.compare/2 the same reach is clean; the ratchet: a built map's keys, through Baseline.compare/2 a behaviour that reaches one fewer is one STALE; the ratchet: a built map's keys, through Baseline.compare/2 a behaviour that reaches a third directory is one NEW; locality_keys/1 a behaviour with only generated causes adds no key |
+| BW-C | the integration flow: --write-baseline is ignored (`lib/anchor/managers/sabotage/behaviours.ex`) | `behaviour_locality_test.exs` | `1 test, 1 failure` (red) | no baseline, written, clean, then a shrunk behaviour is STALE |
+| BW-D | the integration flow: the key holds no test name (`lib/anchor/domain/sabotage/behaviour_map.ex`) | `behaviour_locality_test.exs` | `1 test, 1 failure` (red) | no baseline, written, clean, then a shrunk behaviour is STALE |
+| BW-E | no map given names no Fix (`lib/anchor/managers/sabotage/behaviours.ex`) | `sabotage_behaviours_test.exs` | `32 tests, 1 failure` (red) | what cannot be measured is exit 3, never a clean report no map given and none configured: the download Fix |
+| BW-F | the configured map is not used (`lib/anchor/managers/sabotage/behaviours.ex`) | `sabotage_behaviours_test.exs` | `32 tests, 1 failure` (red) | what cannot be measured is exit 3, never a clean report the configured map is used when none is given |
+| BW-G | no sabotage section reads differently (`lib/anchor/managers/sabotage/runner.ex`) | `sabotage_behaviours_test.exs` | `32 tests, 1 failure` (red) | what cannot be measured is exit 3, never a clean report no sabotage section |
+| BW-H | zero records still measure (`lib/anchor/managers/sabotage/behaviours.ex`) | `sabotage_behaviours_test.exs` | `32 tests, 1 failure` (red) | what cannot be measured is exit 3, never a clean report zero records |
+| BW-I | a baseline it cannot read is exit 1 (`lib/anchor/managers/sabotage/behaviours.ex`) | `sabotage_behaviours_test.exs` | `32 tests, 1 failure` (red) | what cannot be measured is exit 3, never a clean report a baseline that cannot be read for another reason |
+| BW-J | the clean verdict says otherwise (`lib/anchor/domain/sabotage/report.ex`) | `sabotage_behaviours_test.exs` | `32 tests, 2 failures` (red) | the ratchet report mode, clean: exit 0 and the behaviours by width; the ratchet enforce mode, clean: exit 0 |
+| BW-K | enforce fails when clean too (`lib/anchor/domain/sabotage/report.ex`) | `sabotage_behaviours_test.exs` | `32 tests, 2 failures` (red) | the ratchet enforce mode, clean: exit 0; the ratchet a first landing has no base copy, so nothing grew |
+| BW-L | --coverage does not reach the Manager (`lib/mix/tasks/anchor.sabotage.ex`) | `anchor_sabotage_behaviours_test.exs` | `7 tests, 2 failures` (red) | --coverage reaches the Manager, and its exit 3 is the task's; the facts: each flag, and what its absence means |
+| BW-M | no --coverage: the words change (`lib/anchor/managers/sabotage/behaviours.ex`) | `anchor_sabotage_behaviours_test.exs` | `7 tests, 1 failure` (red) | no --coverage reads the config |
+| BW-N | an unknown format is not usage (`lib/mix/tasks/anchor.sabotage.ex`) | `anchor_sabotage_behaviours_test.exs` | `7 tests, 1 failure` (red) | an unknown format is usage, exit 2, nothing read |
+| BW-O | an unknown flag or a stray argument is not usage (`lib/mix/tasks/anchor.sabotage.ex`) | `anchor_sabotage_behaviours_test.exs` | `7 tests, 2 failures` (red) | an unknown flag is usage, exit 2, nothing read; a stray argument is usage, exit 2, nothing read |
+
+### BW-A — no confirmed behaviour reads as measured
+
+Run summary: `32 tests, 2 failures`
+
+```text
+1) test what cannot be measured is exit 3, never a clean report --write-baseline writes no empty ratchet when nothing confirms a behaviour (Anchor.Managers.SabotageBehavioursTest)
+     test/anchor/managers/sabotage_behaviours_test.exs:216
+     ** (Mox.UnexpectedCallError) no expectation defined for Anchor.BaselineStoreMock.create/3 in process #PID<0.1344.0> with args ["/repo", ".anchor/baselines/behaviour-locality.txt", "# anchor baseline for behaviour-locality; shrink only\n"]
+     code: assert {3, [_line]} = Sabotage.behaviours(facts(%{write_baseline: true}), @opts)
+     stacktrace:
+       (mox 1.2.0) lib/mox.ex:903: Mox.__dispatch__/4
+       (anchor 0.1.0) lib/anchor/managers/sabotage/behaviours.ex:200: Anchor.Managers.Sabotage.Behaviours.judged/4
+       test/anchor/managers/sabotage_behaviours_test.exs:229: (test)
+
+..........................
+```
+
+### BW-B — the ratchet: a key once per behaviour
+
+Run summary: `25 tests, 5 failures`
+
+```text
+1) test locality_keys/1 a behaviour's key once per directory (Anchor.Domain.Sabotage.BehaviourMapTest)
+     test/anchor/domain/sabotage/behaviour_map_test.exs:199
+     Assertion with == failed
+     code:  assert BehaviourMap.locality_keys(result) == [@t_key, @t_key, @u_key]
+     left:  ["test/t_test.exs::test t does it", "test/u_test.exs::test u"]
+     right: ["test/t_test.exs::test t does it",
+             "test/t_test.exs::test t does it",
+             "test/u_test.exs::test u"]
+     stacktrace:
+       test/anchor/domain/sabotage/behaviour_map_test.exs:205: (test)
+
+.
+```
+
+### BW-C — the integration flow: --write-baseline is ignored
+
+Run summary: `1 test, 1 failure`
+
+```text
+1) test no baseline, written, clean, then a shrunk behaviour is STALE (Anchor.Integration.BehaviourLocalityTest)
+     test/anchor/integration/behaviour_locality_test.exs:53
+     Assertion with == failed
+     code:  assert {0, ["behaviour locality: wrote #{@baseline} with 2 entries"]} ==
+              Sabotage.behaviours(%{facts | write_baseline: true})
+     left:  {0,
+             ["behaviour locality: wrote .anchor/baselines/behaviour-locality.txt with 2 entries"]}
+     right: {0,
+             ["behaviours: no baseline at .anchor/baselines/behaviour-locality.txt: every locality key is NEW",
+              "2\ttest/t_test.exs::test t\tlib/a lib/b",
+              "behaviours: 1 confirmed, 1 unconfirmed (no killed mutant among what they executed)",
+              "NEW test/t_test.exs::test t: this behaviour reaches one more directory",
+              "NEW test/t_test.exs::test t: this behaviour reaches one more directory",
+              "behaviour locality: 2 NEW, 0 STALE against .anchor/baselines/behaviour-locality.txt (report mode, not failing)"]}
+     stacktrace:
+       test/anchor/integration/behaviour_locality_test.exs:58: (test)
+```
+
+### BW-D — the integration flow: the key holds no test name
+
+Run summary: `1 test, 1 failure`
+
+```text
+1) test no baseline, written, clean, then a shrunk behaviour is STALE (Anchor.Integration.BehaviourLocalityTest)
+     test/anchor/integration/behaviour_locality_test.exs:53
+     Assertion with =~ failed
+     code:  assert Enum.join(lines, "\n") =~ "NEW #{@key}"
+     left:  "behaviours: no baseline at .anchor/baselines/behaviour-locality.txt: every locality key is NEW\n2\ttest/t_test.exs::6\tlib/a lib/b\nbehaviours: 1 confirmed, 1 unconfirmed (no killed mutant among what they executed)\nNEW test/t_test.exs::6: this behaviour reaches one more directory\nNEW test/t_test.exs::6: this behaviour reaches one more directory\nbehaviour locality: 2 NEW, 0 STALE against .anchor/baselines/behaviour-locality.txt (report mode, not failing)"
+     right: "NEW test/t_test.exs::test t"
+     stacktrace:
+       test/anchor/integration/behaviour_locality_test.exs:56: (test)
+```
+
+### BW-E — no map given names no Fix
+
+Run summary: `32 tests, 1 failure`
+
+```text
+1) test what cannot be measured is exit 3, never a clean report no map given and none configured: the download Fix (Anchor.Managers.SabotageBehavioursTest)
+     test/anchor/managers/sabotage_behaviours_test.exs:101
+     Assertion with =~ failed
+     code:  assert line =~ "Fix: download the anchor-coverage artifact (CI) and pass --coverage"
+     left:  "COULD NOT MEASURE: no coverage map was given."
+     right: "Fix: download the anchor-coverage artifact (CI) and pass --coverage"
+     stacktrace:
+       test/anchor/managers/sabotage_behaviours_test.exs:105: (test)
+
+.....
+```
+
+### BW-F — the configured map is not used
+
+Run summary: `32 tests, 1 failure`
+
+```text
+1) test what cannot be measured is exit 3, never a clean report the configured map is used when none is given (Anchor.Managers.SabotageBehavioursTest)
+     test/anchor/managers/sabotage_behaviours_test.exs:108
+     Assertion with =~ failed
+     code:  assert line =~ "the coverage map cov.etf cannot be read (:enoent)"
+     left:  "COULD NOT MEASURE: no coverage map was given. Fix: download the anchor-coverage artifact (CI) and pass --coverage"
+     right: "the coverage map cov.etf cannot be read (:enoent)"
+     stacktrace:
+       test/anchor/managers/sabotage_behaviours_test.exs:112: (test)
+
+........................
+```
+
+### BW-G — no sabotage section reads differently
+
+Run summary: `32 tests, 1 failure`
+
+```text
+1) test what cannot be measured is exit 3, never a clean report no sabotage section (Anchor.Managers.SabotageBehavioursTest)
+     test/anchor/managers/sabotage_behaviours_test.exs:150
+     Assertion with =~ failed
+     code:  assert line =~ "no sabotage: section"
+     left:  "COULD NOT MEASURE: .anchor.yml is short a section. Fix: add a sabotage: section (see README, Sabotage)"
+     right: "no sabotage: section"
+     stacktrace:
+       test/anchor/managers/sabotage_behaviours_test.exs:153: (test)
+
+.
+```
+
+### BW-H — zero records still measure
+
+Run summary: `32 tests, 1 failure`
+
+```text
+1) test what cannot be measured is exit 3, never a clean report zero records (Anchor.Managers.SabotageBehavioursTest)
+     test/anchor/managers/sabotage_behaviours_test.exs:156
+     ** (Mox.UnexpectedCallError) no expectation defined for Anchor.SourceSourceMock.list/1 in process #PID<0.1269.0> with args ["/repo"]
+     code: assert {3, [line]} = Sabotage.behaviours(facts(), @opts)
+     stacktrace:
+       (mox 1.2.0) lib/mox.ex:903: Mox.__dispatch__/4
+       (anchor 0.1.0) lib/anchor/managers/sabotage/behaviours.ex:166: Anchor.Managers.Sabotage.Behaviours.source_index/2
+       (anchor 0.1.0) lib/anchor/managers/sabotage/behaviours.ex:68: Anchor.Managers.Sabotage.Behaviours.run/2
+       test/anchor/managers/sabotage_behaviours_test.exs:160: (test)
+
+.....................
+```
+
+### BW-I — a baseline it cannot read is exit 1
+
+Run summary: `32 tests, 1 failure`
+
+```text
+1) test what cannot be measured is exit 3, never a clean report a baseline that cannot be read for another reason (Anchor.Managers.SabotageBehavioursTest)
+     test/anchor/managers/sabotage_behaviours_test.exs:232
+     match (=) failed
+     code:  assert {3, [line]} = Sabotage.behaviours(facts(), @opts)
+     left:  {3, [line]}
+     right: {1,
+             ["the baseline .anchor/baselines/behaviour-locality.txt cannot be read (:outside_root). Fix: make it a readable file inside the project, with no symlink on its path"]}
+     stacktrace:
+       test/anchor/managers/sabotage_behaviours_test.exs:235: (test)
+
+........................
+```
+
+### BW-J — the clean verdict says otherwise
+
+Run summary: `32 tests, 2 failures`
+
+```text
+1) test the ratchet report mode, clean: exit 0 and the behaviours by width (positive control) (Anchor.Managers.SabotageBehavioursTest)
+     test/anchor/managers/sabotage_behaviours_test.exs:249
+     Assertion with =~ failed
+     code:  assert output =~ "behaviour locality: clean against #{@path} (report mode)"
+     left:  "2\ttest/t_test.exs::test t\tlib/a lib/b\nbehaviours: 1 confirmed, 1 unconfirmed (no killed mutant among what they executed)\nbehaviour locality: compared with .anchor/baselines/behaviour-locality.txt (report mode)"
+     right: "behaviour locality: clean against .anchor/baselines/behaviour-locality.txt (report mode)"
+     stacktrace:
+       test/anchor/managers/sabotage_behaviours_test.exs:257: (test)
+
+.........................
+```
+
+### BW-K — enforce fails when clean too
+
+Run summary: `32 tests, 2 failures`
+
+```text
+1) test the ratchet enforce mode, clean: exit 0 (Anchor.Managers.SabotageBehavioursTest)
+     test/anchor/managers/sabotage_behaviours_test.exs:287
+     match (=) failed
+     code:  assert {0, lines} = Sabotage.behaviours(facts(), @opts)
+     left:  {0, lines}
+     right: {1,
+             ["2\ttest/t_test.exs::test t\tlib/a lib/b",
+              "behaviours: 1 confirmed, 1 unconfirmed (no killed mutant among what they executed)",
+              "behaviour locality: clean against .anchor/baselines/behaviour-locality.txt (enforce mode)"]}
+     stacktrace:
+       test/anchor/managers/sabotage_behaviours_test.exs:291: (test)
+
+....................
+```
+
+### BW-L — --coverage does not reach the Manager
+
+Run summary: `7 tests, 2 failures`
+
+```text
+1) test --coverage reaches the Manager, and its exit 3 is the task's (Mix.Tasks.Anchor.SabotageBehavioursTest)
+     test/mix/tasks/anchor_sabotage_behaviours_test.exs:25
+     ** (Mox.VerificationError) error while verifying mocks for #PID<0.1254.0>:
+
+       * expected Anchor.CoverageStoreMock.read/1 to be invoked once but it was invoked 0 times
+     stacktrace:
+       (mox 1.2.0) lib/mox.ex:862: Mox.__verify_mock_or_all__/2
+       (mox 1.2.0) lib/mox.ex:819: anonymous fn/1 in Mox.verify_on_exit!/1
+       (ex_unit 1.19.4) lib/ex_unit/on_exit_handler.ex:140: ExUnit.OnExitHandler.exec_callback/1
+       (ex_unit 1.19.4) lib/ex_unit/on_exit_handler.ex:126: ExUnit.OnExitHandler.on_exit_runner_loop/0
+```
+
+### BW-M — no --coverage: the words change
+
+Run summary: `7 tests, 1 failure`
+
+```text
+1) test no --coverage reads the config (Mix.Tasks.Anchor.SabotageBehavioursTest)
+     test/mix/tasks/anchor_sabotage_behaviours_test.exs:55
+     Assertion with =~ failed
+     code:  assert stderr =~ "no coverage map was given"
+     left:  "COULD NOT MEASURE: no coverage. Fix: download the anchor-coverage artifact (CI) and pass --coverage\n"
+     right: "no coverage map was given"
+     stacktrace:
+       test/mix/tasks/anchor_sabotage_behaviours_test.exs:63: (test)
+
+..
+```
+
+### BW-N — an unknown format is not usage
+
+Run summary: `7 tests, 1 failure`
+
+```text
+1) test an unknown format is usage, exit 2, nothing read (Mix.Tasks.Anchor.SabotageBehavioursTest)
+     test/mix/tasks/anchor_sabotage_behaviours_test.exs:72
+     ** (Mox.UnexpectedCallError) no expectation defined for Anchor.ConfigLoaderMock.load_in/1 in process #PID<0.1269.0> with args ["<worktree>"]
+     code: capture_io(:stderr, fn ->
+     stacktrace:
+       (mox 1.2.0) lib/mox.ex:903: Mox.__dispatch__/4
+       (anchor 0.1.0) lib/anchor/managers/sabotage/runner.ex:395: Anchor.Managers.Sabotage.Runner.config/2
+       (anchor 0.1.0) lib/anchor/managers/sabotage/behaviours.ex:65: Anchor.Managers.Sabotage.Behaviours.run/2
+       (anchor 0.1.0) lib/mix/tasks/anchor.sabotage.ex:204: Mix.Tasks.Anchor.Sabotage.run/2
+       test/mix/tasks/anchor_sabotage_behaviours_test.exs:75: anonymous fn/0 in Mix.Tasks.Anchor.SabotageBehavioursTest."test an unknown format is usage, exit 2, nothing read"/1
+       (ex_unit 1.19.4) lib/ex_unit/capture_io.ex:296: ExUnit.CaptureIO.do_with_io/3
+       (ex_unit 1.19.4) lib/ex_unit/capture_io.ex:166: ExUnit.CaptureIO.capture_io/2
+       test/mix/tasks/anchor_sabotage_behaviours_test.exs:74: (test)
+```
+
+### BW-O — an unknown flag or a stray argument is not usage
+
+Run summary: `7 tests, 2 failures`
+
+```text
+1) test an unknown flag is usage, exit 2, nothing read (Mix.Tasks.Anchor.SabotageBehavioursTest)
+     test/mix/tasks/anchor_sabotage_behaviours_test.exs:72
+     ** (Mox.UnexpectedCallError) no expectation defined for Anchor.ConfigLoaderMock.load_in/1 in process #PID<0.1259.0> with args ["<worktree>"]
+     code: capture_io(:stderr, fn ->
+     stacktrace:
+       (mox 1.2.0) lib/mox.ex:903: Mox.__dispatch__/4
+       (anchor 0.1.0) lib/anchor/managers/sabotage/runner.ex:395: Anchor.Managers.Sabotage.Runner.config/2
+       (anchor 0.1.0) lib/anchor/managers/sabotage/behaviours.ex:65: Anchor.Managers.Sabotage.Behaviours.run/2
+       (anchor 0.1.0) lib/mix/tasks/anchor.sabotage.ex:204: Mix.Tasks.Anchor.Sabotage.run/2
+       test/mix/tasks/anchor_sabotage_behaviours_test.exs:75: anonymous fn/0 in Mix.Tasks.Anchor.SabotageBehavioursTest."test an unknown flag is usage, exit 2, nothing read"/1
+       (ex_unit 1.19.4) lib/ex_unit/capture_io.ex:296: ExUnit.CaptureIO.do_with_io/3
+       (ex_unit 1.19.4) lib/ex_unit/capture_io.ex:166: ExUnit.CaptureIO.capture_io/2
+       test/mix/tasks/anchor_sabotage_behaviours_test.exs:74: (test)
+
+.
+```

@@ -8,7 +8,7 @@
 
 The first table holds the last full run, and each of its sections shows the first failure, cut at 70 lines. It was rewritten in place through the critic's rounds, so `## Measured zeros` and `## Retired mutants` keep what those rewrites dropped, and `## Second run` and `## Third run` are appended after it.
 
-**Not run:** the chain's recursion guard (`MapSet.member?(seen, step)` read as `false`). Without it `steps/3` does not terminate, so its mutant spins and allocates for the whole 2000 ms bound on the desktop (the sabotage load rule). `count/2` in the canary and `D.rec/1` in the Domain test are the rows it would fail.
+**Not run in this form (`## Fourth run`, PW-A, is its bounded form):** the chain's recursion guard (`MapSet.member?(seen, step)` read as `false`). Without it `steps/3` does not terminate, so its mutant spins and allocates for the whole 2000 ms bound on the desktop (the sabotage load rule). `count/2` in the canary and `D.rec/1` in the Domain test are the rows it would fail.
 
 | # | Mutation | Tests run | Result | Failing tests |
 |---|---|---|---|---|
@@ -1467,7 +1467,7 @@ Fixes:
 
 ## Retired mutants
 
-These ran red in earlier rounds. Their code left the branch in `f3edea3`, when the reading narrowed to names spelled out in full, so there is nothing left to mutate. `core_mfa_references_test.exs` now pins each shape as no reference, and PL-W (a variable third argument reads as args) replaces them.
+These ran red in earlier rounds; `3d5cccf`'s copy of this record holds their output. Their code left the branch in `f3edea3`, when the reading narrowed to names spelled out in full, so there is nothing left to mutate. `core_mfa_references_test.exs` now pins each shape as no reference, and PL-W (a variable third argument reads as args) replaces them.
 
 | # | What it mutated |
 |---|---|
@@ -1657,4 +1657,297 @@ Run summary: `30 tests, 1 failure`
        test/anchor/domain/graph_report_test.exs:375: (test)
 
 ......
+```
+
+## Fourth run
+
+The review floor found tests with no recorded red, because no mutation had been aimed at them. These ran against `705588e`, through the same driver and `test-slot`. PW-A is the recursion guard in a form that terminates. PW-F and PW-H stayed green.
+
+| # | Mutation | Tests run | Result | Failing tests |
+|---|---|---|---|---|
+| PW-A | the chain stops after three steps, not at a repeat (the bounded form of the recursion guard) (`lib/anchor/domain/graph_rules/parameter_reaches_sink.ex`) | `parameter_reaches_sink_test.exs`, `parameter_reaches_sink_canary_test.exs` | `40 tests, 4 failures` (red) | check/2 the chain follows an absent callee, past one that is not, and stops at recursion; exactly the dropped parameters are findings; every compliant and exempt one is not; the message names the parameter, its chain and its call sites; the summary prints the precision counts, and the apply site that fell to any |
+| PW-B | a rule that selects no module still trips the floor (`lib/anchor/domain/graph_rules/parameter_reaches_sink.ex`) | `parameter_reaches_sink_test.exs` | `37 tests, 1 failure` (red) | the floor a rule that selects no module leaves it to the selection floor |
+| PW-C | the shape says something else (`lib/anchor/domain/graph_rules/parameter_reaches_sink.ex`) | `parameter_reaches_sink_test.exs` | `37 tests, 1 failure` (red) | shape/1 states the rule |
+| PW-D | the rule needs no flow analysis (`lib/anchor/domain/graph_rules/parameter_reaches_sink.ex`) | `parameter_reaches_sink_test.exs` | `37 tests, 1 failure` (red) | rule_type/0, needs/0 and narrows?/2 |
+| PW-E | any two keys narrow (`lib/anchor/domain/graph_rules/parameter_reaches_sink.ex`) | `parameter_reaches_sink_test.exs` | `37 tests, 1 failure` (red) | rule_type/0, needs/0 and narrows?/2 |
+| PW-F | the demand analysis runs with the flow analysis crashed (`lib/anchor/managers/graph.ex`) | `graph_demand_test.exs` | `12 tests, 0 failures` (GREEN: survived) |  |
+| PW-G | the rule is not in the graph rule types (`lib/anchor/domain/rule_schema.ex`) | `rule_checks_nothing_test.exs`, `rule_schema_test.exs` | `67 tests, 4 failures` (red) | the positive case the ast types are exactly the rule types of Anchor.checks/0; engine/1 every shipped type has an engine; the graph types are the graph rule modules'; the positive case the README lists exactly the keys each rule type accepts, its relation and engine; parameter_reaches_sink: every rule that checks nothing is refused, and the positive rows load |
+| PW-H | the rule is not registered (`lib/anchor/domain/rule_shapes.ex`) | `graph_canary_test.exs`, `rule_schema_test.exs` | `46 tests, 0 failures` (GREEN: survived) |  |
+
+### PW-A — the chain stops after three steps, not at a repeat (the bounded form of the recursion guard)
+
+Run summary: `40 tests, 4 failures`
+
+```text
+1) test check/2 the chain follows an absent callee, past one that is not, and stops at recursion (Anchor.Domain.GraphRules.ParameterReachesSinkTest)
+     test/anchor/domain/graph_rules/parameter_reaches_sink_test.exs:109
+     ** (ExUnit.TimeoutError) test timed out after 2000ms. You can change the timeout:
+
+       1. per test by setting "@tag timeout: x" (accepts :infinity)
+       2. per test module by setting "@moduletag timeout: x" (accepts :infinity)
+       3. globally via "ExUnit.start(timeout: x)" configuration
+       4. by running "mix test --timeout x" which sets timeout
+       5. or by running "mix test --trace" which sets timeout to infinity
+          (useful when using IEx.pry/0)
+
+     where "x" is the timeout given as integer in milliseconds (defaults to 60_000).
+
+     code: [f, rec] = model |> ParameterReachesSink.check(@rule) |> Enum.sort_by(& &1.key)
+     stacktrace:
+       (elixir 1.19.4) lib/enum.ex:3045: Enum.amount_with_step/2
+       (elixir 1.19.4) lib/enum.ex:4629: Enum.slice_forward/4
+       (elixir 1.19.4) lib/enum.ex:483: Enum.at/3
+       (anchor 0.1.0) lib/anchor/domain/demand.ex:131: Anchor.Domain.Demand.param/3
+       (anchor 0.1.0) lib/anchor/domain/graph_rules/parameter_reaches_sink.ex:328: Anchor.Domain.GraphRules.ParameterReachesSink.absent?/2
+       (elixir 1.19.4) lib/enum.ex:4459: Enum.find_list/3
+       (anchor 0.1.0) lib/anchor/domain/graph_rules/parameter_reaches_sink.ex:314: Anchor.Domain.GraphRules.ParameterReachesSink.steps/3
+       (anchor 0.1.0) lib/anchor/domain/graph_rules/parameter_reaches_sink.ex:318: Anchor.Domain.GraphRules.ParameterReachesSink.steps/3
+       (anchor 0.1.0) lib/anchor/domain/graph_rules/parameter_reaches_sink.ex:305: Anchor.Domain.GraphRules.ParameterReachesSink.chain/3
+       (anchor 0.1.0) lib/anchor/domain/graph_rules/parameter_reaches_sink.ex:268: Anchor.Domain.GraphRules.ParameterReachesSink.violation/5
+       (anchor 0.1.0) lib/anchor/domain/graph_rules/parameter_reaches_sink.ex:125: anonymous fn/6 in Anchor.Domain.GraphRules.ParameterReachesSink.check/2
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       (anchor 0.1.0) lib/anchor/domain/graph_rules/parameter_reaches_sink.ex:122: Anchor.Domain.GraphRules.ParameterReachesSink.check/2
+       test/anchor/domain/graph_rules/parameter_reaches_sink_test.exs:117: (test)
+       (ex_unit 1.19.4) lib/ex_unit/runner.ex:528: ExUnit.Runner.exec_test/2
+       (stdlib 7.1) timer.erl:599: :timer.tc/2
+       (ex_unit 1.19.4) lib/ex_unit/runner.ex:450: anonymous fn/6 in ExUnit.Runner.spawn_test_monitor/4
+
+............
+```
+
+### PW-B — a rule that selects no module still trips the floor
+
+Run summary: `37 tests, 1 failure`
+
+```text
+1) test the floor a rule that selects no module leaves it to the selection floor (Anchor.Domain.GraphRules.ParameterReachesSinkTest)
+     test/anchor/domain/graph_rules/parameter_reaches_sink_test.exs:402
+     Assertion with == failed
+     code:  assert ParameterReachesSink.check(model, %{@rule | bucket: "managers"}) == []
+     left:  [
+              %Anchor.Domain.Violation{
+                line: nil,
+                trigger: nil,
+                message: "rule (id: \"sinks\", parameter_reaches_sink) judged no function: every function of the modules it selects is exempt, has no Core body, or could not be analysed, so it checked nothing. Fix: select modules with functions of their own, or remove the rule.",
+                filename: ".anchor.yml",
+                kind: :fail_closed,
+                key: nil,
+                rule_id: nil,
+                enforcement: :enforce
+              }
+            ]
+     right: []
+     stacktrace:
+       test/anchor/domain/graph_rules/parameter_reaches_sink_test.exs:404: (test)
+
+....
+```
+
+### PW-C — the shape says something else
+
+Run summary: `37 tests, 1 failure`
+
+```text
+1) test shape/1 states the rule (Anchor.Domain.GraphRules.ParameterReachesSinkTest)
+     test/anchor/domain/graph_rules/parameter_reaches_sink_test.exs:409
+     Assertion with =~ failed
+     code:  assert shape =~ "every parameter reaches the return value or an effect"
+     left:  "each parameter is read, directly or through a callee; callback implementations and captured, dynamically called or generated functions are exempt"
+     right: "every parameter reaches the return value or an effect"
+     stacktrace:
+       test/anchor/domain/graph_rules/parameter_reaches_sink_test.exs:411: (test)
+
+.....
+```
+
+### PW-D — the rule needs no flow analysis
+
+Run summary: `37 tests, 1 failure`
+
+```text
+1) test rule_type/0, needs/0 and narrows?/2 (Anchor.Domain.GraphRules.ParameterReachesSinkTest)
+     test/anchor/domain/graph_rules/parameter_reaches_sink_test.exs:416
+     Assertion with == failed
+     code:  assert ParameterReachesSink.needs() == [:cfa, :demand]
+     left:  [:demand]
+     right: [:cfa, :demand]
+     stacktrace:
+       test/anchor/domain/graph_rules/parameter_reaches_sink_test.exs:418: (test)
+
+..............
+```
+
+### PW-E — any two keys narrow
+
+Run summary: `37 tests, 1 failure`
+
+```text
+1) test rule_type/0, needs/0 and narrows?/2 (Anchor.Domain.GraphRules.ParameterReachesSinkTest)
+     test/anchor/domain/graph_rules/parameter_reaches_sink_test.exs:416
+     Expected false or nil, got true
+     code: refute ParameterReachesSink.narrows?("a", "b")
+     stacktrace:
+       test/anchor/domain/graph_rules/parameter_reaches_sink_test.exs:419: (test)
+
+.............
+```
+
+### PW-F — the demand analysis runs with the flow analysis crashed
+
+Run summary: `12 tests, 0 failures`
+
+```text
+Compiling 17 files (.ex)
+Generated anchor app
+Running ExUnit with seed: 440004, max_cases: 2
+
+............
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+12 tests, 0 failures
+warning: mtime (modified time) for "lib/anchor/domain/graph_rules/parameter_reaches_sink.ex" was set to the future, resetting to now
+warning: mtime (modified time) for "lib/anchor/managers/graph.ex" was set to the future, resetting to now
+```
+
+### PW-G — the rule is not in the graph rule types
+
+Run summary: `67 tests, 4 failures`
+
+```text
+1) test the positive case the ast types are exactly the rule types of Anchor.checks/0 (Anchor.Domain.RuleSchemaTest)
+     test/anchor/domain/rule_schema_test.exs:209
+     Assertion with == failed
+     code:  assert RuleSchema.rule_types_for_engine(:ast) == check_types
+     left:  [:alphabetized_functions, :case_on_bare_arg, :max_file_length,
+             :module_pattern_restrictions, :must_use_module,
+             :no_comparison_in_if, :no_direct_dependency,
+             :no_discarded_pure_expression,
+             :no_discarding_arrow_in_with, :no_forwarding_function,
+             :no_transitive_dependency, :no_tuple_match_in_head,
+             :parameter_reaches_sink, :single_control_flow,
+             :struct_getter_convention, :struct_owned_by_module]
+     right: [:alphabetized_functions, :case_on_bare_arg, :max_file_length,
+             :module_pattern_restrictions, :must_use_module,
+             :no_comparison_in_if, :no_direct_dependency,
+             :no_discarded_pure_expression,
+             :no_discarding_arrow_in_with, :no_forwarding_function,
+             :no_transitive_dependency, :no_tuple_match_in_head,
+             :single_control_flow, :struct_getter_convention,
+             :struct_owned_by_module]
+     stacktrace:
+       test/anchor/domain/rule_schema_test.exs:212: (test)
+
+........
+```
+
+### PW-H — the rule is not registered
+
+Run summary: `46 tests, 0 failures`
+
+```text
+Compiling 18 files (.ex)
+Generated anchor app
+Running ExUnit with seed: 679826, max_cases: 2
+
+..............................................
+Finished in 0.3 seconds (0.3s async, 0.00s sync)
+46 tests, 0 failures
+warning: mtime (modified time) for "lib/anchor/domain/rule_shapes.ex" was set to the future, resetting to now
+warning: mtime (modified time) for "lib/anchor/domain/rule_schema.ex" was set to the future, resetting to now
+```
+
+
+### The zeros, and what closed them
+
+- **PW-F:** the flow-crash test's `refute` could not fail. The behaviours read comes before the analysis and had no stub, so the mutant crashed there and never called the analysis. `663555d` stubs it, and PW-F is red below.
+- **PW-H:** it removed the rule from `RuleShapes`, which the tests it named do not read. It proved nothing about `@own_canary`, the row it was meant for. The row is now mutated directly (PW-H below), and the `RuleShapes` removal is PW-I, run against the test that reads it.
+
+Re-run against `663555d`:
+
+| # | Mutation | Tests run | Result | Failing tests |
+|---|---|---|---|---|
+| PW-F | the demand analysis runs with the flow analysis crashed (`lib/anchor/managers/graph.ex`) | `graph_demand_test.exs` | `12 tests, 1 failure` (red) | a crashed flow analysis: the rule reports it and the demand analysis is not run |
+| PW-H | the rule is not in @own_canary (`test/anchor/integration/graph_canary_test.exs`) | `graph_canary_test.exs` | `10 tests, 1 failure` (red) | every graph rule type finds its violating canary module; every finding has one Fix: |
+| PW-I | the rule has no shape entry (`lib/anchor/domain/rule_shapes.ex`) | `rule_shapes_test.exs` | `7 tests, 1 failure` (red) | for/1 every rule type in RuleSchema.rule_types/0 has a non-empty shape |
+
+### PW-F — the demand analysis runs with the flow analysis crashed
+
+Run summary: `12 tests, 1 failure`
+
+```text
+1) test a crashed flow analysis: the rule reports it and the demand analysis is not run (Anchor.Managers.GraphDemandTest)
+     test/anchor/managers/graph_demand_test.exs:243
+     Unexpectedly received message :demand_ran (which matched :demand_ran)
+     code: refute_received :demand_ran
+     stacktrace:
+       test/anchor/managers/graph_demand_test.exs:261: (test)
+```
+
+### PW-H — the rule is not in @own_canary
+
+Run summary: `10 tests, 1 failure`
+
+```text
+1) test every graph rule type finds its violating canary module; every finding has one Fix: (Anchor.Integration.GraphCanaryTest)
+     test/anchor/integration/graph_canary_test.exs:272
+     Anchor.Domain.GraphRules.ParameterReachesSink has no violating module in this canary. Fix: add one, or name the integration test of its own canary in @own_canary
+     code: for module <- GraphRules.all(),
+     stacktrace:
+       test/anchor/integration/graph_canary_test.exs:281: anonymous fn/3 in Anchor.Integration.GraphCanaryTest."test every graph rule type finds its violating canary module; every finding has one Fix:"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/integration/graph_canary_test.exs:279: (test)
+
+....
+```
+
+### PW-I — the rule has no shape entry
+
+Run summary: `7 tests, 1 failure`
+
+```text
+1) test for/1 every rule type in RuleSchema.rule_types/0 has a non-empty shape (Anchor.Domain.RuleShapesTest)
+     test/anchor/domain/rule_shapes_test.exs:30
+     ** (FunctionClauseError) no function clause matching in Anchor.Domain.RuleShapes.for/1
+
+     The following arguments were given to Anchor.Domain.RuleShapes.for/1:
+
+         # 1
+         %{id: nil, match: :reference, type: :parameter_reaches_sink, mode: nil, pattern: "MyApp.*", recursive: false, enforcement: :enforce, forbidden_modules: [], forbidden_patterns: [], forbidden_functions: [], allowed_callers: [], same_context: false, context_depth: 2, required_modules: [], max_lines: nil, allowed_functions: [], uses_module: nil, bucket: nil, paths: nil, min_modules: nil, baseline: nil, max_width: nil, min_files: 1, owned_namespaces: nil, pure_patterns: []}
+
+     Attempted function clauses (showing 1 out of 1):
+
+         def for(%{type: type} = rule) when -is_map_key(
+       %{
+         aggregate_declarations: Anchor.Domain.GraphRules.AggregateDeclarations,
+         alphabetized_functions: Anchor.Domain.Checks.AlphabetizedFunctions,
+         case_on_bare_arg: Anchor.Domain.Checks.CaseOnBareArg,
+         context_acyclic: Anchor.Domain.GraphRules.ContextAcyclic,
+         effects_match_bucket: Anchor.Domain.GraphRules.EffectsMatchBucket,
+         interface: Anchor.Domain.GraphRules.Interface,
+         layering: Anchor.Domain.GraphRules.Layering,
+         max_file_length: Anchor.Domain.Checks.MaxFileLength,
+         module_pattern_restrictions: Anchor.Domain.Checks.ModulePatternRestrictions,
+         must_use_module: Anchor.Domain.Checks.MustUseModule,
+         no_comparison_in_if: Anchor.Domain.Checks.NoComparisonInIf,
+         no_direct_dependency: Anchor.Domain.Checks.NoDependency,
+         no_discarded_pure_expression: Anchor.Domain.Checks.NoDiscardedPureExpression,
+         no_discarding_arrow_in_with: Anchor.Domain.Checks.NoDiscardingArrowInWith,
+         no_forwarding_function: Anchor.Domain.Checks.NoForwardingFunction,
+         no_transitive_dependency: Anchor.Domain.Checks.NoTransitiveDependency,
+         no_tuple_match_in_head: Anchor.Domain.Checks.NoTupleMatchInHead,
+         single_control_flow: Anchor.Domain.Checks.SingleControlFlow,
+         struct_getter_convention: Anchor.Domain.Checks.StructGetterConvention,
+         struct_owned_by_module: Anchor.Domain.Checks.StructOwnedByModule,
+         struct_owned_by_module_flow: Anchor.Domain.GraphRules.StructOwnedByModuleFlow
+       },
+       type
+     )-
+
+     code: for type <- RuleSchema.rule_types() do
+     stacktrace:
+       (anchor 0.1.0) lib/anchor/domain/rule_shapes.ex:56: Anchor.Domain.RuleShapes.for/1
+       test/anchor/domain/rule_shapes_test.exs:32: anonymous fn/2 in Anchor.Domain.RuleShapesTest."test for/1 every rule type in RuleSchema.rule_types/0 has a non-empty shape"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/rule_shapes_test.exs:31: (test)
+
+.
 ```
