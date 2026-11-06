@@ -7,6 +7,7 @@ defmodule Anchor.Managers.GraphCfaTest do
   # test/anchor/managers/graph_cfa_test.exs.
   #
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5574_cfa_wiring.md
+  # Sabotage record (DND-5675): ../../sabotage_records/graph_rules-20261106-dnd_5676_effects_cfa_batch.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -210,6 +211,30 @@ defmodule Anchor.Managers.GraphCfaTest do
         assert probe.message == "probe saw cfa: nil. Fix: none, a probe."
         assert report.counts.apply_sites == nil
       end
+    end
+
+    test "DND-5675: a rule needing :effects without :cfa is one issue and is not run; the " <>
+           "flow analysis is not run for it",
+         %{beams: beams} do
+      report =
+        run(
+          [
+            rule(:stub_needs_effects_without_cfa, "effects", 1),
+            rule(:stub_cfa_probe, "probe", 2)
+          ],
+          beams
+        )
+
+      refute_received :cfa_ran
+      assert report.exit_code == 1
+      assert [refused, probe] = report.findings
+
+      assert refused.message =~
+               ~s|rule 1 (id: "effects", stub_needs_effects_without_cfa) could not run: ArgumentError: | <>
+                 "Anchor.Test.GraphRuleStubs.NeedsEffectsWithoutCfa.needs/0 names :effects without :cfa"
+
+      assert length(String.split(refused.message, "Fix: ")) == 2
+      assert probe.message == "probe saw cfa: nil. Fix: none, a probe."
     end
 
     test "a rule whose needs/0 names what the runner does not compute is one issue and is " <>

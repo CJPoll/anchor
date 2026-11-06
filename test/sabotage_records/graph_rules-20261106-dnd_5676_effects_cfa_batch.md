@@ -650,3 +650,156 @@ None.
 ```anchor-kills
 # id	file	mfa	operator	status	killers
 ```
+
+## Hand run — an analysis named without one it reads is refused (DND-5675)
+
+- **Domain:** graph_rules
+- **Branch:** dnd-5676-effects-cfa-batch
+- **Date:** 2026-11-06
+- **Ticket:** DND-5675
+- **Code under test:** `Anchor.Domain.GraphRules` (needs/1, @prerequisites, prerequisites!/2)
+- **Suite run:** `mix test --timeout 2000 --max-cases 2 <files>` per mutation, through test-slot; files: `test/anchor/domain/graph_rules_test.exs`, `test/anchor/managers/graph_cfa_test.exs`
+
+Each mutation was applied to the committed tree, the named test files run, and the file restored with `git checkout --`.
+
+| Mutation | File | Change | Result |
+|---|---|---|---|
+| A | `lib/anchor/domain/graph_rules.ex` | `prerequisite not in needs,` -> `prerequisite not in [],` | 28 tests, 3 failures |
+| B | `lib/anchor/domain/graph_rules.ex` | `@prerequisites %{effects: [:cfa], demand: [:cfa], placement: [:cfa, :effects]}` -> `@prerequisites %{effects: [:cfa], demand: [:cfa], placement: [:cfa]}` | 18 tests, 1 failure |
+| C | `lib/anchor/domain/graph_rules.ex` | `@prerequisites %{effects: [:cfa], demand: [:cfa], placement: [:cfa, :effects]}` -> `@prerequisites %{effects: [:cfa], demand: [], placement: [:cfa, :effects]}` | 18 tests, 1 failure |
+| D | `lib/anchor/domain/graph_rules.ex` | `prerequisite not in needs,` -> `prerequisite not in [:cfa, :effects, :placement, :demand],` | 28 tests, 2 failures |
+| E | `lib/anchor/domain/graph_rules.ex` | `@prerequisites %{effects: [:cfa], demand: [:cfa], placement: [:cfa, :effects]}` -> `@prerequisites %{effects: [:cfa], demand: [:cfa], placement: [:cfa, :effects], aggregate_analysis: [:cfa]}` | 18 tests, 1 failure |
+
+### A
+
+```
+1) test needs/1 (DND-5574) DND-5675 control: every rule Anchor ships names what its analyses read (Anchor.Domain.GraphRulesTest)
+     test/anchor/domain/graph_rules_test.exs:79
+     ** (ArgumentError) Anchor.Domain.GraphRules.EffectsMatchBucket.needs/0 names :effects without :cfa, which :effects reads, so it would run degraded; add :cfa to Anchor.Domain.GraphRules.EffectsMatchBucket.needs/0
+     code: for module <- GraphRules.all(), do: GraphRules.needs(module)
+     stacktrace:
+       (anchor 0.1.0) lib/anchor/domain/graph_rules.ex:177: Anchor.Domain.GraphRules.prerequisites!/2
+       test/anchor/domain/graph_rules_test.exs:80: anonymous fn/2 in Anchor.Domain.GraphRulesTest."test needs/1 (DND-5574) DND-5675 control: every rule Anchor ships names what its analyses read"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/graph_rules_test.exs:80: (test)
+
+.
+
+  2) test needs/1 (DND-5574) the rule that holds the analyses complete needs the flow analysis and demand (Anchor.Domain.GraphRulesTest)
+     test/anchor/domain/graph_rules_test.exs:50
+     ** (ArgumentError) Anchor.Domain.GraphRules.AnalysesComplete.needs/0 names :demand without :cfa, which :demand reads, so it would run degraded; add :cfa to Anchor.Domain.GraphRules.AnalysesComplete.needs/0
+     code: assert GraphRules.needs(GraphRules.AnalysesComplete) == [:cfa, :demand]
+```
+
+### B
+
+```
+1) test needs/1 (DND-5574) DND-5675: an analysis named without one it reads raises, naming both (Anchor.Domain.GraphRulesTest)
+     test/anchor/domain/graph_rules_test.exs:62
+     Expected exception ArgumentError but nothing was raised
+     code: assert_raise ArgumentError, fn -> GraphRules.needs(Stubs.NeedsPlacementWithoutEffects) end
+     stacktrace:
+       test/anchor/domain/graph_rules_test.exs:74: (test)
+
+.
+Finished in 0.07 seconds (0.07s async, 0.00s sync)
+18 tests, 1 failure
+```
+
+### C
+
+```
+1) test needs/1 (DND-5574) DND-5675: an analysis named without one it reads raises, naming both (Anchor.Domain.GraphRulesTest)
+     test/anchor/domain/graph_rules_test.exs:62
+     Expected exception ArgumentError but nothing was raised
+     code: error = assert_raise ArgumentError, fn -> GraphRules.needs(Stubs.NeedsDemandWithoutCfa) end
+     stacktrace:
+       test/anchor/domain/graph_rules_test.exs:70: (test)
+
+..
+Finished in 0.08 seconds (0.08s async, 0.00s sync)
+18 tests, 1 failure
+```
+
+### D
+
+```
+1) test needs/1 (DND-5574) DND-5675: an analysis named without one it reads raises, naming both (Anchor.Domain.GraphRulesTest)
+     test/anchor/domain/graph_rules_test.exs:62
+     Expected exception ArgumentError but nothing was raised
+     code: error = assert_raise ArgumentError, fn -> GraphRules.needs(Stubs.NeedsEffectsWithoutCfa) end
+     stacktrace:
+       test/anchor/domain/graph_rules_test.exs:63: (test)
+
+.......................
+
+  2) test fail closed DND-5675: a rule needing :effects without :cfa is one issue and is not run; the flow analysis is not run for it (Anchor.Managers.GraphCfaTest)
+     test/anchor/managers/graph_cfa_test.exs:216
+     match (=) failed
+     code:  assert [refused, probe] = report.findings
+     left:  [refused, probe]
+     right: [
+              %Anchor.Domain.GraphReport.Finding{
+                rule_id: "probe",
+                type: :stub_cfa_probe,
+                label: "rule 2 (id: \"probe\", stub_cfa_probe)",
+                enforcement: :enforce,
+                key: "probe",
+                file: "lib/my_app/domain/flow.ex",
+                line: 1,
+                message: "probe saw cfa: nil. Fix: none, a probe."
+              }
+            ]
+     stacktrace:
+       test/anchor/managers/graph_cfa_test.exs:230: (test)
+
+
+Finished in 0.3 seconds (0.3s async, 0.00s sync)
+28 tests, 2 failures
+```
+
+### E
+
+```
+1) test needs/1 (DND-5574) DND-5675 control: every rule Anchor ships names what its analyses read (Anchor.Domain.GraphRulesTest)
+     test/anchor/domain/graph_rules_test.exs:79
+     ** (ArgumentError) Anchor.Domain.GraphRules.AggregateWriteSources.needs/0 names :aggregate_analysis without :cfa, which :aggregate_analysis reads, so it would run degraded; add :cfa to Anchor.Domain.GraphRules.AggregateWriteSources.needs/0
+     code: for module <- GraphRules.all(), do: GraphRules.needs(module)
+     stacktrace:
+       (anchor 0.1.0) lib/anchor/domain/graph_rules.ex:177: Anchor.Domain.GraphRules.prerequisites!/2
+       test/anchor/domain/graph_rules_test.exs:80: anonymous fn/2 in Anchor.Domain.GraphRulesTest."test needs/1 (DND-5574) DND-5675 control: every rule Anchor ships names what its analyses read"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/graph_rules_test.exs:80: (test)
+
+.............
+Finished in 0.06 seconds (0.06s async, 0.00s sync)
+18 tests, 1 failure
+test-slot: HELD before queuing (walt_ui first, DND-3526): heavy-go: HOLD repo=anchor step=gate: load1 13.32 (holds at > 12.0); captain_cap=5
+test-slot: Fix: nothing to do; this run queues by itself once heavy-go says GO (re-asked every 30s, within --wait-timeout). A run already holding units keeps them.
+test-slot: heavy-go: GO after 60s held; queuing for 8 unit(s)
+```
+
+### Traps
+
+- The first job on this ticket ran on a commit that did not compile (a new `defp` split `provided_needs!/2`'s clauses: warnings as errors); every row read "no summary" and nothing was recorded from it. A later run collided with `graph_placement_test.exs`'s own `:stub_needs_effects_only` stub type, so the shared stubs were renamed `NeedsEffectsWithoutCfa` and `NeedsDemandWithoutCfa`; the rows above are the run after both fixes.
+
+### Rows that stayed green
+
+- B, C and E each change one row of the table: only the exact-message test (B, C) or the ships-clean control (E) can tell, and that is the one that went red.
+
+### Regression (bug fix, before and after)
+
+`mix test --timeout 2000 --max-cases 2 test/anchor/domain/graph_rules_test.exs test/anchor/managers/graph_cfa_test.exs test/anchor/managers/graph_placement_test.exs`, lib at b122671 (before) and at the fix (after):
+
+```
+before: 34 tests, 2 failures
+  1) test needs/1 (DND-5574) DND-5675: an analysis named without one it reads raises, naming both (Anchor.Domain.GraphRulesTest)
+     test/anchor/domain/graph_rules_test.exs:62
+     Expected exception ArgumentError but nothing was raised
+     code: error = assert_raise ArgumentError, fn -> GraphRules.needs(Stubs.NeedsEffectsWithoutCfa) end
+     stacktrace:
+       test/anchor/domain/graph_rules_test.exs:63: (test)
+
+...............
+after: 34 tests, 0 failures
+```

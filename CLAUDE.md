@@ -494,7 +494,9 @@ analysis (a sort may call its `compare/2`).
 
 The runner wires it lazily (DND-5574): a graph rule that reads it declares
 `needs: [:cfa]` (`GraphRule`'s optional `needs/0`, read and checked by
-`GraphRules.needs/1`), and `Anchor.Managers.Graph` runs
+`GraphRules.needs/1`, which also refuses a need named without one it reads:
+`:effects` and `:demand` read `:cfa`, `:placement` reads `:cfa` and `:effects`,
+DND-5675), and `Anchor.Managers.Graph` runs
 `Cfa.analyze(graph, Cfa.default_seed(graph))` once per run, under the rule
 guard, only when a rule that runs needs it, and puts it on `Model.cfa` (`nil`
 otherwise). The summary then ends `; apply sites: <r> resolved, <a> any`, and
