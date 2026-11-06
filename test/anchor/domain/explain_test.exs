@@ -201,7 +201,6 @@ defmodule Anchor.Domain.ExplainTest do
         file: "lib/app/managers/orders.ex"
       }
 
-
       assert %Explain{findings: [^finding]} =
                Explain.build(config(), model(), subject(%{findings: [finding]}))
 
