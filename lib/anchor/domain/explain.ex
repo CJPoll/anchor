@@ -181,10 +181,11 @@ defmodule Anchor.Domain.Explain do
   end
 
   # In the graph but not classified: the run's own verdict (unclassified or
-  # ambiguous), with every bucket's selectors.
+  # ambiguous), with every bucket's selectors, from the facts the model was
+  # classified with (a `use` is only in those).
   defp unplaced(%Model{graph: graph} = model, arch, %{module: module} = subject)
        when is_map_key(graph.modules, module) do
-    facts = Model.facts(Map.fetch!(graph.modules, module), %{})
+    facts = Map.fetch!(model.facts, module)
     issue = graph_issue(Classification.classify(facts, arch), facts, arch)
 
     %{

@@ -3,8 +3,8 @@
 - **Domain:** rule_shapes
 - **Branch:** dnd-5443-graph-rules-b
 - **Date:** 2026-11-03
-- **Code under test:** `Anchor.Domain.RuleShapes` (`for/1`, `with_fix/2`, `with_shape/2`, `append_fix/2`, `fix_count/1`), each `Anchor.Domain.Checks.*` module's `shape/1` and Fix suffix, and in `Anchor.Domain.Failures` the generic Fix of a rejected config (`with_generic_fix/2`) and the three load refusals moved there from `Anchor.Domain.RuleSchema`
-- **Suite run:** each mutation ran `mix test --force --timeout 2000 --max-cases 2 <its test files>` inside one `test-slot`, by a driver that applied it, ran the files and restored the source. Every row is red but EC-F, a survivor recorded as a finding (see its note). The checkout's absolute path in the output reads `<worktree>`.
+- **Code under test:** `Anchor.Domain.RuleShapes` (`for/1`, `with_fix/2`, `with_shape/2`, `append_fix/2`, `fix_count/1`), each `Anchor.Domain.Checks.*` module's `shape/1` and Fix suffix, `Anchor.Domain.GraphRules.AggregateDeclarations`'s messages, and in `Anchor.Domain.Failures` the generic Fix of a rejected config (`with_generic_fix/2`) and the three load refusals moved there from `Anchor.Domain.RuleSchema`
+- **Suite run:** each mutation ran `mix test --force --timeout 2000 --max-cases 2 <its test files>` inside one `test-slot`, by a driver that applied it, ran the files and restored the source. Every row is red. The checkout's absolute path in the output reads `<worktree>`.
 
 RS-E and RS-F stand for every check: each check appends its Fix through the same
 `RuleShapes.with_shape/2` call, and `fix_shape_invariant_test.exs` holds every
@@ -29,12 +29,6 @@ findings to one `Fix:` (RS-H), and the graph canary names that test.
 | FA-D | the moved pure_patterns refusal loses its own Fix (`lib/anchor/domain/failures.ex`) | `failures_test.exs`, `rule_checks_nothing_test.exs`, `architecture_checks_nothing_test.exs` | `84 tests, 1 failure` (red) | one Fix: per rejected config each moved load refusal keeps its own Fix, and only it |
 | RS-G | aggregate_declarations (main's new graph type) has no shape entry (`lib/anchor/domain/rule_shapes.ex`) | `rule_shapes_test.exs` | `7 tests, 1 failure` (red) | for/1 every rule type in RuleSchema.rule_types/0 has a non-empty shape |
 | RS-H | an aggregate_declarations finding (claimed twice) carries no Fix: (`lib/anchor/domain/graph_rules/aggregate_declarations.ex`) | `aggregate_declarations_integration_test.exs` | `2 tests, 1 failure` (red) | N1: the violating module's table claim is claimed twice, at the config and at it |
-| EP-F | identity keeps the Fix: sentence (`lib/anchor/domain/enforcement_passes.ex`) | `enforcement_passes_test.exs`, `lint_baseline_test.exs` | `37 tests, 3 failures` (red) | merge/2 two rules' copies differing only in their Fix: are one finding, the enforced one's; a finding two rules make with no baseline yet, two report rules' finding keeps the baselined rule's key (for --write); a finding two rules make a report rule's copy never downgrades an enforced baselined rule's NEW finding |
-| RS-W | without_fix drops nothing (`lib/anchor/domain/rule_shapes.ex`) | `enforcement_passes_test.exs` | `15 tests, 1 failure` (red) | merge/2 two rules' copies differing only in their Fix: are one finding, the enforced one's |
-| EC-G | a Manager's effect finding carries no Fix: (`lib/anchor/domain/graph_rules/effects_match_bucket.ex`) | `effects_canary_test.exs` | `3 tests, 1 failure` (red) | the violating modules give one finding per bad function, the compliant none |
-| EC-F | the fallback role's finding carries no Fix: (`lib/anchor/domain/graph_rules/effects_match_bucket.ex`) | `effects_canary_test.exs`, `effects_match_bucket_test.exs` | `18 tests, 0 failures` (GREEN: survived) |  |
-
-After merging main at 07aef9f. EP-F and RS-W cover the identity fix; EP-F restores the unfixed behaviour. EC-G is the one-Fix assertion in effects_canary_test.exs. EC-F SURVIVES, and is a finding, not a pass: effects_match_bucket's last message clause is a fallback no (bucket role, inferred role) pair the other clauses leave reaches, so no test can reach it. It is main's code; proposed as a ticket in the MR report.
 
 ## RS-A — append_fix appends a second Fix: to a message that has one
 
@@ -164,8 +158,6 @@ Run summary: `23 tests, 17 failures`
        (elixir 1.19.4) lib/enum.ex:1688: Enum."-map/2-lists^map/1-1-"/2
        test/anchor/domain/fix_shape_invariant_test.exs:146: (test)
 
-
-
  10) test max_file_length: its canonical violation ends with exactly one Fix:, its rule's shape (Anchor.Domain.FixShapeInvariantTest)
      test/anchor/domain/fix_shape_invariant_test.exs:137
      File contains 4 lines of code (maximum allowed: 1). Consider breaking this file into smaller, more focused modules. Fix: at most 1 lines of code per file; split the module into smaller modules, each with one responsibility
@@ -174,8 +166,6 @@ Run summary: `23 tests, 17 failures`
        test/anchor/domain/fix_shape_invariant_test.exs:147: anonymous fn/2 in Anchor.Domain.FixShapeInvariantTest."test max_file_length: its canonical violation ends with exactly one Fix:, its rule's shape"/1
        (elixir 1.19.4) lib/enum.ex:1688: Enum."-map/2-lists^map/1-1-"/2
        test/anchor/domain/fix_shape_invariant_test.exs:146: (test)
-
-
 
  11) test no_comparison_in_if: its canonical violation ends with exactly one Fix:, its rule's shape (Anchor.Domain.FixShapeInvariantTest)
      test/anchor/domain/fix_shape_invariant_test.exs:137
@@ -186,8 +176,6 @@ Run summary: `23 tests, 17 failures`
        (elixir 1.19.4) lib/enum.ex:1688: Enum."-map/2-lists^map/1-1-"/2
        test/anchor/domain/fix_shape_invariant_test.exs:146: (test)
 
-
-
  12) test module_pattern_restrictions: its canonical violation ends with exactly one Fix:, its rule's shape (Anchor.Domain.FixShapeInvariantTest)
      test/anchor/domain/fix_shape_invariant_test.exs:137
      Module defines non-allowed function: other. Fix: define only the allowed functions: new
@@ -196,8 +184,6 @@ Run summary: `23 tests, 17 failures`
        test/anchor/domain/fix_shape_invariant_test.exs:147: anonymous fn/2 in Anchor.Domain.FixShapeInvariantTest."test module_pattern_restrictions: its canonical violation ends with exactly one Fix:, its rule's shape"/1
        (elixir 1.19.4) lib/enum.ex:1688: Enum."-map/2-lists^map/1-1-"/2
        test/anchor/domain/fix_shape_invariant_test.exs:146: (test)
-
-
 
  13) test struct_getter_convention: its canonical violation ends with exactly one Fix:, its rule's shape (Anchor.Domain.FixShapeInvariantTest)
      test/anchor/domain/fix_shape_invariant_test.exs:137
@@ -208,8 +194,6 @@ Run summary: `23 tests, 17 failures`
        (elixir 1.19.4) lib/enum.ex:1688: Enum."-map/2-lists^map/1-1-"/2
        test/anchor/domain/fix_shape_invariant_test.exs:146: (test)
 
-
-
  14) test single_control_flow: its canonical violation ends with exactly one Fix:, its rule's shape (Anchor.Domain.FixShapeInvariantTest)
      test/anchor/domain/fix_shape_invariant_test.exs:137
      Function clause `f` contains 2 control-flow structures (maximum allowed: 1). Control-flow structures include: pipe chains (|>), cond, with, case, if, unless, for, and receive. Favor extracting pipe chains to helpers before extracting other structures. Fix: one control structure per function clause: extract each extra pipe chain, case, cond, with, if, unless, for or receive into its own named function
@@ -218,8 +202,6 @@ Run summary: `23 tests, 17 failures`
        test/anchor/domain/fix_shape_invariant_test.exs:147: anonymous fn/2 in Anchor.Domain.FixShapeInvariantTest."test single_control_flow: its canonical violation ends with exactly one Fix:, its rule's shape"/1
        (elixir 1.19.4) lib/enum.ex:1688: Enum."-map/2-lists^map/1-1-"/2
        test/anchor/domain/fix_shape_invariant_test.exs:146: (test)
-
-
 
  15) test no_discarding_arrow_in_with: its canonical violation ends with exactly one Fix:, its rule's shape (Anchor.Domain.FixShapeInvariantTest)
      test/anchor/domain/fix_shape_invariant_test.exs:137
@@ -230,8 +212,6 @@ Run summary: `23 tests, 17 failures`
        (elixir 1.19.4) lib/enum.ex:1688: Enum."-map/2-lists^map/1-1-"/2
        test/anchor/domain/fix_shape_invariant_test.exs:146: (test)
 
-
-
  16) test no_direct_dependency: its canonical violation ends with exactly one Fix:, its rule's shape (Anchor.Domain.FixShapeInvariantTest)
      test/anchor/domain/fix_shape_invariant_test.exs:137
      Module has forbidden direct dependency on MyApp.Repo. Fix: do not reference MyApp.Repo from a module this rule selects; reach it through a module the rule allows
@@ -240,8 +220,6 @@ Run summary: `23 tests, 17 failures`
        test/anchor/domain/fix_shape_invariant_test.exs:147: anonymous fn/2 in Anchor.Domain.FixShapeInvariantTest."test no_direct_dependency: its canonical violation ends with exactly one Fix:, its rule's shape"/1
        (elixir 1.19.4) lib/enum.ex:1688: Enum."-map/2-lists^map/1-1-"/2
        test/anchor/domain/fix_shape_invariant_test.exs:146: (test)
-
-
 
  17) test struct_owned_by_module: its canonical violation ends with exactly one Fix:, its rule's shape (Anchor.Domain.FixShapeInvariantTest)
      test/anchor/domain/fix_shape_invariant_test.exs:137
@@ -526,8 +504,6 @@ Run summary: `84 tests, 29 failures`
      stacktrace:
        test/anchor/domain/architecture_checks_nothing_test.exs:59: (test)
 
-
-
  10) test buckets[].select[].exports_function: every refusal is refused with its key path and Fix:, positives load (Anchor.Domain.ArchitectureChecksNothingTest)
      test/anchor/domain/architecture_checks_nothing_test.exs:54
      buckets[].select[].exports_function / no arity: the issue carries 2 Fix: lines: Anchor rejected .anchor.yml, so no Anchor rule was checked: architecture.buckets[0].select[0].exports_function "run" has no arity. Fix: write the function as "name/arity", e.g. "__aggregate__/0". Fix: correct .anchor.yml to match the README section "Config schema: rule keys at a glance" and its table "Keys each rule type accepts".
@@ -537,8 +513,6 @@ Run summary: `84 tests, 29 failures`
      code: assert failures == [], Enum.join(failures, "\n")
      stacktrace:
        test/anchor/domain/architecture_checks_nothing_test.exs:59: (test)
-
-
 
  11) test calls: every refusal is refused with its key path and Fix:, positives load (Anchor.Domain.ArchitectureChecksNothingTest)
      test/anchor/domain/architecture_checks_nothing_test.exs:54
@@ -555,8 +529,6 @@ Run summary: `84 tests, 29 failures`
      code: assert failures == [], Enum.join(failures, "\n")
      stacktrace:
        test/anchor/domain/architecture_checks_nothing_test.exs:59: (test)
-
-
 
  12) test roots[].exports_function: every refusal is refused with its key path and Fix:, positives load (Anchor.Domain.ArchitectureChecksNothingTest)
      test/anchor/domain/architecture_checks_nothing_test.exs:54
@@ -577,8 +549,6 @@ Run summary: `84 tests, 29 failures`
      code: assert failures == [], Enum.join(failures, "\n")
      stacktrace:
        test/anchor/domain/architecture_checks_nothing_test.exs:59: (test)
-
-
 
  14) test buckets[].select[].behaviour: every refusal is refused with its key path and Fix:, positives load (Anchor.Domain.ArchitectureChecksNothingTest)
      test/anchor/domain/architecture_checks_nothing_test.exs:54
@@ -611,8 +581,6 @@ Run summary: `84 tests, 29 failures`
      stacktrace:
        test/anchor/domain/architecture_checks_nothing_test.exs:59: (test)
 
-
-
  17) test architecture: every refusal is refused with its key path and Fix:, positives load (Anchor.Domain.ArchitectureChecksNothingTest)
      test/anchor/domain/architecture_checks_nothing_test.exs:54
      architecture / architectur: misspelt is an unknown top-level key: the issue carries 2 Fix: lines: Anchor rejected .anchor.yml, so no Anchor rule was checked: unknown top-level key(s) "architectur"; Fix: remove or correct it; the top-level keys are `architecture`, `rules` and `sabotage`. Fix: correct .anchor.yml to match the README section "Config schema: rule keys at a glance" and its table "Keys each rule type accepts".
@@ -638,8 +606,6 @@ Run summary: `84 tests, 29 failures`
      stacktrace:
        test/anchor/domain/architecture_checks_nothing_test.exs:59: (test)
 
-
-
  19) test buckets[].select: every refusal is refused with its key path and Fix:, positives load (Anchor.Domain.ArchitectureChecksNothingTest)
      test/anchor/domain/architecture_checks_nothing_test.exs:54
      buckets[].select / missing: the issue carries 2 Fix: lines: Anchor rejected .anchor.yml, so no Anchor rule was checked: architecture.buckets[0].select is missing (must be a non-empty list of selectors). Fix: list at least one selector (behaviour, exports_function, paths, pattern, uses_module). Fix: correct .anchor.yml to match the README section "Config schema: rule keys at a glance" and its table "Keys each rule type accepts".
@@ -653,8 +619,6 @@ Run summary: `84 tests, 29 failures`
      code: assert failures == [], Enum.join(failures, "\n")
      stacktrace:
        test/anchor/domain/architecture_checks_nothing_test.exs:59: (test)
-
-
 
  20) test buckets[].name: every refusal is refused with its key path and Fix:, positives load (Anchor.Domain.ArchitectureChecksNothingTest)
      test/anchor/domain/architecture_checks_nothing_test.exs:54
@@ -688,8 +652,6 @@ Run summary: `84 tests, 29 failures`
      stacktrace:
        test/anchor/domain/architecture_checks_nothing_test.exs:59: (test)
 
-
-
  23) test roots[].pattern: every refusal is refused with its key path and Fix:, positives load (Anchor.Domain.ArchitectureChecksNothingTest)
      test/anchor/domain/architecture_checks_nothing_test.exs:54
      roots[].pattern / a match-all *: the issue carries 2 Fix: lines: Anchor rejected .anchor.yml, so no Anchor rule was checked: architecture.roots[0].pattern "*" matches every module. Fix: write a module-name glob with at least one literal segment, e.g. "MyApp.Domain.*". Fix: correct .anchor.yml to match the README section "Config schema: rule keys at a glance" and its table "Keys each rule type accepts".
@@ -700,8 +662,6 @@ Run summary: `84 tests, 29 failures`
      code: assert failures == [], Enum.join(failures, "\n")
      stacktrace:
        test/anchor/domain/architecture_checks_nothing_test.exs:59: (test)
-
-
 
  24) test roots[].uses_module: every refusal is refused with its key path and Fix:, positives load (Anchor.Domain.ArchitectureChecksNothingTest)
      test/anchor/domain/architecture_checks_nothing_test.exs:54
@@ -726,8 +686,6 @@ Run summary: `84 tests, 29 failures`
      stacktrace:
        test/anchor/domain/architecture_checks_nothing_test.exs:59: (test)
 
-
-
  26) test contexts.depth: every refusal is refused with its key path and Fix:, positives load (Anchor.Domain.ArchitectureChecksNothingTest)
      test/anchor/domain/architecture_checks_nothing_test.exs:54
      contexts.depth / missing: the issue carries 2 Fix: lines: Anchor rejected .anchor.yml, so no Anchor rule was checked: architecture.contexts.depth is missing (must be a positive integer). Fix: set it to how many leading module-name segments name a context, e.g. 2. Fix: correct .anchor.yml to match the README section "Config schema: rule keys at a glance" and its table "Keys each rule type accepts".
@@ -739,8 +697,6 @@ Run summary: `84 tests, 29 failures`
      stacktrace:
        test/anchor/domain/architecture_checks_nothing_test.exs:59: (test)
 
-
-
  27) test buckets[].min_modules: every refusal is refused with its key path and Fix:, positives load (Anchor.Domain.ArchitectureChecksNothingTest)
      test/anchor/domain/architecture_checks_nothing_test.exs:54
      buckets[].min_modules / 0: the issue carries 2 Fix: lines: Anchor rejected .anchor.yml, so no Anchor rule was checked: architecture.buckets[0].min_modules must be a positive integer, got: 0. Fix: a floor is a positive integer; omit it for the default 1. Fix: correct .anchor.yml to match the README section "Config schema: rule keys at a glance" and its table "Keys each rule type accepts".
@@ -750,8 +706,6 @@ Run summary: `84 tests, 29 failures`
      code: assert failures == [], Enum.join(failures, "\n")
      stacktrace:
        test/anchor/domain/architecture_checks_nothing_test.exs:59: (test)
-
-
 
  28) test roots[].paths: every refusal is refused with its key path and Fix:, positives load (Anchor.Domain.ArchitectureChecksNothingTest)
      test/anchor/domain/architecture_checks_nothing_test.exs:54
@@ -765,8 +719,6 @@ Run summary: `84 tests, 29 failures`
      code: assert failures == [], Enum.join(failures, "\n")
      stacktrace:
        test/anchor/domain/architecture_checks_nothing_test.exs:59: (test)
-
-
 
  29) test buckets[].select[].pattern: every refusal is refused with its key path and Fix:, positives load (Anchor.Domain.ArchitectureChecksNothingTest)
      test/anchor/domain/architecture_checks_nothing_test.exs:54
@@ -995,8 +947,6 @@ Run summary: `84 tests, 21 failures`
      stacktrace:
        test/anchor/domain/rule_checks_nothing_test.exs:54: (test)
 
-
-
  12) test struct_owned_by_module: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
      test/anchor/domain/rule_checks_nothing_test.exs:48
      struct_owned_by_module / no selector: the issue carries 0 Fix: lines: Anchor rejected .anchor.yml, so no Anchor rule was checked: rule 1: the rule has no selector, so it would select no file; give it one of: paths (a non-empty list of path globs), pattern (a module-name glob), uses_module (a module the file uses). correct .anchor.yml to match the README section "Config schema: rule keys at a glance" and its table "Keys each rule type accepts".
@@ -1017,8 +967,6 @@ Run summary: `84 tests, 21 failures`
      code: assert failures == [], Enum.join(failures, "\n")
      stacktrace:
        test/anchor/domain/rule_checks_nothing_test.exs:54: (test)
-
-
 
  13) test no_comparison_in_if: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
      test/anchor/domain/rule_checks_nothing_test.exs:48
@@ -1115,8 +1063,6 @@ Run summary: `84 tests, 21 failures`
      stacktrace:
        test/anchor/domain/rule_checks_nothing_test.exs:54: (test)
 
-
-
  16) test no_transitive_dependency: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
      test/anchor/domain/rule_checks_nothing_test.exs:48
      no_transitive_dependency / no selector: the issue carries 0 Fix: lines: Anchor rejected .anchor.yml, so no Anchor rule was checked: rule 1: the rule has no selector, so it would select no file; give it one of: paths (a non-empty list of path globs), pattern (a module-name glob), uses_module (a module the file uses). correct .anchor.yml to match the README section "Config schema: rule keys at a glance" and its table "Keys each rule type accepts".
@@ -1170,8 +1116,6 @@ Run summary: `84 tests, 21 failures`
      stacktrace:
        test/anchor/domain/rule_checks_nothing_test.exs:54: (test)
 
-
-
  18) test single_control_flow: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
      test/anchor/domain/rule_checks_nothing_test.exs:48
      single_control_flow / no selector: the issue carries 0 Fix: lines: Anchor rejected .anchor.yml, so no Anchor rule was checked: rule 1: the rule has no selector, so it would select no file; give it one of: paths (a non-empty list of path globs), pattern (a module-name glob), uses_module (a module the file uses). correct .anchor.yml to match the README section "Config schema: rule keys at a glance" and its table "Keys each rule type accepts".
@@ -1190,8 +1134,6 @@ Run summary: `84 tests, 21 failures`
      code: assert failures == [], Enum.join(failures, "\n")
      stacktrace:
        test/anchor/domain/rule_checks_nothing_test.exs:54: (test)
-
-
 
  19) test must_use_module: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
      test/anchor/domain/rule_checks_nothing_test.exs:48
@@ -1215,8 +1157,6 @@ Run summary: `84 tests, 21 failures`
      code: assert failures == [], Enum.join(failures, "\n")
      stacktrace:
        test/anchor/domain/rule_checks_nothing_test.exs:54: (test)
-
-
 
  20) test interface: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
      test/anchor/domain/rule_checks_nothing_test.exs:48
@@ -1242,8 +1182,6 @@ Run summary: `84 tests, 21 failures`
      code: assert failures == [], Enum.join(failures, "\n")
      stacktrace:
        test/anchor/domain/rule_checks_nothing_test.exs:54: (test)
-
-
 
  21) test no_forwarding_function: every rule that checks nothing is refused, and the positive rows load (Anchor.Domain.RuleChecksNothingTest)
      test/anchor/domain/rule_checks_nothing_test.exs:48
@@ -1369,152 +1307,4 @@ Run summary: `2 tests, 1 failure`
        test/anchor/integration/aggregate_declarations_integration_test.exs:95: anonymous fn/2 in Anchor.Integration.AggregateDeclarationsIntegrationTest."test N1: the violating module's table claim is claimed twice, at the config and at it"/1
        (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
        test/anchor/integration/aggregate_declarations_integration_test.exs:91: (test)
-```
-
-## EP-F — identity keeps the Fix: sentence
-
-Run summary: `37 tests, 3 failures`
-
-```text
-  1) test merge/2 two rules' copies differing only in their Fix: are one finding, the enforced one's (Anchor.Domain.EnforcementPassesTest)
-     test/anchor/domain/enforcement_passes_test.exs:29
-     match (=) failed
-     code:  assert [%Violation{enforcement: :enforce, message: message}] =
-              EnforcementPasses.merge(enforced, reported)
-     left:  [%Anchor.Domain.Violation{enforcement: :enforce, message: message}]
-     right: [
-              %Anchor.Domain.Violation{
-                line: 3,
-                trigger: "alias",
-                message: "cannot resolve. Fix: enforced rule's shape",
-                filename: nil,
-                kind: :rule,
-                key: nil,
-                rule_id: nil,
-                enforcement: :enforce
-              },
-              %Anchor.Domain.Violation{
-                line: 3,
-                trigger: "alias",
-                message: "cannot resolve. Fix: report rule's shape",
-                filename: nil,
-                kind: :rule,
-                key: nil,
-                rule_id: nil,
-                enforcement: :report
-              }
-            ]
-     stacktrace:
-       test/anchor/domain/enforcement_passes_test.exs:33: (test)
-
-......
-
-  2) test a finding two rules make with no baseline yet, two report rules' finding keeps the baselined rule's key (for --write) (Anchor.Managers.LintBaselineTest)
-     test/anchor/managers/lint_baseline_test.exs:329
-     match (=) failed
-     code:  assert [{"lib/b.ex", "File", "pure|lib/b.ex|File"}] = findings(results)
-     left:  [{"lib/b.ex", "File", "pure|lib/b.ex|File"}]
-     right: [
-              {"lib/b.ex", "File", nil},
-              {"lib/b.ex", "File", "pure|lib/b.ex|File"}
-            ]
-     stacktrace:
-       test/anchor/managers/lint_baseline_test.exs:338: (test)
-
-..........
-
-  3) test a finding two rules make a report rule's copy never downgrades an enforced baselined rule's NEW finding (Anchor.Managers.LintBaselineTest)
-     test/anchor/managers/lint_baseline_test.exs:309
-     match (=) failed
-     code:  assert [%Violation{enforcement: :enforce, key: "pure|lib/b.ex|File"}] = violations
-     left:  [%Anchor.Domain.Violation{enforcement: :enforce, key: "pure|lib/b.ex|File"}]
-     right: [
-              %Anchor.Domain.Violation{
-                line: 2,
-                trigger: "File",
-                message: "Module has forbidden direct dependency on File. Fix: do not reference File from a module this rule selects; reach it through a module the rule allows",
-                filename: nil,
-                kind: :rule,
-                key: nil,
-                rule_id: nil,
-                enforcement: :report
-              },
-              %Anchor.Domain.Violation{
-                line: 2,
-                trigger: "File",
-                message: "Module has forbidden direct dependency on File. Fix: do not reference File, IO from a module this rule selects; reach it through a module the rule allows",
-                filename: nil,
-                kind: :rule,
-                key: "pure|lib/b.ex|File",
-                rule_id: "pure",
-                enforcement: :enforce
-              }
-            ]
-     stacktrace:
-       test/anchor/managers/lint_baseline_test.exs:317: (test)
-
-.........
-```
-
-## RS-W — without_fix drops nothing
-
-Run summary: `15 tests, 1 failure`
-
-```text
-  1) test merge/2 two rules' copies differing only in their Fix: are one finding, the enforced one's (Anchor.Domain.EnforcementPassesTest)
-     test/anchor/domain/enforcement_passes_test.exs:29
-     match (=) failed
-     code:  assert [%Violation{enforcement: :enforce, message: message}] =
-              EnforcementPasses.merge(enforced, reported)
-     left:  [%Anchor.Domain.Violation{enforcement: :enforce, message: message}]
-     right: [
-              %Anchor.Domain.Violation{
-                line: 3,
-                trigger: "alias",
-                message: "cannot resolve. Fix: enforced rule's shape",
-                filename: nil,
-                kind: :rule,
-                key: nil,
-                rule_id: nil,
-                enforcement: :enforce
-              },
-              %Anchor.Domain.Violation{
-                line: 3,
-                trigger: "alias",
-                message: "cannot resolve. Fix: report rule's shape",
-                filename: nil,
-                kind: :rule,
-                key: nil,
-                rule_id: nil,
-                enforcement: :report
-              }
-            ]
-     stacktrace:
-       test/anchor/domain/enforcement_passes_test.exs:33: (test)
-
-.............
-```
-
-## EC-G — a Manager's effect finding carries no Fix:
-
-Run summary: `3 tests, 1 failure`
-
-```text
-  1) test the violating modules give one finding per bad function, the compliant none (Anchor.Integration.EffectsCanaryTest)
-     test/anchor/integration/effects_canary_test.exs:73
-     AnchorFixtures.EffectsCanary.Direct.load/1 is in bucket managers (managers) but calls an effect itself: AnchorFixtures.EffectsCanary.Direct.load/1 -> File.read/1. Remedy: move the call into an adapter of this context and call the adapter.
-     code: for finding <- report.findings do
-     stacktrace:
-       (elixir 1.19.4) lib/enum.ex:1688: Enum."-map/2-lists^map/1-1-"/2
-       test/anchor/integration/effects_canary_test.exs:97: (test)
-
-.
-```
-
-## EC-F — the fallback role's finding carries no Fix:
-
-Run summary: `18 tests, 0 failures`
-
-```text
-
 ```

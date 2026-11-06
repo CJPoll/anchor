@@ -4,6 +4,7 @@ defmodule Anchor.Domain.GraphRules.InterfaceTest do
   # contexts of two apps.
   #
   # Sabotage record: ../../../sabotage_records/interface-20261103-dnd_5443_graph_rules_b.md
+  # Sabotage record (after the merge): ../../../sabotage_records/interface-20261106-dnd_5443_graph_rules_b.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures

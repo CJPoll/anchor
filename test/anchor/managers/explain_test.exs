@@ -5,6 +5,7 @@ defmodule Anchor.Managers.ExplainTest do
   # run of the same build writes under (captured from Managers.Graph.run/2).
   #
   # Sabotage record: ../../sabotage_records/explain-20261103-dnd_5443_graph_rules_b.md
+  # Sabotage record (after the merge): ../../sabotage_records/explain-20261106-dnd_5443_graph_rules_b.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures

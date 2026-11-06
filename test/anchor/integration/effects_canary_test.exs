@@ -7,7 +7,7 @@ defmodule Anchor.Integration.EffectsCanaryTest do
   # artifact store is doubled, so nothing is written into the repo.
   #
   # Sabotage record: ../../sabotage_records/effects-20261103-dnd_5447_graph_rules_c.md
-  # Sabotage record (the one-Fix assertion): ../../sabotage_records/rule_shapes-20261103-dnd_5443_graph_rules_b.md
+  # Sabotage record (the one-Fix assertion): ../../sabotage_records/effects-20261106-dnd_5443_graph_rules_b.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures

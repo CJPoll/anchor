@@ -3,6 +3,7 @@ defmodule Anchor.Domain.ExplainTest do
   # only. Pure Domain, over hand-built models.
   #
   # Sabotage record: ../../sabotage_records/explain-20261103-dnd_5443_graph_rules_b.md
+  # Sabotage record (after the merge): ../../sabotage_records/explain-20261106-dnd_5443_graph_rules_b.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config
@@ -12,6 +13,7 @@ defmodule Anchor.Domain.ExplainTest do
   alias Anchor.Domain.Explain
   alias Anchor.Domain.Graph
   alias Anchor.Domain.Graph.ModuleNode
+  alias Anchor.Domain.Graph.SourceFacts
   alias Anchor.Domain.GraphReport.Finding
   alias Anchor.Domain.Model
   alias Anchor.Domain.RuleShapes
@@ -95,8 +97,29 @@ defmodule Anchor.Domain.ExplainTest do
       graph: %Graph{modules: nodes},
       architecture: config().architecture,
       classification: classification,
-      config: config()
+      config: config(),
+      facts: Map.new(nodes, fn {module, node} -> {module, Model.facts(node, %{})} end)
     }
+  end
+
+  # Explains App.Worker, a module whose source says `use GenServer`, over a model
+  # built as a run builds it.
+  defp explain_of_worker(config, file \\ "lib/app/domain/worker.ex") do
+    source = "defmodule App.Worker do\n  use GenServer\nend\n"
+    node = %ModuleNode{module: App.Worker, app: :app, source_file: file}
+
+    {model, _issues} =
+      Model.build(
+        %Graph{modules: %{App.Worker => node}},
+        config,
+        %{file => SourceFacts.from_source(file, source)}
+      )
+
+    Explain.build(
+      config,
+      model,
+      subject(%{module: App.Worker, path: file, argument: "App.Worker"})
+    )
   end
 
   defp subject(overrides) do
@@ -226,6 +249,43 @@ defmodule Anchor.Domain.ExplainTest do
       assert length(explain.classification["selectors"]) == 3
       assert explain.may_call == []
       assert explain.must_not_call == []
+    end
+
+    # Re-classifying with no source facts lost every `use`, so the answer could
+    # differ from the verdict the model holds: a crash here, the wrong one below.
+    test "a module in two buckets, one through its source's `use`, is ambiguous" do
+      explain = explain_of_worker(config())
+
+      assert explain.classification["status"] == "ambiguous"
+
+      assert explain.classification["fix"] =~
+               "App.Worker is in buckets domain (by paths [\"lib/**/domain/**/*.ex\"]) and " <>
+                 "framework (by uses_module GenServer). Fix:"
+
+      assert %{"bucket" => "framework", "matched" => "uses_module GenServer"} =
+               Enum.find(explain.classification["selectors"], &(&1["bucket"] == "framework"))
+    end
+
+    test "a module in two buckets, both through its source's `use`, is ambiguous" do
+      second = %{
+        "name" => "workers",
+        "role" => "framework",
+        "select" => [%{"uses_module" => "GenServer"}]
+      }
+
+      yaml =
+        update_in(@yaml, ["architecture"], fn arch ->
+          arch
+          |> Map.update!("buckets", &(&1 ++ [second]))
+          |> put_in(["calls", "workers"], ["workers"])
+        end)
+
+      explain = explain_of_worker(Config.parse_config(yaml), "lib/app/worker.ex")
+
+      assert explain.classification["status"] == "ambiguous"
+
+      assert explain.classification["fix"] =~
+               "framework (by uses_module GenServer) and workers (by uses_module GenServer)"
     end
   end
 
