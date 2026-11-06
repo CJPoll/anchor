@@ -54,13 +54,26 @@ defmodule AnchorFixtures.ParameterSinks.Started do
   def literal_spec, do: {__MODULE__, :literal_target, [:fixed]}
   def literal_target(_x), do: :ok
 
+  # A local call passes an MFA too.
+  def run_local(x), do: run(__MODULE__, :local_worker, [x])
+  def local_worker(_x), do: :ok
+  defp run(m, f, a), do: apply(m, f, a)
+
+  # A list of unknown length: every arity of the name.
+  def spawned_tail(x, rest), do: spawn(__MODULE__, :tail_worker, [x | rest])
+  def tail_worker(_x, _y), do: :ok
+
   # A module outside the project names nothing the rule judges.
   def outside_spec, do: {GenServer, :start, [:fixed]}
 end
 
 defmodule AnchorFixtures.ParameterSinks.Computed do
-  # A computed name: the rule cannot see its target, and counts it.
+  # A computed name on a known module: every public function of this arity there.
   def dispatch(action, x), do: apply(__MODULE__, action, [x])
+  def index(_params), do: :ok
+
+  # Computed module and name: the rule cannot see its target, and counts it.
+  def anywhere(mod, name, x), do: apply(mod, name, [x])
 end
 
 defmodule AnchorFixtures.ParameterSinks.Macros do

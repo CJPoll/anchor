@@ -1167,8 +1167,10 @@ guard that reads the parameter.
 **Exempt**, because something else fixes the signature: a callback of a
 behaviour the module declares; a function captured anywhere in the project
 (`&M.f/2`); a public function a dynamic call can reach (`mod.f(x)`, by
-`Anchor.Domain.DynamicCalls`); a public function a literal `{M, :f, args}` names (a
-child spec's `start:`, `spawn(M, :f, [a])`); and a generated function (a module with no literal
+`Anchor.Domain.DynamicCalls`); a public function a `{M, :f, args}` names (a child
+spec's `start:`, `spawn(M, :f, [a])`, and with a variable name
+`apply(__MODULE__, action, [conn, params])` every public function of that arity in
+`M`); and a generated function (a module with no literal
 `defmodule`, a `__name__`, a macro's output, the head a default argument
 generates).
 
@@ -1179,11 +1181,10 @@ read. If nothing the rule selects could be judged, that is one fail-closed issue
 
 Demand over-approximates what a function does with a parameter, so its imprecision
 only hides a finding: a parameter passed to an unresolved call is used. Who calls a
-function is another question. A call whose function name is computed
-(`apply(__MODULE__, action, [conn, params])`) can reach any public function of its
-arity; exempting them all would let one such call silence the rule for that arity,
-so they stay judged and the run counts those calls. When that count is not zero,
-check a public function's finding against them before you drop the parameter: a
+function is another question. A call with both the module and the name computed
+(`apply(mod, action, args)`) can reach any public function; exempting them all would
+let one such call silence the rule, so they stay judged and the run counts the calls
+that compute a name. When that count is not zero, check a public function's finding against them before you drop the parameter: a
 signature one of them relies on is a false finding this rule cannot rule out. Each
 run prints all of it:
 

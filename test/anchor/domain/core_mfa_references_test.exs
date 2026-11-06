@@ -27,6 +27,11 @@ defmodule Anchor.Domain.CoreMfaReferencesTest do
     def tuple_var(args), do: {M, :f, args}
     def later_args(x), do: Task.start_link(M, :f, [x])
     def improper(x, y), do: {M, :f, [x | y]}
+    def literal_improper, do: {M, :f, [:a | :b]}
+    def spawn_improper(x, y), do: spawn(M, :f, [x | y])
+    def local(x), do: run(M, :f, [x])
+    def both_computed(mod, name, x), do: {mod, name, [x]}
+    defp run(m, f, a), do: apply(m, f, a)
     def a_number, do: {M, :f, 3}
     def computed(mod, x), do: {mod, :f, [x]}
     def computed_name(name, x), do: {M, name, [x]}
@@ -55,21 +60,25 @@ defmodule Anchor.Domain.CoreMfaReferencesTest do
         {:tuple_var, 1, [{M, :f, nil}]},
         {:later_args, 1, [{M, :f, 1}]},
         {:a_number, 0, []},
-        {:computed, 2, []},
-        {:computed_name, 2, []},
+        {:computed, 2, [{nil, :f, 1}]},
+        {:computed_name, 2, [{M, nil, 1}]},
+        {:both_computed, 3, []},
+        {:improper, 2, [{M, :f, nil}]},
+        {:literal_improper, 0, [{M, :f, nil}]},
+        {:spawn_improper, 2, [{M, :f, nil}]},
+        {:local, 1, [{M, :f, 1}]},
         {:strings, 1, []},
         {:none, 1, []}
       ] do
     test "#{function}/#{arity}", %{binary: binary} do
-      references = binary |> core({unquote(function), unquote(arity)}) |> Core.mfa_references()
+      references =
+        binary
+        |> core({unquote(function), unquote(arity)})
+        |> Core.mfa_references()
+        # The compiler's own `{:function_clause, x, y}` has the shape, and no module.
+        |> Enum.reject(&(elem(&1, 0) == :function_clause))
 
       assert Enum.sort(references) == unquote(Macro.escape(expected))
     end
-  end
-
-  test "a list of unknown length is no reference, and each reference is listed once", %{
-    binary: binary
-  } do
-    assert binary |> core({:improper, 2}) |> Core.mfa_references() == []
   end
 end

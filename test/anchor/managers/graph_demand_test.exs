@@ -217,6 +217,20 @@ defmodule Anchor.Managers.GraphDemandTest do
     end
   end
 
+  test "a rule that crashes while it counts is one issue: the run still reports the others", %{
+    beams: beams
+  } do
+    expect(BehaviourSourceMock, :callbacks, fn [] -> %{} end)
+
+    report =
+      run([sinks(), probe(2)], beams, demand: fn _g, _c, _e -> %Demand{summaries: :not_a_map} end)
+
+    assert [issue, probe] = report.findings
+    assert issue.message =~ "could not run"
+    assert probe.message =~ "probe saw cfa:"
+    assert Map.get(report.counts, :parameter_sinks) == nil
+  end
+
   test "a behaviour read that raises is the same one issue", %{beams: beams} do
     expect(BehaviourSourceMock, :callbacks, fn [] -> raise "no code server" end)
     report = run([sinks()], beams)

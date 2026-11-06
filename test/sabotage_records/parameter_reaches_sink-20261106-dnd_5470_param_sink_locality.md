@@ -3,7 +3,7 @@
 - **Domain:** parameter_reaches_sink
 - **Branch:** dnd-5470-param-sink-locality
 - **Date:** 2026-11-06
-- **Code under test:** `Anchor.Domain.GraphRules.ParameterReachesSink`, `Anchor.Domain.Core.mfa_references/1`, `Anchor.Domain.DynamicCalls.computed_name_count/1`, the `:demand` wiring in `Anchor.Managers.Graph`, `Anchor.Domain.GraphReport.parameter_sinks/3` and its note, and the two rows of `Anchor.Domain.Demand.Transfer` the QA plan names.
+- **Code under test:** `Anchor.Domain.GraphRules.ParameterReachesSink`, `Anchor.Domain.Core.mfa_references/1`, `Anchor.Domain.DynamicCalls.computed_name_count/1`, the `:demand` wiring in `Anchor.Managers.Graph`, `Anchor.Domain.GraphReport.parameter_sinks/4` and its note, and the two rows of `Anchor.Domain.Demand.Transfer` the QA plan names.
 - **Suite run:** each mutation ran `mix test --timeout 2000 --max-cases 2 <its test files>` inside one `test-slot`, by a driver that applied it, ran the files and restored the source. The checkout's absolute path in the output reads `<worktree>`.
 
 Every mutation below reddens a test; each section shows the first failure, cut at 70 lines. Earlier rounds came first: their survivors were test defects, fixed in this branch. A `CfaProbe` needs nothing, so `no rule needs it` proved less than it said (PR-B); `both crashed` did not run an effects rule (PR-G); a private function with no public sibling is no candidate at all (PS-G3); a literal list or nested tuple is only read as a term inside a map, because `:cerl_trees.fold` already walks the others (PL-H, PL-I); no fixture named a module outside the project (PL-J).

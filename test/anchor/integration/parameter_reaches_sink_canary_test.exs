@@ -135,8 +135,8 @@ defmodule Anchor.Integration.ParameterReachesSinkCanaryTest do
     assert any > 0, "Uses.invoked/2 applies a closure from outside"
     assert imprecise > 0, "Uses.applied/3 passes p to an apply/3 Core does not name"
 
-    assert report.counts.parameter_sinks.computed_names == 2,
-           "Uses.applied/3, Computed.dispatch/2"
+    assert report.counts.parameter_sinks.computed_names == 3,
+           "Uses.applied/3, Computed.dispatch/2, Computed.anywhere/3"
 
     assert judged > 0
     assert exempt > 0
@@ -145,7 +145,7 @@ defmodule Anchor.Integration.ParameterReachesSinkCanaryTest do
     assert GraphReport.summary(report) =~
              "; parameter_reaches_sink: #{precise} apply sites precise, #{any} fell to any, "
 
-    assert GraphReport.summary(report) =~ ", 2 calls of a computed name"
+    assert GraphReport.summary(report) =~ ", 3 calls of a computed name"
 
     assert %{"parameter_sinks" => %{"any" => ^any, "judged" => ^judged}} =
              JSON.decode!(GraphReport.render(report, :json))

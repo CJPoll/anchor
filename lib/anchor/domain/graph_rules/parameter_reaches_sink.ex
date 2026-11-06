@@ -28,10 +28,10 @@ defmodule Anchor.Domain.GraphRules.ParameterReachesSink do
   (`Anchor.Domain.GraphReport`).
 
   Who calls a function is another question, and there one kind of call stays
-  unseen: a computed name (`apply(__MODULE__, action, [conn, params])`) can reach
-  any public function of its arity. Exempting them all would let one such call
-  silence the rule for that arity across the project, so they stay judged and the
-  run prints how many such calls there are
+  unseen: with both the module and the name computed (`apply(mod, action, args)`),
+  or an `apply(fun, args)`, it can reach any public function. Exempting them all
+  would let one such call silence the rule across the project, so they stay judged
+  and the run prints how many calls compute a name
   (`Anchor.Domain.DynamicCalls.computed_name_count/1`). When that count is not
   zero, check a public function's finding against those calls before dropping the
   parameter: a signature one of them relies on is a false finding this rule
@@ -51,10 +51,13 @@ defmodule Anchor.Domain.GraphRules.ParameterReachesSink do
       `Anchor.Domain.DynamicCalls.targets/2`): the unseen receiver fixes the
       arity. A call whose function name is computed as well names no target,
       so it exempts nothing;
-    * a public function a literal `{M, :f, args}` names, in a term or as three
-      arguments of a call (a child spec's `start:`, `spawn(M, :f, [a])`,
+    * a public function a `{M, :f, args}` names, in a term or as three arguments
+      of a call (a child spec's `start:`, `spawn(M, :f, [a])`,
       `Anchor.Domain.Core.mfa_references/1`): the args fix the arity. Args that
-      are not a list of known length reach every arity of the name;
+      are not a list of known length reach every arity of the name; a variable
+      for the name (`apply(__MODULE__, action, [conn, params])`) reaches every
+      public function of that arity in `M`, and a variable for the module every
+      exporter of `f`;
     * a generated function: its module has no literal `defmodule`
       (`ModuleNode.generated?`), its name is `__name__`, or a macro wrote it (a
       clause meta with `generated` or `context`, the argument Elixir generates
@@ -225,6 +228,13 @@ defmodule Anchor.Domain.GraphRules.ParameterReachesSink do
     end
   end
 
+  # No module named: the exporters of the name, as a dynamic call reaches them.
+  defp add_named({nil, name, arity}, reached, graph) do
+    graph
+    |> DynamicCalls.candidates({name, arity})
+    |> Enum.reduce(reached, &add_named({&1, name, arity}, &2, graph))
+  end
+
   defp add_named({module, name, arity}, reached, %Graph{modules: modules}) do
     case Map.get(modules, module) do
       nil -> reached
@@ -233,10 +243,11 @@ defmodule Anchor.Domain.GraphRules.ParameterReachesSink do
   end
 
   defp add_exports(functions, {module, name, arity}, reached) do
-    for {{^name, candidate}, %FunctionNode{kind: :def}} <- functions,
+    for {{candidate_name, candidate}, %FunctionNode{kind: :def}} <- functions,
+        name in [nil, candidate_name],
         arity in [nil, candidate],
         reduce: reached do
-      reached -> MapSet.put(reached, {module, name, candidate})
+      reached -> MapSet.put(reached, {module, candidate_name, candidate})
     end
   end
 

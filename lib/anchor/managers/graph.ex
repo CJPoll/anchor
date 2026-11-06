@@ -377,6 +377,14 @@ defmodule Anchor.Managers.Graph do
   defp parameter_sinks(_rules, %Model{demand: nil}), do: nil
 
   defp parameter_sinks(rules, %Model{} = model) do
+    # Under the guard: the rule that crashed in `check/2` is one issue already.
+    case guarded(fn -> sink_counts(rules, model) end) do
+      {:ok, counts} -> counts
+      _crashed -> nil
+    end
+  end
+
+  defp sink_counts(rules, model) do
     counts =
       for {%{type: :parameter_reaches_sink} = rule, _module, _needs} <- rules,
           do: ParameterReachesSink.counts(model, rule)
