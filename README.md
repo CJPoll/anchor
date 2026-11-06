@@ -1146,8 +1146,8 @@ no baseline.
 
 ### Writes and transactions: the `aggregate_write_sources` rule (DND-5459)
 
-With an `aggregates:` section, `mix anchor.graph` reads every database write
-and transaction from the compiled code (each function's Core Erlang, so an
+When a rule needs it, `mix anchor.graph` reads every database write and
+transaction from the compiled code (each function's Core Erlang, so an
 alias, a pipe and an `@repo` attribute are already resolved):
 
 - **Repos** are the modules whose beam declares `@behaviour Ecto.Repo`, plus

@@ -180,8 +180,8 @@ into exactly one bucket, with no precedence between buckets; the graph runner
 
 ## Writes and transactions (DND-5459)
 
-With an `aggregates:` section, `Anchor.Domain.Model` builds
-`aggregate_analysis` (`Anchor.Domain.Aggregates.Analysis`): every database
+When a rule needs it (`needs: [:aggregate_analysis]`), the runner computes
+`Model.aggregate_analysis` (`Anchor.Domain.Aggregates.Analysis`): every database
 write, what it writes, every transaction's write set over its call closure,
 and the writes outside transactions, all read from Core.
 `Aggregates.FunctionWalk` is the one walk over a function's Core (node ids,

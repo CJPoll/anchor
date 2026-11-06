@@ -756,7 +756,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
           line,
           "a call of #{name}/#{length(args)} on a module held in a variable",
           tags,
-          repo_write?(name, length(args))
+          repo_write?(name, length(args)) or name in @raw_sql
         )
     end
   end
@@ -817,7 +817,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   defp capture_of_write_name?([_module, name, arity], env) do
     with {:ok, name} <- FunctionWalk.atom(name, env),
          true <- :cerl.is_literal(arity) and is_integer(:cerl.concrete(arity)) do
-      repo_write?(name, :cerl.concrete(arity))
+      repo_write?(name, :cerl.concrete(arity)) or name in @raw_sql
     else
       _computed -> true
     end
@@ -907,7 +907,13 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
     with {:ok, m} <- FunctionWalk.atom(m, env),
          {:ok, f} <- FunctionWalk.atom(f, env),
          {:ok, n} <- list_length(args, env) do
-      literal_call(acc, {m, f, n}, [], env, tags, line, ctx)
+      if unread_apply?({m, f, n}, ctx) do
+        dynamic(acc, line, "an apply of #{ViolationKey.mfa({m, f, n})} Anchor does not read", [
+          :unread_transaction | tags
+        ])
+      else
+        literal_call(acc, {m, f, n}, [], env, tags, line, ctx)
+      end
     else
       _other -> dynamic(acc, line, "an apply/3 Anchor cannot resolve", tags)
     end
@@ -915,6 +921,14 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
 
   defp erlang_apply(acc, _args, _env, tags, line, _ctx),
     do: dynamic(acc, line, "an apply/2 Anchor cannot resolve", tags)
+
+  # An apply/3 has no argument nodes to read a body or a Multi step from.
+  defp unread_apply?({@multi, name, _arity}, _ctx), do: name in [:append, :merge, :prepend, :run]
+
+  defp unread_apply?({module, name, arity}, ctx) do
+    repo_transaction?(ctx, module, name, arity) or
+      Enum.any?(ctx.transaction_functions, &FunctionRef.matches?(&1, module, name, arity))
+  end
 
   defp literal_call(acc, {module, name, arity} = callee, args, env, tags, line, ctx) do
     cond do
@@ -990,6 +1004,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
 
   defp write?({module, name, arity} = callee, ctx) do
     (MapSet.member?(ctx.repos, module) and repo_write?(name, arity)) or
+      (name in @raw_sql and (module == @raw_sql_module or MapSet.member?(ctx.repos, module))) or
       write_function?(callee, ctx)
   end
 

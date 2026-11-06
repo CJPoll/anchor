@@ -106,7 +106,7 @@ defmodule Anchor.Domain.Aggregates.Inference do
       counts.writes > 0 && "#{counts.writes} write(s) found, #{counts.unresolved} unresolved",
       scopes != [] && "#{length(scopes)} transaction(s)",
       counts.outside_gaps > 0 &&
-        "#{counts.outside_gaps} call(s) Anchor cannot attribute outside a transaction"
+        "#{counts.outside_gaps} call(s) or write(s) Anchor cannot attribute outside a transaction"
     ]
     |> Enum.filter(&is_binary/1)
   end

@@ -228,6 +228,21 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
 
     def s71(fun), do: Repo.transaction(fn -> Helper.tx_any(fun) end)
     def s72(fun), do: Repo.transaction(fn -> Repo.transaction(fun) end)
+    def s74(sqls), do: Repo.transaction(fn -> Enum.each(sqls, &Repo.query!/1) end)
+    def s75(sqls), do: Repo.transaction(fn -> Enum.map(sqls, &Ecto.Adapters.SQL.query!(Repo, &1)) end)
+    def s76(sqls), do: Repo.transaction(fn -> Enum.each(sqls, &Ecto.Adapters.SQL.query!/1) end)
+    def s77(args), do: Repo.transaction(fn -> apply(Repo, :transaction, args) end)
+
+    def s78(fun) do
+      args = [fun]
+      Repo.transaction(fn -> apply(Repo, :transaction, args) end)
+    end
+
+    def s79(m) do
+      args = [m, :a, fn _, _ -> {:ok, 1} end]
+      Repo.transaction(fn -> apply(Multi, :run, args) end)
+    end
+
     def s73(fun), do: Repo.transaction(fn -> local_unread(fun) end)
     defp local_unread(fun), do: atomically(fun)
 
@@ -348,7 +363,13 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
               :s68,
               :s71,
               :s72,
-              :s73
+              :s73,
+              :s74,
+              :s75,
+              :s76,
+              :s77,
+              :s78,
+              :s79
             ],
        do: 1
 
@@ -648,6 +669,23 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
     test "a local transaction function's gap reaches the transaction around it", %{analysis: a} do
       assert %Scope{complete?: false, gaps: gaps} = one(a, :s73)
       assert Enum.any?(gaps, &match?({:dynamic_call, {@x, :local_unread, 1}, _}, &1))
+    end
+
+    test "a capture of raw SQL in a body is a gap", %{analysis: a} do
+      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s74, 1}, _}]} = one(a, :s74)
+      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s76, 1}, _}]} = one(a, :s76)
+    end
+
+    test "a lambda calling raw SQL in a body is a gap (positive control)", %{analysis: a} do
+      assert %Scope{complete?: false} = one(a, :s75)
+    end
+
+    test "an apply of a transaction or a Multi step opens nothing Anchor reads: a gap", %{
+      analysis: a
+    } do
+      assert %Scope{complete?: false} = one(a, :s77)
+      assert %Scope{complete?: false} = one(a, :s78)
+      assert %Scope{complete?: false} = one(a, :s79)
     end
 
     test "a transaction nested in a body: its gap is a gap of the outer one", %{analysis: a} do

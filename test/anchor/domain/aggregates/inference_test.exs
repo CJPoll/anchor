@@ -146,7 +146,7 @@ defmodule Anchor.Domain.Aggregates.InferenceTest do
     outside = %{analysis([], []) | counts: %{counts() | outside_gaps: 1}}
 
     assert {:error, why} = Inference.render_yaml(outside)
-    assert why =~ "1 call(s) Anchor cannot attribute"
+    assert why =~ "1 call(s) or write(s) Anchor cannot attribute"
   end
 
   test "F8: no repo is an error, never declare: none" do

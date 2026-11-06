@@ -63,6 +63,10 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
               defp n29b, do: Repo.insert(%S{})
 
               def n30(fun), do: Repo.transaction(fun)
+              def n31(sqls), do: Enum.each(sqls, &Repo.query!/1)
+              def n32(mod), do: mod.query!("DELETE FROM s")
+              def n33(sqls), do: Enum.each(sqls, &Ecto.Adapters.SQL.query!/1)
+              def n34(mod, sqls), do: Enum.each(sqls, &mod.query!/1)
 
               def n27(0), do: :ok
               def n27(n), do: (Repo.query!("DELETE FROM s"); n27(n - 1))
@@ -185,8 +189,15 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
              %{mfa: {@n, :n12, 1}, what: computed},
              %{mfa: {@n, :n22, 1}, what: captured},
              %{mfa: {@n, :n23, 1}, what: computed_capture},
-             %{mfa: {@n, :n27, 1}}
+             %{mfa: {@n, :n27, 1}},
+             %{mfa: {@n, :n31, 1}, what: raw_capture},
+             %{mfa: {@n, :n32, 1}, what: computed_raw},
+             %{mfa: {@n, :n33, 1}},
+             %{mfa: {@n, :n34, 2}, what: "a capture on a computed module or name"}
            ] = a.unattributed
+
+    assert raw_capture == "a capture of the write #{inspect(@repo)}.query!/1"
+    assert computed_raw == "a call of query!/1 on a module held in a variable"
 
     assert captured == "a capture of the write #{inspect(@repo)}.insert/1"
     assert computed_capture == "a capture on a computed module or name"
