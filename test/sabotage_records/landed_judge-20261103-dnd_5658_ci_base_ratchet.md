@@ -17,7 +17,7 @@ Positive controls that stayed green under every mutation, and why:
 
 - An unchanged base gives no failure and no note.
 - An honest shrink of a base rule's baseline passes (`GraphLandedJudgeTest`).
-- Outside the judge, the config loads with `load_in/1` and nothing is compared.
+- Outside the judge, the config loads with `load/0` (`load_in/1` until the merge of main at 48c6728, which went back to main's call so main's graph tests keep their stubs) and nothing is compared.
 
 | # | Mutation | Tests | Failing tests |
 |---|---|---|---|
@@ -26,7 +26,7 @@ Positive controls that stayed green under every mutation, and why:
 | L3 | a removed base rule is not reported | 14, 3 failed | `LandedJudgeTest`: `a base rule the change removes fails, naming it`, `a base rule renamed is a removal (the new id is not a base rule)`; `GraphLandedJudgeTest`: `a base rule the change removes fails: exit 1` |
 | L4 | a base rule retyped to a known type passes (`{:ok, _type} -> []`) | 14, 2 failed | `LandedJudgeTest`: `a base rule retyped to a type the judge knows fails`; `GraphLandedJudgeTest`: `a base rule the change retypes fails: exit 1` |
 | L5 | a base rule retyped to a set-aside type is also given a FIRST LANDING note | 8, 1 failed | `LandedJudgeTest`: `a base rule retyped to a type the judge set aside fails, and is no first landing` |
-| L6 | the Manager drops the landed judge's findings (run before the critic round renamed `landed_judge/3` to `landed/3`; PENDING: its re-run on `landed/3` was parked before it started) | 6, 4 failed | `GraphLandedJudgeTest`: removes, retypes, base config unreadable, FIRST LANDING |
+| L6 | the Manager drops the landed judge's findings (run before the critic round renamed `landed_judge/3` to `landed/3`; Re-run on the merged `landed/3`, 2026-11-06: `landed = Enum.take(Map.get(deps, :landed, []), 0)`, 7 tests, 3 failed: `the judge loads with unknown types set aside; a new type is a FIRST LANDING, exit 0`, `a base rule the change retypes fails: exit 1`, `a base rule the change removes fails: exit 1`.) | 6, 4 failed | `GraphLandedJudgeTest`: removes, retypes, base config unreadable, FIRST LANDING |
 | L7 | the Manager never loads with `load_judged/1` | 20, 6 failed | the four `GraphLandedJudgeTest` judge tests (`Mox.UnexpectedCallError` on `load_in/1`) and the two `--project` tests in `Mix.Tasks.Anchor.GraphTest` |
 | L8 | `Finding.note/2` gives an `:enforce` finding | 8, 3 failed | `FindingNoteTest`: both tests; `GraphLandedJudgeTest`: `the judge loads with unknown types set aside; a new type is a FIRST LANDING, exit 0` |
 | L9 | the judge reads no base config when no rule has a baseline | 6, 4 failed | `GraphLandedJudgeTest`: base config unreadable, retypes, removes, FIRST LANDING (`GitBase.rules/3` expected, not called) |
@@ -34,6 +34,7 @@ Positive controls that stayed green under every mutation, and why:
 | L11 | the landed judge runs the change's rule definitions, not the base's (`rules/2` returns the change's rules); the first try left a variable unused and failed to compile, so that run does not count, and this re-run compiles | 18, 3 failed | `LandedJudgeTest`: `rules/2: what the landed judge runs a base rule the change narrows or downgrades runs as the base defines it`, `... an id-less rule runs once when the base has it as written, and is added when new`; `GraphLandedJudgeTest`: `a base rule the change downgrades and shrinks is judged as the base defines it: exit 1` |
 | L12 | an id-less base rule is compared with its position, so the change's copy also runs | 11, 1 failed | `LandedJudgeTest`: `rules/2: what the landed judge runs an id-less rule runs once when the base has it as written, and is added when new` |
 | L13 | the Manager does not swap in the base's definitions (`judged_rules/2` keeps the change's rules) | 7, 1 failed | `GraphLandedJudgeTest`: `a base rule the change downgrades and shrinks is judged as the base defines it: exit 1` |
+| L14 | a base config the judge cannot read reads as nothing removed (`{:ok, config, Map.put(deps, :landed, [])}` in place of `{:could_not_check, ...}`, 2026-11-06) | 7, 1 failed | `a base config that cannot be read is COULD NOT MEASURE, never nothing removed` |
 | S11 | the landed judge never sets a rule aside (L1, in the base copy) | self-test T7 | `FAIL T7 a rule type new in the pull request is a FIRST LANDING, not a refusal: exit 3, wanted 0` |
 | S12 | the landed judge passes a removed base rule (L3, in the base copy) | self-test T11 | `FAIL T11 a removed base rule fails the landed judge: exit 0, wanted 1` |
 | S13 | the landed judge runs the change's rule definitions (L13, in the base copy) | self-test T13 | `FAIL T13 a downgraded base rule is judged as the base defines it: exit 0, wanted 1` |

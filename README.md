@@ -681,6 +681,8 @@ does not have. Per rule id:
 | on the base, with a key the base does not know | COULD NOT MEASURE | 3 |
 | any, beside a top-level section the base does not know | COULD NOT MEASURE | 3 |
 | on the base, narrowed (a smaller selector, `enforcement: report`) with its baseline shrunk or grown to match | the base's definition still finds it: NEW or GREW | 1 |
+| on the base, its new entry excused by a `narrows?/2` the pull request changed | the base's `narrows?/2` decides: GREW | 1 |
+| any, with a `.anchor.yml` at the base that cannot be read | COULD NOT MEASURE | 3 |
 
 The refused rows are landed by the owner. The pull request's own `mix anchor.graph --base` step still runs:
 it is the product under test. A base with no `bin/ci/base-judge.sh` prints

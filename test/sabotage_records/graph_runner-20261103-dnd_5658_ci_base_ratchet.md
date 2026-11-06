@@ -20,3 +20,5 @@ Each mutation was one `perl -0pi` substitution in the named file. The suite ran,
 | G8 | the graph artifact goes under DIR's build path, not the judge's | 2 of 14 | the `--project DIR` test (`assert artifact_dir == Path.join(Mix.Project.build_path(), "anchor")`, left `/tmp/anchor-project-9/_build/test/anchor`) and `the artifact goes under Mix's build path, as MIX_BUILD_PATH sets it` |
 
 The verbatim run logs are at `ai-artifacts/coordination/2026-11-03-anchor-causal/logs/DND-5658/sab/` in the custom repo (machine-local).
+
+**Later (2026-11-06, the merge of main at 48c6728):** the Manager outside `--project` went back to `loader.load()`, as main calls it, so main's new graph tests and in-flight branches keep their stubs. G7's seam (`load_in/1` under the request's root) is gone from the graph path, and the `@root` pins it counted in `graph_test.exs` went with it. Under `--project` the root still reaches the loader: L7 and G1 hold it (`load_judged/1`, `fn @root`). The `load_in/1` strings quoted above are the failures as they read then.
