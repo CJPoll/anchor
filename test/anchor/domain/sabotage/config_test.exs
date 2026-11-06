@@ -2,6 +2,7 @@ defmodule Anchor.Domain.Sabotage.ConfigTest do
   # DND-5473: the `sabotage:` section of `.anchor.yml`, parsed and refused.
   # Sabotage record: ../../../sabotage_records/sabotage-20261103-dnd_5473_sabotage_run.md
   # Sabotage record (DND-5489): ../../../sabotage_records/sabotage-20261106-dnd_5470_param_sink_locality.md
+  # Sabotage record (DND-5490): ../../../sabotage_records/sabotage-20261106-dnd_5490_scan.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Sabotage.Config
@@ -20,6 +21,7 @@ defmodule Anchor.Domain.Sabotage.ConfigTest do
       assert config.survivors == nil
       assert config.behaviour_locality_baseline == nil
       assert config.behaviour_locality_enforcement == :report
+      assert config.scan_shards == 7
 
       assert config.records == %{
                dir: "test/sabotage_records",
@@ -52,6 +54,7 @@ defmodule Anchor.Domain.Sabotage.ConfigTest do
                  "survivors" => "sabotage/survivors.txt",
                  "behaviour_locality_baseline" => "b/locality.txt",
                  "behaviour_locality_enforcement" => "enforce",
+                 "scan_shards" => 30,
                  "records" => %{
                    "dir" => "apps/{app}/test/sabotage_records",
                    "naming" => "ticket_nn_what",
@@ -70,6 +73,7 @@ defmodule Anchor.Domain.Sabotage.ConfigTest do
       assert config.survivors == "sabotage/survivors.txt"
       assert config.behaviour_locality_baseline == "b/locality.txt"
       assert config.behaviour_locality_enforcement == :enforce
+      assert config.scan_shards == 30
 
       assert config.records == %{
                dir: "apps/{app}/test/sabotage_records",
@@ -121,6 +125,10 @@ defmodule Anchor.Domain.Sabotage.ConfigTest do
       {"an empty test_command", %{"test_command" => []}, "sabotage.test_command"},
       {"a non-string test_command element", %{"test_command" => [1]}, "sabotage.test_command"},
       {"max_mutants 0", %{"max_mutants" => 0}, "sabotage.max_mutants"},
+      {"scan_shards 0 (DND-5490)", %{"scan_shards" => 0},
+       "sabotage.scan_shards must be a positive integer"},
+      {"scan_shards a string (DND-5490)", %{"scan_shards" => "7"},
+       "sabotage.scan_shards must be a positive integer"},
       {"timeout_seconds a string", %{"timeout_seconds" => "x"}, "sabotage.timeout_seconds"},
       {"an unknown operator", %{"operators" => ["bogus"]}, "sabotage.operators names \"bogus\""},
       {"an empty operator list", %{"operators" => []}, "sabotage.operators"},

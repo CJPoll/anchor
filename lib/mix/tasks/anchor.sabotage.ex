@@ -29,6 +29,7 @@ defmodule Mix.Tasks.Anchor.Sabotage do
       mix anchor.sabotage run [--base REF] [--max N|all] [--only ID]... [--dry-run]
                               [--coverage PATH] [--no-record] [--domain D]
                               [--ticket KEY] [--slot S] [--print-survivor-lines]
+                              [--scope diff|all] [--shard I/N|auto] [--report PATH]
       mix anchor.sabotage restore
 
   `run` applies the mutants of the changed functions one at a time, runs only
@@ -95,6 +96,20 @@ defmodule Mix.Tasks.Anchor.Sabotage do
   `sabotage:` config, the scope or a record or the survivors list could not be
   read, changed source files in which nothing was found, one mutant id
   generated twice).
+
+  ## The nightly scan (DND-5490)
+
+  `--scope all` scopes every function with a literal clause in the project's
+  `lib` files instead of the diff (`Anchor.Domain.Sabotage.Scope.all/1`);
+  `--shard I/N` keeps the mutants whose id, read as a hexadecimal number, is
+  `I` modulo `N`, and `--shard auto` is the shard of the day, day-of-year
+  modulo `sabotage.scan_shards` (default 7). `--report PATH` writes the scan's
+  report (`Anchor.Domain.Sabotage.ScanReport`) to `PATH` and its term beside
+  it as `.etf`: the survivors the survivors list does not hold are its
+  findings. `--report` and `--scope all` write no record. With `--report` the
+  exit code ignores survivors: 0 measured, 2 the report not written or a
+  refusal, 3 COULD NOT MEASURE (no function in scope, a failing baseline,
+  nothing measured). A malformed `--shard` or `--scope` is a usage error (2).
 
   ## replay (DND-5485)
 
@@ -186,6 +201,7 @@ defmodule Mix.Tasks.Anchor.Sabotage do
          mix anchor.sabotage run [--base REF] [--max N|all] [--only ID]... [--dry-run]
                                  [--coverage PATH] [--no-record] [--domain D]
                                  [--ticket KEY] [--slot S] [--print-survivor-lines]
+                                 [--scope diff|all] [--shard I/N|auto] [--report PATH]
          mix anchor.sabotage restore
          mix anchor.sabotage verify --base REF [--format text|json]
          mix anchor.sabotage replay [--max N|all] [--records DIR_GLOB]...
@@ -193,7 +209,7 @@ defmodule Mix.Tasks.Anchor.Sabotage do
          mix anchor.sabotage behaviours [--coverage PATH] [--format text|json]
                                         [--write-baseline] [--base REF]
          mix anchor.sabotage coverage-compare FIRST SECOND
-  Fix: use one of these forms; --max takes a positive integer or `all`\
+  Fix: use one of these forms; --max takes a positive integer or `all`; --shard I/N needs 0 <= I < N\
   """
 
   @impl Mix.Task
@@ -278,11 +294,21 @@ defmodule Mix.Tasks.Anchor.Sabotage do
       domain: :string,
       ticket: :string,
       slot: :string,
-      print_survivor_lines: :boolean
+      print_survivor_lines: :boolean,
+      scope: :string,
+      shard: :string,
+      report: :string
     ]
 
     with {parsed, [], []} <- OptionParser.parse(argv, strict: switches),
-         {:ok, max} <- max(parsed[:max]) do
+         {:ok, max} <- max(parsed[:max]),
+         {:ok, scope} <- run_scope(parsed[:scope]),
+         {:ok, shard} <- shard(parsed[:shard]) do
+      # DND-5490: a scan's report, or the whole tree, is never a branch's record.
+      no_record =
+        Keyword.get(parsed, :record, true) == false or scope == :all or
+          is_binary(parsed[:report])
+
       facts = %{
         root: File.cwd!(),
         env: Mix.env(),
@@ -293,7 +319,10 @@ defmodule Mix.Tasks.Anchor.Sabotage do
         only: Keyword.get_values(parsed, :only),
         dry_run: Keyword.get(parsed, :dry_run, false),
         coverage: parsed[:coverage],
-        no_record: Keyword.get(parsed, :record, true) == false,
+        no_record: no_record,
+        scope: scope,
+        shard: shard,
+        report: parsed[:report],
         domain: parsed[:domain],
         ticket: parsed[:ticket],
         slot: parsed[:slot],
@@ -406,6 +435,26 @@ defmodule Mix.Tasks.Anchor.Sabotage do
   defp emit(code, lines) do
     Mix.shell().error(Enum.join(lines, "\n"))
     exit({:shutdown, code})
+  end
+
+  defp run_scope(nil), do: {:ok, :diff}
+  defp run_scope("diff"), do: {:ok, :diff}
+  defp run_scope("all"), do: {:ok, :all}
+  defp run_scope(_other), do: :error
+
+  # The date is read here, as `now` is: `auto` is the scan's shard of the day.
+  defp shard(nil), do: {:ok, nil}
+  defp shard("auto"), do: {:ok, {:auto, Date.utc_today()}}
+
+  defp shard(text) do
+    with [i, n] <- String.split(text, "/"),
+         {i, ""} <- Integer.parse(i),
+         {n, ""} <- Integer.parse(n),
+         true <- n >= 1 and i >= 0 and i < n do
+      {:ok, {i, n}}
+    else
+      _bad -> :error
+    end
   end
 
   defp max(nil), do: {:ok, nil}

@@ -44,4 +44,21 @@ defmodule Anchor.Adapters.RecordFileTest do
 
     assert RecordFile.read(root, "apps/core/test/sabotage_records/a.md") == {:ok, "x"}
   end
+
+  test "DND-5490: write_report writes the markdown and its .etf, overwriting both", %{
+    tmp_dir: root
+  } do
+    # Sabotage record: ../../sabotage_records/sabotage-20261106-dnd_5490_scan.md
+    term = :erlang.term_to_binary(%{findings: []})
+
+    assert RecordFile.write_report(root, "out/scan.md", "old\n", "old") ==
+             {:ok, [Path.join(root, "out/scan.md"), Path.join(root, "out/scan.etf")]}
+
+    assert {:ok, _paths} = RecordFile.write_report(root, "out/scan.md", "# scan\n", term)
+    assert File.read!(Path.join(root, "out/scan.md")) == "# scan\n"
+    assert File.read!(Path.join(root, "out/scan.etf")) == term
+
+    absolute = Path.join(root, "abs/scan.md")
+    assert {:ok, [^absolute, _etf]} = RecordFile.write_report("/elsewhere", absolute, "x", term)
+  end
 end

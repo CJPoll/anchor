@@ -1977,6 +1977,7 @@ sabotage:
   survivors: .anchor/sabotage/survivors.txt  # the survivors list (DND-5483); named here, it must exist
   behaviour_locality_baseline: .anchor/baselines/behaviour-locality.txt  # DND-5489; named here, it must exist
   behaviour_locality_enforcement: report  # or enforce: fail on NEW, STALE or GREW
+  scan_shards: 7                     # the nightly scan's shards (DND-5490): --shard auto is day-of-year mod 7
 ```
 
 ```gitignore
@@ -2219,6 +2220,42 @@ crashed (exit 1): its kills went unchecked. Like `run`, a replay refuses (exit 2
 lock held, or the journal not git-ignored, and never writes a record or the
 survivors list. Anchor runs it weekly and on demand in CI
 (`.github/workflows/sabotage-replay.yml`, `--max all`).
+
+### Sabotage: the nightly improvement scan
+
+```bash
+mix anchor.sabotage run --scope all --shard I/N|auto --max all --report PATH [--coverage MAP]
+```
+
+Diff-scoped sabotage only checks what a branch touched; code that landed
+before the tool, or was never touched since, is never sabotaged. The scan
+runs the generator over every function with a literal clause in the
+project's `lib` files (`--scope all`, DND-5490), one shard at a time:
+`--shard I/N` keeps the mutants whose id, read as a hexadecimal number, is
+`I` modulo `N`. An id hashes the mutant's function, operator and target,
+never its line, so shards `0..N-1` together hold every mutant exactly once.
+`--shard auto` runs the day's shard, day-of-year modulo `sabotage.scan_shards`
+(default 7), so all of main is scanned every 7 nights and no night runs
+everything.
+
+`--report PATH` writes the report, markdown at `PATH` and its term beside it
+as `.etf` (`Anchor.Domain.Sabotage.ScanReport`), and never a record
+(`--scope all` writes none either). Its first line says how tests were
+selected: from the coverage map, or, with none, from the kill maps and the
+test mirror. Then the shard, the totals by status and by module, the
+**findings** (the survivors the survivors list does not hold), and the
+functions whose mutants had no test. Survivors never fail a scan: it exits 0
+when it measured, 2 when the report could not be written (or a refusal), 3
+`COULD NOT MEASURE` (no function in scope, a failing baseline, nothing
+measured). A malformed `--shard` or `--scope` is a usage error, 2.
+
+Anchor runs it nightly and on demand in CI (`.github/workflows/sabotage-scan.yml`):
+it downloads the latest `anchor-coverage` artifact main's Coverage map
+workflow uploaded (none is said, not a failure), runs the day's shard with
+`--max all`, writes the report to the job summary and uploads it as the
+`anchor-sabotage-scan` artifact. The job's token only reads. Whoever reads
+the summary files one ticket per module with findings; the job files nothing
+and fixes nothing.
 
 ### Sabotage: the per-test coverage map
 

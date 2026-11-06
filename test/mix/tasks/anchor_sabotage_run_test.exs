@@ -8,6 +8,7 @@ defmodule Mix.Tasks.Anchor.SabotageRunTest do
   # Sabotage record (DND-5570): ../../sabotage_records/sabotage-20261103-dnd_5570_sabotage_hardening.md
   # Sabotage record (DND-5617): ../../sabotage_records/sabotage-20261103-dnd_5617_sabotage_cfa_batch.md
   # Sabotage record (DND-5635): ../../sabotage_records/sabotage-20261103-dnd_5630_graph_hardening.md
+  # Sabotage record (DND-5490): ../../sabotage_records/sabotage-20261106-dnd_5490_scan.md
   use ExUnit.Case, async: false
 
   import ExUnit.CaptureIO
@@ -225,6 +226,30 @@ defmodule Mix.Tasks.Anchor.SabotageRunTest do
 
     assert {:ok, %{no_record: false, domain: nil, now: %DateTime{}}} = Sabotage.run_facts([])
     assert Sabotage.run_facts(["--no-such-flag"]) == :usage
+  end
+
+  test "DND-5490: run_facts/1 maps --scope, --shard and --report; a scan writes no record" do
+    # Sabotage record: ../../sabotage_records/sabotage-20261106-dnd_5490_scan.md
+    assert {:ok, %{scope: :diff, shard: nil, report: nil, no_record: false}} =
+             Sabotage.run_facts([])
+
+    assert {:ok, %{scope: :all, shard: {3, 7}, report: "scan.md", no_record: true}} =
+             Sabotage.run_facts(["--scope", "all", "--shard", "3/7", "--report", "scan.md"])
+
+    assert {:ok, %{scope: :all, no_record: true}} = Sabotage.run_facts(["--scope", "all"])
+    assert {:ok, %{scope: :diff, no_record: true}} = Sabotage.run_facts(["--report", "r.md"])
+    assert {:ok, %{shard: {:auto, %Date{}}}} = Sabotage.run_facts(["--shard", "auto"])
+
+    for bad <- [
+          ["--shard", "7/7"],
+          ["--shard", "-1/7"],
+          ["--shard", "1/0"],
+          ["--shard", "a/7"],
+          ["--shard", "3"],
+          ["--scope", "everything"]
+        ] do
+      assert Sabotage.run_facts(bad) == :usage, inspect(bad)
+    end
   end
 
   test "a refused run prints its message and exits with its code" do

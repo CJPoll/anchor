@@ -4,6 +4,8 @@ defmodule Anchor.Adapters.RecordFile do
   behind `Anchor.Adapters.RecordStore`. It writes only record files: `create`
   opens with `:exclusive`, so an existing record is never overwritten, and
   `append` only adds. It never writes a README, and stages or commits nothing.
+  `write_report` writes a scan report and its `.etf` (DND-5490), overwriting
+  both: a report is a build output, never a record.
   """
 
   @behaviour Anchor.Adapters.RecordStore
@@ -39,6 +41,18 @@ defmodule Anchor.Adapters.RecordFile do
       {:ok, %File.Stat{type: :regular}} -> File.write(full, "\n" <> content, [:append])
       {:ok, %File.Stat{}} -> {:error, :eisdir}
       {:error, posix} -> {:error, posix}
+    end
+  end
+
+  @impl Anchor.Adapters.RecordStore
+  def write_report(root, path, markdown, term) do
+    full = Path.expand(path, root)
+    etf = Path.rootname(full) <> ".etf"
+
+    with :ok <- File.mkdir_p(Path.dirname(full)),
+         :ok <- File.write(full, markdown),
+         :ok <- File.write(etf, term) do
+      {:ok, [full, etf]}
     end
   end
 end

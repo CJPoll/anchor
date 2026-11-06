@@ -315,4 +315,46 @@ defmodule Anchor.Domain.Sabotage.ScopeTest do
                  "1 non-source files, 0 deleted files, 0 hunks outside a function, 0 macros"
     end
   end
+
+  describe "all/1 (DND-5490)" do
+    # Sabotage record: ../../../sabotage_records/sabotage-20261106-dnd_5490_scan.md
+    defp spans(sources),
+      do:
+        Map.new(sources, fn {path, text} ->
+          {:ok, spans} = FunctionSpans.spans(text, path)
+          {path, spans}
+        end)
+
+    test "1: every literal def and defp of every file, nested modules too, in path order" do
+      scope =
+        Scope.all(
+          spans(%{
+            "lib/b.ex" => "defmodule B do\n  defmodule Inner do\n    def c, do: :c\n  end\nend\n",
+            "lib/a.ex" => "defmodule A do\n  def a(x), do: x\n  defp b, do: :b\nend\n"
+          })
+        )
+
+      assert Enum.map(scope.functions, &{&1.file, &1.module, &1.name, &1.arity}) == [
+               {"lib/a.ex", A, :a, 1},
+               {"lib/a.ex", A, :b, 0},
+               {"lib/b.ex", B.Inner, :c, 0}
+             ]
+    end
+
+    test "2: a module whose functions come only from a use gives none; a macro neither" do
+      scope =
+        Scope.all(
+          spans(%{
+            "lib/u.ex" => "defmodule U do\n  use GenServer\nend\n",
+            "lib/m.ex" => "defmodule M do\n  defmacro m(x), do: x\n  def f, do: :f\nend\n"
+          })
+        )
+
+      assert Enum.map(scope.functions, &{&1.module, &1.name}) == [{M, :f}]
+    end
+
+    test "3: zero files is an empty scope" do
+      assert Scope.all(%{}).functions == []
+    end
+  end
 end
