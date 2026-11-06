@@ -13,6 +13,11 @@ defmodule Anchor.Managers.Sabotage do
   Delegated to `Anchor.Managers.Sabotage.Coverage`: the per-test coverage
   map, built by running the suite in this VM with call tracing.
 
+  ## coverage_compare/2 (DND-5692)
+
+  Delegated to `Anchor.Managers.Sabotage.CoverageCompare`: the verdict on two
+  builds of the map at one commit and one seed.
+
   ## replay/2 (DND-5485)
 
   Delegated to `Anchor.Managers.Sabotage.Replay`: re-applies each landed
@@ -54,6 +59,7 @@ defmodule Anchor.Managers.Sabotage do
   alias Anchor.Domain.Sabotage.Replay.Result
   alias Anchor.Managers.Sabotage.Behaviours
   alias Anchor.Managers.Sabotage.Coverage
+  alias Anchor.Managers.Sabotage.CoverageCompare
   alias Anchor.Managers.Sabotage.Replay
   alias Anchor.Managers.Sabotage.Runner
 
@@ -71,6 +77,13 @@ defmodule Anchor.Managers.Sabotage do
   """
   @spec coverage(Coverage.facts(), keyword()) :: {non_neg_integer(), [String.t()]}
   def coverage(facts, opts \\ []), do: Coverage.run(facts, opts)
+
+  @doc """
+  Judges two builds of the coverage map (DND-5692) and returns `{exit_code, lines}`.
+  See `Anchor.Managers.Sabotage.CoverageCompare`.
+  """
+  @spec coverage_compare(CoverageCompare.facts(), keyword()) :: {non_neg_integer(), [String.t()]}
+  def coverage_compare(facts, opts \\ []), do: CoverageCompare.run(facts, opts)
 
   @doc """
   Replays the landed sabotage records (DND-5485). See

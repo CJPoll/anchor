@@ -68,6 +68,13 @@ before coining a synonym.
   `Anchor.TestBootTest` holds (DND-5690): the application closure loaded before
   any test runs. The coverage tool's own refusal of a module that cannot load
   is `sabotage`'s.
+- `coverage_attribution` — `mix anchor.sabotage coverage`'s causal attribution
+  (DND-5691): `Anchor.Domain.Sabotage.Attribution`, `ProcessOwnership`, `LabelSpec`,
+  `CoverageArgs`, the map's classification, and the tracer, collector and suite
+  runner around them.
+- `coverage_compare` — `mix anchor.sabotage coverage-compare` (DND-5692):
+  `Anchor.Domain.Sabotage.CoverageCompare`, its Manager and task, and what makes the
+  Coverage map workflow the guard (`test/anchor/coverage_map_workflow_test.exs`).
 - `sabotage_scope` — `mix anchor.sabotage scope` (DND-5472): the diff parser
   (`Anchor.Domain.Sabotage.DiffHunks`), the function spans
   (`Anchor.Domain.Sabotage.FunctionSpans`), the mapping and its counts
@@ -242,6 +249,10 @@ before coining a synonym.
   and the ast rules' baselines (DND-5632): `Anchor.Domain.AstBaseline`,
   `Anchor.Managers.AstBaseline`, the `LintKeys` port and its `CredoKeys`
   adapter, and `mix anchor.baseline`.
+- `analyses_complete` — the `analyses_complete` graph rule (DND-5715):
+  `Anchor.Domain.GraphRules.AnalysesComplete`, its floors and failures, and
+  `mix anchor.graph` over Anchor's own lib/ under sabotage. The record also says
+  what each assertion of the removed whole-Anchor self tests became.
 - `layering` — the `layering` graph rule (DND-5442):
   `Anchor.Domain.GraphRules.Layering`, `CallMatrix`, `DynamicCalls`,
   `ViolationKey.mfa/1`, its registration and Config's architecture check of

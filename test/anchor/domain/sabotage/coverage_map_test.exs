@@ -1,9 +1,9 @@
 defmodule Anchor.Domain.Sabotage.CoverageMapTest do
-  # DND-5474: per-test coverage, windowed by strict monotonic stamps. The
-  # order of events is set by their stamps, never by real time.
+  # DND-5474, DND-5691: per-test coverage, classified from what the VM read at each
+  # call and resolved once the run is over. Pids are only names here.
   # Sabotage record: ../../../sabotage_records/sabotage-20261103-dnd_5474_coverage_map.md
+  # Sabotage record: ../../../sabotage_records/coverage_attribution-20261106-dnd_5691_causal_attribution.md
   # Sabotage record (DND-5489): ../../../sabotage_records/sabotage-20261106-dnd_5470_param_sink_locality.md
-  # Sabotage record (DND-5642): ../../../sabotage_records/sabotage-20261103-dnd_5639_sabotage_followups.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Sabotage.CoverageMap
@@ -16,133 +16,126 @@ defmodule Anchor.Domain.Sabotage.CoverageMapTest do
     otp: "28",
     modules_traced: 2,
     suite_exit: 0,
+    total: 2,
     root: "/proj"
   }
+  @a {A, :f, 0}
+  @b {B, :g, 0}
 
+  # Two tests of one runner, each with its own process calling one function.
   defp row1 do
+    [runner, t1, t2] = for _i <- 1..3, do: spawn(fn -> :ok end)
+
     [
-      {:window_open, 1, @t1},
-      {:call, 2, "A.f/0"},
-      {:window_close, 3, @t1},
-      {:window_open, 4, @t2},
-      {:call, 5, "B.g/0"},
-      {:window_close, 6, @t2}
+      {:test_started, runner, 1, @t1, ATest},
+      {:spawn, runner, t1, nil},
+      {:entry, 1},
+      {:call, @a, t1, 1, 1},
+      {:test_finished, runner, 2, true, ATest},
+      {:test_started, runner, 3, @t2, BTest},
+      {:spawn, runner, t2, nil},
+      {:entry, 3},
+      {:call, @b, t2, 3, 3},
+      {:test_finished, runner, 4, true, BTest}
     ]
   end
 
-  defp build(events, slack \\ 10) do
-    [slack: slack] |> CoverageMap.new() |> CoverageMap.attribute(events) |> finalize()
+  defp build(events, meta \\ @meta) do
+    assert {:ok, map} =
+             CoverageMap.new() |> CoverageMap.attribute(events) |> CoverageMap.finalize(meta)
+
+    map
   end
 
-  defp finalize(state), do: CoverageMap.finalize(state, @meta)
+  defp refused(events, meta \\ @meta),
+    do: CoverageMap.new() |> CoverageMap.attribute(events) |> CoverageMap.finalize(meta)
 
   defp sets(map), do: Map.new(map.tests, &{&1.name, &1.functions})
-
-  describe "check/1, a test's name (DND-5489)" do
-    test "a test with no string name is no usable map: a key is built from it" do
-      test_ref = %{file: "test/a_test.exs", line: 1, functions: []}
-      map = %{version: 1, commit: nil, tests: [test_ref]}
-
-      assert CoverageMap.check(map) == {:error, :not_a_map}
-
-      assert CoverageMap.check(%{map | tests: [Map.put(test_ref, :name, :atom)]}) ==
-               {:error, :not_a_map}
-
-      assert {:ok, _map} = CoverageMap.check(%{map | tests: [Map.put(test_ref, :name, "test a")]})
-    end
-  end
+  defp pid, do: spawn(fn -> :ok end)
 
   describe "attribute/2 and finalize/2" do
-    test "1: each call goes to the window it happened in" do
+    test "each call goes to the test that owns its process" do
       map = build(row1())
 
       assert sets(map) == %{"test one" => ["A.f/0"], "test two" => ["B.g/0"]}
-      assert map.outside_windows == 0
-      assert map.late_events == 0
+      assert map.leaks == []
+      assert map.ambient == []
     end
 
-    test "2: events out of arrival order are attributed by stamp" do
-      [open1, call_a, close1, open2, call_b, close2] = row1()
-      shuffled = [open1, call_b, call_a, open2, close1, close2]
+    test "a thousand calls of one function make one element" do
+      [started, spawn, entry, call, finished | _rest] = row1()
+      calls = List.duplicate(call, 1000)
+      map = build([started, spawn, entry] ++ calls ++ [finished], %{@meta | total: 1})
 
-      assert sets(build(shuffled)) == sets(build(row1()))
-      assert sets(build(shuffled, 6)) == %{"test one" => ["A.f/0"], "test two" => ["B.g/0"]}
+      assert sets(map) == %{"test one" => ["A.f/0"]}
+      assert map.counters.call_rows == 1
     end
 
-    test "2: a batch boundary does not reorder: the slack holds back events" do
-      [open1, call_a, close1, open2, call_b, close2] = row1()
+    test "a process spawned by the runner between windows belongs to the module" do
+      [runner, s, t] = [pid(), pid(), pid()]
 
-      state =
-        [slack: 2]
-        |> CoverageMap.new()
-        |> CoverageMap.attribute([open1, call_b, open2])
-        |> CoverageMap.attribute([call_a, close1, close2])
+      map =
+        build([
+          {:module_started, runner, ATest},
+          {:spawn, runner, s, nil},
+          {:call, @a, s, ATest, 0},
+          {:test_started, runner, 1, @t1, ATest},
+          {:spawn, runner, t, nil},
+          {:entry, 1},
+          {:test_finished, runner, 2, true, ATest},
+          {:test_started, runner, 3, %{@t1 | line: 9}, ATest},
+          {:entry, 3},
+          {:test_finished, runner, 4, true, ATest},
+          {:module_finished, runner, ATest, 6}
+        ])
 
-      assert sets(finalize(state)) == %{"test one" => ["A.f/0"], "test two" => ["B.g/0"]}
-      assert finalize(state).late_events == 0
+      assert Enum.map(map.tests, & &1.functions) == [["A.f/0"], ["A.f/0"]]
     end
 
-    test "3: a call after every window closed is outside_windows, in no test" do
-      map = build(row1() ++ [{:call, 7, "C.h/0"}])
+    test "a module credit never reaches its test that never ran" do
+      [runner, s] = [pid(), pid()]
 
-      assert map.outside_windows == 1
-      refute Enum.any?(map.tests, &("C.h/0" in &1.functions))
-      assert sets(map) == %{"test one" => ["A.f/0"], "test two" => ["B.g/0"]}
+      map =
+        build([
+          {:test_started, runner, 1, %{@t1 | line: 9}, ATest},
+          {:test_finished, runner, 2, false, ATest},
+          {:module_started, runner, ATest},
+          {:spawn, runner, s, nil},
+          {:call, @a, s, ATest, 2},
+          {:test_started, runner, 3, @t1, ATest},
+          {:entry, 3},
+          {:test_finished, runner, 4, true, ATest},
+          {:module_finished, runner, ATest, 6}
+        ])
+
+      assert [%{line: 3, functions: ["A.f/0"]}] = map.tests
     end
 
-    test "4: 50 alternating tests never mix their sets" do
-      events =
-        Enum.flat_map(1..50, fn i ->
-          ref = %{file: "/proj/test/x_test.exs", line: i, name: "test #{i}", module: "XTest"}
-          call = if rem(i, 2) == 1, do: "A.f/0", else: "B.g/0"
-          base = i * 10
-          [{:window_open, base, ref}, {:call, base + 1, call}, {:window_close, base + 2, ref}]
-        end)
+    test "a spawn after the runner's module finished is not a root" do
+      [runner, late] = [pid(), pid()]
 
-      map = build(events, 7)
+      map =
+        build(
+          [
+            {:module_started, runner, ATest},
+            {:test_started, runner, 1, @t1, ATest},
+            {:entry, 1},
+            {:test_finished, runner, 2, true, ATest},
+            {:module_finished, runner, ATest, 4},
+            {:spawn, runner, late, nil},
+            {:call, @a, late, :none, 4}
+          ],
+          %{@meta | total: 1}
+        )
 
-      assert length(map.tests) == 50
-
-      for test <- map.tests do
-        expected = if rem(test.line, 2) == 1, do: ["A.f/0"], else: ["B.g/0"]
-        assert test.functions == expected, "test #{test.line}: #{inspect(test.functions)}"
-      end
-    end
-
-    test "5: a thousand calls of one function make one element" do
-      calls = for i <- 1..1000, do: {:call, i + 1, "A.f/0"}
-      events = [{:window_open, 1, @t1}] ++ calls ++ [{:window_close, 2000, @t1}]
-
-      assert [%{functions: ["A.f/0"]}] = build(events, 50).tests
-    end
-
-    test "6: an event later than the slack allows is counted, never attributed" do
-      events = [
-        {:window_open, 10, @t1},
-        {:call, 20, "A.f/0"},
-        {:window_close, 30, @t1},
-        {:window_open, 40, @t2},
-        {:call, 50, "B.g/0"}
-      ]
-
-      state = [slack: 2] |> CoverageMap.new() |> CoverageMap.attribute(events)
-      state = CoverageMap.attribute(state, [{:call, 15, "LATE.x/0"}, {:window_close, 60, @t2}])
-      map = finalize(state)
-
-      assert map.late_events == 1
-      refute Enum.any?(map.tests, &("LATE.x/0" in &1.functions))
-      assert CoverageMap.summary(map, "out.etf") =~ "late_events: 1"
+      assert map.ambient == ["A.f/0"]
     end
 
     test "mfa tuples become `Module.fun/arity` strings; files are made relative to root" do
-      events = [
-        {:window_open, 1, @t1},
-        {:call, 2, {Anchor.Domain.GlobPattern, :matches_pattern?, 2}},
-        {:window_close, 3, @t1}
-      ]
+      map = build(row1())
 
-      assert [test] = build(events).tests
-      assert test.functions == ["Anchor.Domain.GlobPattern.matches_pattern?/2"]
+      assert [test | _rest] = map.tests
+      assert test.functions == ["A.f/0"]
       assert test.file == "test/a_test.exs"
       assert test.module == "ATest"
     end
@@ -151,7 +144,7 @@ defmodule Anchor.Domain.Sabotage.CoverageMapTest do
       map = build(row1())
 
       assert %{
-               version: 1,
+               version: 2,
                commit: "abababababababababababababababababababab",
                elixir: "1.19.4",
                otp: "28"
@@ -161,15 +154,277 @@ defmodule Anchor.Domain.Sabotage.CoverageMapTest do
       assert map.suite_exit == 0
     end
 
-    test "a window the suite never closed is kept" do
-      map = build([{:window_open, 1, @t1}, {:call, 2, "A.f/0"}])
+    test "a test ExUnit ran twice (parameterized) is one row with both sets" do
+      [runner, t1, t2] = [pid(), pid(), pid()]
+
+      map =
+        build([
+          {:test_started, runner, 1, @t1, ATest},
+          {:spawn, runner, t1, nil},
+          {:entry, 1},
+          {:call, @a, t1, 1, 1},
+          {:test_finished, runner, 2, true, ATest},
+          {:test_started, runner, 3, @t1, ATest},
+          {:spawn, runner, t2, nil},
+          {:entry, 3},
+          {:call, @b, t2, 3, 3},
+          {:test_finished, runner, 4, true, ATest}
+        ])
+
+      assert [%{functions: ["A.f/0", "B.g/0"]}] = map.tests
+    end
+  end
+
+  describe "leaks and ambient" do
+    test "a call past its owner's window is a leak, listed once, and still credited" do
+      [runner, t] = [pid(), pid()]
+      leak_calls = for word <- [2, 3, 4], do: {:call, @a, t, :none, word}
+
+      map =
+        build(
+          [
+            {:test_started, runner, 1, @t1, ATest},
+            {:spawn, runner, t, nil},
+            {:entry, 1},
+            {:test_finished, runner, 2, true, ATest}
+          ] ++ leak_calls,
+          %{@meta | total: 1}
+        )
+
+      assert map.leaks == [
+               %{
+                 from: %{file: "test/a_test.exs", line: 3, name: "test one", module: "ATest"},
+                 function: "A.f/0"
+               }
+             ]
+
       assert sets(map) == %{"test one" => ["A.f/0"]}
+    end
+
+    test "a parameterized module's end is its last by word, in either arrival order" do
+      [r1, r2, s] = [pid(), pid(), pid()]
+
+      started = [
+        {:module_started, r1, ATest},
+        {:spawn, r1, s, nil},
+        {:module_started, r2, ATest},
+        {:test_started, r2, 3, @t1, ATest},
+        {:entry, 3},
+        {:test_finished, r2, 4, true, ATest},
+        {:call, @a, s, :none, 5}
+      ]
+
+      first = {:module_finished, r1, ATest, 2}
+      last = {:module_finished, r2, ATest, 6}
+
+      for ends <- [[first, last], [last, first]] do
+        map = build(started ++ ends, %{@meta | total: 1})
+        assert map.leaks == [], inspect(ends)
+        assert sets(map) == %{"test one" => ["A.f/0"]}, inspect(ends)
+      end
+    end
+
+    test "a module-owned call past the module leaks from the module" do
+      [runner, s] = [pid(), pid()]
+
+      map =
+        build(
+          [
+            {:module_started, runner, ATest},
+            {:spawn, runner, s, nil},
+            {:test_started, runner, 1, @t1, ATest},
+            {:entry, 1},
+            {:test_finished, runner, 2, true, ATest},
+            {:module_finished, runner, ATest, 4},
+            {:call, @a, s, :none, 4}
+          ],
+          %{@meta | total: 1}
+        )
+
+      assert map.leaks == [%{from: %{module: "ATest"}, function: "A.f/0"}]
+      assert sets(map) == %{"test one" => ["A.f/0"]}
+    end
+
+    test "an unowned call is ambient, credited to no test; a label in its window credits" do
+      [_ | _] = events = row1()
+      [server, compiler] = [pid(), pid()]
+
+      map =
+        build(
+          events ++
+            [
+              {:call, {S, :stale, 0}, server, 1, 3},
+              {:call, {S, :handler, 0}, server, 3, 3},
+              {:call, {C, :body, 0}, compiler, :none, 0}
+            ]
+        )
+
+      assert map.ambient == ["C.body/0", "S.stale/0"]
+      assert sets(map)["test two"] == ["B.g/0", "S.handler/0"]
+      assert map.counters.credited_by_label == 1
+      assert map.leaks == []
+    end
+
+    test "leak_lines/1 names each pair and ends with a Fix:; no leak, no lines" do
+      assert CoverageMap.leak_lines(build(row1())) == []
+
+      map = %{
+        leaks: [
+          %{from: %{file: "test/a_test.exs", line: 3, name: "test one"}, function: "A.f/0"},
+          %{from: %{module: "ATest"}, function: "B.g/0"}
+        ]
+      }
+
+      assert [first, second, fix] = CoverageMap.leak_lines(map)
+      assert first =~ "leak: test/a_test.exs:3 test one left a process that called A.f/0"
+      assert second =~ "leak: setup_all of ATest left a process that called B.g/0"
+      assert fix =~ "Fix: make the process end inside its test"
+    end
+  end
+
+  describe "refusals: a run that cannot be believed writes no map" do
+    test "fewer windows than total" do
+      assert refused(row1(), %{@meta | total: 3}) == {:error, {:windows, 2, 3}}
+    end
+
+    test "windows with no total" do
+      assert refused(row1(), %{@meta | total: nil}) == {:error, {:windows, 2, nil}}
+    end
+
+    test "no windows and no total is no refusal here: validate/1 says it measured nothing" do
+      assert {:ok, %{tests: []}} = refused([], %{@meta | total: nil})
+    end
+
+    test "a test that ran with no entry message, naming it" do
+      runner = pid()
+
+      assert refused(
+               [
+                 {:test_started, runner, 1, @t1, ATest},
+                 {:test_finished, runner, 2, true, ATest}
+               ],
+               %{@meta | total: 1}
+             ) == {:error, {:no_entry, @t1}}
+    end
+
+    test "a test with no process needs no entry, and is not in the map" do
+      runner = pid()
+
+      assert {:ok, %{tests: []}} =
+               refused(
+                 [
+                   {:test_started, runner, 1, @t1, ATest},
+                   {:test_finished, runner, 2, false, ATest}
+                 ],
+                 %{@meta | total: 1}
+               )
+    end
+
+    test "a label from outside this run, or a recorded error, by name" do
+      assert refused(row1() ++ [{:call, @a, pid(), {:x}, 1}]) == {:error, {:bad_label, {:x}}}
+
+      assert refused(row1() ++ [{:error, {:task_shape, {Task.Supervised, :noreply, []}}}]) ==
+               {:error, {:task_shape, {Task.Supervised, :noreply, []}}}
+    end
+
+    test "a test finished with no start, by name" do
+      assert {:error, {:unreadable, {:test_finished, 2}}} =
+               refused([{:test_finished, pid(), 2, true, ATest}], %{@meta | total: 1})
+    end
+
+    test "a module that started and never finished" do
+      runner = pid()
+
+      assert refused(
+               [
+                 {:module_started, runner, ATest},
+                 {:test_started, runner, 1, @t1, ATest},
+                 {:entry, 1},
+                 {:test_finished, runner, 2, true, ATest}
+               ],
+               %{@meta | total: 1}
+             ) == {:error, {:module_unfinished, ATest}}
+    end
+  end
+
+  describe "canonical/1" do
+    # A real arrival order keeps each tracee's own order, and only that: the three
+    # below interleave the runner's, the test process's and a server's.
+    test "1: the same calls and edges in any arrival order give the same bytes" do
+      [runner, t, server, a] = [pid(), pid(), pid(), pid()]
+
+      runner_stream = [
+        {:test_started, runner, 1, @t1, ATest},
+        {:spawn, runner, t, nil},
+        {:test_finished, runner, 2, true, ATest}
+      ]
+
+      others = [
+        {:entry, 1},
+        {:spawn, t, a, nil},
+        {:call, @a, t, 1, 1},
+        {:call, @b, a, 1, 2},
+        {:call, {S, :h, 0}, server, 1, 1}
+      ]
+
+      bytes =
+        for order <- [
+              runner_stream ++ others,
+              others ++ runner_stream,
+              Enum.reverse(others) ++ runner_stream
+            ] do
+          order |> build(%{@meta | total: 1}) |> CoverageMap.canonical()
+        end
+
+      assert [same, same, same] = bytes
+    end
+
+    test "2: a leak is listed once" do
+      [runner, t] = [pid(), pid()]
+
+      events =
+        [
+          {:test_started, runner, 1, @t1, ATest},
+          {:spawn, runner, t, nil},
+          {:entry, 1},
+          {:test_finished, runner, 2, true, ATest}
+        ] ++ for(word <- 2..6, do: {:call, @a, t, :none, word})
+
+      map = build(events, %{@meta | total: 1})
+      assert length(map.leaks) == 1
+    end
+
+    test "3: no counts, no stamps, no pids, no commit" do
+      map = build(row1())
+      term = map |> CoverageMap.canonical() |> :erlang.binary_to_term()
+
+      assert Map.keys(term) |> Enum.sort() == [:ambient, :leaks, :tests, :version]
+      refute inspect(term) =~ "#PID"
+
+      assert CoverageMap.canonical(%{map | commit: nil, counters: %{}}) ==
+               CoverageMap.canonical(map)
+    end
+
+    test "a function called in another order or by another pid changes nothing" do
+      first = row1()
+      second = row1()
+      assert CoverageMap.canonical(build(first)) == CoverageMap.canonical(build(second))
+    end
+  end
+
+  describe "summary/2" do
+    test "the counters live on the summary line" do
+      line = CoverageMap.summary(build(row1()), "out.etf")
+
+      assert line =~ "tests: 2, modules_traced: 2, leaks: 0, ambient: 0, call_rows: 2"
+      assert line =~ "credited_by_label: 0, suite_exit: 0"
+      assert line =~ "wrote out.etf"
     end
   end
 
   describe "validate/1 and tests_for/2" do
     test "1: zero tests is refused" do
-      assert CoverageMap.validate(build([])) == {:error, :no_tests}
+      assert CoverageMap.validate(build([], %{@meta | total: 0})) == {:error, :no_tests}
     end
 
     test "2: zero modules traced is refused" do
@@ -242,183 +497,37 @@ defmodule Anchor.Domain.Sabotage.CoverageMapTest do
   end
 
   describe "check/1" do
-    test "a version-1 map passes; another version or another term is refused" do
+    test "a version-2 map passes; version 1, another version or another term is refused" do
       map = build(row1())
 
       assert CoverageMap.check(map) == {:ok, map}
-      assert CoverageMap.check(%{map | version: 2}) == {:error, {:version, 2}}
+      assert CoverageMap.check(%{map | version: 1}) == {:error, {:version, 1}}
+      assert CoverageMap.check(%{map | version: 3}) == {:error, {:version, 3}}
       assert CoverageMap.check(:nope) == {:error, :not_a_map}
       assert CoverageMap.check(%{map | tests: [%{file: 1}]}) == {:error, :not_a_map}
+      assert CoverageMap.check(Map.delete(map, :leaks)) == {:error, :not_a_map}
+      assert CoverageMap.check(%{map | ambient: :x}) == {:error, :not_a_map}
     end
   end
 
-  describe "window leaks (DND-5642)" do
-    @p1 :erlang.list_to_pid(~c"<0.901.0>")
-    @p2 :erlang.list_to_pid(~c"<0.902.0>")
-    @t3 %{file: "/proj/test/b_test.exs", line: 11, name: "test three", module: "BTest"}
+  describe "a leak in words (DND-5692)" do
+    @ref %{file: "test/a_test.exs", line: 3, name: "test one", module: "ATest"}
 
-    defp rel(ref), do: %{ref | file: Path.relative_to(ref.file, "/proj")}
-
-    defp leaking do
-      [
-        {:window_open, 1, @t1},
-        {:call, 2, "A.f/0", @p1},
-        {:window_close, 3, @t1},
-        {:window_open, 4, @t2},
-        {:call, 5, "B.g/0", @p1},
-        {:call, 6, "B.g/0", @p1},
-        {:window_close, 7, @t2}
-      ]
+    test "owner_name/1 names a test by place and name, a module by its setup_all" do
+      assert CoverageMap.owner_name(@ref) == "test/a_test.exs:3 test one"
+      assert CoverageMap.owner_name(%{module: "ATest"}) == "setup_all of ATest"
     end
 
-    test "L1: a process first seen in an earlier window, calling in a later one, is a leak; selection unchanged" do
-      map = build(leaking())
-
-      assert map.window_leaks == [%{from: [rel(@t1)], to: rel(@t2), calls: 2}]
-      assert sets(map) == %{"test one" => ["A.f/0"], "test two" => ["B.g/0"]}
-
-      assert CoverageMap.leak_warnings(map) == [
-               "anchor.sabotage coverage: warning: test/b_test.exs: 2 calls from a process first " <>
-                 "seen during an earlier test were credited to a later test (selection unchanged): " <>
-                 "test/a_test.exs:3 test one -> test/b_test.exs:7 test two (2 calls)"
-             ]
+    test "leak_pair/1 names both halves of the pair" do
+      assert CoverageMap.leak_pair(%{from: @ref, function: "A.late/0"}) ==
+               "leak: test/a_test.exs:3 test one left a process that called A.late/0 after it finished"
     end
 
-    test "L2: positive control: a clean pair (each process in its own window) has no leak" do
-      events = [
-        {:window_open, 1, @t1},
-        {:call, 2, "A.f/0", @p1},
-        {:window_close, 3, @t1},
-        {:window_open, 4, @t2},
-        {:call, 5, "B.g/0", @p2},
-        {:window_close, 6, @t2}
-      ]
-
-      map = build(events)
-      assert map.window_leaks == []
-      assert CoverageMap.leak_warnings(map) == []
-      assert sets(map) == %{"test one" => ["A.f/0"], "test two" => ["B.g/0"]}
-    end
-
-    test "L3: a process first seen outside every window is never a leak" do
-      map = build([{:call, 1, "A.f/0", @p1} | tl(tl(leaking()))])
-
-      assert map.window_leaks == []
-      assert map.outside_windows == 1
-    end
-
-    test "L4: a call while the window that first saw the process is still open is no leak" do
-      events = [
-        {:window_open, 1, @t1},
-        {:call, 2, "A.f/0", @p1},
-        {:window_open, 3, @t2},
-        {:call, 4, "B.g/0", @p1},
-        {:window_close, 5, @t1},
-        {:window_close, 6, @t2}
-      ]
-
-      assert build(events).window_leaks == []
-    end
-
-    test "L5: leaks follow stamp order, not arrival order" do
-      [open1, call_a, close1, open2, call_b, call_b2, close2] = leaking()
-      shuffled = [open1, open2, call_b, close1, call_a, call_b2, close2]
-
-      assert build(shuffled).window_leaks == build(leaking()).window_leaks
-    end
-
-    test "L6: one line per credited test file, at most five pairs shown, in file order" do
-      earlier =
-        for i <- 1..7 do
-          %{file: "/proj/test/a_test.exs", line: i, name: "test a#{i}", module: "ATest"}
-        end
-
-      pids = for i <- 1..7, do: :erlang.list_to_pid(~c"<0.#{910 + i}.0>")
-
-      firsts =
-        earlier
-        |> Enum.zip(pids)
-        |> Enum.with_index()
-        |> Enum.flat_map(fn {{ref, pid}, i} ->
-          [
-            {:window_open, i * 3 + 1, ref},
-            {:call, i * 3 + 2, "A.f/0", pid},
-            {:window_close, i * 3 + 3, ref}
-          ]
-        end)
-
-      later =
-        [{:window_open, 100, @t2}] ++
-          Enum.with_index(pids, &{:call, 101 + &2, "B.g/0", &1}) ++
-          [{:window_close, 120, @t2}, {:window_open, 121, @t3}, {:call, 122, "B.g/0", hd(pids)}] ++
-          [{:window_close, 123, @t3}]
-
-      map = build(firsts ++ later, 50)
-      assert [b_line] = CoverageMap.leak_warnings(map)
-
-      assert b_line =~ "warning: test/b_test.exs: 8 calls from a process"
-      assert b_line =~ "test/a_test.exs:1 test a1 -> test/b_test.exs:7 test two (1 calls); "
-
-      assert b_line =~
-               "test/a_test.exs:5 test a5 -> test/b_test.exs:7 test two (1 calls); and 3 more"
-
-      # The three not shown: a6 and a7 into test two, a1 into test three.
-      refute b_line =~ "test three"
-      assert b_line =~ "; and 3 more"
-      assert length(map.window_leaks) == 8
-
-      a_leak = %{file: "/proj/test/a_test.exs", line: 9, name: "test a9", module: "ATest"}
-
-      two_files =
-        build(
-          firsts ++
-            [
-              {:window_open, 200, a_leak},
-              {:call, 201, "B.g/0", hd(pids)},
-              {:window_close, 202, a_leak}
-            ] ++
-            later,
-          50
-        )
-
-      assert [a_line, b_line2] = CoverageMap.leak_warnings(two_files)
-      assert a_line =~ "warning: test/a_test.exs: 1 calls"
-      assert b_line2 =~ "warning: test/b_test.exs: "
-    end
-
-    test "L8: an application process a test first wakes is reported as first seen there, never as started by it" do
-      # A long-lived server sits idle until test one calls it, then serves
-      # test two: its calls in test two are reported, and the line claims
-      # only where it was first seen.
-      server = :erlang.list_to_pid(~c"<0.950.0>")
-
-      map =
-        build([
-          {:window_open, 1, @t1},
-          {:call, 2, "Cache.get/1", server},
-          {:window_close, 3, @t1},
-          {:window_open, 4, @t2},
-          {:call, 5, "Cache.get/1", server},
-          {:window_close, 6, @t2}
-        ])
-
-      assert [line] = CoverageMap.leak_warnings(map)
-      assert line =~ "1 calls from a process first seen during an earlier test"
-      refute line =~ "started"
-    end
-
-    test "L7: a call with no pid (an older event shape) and a map with no window_leaks warn of nothing" do
-      events = [
-        {:window_open, 1, @t1},
-        {:call, 2, "A.f/0"},
-        {:window_close, 3, @t1},
-        {:window_open, 4, @t2},
-        {:call, 5, "B.g/0"},
-        {:window_close, 6, @t2}
-      ]
-
-      assert build(events).window_leaks == []
-      assert CoverageMap.leak_warnings(Map.delete(build(events), :window_leaks)) == []
+    test "leak_fix/0 is a Fix: line saying where the process must end" do
+      assert String.starts_with?(
+               CoverageMap.leak_fix(),
+               "Fix: make the process end inside its test"
+             )
     end
   end
 end

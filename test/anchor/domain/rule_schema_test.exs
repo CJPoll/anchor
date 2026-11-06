@@ -7,6 +7,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
   # path anchored on this file (not the cwd, which sync modules change).
   #
   # Sabotage record: ../../sabotage_records/rule_schema-20260929-dnd_1286_rule_key_allowlist.md
+  # Sabotage record (DND-5715): ../../sabotage_records/analyses_complete-20261106-dnd_5715_bucket_split.md
   # Sabotage record (DND-5632): ../../sabotage_records/baseline-20261103-dnd_5648_graph_followups.md
   # Sabotage record (DND-5447, DND-5454 rows): ../../sabotage_records/rule_schema-20261103-dnd_5447_graph_rules_c.md
   # DND-5441 (engine common keys, enforcement, baseline, validate_architecture/3):
@@ -34,7 +35,10 @@ defmodule Anchor.Domain.RuleSchemaTest do
     "match" => "call",
     "max_lines" => 200,
     "max_width" => 10,
+    "min_absent_parameters" => 1,
+    "min_apply_sites" => 1,
     "min_files" => 1,
+    "min_functions" => 1,
     "min_modules" => 2,
     "owned_namespaces" => ["MyApp"],
     "mode" => "all",
@@ -52,6 +56,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
   @typos %{
     aggregate_declarations: "min_module",
     alphabetized_functions: "mdoe",
+    analyses_complete: "min_function",
     case_on_bare_arg: "pahts",
     context_acyclic: "min_module",
     effects_match_bucket: "min_module",

@@ -30,11 +30,12 @@ defmodule Anchor.Domain.Model do
     * `effects` — the effects-inferred role of every function
       (`%Anchor.Domain.Effects{}`, DND-5447), set by the runner only when a
       rule that runs declares `needs: [:effects]`; `nil` otherwise;
-    * `demand` — the demand analysis (`%Anchor.Domain.Demand{}`, DND-5470), set
+    * `demand` — the demand analysis (`%Anchor.Domain.Demand{}`, DND-5715), set
       by the runner only when a rule that runs declares `needs: [:demand]`;
       `nil` otherwise;
     * `callbacks` — the external behaviours' callbacks
-      (`%{behaviour => [{name, arity}]}`), read with `demand`: `%{}` otherwise;
+      (`%{behaviour => [{name, arity}]}`), read with `demand` when a
+      `parameter_reaches_sink` rule runs (DND-5470): `%{}` otherwise;
     * `facts` — `%{module => Classification.facts()}`, the facts each module
       was classified by (DND-5447: `architecture.roots` selectors read them
       too, `uses_module` included).

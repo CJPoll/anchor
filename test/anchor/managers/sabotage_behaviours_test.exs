@@ -28,7 +28,9 @@ defmodule Anchor.Managers.SabotageBehavioursTest do
   @path ".anchor/baselines/behaviour-locality.txt"
   @key "test/t_test.exs::test t"
   @map %{
-    version: 1,
+    version: 2,
+    leaks: [],
+    ambient: [],
     commit: nil,
     modules_traced: 2,
     tests: [

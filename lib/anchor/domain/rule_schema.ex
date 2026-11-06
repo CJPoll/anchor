@@ -101,6 +101,9 @@ defmodule Anchor.Domain.RuleSchema do
       `owned_namespaces`, that narrows which structs it checks; without it
       every struct is checked. An empty list, and an entry that is not an
       exact module name, are refused.
+    * `analyses_complete` (DND-5715) reads three optional floors,
+      `min_functions`, `min_apply_sites` and `min_absent_parameters`; it always
+      checks the analyses' bounds and summaries without them.
     * `no_discarded_pure_expression` (DND-5451) reads one optional key,
       `pure_patterns`, that widens what it reports; without it the stdlib pure
       set still applies, so it always checks. A match-all entry
@@ -196,6 +199,9 @@ defmodule Anchor.Domain.RuleSchema do
     # declarations are the `aggregates:` section's and the modules').
     aggregate_declarations: [],
     alphabetized_functions: ~w(mode),
+    # DND-5715: analyses_complete's floors on what the analyses judged (its
+    # bounds are the analyses' own).
+    analyses_complete: ~w(min_absent_parameters min_apply_sites min_functions),
     case_on_bare_arg: [],
     # DND-5445: context_acyclic reads only the graph common keys (the contexts
     # are the `architecture:` section's).
@@ -235,6 +241,7 @@ defmodule Anchor.Domain.RuleSchema do
   @relations_by_type %{
     aggregate_declarations: [],
     alphabetized_functions: [],
+    analyses_complete: [],
     case_on_bare_arg: [],
     context_acyclic: [],
     effects_match_bucket: [],
@@ -263,6 +270,7 @@ defmodule Anchor.Domain.RuleSchema do
   @engine_by_type %{
     aggregate_declarations: :graph,
     alphabetized_functions: :ast,
+    analyses_complete: :graph,
     case_on_bare_arg: :ast,
     context_acyclic: :graph,
     effects_match_bucket: :graph,
@@ -467,6 +475,7 @@ defmodule Anchor.Domain.RuleSchema do
          :ok <- validate_recursive(rule, engine),
          :ok <- validate_floor(rule),
          :ok <- validate_min_modules(rule),
+         :ok <- validate_analyses_floors(rule),
          :ok <- validate_max_width(rule),
          :ok <- validate_id(rule),
          :ok <- validate_enforcement(rule) do
@@ -550,6 +559,21 @@ defmodule Anchor.Domain.RuleSchema do
   end
 
   defp validate_min_modules(_rule), do: :ok
+
+  # DND-5715: `analyses_complete`'s floors, the same shape as `min_modules`.
+  defp validate_analyses_floors(rule) do
+    Enum.find_value(~w(min_absent_parameters min_apply_sites min_functions), :ok, fn key ->
+      case Map.fetch(rule, key) do
+        {:ok, min} when not is_integer(min) or min < 1 ->
+          {:error,
+           "`#{key}` must be a positive integer (the fewest the analyses must judge), " <>
+             "got: #{inspect(min)}"}
+
+        _absent_or_positive ->
+          nil
+      end
+    end)
+  end
 
   # DND-5443: an interface rule's `max_width`. Zero would fail every context
   # with an interface at all; a non-integer would compare as nothing.

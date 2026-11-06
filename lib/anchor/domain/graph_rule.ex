@@ -25,10 +25,10 @@ defmodule Anchor.Domain.GraphRule do
   that runs needs `:cfa`, the analysis is not run and `Model.cfa` is `nil`.
   `[:effects]` (DND-5447) asks for the effect inference
   (`Anchor.Domain.Effects`), stored on `Model.effects`; it reads the flow
-  analysis, so a rule that needs it names `:cfa` too. `[:demand]` (DND-5470)
+  analysis, so a rule that needs it names `:cfa` too. `[:demand]` (DND-5715)
   asks for the demand analysis (`Anchor.Domain.Demand`), stored on
-  `Model.demand`, with the external behaviours' callbacks on `Model.callbacks`;
-  it reads the flow analysis too, so a rule that needs it names `:cfa` as well.
+  `Model.demand`; it reads the flow analysis, so a rule that needs it names
+  `:cfa` too.
   `Anchor.Domain.GraphRules.needs/1` reads and checks it.
 
   ## Narrowed keys (DND-5633)
@@ -49,7 +49,7 @@ defmodule Anchor.Domain.GraphRule do
   @callback check(Anchor.Domain.Model.t(), rule :: map()) :: [Anchor.Domain.Violation.t()]
 
   @doc "The analyses this rule reads from the model (`:cfa`, `Model.cfa`); `[]` when absent."
-  @callback needs() :: [:cfa | :demand | :effects]
+  @callback needs() :: [:cfa | :effects | :demand]
 
   @doc "Whether baseline key `key` is a narrowing of `base_key`; see the moduledoc."
   @callback narrows?(base_key :: String.t(), key :: String.t()) :: boolean()

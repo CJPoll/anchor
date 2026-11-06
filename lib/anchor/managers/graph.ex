@@ -35,10 +35,11 @@ defmodule Anchor.Managers.Graph do
        guard) and store it on `Model.cfa` (DND-5574). When none does, it is
        not run: rules that do not need it pay nothing. Likewise `:effects`:
        the effect inference (`Anchor.Domain.Effects.infer/2`, DND-5447) runs
-       once after the flow analysis, under the guard, onto `Model.effects`,
-       and `:demand` the demand analysis (`Anchor.Domain.Demand.analyze/3`,
-       DND-5470) likewise onto `Model.demand`, with the external behaviours'
-       callbacks onto `Model.callbacks`;
+       once after the flow analysis, under the guard, onto `Model.effects`.
+       Likewise `:demand`: the demand analysis (`Anchor.Domain.Demand.analyze/3`
+       with `architecture.effects`, DND-5715), onto `Model.demand`, with the
+       external behaviours' callbacks onto `Model.callbacks` for a
+       `parameter_reaches_sink` rule (DND-5470);
     7. for each enabled graph rule (narrowed by `--only`): its floor
        (`min_modules`), then its `check/2` under a guard (`try` with `rescue`, `catch :throw` and
        `catch :exit`, DND-1312's lesson): a rule that crashes is one issue,
@@ -85,9 +86,9 @@ defmodule Anchor.Managers.Graph do
   default `Cfa.analyze(graph, Cfa.default_seed(graph))`; tests pass one that
   crashes), `:effects` (a two-argument function from the model and its
   options to its `%Anchor.Domain.Effects{}`, default `Effects.infer/2`),
-  `:demand` (a three-argument function from the graph, the `%Cfa{}` and the
-  effect tokens to its `%Anchor.Domain.Demand{}`, default `Demand.analyze/3`),
-  and
+  `:demand` (a three-argument function from the graph, the flow analysis and
+  the extra effect tokens to its `%Anchor.Domain.Demand{}`, default
+  `Demand.analyze/3`), and
   `:behaviour_source` (`Anchor.Adapters.BehaviourReader`, the external
   behaviours' callbacks the inference's roots read).
   """
@@ -289,6 +290,7 @@ defmodule Anchor.Managers.Graph do
       |> Map.put(:interface_width, interface_width(rules, model))
       |> Map.put(:dynamic_calls, DynamicCalls.tally(graph))
       |> put_effects(GraphReport.effects(model.effects))
+      |> put_demand(GraphReport.demand(model.demand))
       |> put_parameter_sinks(parameter_sinks(rules, model))
       |> put_aggregates(model.aggregates),
       held: Enum.flat_map(ran, & &1.held),
@@ -337,64 +339,6 @@ defmodule Anchor.Managers.Graph do
     demand = demand(rules, model, cfa, deps)
 
     {with_demand(model, demand), %{cfa: cfa, effects: effects, demand: demand}}
-  end
-
-  # DND-5470: the demand analysis runs once, after the flow analysis it reads,
-  # and only when a rule that runs needs it; the same guard covers the
-  # behaviours' callbacks that rule reads with it.
-  defp demand(rules, model, cfa, deps) do
-    needed? = Enum.any?(rules, fn {_rule, _module, needs} -> needs?(needs, :demand) end)
-
-    case {needed?, cfa} do
-      {true, {:ok, %Cfa{} = analysis}} -> guarded(fn -> demand!(model, analysis, deps) end)
-      _none_or_crashed -> nil
-    end
-  end
-
-  defp demand!(model, cfa, deps) do
-    tokens = model.architecture.effects
-    callbacks = deps.behaviour_source.callbacks(Roots.external_behaviours(model.graph))
-
-    case deps.demand.(model.graph, cfa, tokens) do
-      %Demand{} = demand ->
-        {demand, callbacks}
-
-      other ->
-        raise ArgumentError, "the analysis returned #{inspect(other, limit: 5)}, not %Demand{}"
-    end
-  end
-
-  defp with_demand(model, {:ok, {%Demand{} = demand, callbacks}}),
-    do: %{model | demand: demand, callbacks: callbacks}
-
-  defp with_demand(model, _none_or_crashed), do: model
-
-  defp put_parameter_sinks(counts, nil), do: counts
-  defp put_parameter_sinks(counts, sinks), do: Map.put(counts, :parameter_sinks, sinks)
-
-  # DND-5470: printed when a parameter_reaches_sink rule ran and could; `nil`
-  # otherwise, so a run without one says nothing about it.
-  defp parameter_sinks(_rules, %Model{demand: nil}), do: nil
-
-  defp parameter_sinks(rules, %Model{} = model) do
-    # Under the guard: the rule that crashed in `check/2` is one issue already.
-    case guarded(fn -> sink_counts(rules, model) end) do
-      {:ok, counts} -> counts
-      _crashed -> nil
-    end
-  end
-
-  defp sink_counts(rules, model) do
-    counts =
-      for {%{type: :parameter_reaches_sink} = rule, _module, _needs} <- rules,
-          do: ParameterReachesSink.counts(model, rule)
-
-    GraphReport.parameter_sinks(
-      counts,
-      model.cfa,
-      model.demand,
-      DynamicCalls.computed_name_count(model.graph)
-    )
   end
 
   # DND-5476: the declared aggregates and their unknown tables are counted
@@ -446,12 +390,83 @@ defmodule Anchor.Managers.Graph do
   defp effects!(other),
     do: raise(ArgumentError, "the inference returned #{inspect(other, limit: 5)}, not %Effects{}")
 
+  # The demand counts appear only when the analysis ran (DND-5715).
+  defp put_demand(counts, nil), do: counts
+  defp put_demand(counts, demand), do: Map.put(counts, :demand, demand)
+
   # The effect counts appear only when the inference ran (DND-5447).
   defp put_effects(counts, nil), do: counts
   defp put_effects(counts, effects), do: Map.put(counts, :effects, effects)
 
   defp effects_analysis({:ok, %Effects{} = effects}), do: effects
   defp effects_analysis(_none_or_crashed), do: nil
+
+  # DND-5715: the demand analysis runs once, after the flow analysis it reads,
+  # and only when a rule that runs needs it; `nil` when none does or the flow
+  # analysis crashed, else the guarded result. The same guard covers the
+  # behaviours' callbacks a parameter_reaches_sink rule reads with it (DND-5470).
+  defp demand(rules, model, cfa, deps) do
+    needed? = Enum.any?(rules, fn {_rule, _module, needs} -> needs?(needs, :demand) end)
+
+    case {needed?, cfa} do
+      {true, {:crashed, _kind, _reason, _stacktrace}} -> nil
+      {true, _ok_or_not_run} -> guarded(fn -> demand!(rules, model, deps) end)
+      {false, _cfa} -> nil
+    end
+  end
+
+  defp demand!(rules, model, deps) do
+    callbacks = sink_callbacks(rules, model, deps)
+
+    case deps.demand.(model.graph, model.cfa, model.architecture.effects) do
+      %Demand{} = demand ->
+        {demand, callbacks}
+
+      # An analysis that returns anything but a `%Demand{}` is reported like one
+      # that raised.
+      other ->
+        raise ArgumentError, "the analysis returned #{inspect(other, limit: 5)}, not a %Demand{}"
+    end
+  end
+
+  defp sink_callbacks(rules, model, deps) do
+    if Enum.any?(rules, &match?({%{type: :parameter_reaches_sink}, _module, _needs}, &1)),
+      do: deps.behaviour_source.callbacks(Roots.external_behaviours(model.graph)),
+      else: %{}
+  end
+
+  defp with_demand(model, {:ok, {%Demand{} = demand, callbacks}}),
+    do: %{model | demand: demand, callbacks: callbacks}
+
+  defp with_demand(model, _none_or_crashed), do: model
+
+  defp put_parameter_sinks(counts, nil), do: counts
+  defp put_parameter_sinks(counts, sinks), do: Map.put(counts, :parameter_sinks, sinks)
+
+  # DND-5470: printed when a parameter_reaches_sink rule ran and could; `nil`
+  # otherwise, so a run without one says nothing about it.
+  defp parameter_sinks(_rules, %Model{demand: nil}), do: nil
+
+  defp parameter_sinks(rules, %Model{} = model) do
+    # Under the guard: the rule that crashed in `check/2` is one issue already.
+    case guarded(fn -> sink_counts(rules, model) end) do
+      {:ok, counts} -> counts
+      _crashed -> nil
+    end
+  end
+
+  defp sink_counts(rules, model) do
+    counts =
+      for {%{type: :parameter_reaches_sink} = rule, _module, _needs} <- rules,
+          do: ParameterReachesSink.counts(model, rule)
+
+    GraphReport.parameter_sinks(
+      counts,
+      model.cfa,
+      model.demand,
+      DynamicCalls.computed_name_count(model.graph)
+    )
+  end
 
   # The analysis runs once, and only when a rule that runs needs it: `nil`
   # when none does, else the guarded result.
@@ -730,7 +745,7 @@ defmodule Anchor.Managers.Graph do
 
   defp run_check(
          {:ok, needs},
-         %{demand: {:crashed, kind, reason, stacktrace}},
+         %{demand: {:crashed, kind, reason, stacktrace}} = analyses,
          rule,
          module,
          model,
@@ -740,7 +755,7 @@ defmodule Anchor.Managers.Graph do
       do:
         {:crashed,
          rule |> Failures.rule_demand_crashed(kind, reason, stacktrace, path) |> fail_closed()},
-      else: check(rule, module, model, path)
+      else: run_check({:ok, needs}, %{analyses | demand: nil}, rule, module, model, path)
   end
 
   defp run_check({:ok, _needs}, _analyses, rule, module, model, path),

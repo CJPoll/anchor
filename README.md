@@ -443,13 +443,15 @@ The Engine column is the one engine that runs the type: `ast` rules run as
 Credo checks over source, `graph` rules run under `mix anchor.graph` over the
 compiled code (DND-5440; `layering`, DND-5442, `context_acyclic`, DND-5445,
 `aggregate_declarations`, DND-5476, `effects_match_bucket`, DND-5447,
-`parameter_reaches_sink`, DND-5470, `struct_owned_by_module_flow`, DND-5454, and `interface`, DND-5443). Credo never reports a
+`parameter_reaches_sink`, DND-5470, `struct_owned_by_module_flow`, DND-5454,
+`analyses_complete`, DND-5715, and `interface`, DND-5443). Credo never reports a
 `graph` rule as unchecked.
 
 | Rule type | Keys beyond the common ones | Relation (needs one, non-empty) | Engine |
 |---|---|---|---|
 | `aggregate_declarations` | none | none | `graph` |
 | `alphabetized_functions` | `mode` | none | `ast` |
+| `analyses_complete` | `min_absent_parameters`, `min_apply_sites`, `min_functions` | none | `graph` |
 | `case_on_bare_arg` | none | none | `ast` |
 | `context_acyclic` | none | none | `graph` |
 | `effects_match_bucket` | none | none | `graph` |
@@ -617,7 +619,7 @@ otherwise. `uses_module`, `recursive` and `min_files` are `ast` keys and are
 refused on a graph rule. A finding of a rule with `enforcement: report` prints
 `[report]` and does not fail the run. `--format json` prints `{"modules",
 "apps", "rules", "opaque", "no_core", "outside_root", "apply_sites", "interface_width",
-"dynamic_calls", "effects", "parameter_sinks", "aggregates", "exit_code",
+"dynamic_calls", "effects", "demand", "parameter_sinks", "aggregates", "exit_code",
 "findings":
 [{rule_id, type, enforcement, key, file, line, message, fix}],
 "could_not_check": [...], "refused": [...], "held": [...]}`. `--only RULE_ID` (repeatable) runs only the
@@ -1011,6 +1013,52 @@ The summary adds `; effects: <n> functions (domain <a>, managers <b>, adapters
 <c>, framework <d>), <u> unresolved dynamic calls`. Anchor's own `.anchor.yml`
 runs it over `lib/` with a baseline holding what it found when it landed.
 
+### The `analyses_complete` rule (DND-5715)
+
+Declares that the whole-program analyses finish over your project. It reads the
+higher-order flow analysis and the demand analysis (`Anchor.Domain.Demand`), so
+the run computes both once. Each of these is a fail-closed issue on the config,
+never held by a baseline and never report-only:
+
+- the flow analysis hit its step bound (every apply site reads `any`);
+- the demand analysis hit its round bound on some component (its parameters
+  read as used without being judged);
+- a selected module has a `def` or `defp` with a Core body and no demand summary;
+- the analyses judged fewer than a floor it declares.
+
+```yaml
+rules:
+  - type: analyses_complete
+    id: analyses_complete
+    paths: ["lib/**/*.ex"]
+    min_modules: 100
+    min_functions: 500          # functions the demand analysis summarised
+    min_apply_sites: 100        # apply sites the flow analysis counted
+    min_absent_parameters: 1    # parameters it judged unused
+
+architecture:
+  contexts:
+    depth: 2
+  buckets:
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/**/*.ex"]
+  calls:
+    domain: [domain]
+```
+
+The summary adds `; demand: <f> functions, <p> parameters, <a> absent, <i>
+imprecise functions`, with `(round bound hit on <n> functions)` after it if the
+analysis hit its bound, and the JSON's `demand` holds the same counts (`null`
+when no rule that runs needs it). The bounds and floors are over the whole
+program, since an analysis runs over all of it; the selector narrows only whose functions must be summarised. Each
+floor is optional, a positive integer, and has no default: without it, that
+count is not judged. A rule that reads the demand analysis declares `needs:
+[:cfa, :demand]` in its module (`Anchor.Domain.GraphRule`). Anchor's own
+`.anchor.yml` declares this rule, so CI's `mix anchor.graph` is the whole-Anchor
+run of both analyses.
+
 ### The `struct_owned_by_module_flow` rule (DND-5454)
 
 ```yaml
@@ -1358,6 +1406,10 @@ line.
 | A bucket below its `min_modules` | 1 | the config | `architecture bucket domain selects 3 modules, below min_modules 10. Fix: correct the selector; lowering min_modules is the owner's call.` |
 | An `interfaces.exports` entry that names no module | 1 | the config | `architecture interfaces.exports names MyApp.Gone, which is no module of the project ... Fix: ...` |
 | An `aggregates:` section of the wrong shape (DND-5476) | 3 | the config path | `aggregates.declare[1].schemas must be a list of exact module names: "MyApp.*" is not an exact Elixir module name (no glob, no Erlang module). Fix: name each module in full, as its defmodule spells it; aggregates: declare: - name: <Aggregate>, ...` |
+| An `analyses_complete` rule when the flow analysis hit its step bound (DND-5715) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "analyses_complete", analyses_complete): the higher-order flow analysis (Anchor.Domain.Cfa) hit its step bound after 40 steps, so every apply site reads any and no closure was resolved. Fix: this is a scale limit of Anchor; ...` |
+| An `analyses_complete` rule when the demand analysis hit its round bound (DND-5715) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "analyses_complete", analyses_complete): the demand analysis (Anchor.Domain.Demand) hit its round bound on 2 function(s) (MyApp.X.f/1, MyApp.X.g/2), so their parameters read as used without being judged. Fix: this is a scale limit of Anchor; ...` |
+| An `analyses_complete` rule when a selected function with a Core body has no demand summary (DND-5715) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "analyses_complete", analyses_complete): 1 function(s) have a Core body and no demand summary (MyApp.X.f/1), so the analysis judged none of their parameters. Fix: this is an Anchor bug; ...` |
+| An `analyses_complete` rule when the analyses judged fewer than a floor it declares (DND-5715) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "analyses_complete", analyses_complete): the whole-program analyses judged 3, below min_functions 501, so they may be judging nothing. Fix: find what stopped them reading this code; ...` |
 | An `aggregate_declarations` rule with no aggregate declared anywhere (DND-5476) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "aggregate_declarations", aggregate_declarations) checks nothing: no aggregate is declared in .anchor.yml or by an @anchor_aggregate attribute. Fix: declare one or remove the rule: ...` |
 | A schema whose `__schema__(:source)` is not a literal (DND-5476) | 0 | the summary | counted as `; aggregates: <N> declared, <U> tables unknown`, never dropped |
 | A graph rule below its `min_modules` | 1 | the config | `rule 2 (id: "web", layering) selects 0 modules, below min_modules 1. Fix: correct the selector; ...` |
@@ -1375,9 +1427,10 @@ line.
 | `--write-baseline` that created the file | 0 | the baseline path | `anchor.graph wrote 3 entries to .anchor/baselines/web.txt. Fix: review it in this change; from here it only shrinks.` (`[report]`) |
 | `--write-baseline` over an existing file, or naming no rule with a `baseline:` | 2 | the baseline path, or the config | `.anchor/baselines/web.txt exists; --write-baseline only creates, and never rewrites a baseline. Fix: ...` |
 | A `--base` ref with a character git must not see (a leading `-`, a space, `;`, `$`, `:`) | 2 | | usage, with a `Fix:` line |
-| A graph rule whose `needs/0` names an analysis the runner does not compute, or is not a list (DND-5574) | 1 | the config | `rule 2 (id: "web", layering) could not run: ArgumentError: MyApp.Rule.needs/0 names [:nope], which the graph runner does not compute (it computes [:cfa, :demand, :effects]), so it checked nothing. Fix: this is an Anchor bug; file it with this line.` The rule is not run; the other rules still run. |
+| A graph rule whose `needs/0` names an analysis the runner does not compute, or is not a list (DND-5574) | 1 | the config | `rule 2 (id: "web", layering) could not run: ArgumentError: MyApp.Rule.needs/0 names [:nope], which the graph runner does not compute (it computes [:cfa, :effects, :demand]), so it checked nothing. Fix: this is an Anchor bug; file it with this line.` The rule is not run; the other rules still run. |
 | The higher-order flow analysis a rule needs raises, throws or exits (DND-5574) | 1 | the config | `rule 2 (id: "web", layering) could not run: the higher-order flow analysis it needs (Anchor.Domain.Cfa) crashed: RuntimeError: ..., so it checked nothing. Fix: this is an Anchor bug; file it with this line.` One per rule that needs it; the rules that do not still run. |
 | The effect inference a rule needs raises, throws or exits, or returns no `%Effects{}` (DND-5447) | 1 | the config | `rule 2 (id: "effects", effects_match_bucket) could not run: the effect inference it needs (Anchor.Domain.Effects) crashed: RuntimeError: ..., so it checked nothing. Fix: this is an Anchor bug; file it with this line.` One per rule that needs it; the rules that do not still run. |
+| The demand analysis a rule needs raises, throws or exits, or returns no `%Demand{}` (DND-5715) | 1 | the config | `rule 1 (id: "analyses_complete", analyses_complete) could not run: the demand analysis it needs (Anchor.Domain.Demand) crashed: ... Fix: this is an Anchor bug; file it with this line.` The other rules still run. |
 | An `effects_match_bucket` rule selects modules of a judged bucket of which no public function was analysed (DND-5447) | 1 | the config | `rule 4 (id: "effects", effects_match_bucket) judged no public function of bucket domain: the modules it selects there have none that was analysed (every one is a root, generated, or has no Core body), so the bucket is below the rule's floor. Fix: select modules of domain with public functions, or set infer: false on domain in a reviewed change.` |
 | The demand analysis a rule needs, or the behaviour read beside it, raises, throws or exits, or the analysis returns no `%Demand{}` (DND-5470) | 1 | the config | `rule 2 (id: "sinks", parameter_reaches_sink) could not run: the demand analysis it needs (Anchor.Domain.Demand) crashed: RuntimeError: ..., so it checked nothing. Fix: this is an Anchor bug; file it with this line.` One per rule that needs it; the rules that do not still run. |
 | A `parameter_reaches_sink` rule selects modules of which no function could be judged (DND-5470) | 1 | the config | `rule 2 (id: "sinks", parameter_reaches_sink) judged no function: every function of the modules it selects is exempt, has no Core body, or could not be analysed, so it checked nothing. Fix: select modules with functions of their own, or remove the rule.` |
@@ -1632,8 +1685,9 @@ How a run goes:
    segment (DND-5640). A record holding a killer that fails this is skipped
    and named, as is one whose kill map does not parse (said:
    `could not read kill map in <path>:<line>`). A map that cannot be read,
-   or is not a version-1 map, is exit 2
-   (`Fix: download the anchor-coverage artifact again`); one built from a
+   is exit 2 (`Fix: download the anchor-coverage artifact again`), and so is one that
+   is not a version-2 map (`Fix: download a current anchor-coverage artifact, or
+   rebuild it with mix anchor.sabotage coverage`); one built from a
    commit that is not an ancestor of `HEAD` is used, with a warning naming
    both commits.
 5. The union of the selected tests runs once with no mutant (the baseline). If
@@ -1800,47 +1854,97 @@ MIX_ENV=test mix anchor.sabotage coverage [--out PATH] [--local] [-- TEST_ARGS]
 beams in the project's ebin directories; never a dependency or the standard
 library). It writes the map test -> functions that test executed, private ones
 included, to `PATH` (default `_build/test/anchor/coverage.etf`). `TEST_ARGS`
-go to `mix test`.
+go to `mix test`, filters only (`--only`, `--exclude`, `--include`,
+`--name-pattern`) when they narrow the run: the map is of the whole suite, so one that chooses files is
+refused.
 
-A test's window is read from traced calls of `ExUnit.EventManager.test_started/2`
-and `test_finished/2`, stamped with strict monotonic timestamps, never from a
-formatter: ExUnit notifies formatters asynchronously, so a formatter cannot
-bound a test. Calls outside every window (`setup_all`, a process that outlived
-its test) are counted (`outside_windows`), and so are trace messages that
-arrived later than the reorder buffer allows (`late_events`). The map records
-the commit it was built at, the Elixir and OTP versions, the number of tests
-and traced modules, and those counts.
+Every test file compiles first, then the suite runs, so no compiler runs while a
+test does (DND-5691). Mix prints "There are no tests to run" between the two: it
+ran none itself.
 
-A process a test started that keeps running is credited, by time alone, to
-whichever test is running when it next calls project code. Each call keeps
-the pid that made it, so a call from a process first seen in an earlier test's
-window, made while none of those windows is open, is a **window leak**
-(DND-5642). Leaks are listed in the map (`window_leaks`: the earlier tests,
-the credited test, the number of calls), and the run prints one line per
-credited test file after the summary, `anchor.sabotage coverage: warning:
-<file>: N calls from a process first seen during an earlier test were
-credited to a later test (selection unchanged): <earlier test> -> <credited
-test> (N calls)`, at most five pairs to a line. Visibility only: the calls are
-still in the credited test's set and the exit code does not change. What is
-measured is where a process was first seen, not what started it: an
-application process (a server, a cache) idle until a test first calls it is
-first seen in that test, so its later calls for other tests are reported too.
-A line names a process to look at, not proof the earlier test leaked it. A
-process first seen outside every window (one that called project code at
-boot, `setup_all`) is never a leak.
+A call is credited to the test it ran on behalf of, whenever its trace message
+arrives (DND-5691). The VM reads two values at the call (a match spec, so nothing
+depends on time): a **window word** (the trace control word, odd while a test
+runs) and the process's **seq_trace label**. Once the run is over:
+
+1. **Ownership decides first.** A process is owned by a test when it was spawned,
+   through any chain, by a process ExUnit's module runner spawned inside that
+   test's window: the test process, its `on_exit` runner and all they start, even
+   after a parent has died. A Task under a supervisor belongs to whoever started
+   it (the owner pid in its spawn event's arguments). What the runner spawned
+   between windows, setup_all's process above all, belongs to the module, and its
+   calls are credited to every test of the module that ran.
+2. **A label decides for a process with no owner**, and only inside its own
+   window: a server handling a test's call or cast under the test's label is
+   credited to that test, a server handling setup_all's request to every test of
+   the module.
+3. **Everything else is ambient**: compile-time calls, application boot, a server's
+   own work, listed in the map and credited to no test.
+
+A **leak fails the run, exit 1**. It is a call of project code by a process a test
+(or a setup_all) owns, after that test (or module) ended; the map lists it as a
+`(test or module, function)` pair and the run prints one line per pair and a
+`Fix:` line. The call also stays in its owner's set. So these fail: a spinner a
+test left running, a process the next test releases (with or without a label), a
+grandchild whose parent is gone, a process that holds a port and calls project
+code afterwards, a Task under an application's supervisor, a process from setup_all
+that outlives its module.
+
+What this does not fail, stated plainly:
+
+- A process that outlives its test and never calls project code. It adds nothing
+  to the map, so no result depends on it.
+- Work handed to an application-owned server that finishes after the test returns
+  (a cast with no reply), or a stale label on a server's timer, or
+  `:timer.apply_after` past close. Past its label's window the call is ambient. A
+  test makes it deterministic by syncing with the server. A server's own timer that
+  fires inside the window of the test that last called it is credited to that test:
+  the call looks the same as real work, and it can only select one more test.
+- A worker an application supervisor starts on a test's behalf: application state.
+- A test that lost its label (a message from a process with no token clears it)
+  and then calls a server: that handler is ambient, listed, and selection falls
+  through to the kill map or the mirror.
+- A process a parameterized module's `setup_all` started, still calling while that
+  module's next run goes: one name, so it is credited to the module. Only its last
+  run's end counts as past the module.
+
+The file is map version 2: `tests` (each test that ran, with its functions),
+`leaks`, `ambient`, the commit, the Elixir and OTP versions, `suite_exit`, and
+`counters`, which the summary line prints and which are not compared.
+`CoverageMap.canonical/1` is the part two builds of one commit must share, byte for
+byte, when neither leaked and no process with no owner works across a window's
+close (the cast and the timer above). Those lists need not repeat: which call lands
+past a window is scheduling. The repeatability check below still fails on such a
+difference, and the fix is in the test: sync with the server.
 
 It is **CI only by default**: without `CI=true` it refuses, exit 2, and
 traces nothing (`Fix: run it in CI, or pass --local where that load is
 acceptable`). Anchor's own map is built by `.github/workflows/coverage-map.yml`
-(on push to main, weekly, and by hand) and uploaded as the artifact
-`anchor-coverage` (30 days).
+(on a pull request, on push to main, weekly, and by hand) and, except on a pull
+request, uploaded as the artifact `anchor-coverage` (30 days).
+
+`mix anchor.sabotage coverage` exits:
 
 | Condition | Exit |
 |---|---|
 | the map was written | 0 |
-| the map was written, but the suite failed (`suite_exit: 1`; `Fix: make the suite green first`) | 1 |
-| not CI and no `--local`; `MIX_ENV` not `test`; `TEST_ARGS` that set `--max-cases` (two tests at once would share their calls); another tracer already on; the map not writable | 2, with `Fix:` |
-| zero project modules or zero tests (with the suite's own message when it failed before any test), or a project module that cannot load (named, with nothing traced): no map is written | 3, `COULD NOT MEASURE` |
+| the map was written, but a test leaked (each pair named, with a `Fix:` line), or the suite failed (`suite_exit: 1`; `Fix: make the suite green first`) | 1 |
+| not CI and no `--local`; `MIX_ENV` not `test`; `TEST_ARGS` that set `--max-cases` (two tests at once would share their calls) or that choose files (a path, `--failed`, `--stale`, `--partitions`); another tracer already on; the map not writable | 2, with `Fix:` |
+| zero project modules or zero tests (with the suite's own message when it failed before any test; a test file that does not compile is one), a project module that cannot load (named, with nothing traced), fewer windows than ExUnit's `total`, a test that ran with no entry message, a module that never reported finishing, a private ExUnit function that cannot be traced, a `Task.Supervised` spawn in an unknown shape, a seq_trace label from outside this run, or a trace message that cannot be read: no map is written | 3, `COULD NOT MEASURE` |
+
+That workflow builds the map **twice in one job**, at one commit and one `--seed`,
+and judges the two files with `mix anchor.sabotage coverage-compare FIRST SECOND`. It
+is the guard for the rule that a tool or test whose result differs between identical
+runs is wrong. `coverage-compare` exits:
+
+| Condition | Exit |
+|---|---|
+| the canonical bytes are identical, and neither build leaked | 0 |
+| a leak in either build: each build's pairs are printed, with a line saying a leak list is identical only at empty and a `Fix:` line. The lists are never compared | 1 |
+| the suite failed in either build (`Fix: make the suite green first`) | 1 |
+| the canonical bytes differ: each differing (test, function), each test in one build only and each ambient function is named, with a `Fix:` line. The fix goes in the test or the tool, never in an exclusion | 1 |
+| wrong arguments | 2 |
+| a map absent (a missing second build is never a pass), unreadable, of another version or measuring nothing; one file given as both builds; two maps not of one commit, Elixir and OTP; a map with no commit | 3, `COULD NOT MEASURE` |
 
 
 ### Sabotage: behaviours and how far they spread

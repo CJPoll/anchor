@@ -27,7 +27,9 @@ defmodule Anchor.Integration.BehaviourLocalityTest do
 
     :ok =
       CoverageFile.write(Path.join(root, "map.etf"), %{
-        version: 1,
+        version: 2,
+        leaks: [],
+        ambient: [],
         commit: nil,
         modules_traced: 2,
         tests: [

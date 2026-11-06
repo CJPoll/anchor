@@ -42,7 +42,7 @@ never an adapter.
 | Bucket | Modules |
 |---|---|
 | Framework | `Anchor.Check.*` (Credo checks, `Anchor.Check.Base`, `Anchor.Check.Source`), `Anchor.Aggregate` (the compile-time macro, DND-5476), `Mix.Tasks.Anchor.*` (`lib/mix/tasks/`; `Mix.Tasks.Anchor.Sabotage`, `.Graph`, `.Explain`), the `Anchor` module (by name), `Anchor.Sabotage.CoverageCollector` (an OTP process, in `lib/mix/tasks/anchor/sabotage/` so `mix anchor.graph` buckets it as Framework) |
-| Managers | `Anchor.Managers.Lint`, `Anchor.Managers.AstBaseline`, `Anchor.Managers.Sabotage` (`.Runner`, `.Coverage`, `.Replay`, `.Behaviours`), `Anchor.Managers.Graph` (`.Request`), `Anchor.Managers.Explain` |
+| Managers | `Anchor.Managers.Lint`, `Anchor.Managers.AstBaseline`, `Anchor.Managers.Sabotage` (`.Runner`, `.Coverage`, `.CoverageCompare`, `.Replay`, `.Behaviours`), `Anchor.Managers.Graph` (`.Request`), `Anchor.Managers.Explain` |
 | Side Effects | ports: `Anchor.Adapters.ConfigLoader`, `ChangeSource`, `BeamSource`, `Tracing`, `InProcessTests`, `ProjectModuleSource`, `CoverageStore`, `BaselineStore`, `GitBase`, `LintKeys`, `SourceSource`, `GraphStore`, `TestExecution`, `SourceMutation`, `BehaviourSource`; adapters: `ConfigFile`, `CredoKeys`, `GitChangeSource`, `BeamReader`, `BehaviourReader`, `CallTracer`, `SuiteRunner`, `ProjectModules`, `CoverageFile`, `RecordFile` (port `RecordStore`), `BaselineFile`, `GitShow`, `SourceReader`, `GraphArtifact`, `TestRunner`, `SourcePatcher`, `GitStatus`, `GitWorktree` (`lib/anchor/adapters/`); `GitEnv`, the environment the git adapters run git with (DND-5581); `Anchor.Sabotage.ExUnitFormatter` (`lib/anchor/sabotage/`) |
 | Domain | everything under `lib/anchor/domain/`, including `Anchor.Domain.Sabotage.*` (`Mutator`, `Operators`, `DiffHunks`, `FunctionSpans`, `Scope`, `CoverageMap`, `Record`, `RecordNaming`, `KillMap`, `ChangedTests`, `TestPath`: the one rule for a path handed to `mix test`, DND-5640) and `Anchor.Domain.Graph.*`, the graph rules (`GraphRules.*`), `Model`, `Classification`, `Interfaces`, `Explain`, `Subject`, `RuleShapes` |
 
@@ -152,7 +152,8 @@ Every rule type has exactly one engine, `@engine_by_type` in
 (`mix anchor.graph`, DND-5440; the graph types are `layering`, DND-5442,
 `context_acyclic`, DND-5445, `aggregate_declarations`, DND-5476,
 `effects_match_bucket`, DND-5447, `parameter_reaches_sink`, DND-5470,
-`struct_owned_by_module_flow`, DND-5454, and `interface`, DND-5443). A new rule type adds its entry there too (compilation
+`struct_owned_by_module_flow`, DND-5454, and
+`analyses_complete`, DND-5715, and `interface`, DND-5443). A new rule type adds its entry there too (compilation
 fails without it) and to the README table's Engine column (a test compares
 them). Credo never reports a `:graph` rule as unchecked
 (`RuleCoverage.unchecked/3`).
@@ -365,6 +366,27 @@ declares its extra effects (tracing, `Path.wildcard`, `Mix.Task.run`,
 `Code.ensure_loaded?`) and a
 first-landing baseline.
 
+## The analyses_complete rule, and testing the analyses at their bucket's level (DND-5715)
+
+`Anchor.Domain.GraphRules.AnalysesComplete` needs `[:cfa, :demand]` (the runner
+computes the demand analysis once when a rule that runs needs it, onto
+`Model.demand`, with `architecture.effects`, and the run's summary and JSON
+print its counts) and fails the run closed on a hit
+step bound, a hit round bound, a selected function with Core and no demand
+summary, or a count below a floor it declares (`min_functions`, `min_apply_sites`,
+`min_absent_parameters`). Anchor's own `.anchor.yml` declares it over lib/, with
+those floors, so CI's `mix anchor.graph` is the whole-Anchor run of those
+analyses. Its canary has its own root, `test/fixtures/graph_canary/analyses_complete/`,
+compliant only: no small module can hit a default bound, so the violating cases
+inject a bounded analysis or raise a floor in the test. **No test reads
+Anchor's own beams or the whole stdlib as a Domain or Manager test:** a behaviour
+of an analysis gets a row in `demand_test.exs`, `transfer_test.exs` or
+`cfa_test.exs` on a small fixture, and `test/anchor/integration/analyses_complete_integration_test.exs`
+is the one happy path over beams on disk, read from that canary. The table logic of `Inlines` is tested
+on hand-built exports; the check against the real stdlib is
+`test/anchor/adapters/inlines_stdlib_test.exs` (`@moduletag bucket: :adapter`),
+which reads the stdlib once, in `setup_all`.
+
 ## The struct_owned_by_module_flow rule (DND-5454)
 
 The graph half of struct ownership; the AST rule `struct_owned_by_module`
@@ -486,17 +508,34 @@ VM. The flow is in `Anchor.Managers.Sabotage.Runner`'s moduledoc.
 
 `mix anchor.sabotage coverage` builds the map test -> project functions it
 executed, CI only unless `--local` (`.github/workflows/coverage-map.yml`,
-artifact `anchor-coverage`). Windows come from traced
-`ExUnit.EventManager.test_started/2`/`test_finished/2` calls with strict
-monotonic stamps, never from a formatter (formatter events are async). The
-windowing is pure (`Anchor.Domain.Sabotage.CoverageMap`); the collector
-process (`Anchor.Sabotage.CoverageCollector`, Framework) is started by the
-Mix task and reached by the Manager only through the `Tracing` port. The
-`:arity` trace flag keeps every traced argument out of the collector. A test
-that turns VM-wide tracing on is tagged `@moduletag :global_tracing`, and the
-coverage build runs with `--exclude global_tracing`. `run --coverage PATH`
-selects a mutant's tests from the map first (source `coverage`), then the
-mirror.
+artifact `anchor-coverage`). It compiles every test file first, then runs the
+suite (`Anchor.Adapters.SuiteRunner`), and refuses a test argument that chooses
+files. A call is credited causally, never by arrival time (DND-5691): the match
+specs (`Anchor.Domain.Sabotage.LabelSpec`) read a window word and the seq_trace
+label at the call, and once the run is over `ProcessOwnership` resolves each pid to
+its owner and `Attribution` classifies each call. Ownership first, a label only
+inside its own window, else ambient. A call by an owned process past its window is
+a leak: exit 1, never a warning. Windows opened must equal ExUnit's `total`, and a
+private ExUnit function, Task shape or label it cannot read is COULD NOT MEASURE.
+No gate or silencing: every call is traced, because DND-5691's measurement found
+the slowest test at 3.9 s. The collector process
+(`Anchor.Sabotage.CoverageCollector`, Framework) is started by the Mix task and
+reached by the Manager only through the `Tracing` port. The `:arity` trace flag
+keeps every call's arguments out of the collector, and the collector reduces a spawn
+event's arguments to the one pid they name. A test that turns VM-wide
+tracing on is tagged `@moduletag :global_tracing`, and the coverage build runs
+with `--exclude global_tracing`. `run --coverage PATH` selects a mutant's tests
+from the map first (source `coverage`), then the mirror.
+
+The workflow, on pull requests too, builds the map twice in one job at one seed and
+runs `mix anchor.sabotage coverage-compare FIRST SECOND`
+(`Anchor.Domain.Sabotage.CoverageCompare`, DND-5692). A leak in either build fails
+and prints each build's pairs, never compared: a leak list is identical only at
+empty. A failed suite fails too. Otherwise `CoverageMap.canonical/1` must match byte for byte, and any
+difference fails naming the test and function: a defect in a test or the tool, fixed
+there and never excluded. A build whose map is missing is exit 3, never a pass. A
+red build is not stopped from reaching the comparison by `continue-on-error`, which
+would hide it, but by `if: !cancelled()` on the steps after it, so the job stays red.
 
 ## Behaviour locality (DND-5489)
 

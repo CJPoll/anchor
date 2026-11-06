@@ -15,6 +15,8 @@ defmodule Anchor.Domain.GraphReportTest do
   # Sabotage record (DND-5470): ../../sabotage_records/parameter_reaches_sink-20261106-dnd_5470_param_sink_locality.md
   use ExUnit.Case, async: true
 
+  # Sabotage record (DND-5715): ../../sabotage_records/graph_runner-20261106-dnd_5715_bucket_split.md
+
   alias Anchor.Domain.GraphReport
   alias Anchor.Domain.GraphReport.Finding
 
@@ -228,6 +230,57 @@ defmodule Anchor.Domain.GraphReportTest do
   end
 
   # DND-5633: an over-approximated dynamic call is counted, never silent.
+  describe "demand counts (DND-5715)" do
+    alias Anchor.Domain.Demand
+
+    @demand %{functions: 4, parameters: 7, absent: 1, imprecise_functions: 2, bound_hit: 0}
+
+    test "demand/1 takes the counts from the analysis, and the bound as a count; nil for none" do
+      analysis = %Demand{
+        counts: %{functions: 4, parameters: 7, absent: 1, imprecise_functions: 2},
+        bound_hit: [{MyApp.X, :run, 1}, {MyApp.X, :run, 2}, {MyApp.X, :run, 3}]
+      }
+
+      assert GraphReport.demand(analysis) == %{@demand | bound_hit: 3}
+      assert GraphReport.demand(nil) == nil
+    end
+
+    test "the summary ends with the counts when the analysis ran, with no finding" do
+      report = GraphReport.new([], [], Map.put(@counts, :demand, @demand))
+
+      assert GraphReport.summary(report) ==
+               "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations " <>
+                 "(0 report-only, 0 baselined); " <>
+                 "demand: 4 functions, 7 parameters, 1 absent, 2 imprecise functions"
+    end
+
+    test "a hit round bound is said, with how many functions hit it" do
+      report = GraphReport.new([], [], Map.put(@counts, :demand, %{@demand | bound_hit: 3}))
+
+      assert GraphReport.summary(report) =~
+               "2 imprecise functions (round bound hit on 3 functions)"
+    end
+
+    test "no analysis says nothing in the summary, and null in the JSON" do
+      report = GraphReport.new([], [], @counts)
+
+      refute GraphReport.summary(report) =~ "demand"
+      assert %{"demand" => nil} = JSON.decode!(GraphReport.render(report, :json))
+    end
+
+    test "the JSON carries the same counts under string keys" do
+      report = GraphReport.new([], [], Map.put(@counts, :demand, @demand))
+
+      assert JSON.decode!(GraphReport.render(report, :json))["demand"] == %{
+               "functions" => 4,
+               "parameters" => 7,
+               "absent" => 1,
+               "imprecise_functions" => 2,
+               "bound_hit" => 0
+             }
+    end
+  end
+
   describe "dynamic calls (DND-5633)" do
     @dynamic %{
       narrowed: [{{MyApp.M, :typed, 2}, :run, 1}],
