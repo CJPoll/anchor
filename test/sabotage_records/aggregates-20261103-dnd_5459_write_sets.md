@@ -53,8 +53,6 @@
 | SC-BODY | a scope holds every write of its function (`lib/anchor/domain/aggregates/scopes.ex`) | `scopes_test.exs` | `18 tests, 1 failure` (red) |
 | NT-OUTSIDE | writes inside a transaction count as non-transactional (`lib/anchor/domain/aggregates/non_transactional.ex`) | `non_transactional_test.exs` | `10 tests, 2 failures` (red) |
 | NT-MULTI | a Multi step counts as non-transactional (`lib/anchor/domain/aggregates/non_transactional.ex`) | `non_transactional_test.exs` | `10 tests, 1 failure` (red) |
-| NT-AIT | always_in_transaction ignores where the call is (`lib/anchor/domain/aggregates/non_transactional.ex`) | `non_transactional_test.exs` | `10 tests, 2 failures` (red) |
-| NT-ROOTS | given roots are ignored (`lib/anchor/domain/aggregates/non_transactional.ex`) | `non_transactional_test.exs` | `10 tests, 2 failures` (red) |
 | IN-INCOMPLETE | incomplete scopes add no edges (`lib/anchor/domain/aggregates/inference.ex`) | `inference_test.exs` | `12 tests, 1 failure` (red) |
 | IN-ROOT | the root ignores how many complete scopes hold it (`lib/anchor/domain/aggregates/inference.ex`) | `inference_test.exs` | `12 tests, 2 failures` (red) |
 | IN-YAML | render_yaml omits declare: (`lib/anchor/domain/aggregates/inference.ex`) | `inference_test.exs` | `12 tests, 2 failures` (red) |
@@ -70,7 +68,6 @@
 | RS-ENGINE | aggregate_write_sources runs on the ast engine (`lib/anchor/domain/rule_schema.ex`) | `rule_schema_test.exs`, `graph_rules_test.exs` | `45 tests, 4 failures` (red) |
 | GR-REG | aggregate_write_sources is not registered (`lib/anchor/domain/graph_rules.ex`) | `graph_rules_test.exs`, `aggregate_write_sources_integration_test.exs` | `14 tests, 2 failures` (red) |
 | MD-ANALYSIS | the model never builds the analysis (`lib/anchor/domain/model.ex`) | `aggregate_write_sources_integration_test.exs` | `2 tests, 2 failures` (red) |
-| MD-ROOTS | the framework bucket's functions are not roots (`lib/anchor/domain/model.ex`) | `non_transactional_test.exs` | `10 tests, 1 failure` (red) |
 | RP-WRITES | the summary omits the writes (`lib/anchor/domain/graph_report.ex`) | `graph_report_aggregates_test.exs`, `aggregate_write_sources_integration_test.exs` | `6 tests, 3 failures` (red) |
 | MG-WRITES | the manager does not count the writes (`lib/anchor/managers/graph.ex`) | `aggregate_write_sources_integration_test.exs` | `2 tests, 2 failures` (red) |
 | FL-NOREPO | the no-repo message loses its Fix (`lib/anchor/domain/failures.ex`) | `failures_graph_test.exs` | `16 tests, 1 failure` (red) |
@@ -1512,109 +1509,6 @@ a Multi step counts as non-transactional (`lib/anchor/domain/aggregates/non_tran
 .
 ```
 
-### NT-AIT
-
-always_in_transaction ignores where the call is (`lib/anchor/domain/aggregates/non_transactional.ex`). Result: `10 tests, 2 failures`.
-
-```
-
-  1) test roots: through Model.build, a framework bucket's public function is a root (Anchor.Domain.Aggregates.NonTransactionalTest)
-     test/anchor/domain/aggregates/non_transactional_test.exs:107
-     Expected truthy, got false
-     code: assert MapSet.member?(analysis.always_in_transaction, {@n, :n2g, 0})
-     arguments:
-
-         # 1
-         MapSet.new([
-           {AnchorFixtures.NonTransactionalTest.N, :n4a, 1},
-           {AnchorFixtures.NonTransactionalTest.N, :n4b, 1},
-           {AnchorFixtures.NonTransactionalTest.N, :n7_step, 2}
-         ])
-
-         # 2
-         {AnchorFixtures.NonTransactionalTest.N, :n2g, 0}
-
-     stacktrace:
-       test/anchor/domain/aggregates/non_transactional_test.exs:146: (test)
-
-..
-
-
-  2) test N2: a callee called only inside a transaction adds nothing and is always in one (Anchor.Domain.Aggregates.NonTransactionalTest)
-     test/anchor/domain/aggregates/non_transactional_test.exs:66
-     Expected truthy, got false
-     code: assert MapSet.member?(a.always_in_transaction, {@n, :n2g, 0})
-     arguments:
-
-         # 1
-         MapSet.new([
-           {AnchorFixtures.NonTransactionalTest.N, :n4a, 1},
-           {AnchorFixtures.NonTransactionalTest.N, :n4b, 1},
-           {AnchorFixtures.NonTransactionalTest.N, :n7_step, 2}
-         ])
-
-         # 2
-         {AnchorFixtures.NonTransactionalTest.N, :n2g, 0}
-
-     stacktrace:
-       test/anchor/domain/aggregates/non_transactional_test.exs:70: (test)
-
-.
-```
-
-### NT-ROOTS
-
-given roots are ignored (`lib/anchor/domain/aggregates/non_transactional.ex`). Result: `10 tests, 2 failures`.
-
-```
-
-  1) test roots: a given root is never always in a transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
-     test/anchor/domain/aggregates/non_transactional_test.exs:101
-     Expected false or nil, got true
-     code: refute MapSet.member?(analysis.always_in_transaction, {@n, :n2g, 0})
-     arguments:
-
-         # 1
-         MapSet.new([
-           {AnchorFixtures.NonTransactionalTest.N, :n2g, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n4a, 1},
-           {AnchorFixtures.NonTransactionalTest.N, :n4b, 1},
-           {AnchorFixtures.NonTransactionalTest.N, :n7_step, 2}
-         ])
-
-         # 2
-         {AnchorFixtures.NonTransactionalTest.N, :n2g, 0}
-
-     stacktrace:
-       test/anchor/domain/aggregates/non_transactional_test.exs:104: (test)
-
-.
-
-
-  2) test roots: through Model.build, a framework bucket's public function is a root (Anchor.Domain.Aggregates.NonTransactionalTest)
-     test/anchor/domain/aggregates/non_transactional_test.exs:107
-     Expected false or nil, got true
-     code: refute MapSet.member?(analysis.always_in_transaction, {fw, :entry, 0})
-     arguments:
-
-         # 1
-         MapSet.new([
-           {AnchorFixtures.NonTransactionalTest.N, :n2g, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n4a, 1},
-           {AnchorFixtures.NonTransactionalTest.N, :n4b, 1},
-           {AnchorFixtures.NonTransactionalTest.N, :n7_step, 2},
-           {AnchorFixtures.NonTransactionalTest.Web, :entry, 0}
-         ])
-
-         # 2
-         {AnchorFixtures.NonTransactionalTest.Web, :entry, 0}
-
-     stacktrace:
-       test/anchor/domain/aggregates/non_transactional_test.exs:145: (test)
-
-..
-```
-
 ### IN-INCOMPLETE
 
 incomplete scopes add no edges (`lib/anchor/domain/aggregates/inference.ex`). Result: `12 tests, 1 failure`.
@@ -2420,36 +2314,6 @@ the model never builds the analysis (`lib/anchor/domain/model.ex`). Result: `2 t
             ]
      stacktrace:
        test/anchor/integration/aggregate_write_sources_integration_test.exs:84: (test)
-```
-
-### MD-ROOTS
-
-the framework bucket's functions are not roots (`lib/anchor/domain/model.ex`). Result: `10 tests, 1 failure`.
-
-```
-
-  1) test roots: through Model.build, a framework bucket's public function is a root (Anchor.Domain.Aggregates.NonTransactionalTest)
-     test/anchor/domain/aggregates/non_transactional_test.exs:107
-     Expected false or nil, got true
-     code: refute MapSet.member?(analysis.always_in_transaction, {fw, :entry, 0})
-     arguments:
-
-         # 1
-         MapSet.new([
-           {AnchorFixtures.NonTransactionalTest.N, :n2g, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n4a, 1},
-           {AnchorFixtures.NonTransactionalTest.N, :n4b, 1},
-           {AnchorFixtures.NonTransactionalTest.N, :n7_step, 2},
-           {AnchorFixtures.NonTransactionalTest.Web, :entry, 0}
-         ])
-
-         # 2
-         {AnchorFixtures.NonTransactionalTest.Web, :entry, 0}
-
-     stacktrace:
-       test/anchor/domain/aggregates/non_transactional_test.exs:145: (test)
-
-....
 ```
 
 ### RP-WRITES

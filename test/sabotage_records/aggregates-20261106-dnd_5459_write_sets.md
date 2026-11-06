@@ -18,7 +18,6 @@
 | IN-BYHAND | the no-repo error does not say none is a person's call (`lib/anchor/domain/aggregates/inference.ex`) | `inference_test.exs` | `14 tests, 1 failure` (red) |
 | IN-EVIDENCESCOPES | a transaction is not named in the error (`lib/anchor/domain/aggregates/inference.ex`) | `inference_test.exs` | `14 tests, 1 failure` (red) |
 | IN-EVIDENCEOUTSIDE | an unattributable call outside a transaction is not named in the error (`lib/anchor/domain/aggregates/inference.ex`) | `inference_test.exs` | `14 tests, 1 failure` (red) |
-| SC-CLOSURE | the closure stops following calls (`lib/anchor/domain/aggregates/scopes.ex`) | `scopes_test.exs`, `non_transactional_test.exs` | `28 tests, 4 failures` (red) |
 | SC-CAPTURES | a captured transaction body is not followed (`lib/anchor/domain/aggregates/scopes.ex`) | `scopes_test.exs`, `non_transactional_test.exs` | `28 tests, 1 failure` (red) |
 | SC-REMOTE | a scope follows only callees in its own module (`lib/anchor/domain/aggregates/scopes.ex`) | `scopes_test.exs`, `non_transactional_test.exs` | `28 tests, 5 failures` (red) |
 | SC-ENUMCAPTURE | a capture in a scope's body is not followed (`lib/anchor/domain/aggregates/scopes.ex`) | `scopes_test.exs`, `non_transactional_test.exs` | `28 tests, 1 failure` (red) |
@@ -26,12 +25,10 @@
 | SC-BODY | a scope holds a write of another transaction in its function (`lib/anchor/domain/aggregates/scopes.ex`) | `scopes_test.exs`, `non_transactional_test.exs` | `28 tests, 1 failure` (red) |
 | SC-BODYTAGS | a scope follows a call or dynamic call outside its body (`lib/anchor/domain/aggregates/scopes.ex`) | `scopes_test.exs`, `non_transactional_test.exs` | `28 tests, 1 failure` (red) |
 | SC-ALLTAGS | the full closure keeps only calls outside a body (`lib/anchor/domain/aggregates/scopes.ex`) | `scopes_test.exs`, `non_transactional_test.exs` | `31 tests, 1 failure` (red after the added test) |
-| NT-OUTSIDE | calls inside a transaction count as non-transactional (`lib/anchor/domain/aggregates/scopes.ex`) | `scopes_test.exs`, `non_transactional_test.exs` | `28 tests, 2 failures` (red) |
 | NT-MULTI | a write inside a transaction body counts as outside (`lib/anchor/domain/aggregates/scopes.ex`) | `scopes_test.exs`, `non_transactional_test.exs` | `31 tests, 2 failures` (red after the added test) |
 | NT-RUNCB | an inline Multi.run callback's write counts as outside a transaction (`lib/anchor/domain/aggregates/scopes.ex`) | `scopes_test.exs`, `non_transactional_test.exs` | `28 tests, 1 failure` (red) |
 | NT-VIA | a Multi step's write counts as outside a transaction (`lib/anchor/domain/aggregates/scopes.ex`) | `scopes_test.exs`, `non_transactional_test.exs` | `28 tests, 1 failure` (red) |
 | NT-VIAWF | a write_functions write does not count as outside (`lib/anchor/domain/aggregates/scopes.ex`) | `scopes_test.exs`, `non_transactional_test.exs` | `31 tests, 1 failure` (red after the added test) |
-| NT-SELECTION | the non-transactional summary asks for everything (`lib/anchor/domain/aggregates/non_transactional.ex`) | `scopes_test.exs`, `non_transactional_test.exs` | `28 tests, 4 failures` (red) |
 | WSC-RUN | a Multi.run capture is left out of the captured set (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_source_test.exs` | `18 tests, 1 failure` (red after the added test) |
 | WSC-CAPTURES | a capture is left out of the captured set (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_test.exs`, `non_transactional_test.exs`, `write_source_test.exs` | `37 tests, 1 failure` (red) |
 | GR-REG | aggregate_write_sources is not registered (`lib/anchor/domain/graph_rules.ex`) | `graph_rules_test.exs`, `aggregate_write_sources_integration_test.exs` | `14 tests, 2 failures` (red) |
@@ -182,69 +179,6 @@ an unattributable call outside a transaction is not named in the error (`lib/anc
        test/anchor/domain/aggregates/inference_test.exs:150: (test)
 
 .....
-```
-
-## SC-CLOSURE
-
-the closure stops following calls (`lib/anchor/domain/aggregates/scopes.ex`). Result: `28 tests, 4 failures`.
-
-```
-
-  1) test N3: a callee also called outside is not always in one; the outside caller has its keys (Anchor.Domain.Aggregates.NonTransactionalTest)
-     test/anchor/domain/aggregates/non_transactional_test.exs:72
-     Assertion with == failed
-     code:  assert nontx(a, :n3h).keys == keys([@t])
-     left:  MapSet.new([])
-     right: MapSet.new([schema: AnchorFixtures.NonTransactionalTest.T])
-     stacktrace:
-       test/anchor/domain/aggregates/non_transactional_test.exs:75: (test)
-
-.
-
-
-  2) test N4: recursion terminates at the fixpoint (Anchor.Domain.Aggregates.NonTransactionalTest)
-     test/anchor/domain/aggregates/non_transactional_test.exs:79
-     Assertion with == failed
-     code:  assert nontx(a, :n4a, 1).keys == keys([@s, @t])
-     left:  MapSet.new([schema: AnchorFixtures.NonTransactionalTest.S])
-     right: MapSet.new([
-              schema: AnchorFixtures.NonTransactionalTest.S,
-              schema: AnchorFixtures.NonTransactionalTest.T
-            ])
-     stacktrace:
-       test/anchor/domain/aggregates/non_transactional_test.exs:80: (test)
-
-.
-
-
-  3) test build/3 S8: recursion terminates, and the keys are the union (Anchor.Domain.Aggregates.ScopesTest)
-     test/anchor/domain/aggregates/scopes_test.exs:175
-     Assertion with == failed
-     code:  assert scope.keys == keys([@s, @t])
-     left:  MapSet.new([schema: AnchorFixtures.ScopesTest.S])
-     right: MapSet.new([
-              schema: AnchorFixtures.ScopesTest.S,
-              schema: AnchorFixtures.ScopesTest.T
-            ])
-     stacktrace:
-       test/anchor/domain/aggregates/scopes_test.exs:177: (test)
-
-...........
-
-
-  4) test N1: a function's own writes and its callees' outside a transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
-     test/anchor/domain/aggregates/non_transactional_test.exs:59
-     Assertion with == failed
-     code:  assert nontx(a, :n1f).keys == keys([@s, @t])
-     left:  MapSet.new([schema: AnchorFixtures.NonTransactionalTest.S])
-     right: MapSet.new([
-              schema: AnchorFixtures.NonTransactionalTest.S,
-              schema: AnchorFixtures.NonTransactionalTest.T
-            ])
-     stacktrace:
-       test/anchor/domain/aggregates/non_transactional_test.exs:60: (test)
-
-..........
 ```
 
 ## SC-CAPTURES
@@ -463,36 +397,6 @@ First run, before the added test: `28 tests, 0 failures` (survived).
 ..........
 ```
 
-## NT-OUTSIDE
-
-calls inside a transaction count as non-transactional (`lib/anchor/domain/aggregates/scopes.ex`). Result: `28 tests, 2 failures`.
-
-```
-
-  1) test N3: a callee also called outside is not always in one; the outside caller has its keys (Anchor.Domain.Aggregates.NonTransactionalTest)
-     test/anchor/domain/aggregates/non_transactional_test.exs:72
-     Assertion with == failed
-     code:  assert nontx(a, :n3f).keys == MapSet.new()
-     left:  MapSet.new([schema: AnchorFixtures.NonTransactionalTest.T])
-     right: MapSet.new([])
-     stacktrace:
-       test/anchor/domain/aggregates/non_transactional_test.exs:76: (test)
-
-
-
-
-  2) test N2: a callee called only inside a transaction adds nothing and is always in one (Anchor.Domain.Aggregates.NonTransactionalTest)
-     test/anchor/domain/aggregates/non_transactional_test.exs:65
-     Assertion with == failed
-     code:  assert nontx(a, :n2f).keys == MapSet.new()
-     left:  MapSet.new([schema: AnchorFixtures.NonTransactionalTest.S])
-     right: MapSet.new([])
-     stacktrace:
-       test/anchor/domain/aggregates/non_transactional_test.exs:68: (test)
-
-..............
-```
-
 ## NT-MULTI
 
 a write inside a transaction body counts as outside (`lib/anchor/domain/aggregates/scopes.ex`). Result: `31 tests, 2 failures`.
@@ -581,60 +485,6 @@ First run, before the added test: `28 tests, 0 failures` (survived).
        test/anchor/domain/aggregates/non_transactional_test.exs:111: (test)
 
 ..........
-```
-
-## NT-SELECTION
-
-the non-transactional summary asks for everything (`lib/anchor/domain/aggregates/non_transactional.ex`). Result: `28 tests, 4 failures`.
-
-```
-
-  1) test N3: a callee also called outside is not always in one; the outside caller has its keys (Anchor.Domain.Aggregates.NonTransactionalTest)
-     test/anchor/domain/aggregates/non_transactional_test.exs:72
-     Assertion with == failed
-     code:  assert nontx(a, :n3f).keys == MapSet.new()
-     left:  MapSet.new([schema: AnchorFixtures.NonTransactionalTest.T])
-     right: MapSet.new([])
-     stacktrace:
-       test/anchor/domain/aggregates/non_transactional_test.exs:76: (test)
-
-
-
-
-  2) test a Multi step is never a non-transactional write (Anchor.Domain.Aggregates.NonTransactionalTest)
-     test/anchor/domain/aggregates/non_transactional_test.exs:96
-     Assertion with == failed
-     code:  assert nontx(a, :n5).keys == MapSet.new()
-     left:  MapSet.new([schema: AnchorFixtures.NonTransactionalTest.S])
-     right: MapSet.new([])
-     stacktrace:
-       test/anchor/domain/aggregates/non_transactional_test.exs:97: (test)
-
-.
-
-
-  3) test N5: a literal-repo write in an inline Multi.run callback is never non-transactional (Anchor.Domain.Aggregates.NonTransactionalTest)
-     test/anchor/domain/aggregates/non_transactional_test.exs:84
-     Assertion with == failed
-     code:  assert nontx(a, :n6).keys == MapSet.new()
-     left:  MapSet.new([schema: AnchorFixtures.NonTransactionalTest.S])
-     right: MapSet.new([])
-     stacktrace:
-       test/anchor/domain/aggregates/non_transactional_test.exs:87: (test)
-
-
-
-
-  4) test N2: a callee called only inside a transaction adds nothing and is always in one (Anchor.Domain.Aggregates.NonTransactionalTest)
-     test/anchor/domain/aggregates/non_transactional_test.exs:65
-     Assertion with == failed
-     code:  assert nontx(a, :n2f).keys == MapSet.new()
-     left:  MapSet.new([schema: AnchorFixtures.NonTransactionalTest.S])
-     right: MapSet.new([])
-     stacktrace:
-       test/anchor/domain/aggregates/non_transactional_test.exs:68: (test)
-
-....
 ```
 
 ## WSC-RUN
@@ -3444,7 +3294,6 @@ a local call in a function written on a repo is not read (`lib/anchor/domain/agg
 | WSI-LOCALWRITE | a local call of a write function is no write (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `48 tests, 1 failure` (red) |
 | WSI-ZERO | a zero-arity write function in a library is dropped (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `48 tests, 2 failures` (red) |
 | WSI-ZEROPROJECT | a zero-arity write function in the project is not followed (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `48 tests, 2 failures` (red) |
-| AN-ALWAYSCOUNT | gaps of functions always in a transaction are counted (`lib/anchor/domain/aggregates/analysis.ex`) | `non_transactional_test.exs` | `17 tests, 1 failure` (red) |
 | IN-INCOMPLETENOTE | a proposal beside an incomplete transaction carries no note (`lib/anchor/domain/aggregates/inference.ex`) | `inference_test.exs` | `15 tests, 1 failure` (red) |
 | IN-EVIDENCECOUNT | the error does not name the gaps outside a transaction (`lib/anchor/domain/aggregates/inference.ex`) | `inference_test.exs` | `15 tests, 1 failure` (red) |
 
@@ -3645,26 +3494,6 @@ a zero-arity write function in the project is not followed (`lib/anchor/domain/a
        test/anchor/domain/aggregates/scopes_test.exs:450: (test)
 
 .............................
-```
-
-## AN-ALWAYSCOUNT
-
-gaps of functions always in a transaction are counted (`lib/anchor/domain/aggregates/analysis.ex`). Result: `17 tests, 1 failure`.
-
-```
-
-
-
-  1) test the gaps outside every transaction are counted (Anchor.Domain.Aggregates.NonTransactionalTest)
-     test/anchor/domain/aggregates/non_transactional_test.exs:191
-     Assertion with == failed
-     code:  assert a.counts.outside_gaps == length(gaps)
-     left:  6
-     right: 4
-     stacktrace:
-       test/anchor/domain/aggregates/non_transactional_test.exs:200: (test)
-
-................
 ```
 
 ## IN-INCOMPLETENOTE
@@ -4679,52 +4508,16 @@ an incomplete transaction alone reads as checking nothing (`lib/anchor/domain/gr
 .......
 ```
 
-# Tenth run: always in a transaction needs one; other processes everywhere
+# Tenth run: other processes everywhere
 
-7 mutations for critic round 12's findings. NT-GROW survived its first run (19 tests, 0 failures), and `n29` was added; the row holds the red run. An eighth, WSM-PROCESS (dropping `Process` from the spawning modules), survived with 60 tests, 0 failures, because `Process.spawn/2` compiles to `:erlang.spawn_opt`: the arm was deleted. WSM-ERLANG's anchor moved with it.
+4 mutations for critic round 12's findings remain here; the claims cut removed the rest. An eighth, WSM-PROCESS (dropping `Process` from the spawning modules), survived with 60 tests, 0 failures, because `Process.spawn/2` compiles to `:erlang.spawn_opt`: the arm was deleted. WSM-ERLANG's anchor moved with it.
 
 | # | Mutation | Tests run | Result |
 |---|---|---|---|
-| NT-GROW | reaching stops at the functions an inside site calls (`lib/anchor/domain/aggregates/non_transactional.ex`) | `non_transactional_test.exs` | `20 tests, 1 failure` (red) |
 | WSM-ERLANG | spawn reads as this process (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `60 tests, 2 failures` (red) |
-| NT-REACHED | a cycle no transaction reaches is always in one (`lib/anchor/domain/aggregates/non_transactional.ex`) | `non_transactional_test.exs` | `19 tests, 2 failures` (red) |
-| NT-RUN5 | a Multi.run/5 callback is not in a transaction (`lib/anchor/domain/aggregates/non_transactional.ex`) | `non_transactional_test.exs` | `19 tests, 2 failures` (red) |
 | WSM-TAGGED | a function in another process is a gap outside a transaction (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs` | `19 tests, 1 failure` (red) |
 | WSM-HELPER | another process in a helper is no gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `60 tests, 1 failure` (red) |
 | WSM-AGENT | an Agent reads as this process (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `60 tests, 1 failure` (red) |
-
-## NT-GROW
-
-reaching stops at the functions an inside site calls (`lib/anchor/domain/aggregates/non_transactional.ex`). Result: `20 tests, 1 failure`.
-
-```
-
-  1) test a function reached only through one always in a transaction is too (Anchor.Domain.Aggregates.NonTransactionalTest)
-     test/anchor/domain/aggregates/non_transactional_test.exs:133
-     Expected truthy, got false
-     code: assert MapSet.member?(a.always_in_transaction, {@n, :n29b, 0})
-     arguments:
-
-         # 1
-         MapSet.new([
-           {AnchorFixtures.NonTransactionalTest.N, :n17h, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n18_step, 2},
-           {AnchorFixtures.NonTransactionalTest.N, :n20g, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n21g, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n28_step, 2},
-           {AnchorFixtures.NonTransactionalTest.N, :n29a, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n2g, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n7_step, 2}
-         ])
-
-         # 2
-         {AnchorFixtures.NonTransactionalTest.N, :n29b, 0}
-
-     stacktrace:
-       test/anchor/domain/aggregates/non_transactional_test.exs:135: (test)
-
-.................
-```
 
 ## WSM-ERLANG
 
@@ -4800,182 +4593,6 @@ spawn reads as this process (`lib/anchor/domain/aggregates/write_sites.ex`). Res
        test/anchor/domain/aggregates/scopes_test.exs:609: (test)
 
 .......
-```
-
-## NT-REACHED
-
-a cycle no transaction reaches is always in one (`lib/anchor/domain/aggregates/non_transactional.ex`). Result: `19 tests, 2 failures`.
-
-```
-
-  1) test a recursive function nothing calls in a transaction is not always in one (Anchor.Domain.Aggregates.NonTransactionalTest)
-     test/anchor/domain/aggregates/non_transactional_test.exs:121
-     Expected false or nil, got true
-     code: refute MapSet.member?(a.always_in_transaction, {@n, :n4a, 1})
-     arguments:
-
-         # 1
-         MapSet.new([
-           {AnchorFixtures.NonTransactionalTest.N, :n17h, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n18_step, 2},
-           {AnchorFixtures.NonTransactionalTest.N, :n20g, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n21g, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n27, 1},
-           {AnchorFixtures.NonTransactionalTest.N, :n28_step, 2},
-           {AnchorFixtures.NonTransactionalTest.N, :n2g, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n4a, 1},
-           {AnchorFixtures.NonTransactionalTest.N, :n4b, 1},
-           {AnchorFixtures.NonTransactionalTest.N, :n7_step, 2}
-         ])
-
-         # 2
-         {AnchorFixtures.NonTransactionalTest.N, :n4a, 1}
-
-     stacktrace:
-       test/anchor/domain/aggregates/non_transactional_test.exs:124: (test)
-
-............
-
-
-  2) test unattributed: raw SQL and a write on a computed module, outside a transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
-     test/anchor/domain/aggregates/non_transactional_test.exs:165
-     match (=) failed
-     code:  assert [
-              %{mfa: {@n, :n11, 0}, what: raw, line: line},
-              %{mfa: {@n, :n12, 1}, what: computed},
-              %{mfa: {@n, :n22, 1}, what: captured},
-              %{mfa: {@n, :n23, 1}, what: computed_capture},
-              %{mfa: {@n, :n27, 1}}
-            ] = a.unattributed
-     left:  [
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n11, 0}, what: raw, line: line},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n12, 1}, what: computed},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n22, 1}, what: captured},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n23, 1}, what: computed_capture},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n27, 1}}
-            ]
-     right: [
-              %{
-                line: 58,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n11,
-                 0},
-                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
-              },
-              %{
-                line: 59,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n12,
-                 1},
-                what: "a call of insert/1 on a module held in a variable"
-              },
-              %{
-                line: 73,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n22,
-                 1},
-                what: "a capture of the write AnchorFixtures.NonTransactionalTest.Repo.insert/1"
-              },
-              %{
-                line: 74,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n23,
-                 1},
-                what: "a capture on a computed module or name"
-              }
-            ]
-     stacktrace:
-       test/anchor/domain/aggregates/non_transactional_test.exs:168: (test)
-
-..
-```
-
-## NT-RUN5
-
-a Multi.run/5 callback is not in a transaction (`lib/anchor/domain/aggregates/non_transactional.ex`). Result: `19 tests, 2 failures`.
-
-```
-
-  1) test a Multi.run callback given by module and name is always in a transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
-     test/anchor/domain/aggregates/non_transactional_test.exs:129
-     Expected truthy, got false
-     code: assert MapSet.member?(a.always_in_transaction, {@n, :n28_step, 2})
-     arguments:
-
-         # 1
-         MapSet.new([
-           {AnchorFixtures.NonTransactionalTest.N, :n17h, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n18_step, 2},
-           {AnchorFixtures.NonTransactionalTest.N, :n20g, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n21g, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n2g, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n7_step, 2}
-         ])
-
-         # 2
-         {AnchorFixtures.NonTransactionalTest.N, :n28_step, 2}
-
-     stacktrace:
-       test/anchor/domain/aggregates/non_transactional_test.exs:132: (test)
-
-....
-
-
-  2) test unattributed: raw SQL and a write on a computed module, outside a transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
-     test/anchor/domain/aggregates/non_transactional_test.exs:165
-     match (=) failed
-     code:  assert [
-              %{mfa: {@n, :n11, 0}, what: raw, line: line},
-              %{mfa: {@n, :n12, 1}, what: computed},
-              %{mfa: {@n, :n22, 1}, what: captured},
-              %{mfa: {@n, :n23, 1}, what: computed_capture},
-              %{mfa: {@n, :n27, 1}}
-            ] = a.unattributed
-     left:  [
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n11, 0}, what: raw, line: line},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n12, 1}, what: computed},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n22, 1}, what: captured},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n23, 1}, what: computed_capture},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n27, 1}}
-            ]
-     right: [
-              %{
-                line: 58,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n11,
-                 0},
-                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
-              },
-              %{
-                line: 59,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n12,
-                 1},
-                what: "a call of insert/1 on a module held in a variable"
-              },
-              %{
-                line: 73,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n22,
-                 1},
-                what: "a capture of the write AnchorFixtures.NonTransactionalTest.Repo.insert/1"
-              },
-              %{
-                line: 74,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n23,
-                 1},
-                what: "a capture on a computed module or name"
-              },
-              %{
-                line: 66,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n27,
-                 1},
-                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
-              },
-              %{
-                line: 69,
-                mfa: {AnchorFixtures.NonTransactionalTest.N,
-                 :n28_step, 2},
-                what: "raw SQL (repo.query!/1 in a Multi.run callback) Anchor cannot attribute"
-              }
-            ]
-     stacktrace:
-       test/anchor/domain/aggregates/non_transactional_test.exs:168: (test)
-
-............
 ```
 
 ## WSM-TAGGED
@@ -5116,7 +4733,6 @@ an Agent reads as this process (`lib/anchor/domain/aggregates/write_sites.ex`). 
 | MG-GUARD | a crash in the write analysis stops the run (`lib/anchor/managers/graph.ex`) | `graph_writes_test.exs` | `3 tests, 2 failures` (red) |
 | RL-NEEDS | the rule does not ask for the analysis (`lib/anchor/domain/graph_rules/aggregate_write_sources.ex`) | `graph_writes_test.exs` | `3 tests, 2 failures` (red) |
 | FL-WRITES | the crash issue does not say what to do (`lib/anchor/domain/failures.ex`) | `failures_graph_test.exs` | `16 tests, 1 failure` (red) |
-| MD-ANALYSIS | the model's analysis ignores declare: none (`lib/anchor/domain/model.ex`) | `non_transactional_test.exs` | `20 tests, 1 failure` (red) |
 
 ## MG-NEEDS
 
@@ -5260,42 +4876,6 @@ the crash issue does not say what to do (`lib/anchor/domain/failures.ex`). Resul
        test/anchor/domain/failures_graph_test.exs:306: (test)
 
 .....
-```
-
-## MD-ANALYSIS
-
-the model's analysis ignores declare: none (`lib/anchor/domain/model.ex`). Result: `20 tests, 1 failure`.
-
-```
-
-  1) test Z5: under declare: none the Model builds no write analysis, and the index keeps none (Anchor.Domain.Aggregates.NonTransactionalTest)
-     test/anchor/domain/aggregates/non_transactional_test.exs:303
-     Assertion with == failed
-     code:  assert Anchor.Domain.Model.aggregate_analysis(model) == nil
-     left:  %Anchor.Domain.Aggregates.Analysis{
-              sites: [],
-              scopes: [],
-              nontx: %{},
-              always_in_transaction: MapSet.new([]),
-              tables: %{},
-              repos: [],
-              no_repo?: true,
-              counts: %{
-                complete: 0,
-                incomplete: 0,
-                resolved: 0,
-                unresolved: 0,
-                writes: 0,
-                scopes: 0,
-                outside_gaps: 0
-              },
-              unattributed: []
-            }
-     right: nil
-     stacktrace:
-       test/anchor/domain/aggregates/non_transactional_test.exs:322: (test)
-
-......
 ```
 
 # Twelfth run: a listed wrapper's callers, and an unread transaction's reach
@@ -7620,578 +7200,6 @@ a computed call reaches every arity of the name (`lib/anchor/domain/aggregates/w
        test/anchor/domain/aggregates/write_source_test.exs:252: (test)
 ```
 
-# Seventeenth run: what a computed call may reach is never always in a transaction
-
-2 mutations for critic round 19's finding, each red on its first run.
-
-| # | Mutation | Tests run | Result |
-|---|---|---|---|
-| NT-COMPUTED | a function a computed call reaches may be always in a transaction (`lib/anchor/domain/aggregates/non_transactional.ex`) | `non_transactional_test.exs` | `22 tests, 2 failures` (red) |
-| WSR-ANY | reached_by_name ignores a computed list (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_source_test.exs` | `26 tests, 1 failure` (red) |
-
-## NT-COMPUTED
-
-a function a computed call reaches may be always in a transaction (`lib/anchor/domain/aggregates/non_transactional.ex`). Result: `22 tests, 2 failures`.
-
-```
-
-  1) test a function a computed call may reach is never always in a transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
-     test/anchor/domain/aggregates/non_transactional_test.exs:146
-     Expected false or nil, got true
-     code: refute MapSet.member?(a.always_in_transaction, {@n, :n44, 0})
-     arguments:
-
-         # 1
-         MapSet.new([
-           {AnchorFixtures.NonTransactionalTest.N, :n17h, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n18_step, 2},
-           {AnchorFixtures.NonTransactionalTest.N, :n20g, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n21g, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n28_step, 2},
-           {AnchorFixtures.NonTransactionalTest.N, :n29a, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n29b, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n2g, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n44, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n45, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n7_step, 2}
-         ])
-
-         # 2
-         {AnchorFixtures.NonTransactionalTest.N, :n44, 0}
-
-     stacktrace:
-       test/anchor/domain/aggregates/non_transactional_test.exs:147: (test)
-
-.....
-
-
-  2) test unattributed: raw SQL and a write on a computed module, outside a transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
-     test/anchor/domain/aggregates/non_transactional_test.exs:204
-     match (=) failed
-     code:  assert [
-              %{mfa: {@n, :n11, 0}, what: raw, line: line},
-              %{mfa: {@n, :n12, 1}, what: computed},
-              %{mfa: {@n, :n22, 1}, what: captured},
-              %{mfa: {@n, :n23, 1}, what: computed_capture},
-              %{mfa: {@n, :n27, 1}},
-              %{mfa: {@n, :n31, 1}, what: raw_capture},
-              %{mfa: {@n, :n32, 1}, what: computed_raw},
-              %{mfa: {@n, :n33, 1}},
-              %{mfa: {@n, :n34, 2}, what: "a capture on a computed module or name"},
-              %{mfa: {@n, :n35, 2}, what: computed_transaction},
-              %{mfa: {@n, :n36, 1}, what: unread_apply},
-              %{mfa: {@n, :n37, 3}},
-              %{mfa: {@n, :n38, 2}},
-              %{mfa: {@n, :n39, 2}},
-              %{mfa: {@n, :n44, 0}},
-              %{mfa: {@n, :n45, 0}}
-            ] = a.unattributed
-     left:  [
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n11, 0}, what: raw, line: line},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n12, 1}, what: computed},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n22, 1}, what: captured},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n23, 1}, what: computed_capture},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n27, 1}},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n31, 1}, what: raw_capture},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n32, 1}, what: computed_raw},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n33, 1}},
-              %{
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n34, 2},
-                what: "a capture on a computed module or name"
-              },
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n35, 2}, what: computed_transaction},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n36, 1}, what: unread_apply},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n37, 3}},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n38, 2}},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n39, 2}},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n44, 0}},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n45, 0}}
-            ]
-     right: [
-              %{
-                line: 58,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n11,
-                 0},
-                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
-              },
-              %{
-                line: 59,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n12,
-                 1},
-                what: "a call of insert/1 on a module held in a variable"
-              },
-              %{
-                line: 98,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n22,
-                 1},
-                what: "a capture of the write AnchorFixtures.NonTransactionalTest.Repo.insert/1"
-              },
-              %{
-                line: 99,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n23,
-                 1},
-                what: "a capture on a computed module or name"
-              },
-              %{
-                line: 91,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n27,
-                 1},
-                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
-              },
-              %{
-                line: 85,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n31,
-                 1},
-                what: "a capture of the write AnchorFixtures.NonTransactionalTest.Repo.query!/1"
-              },
-              %{
-                line: 86,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n32,
-                 1},
-                what: "a call of query!/1 on a module held in a variable"
-              },
-              %{
-                line: 87,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n33,
-                 1},
-                what: "a capture of the write Ecto.Adapters.SQL.query!/1"
-              },
-              %{
-                line: 88,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n34,
-                 2},
-                what: "a capture on a computed module or name"
-              },
-              %{
-                line: 76,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n35,
-                 2},
-                what: "a call of transaction/1 on a module held in a variable"
-              },
-              %{
-                line: 77,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n36,
-                 1},
-                what: "an apply/3 Anchor cannot resolve"
-              },
-              %{
-                line: 78,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n37,
-                 3},
-                what: "an apply/3 Anchor cannot resolve"
-              },
-              %{
-                line: 79,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n38,
-                 2},
-                what: "an apply/3 Anchor cannot resolve"
-              },
-              %{
-                line: 80,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n39,
-                 2},
-                what: "an apply/3 Anchor cannot resolve"
-              }
-            ]
-     stacktrace:
-       test/anchor/domain/aggregates/non_transactional_test.exs:207: (test)
-
-.............
-```
-
-## WSR-ANY
-
-reached_by_name ignores a computed list (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `26 tests, 1 failure`.
-
-```
-
-  1) test resolve/3 (through WriteSites.find/2) a parameter of a function a computed call may reach has callers Anchor cannot see (Anchor.Domain.Aggregates.WriteSourceTest)
-     test/anchor/domain/aggregates/write_source_test.exs:244
-     match (=) failed
-     code:  assert %{sources: [], unresolved: seen} = site(sites, name)
-     left:  %{sources: [], unresolved: seen}
-     right: %Anchor.Domain.Aggregates.WriteSite{
-              mfa: {AnchorFixtures.WriteSourceTest.X, :r42, 1},
-              line: 81,
-              op: :insert,
-              via: :repo,
-              sources: [schema: AnchorFixtures.WriteSourceTest.S],
-              unresolved: nil,
-              scopes: [],
-              run_callback?: false
-            }
-     stacktrace:
-       test/anchor/domain/aggregates/write_source_test.exs:248: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSourceTest."test resolve/3 (through WriteSites.find/2) a parameter of a function a computed call may reach has callers Anchor cannot see"/1
-       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
-       test/anchor/domain/aggregates/write_source_test.exs:247: (test)
-```
-
-# Eighteenth run: a capture beside a body capture reads as outside
-
-2 mutations for critic round 20's finding, each red on its first run.
-
-| # | Mutation | Tests run | Result |
-|---|---|---|---|
-| WSS-MIXED | a capture beside a body capture reads as inside (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs` | `24 tests, 2 failures` (red) |
-| WSS-ALL | every capture reads as outside (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs` | `24 tests, 3 failures` (red) |
-
-## WSS-MIXED
-
-a capture beside a body capture reads as inside (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `24 tests, 2 failures`.
-
-```
-
-
-
-  1) test a capture beside a body capture of one function is outside the transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
-     test/anchor/domain/aggregates/non_transactional_test.exs:172
-     Expected false or nil, got true
-     code: refute MapSet.member?(a.always_in_transaction, {@n, :n46, 0})
-     arguments:
-
-         # 1
-         MapSet.new([
-           {AnchorFixtures.NonTransactionalTest.N, :n17h, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n18_step, 2},
-           {AnchorFixtures.NonTransactionalTest.N, :n20g, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n21g, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n28_step, 2},
-           {AnchorFixtures.NonTransactionalTest.N, :n29a, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n29b, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n2g, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n46, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n47, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n48, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n7_step, 2}
-         ])
-
-         # 2
-         {AnchorFixtures.NonTransactionalTest.N, :n46, 0}
-
-     stacktrace:
-       test/anchor/domain/aggregates/non_transactional_test.exs:175: (test)
-
-............
-
-
-  2) test unattributed: raw SQL and a write on a computed module, outside a transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
-     test/anchor/domain/aggregates/non_transactional_test.exs:239
-     match (=) failed
-     code:  assert [
-              %{mfa: {@n, :n11, 0}, what: raw, line: line},
-              %{mfa: {@n, :n12, 1}, what: computed},
-              %{mfa: {@n, :n22, 1}, what: captured},
-              %{mfa: {@n, :n23, 1}, what: computed_capture},
-              %{mfa: {@n, :n27, 1}},
-              %{mfa: {@n, :n31, 1}, what: raw_capture},
-              %{mfa: {@n, :n32, 1}, what: computed_raw},
-              %{mfa: {@n, :n33, 1}},
-              %{mfa: {@n, :n34, 2}, what: "a capture on a computed module or name"},
-              %{mfa: {@n, :n35, 2}, what: computed_transaction},
-              %{mfa: {@n, :n36, 1}, what: unread_apply},
-              %{mfa: {@n, :n37, 3}},
-              %{mfa: {@n, :n38, 2}},
-              %{mfa: {@n, :n39, 2}},
-              %{mfa: {@n, :n44, 0}},
-              %{mfa: {@n, :n45, 0}},
-              %{mfa: {@n, :n46, 0}}
-            ] = a.unattributed
-     left:  [
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n11, 0}, what: raw, line: line},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n12, 1}, what: computed},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n22, 1}, what: captured},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n23, 1}, what: computed_capture},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n27, 1}},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n31, 1}, what: raw_capture},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n32, 1}, what: computed_raw},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n33, 1}},
-              %{
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n34, 2},
-                what: "a capture on a computed module or name"
-              },
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n35, 2}, what: computed_transaction},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n36, 1}, what: unread_apply},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n37, 3}},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n38, 2}},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n39, 2}},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n44, 0}},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n45, 0}},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n46, 0}}
-            ]
-     right: [
-              %{
-                line: 58,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n11,
-                 0},
-                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
-              },
-              %{
-                line: 59,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n12,
-                 1},
-                what: "a call of insert/1 on a module held in a variable"
-              },
-              %{
-                line: 119,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n22,
-                 1},
-                what: "a capture of the write AnchorFixtures.NonTransactionalTest.Repo.insert/1"
-              },
-              %{
-                line: 120,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n23,
-                 1},
-                what: "a capture on a computed module or name"
-              },
-              %{
-                line: 112,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n27,
-                 1},
-                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
-              },
-              %{
-                line: 106,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n31,
-                 1},
-                what: "a capture of the write AnchorFixtures.NonTransactionalTest.Repo.query!/1"
-              },
-              %{
-                line: 107,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n32,
-                 1},
-                what: "a call of query!/1 on a module held in a variable"
-              },
-              %{
-                line: 108,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n33,
-                 1},
-                what: "a capture of the write Ecto.Adapters.SQL.query!/1"
-              },
-              %{
-                line: 109,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n34,
-                 2},
-                what: "a capture on a computed module or name"
-              },
-              %{
-                line: 97,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n35,
-                 2},
-                what: "a call of transaction/1 on a module held in a variable"
-              },
-              %{
-                line: 98,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n36,
-                 1},
-                what: "an apply/3 Anchor cannot resolve"
-              },
-              %{
-                line: 99,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n37,
-                 3},
-                what: "an apply/3 Anchor cannot resolve"
-              },
-              %{
-                line: 100,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n38,
-                 2},
-                what: "an apply/3 Anchor cannot resolve"
-              },
-              %{
-                line: 101,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n39,
-                 2},
-                what: "an apply/3 Anchor cannot resolve"
-              },
-              %{line: 91, ...},
-              ...
-            ]
-     stacktrace:
-       test/anchor/domain/aggregates/non_transactional_test.exs:242: (test)
-
-..........
-```
-
-## WSS-ALL
-
-every capture reads as outside (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `24 tests, 3 failures`.
-
-```
-
-  1) test every capture of a function a body: it is always in a transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
-     test/anchor/domain/aggregates/non_transactional_test.exs:181
-     Expected truthy, got false
-     code: assert MapSet.member?(a.always_in_transaction, {@n, :n48, 0})
-     arguments:
-
-         # 1
-         MapSet.new([
-           {AnchorFixtures.NonTransactionalTest.N, :n17h, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n18_step, 2},
-           {AnchorFixtures.NonTransactionalTest.N, :n28_step, 2},
-           {AnchorFixtures.NonTransactionalTest.N, :n29a, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n29b, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n2g, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n7_step, 2}
-         ])
-
-         # 2
-         {AnchorFixtures.NonTransactionalTest.N, :n48, 0}
-
-     stacktrace:
-       test/anchor/domain/aggregates/non_transactional_test.exs:182: (test)
-
-.
-
-
-  2) test a function captured as a transaction's body is inside it (Anchor.Domain.Aggregates.NonTransactionalTest)
-     test/anchor/domain/aggregates/non_transactional_test.exs:309
-     Assertion with == failed
-     code:  assert nontx(a, :n20).keys == MapSet.new()
-     left:  MapSet.new([schema: AnchorFixtures.NonTransactionalTest.S])
-     right: MapSet.new([])
-     stacktrace:
-       test/anchor/domain/aggregates/non_transactional_test.exs:310: (test)
-
-..................
-
-
-  3) test unattributed: raw SQL and a write on a computed module, outside a transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
-     test/anchor/domain/aggregates/non_transactional_test.exs:239
-     match (=) failed
-     code:  assert [
-              %{mfa: {@n, :n11, 0}, what: raw, line: line},
-              %{mfa: {@n, :n12, 1}, what: computed},
-              %{mfa: {@n, :n22, 1}, what: captured},
-              %{mfa: {@n, :n23, 1}, what: computed_capture},
-              %{mfa: {@n, :n27, 1}},
-              %{mfa: {@n, :n31, 1}, what: raw_capture},
-              %{mfa: {@n, :n32, 1}, what: computed_raw},
-              %{mfa: {@n, :n33, 1}},
-              %{mfa: {@n, :n34, 2}, what: "a capture on a computed module or name"},
-              %{mfa: {@n, :n35, 2}, what: computed_transaction},
-              %{mfa: {@n, :n36, 1}, what: unread_apply},
-              %{mfa: {@n, :n37, 3}},
-              %{mfa: {@n, :n38, 2}},
-              %{mfa: {@n, :n39, 2}},
-              %{mfa: {@n, :n44, 0}},
-              %{mfa: {@n, :n45, 0}},
-              %{mfa: {@n, :n46, 0}}
-            ] = a.unattributed
-     left:  [
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n11, 0}, what: raw, line: line},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n12, 1}, what: computed},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n22, 1}, what: captured},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n23, 1}, what: computed_capture},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n27, 1}},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n31, 1}, what: raw_capture},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n32, 1}, what: computed_raw},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n33, 1}},
-              %{
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n34, 2},
-                what: "a capture on a computed module or name"
-              },
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n35, 2}, what: computed_transaction},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n36, 1}, what: unread_apply},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n37, 3}},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n38, 2}},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n39, 2}},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n44, 0}},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n45, 0}},
-              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n46, 0}}
-            ]
-     right: [
-              %{
-                line: 58,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n11,
-                 0},
-                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
-              },
-              %{
-                line: 59,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n12,
-                 1},
-                what: "a call of insert/1 on a module held in a variable"
-              },
-              %{
-                line: 127,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n21g,
-                 0},
-                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
-              },
-              %{
-                line: 119,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n22,
-                 1},
-                what: "a capture of the write AnchorFixtures.NonTransactionalTest.Repo.insert/1"
-              },
-              %{
-                line: 120,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n23,
-                 1},
-                what: "a capture on a computed module or name"
-              },
-              %{
-                line: 112,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n27,
-                 1},
-                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
-              },
-              %{
-                line: 106,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n31,
-                 1},
-                what: "a capture of the write AnchorFixtures.NonTransactionalTest.Repo.query!/1"
-              },
-              %{
-                line: 107,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n32,
-                 1},
-                what: "a call of query!/1 on a module held in a variable"
-              },
-              %{
-                line: 108,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n33,
-                 1},
-                what: "a capture of the write Ecto.Adapters.SQL.query!/1"
-              },
-              %{
-                line: 109,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n34,
-                 2},
-                what: "a capture on a computed module or name"
-              },
-              %{
-                line: 97,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n35,
-                 2},
-                what: "a call of transaction/1 on a module held in a variable"
-              },
-              %{
-                line: 98,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n36,
-                 1},
-                what: "an apply/3 Anchor cannot resolve"
-              },
-              %{
-                line: 99,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n37,
-                 3},
-                what: "an apply/3 Anchor cannot resolve"
-              },
-              %{
-                line: 100,
-                mfa: {AnchorFixtures.NonTransactionalTest.N, :n38,
-                 2},
-                what: "an apply/3 Anchor cannot resolve"
-              },
-              %{line: 101, ...},
-              ...
-            ]
-     stacktrace:
-       test/anchor/domain/aggregates/non_transactional_test.exs:242: (test)
-```
-
 # Nineteenth run: a write captured as a body is a gap of its transaction
 
 4 mutations for critic round 21's finding, each red on its first run.
@@ -8351,8 +7359,6 @@ the dynamic row keeps its tag when mixed (`lib/anchor/domain/aggregates/write_si
 | WSU-RAWMOD | an apply on the raw SQL module is no report (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs` | `25 tests, 1 failure` (red) |
 | WSU-REPOMOD | an apply on a repo is no report (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs` | `25 tests, 1 failure` (red) |
 | WSU-LISTEDNAME | a listed name on a computed module is no report (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs` | `25 tests, 1 failure` (red) |
-| WSU-MODULEREACH | a computed name on a module leaves its callers known (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs` | `25 tests, 1 failure` (red) |
-| WSU-MODULEMARK | a computed name on a module marks nothing (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs` | `25 tests, 1 failure` (red) |
 | WSU-LISTEDMOD | an apply of a listed write on its module is no report (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs` | `25 tests, 1 failure` (red) |
 
 ## WSU-RAWMOD
@@ -8700,78 +7706,6 @@ a listed name on a computed module is no report (`lib/anchor/domain/aggregates/w
 ............
 ```
 
-## WSU-MODULEREACH
-
-a computed name on a module leaves its callers known (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `25 tests, 1 failure`.
-
-```
-
-  1) test an apply of a computed name reaches every function of the module it names (Anchor.Domain.Aggregates.NonTransactionalTest)
-     test/anchor/domain/aggregates/non_transactional_test.exs:250
-     Expected false or nil, got true
-     code: refute MapSet.member?(analysis.always_in_transaction, {store, :save, 1})
-     arguments:
-
-         # 1
-         MapSet.new([
-           {AnchorFixtures.NonTransactionalTest.N, :n17h, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n18_step, 2},
-           {AnchorFixtures.NonTransactionalTest.N, :n20g, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n21g, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n28_step, 2},
-           {AnchorFixtures.NonTransactionalTest.N, :n29a, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n29b, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n2g, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n48, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n7_step, 2},
-           {AnchorFixtures.NonTransactionalTest.Store, :save, 1}
-         ])
-
-         # 2
-         {AnchorFixtures.NonTransactionalTest.Store, :save, 1}
-
-     stacktrace:
-       test/anchor/domain/aggregates/non_transactional_test.exs:265: (test)
-
-...............
-```
-
-## WSU-MODULEMARK
-
-a computed name on a module marks nothing (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `25 tests, 1 failure`.
-
-```
-
-  1) test an apply of a computed name reaches every function of the module it names (Anchor.Domain.Aggregates.NonTransactionalTest)
-     test/anchor/domain/aggregates/non_transactional_test.exs:250
-     Expected false or nil, got true
-     code: refute MapSet.member?(analysis.always_in_transaction, {store, :save, 1})
-     arguments:
-
-         # 1
-         MapSet.new([
-           {AnchorFixtures.NonTransactionalTest.N, :n17h, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n18_step, 2},
-           {AnchorFixtures.NonTransactionalTest.N, :n20g, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n21g, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n28_step, 2},
-           {AnchorFixtures.NonTransactionalTest.N, :n29a, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n29b, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n2g, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n48, 0},
-           {AnchorFixtures.NonTransactionalTest.N, :n7_step, 2},
-           {AnchorFixtures.NonTransactionalTest.Store, :save, 1}
-         ])
-
-         # 2
-         {AnchorFixtures.NonTransactionalTest.Store, :save, 1}
-
-     stacktrace:
-       test/anchor/domain/aggregates/non_transactional_test.exs:265: (test)
-
-................
-```
-
 ## WSU-LISTEDMOD
 
 an apply of a listed write on its module is no report (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `25 tests, 1 failure`.
@@ -8818,4 +7752,876 @@ an apply of a listed write on its module is no report (`lib/anchor/domain/aggreg
        test/anchor/domain/aggregates/non_transactional_test.exs:250: (test)
 
 .......................
+```
+
+# Twenty-first run: the claims cut
+
+The artifact-scope decision deleted `always_in_transaction` and the roots it read, so the rows for that code are gone from this record and the 2026-11-03 one: NT-AIT, NT-ROOTS, MD-ROOTS, AN-ALWAYSCOUNT, NT-GROW, NT-REACHED, NT-RUN5, NT-COMPUTED. The cut changed the tests that killed SC-CLOSURE, NT-OUTSIDE, NT-SELECTION, WSR-ANY, WSS-MIXED, WSS-ALL, WSU-MODULEREACH, WSU-MODULEMARK, MD-ANALYSIS, so each was run again on the new code, re-anchored where the code had moved since its first run, and its row here replaces the earlier one. MD-ANALYSIS's first form this run was a compile error under `warnings_as_errors` and was re-anchored. The new rows pin the summary line, the proposal's first line, the rule's message and the Multi.run callback staying out of the report. Earlier rows quote their failures verbatim, so they still say `complete?`.
+
+| # | Mutation | Tests run | Result |
+|---|---|---|---|
+| SC-CLOSURE | the closure stops following calls (`lib/anchor/domain/aggregates/scopes.ex`) | `scopes_test.exs`, `non_transactional_test.exs` | `91 tests, 7 failures` (red) |
+| NT-OUTSIDE | writes inside a transaction count as non-transactional (`lib/anchor/domain/aggregates/scopes.ex`) | `non_transactional_test.exs` | `19 tests, 5 failures` (red) |
+| NT-SELECTION | the non-transactional summary asks for everything (`lib/anchor/domain/aggregates/non_transactional.ex`) | `scopes_test.exs`, `non_transactional_test.exs` | `91 tests, 9 failures` (red) |
+| WSR-ANY | what a computed call reaches ignores a computed list (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_source_test.exs` | `26 tests, 1 failure` (red) |
+| WSS-MIXED | a capture beside a body capture reads as inside (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs` | `19 tests, 1 failure` (red) |
+| WSS-ALL | every capture reads as outside (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs` | `19 tests, 1 failure` (red) |
+| WSU-MODULEREACH | a computed name on a module leaves its callers known (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs` | `19 tests, 1 failure` (red) |
+| WSU-MODULEMARK | a computed name on a module marks nothing (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs` | `19 tests, 1 failure` (red) |
+| GR-READCLAUSE | the summary drops that unlisted forms are not read (`lib/anchor/domain/graph_report.ex`) | `graph_report_aggregates_test.exs` | `4 tests, 1 failure` (red) |
+| GR-OLDWORDS | the summary still says found and complete (`lib/anchor/domain/graph_report.ex`) | `graph_report_aggregates_test.exs` | `4 tests, 1 failure` (red) |
+| GR-OUTSIDEWORDS | the summary still says gaps outside a transaction (`lib/anchor/domain/graph_report.ex`) | `graph_report_aggregates_test.exs` | `4 tests, 1 failure` (red) |
+| IN-READNOTE | a proposal has no read note (`lib/anchor/domain/aggregates/inference.ex`) | `inference_test.exs` | `17 tests, 1 failure` (red) |
+| IN-NOTEGAPONLY | the read note prints only beside an unresolved write (`lib/anchor/domain/aggregates/inference.ex`) | `inference_test.exs` | `17 tests, 1 failure` (red) |
+| RL-OUTSIDEWORDS | the rule still says outside any transaction (`lib/anchor/domain/graph_rules/aggregate_write_sources.ex`) | `aggregate_write_sources_test.exs` | `13 tests, 1 failure` (red) |
+| AN-RUNCALLBACK | a captured Multi.run callback's raw SQL is reported (`lib/anchor/domain/aggregates/analysis.ex`) | `non_transactional_test.exs` | `19 tests, 1 failure` (red) |
+| MD-ANALYSIS | the model gives no analysis (`lib/anchor/domain/model.ex`) | `aggregate_write_sources_integration_test.exs` | `2 tests, 2 failures` (red) |
+
+## SC-CLOSURE
+
+the closure stops following calls (`lib/anchor/domain/aggregates/scopes.ex`). Result: `91 tests, 7 failures`.
+
+```
+
+  1) test N3: a callee also called outside: the outside caller has its keys (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:149
+     Assertion with == failed
+     code:  assert nontx(a, :n3h).keys == keys([@t])
+     left:  MapSet.new([])
+     right: MapSet.new([schema: AnchorFixtures.NonTransactionalTest.T])
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:151: (test)
+
+
+
+
+  2) test N4: recursion terminates at the fixpoint (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:171
+     Assertion with == failed
+     code:  assert nontx(a, :n4a, 1).keys == keys([@s, @t])
+     left:  MapSet.new([schema: AnchorFixtures.NonTransactionalTest.S])
+     right: MapSet.new([
+              schema: AnchorFixtures.NonTransactionalTest.S,
+              schema: AnchorFixtures.NonTransactionalTest.T
+            ])
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:172: (test)
+
+..
+
+
+  3) test N1: a function's own writes and its callees' outside a transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:137
+     Assertion with == failed
+     code:  assert nontx(a, :n1f).keys == keys([@s, @t])
+     left:  MapSet.new([schema: AnchorFixtures.NonTransactionalTest.S])
+     right: MapSet.new([
+              schema: AnchorFixtures.NonTransactionalTest.S,
+              schema: AnchorFixtures.NonTransactionalTest.T
+            ])
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:138: (test)
+
+.
+
+
+  4) test a capture beside a body capture of one function is outside the transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:155
+     Assertion with == failed
+     code:  assert nontx(a, :n47_run).keys == keys([@s])
+     left:  MapSet.new([])
+     right: MapSet.new([schema: AnchorFixtures.NonTransactionalTest.S])
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:158: (test)
+
+
+
+
+  5) test a captured run callback's own entry is empty; a direct caller still has its writes (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:267
+     Assertion with == failed
+     code:  assert nontx(a, :n19_direct).keys == keys([@s])
+     left:  MapSet.new([])
+     right: MapSet.new([schema: AnchorFixtures.NonTransactionalTest.S])
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:270: (test)
+
+..........................................................
+
+
+  6) test build/3 an outer scope follows the calls inside a callee's inner transaction (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:463
+     Assertion with == failed
+     code:  assert one(a, :s17).keys == keys([@t])
+     left:  MapSet.new([])
+     right: MapSet.new([schema: AnchorFixtures.ScopesTest.T])
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:464: (test)
+
+.................
+
+
+  7) test build/3 S8: recursion terminates, and the keys are the union (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:449
+     Assertion with == failed
+     code:  assert scope.keys == keys([@s, @t])
+     left:  MapSet.new([schema: AnchorFixtures.ScopesTest.S])
+     right: MapSet.new([
+              schema: AnchorFixtures.ScopesTest.S,
+              schema: AnchorFixtures.ScopesTest.T
+            ])
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:451: (test)
+
+....
+```
+
+## NT-OUTSIDE
+
+writes inside a transaction count as non-transactional (`lib/anchor/domain/aggregates/scopes.ex`). Result: `19 tests, 5 failures`.
+
+```
+
+  1) test N3: a callee also called outside: the outside caller has its keys (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:149
+     Assertion with == failed
+     code:  assert nontx(a, :n3f).keys == MapSet.new()
+     left:  MapSet.new([schema: AnchorFixtures.NonTransactionalTest.T])
+     right: MapSet.new([])
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:152: (test)
+
+.
+
+
+  2) test an unread transaction is no gap outside a transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:167
+     match (=) failed
+     code:  assert %{no_gap_noticed?: true} = nontx(a, :n30, 1)
+     left:  %{no_gap_noticed?: true}
+     right: %{
+              keys: MapSet.new([]),
+              sites: [],
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.NonTransactionalTest.N, :n30, 1},
+                 66}
+              ],
+              no_gap_noticed?: false
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:168: (test)
+
+
+
+
+  3) test the gaps with no transaction read around them are counted (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:304
+     Expected false or nil, got true
+     code: refute Enum.any?(gaps, &match?({:dynamic_call, {@n, :n26, 0}, _line}, &1))
+     arguments:
+
+         # 1
+         [
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n48, 0}, 83},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n50, 1}, 68},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n54, 2}, 72},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n30, 1}, 66},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n41, 2}, 95},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n12, 1}, 59},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n39, 2}, 93},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n47_run, 0}, 80},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n27, 1}, 104},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n13, 1}, 60},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n9, 0}, 129},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n33, 1}, 100},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n11, 0}, 58},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n23, 1}, 110},
+           {:dynamic_call, ...},
+           ...
+         ]
+
+         # 2
+         #Function<7.66795014/1 in Anchor.Domain.Aggregates.NonTransactionalTest."test the gaps with no transaction read around them are counted"/1>
+
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:312: (test)
+
+
+
+
+  4) test a function captured as a transaction's body is inside it (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:300
+     Assertion with == failed
+     code:  assert nontx(a, :n20).keys == MapSet.new()
+     left:  MapSet.new([schema: AnchorFixtures.NonTransactionalTest.S])
+     right: MapSet.new([])
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:301: (test)
+
+..
+
+
+  5) test N2: a callee called only inside a transaction adds nothing to its caller's entry (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:143
+     Assertion with == failed
+     code:  assert nontx(a, :n2f).keys == MapSet.new()
+     left:  MapSet.new([schema: AnchorFixtures.NonTransactionalTest.S])
+     right: MapSet.new([])
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:146: (test)
+
+.......
+```
+
+## NT-SELECTION
+
+the non-transactional summary asks for everything (`lib/anchor/domain/aggregates/non_transactional.ex`). Result: `91 tests, 9 failures`.
+
+```
+
+  1) test a function captured as a transaction's body is inside it (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:300
+     Assertion with == failed
+     code:  assert nontx(a, :n20).keys == MapSet.new()
+     left:  MapSet.new([schema: AnchorFixtures.NonTransactionalTest.S])
+     right: MapSet.new([])
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:301: (test)
+
+
+
+
+  2) test N5: a literal-repo write in an inline Multi.run callback is never non-transactional (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:176
+     Assertion with == failed
+     code:  assert nontx(a, :n6).keys == MapSet.new()
+     left:  MapSet.new([schema: AnchorFixtures.NonTransactionalTest.S])
+     right: MapSet.new([])
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:179: (test)
+
+
+
+
+  3) test a Multi step is never a non-transactional write (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:321
+     Assertion with == failed
+     code:  assert nontx(a, :n5).keys == MapSet.new()
+     left:  MapSet.new([schema: AnchorFixtures.NonTransactionalTest.S])
+     right: MapSet.new([])
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:322: (test)
+
+..
+
+
+  4) test a write_functions write outside a transaction is non-transactional; inside it is not (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:191
+     Assertion with == failed
+     code:  assert nontx(analysis, :n10).keys == MapSet.new()
+     left:  MapSet.new([schema: AnchorFixtures.NonTransactionalTest.S])
+     right: MapSet.new([])
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:198: (test)
+
+.
+
+
+  5) test an unread transaction is no gap outside a transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:167
+     match (=) failed
+     code:  assert %{no_gap_noticed?: true} = nontx(a, :n30, 1)
+     left:  %{no_gap_noticed?: true}
+     right: %{
+              keys: MapSet.new([]),
+              sites: [],
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.NonTransactionalTest.N, :n30, 1},
+                 66}
+              ],
+              no_gap_noticed?: false
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:168: (test)
+
+
+
+
+  6) test N3: a callee also called outside: the outside caller has its keys (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:149
+     Assertion with == failed
+     code:  assert nontx(a, :n3f).keys == MapSet.new()
+     left:  MapSet.new([schema: AnchorFixtures.NonTransactionalTest.T])
+     right: MapSet.new([])
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:152: (test)
+
+
+
+
+  7) test the gaps with no transaction read around them are counted (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:304
+     Expected false or nil, got true
+     code: refute Enum.any?(gaps, &match?({:dynamic_call, {@n, :n26, 0}, _line}, &1))
+     arguments:
+
+         # 1
+         [
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n12, 1}, 59},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n24, 1}, 111},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n26, 0}, 106},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n38, 2}, 92},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n48, 0}, 83},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n52, 1}, 70},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n15, 1}, 62},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n51, 2}, 69},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n14, 0}, 61},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n41, 2}, 95},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n40, 1}, 94},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n30, 1}, 66},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n56, 1}, 67},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n47_run, 0}, 80},
+           {:dynamic_call, ...},
+           ...
+         ]
+
+         # 2
+         #Function<7.66795014/1 in Anchor.Domain.Aggregates.NonTransactionalTest."test the gaps with no transaction read around them are counted"/1>
+
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:312: (test)
+
+.
+
+
+  8) test a write directly in a transaction body is never non-transactional (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:187
+     Assertion with == failed
+     code:  assert nontx(a, :n8).keys == MapSet.new()
+     left:  MapSet.new([schema: AnchorFixtures.NonTransactionalTest.S])
+     right: MapSet.new([])
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:188: (test)
+
+...
+
+
+  9) test N2: a callee called only inside a transaction adds nothing to its caller's entry (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:143
+     Assertion with == failed
+     code:  assert nontx(a, :n2f).keys == MapSet.new()
+     left:  MapSet.new([schema: AnchorFixtures.NonTransactionalTest.S])
+     right: MapSet.new([])
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:146: (test)
+
+........................................................................
+```
+
+## WSR-ANY
+
+what a computed call reaches ignores a computed list (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `26 tests, 1 failure`.
+
+```
+
+  1) test resolve/3 (through WriteSites.find/2) a parameter of a function a computed call may reach has callers Anchor cannot see (Anchor.Domain.Aggregates.WriteSourceTest)
+     test/anchor/domain/aggregates/write_source_test.exs:244
+     match (=) failed
+     code:  assert %{sources: [], unresolved: seen} = site(sites, name)
+     left:  %{sources: [], unresolved: seen}
+     right: %Anchor.Domain.Aggregates.WriteSite{
+              mfa: {AnchorFixtures.WriteSourceTest.X, :r42, 1},
+              line: 81,
+              op: :insert,
+              via: :repo,
+              sources: [schema: AnchorFixtures.WriteSourceTest.S],
+              unresolved: nil,
+              scopes: [],
+              run_callback?: false
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_source_test.exs:248: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSourceTest."test resolve/3 (through WriteSites.find/2) a parameter of a function a computed call may reach has callers Anchor cannot see"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_source_test.exs:247: (test)
+```
+
+## WSS-MIXED
+
+a capture beside a body capture reads as inside (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `19 tests, 1 failure`.
+
+```
+
+  1) test a capture beside a body capture of one function is outside the transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:155
+     Assertion with == failed
+     code:  assert nontx(a, :n47_run).keys == keys([@s])
+     left:  MapSet.new([])
+     right: MapSet.new([schema: AnchorFixtures.NonTransactionalTest.S])
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:158: (test)
+
+.......
+```
+
+## WSS-ALL
+
+every capture reads as outside (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `19 tests, 1 failure`.
+
+```
+
+  1) test a function captured as a transaction's body is inside it (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:300
+     Assertion with == failed
+     code:  assert nontx(a, :n20).keys == MapSet.new()
+     left:  MapSet.new([schema: AnchorFixtures.NonTransactionalTest.S])
+     right: MapSet.new([])
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:301: (test)
+
+.......
+```
+
+## WSU-MODULEREACH
+
+a computed name on a module leaves its callers known (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `19 tests, 1 failure`.
+
+```
+
+  1) test an apply of a computed name reaches every function of the module it names (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:207
+     ** (FunctionClauseError) no function clause matching in Kernel.=~/2
+
+     The following arguments were given to Kernel.=~/2:
+
+         # 1
+         nil
+
+         # 2
+         "callers are not known"
+
+     Attempted function clauses (showing 3 out of 3):
+
+         def =~(left, -""-) when -is_binary(left)-
+         def =~(left, right) when -is_binary(left)- and is_binary(right)
+         def =~(left, right) when -is_binary(left)-
+
+     code: assert seen =~ "callers are not known"
+     stacktrace:
+       (elixir 1.19.4) lib/kernel.ex:2394: Kernel.=~/2
+       test/anchor/domain/aggregates/non_transactional_test.exs:224: (test)
+
+............
+```
+
+## WSU-MODULEMARK
+
+a computed name on a module marks nothing (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `19 tests, 1 failure`.
+
+```
+
+  1) test an apply of a computed name reaches every function of the module it names (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:207
+     ** (FunctionClauseError) no function clause matching in Kernel.=~/2
+
+     The following arguments were given to Kernel.=~/2:
+
+         # 1
+         nil
+
+         # 2
+         "callers are not known"
+
+     Attempted function clauses (showing 3 out of 3):
+
+         def =~(left, -""-) when -is_binary(left)-
+         def =~(left, right) when -is_binary(left)- and is_binary(right)
+         def =~(left, right) when -is_binary(left)-
+
+     code: assert seen =~ "callers are not known"
+     stacktrace:
+       (elixir 1.19.4) lib/kernel.ex:2394: Kernel.=~/2
+       test/anchor/domain/aggregates/non_transactional_test.exs:224: (test)
+
+........
+```
+
+## GR-READCLAUSE
+
+the summary drops that unlisted forms are not read (`lib/anchor/domain/graph_report.ex`). Result: `4 tests, 1 failure`.
+
+```
+
+  1) test the write analysis's counts are in the summary and the JSON (Anchor.Domain.GraphReportAggregatesTest)
+     test/anchor/domain/graph_report_aggregates_test.exs:42
+     Assertion with == failed
+     code:  assert GraphReport.summary(report) ==
+              "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 " <>
+                "baselined); writes: 7 read, 5 resolved, 2 unresolved; transactions: 3 read, 2 " <>
+                "no gap noticed, 1 incomplete; 4 gaps with no transaction read around them; " <>
+                "forms not listed in the README are not read"
+     left:  "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 baselined); writes: 7 read, 5 resolved, 2 unresolved; transactions: 3 read, 2 no gap noticed, 1 incomplete; 4 gaps with no transaction read around them"
+     right: "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 baselined); writes: 7 read, 5 resolved, 2 unresolved; transactions: 3 read, 2 no gap noticed, 1 incomplete; 4 gaps with no transaction read around them; forms not listed in the README are not read"
+     stacktrace:
+       test/anchor/domain/graph_report_aggregates_test.exs:55: (test)
+
+.
+```
+
+## GR-OLDWORDS
+
+the summary still says found and complete (`lib/anchor/domain/graph_report.ex`). Result: `4 tests, 1 failure`.
+
+```
+
+  1) test the write analysis's counts are in the summary and the JSON (Anchor.Domain.GraphReportAggregatesTest)
+     test/anchor/domain/graph_report_aggregates_test.exs:42
+     Assertion with == failed
+     code:  assert GraphReport.summary(report) ==
+              "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 " <>
+                "baselined); writes: 7 read, 5 resolved, 2 unresolved; transactions: 3 read, 2 " <>
+                "no gap noticed, 1 incomplete; 4 gaps with no transaction read around them; " <>
+                "forms not listed in the README are not read"
+     left:  "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 baselined); writes: 7 read, 5 resolved, 2 unresolved; transactions: 3 read, 2 complete, 1 incomplete; 4 gaps with no transaction read around them; forms not listed in the README are not read"
+     right: "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 baselined); writes: 7 read, 5 resolved, 2 unresolved; transactions: 3 read, 2 no gap noticed, 1 incomplete; 4 gaps with no transaction read around them; forms not listed in the README are not read"
+     stacktrace:
+       test/anchor/domain/graph_report_aggregates_test.exs:55: (test)
+
+..
+```
+
+## GR-OUTSIDEWORDS
+
+the summary still says gaps outside a transaction (`lib/anchor/domain/graph_report.ex`). Result: `4 tests, 1 failure`.
+
+```
+
+
+
+  1) test the write analysis's counts are in the summary and the JSON (Anchor.Domain.GraphReportAggregatesTest)
+     test/anchor/domain/graph_report_aggregates_test.exs:42
+     Assertion with == failed
+     code:  assert GraphReport.summary(report) ==
+              "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 " <>
+                "baselined); writes: 7 read, 5 resolved, 2 unresolved; transactions: 3 read, 2 " <>
+                "no gap noticed, 1 incomplete; 4 gaps with no transaction read around them; " <>
+                "forms not listed in the README are not read"
+     left:  "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 baselined); writes: 7 read, 5 resolved, 2 unresolved; transactions: 3 read, 2 no gap noticed, 1 incomplete; 4 gaps outside a transaction; forms not listed in the README are not read"
+     right: "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 baselined); writes: 7 read, 5 resolved, 2 unresolved; transactions: 3 read, 2 no gap noticed, 1 incomplete; 4 gaps with no transaction read around them; forms not listed in the README are not read"
+     stacktrace:
+       test/anchor/domain/graph_report_aggregates_test.exs:55: (test)
+
+...
+```
+
+## IN-READNOTE
+
+a proposal has no read note (`lib/anchor/domain/aggregates/inference.ex`). Result: `17 tests, 1 failure`.
+
+```
+
+  1) test every proposal says on its first line what it was read from (Anchor.Domain.Aggregates.InferenceTest)
+     test/anchor/domain/aggregates/inference_test.exs:174
+     Expected truthy, got false
+     code: assert String.starts_with?(yaml, read_note)
+     arguments:
+
+         # 1
+         "aggregates:\n  declare:\n    - name: App.S\n      schemas: [App.S]\n      tables: []\n      # owners: proposed by aggregate_owner_writes\n"
+
+         # 2
+         "# read from the forms Anchor recognises; a write in any other form is not in this proposal\n"
+
+     stacktrace:
+       test/anchor/domain/aggregates/inference_test.exs:180: (test)
+
+..
+```
+
+## IN-NOTEGAPONLY
+
+the read note prints only beside an unresolved write (`lib/anchor/domain/aggregates/inference.ex`). Result: `17 tests, 1 failure`.
+
+```
+
+  1) test every proposal says on its first line what it was read from (Anchor.Domain.Aggregates.InferenceTest)
+     test/anchor/domain/aggregates/inference_test.exs:174
+     Expected truthy, got false
+     code: assert String.starts_with?(yaml, read_note)
+     arguments:
+
+         # 1
+         "aggregates:\n  declare:\n    - name: App.S\n      schemas: [App.S]\n      tables: []\n      # owners: proposed by aggregate_owner_writes\n"
+
+         # 2
+         "# read from the forms Anchor recognises; a write in any other form is not in this proposal\n"
+
+     stacktrace:
+       test/anchor/domain/aggregates/inference_test.exs:180: (test)
+
+...
+```
+
+## RL-OUTSIDEWORDS
+
+the rule still says outside any transaction (`lib/anchor/domain/graph_rules/aggregate_write_sources.ex`). Result: `13 tests, 1 failure`.
+
+```
+
+  1) test check/2 raw SQL outside a transaction is reported, keyed without its line, with a Fix (Anchor.Domain.GraphRules.AggregateWriteSourcesTest)
+     test/anchor/domain/graph_rules/aggregate_write_sources_test.exs:115
+     Assertion with =~ failed
+     code:  assert finding.message =~ "App.Store.purge/0 writes, or may write, with no transaction read around it"
+     left:  "App.Store.purge/0 writes, or may write, outside any transaction in a way no schema or table names: raw SQL (App.Repo.query!/1) Anchor cannot attribute. Fix: write through a schema with Repo, or name the module the call is on."
+     right: "App.Store.purge/0 writes, or may write, with no transaction read around it"
+     stacktrace:
+       test/anchor/domain/graph_rules/aggregate_write_sources_test.exs:126: (test)
+
+...........
+```
+
+## AN-RUNCALLBACK
+
+a captured Multi.run callback's raw SQL is reported (`lib/anchor/domain/aggregates/analysis.ex`). Result: `19 tests, 1 failure`.
+
+```
+
+  1) test unattributed: raw SQL and a write on a computed module, outside a transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:227
+     match (=) failed
+     code:  assert [
+              %{mfa: {@n, :n11, 0}, what: raw, line: line},
+              %{mfa: {@n, :n12, 1}, what: computed},
+              %{mfa: {@n, :n17h, 0}},
+              %{mfa: {@n, :n21g, 0}},
+              %{mfa: {@n, :n22, 1}, what: captured},
+              %{mfa: {@n, :n23, 1}, what: computed_capture},
+              %{mfa: {@n, :n27, 1}},
+              %{mfa: {@n, :n31, 1}, what: raw_capture},
+              %{mfa: {@n, :n32, 1}, what: computed_raw},
+              %{mfa: {@n, :n33, 1}},
+              %{mfa: {@n, :n34, 2}, what: "a capture on a computed module or name"},
+              %{mfa: {@n, :n35, 2}, what: computed_transaction},
+              %{mfa: {@n, :n36, 1}, what: unread_apply},
+              %{mfa: {@n, :n37, 3}},
+              %{mfa: {@n, :n38, 2}},
+              %{mfa: {@n, :n39, 2}},
+              %{mfa: {@n, :n48, 0}},
+              %{mfa: {@n, :n50, 1}},
+              %{mfa: {@n, :n53, 2}},
+              %{mfa: {@n, :n55, 2}}
+            ] = a.unattributed
+     left:  [
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n11, 0}, what: raw, line: line},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n12, 1}, what: computed},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n17h, 0}},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n21g, 0}},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n22, 1}, what: captured},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n23, 1}, what: computed_capture},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n27, 1}},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n31, 1}, what: raw_capture},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n32, 1}, what: computed_raw},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n33, 1}},
+              %{
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n34, 2},
+                what: "a capture on a computed module or name"
+              },
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n35, 2}, what: computed_transaction},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n36, 1}, what: unread_apply},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n37, 3}},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n38, 2}},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n39, 2}},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n48, 0}},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n50, 1}},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n53, 2}},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n55, 2}}
+            ]
+     right: [
+              %{
+                line: 58,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n11,
+                 0},
+                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
+              },
+              %{
+                line: 59,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n12,
+                 1},
+                what: "a call of insert/1 on a module held in a variable"
+              },
+              %{
+                line: 120,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n17h,
+                 0},
+                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
+              },
+              %{
+                line: 123,
+                mfa: {AnchorFixtures.NonTransactionalTest.N,
+                 :n18_step, 2},
+                what: "raw SQL (repo.query!/1 in a Multi.run callback) Anchor cannot attribute"
+              },
+              %{
+                line: 117,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n21g,
+                 0},
+                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
+              },
+              %{
+                line: 109,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n22,
+                 1},
+                what: "a capture of the write AnchorFixtures.NonTransactionalTest.Repo.insert/1"
+              },
+              %{
+                line: 110,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n23,
+                 1},
+                what: "a capture on a computed module or name"
+              },
+              %{
+                line: 104,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n27,
+                 1},
+                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
+              },
+              %{
+                line: 98,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n31,
+                 1},
+                what: "a capture of the write AnchorFixtures.NonTransactionalTest.Repo.query!/1"
+              },
+              %{
+                line: 99,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n32,
+                 1},
+                what: "a call of query!/1 on a module held in a variable"
+              },
+              %{
+                line: 100,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n33,
+                 1},
+                what: "a capture of the write Ecto.Adapters.SQL.query!/1"
+              },
+              %{
+                line: 101,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n34,
+                 2},
+                what: "a capture on a computed module or name"
+              },
+              %{
+                line: 89,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n35,
+                 2},
+                what: "a call of transaction/1 on a module held in a variable"
+              },
+              %{
+                line: 90,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n36,
+                 1},
+                what: "an apply/3 Anchor cannot resolve"
+              },
+              %{line: 91, ...},
+              ...
+            ]
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:230: (test)
+
+...............
+```
+
+## MD-ANALYSIS
+
+the model gives no analysis (`lib/anchor/domain/model.ex`). Result: `2 tests, 2 failures`.
+
+```
+
+
+
+  1) test I1: the violating module gives exactly the unresolved write and the incomplete transaction (Anchor.Integration.AggregateWriteSourcesIntegrationTest)
+     test/anchor/integration/aggregate_write_sources_integration_test.exs:78
+     match (=) failed
+     code:  assert [save, run] = Enum.sort_by(report.findings, & &1.line)
+     left:  [save, run]
+     right: [
+              %Anchor.Domain.GraphReport.Finding{
+                rule_id: nil,
+                type: nil,
+                label: "anchor.graph",
+                enforcement: :enforce,
+                key: nil,
+                file: "/home/cjpoll/.local/worktrees/anchor/dnd-5459-write-sets/test/fixtures/graph_canary/aggregate_write_sources/.anchor.yml",
+                line: nil,
+                message: "rule 1 (id: \"aggregate_write_sources\", aggregate_write_sources): no Ecto repo found: no module declares @behaviour Ecto.Repo and aggregates.repos is empty. Fix: list the repo under aggregates.repos."
+              }
+            ]
+     stacktrace:
+       test/anchor/integration/aggregate_write_sources_integration_test.exs:84: (test)
+
+
+
+
+  2) test I1: the compliant canary gives no finding, and the summary counts its writes (Anchor.Integration.AggregateWriteSourcesIntegrationTest)
+     test/anchor/integration/aggregate_write_sources_integration_test.exs:67
+     match (=) failed
+     code:  assert %GraphReport{exit_code: 0, findings: [], could_not_check: []} = report
+     left:  %Anchor.Domain.GraphReport{exit_code: 0, findings: [], could_not_check: []}
+     right: %Anchor.Domain.GraphReport{
+              findings: [
+                %Anchor.Domain.GraphReport.Finding{
+                  rule_id: nil,
+                  type: nil,
+                  label: "anchor.graph",
+                  enforcement: :enforce,
+                  key: nil,
+                  file: "/home/cjpoll/.local/worktrees/anchor/dnd-5459-write-sets/test/fixtures/graph_canary/aggregate_write_sources/.anchor.yml",
+                  line: nil,
+                  message: "rule 1 (id: \"aggregate_write_sources\", aggregate_write_sources): no Ecto repo found: no module declares @behaviour Ecto.Repo and aggregates.repos is empty. Fix: list the repo under aggregates.repos."
+                }
+              ],
+              could_not_check: [],
+              held: [],
+              refused: [],
+              counts: %{
+                modules: 3,
+                opaque: 0,
+                apps: 1,
+                rules: 1,
+                outside_root: 0,
+                apply_sites: nil,
+                no_core: 0
+              },
+              exit_code: 1
+            }
+     stacktrace:
+       test/anchor/integration/aggregate_write_sources_integration_test.exs:72: (test)
 ```
