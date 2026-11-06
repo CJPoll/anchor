@@ -47,7 +47,8 @@ defmodule Anchor.Domain.Sabotage.ReplayTest do
         %{
           sources: %{"lib/calc.ex" => true},
           generated: %{{"lib/calc.ex", "Calc.add/2"} => {:ok, [mutant(@id)]}},
-          tests: MapSet.new(["test/calc_test.exs"])
+          tests: MapSet.new(["test/calc_test.exs"]),
+          symlinked: MapSet.new()
         },
         overrides
       )
@@ -291,6 +292,56 @@ defmodule Anchor.Domain.Sabotage.ReplayTest do
       reason = {:bad_killer, "--include:1 test x", {:bad_path, :option}}
       text = Replay.render(%Result{rows: 1, records: 1, drifted: [{bad, reason}]})
       assert text =~ ~s(drifted (killer "--include:1 test x": {:bad_path, :option}\) #{@id})
+    end
+
+    test "each drift reason is said in words" do
+      for {reason, words} <- [
+            {:file_outside, "file outside the project"},
+            {:symlink, "a symlink on the file's path: never followed"},
+            {:file_gone, "file gone"},
+            {:bad_function, "not a Module.fun/arity"},
+            {{:function_gone, :not_read}, "function gone: :not_read"},
+            {:no_mutant_with_id, "no mutant with id"},
+            {:no_killer_test, "no killer test"},
+            {{:killer_gone, "test/a_test.exs"}, "killer gone: test/a_test.exs"},
+            {{:killer_symlink, "test/a_test.exs"},
+             "a symlink on the killer's path: test/a_test.exs"}
+          ] do
+        text = Replay.render(%Result{rows: 1, records: 1, drifted: [{item(), reason}]})
+        assert text =~ "drifted (#{words}) #{@id} Calc.add/2 return_input (#{@record})\n"
+      end
+    end
+
+    test "a row drifted by its run is counted and said; every row drifted concludes COULD NOT MEASURE" do
+      for {verdict, words} <- [
+            {{:drifted, :no_longer_compiles}, "no longer compiles"},
+            {{:drifted, :killer_not_found}, "killer test not found: no test ran"}
+          ] do
+        text = Replay.render(%Result{rows: 1, records: 1, results: [{item(), verdict}]})
+        assert text =~ "drifted (#{words}) #{@id}"
+        assert text =~ "0 replayed, 0 still killed, 0 LOST POWER, 0 crashed, 1 drifted"
+        assert text =~ "COULD NOT MEASURE: no row was replayed (every one drifted)."
+      end
+    end
+
+    test "a crashed row names its reason, the record and a Fix" do
+      text = Replay.render(%Result{rows: 1, records: 1, results: [{item(), {:crashed, "boom"}}]})
+
+      assert text =~ "CRASHED #{@id} Calc.add/2 return_input (#{@record}): boom\n"
+      assert text =~ "  Fix: run the killers under this mutant to see why the run crashed"
+      assert text =~ "1 replayed, 0 still killed, 0 LOST POWER, 1 crashed, 0 drifted"
+    end
+
+    test "a refusal prints the notes before its message" do
+      r = %Result{notes: ["restored leftover mutant x"], refusal: {2, "refused. Fix: y"}}
+      assert Replay.render(r) == "restored leftover mutant x\nrefused. Fix: y"
+    end
+
+    test "a row over the cap names the way to lift it" do
+      text = Replay.render(%Result{rows: 1, records: 1, not_replayed: [item()]})
+
+      assert text =~
+               "not replayed (cap) #{@id} Calc.add/2 return_input; rerun with --max all"
     end
 
     test "zero rows says COULD NOT MEASURE and names the directories searched" do

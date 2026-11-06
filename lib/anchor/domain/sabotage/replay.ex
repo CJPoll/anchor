@@ -135,7 +135,7 @@ defmodule Anchor.Domain.Sabotage.Replay do
   end
 
   defp plan_item(%{row: row} = item, items, facts) do
-    symlinked = Map.get(facts, :symlinked, MapSet.new())
+    symlinked = facts.symlinked
 
     with :ok <- check(inside?(row.file), :file_outside),
          :ok <- check(not MapSet.member?(symlinked, row.file), :symlink),

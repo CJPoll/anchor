@@ -386,6 +386,101 @@ defmodule Anchor.Managers.SabotageReplayTest do
     assert Replay.exit_code(result) == 0
   end
 
+  describe "the start-up refusals stop the replay with their own code" do
+    test "a journal that cannot be read: exit 2, before the config is read" do
+      expect(SourceMutationMock, :read_journal, fn @root -> {:error, :corrupt_journal} end)
+
+      result = Sabotage.replay(@facts, @opts)
+
+      assert {2, message} = result.refusal
+      assert message =~ ".anchor/sabotage/in-flight.json cannot be read (:corrupt_journal)"
+      assert Replay.exit_code(result) == 2
+    end
+
+    test "a leftover mutant is restored first and said; the replay then goes on" do
+      entry = %Journal{
+        file: "lib/calc.ex",
+        mutant_id: "aaaaaaaaaaaa",
+        original: @source,
+        original_sha: Journal.sha256(@source),
+        mutated_sha: "mutated",
+        owner: %{os_pid: 4242, started: "777"}
+      }
+
+      expect(SourceMutationMock, :read_journal, fn @root -> {:ok, entry} end)
+      expect(SourceMutationMock, :owner_alive?, fn %{os_pid: 4242} -> false end)
+
+      SourceMutationMock
+      |> expect(:sha256_file, fn @file_path -> {:ok, "mutated"} end)
+      |> expect(:sha256_file, fn @file_path -> {:ok, Journal.sha256(@source)} end)
+
+      expect(SourceMutationMock, :write_file, fn @file_path, @source -> :ok end)
+      expect(SourceMutationMock, :touch_ahead, fn @file_path -> :ok end)
+      expect(SourceMutationMock, :delete_journal, fn @root -> :ok end)
+
+      expect(ConfigLoaderMock, :load_in, fn @root ->
+        {:ok, %Anchor.Config{rules: [], sabotage: %SabotageConfig{}}}
+      end)
+
+      expect(GitWorktreeMock, :ignored?, fn @root, _path -> {:ok, true} end)
+      expect(RecordStoreMock, :list, fn @root, _glob -> [] end)
+
+      result = Sabotage.replay(@facts, @opts)
+
+      assert result.notes == ["restored leftover mutant aaaaaaaaaaaa in lib/calc.ex"]
+      assert Replay.render(result) =~ "restored leftover mutant aaaaaaaaaaaa in lib/calc.ex\n"
+    end
+
+    test "another run's live journal: exit 2, nothing touched" do
+      entry = %Journal{
+        file: "lib/calc.ex",
+        mutant_id: "aaaaaaaaaaaa",
+        original: @source,
+        original_sha: Journal.sha256(@source),
+        mutated_sha: "mutated",
+        owner: %{os_pid: 4242, started: "777"}
+      }
+
+      expect(SourceMutationMock, :read_journal, fn @root -> {:ok, entry} end)
+      expect(SourceMutationMock, :owner_alive?, fn %{os_pid: 4242} -> true end)
+
+      assert %{refusal: {2, message}} = Sabotage.replay(@facts, @opts)
+      assert message =~ "another sabotage run (OS pid 4242)"
+    end
+
+    test "no sabotage: section: exit 3, before the journal check or any record" do
+      expect(SourceMutationMock, :read_journal, fn @root -> :none end)
+
+      expect(ConfigLoaderMock, :load_in, fn @root ->
+        {:ok, %Anchor.Config{rules: [], sabotage: nil}}
+      end)
+
+      result = Sabotage.replay(@facts, @opts)
+
+      assert {3, message} = result.refusal
+      assert message =~ "COULD NOT MEASURE: .anchor.yml has no sabotage: section"
+      assert Replay.exit_code(result) == 3
+    end
+
+    test "the journal not git-ignored: exit 2, before any record is read" do
+      expect(SourceMutationMock, :read_journal, fn @root -> :none end)
+
+      expect(ConfigLoaderMock, :load_in, fn @root ->
+        {:ok, %Anchor.Config{rules: [], sabotage: %SabotageConfig{}}}
+      end)
+
+      expect(GitWorktreeMock, :ignored?, fn @root, ".anchor/sabotage/in-flight.json" ->
+        {:ok, false}
+      end)
+
+      result = Sabotage.replay(@facts, @opts)
+
+      assert {2, message} = result.refusal
+      assert message =~ ".anchor/sabotage/in-flight.json is not git-ignored"
+      assert Replay.exit_code(result) == 2
+    end
+  end
+
   test "no --max: the cap is the config's max_mutants" do
     [first, second] = mutants()
 

@@ -783,3 +783,30 @@ nor did any reach the documented cap with no `--max`. The test file drives
 
 After every row was restored, each file named above was green (`33 tests, 0
 failures`).
+
+## Replay's start-up refusals and its every printed reason (critic, whole MR)
+
+The critic found no refusal at start-up tested through the replay. The sweep
+closes the class on `Managers.Sabotage.Replay`: every clause holding a refusal
+now has a row here or above (68: I1; 92: I2, I3; 159, 237: the dirty row and G5;
+242, 263, 266: G5, G6, G7; 311: G8). It also covers every printed reason in
+`Replay.render/1` (each `drift_text` clause, the crashed lines, the conclusion,
+the cap's hint, a refusal's notes).
+
+| # | Mutation | Tests failed | First failure, verbatim |
+|---|---|---|---|
+| I1 | a recovery's refusal ignored | 2 of 24: "another run's live journal: exit 2, nothing touched", "a journal that cannot be read: exit 2, before the config is read" | `left:  %{refusal: {2, message}}` |
+| I2 | every refusal after recovery is exit 3 | 1 of 24: "the journal not git-ignored: exit 2, before any record is read" | `left:  {2, message}` |
+| I3 | a refusal after recovery ignored | 2 of 24: "no sabotage: section: exit 3, before the journal check or any record", "the journal not git-ignored ..." | `left:  {3, message}` |
+| I4 | outside the project read as file gone | 1 of 35: "each drift reason is said in words" | `left:  "drifted (file gone) 3f9a01c2b7de Calc.add/2 return_input ...` |
+| I5 | a symlinked killer read as killer gone | 1 of 35: the same test | `left:  "drifted (killer gone: test/a_test.exs) 3f9a01c2b7de ...` |
+| I6 | no test ran read as no longer compiles | 1 of 35: "a row drifted by its run is counted and said; ..." | `left:  "drifted (no longer compiles) 3f9a01c2b7de ...` |
+| I7 | a refusal's message before its notes | 1 of 35: "a refusal prints the notes before its message" | `left:  "refused. Fix: y\nrestored leftover mutant x"` |
+| I8 | every row drifted no longer says COULD NOT MEASURE | 1 of 35: "a row drifted by its run ..." | `left:  "drifted (no longer compiles) 3f9a01c2b7de ...` |
+| I9 | a crash loses its `Fix:` | 1 of 35: "a crashed row names its reason, the record and a Fix" | `left:  "CRASHED 3f9a01c2b7de Calc.add/2 return_input (test/sabotage_records/sabotage-20261105-dnd_5473.md): boom\n  run the killers under this mutant\n...` |
+| I10 | the cap's hint dropped | 1 of 35: "a row over the cap names the way to lift it" | `left:  "not replayed (cap) 3f9a01c2b7de Calc.add/2 return_input\n...` |
+
+After every row was restored, each file named above was green (`59 tests, 0
+failures`). `plan/2` now reads `facts.symlinked` with no default, since a missing
+answer read as "no symlink" failed open; the README's drift row names every
+reason.

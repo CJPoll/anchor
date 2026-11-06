@@ -1465,7 +1465,7 @@ function's other killed rows in the same record, whole, and says so.
 | a killer failed (or the run timed out) | `still killed <id> ...` | 0 |
 | every killer passed | `LOST POWER <id> M.f/a operator (<record>)`, each killer on `no longer failed by:`, and a `Fix:` | 1 |
 | the run crashed | `CRASHED <id> ...` with a `Fix:` | 1 |
-| it cannot be replayed as recorded: its file is gone or outside the project, its function is gone, no mutant has its id (the function changed), a killer's file or test is gone, it no longer compiles | `drifted (<reason>) <id> ...` | never on its own |
+| it cannot be replayed as recorded: its file is gone or outside the project, a symlink is on its file's or a killer's path, its function is gone, no mutant has its id (the function changed), a killer's file or test is gone, a killer does not read as a test, a row killed by the time bound has no killed row to take its killer files from, it no longer compiles | `drifted (<reason>) <id> ...` | never on its own |
 | zero rows, every row drifted, or a record that could not be read | `COULD NOT MEASURE` with `Fix:` | 3 |
 
 A record whose kill map does not parse is named (`could not read ...`), and
