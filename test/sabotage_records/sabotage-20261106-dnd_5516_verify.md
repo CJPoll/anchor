@@ -693,3 +693,46 @@ Green first: every test file below, unmutated: `164 tests, 0 failures`.
 
 ............
 ```
+
+## Critic round 1: a mutant's latest row decides
+
+The critic found that a covering row of an earlier run still covered a mutant whose latest run survived. The fix reads each id's latest row only (`coverage/5`). VD-B's site, the old filter, is gone; VD-Q restores it. Driver and bounds as above.
+
+Green first: `29 tests, 0 failures`.
+
+| # | Mutation | Tests run | Result | Failing tests |
+|---|---|---|---|---|
+| VD-P | an id's earliest row decides, not its latest (`lib/anchor/domain/sabotage/verify.ex`) | `verify_test.exs` | `29 tests, 1 failure` (red) | judge/4 a mutant's latest row decides: a later survived row undoes an earlier kill |
+| VD-Q | a covering row in any run counts (the critic's case) (`lib/anchor/domain/sabotage/verify.ex`) | `verify_test.exs` | `29 tests, 1 failure` (red) | judge/4 a mutant's latest row decides: a later survived row undoes an earlier kill |
+
+### VD-P: an id's earliest row decides, not its latest
+
+```
+
+  1) test judge/4 a mutant's latest row decides: a later survived row undoes an earlier kill (Anchor.Domain.Sabotage.VerifyTest)
+     test/anchor/domain/sabotage/verify_test.exs:92
+     match (=) failed
+     code:  assert [%Mutant{id: "m1"}] = Verify.judge([mutant("m1")], rows, [], ctx()).uncovered
+     left:  [%Anchor.Domain.Sabotage.Mutant{id: "m1"}]
+     right: []
+     stacktrace:
+       test/anchor/domain/sabotage/verify_test.exs:95: (test)
+
+........................
+```
+
+### VD-Q: a covering row in any run counts (the critic's case)
+
+```
+
+  1) test judge/4 a mutant's latest row decides: a later survived row undoes an earlier kill (Anchor.Domain.Sabotage.VerifyTest)
+     test/anchor/domain/sabotage/verify_test.exs:92
+     match (=) failed
+     code:  assert [%Mutant{id: "m1"}] = Verify.judge([mutant("m1")], rows, [], ctx()).uncovered
+     left:  [%Anchor.Domain.Sabotage.Mutant{id: "m1"}]
+     right: []
+     stacktrace:
+       test/anchor/domain/sabotage/verify_test.exs:95: (test)
+
+...........................
+```

@@ -8,13 +8,14 @@ defmodule Anchor.Domain.Sabotage.Verify do
 
   ## Coverage
 
-  A mutant id is covered by a kill-map row (`Anchor.Domain.Sabotage.KillMap`)
-  of a record this branch added or appended to, with status `killed`,
-  `timeout` or `invalid`, or else by a survivors entry
+  A mutant id is covered by its latest kill-map row
+  (`Anchor.Domain.Sabotage.KillMap`; records in path order, blocks in file
+  order) in the records this branch added or appended to, when that row's
+  status is `killed`, `timeout` or `invalid`, or else by a survivors entry
   (`Anchor.Domain.Sabotage.Survivors`) with the same id whose file, function
   and operator are the mutant's. Anything else is UNCOVERED. A row whose
   status is `survived`, `no_tests` or `crashed` covers nothing: a survivor
-  needs its entry.
+  needs its entry, and a later run's `survived` row undoes an earlier kill.
 
   ## Stale rows
 
@@ -206,7 +207,9 @@ defmodule Anchor.Domain.Sabotage.Verify do
   # -- judge -------------------------------------------------------------------
 
   defp coverage(verdict, mutants, rows, entries, changed_mfas) do
-    by_id = rows |> Enum.filter(&Map.has_key?(@covering, &1.status)) |> Map.new(&{&1.id, &1})
+    # Rows come in record order, then block order: the last row of an id is
+    # its latest run, and only that run's status counts.
+    by_id = Map.new(rows, &{&1.id, &1})
     entries_by_id = Map.new(entries, &{&1.id, &1})
 
     {covered, uncovered, mismatched} =
@@ -228,10 +231,18 @@ defmodule Anchor.Domain.Sabotage.Verify do
   end
 
   defp cover(mutant, by_id, entries_by_id) do
-    case {Map.fetch(by_id, mutant.id), Map.fetch(entries_by_id, mutant.id)} do
-      {{:ok, row}, _entry} -> {:ok, Map.fetch!(@covering, row.status)}
+    case {Map.fetch(@covering, latest_status(by_id, mutant.id)),
+          Map.fetch(entries_by_id, mutant.id)} do
+      {{:ok, how}, _entry} -> {:ok, how}
       {:error, {:ok, entry}} -> entry_cover(entry, mutant)
       {:error, :error} -> :none
+    end
+  end
+
+  defp latest_status(by_id, id) do
+    case Map.fetch(by_id, id) do
+      {:ok, row} -> row.status
+      :error -> nil
     end
   end
 

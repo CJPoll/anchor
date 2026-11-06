@@ -89,6 +89,20 @@ defmodule Anchor.Domain.Sabotage.VerifyTest do
       assert Verify.judge([mutant("m1")], [row("m1", "killed")], [], ctx()).uncovered == []
     end
 
+    test "a mutant's latest row decides: a later survived row undoes an earlier kill" do
+      rows = [row("m1", "killed", block: 1), row("m1", "survived", block: 2)]
+
+      assert [%Mutant{id: "m1"}] = Verify.judge([mutant("m1")], rows, [], ctx()).uncovered
+
+      assert Verify.judge([mutant("m1")], rows, [entry("m1")], ctx()).covered == [
+               {"m1", :survivor}
+             ]
+
+      # Positive control: the kill as the latest row covers it.
+      v = Verify.judge([mutant("m1")], Enum.reverse(rows), [], ctx())
+      assert v.covered == [{"m1", :killed}]
+    end
+
     test "3: a survivors entry covers an id" do
       v = Verify.judge([mutant("m1")], [], [entry("m1")], ctx())
 

@@ -2151,8 +2151,9 @@ mix anchor.sabotage verify --base REF [--format text|json]
 The cheap check a gate runs once a branch's `run` has committed its record
 (DND-5516). For the functions the diff since `REF` changes (the scope above),
 it regenerates every mutant id from the working tree's source and checks each
-is covered: by a `killed`, `timeout` or `invalid` row of an `anchor-kills`
-block in a record the branch added or appended to, or by a survivors entry
+is covered: by its latest row (records in path order, blocks in file order)
+in the `anchor-kills` blocks of the records the branch added or appended to,
+when that row is `killed`, `timeout` or `invalid`, or by a survivors entry
 with that id, file, function and operator. It compiles nothing, runs no test,
 applies no mutant and writes nothing, so it takes seconds and loads nothing.
 
