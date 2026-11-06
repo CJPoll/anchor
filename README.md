@@ -976,8 +976,11 @@ architecture:
     domain: [domain]
 ```
 
-The bounds and floors are over the whole program, since an analysis runs over
-all of it; the selector narrows only whose functions must be summarised. Each
+The summary adds `; demand: <f> functions, <p> parameters, <a> absent, <i>
+imprecise functions`, with `(round bound hit on <n> functions)` after it if the
+analysis hit its bound, and the JSON's `demand` holds the same counts (`null`
+when no rule that runs needs it). The bounds and floors are over the whole
+program, since an analysis runs over all of it; the selector narrows only whose functions must be summarised. Each
 floor is optional, a positive integer, and has no default: without it, that
 count is not judged. A rule that reads the demand analysis declares `needs:
 [:cfa, :demand]` in its module (`Anchor.Domain.GraphRule`). Anchor's own

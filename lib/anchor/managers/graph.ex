@@ -286,6 +286,7 @@ defmodule Anchor.Managers.Graph do
       |> Map.put(:apply_sites, GraphReport.apply_sites(model.cfa))
       |> Map.put(:dynamic_calls, DynamicCalls.tally(graph))
       |> put_effects(GraphReport.effects(model.effects))
+      |> put_demand(GraphReport.demand(model.demand))
       |> put_aggregates(model.aggregates),
       held: Enum.flat_map(ran, & &1.held),
       refused: Enum.flat_map(ran, & &1.refused)
@@ -335,6 +336,9 @@ defmodule Anchor.Managers.Graph do
     do: raise(ArgumentError, "the inference returned #{inspect(other, limit: 5)}, not %Effects{}")
 
   # The effect counts appear only when the inference ran (DND-5447).
+  defp put_demand(counts, nil), do: counts
+  defp put_demand(counts, demand), do: Map.put(counts, :demand, demand)
+
   defp put_effects(counts, nil), do: counts
   defp put_effects(counts, effects), do: Map.put(counts, :effects, effects)
 

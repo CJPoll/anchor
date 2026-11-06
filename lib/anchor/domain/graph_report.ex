@@ -56,10 +56,14 @@ defmodule Anchor.Domain.GraphReport do
   computed the effect inference, the summary then ends with `; effects: <n>
   functions (domain <a>, managers <b>, adapters <c>, framework <d>), <u>
   unresolved dynamic calls`, and `, not analysed: <k>` when some public
-  function had no Core body (DND-5447).
+  function had no Core body (DND-5447). When it computed the demand analysis,
+  the summary then ends with `; demand: <f> functions, <p> parameters, <a>
+  absent, <i> imprecise functions`, and `(round bound hit on <n> functions)`
+  when it hit its bound (DND-5715).
   """
 
   alias Anchor.Domain.Cfa
+  alias Anchor.Domain.Demand
   alias Anchor.Domain.Effects
   alias Anchor.Domain.GraphReport.Finding
 
@@ -102,12 +106,21 @@ defmodule Anchor.Domain.GraphReport do
           required(:apply_sites) => apply_sites() | nil,
           optional(:dynamic_calls) => dynamic_calls() | nil,
           optional(:effects) => effects() | nil,
+          optional(:demand) => demand() | nil,
           optional(:aggregates) => %{declared: pos_integer(), tables_unknown: non_neg_integer()}
         }
 
   @type dynamic_calls :: %{
           narrowed: [{mfa(), atom(), arity()}],
           fanned_out: [{mfa(), atom(), arity()}]
+        }
+
+  @type demand :: %{
+          functions: non_neg_integer(),
+          parameters: non_neg_integer(),
+          absent: non_neg_integer(),
+          imprecise_functions: non_neg_integer(),
+          bound_hit: non_neg_integer()
         }
 
   @type effects :: %{
@@ -158,6 +171,24 @@ defmodule Anchor.Domain.GraphReport do
       any: counts.any,
       bound_hit?: bound_hit?,
       by_function: counts.by_function
+    }
+  end
+
+  @doc """
+  The demand-analysis counts (DND-5715) for the summary: functions, parameters,
+  absent parameters, imprecise functions, and how many functions hit the round
+  bound. `nil` for no analysis.
+  """
+  @spec demand(Demand.t() | nil) :: demand() | nil
+  def demand(nil), do: nil
+
+  def demand(%Demand{counts: counts, bound_hit: bound_hit}) do
+    %{
+      functions: counts.functions,
+      parameters: counts.parameters,
+      absent: counts.absent,
+      imprecise_functions: counts.imprecise_functions,
+      bound_hit: length(bound_hit)
     }
   end
 
@@ -221,6 +252,7 @@ defmodule Anchor.Domain.GraphReport do
       "apply_sites" => apply_sites_json(report.counts.apply_sites),
       "dynamic_calls" => dynamic_calls_json(Map.get(report.counts, :dynamic_calls)),
       "effects" => effects_json(Map.get(report.counts, :effects)),
+      "demand" => demand_json(Map.get(report.counts, :demand)),
       "aggregates" => aggregates_json(Map.get(report.counts, :aggregates)),
       "exit_code" => report.exit_code,
       "findings" => Enum.map(report.findings, &Finding.to_json/1),
@@ -250,6 +282,7 @@ defmodule Anchor.Domain.GraphReport do
       apply_sites_note(counts.apply_sites) <>
       dynamic_calls_note(Map.get(counts, :dynamic_calls)) <>
       effects_note(Map.get(counts, :effects)) <>
+      demand_note(Map.get(counts, :demand)) <>
       aggregates_note(Map.get(counts, :aggregates))
   end
 
@@ -308,6 +341,20 @@ defmodule Anchor.Domain.GraphReport do
 
   defp apply_sites_note(%{resolved: resolved, any: any, bound_hit?: bound_hit?}),
     do: "; apply sites: #{resolved} resolved, #{any} any#{bound_note(bound_hit?)}"
+
+  defp demand_json(nil), do: nil
+  defp demand_json(demand), do: Map.new(demand, &stringify_key/1)
+
+  defp demand_note(nil), do: ""
+
+  defp demand_note(demand) do
+    "; demand: #{demand.functions} functions, #{demand.parameters} parameters, " <>
+      "#{demand.absent} absent, #{demand.imprecise_functions} imprecise functions" <>
+      round_bound_note(demand.bound_hit)
+  end
+
+  defp round_bound_note(0), do: ""
+  defp round_bound_note(count), do: " (round bound hit on #{count} functions)"
 
   defp effects_json(nil), do: nil
 

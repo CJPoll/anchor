@@ -20,6 +20,7 @@ defmodule Anchor.Managers.GraphDemandTest do
   alias Anchor.Domain.Cfa
   alias Anchor.Domain.Demand
   alias Anchor.Domain.Graph.SourceFacts
+  alias Anchor.Domain.GraphReport
   alias Anchor.Domain.GraphRules.AnalysesComplete
   alias Anchor.GraphStoreMock
   alias Anchor.Managers.Graph
@@ -131,6 +132,9 @@ defmodule Anchor.Managers.GraphDemandTest do
 
       refute_received :demand_ran
       assert report.exit_code == 0
+      refute Map.has_key?(report.counts, :demand)
+      refute GraphReport.summary(report) =~ "demand:"
+      assert %{"demand" => nil} = JSON.decode!(GraphReport.render(report, :json))
     end
 
     test "--only narrowing away the rule that needs it: not run", %{beams: beams} do
@@ -166,6 +170,22 @@ defmodule Anchor.Managers.GraphDemandTest do
       assert_received :demand_ran
       assert report.exit_code == 0
       assert report.findings == []
+
+      # Precision is never silent (epic QA plan, P4): the counts print with no finding.
+      assert GraphReport.summary(report) =~
+               "; demand: 4 functions, 7 parameters, 1 absent, 0 imprecise functions"
+
+      refute GraphReport.summary(report) =~ "round bound"
+
+      assert %{
+               "demand" => %{
+                 "functions" => 4,
+                 "parameters" => 7,
+                 "absent" => 1,
+                 "imprecise_functions" => 0,
+                 "bound_hit" => 0
+               }
+             } = JSON.decode!(GraphReport.render(report, :json))
     end
   end
 
@@ -189,6 +209,7 @@ defmodule Anchor.Managers.GraphDemandTest do
       assert [finding] = report.findings
       assert finding.message =~ "hit its round bound on 4 function(s)"
       assert finding.message =~ "AnchorFixtures.GraphDemandTest.Flow.first/2"
+      assert GraphReport.summary(report) =~ "(round bound hit on 4 functions)"
     end
 
     test "on a function the analysis left unsummarised", %{beams: beams} do
