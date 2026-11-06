@@ -5517,3 +5517,310 @@ an unread local transaction function is no gap (`lib/anchor/domain/aggregates/wr
 
 .
 ```
+
+# Thirteenth run: raw SQL captured or on a computed module; apply of a transaction
+
+6 mutations for critic round 15's findings, each red on its first run.
+
+| # | Mutation | Tests run | Result |
+|---|---|---|---|
+| WSO-RAWCAPTURE | a capture of raw SQL on a repo is no gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `67 tests, 1 failure` (red) |
+| WSO-RAWMODULE | a capture of Ecto.Adapters.SQL is no gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `67 tests, 1 failure` (red) |
+| WSO-COMPUTED | raw SQL on a computed module is not reported (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs` | `21 tests, 1 failure` (red) |
+| WSO-COMPCAPTURE | a capture of raw SQL on a computed module is not reported (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs` | `21 tests, 1 failure` (red) |
+| WSO-APPLYTX | an apply of a transaction is no gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `67 tests, 1 failure` (red) |
+| WSO-APPLYMULTI | an apply of a Multi step is no gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `67 tests, 1 failure` (red) |
+
+## WSO-RAWCAPTURE
+
+a capture of raw SQL on a repo is no gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `67 tests, 1 failure`.
+
+```
+
+  1) test build/3 a capture of raw SQL in a body is a gap (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:674
+     match (=) failed
+     code:  assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s74, 1}, _}]} = one(a, :s74)
+     left:  %Anchor.Domain.Aggregates.Scope{
+              complete?: false,
+              gaps: [{:dynamic_call, {AnchorFixtures.ScopesTest.X, :s74, 1}, _}]
+            }
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s74, 1},
+              ordinal: 1,
+              line: 276,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              complete?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:675: (test)
+
+......................
+```
+
+## WSO-RAWMODULE
+
+a capture of Ecto.Adapters.SQL is no gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `67 tests, 1 failure`.
+
+```
+
+  1) test build/3 a capture of raw SQL in a body is a gap (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:674
+     match (=) failed
+     code:  assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s76, 1}, _}]} = one(a, :s76)
+     left:  %Anchor.Domain.Aggregates.Scope{
+              complete?: false,
+              gaps: [{:dynamic_call, {AnchorFixtures.ScopesTest.X, :s76, 1}, _}]
+            }
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s76, 1},
+              ordinal: 1,
+              line: 278,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              complete?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:676: (test)
+
+..........................................................
+```
+
+## WSO-COMPUTED
+
+raw SQL on a computed module is not reported (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `21 tests, 1 failure`.
+
+```
+
+  1) test unattributed: raw SQL and a write on a computed module, outside a transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:184
+     match (=) failed
+     code:  assert [
+              %{mfa: {@n, :n11, 0}, what: raw, line: line},
+              %{mfa: {@n, :n12, 1}, what: computed},
+              %{mfa: {@n, :n22, 1}, what: captured},
+              %{mfa: {@n, :n23, 1}, what: computed_capture},
+              %{mfa: {@n, :n27, 1}},
+              %{mfa: {@n, :n31, 1}, what: raw_capture},
+              %{mfa: {@n, :n32, 1}, what: computed_raw},
+              %{mfa: {@n, :n33, 1}},
+              %{mfa: {@n, :n34, 2}, what: "a capture on a computed module or name"}
+            ] = a.unattributed
+     left:  [
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n11, 0}, what: raw, line: line},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n12, 1}, what: computed},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n22, 1}, what: captured},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n23, 1}, what: computed_capture},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n27, 1}},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n31, 1}, what: raw_capture},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n32, 1}, what: computed_raw},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n33, 1}},
+              %{
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n34, 2},
+                what: "a capture on a computed module or name"
+              }
+            ]
+     right: [
+              %{
+                line: 58,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n11,
+                 0},
+                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
+              },
+              %{
+                line: 59,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n12,
+                 1},
+                what: "a call of insert/1 on a module held in a variable"
+              },
+              %{
+                line: 83,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n22,
+                 1},
+                what: "a capture of the write AnchorFixtures.NonTransactionalTest.Repo.insert/1"
+              },
+              %{
+                line: 84,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n23,
+                 1},
+                what: "a capture on a computed module or name"
+              },
+              %{
+                line: 76,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n27,
+                 1},
+                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
+              },
+              %{
+                line: 70,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n31,
+                 1},
+                what: "a capture of the write AnchorFixtures.NonTransactionalTest.Repo.query!/1"
+              },
+              %{
+                line: 72,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n33,
+                 1},
+                what: "a capture of the write Ecto.Adapters.SQL.query!/1"
+              },
+              %{
+                line: 73,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n34,
+                 2},
+                what: "a capture on a computed module or name"
+              }
+            ]
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:187: (test)
+
+...................
+```
+
+## WSO-COMPCAPTURE
+
+a capture of raw SQL on a computed module is not reported (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `21 tests, 1 failure`.
+
+```
+
+  1) test unattributed: raw SQL and a write on a computed module, outside a transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:184
+     match (=) failed
+     code:  assert [
+              %{mfa: {@n, :n11, 0}, what: raw, line: line},
+              %{mfa: {@n, :n12, 1}, what: computed},
+              %{mfa: {@n, :n22, 1}, what: captured},
+              %{mfa: {@n, :n23, 1}, what: computed_capture},
+              %{mfa: {@n, :n27, 1}},
+              %{mfa: {@n, :n31, 1}, what: raw_capture},
+              %{mfa: {@n, :n32, 1}, what: computed_raw},
+              %{mfa: {@n, :n33, 1}},
+              %{mfa: {@n, :n34, 2}, what: "a capture on a computed module or name"}
+            ] = a.unattributed
+     left:  [
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n11, 0}, what: raw, line: line},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n12, 1}, what: computed},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n22, 1}, what: captured},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n23, 1}, what: computed_capture},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n27, 1}},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n31, 1}, what: raw_capture},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n32, 1}, what: computed_raw},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n33, 1}},
+              %{
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n34, 2},
+                what: "a capture on a computed module or name"
+              }
+            ]
+     right: [
+              %{
+                line: 58,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n11,
+                 0},
+                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
+              },
+              %{
+                line: 59,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n12,
+                 1},
+                what: "a call of insert/1 on a module held in a variable"
+              },
+              %{
+                line: 83,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n22,
+                 1},
+                what: "a capture of the write AnchorFixtures.NonTransactionalTest.Repo.insert/1"
+              },
+              %{
+                line: 84,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n23,
+                 1},
+                what: "a capture on a computed module or name"
+              },
+              %{
+                line: 76,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n27,
+                 1},
+                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
+              },
+              %{
+                line: 70,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n31,
+                 1},
+                what: "a capture of the write AnchorFixtures.NonTransactionalTest.Repo.query!/1"
+              },
+              %{
+                line: 71,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n32,
+                 1},
+                what: "a call of query!/1 on a module held in a variable"
+              },
+              %{
+                line: 72,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n33,
+                 1},
+                what: "a capture of the write Ecto.Adapters.SQL.query!/1"
+              }
+            ]
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:187: (test)
+
+....
+```
+
+## WSO-APPLYTX
+
+an apply of a transaction is no gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `67 tests, 1 failure`.
+
+```
+
+  1) test build/3 an apply of a transaction or a Multi step opens nothing Anchor reads: a gap (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:683
+     match (=) failed
+     code:  assert %Scope{complete?: false} = one(a, :s78)
+     left:  %Anchor.Domain.Aggregates.Scope{complete?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s78, 1},
+              ordinal: 1,
+              line: 283,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              complete?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:687: (test)
+
+............................................
+```
+
+## WSO-APPLYMULTI
+
+an apply of a Multi step is no gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `67 tests, 1 failure`.
+
+```
+
+  1) test build/3 an apply of a transaction or a Multi step opens nothing Anchor reads: a gap (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:683
+     match (=) failed
+     code:  assert %Scope{complete?: false} = one(a, :s79)
+     left:  %Anchor.Domain.Aggregates.Scope{complete?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s79, 1},
+              ordinal: 1,
+              line: 288,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              complete?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:688: (test)
+
+.................................
+```
