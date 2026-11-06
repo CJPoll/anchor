@@ -7466,3 +7466,156 @@ a function given to a repo call reads as a gap (`lib/anchor/domain/aggregates/wr
 
 .......................
 ```
+
+# Sixteenth run: a computed call marks what it may reach
+
+5 mutations for critic round 18's finding, each red on its first run.
+
+| # | Mutation | Tests run | Result |
+|---|---|---|---|
+| WSR-CALL | a call on a computed module leaves the callers known (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_source_test.exs` | `26 tests, 1 failure` (red) |
+| WSR-CAPTURE | a capture on a computed module leaves the callers known (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_source_test.exs` | `26 tests, 1 failure` (red) |
+| WSR-APPLYN | an apply with a known count leaves the callers known (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_source_test.exs` | `26 tests, 1 failure` (red) |
+| WSR-APPLYANY | an apply with a computed list leaves the callers known (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_source_test.exs` | `26 tests, 1 failure` (red) |
+| WSR-ARITY | a computed call reaches every arity of the name (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_source_test.exs` | `26 tests, 1 failure` (red) |
+
+## WSR-CALL
+
+a call on a computed module leaves the callers known (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `26 tests, 1 failure`.
+
+```
+
+  1) test resolve/3 (through WriteSites.find/2) a parameter of a function a computed call may reach has callers Anchor cannot see (Anchor.Domain.Aggregates.WriteSourceTest)
+     test/anchor/domain/aggregates/write_source_test.exs:244
+     match (=) failed
+     code:  assert %{sources: [], unresolved: seen} = site(sites, name)
+     left:  %{sources: [], unresolved: seen}
+     right: %Anchor.Domain.Aggregates.WriteSite{
+              mfa: {AnchorFixtures.WriteSourceTest.X, :r40, 1},
+              line: 75,
+              op: :insert,
+              via: :repo,
+              sources: [schema: AnchorFixtures.WriteSourceTest.S],
+              unresolved: nil,
+              scopes: [],
+              run_callback?: false
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_source_test.exs:248: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSourceTest."test resolve/3 (through WriteSites.find/2) a parameter of a function a computed call may reach has callers Anchor cannot see"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_source_test.exs:247: (test)
+
+......
+```
+
+## WSR-CAPTURE
+
+a capture on a computed module leaves the callers known (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `26 tests, 1 failure`.
+
+```
+
+  1) test resolve/3 (through WriteSites.find/2) a parameter of a function a computed call may reach has callers Anchor cannot see (Anchor.Domain.Aggregates.WriteSourceTest)
+     test/anchor/domain/aggregates/write_source_test.exs:244
+     match (=) failed
+     code:  assert %{sources: [], unresolved: seen} = site(sites, name)
+     left:  %{sources: [], unresolved: seen}
+     right: %Anchor.Domain.Aggregates.WriteSite{
+              mfa: {AnchorFixtures.WriteSourceTest.X, :r43, 1},
+              line: 84,
+              op: :insert,
+              via: :repo,
+              sources: [schema: AnchorFixtures.WriteSourceTest.S],
+              unresolved: nil,
+              scopes: [],
+              run_callback?: false
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_source_test.exs:248: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSourceTest."test resolve/3 (through WriteSites.find/2) a parameter of a function a computed call may reach has callers Anchor cannot see"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_source_test.exs:247: (test)
+
+...............
+```
+
+## WSR-APPLYN
+
+an apply with a known count leaves the callers known (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `26 tests, 1 failure`.
+
+```
+
+  1) test resolve/3 (through WriteSites.find/2) a parameter of a function a computed call may reach has callers Anchor cannot see (Anchor.Domain.Aggregates.WriteSourceTest)
+     test/anchor/domain/aggregates/write_source_test.exs:244
+     match (=) failed
+     code:  assert %{sources: [], unresolved: seen} = site(sites, name)
+     left:  %{sources: [], unresolved: seen}
+     right: %Anchor.Domain.Aggregates.WriteSite{
+              mfa: {AnchorFixtures.WriteSourceTest.X, :r41, 1},
+              line: 78,
+              op: :insert,
+              via: :repo,
+              sources: [schema: AnchorFixtures.WriteSourceTest.S],
+              unresolved: nil,
+              scopes: [],
+              run_callback?: false
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_source_test.exs:248: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSourceTest."test resolve/3 (through WriteSites.find/2) a parameter of a function a computed call may reach has callers Anchor cannot see"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_source_test.exs:247: (test)
+
+.................
+```
+
+## WSR-APPLYANY
+
+an apply with a computed list leaves the callers known (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `26 tests, 1 failure`.
+
+```
+
+  1) test resolve/3 (through WriteSites.find/2) a parameter of a function a computed call may reach has callers Anchor cannot see (Anchor.Domain.Aggregates.WriteSourceTest)
+     test/anchor/domain/aggregates/write_source_test.exs:244
+     match (=) failed
+     code:  assert %{sources: [], unresolved: seen} = site(sites, name)
+     left:  %{sources: [], unresolved: seen}
+     right: %Anchor.Domain.Aggregates.WriteSite{
+              mfa: {AnchorFixtures.WriteSourceTest.X, :r42, 1},
+              line: 81,
+              op: :insert,
+              via: :repo,
+              sources: [schema: AnchorFixtures.WriteSourceTest.S],
+              unresolved: nil,
+              scopes: [],
+              run_callback?: false
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_source_test.exs:248: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSourceTest."test resolve/3 (through WriteSites.find/2) a parameter of a function a computed call may reach has callers Anchor cannot see"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_source_test.exs:247: (test)
+
+.
+```
+
+## WSR-ARITY
+
+a computed call reaches every arity of the name (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `26 tests, 1 failure`.
+
+```
+
+  1) test resolve/3 (through WriteSites.find/2) a parameter of a function a computed call may reach has callers Anchor cannot see (Anchor.Domain.Aggregates.WriteSourceTest)
+     test/anchor/domain/aggregates/write_source_test.exs:244
+     match (=) failed
+     code:  assert %{sources: [schema: @t], unresolved: nil} = site(sites, :r44)
+     left:  %{sources: [schema: AnchorFixtures.WriteSourceTest.T], unresolved: nil}
+     right: %Anchor.Domain.Aggregates.WriteSite{
+              mfa: {AnchorFixtures.WriteSourceTest.X, :r44, 1},
+              line: 87,
+              op: :insert,
+              via: :repo,
+              sources: [],
+              unresolved: "parameter 1 of AnchorFixtures.WriteSourceTest.X.r44/1 is passed as a function value or called on a computed module, so its callers are not known",
+              scopes: [],
+              run_callback?: false
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_source_test.exs:252: (test)
+```
