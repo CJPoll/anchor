@@ -109,6 +109,18 @@ defmodule Mix.Tasks.Anchor.Sabotage do
   `--max-cases` or choose files, another tracer on, the map not writable); 3 `COULD
   NOT MEASURE` (zero modules or zero tests, a project module that cannot load, or a
   run that cannot be believed, such as fewer windows than tests: no map written).
+
+  ## coverage-compare (DND-5692)
+
+      mix anchor.sabotage coverage-compare FIRST SECOND
+
+  Judges two maps built at one commit and one seed
+  (`Anchor.Domain.Sabotage.CoverageCompare`). Exit codes: 0 the canonical bytes are
+  identical and neither build leaked; 1 a leak in either build (each build's pairs
+  printed, never compared: a leak list is identical only at empty), a failed suite,
+  or a difference (each differing test, function and ambient function named);
+  2 usage; 3 `COULD NOT MEASURE` (a map absent, unreadable or measuring nothing, or
+  two maps not of one commit, Elixir and OTP: a missing second build is never a pass).
   """
 
   use Mix.Task
@@ -129,6 +141,7 @@ defmodule Mix.Tasks.Anchor.Sabotage do
          mix anchor.sabotage restore
          mix anchor.sabotage replay [--max N|all] [--records DIR_GLOB]...
          MIX_ENV=test mix anchor.sabotage coverage [--out PATH] [--local] [-- TEST_ARGS]
+         mix anchor.sabotage coverage-compare FIRST SECOND
   Fix: use one of these forms; --max takes a positive integer or `all`\
   """
 
@@ -173,6 +186,11 @@ defmodule Mix.Tasks.Anchor.Sabotage do
       {parsed, [], []} -> coverage(parsed, test_args, opts)
       _invalid -> usage()
     end
+  end
+
+  def run(["coverage-compare", first, second], opts) do
+    {code, lines} = Sabotage.coverage_compare(%{first: first, second: second}, opts)
+    emit(code, lines)
   end
 
   def run(_argv, _opts), do: usage()

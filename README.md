@@ -1833,13 +1833,16 @@ The file is map version 2: `tests` (each test that ran, with its functions),
 `CoverageMap.canonical/1` is the part two builds of one commit must share, byte for
 byte, when neither leaked and no process with no owner works across a window's
 close (the cast and the timer above). Those lists need not repeat: which call lands
-past a window is scheduling.
+past a window is scheduling. The repeatability check below still fails on such a
+difference, and the fix is in the test: sync with the server.
 
 It is **CI only by default**: without `CI=true` it refuses, exit 2, and
 traces nothing (`Fix: run it in CI, or pass --local where that load is
 acceptable`). Anchor's own map is built by `.github/workflows/coverage-map.yml`
-(on push to main, weekly, and by hand) and uploaded as the artifact
-`anchor-coverage` (30 days).
+(on a pull request, on push to main, weekly, and by hand) and, except on a pull
+request, uploaded as the artifact `anchor-coverage` (30 days).
+
+`mix anchor.sabotage coverage` exits:
 
 | Condition | Exit |
 |---|---|
@@ -1847,6 +1850,20 @@ acceptable`). Anchor's own map is built by `.github/workflows/coverage-map.yml`
 | the map was written, but a test leaked (each pair named, with a `Fix:` line), or the suite failed (`suite_exit: 1`; `Fix: make the suite green first`) | 1 |
 | not CI and no `--local`; `MIX_ENV` not `test`; `TEST_ARGS` that set `--max-cases` (two tests at once would share their calls) or that choose files (a path, `--failed`, `--stale`, `--partitions`); another tracer already on; the map not writable | 2, with `Fix:` |
 | zero project modules or zero tests (with the suite's own message when it failed before any test; a test file that does not compile is one), a project module that cannot load (named, with nothing traced), fewer windows than ExUnit's `total`, a test that ran with no entry message, a module that never reported finishing, a private ExUnit function that cannot be traced, a `Task.Supervised` spawn in an unknown shape, a seq_trace label from outside this run, or a trace message that cannot be read: no map is written | 3, `COULD NOT MEASURE` |
+
+That workflow builds the map **twice in one job**, at one commit and one `--seed`,
+and judges the two files with `mix anchor.sabotage coverage-compare FIRST SECOND`. It
+is the guard for the rule that a tool or test whose result differs between identical
+runs is wrong. `coverage-compare` exits:
+
+| Condition | Exit |
+|---|---|
+| the canonical bytes are identical, and neither build leaked | 0 |
+| a leak in either build: each build's pairs are printed, with a line saying a leak list is identical only at empty and a `Fix:` line. The lists are never compared | 1 |
+| the suite failed in either build (`Fix: make the suite green first`) | 1 |
+| the canonical bytes differ: each differing (test, function), each test in one build only and each ambient function is named, with a `Fix:` line. The fix goes in the test or the tool, never in an exclusion | 1 |
+| wrong arguments | 2 |
+| a map absent (a missing second build is never a pass), unreadable, of another version or measuring nothing; one file given as both builds; two maps not of one commit, Elixir and OTP; a map with no commit | 3, `COULD NOT MEASURE` |
 
 ## Check Types
 

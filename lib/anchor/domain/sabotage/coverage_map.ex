@@ -132,7 +132,8 @@ defmodule Anchor.Domain.Sabotage.CoverageMap do
   ambient, with no count, stamp, pid, commit or tool version in them. Only meaningful
   when both have no leak and no process with no owner works across a window's close
   (a cast near it, a server's timer): which call lands past a window is scheduling,
-  so those lists can differ.
+  so those lists can differ. `Anchor.Domain.Sabotage.CoverageCompare` holds the
+  comparison (DND-5692): it fails on such a difference, and the fix is in the test.
   """
   @spec canonical(t()) :: binary()
   def canonical(%{version: version, tests: tests, leaks: leaks, ambient: ambient}) do
@@ -147,18 +148,26 @@ defmodule Anchor.Domain.Sabotage.CoverageMap do
   def leak_lines(%{leaks: []}), do: []
 
   def leak_lines(%{leaks: leaks}) do
-    lines =
-      Enum.map(leaks, fn leak ->
-        "anchor.sabotage coverage: leak: #{leak_owner(leak.from)} left a process that called " <>
-          "#{leak.function} after it finished"
-      end)
-
-    lines ++
-      [
-        "Fix: make the process end inside its test (await it, stop it, or start it with " <>
-          "start_supervised). A test that ran on is a defect in the test, never in this list."
-      ]
+    Enum.map(leaks, &("anchor.sabotage coverage: " <> leak_pair(&1))) ++ [leak_fix()]
   end
+
+  @doc "One leak in words, naming its (test or module, function) pair."
+  @spec leak_pair(leak()) :: String.t()
+  def leak_pair(leak) do
+    "leak: #{owner_name(leak.from)} left a process that called #{leak.function} after it finished"
+  end
+
+  @doc "The `Fix:` line every report of a leak ends with."
+  @spec leak_fix() :: String.t()
+  def leak_fix do
+    "Fix: make the process end inside its test (await it, stop it, or start it with " <>
+      "start_supervised). A test that ran on is a defect in the test, never in this list."
+  end
+
+  @doc "A test as `file:line name`, or a module's `setup_all`."
+  @spec owner_name(test_ref() | %{module: String.t()}) :: String.t()
+  def owner_name(%{file: file, line: line, name: name}), do: "#{file}:#{line} #{name}"
+  def owner_name(%{module: module}), do: "setup_all of #{module}"
 
   @doc """
   A map read back from a file: `{:ok, map}` when it is a version-2 map with every
@@ -400,16 +409,13 @@ defmodule Anchor.Domain.Sabotage.CoverageMap do
     |> Enum.map(fn {owner, mfa} ->
       %{from: leak_from(owner, windows, root), function: mfa_string(mfa)}
     end)
-    |> Enum.sort_by(&{leak_owner(&1.from), &1.function})
+    |> Enum.sort_by(&{owner_name(&1.from), &1.function})
   end
 
   defp leak_from({:test, n}, windows, root),
     do: windows |> Map.fetch!(Attribution.open_word(n)) |> Map.fetch!(:ref) |> relative_ref(root)
 
   defp leak_from({:module, module}, _windows, _root), do: %{module: inspect(module)}
-
-  defp leak_owner(%{file: file, line: line, name: name}), do: "#{file}:#{line} #{name}"
-  defp leak_owner(%{module: module}), do: "setup_all of #{module}"
 
   defp ref_order(ref), do: {ref.file, ref.line, ref.name}
   defp relative_ref(ref, root), do: %{ref | file: relative(ref.file, root)}
