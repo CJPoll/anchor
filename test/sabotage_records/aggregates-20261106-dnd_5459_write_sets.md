@@ -4415,3 +4415,266 @@ a value read out of a changeset is its schema (`lib/anchor/domain/aggregates/wri
 
 ......
 ```
+
+# Ninth run: Multi.append's sides, other processes, writes in no scope
+
+8 mutations for critic round 11's findings and two of its notes. WSL-APPENDRIGHT survived its first run (58 tests, 0 failures), and `s66` was added; the row holds the red run.
+
+| # | Mutation | Tests run | Result |
+|---|---|---|---|
+| WSL-APPENDRIGHT | only the left side of an append is read (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `59 tests, 1 failure` (red) |
+| WSL-APPEND | Multi.append of an untraced Multi in a helper is no gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `58 tests, 1 failure` (red) |
+| WSL-TRACEAPPEND | the trace of Multi.append drops its right side (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `58 tests, 1 failure` (red) |
+| WSL-PROCESS | a function run in another process reads as inside (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `58 tests, 1 failure` (red) |
+| WSL-SPAWN | spawn reads as inside (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `58 tests, 1 failure` (red) |
+| WSL-OUTSIDEPROCESS | a Task outside a body is a gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs` | `17 tests, 1 failure` (red) |
+| IN-ANYWHERE | a resolved write in no scope is no vertex (`lib/anchor/domain/aggregates/inference.ex`) | `inference_test.exs` | `16 tests, 1 failure` (red) |
+| RL-ONLYINCOMPLETE | an incomplete transaction alone reads as checking nothing (`lib/anchor/domain/graph_rules/aggregate_write_sources.ex`) | `aggregate_write_sources_test.exs` | `13 tests, 1 failure` (red) |
+
+## WSL-APPENDRIGHT
+
+only the left side of an append is read (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `59 tests, 1 failure`.
+
+```
+
+  1) test build/3 a helper appending an untraced Multi to its own new one is a gap (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:589
+     match (=) failed
+     code:  assert %Scope{complete?: false, gaps: [{:dynamic_call, {@builder, :append_to_new, 1}, _}]} = one(a, :s66)
+     left:  %Anchor.Domain.Aggregates.Scope{
+              complete?: false,
+              gaps: [{:dynamic_call, {AnchorFixtures.ScopesTest.Builder, :append_to_new, 1}, _}]
+            }
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s66, 1},
+              ordinal: 1,
+              line: 263,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              complete?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:590: (test)
+
+.........................
+```
+
+## WSL-APPEND
+
+Multi.append of an untraced Multi in a helper is no gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `58 tests, 1 failure`.
+
+```
+
+  1) test build/3 Multi.append of a Multi Anchor cannot trace is a gap, written here or in a helper (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:577
+     match (=) failed
+     code:  assert %Scope{complete?: false, gaps: [{:dynamic_call, {@builder, :add_append, 2}, _}]} = one(a, :s59)
+     left:  %Anchor.Domain.Aggregates.Scope{
+              complete?: false,
+              gaps: [{:dynamic_call, {AnchorFixtures.ScopesTest.Builder, :add_append, 2}, _}]
+            }
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s59, 1},
+              ordinal: 1,
+              line: 241,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              complete?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:582: (test)
+
+.......
+```
+
+## WSL-TRACEAPPEND
+
+the trace of Multi.append drops its right side (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `58 tests, 1 failure`.
+
+```
+
+  1) test build/3 Multi.append and prepend hold both sides' writes (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:570
+     Assertion with == failed
+     code:  assert scope.keys == keys([@s])
+     left:  MapSet.new([])
+     right: MapSet.new([schema: AnchorFixtures.ScopesTest.S])
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:572: (test)
+
+....
+```
+
+## WSL-PROCESS
+
+a function run in another process reads as inside (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `58 tests, 1 failure`.
+
+```
+
+  1) test build/3 a function run in another process is outside the transaction: a gap (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:586
+     match (=) failed
+     code:  assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s63, 0}, _}]} = one(a, :s63)
+     left:  %Anchor.Domain.Aggregates.Scope{
+              complete?: false,
+              gaps: [{:dynamic_call, {AnchorFixtures.ScopesTest.X, :s63, 0}, _}]
+            }
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s63, 0},
+              ordinal: 1,
+              line: 258,
+              kind: :fun,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.ScopesTest.X, :s63, 0},
+                  line: 258,
+                  op: :insert,
+                  via: :repo,
+                  sources: [schema: AnchorFixtures.ScopesTest.S],
+                  unresolved: nil,
+                  scopes: [1],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([schema: AnchorFixtures.ScopesTest.S]),
+              complete?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:587: (test)
+
+...........
+```
+
+## WSL-SPAWN
+
+spawn reads as inside (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `58 tests, 1 failure`.
+
+```
+
+  1) test build/3 a function run in another process is outside the transaction: a gap (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:586
+     match (=) failed
+     code:  assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s64, 0}, _}]} = one(a, :s64)
+     left:  %Anchor.Domain.Aggregates.Scope{
+              complete?: false,
+              gaps: [{:dynamic_call, {AnchorFixtures.ScopesTest.X, :s64, 0}, _}]
+            }
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s64, 0},
+              ordinal: 1,
+              line: 259,
+              kind: :fun,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.ScopesTest.X, :s64, 0},
+                  line: 259,
+                  op: :insert,
+                  via: :repo,
+                  sources: [schema: AnchorFixtures.ScopesTest.S],
+                  unresolved: nil,
+                  scopes: [1],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([schema: AnchorFixtures.ScopesTest.S]),
+              complete?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:588: (test)
+
+....................
+```
+
+## WSL-OUTSIDEPROCESS
+
+a Task outside a body is a gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `17 tests, 1 failure`.
+
+```
+
+  1) test the gaps outside every transaction are counted (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:202
+     Expected false or nil, got true
+     code: refute Enum.any?(gaps, &match?({:dynamic_call, {@n, :n26, 0}, _line}, &1))
+     arguments:
+
+         # 1
+         [
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n24, 1}, 69},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n12, 1}, 59},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n13, 1}, 60},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n11, 0}, 58},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n9, 0}, 87},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n22, 1}, 67},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n23, 1}, 68},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n26, 0}, 64}
+         ]
+
+         # 2
+         #Function<5.119990556/1 in Anchor.Domain.Aggregates.NonTransactionalTest."test the gaps outside every transaction are counted"/1>
+
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:210: (test)
+
+......
+```
+
+## IN-ANYWHERE
+
+a resolved write in no scope is no vertex (`lib/anchor/domain/aggregates/inference.ex`). Result: `16 tests, 1 failure`.
+
+```
+
+  1) test a resolved write in no scope and no nontx entry is still a vertex (Anchor.Domain.Aggregates.InferenceTest)
+     test/anchor/domain/aggregates/inference_test.exs:158
+     Assertion with == failed
+     code:  assert Inference.components(analysis) == [MapSet.new(schema: App.Z)]
+     left:  []
+     right: [MapSet.new([schema: App.Z])]
+     stacktrace:
+       test/anchor/domain/aggregates/inference_test.exs:169: (test)
+
+.
+```
+
+## RL-ONLYINCOMPLETE
+
+an incomplete transaction alone reads as checking nothing (`lib/anchor/domain/graph_rules/aggregate_write_sources.ex`). Result: `13 tests, 1 failure`.
+
+```
+
+  1) test check/2 selected modules holding only an incomplete transaction: no checks-nothing failure (Anchor.Domain.GraphRules.AggregateWriteSourcesTest)
+     test/anchor/domain/graph_rules/aggregate_write_sources_test.exs:143
+     match (=) failed
+     code:  assert [%{line: 30}] = AggregateWriteSources.check(model(analysis), @rule)
+     left:  [%{line: 30}]
+     right: [
+              %Anchor.Domain.Violation{
+                line: nil,
+                trigger: nil,
+                message: "rule (id: \"writes\", aggregate_write_sources) checks nothing: no write found in paths [\"lib/app/**\"]. Fix: correct the selector or aggregates.repos.",
+                filename: ".anchor.yml",
+                kind: :fail_closed,
+                key: nil,
+                rule_id: nil,
+                enforcement: :enforce
+              }
+            ]
+     stacktrace:
+       test/anchor/domain/graph_rules/aggregate_write_sources_test.exs:146: (test)
+
+.......
+```
