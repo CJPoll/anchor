@@ -77,8 +77,9 @@ defmodule Anchor.Domain.GraphReport do
   (DND-5448), it then has `; placement: <f> functions placed, <n> with no @spec
   (ownership unknown), <a> ambiguous owner, <j> with no clause to slice, <c> calls
   of a computed name, reachability <precise|lost at <s> call sites|no roots>, <m>
-  modules not placed (no source)` (generated or possibly generated, or with no
-  source file: directory placement does not place them, DND-5462).
+  modules not placed (generated, or no source)`: the graph's modules directory
+  placement does not place (generated or possibly generated, unclassified, or with
+  no source file, DND-5462).
   """
 
   alias Anchor.Domain.Cfa
@@ -476,7 +477,7 @@ defmodule Anchor.Domain.GraphReport do
       "#{placement.unjoined} with no clause to slice, #{placement.computed_calls} calls of a " <>
       "computed name, reachability " <>
       reachability_note(placement) <>
-      ", #{placement.modules_not_placed} modules not placed (no source)"
+      ", #{placement.modules_not_placed} modules not placed (generated, or no source)"
   end
 
   defp reachability_note(%{reachability: :precise}), do: "precise"

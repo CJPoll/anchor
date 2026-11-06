@@ -51,6 +51,12 @@ defmodule Anchor.Domain.Placement.DirectoriesTest do
       model = directory_model(modules, [], files)
 
       assert Directories.bucket_root(model, "domain", "b") == "lib/b/domain"
+
+      # No module sits at the root itself: it is still their common directory.
+      deeper = %{files | A => "lib/b/domain/y/a.ex"}
+
+      assert Directories.bucket_root(directory_model(modules, [], deeper), "domain", "b") ==
+               "lib/b/domain"
     end
 
     test "one module: its own directory" do

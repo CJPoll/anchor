@@ -1301,7 +1301,7 @@ unrelated places) get no move from rules 2 to 4; rule 1 still names their bucket
 **Every run prints the model's precision**, whenever a rule needed it:
 
 ```text
-; placement: 42 functions placed, 3 with no @spec (ownership unknown), 0 ambiguous owner, 0 with no clause to slice, 1 calls of a computed name, reachability lost at 1 call sites, 0 modules not placed (no source)
+; placement: 42 functions placed, 3 with no @spec (ownership unknown), 0 ambiguous owner, 0 with no clause to slice, 1 calls of a computed name, reachability lost at 1 call sites, 0 modules not placed (generated, or no source)
 ```
 
 A project module a function holds as a value (`children = [M, {N, arg}]`) reaches that
@@ -1412,7 +1412,7 @@ one bucket of one context:
   module (`<dir>.ex`), encapsulates nothing: flatten it.
 
 A generated module, or one with no source file, is not placed, and the precision line
-counts it (`<m> modules not placed (no source)`). A module violation sits at its
+counts it (`<m> modules not placed (generated, or no source)`). A module violation sits at its
 `defmodule` line; a directory's on the first file in it. With no roots the rule fails
 closed.
 

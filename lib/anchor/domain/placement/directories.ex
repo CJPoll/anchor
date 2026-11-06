@@ -91,7 +91,10 @@ defmodule Anchor.Domain.Placement.Directories do
     end
   end
 
-  @doc "How many modules of the graph are not placed: generated, possibly so, or with no source."
+  @doc """
+  How many modules of the graph are not placed: generated or possibly so, unclassified,
+  or with no source file.
+  """
   @spec not_placed(Model.t()) :: non_neg_integer()
   def not_placed(%Model{graph: graph} = model),
     do: Enum.count(Map.keys(graph.modules), &(not placed?(model, &1)))

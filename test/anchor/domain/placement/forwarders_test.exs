@@ -30,7 +30,6 @@ defmodule Anchor.Domain.Placement.ForwardersTest do
     def shadowed(b), do: N.h(b)
     def piped(a), do: a |> Enum.sort() |> N.g()
     def none, do: N.g()
-    def repeated(a, a), do: N.g(a, a)
     def renamed(a) do
       b = a
       N.g(b)
@@ -94,10 +93,6 @@ defmodule Anchor.Domain.Placement.ForwardersTest do
 
     test "two clauses are not a forwarder", %{binary: binary} do
       assert forwarder(binary, {:two, 1}) == :no
-    end
-
-    test "a repeated parameter is not a forwarder", %{binary: binary} do
-      assert forwarder(binary, {:repeated, 2}) == :no
     end
 
     test "a call into the same module is not this rule's (no_forwarding_function)", %{

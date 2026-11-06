@@ -1449,6 +1449,583 @@ First failure, verbatim:
 
 DIR-F first form put `Application.get_env/3` in a guard, which does not compile; the row is the second form, which proposes the module's own directory.
 
+## Sweep after the DND-5462 critic: every test the generated runs list as lacking a red
+
+The DND-5462 critic found new tests the generated runs list under *Tests still lacking a red* that no hand row above had failed. This sweep breaks the code each one guards. SWP-Q to SWP-T re-see the DND-5448 `render/1` tests, which moved into `placement_test.exs` (the mirror file the generated run selects) from `placement_render_test.exs`; their first reds are in `placement-20261106-dnd_5448_placement_core.md`. The DND-5461 test "a repeated parameter is not a forwarder" was deleted, not swept: no edit to `forwarder/1` makes it accept a repeated parameter without also accepting a guard (HOP-J), because Elixir compiles `f(a, a)` to two variables and an `=:=` guard. SWP-G and SWP-K first forms did not compile (the type checker saw `boundary/3` never answer `:none`, and `common_prefix/2` go unused); the rows are the second forms.
+
+
+Each row ran its own files through `test-slot`, `mix test --timeout 2000 --max-cases 2`: SWP-A to SWP-I `test/anchor/domain/placement/forwarders_test.exs test/anchor/domain/graph_rules/no_inert_hop_test.exs`; SWP-J to SWP-P `test/anchor/domain/placement/directories_test.exs test/anchor/domain/placement/tie_break_test.exs test/anchor/domain/graph_rules/directory_placement_test.exs`; SWP-Q to SWP-T `test/anchor/domain/placement_test.exs`.
+
+| # | Mutation | File | Result | Failing tests |
+|---|---|---|---|---|
+| SWP-A | a forwarder reads as none (the positive forwarder tests) | `lib/anchor/domain/placement/forwarders.ex` | `32 tests, 9 failures` (red) | a forwarder no call names is still inert: dynamic callers only; legal forwarders are not reported: bucket, interface and dependency crossings; a generated module's forwarder is not judged; an inert forwarder is one violation naming both callers; its Fix is the render; a function with a default argument is no forwarder; forwarder/1 a zero-arity forwarder; forwarder/1 defdelegate reads the same; forwarder/1 a plain forwarder; forwarder/1 a let that only renames a variable is peeled |
+| SWP-B | literal arguments are dropped before the comparison | `lib/anchor/domain/placement/forwarders.ex` | `32 tests, 1 failure` (red) | forwarder/1 an extra literal argument is not a forwarder |
+| SWP-C | the last clause is read | `lib/anchor/domain/placement/forwarders.ex` | `32 tests, 2 failures` (red) | forwarder/1 two clauses are not a forwarder; forwarder/1 a forwarding first clause with a second clause is not a forwarder |
+| SWP-D | a local apply reads as a forwarder | `lib/anchor/domain/placement/forwarders.ex` | `32 tests, 1 failure` (red) | forwarder/1 a call into the same module is not this rule's (no_forwarding_function) |
+| SWP-E | any let is peeled as a rename of the first parameter | `lib/anchor/domain/placement/forwarders.ex` | `32 tests, 1 failure` (red) | forwarder/1 a transforming pipe is not a forwarder |
+| SWP-F | a function with no Core forwards | `lib/anchor/domain/placement/forwarders.ex` | `32 tests, 1 failure` (red) | forwarder/1 a function with no Core is not a forwarder |
+| SWP-G | a hop that crosses nothing reads as a bucket crossing | `lib/anchor/domain/placement/forwarders.ex` | `32 tests, 10 failures` (red) | an inert forwarder is one violation naming both callers; its Fix is the render; a generated module's forwarder is not judged; a function with a default argument is no forwarder; a forwarder no call names is still inert: dynamic callers only; legal forwarders are not reported: bucket, interface and dependency crossings; boundary/3 an external behaviour's callback the inference was given; boundary/3 no aggregates declared: the aggregate test is not judged; boundary/3 different aggregates, when declared; boundary/3 an interface forwarding to a module that is not one; boundary/3 same bucket, context and app, no interface and no callback: none |
+| SWP-H | a module in no aggregate counts as its own | `lib/anchor/domain/placement/forwarders.ex` | `32 tests, 11 failures` (red) | an inert forwarder is one violation naming both callers; its Fix is the render; legal forwarders are not reported: bucket, interface and dependency crossings; a forwarder no call names is still inert: dynamic callers only; a generated module's forwarder is not judged; a function with a default argument is no forwarder; boundary/3 an interface forwarding to a module that is not one; boundary/3 an external behaviour's callback the inference was given; boundary/3 no aggregates declared: the aggregate test is not judged; boundary/3 a project behaviour's callback; boundary/3 different aggregates, when declared; boundary/3 same bucket, context and app, no interface and no callback: none |
+| SWP-I | no_inert_hop's shape text changes | `lib/anchor/domain/graph_rules/no_inert_hop.ex` | `32 tests, 1 failure` (red) | shape/1, needs/0 and narrows?/2 |
+| SWP-J | only the first root module seeds the dominators | `lib/anchor/domain/placement/directories.ex` | `28 tests, 5 failures` (red) | a shared module's message says it had no tie-break evidence; a library-context proposal names the contexts; proposals/3 a module shared across contexts goes to a library context naming them; module_dominators/1 two root modules calling one module make the virtual root its dominator; proposals/3 a shared module within one context goes to the bucket root, with no tie-break |
+| SWP-K | the bucket root is the first module's directory | `lib/anchor/domain/placement/directories.ex` | `28 tests, 1 failure` (red) | bucket_root/3 the deepest directory holding every module of the bucket in the context |
+| SWP-L | the bucket root is one level up | `lib/anchor/domain/placement/directories.ex` | `28 tests, 6 failures` (red) | a shared module's message says it had no tie-break evidence; proposals/3 a module shared by callers of one other context is the context rule's question; proposals/3 the bucket root itself is never flattened; proposals/3 a shared module within one context goes to the bucket root, with no tie-break; bucket_root/3 one module: its own directory; bucket_root/3 the deepest directory holding every module of the bucket in the context |
+| SWP-M | no module gives an empty bucket root, not nil | `lib/anchor/domain/placement/directories.ex` | `28 tests, 1 failure` (red) | bucket_root/3 no module of that bucket in that context |
+| SWP-N | the tie-break keeps the last candidate | `lib/anchor/domain/placement/tie_break.ex` | `28 tests, 3 failures` (red) | no evidence keeps the bucket root, and says it had none; a shared module's message says it had no tie-break evidence; proposals/3 a shared module within one context goes to the bucket root, with no tie-break |
+| SWP-O | the tie-break ignores evidence it cannot read | `lib/anchor/domain/placement/tie_break.ex` | `28 tests, 1 failure` (red) | evidence it cannot read yet is refused, never ignored |
+| SWP-P | directory_placement's shape text changes | `lib/anchor/domain/graph_rules/directory_placement.ex` | `28 tests, 1 failure` (red) | shape/1, needs/0 and narrows?/2 |
+| SWP-Q | the output-owner text changes | `lib/anchor/domain/placement.ex` | `58 tests, 1 failure` (red) | render/1 output owner text |
+| SWP-R | the dominated text changes | `lib/anchor/domain/placement.ex` | `58 tests, 1 failure` (red) | render/1 dominated text |
+| SWP-S | the bucket text drops the context | `lib/anchor/domain/placement.ex` | `58 tests, 1 failure` (red) | render/1 bucket text names the context and module when known, and the evidence |
+| SWP-T | an unknown reason gets a default text | `lib/anchor/domain/placement.ex` | `58 tests, 1 failure` (red) | render/1 an unknown reason raises: there is no default text |
+
+### SWP-A: a forwarder reads as none (the positive forwarder tests)
+
+Mutation:
+
+```elixir
+# before
+      {_other, _name, _arity} = mfa -> {:forwards, mfa}
+# after
+      {_other, _name, _arity} -> :no
+```
+
+First failure, verbatim:
+
+```text
+  1) test a forwarder no call names is still inert: dynamic callers only (Anchor.Domain.GraphRules.NoInertHopTest)
+     test/anchor/domain/graph_rules/no_inert_hop_test.exs:133
+     match (=) failed
+     code:  assert [violation] = NoInertHop.check(model, @rule)
+     left:  [violation]
+     right: []
+     stacktrace:
+       test/anchor/domain/graph_rules/no_inert_hop_test.exs:138: (test)
+32 tests, 9 failures
+```
+
+### SWP-B: literal arguments are dropped before the comparison
+
+Mutation:
+
+```elixir
+# before
+    case vars(:cerl.call_args(call)) do
+# after
+    case vars(Enum.filter(:cerl.call_args(call), &(:cerl.type(&1) == :var))) do
+```
+
+First failure, verbatim:
+
+```text
+  1) test forwarder/1 an extra literal argument is not a forwarder (Anchor.Domain.Placement.ForwardersTest)
+     test/anchor/domain/placement/forwarders_test.exs:82
+     Assertion with == failed
+     code:  assert forwarder(binary, {:literal, 1}) == :no
+     left:  {:forwards, {N, :g, 2}}
+     right: :no
+     stacktrace:
+       test/anchor/domain/placement/forwarders_test.exs:83: (test)
+....
+32 tests, 1 failure
+```
+
+### SWP-C: the last clause is read
+
+Mutation:
+
+```elixir
+# before
+         [clause] <- Enum.reject(:cerl.case_clauses(body), &compiler_generated?/1),
+# after
+         clause when clause != nil <- List.last(Enum.reject(:cerl.case_clauses(body), &compiler_generated?/1)),
+```
+
+First failure, verbatim:
+
+```text
+  1) test forwarder/1 two clauses are not a forwarder (Anchor.Domain.Placement.ForwardersTest)
+     test/anchor/domain/placement/forwarders_test.exs:94
+     Assertion with == failed
+     code:  assert forwarder(binary, {:two, 1}) == :no
+     left:  {:forwards, {N, :g, 1}}
+     right: :no
+     stacktrace:
+       test/anchor/domain/placement/forwarders_test.exs:95: (test)
+......
+32 tests, 2 failures
+```
+
+### SWP-D: a local apply reads as a forwarder
+
+Mutation:
+
+```elixir
+# before
+      :call -> forwarding_call(body, params, renames)
+# after
+      :call -> forwarding_call(body, params, renames)
+      :apply -> {:sabotaged, :f, 1}
+```
+
+First failure, verbatim:
+
+```text
+  1) test forwarder/1 a call into the same module is not this rule's (no_forwarding_function) (Anchor.Domain.Placement.ForwardersTest)
+     test/anchor/domain/placement/forwarders_test.exs:98
+     Assertion with == failed
+     code:  assert forwarder(binary, {:local, 1}) == :no
+     left:  {:forwards, {:sabotaged, :f, 1}}
+     right: :no
+     stacktrace:
+       test/anchor/domain/placement/forwarders_test.exs:101: (test)
+......
+32 tests, 1 failure
+```
+
+### SWP-E: any let is peeled as a rename of the first parameter
+
+Mutation:
+
+```elixir
+# before
+         [name] <- vars(case_values(:cerl.let_arg(body))) do
+# after
+         [name] <- vars(case_values(:cerl.let_arg(body))) || [hd(params)] do
+```
+
+First failure, verbatim:
+
+```text
+  1) test forwarder/1 a transforming pipe is not a forwarder (Anchor.Domain.Placement.ForwardersTest)
+     test/anchor/domain/placement/forwarders_test.exs:112
+     Assertion with == failed
+     code:  assert forwarder(binary, {:piped, 1}) == :no
+     left:  {:forwards, {N, :g, 1}}
+     right: :no
+     stacktrace:
+       test/anchor/domain/placement/forwarders_test.exs:113: (test)
+..................
+32 tests, 1 failure
+```
+
+### SWP-F: a function with no Core forwards
+
+Mutation:
+
+```elixir
+# before
+  def forwarder(%FunctionNode{core: nil}), do: :no
+# after
+  def forwarder(%FunctionNode{core: nil}), do: {:forwards, {nil, nil, 0}}
+```
+
+First failure, verbatim:
+
+```text
+  1) test forwarder/1 a function with no Core is not a forwarder (Anchor.Domain.Placement.ForwardersTest)
+     test/anchor/domain/placement/forwarders_test.exs:116
+     Assertion with == failed
+     code:  assert Forwarders.forwarder(node) == :no
+     left:  {:forwards, {nil, nil, 0}}
+     right: :no
+     stacktrace:
+       test/anchor/domain/placement/forwarders_test.exs:118: (test)
+.....
+32 tests, 1 failure
+```
+
+### SWP-G: a hop that crosses nothing reads as a bucket crossing
+
+Mutation:
+
+```elixir
+# before
+      true ->
+        :none
+# after
+      true ->
+        Application.get_env(:anchor, :sabotage_never_set, {:crosses, :bucket})
+```
+
+First failure, verbatim:
+
+```text
+  1) test an inert forwarder is one violation naming both callers; its Fix is the render (Anchor.Domain.GraphRules.NoInertHopTest)
+     test/anchor/domain/graph_rules/no_inert_hop_test.exs:89
+     match (=) failed
+     code:  assert [violation] = NoInertHop.check(model, @rule)
+     left:  [violation]
+     right: []
+     stacktrace:
+       test/anchor/domain/graph_rules/no_inert_hop_test.exs:94: (test)
+32 tests, 10 failures
+```
+
+### SWP-H: a module in no aggregate counts as its own
+
+Mutation:
+
+```elixir
+# before
+    Enum.sort(Enum.uniq(schemas ++ Map.get(index.owners, module, [])))
+# after
+    Enum.sort(Enum.uniq(schemas ++ Map.get(index.owners, module, [module])))
+```
+
+First failure, verbatim:
+
+```text
+  1) test an inert forwarder is one violation naming both callers; its Fix is the render (Anchor.Domain.GraphRules.NoInertHopTest)
+     test/anchor/domain/graph_rules/no_inert_hop_test.exs:89
+     match (=) failed
+     code:  assert [violation] = NoInertHop.check(model, @rule)
+     left:  [violation]
+     right: []
+     stacktrace:
+       test/anchor/domain/graph_rules/no_inert_hop_test.exs:94: (test)
+..
+32 tests, 11 failures
+```
+
+### SWP-I: no_inert_hop's shape text changes
+
+Mutation:
+
+```elixir
+# before
+    "a function that only forwards to another module crosses
+# after
+    "a function that forwards to another module crosses
+```
+
+First failure, verbatim:
+
+```text
+  1) test shape/1, needs/0 and narrows?/2 (Anchor.Domain.GraphRules.NoInertHopTest)
+     test/anchor/domain/graph_rules/no_inert_hop_test.exs:184
+     Assertion with =~ failed
+     code:  assert NoInertHop.shape(@rule) =~ "only forwards to another module"
+     left:  "a function that forwards to another module crosses a bucket, context, app, aggregate, interface or callback boundary; otherwise its callers call the target"
+     right: "only forwards to another module"
+     stacktrace:
+       test/anchor/domain/graph_rules/no_inert_hop_test.exs:185: (test)
+............................
+32 tests, 1 failure
+```
+
+### SWP-J: only the first root module seeds the dominators
+
+Mutation:
+
+```elixir
+# before
+      else: GraphAlgorithms.dominators(Digraph.new(nodes, edges), root_modules).idom
+# after
+      else: GraphAlgorithms.dominators(Digraph.new(nodes, edges), Enum.take(root_modules, 1)).idom
+```
+
+First failure, verbatim:
+
+```text
+  1) test a shared module's message says it had no tie-break evidence (Anchor.Domain.GraphRules.DirectoryPlacementTest)
+     test/anchor/domain/graph_rules/directory_placement_test.exs:62
+     match (=) failed
+     code:  assert [violation] = DirectoryPlacement.check(model, @rule)
+     left:  [violation]
+     right: []
+     stacktrace:
+       test/anchor/domain/graph_rules/directory_placement_test.exs:79: (test)
+..
+28 tests, 5 failures
+```
+
+### SWP-K: the bucket root is the first module's directory
+
+Mutation:
+
+```elixir
+# before
+      [first | rest] -> rest |> Enum.reduce(first, &common_prefix/2) |> Path.join()
+# after
+      [first | rest] -> rest |> Enum.reduce(first, fn parts, acc -> if Application.get_env(:anchor, :sabotage_never_set, false), do: common_prefix(parts, acc), else: acc end) |> Path.join()
+```
+
+First failure, verbatim:
+
+```text
+  1) test bucket_root/3 the deepest directory holding every module of the bucket in the context (Anchor.Domain.Placement.DirectoriesTest)
+     test/anchor/domain/placement/directories_test.exs:48
+     Assertion with == failed
+     code:  assert Directories.bucket_root(directory_model(modules, [], deeper), "domain", "b") == "lib/b/domain"
+     left:  "lib/b/domain/y"
+     right: "lib/b/domain"
+     stacktrace:
+       test/anchor/domain/placement/directories_test.exs:58: (test)
+..........
+28 tests, 1 failure
+```
+
+### SWP-L: the bucket root is one level up
+
+Mutation:
+
+```elixir
+# before
+      [first | rest] -> rest |> Enum.reduce(first, &common_prefix/2) |> Path.join()
+# after
+      [first | rest] -> rest |> Enum.reduce(first, &common_prefix/2) |> Path.join() |> Path.dirname()
+```
+
+First failure, verbatim:
+
+```text
+  1) test a shared module's message says it had no tie-break evidence (Anchor.Domain.GraphRules.DirectoryPlacementTest)
+     test/anchor/domain/graph_rules/directory_placement_test.exs:62
+     match (=) failed
+     code:  assert [violation] = DirectoryPlacement.check(model, @rule)
+     left:  [violation]
+     right: [
+              %Anchor.Domain.Violation{
+                line: 3,
+                trigger: "K",
+                message: "K is shared: no one module reaches it. Fix: move K to lib/b (reached from 2 unrelated callers: shared, not a private helper); no tie-break evidence",
+                filename: "lib/b/domain/x/k.ex",
+                kind: :rule,
+                key: "dirs|directory|K|lib/b",
+                rule_id: "dirs",
+                enforcement: :enforce
+              },
+              %Anchor.Domain.Violation{
+                line: 3,
+                trigger: "lib/b/web",
+                message: "lib/b/web encapsulates nothing: no module in it is reached only through it. Fix: flatten lib/b/web into lib/b (no module in it is reached only through it)",
+                filename: "lib/b/web/w1.ex",
+                kind: :rule,
+                key: "dirs|directory|lib/b/web|lib/b",
+                rule_id: "dirs",
+                enforcement: :enforce
+              }
+            ]
+     stacktrace:
+       test/anchor/domain/graph_rules/directory_placement_test.exs:79: (test)
+.......
+28 tests, 6 failures
+```
+
+### SWP-M: no module gives an empty bucket root, not nil
+
+Mutation:
+
+```elixir
+# before
+      [] -> nil
+      [first | rest]
+# after
+      [] -> ""
+      [first | rest]
+```
+
+First failure, verbatim:
+
+```text
+  1) test bucket_root/3 no module of that bucket in that context (Anchor.Domain.Placement.DirectoriesTest)
+     test/anchor/domain/placement/directories_test.exs:67
+     Assertion with == failed
+     code:  assert Directories.bucket_root(model, "domain", "c") == nil
+     left:  ""
+     right: nil
+     stacktrace:
+       test/anchor/domain/placement/directories_test.exs:69: (test)
+...............
+28 tests, 1 failure
+```
+
+### SWP-N: the tie-break keeps the last candidate
+
+Mutation:
+
+```elixir
+# before
+  def choose([root | _others], nil), do: {:none, root}
+# after
+  def choose(candidates, nil), do: {:none, List.last(candidates)}
+```
+
+First failure, verbatim:
+
+```text
+  1) test no evidence keeps the bucket root, and says it had none (Anchor.Domain.Placement.TieBreakTest)
+     test/anchor/domain/placement/tie_break_test.exs:9
+     Assertion with == failed
+     code:  assert TieBreak.choose(["lib/b/domain", "lib/b/domain/d1", "lib/b/domain/d2"], nil) ==
+              {:none, "lib/b/domain"}
+     left:  {:none, "lib/b/domain/d2"}
+     right: {:none, "lib/b/domain"}
+     stacktrace:
+       test/anchor/domain/placement/tie_break_test.exs:10: (test)
+28 tests, 3 failures
+```
+
+### SWP-O: the tie-break ignores evidence it cannot read
+
+Mutation:
+
+```elixir
+# before
+  def choose([root | _others], nil), do: {:none, root}
+# after
+  def choose([root | _others], _evidence), do: {:none, root}
+```
+
+First failure, verbatim:
+
+```text
+  1) test evidence it cannot read yet is refused, never ignored (Anchor.Domain.Placement.TieBreakTest)
+     test/anchor/domain/placement/tie_break_test.exs:14
+     Expected exception FunctionClauseError but nothing was raised
+     code: assert_raise FunctionClauseError, fn ->
+     stacktrace:
+       test/anchor/domain/placement/tie_break_test.exs:15: (test)
+...........................
+28 tests, 1 failure
+```
+
+### SWP-P: directory_placement's shape text changes
+
+Mutation:
+
+```elixir
+# before
+    "a directory is a dominator subtree within one bucket of one context, under its "
+# after
+    "a directory is a subtree within one bucket of one context, under its "
+```
+
+First failure, verbatim:
+
+```text
+  1) test shape/1, needs/0 and narrows?/2 (Anchor.Domain.GraphRules.DirectoryPlacementTest)
+     test/anchor/domain/graph_rules/directory_placement_test.exs:114
+     Assertion with =~ failed
+     code:  assert DirectoryPlacement.shape(@rule) =~ "dominator subtree"
+     left:  "a directory is a subtree within one bucket of one context, under its public module; a module reached from unrelated places sits at its bucket root"
+     right: "dominator subtree"
+     stacktrace:
+       test/anchor/domain/graph_rules/directory_placement_test.exs:115: (test)
+......................
+28 tests, 1 failure
+```
+
+### SWP-Q: the output-owner text changes
+
+Mutation:
+
+```elixir
+# before
+(it returns %#{inspect(owner)}{}; the "
+# after
+(it builds %#{inspect(owner)}{}; the "
+```
+
+First failure, verbatim:
+
+```text
+  1) test render/1 output owner text (Anchor.Domain.PlacementTest)
+     test/anchor/domain/placement_test.exs:563
+     Assertion with == failed
+     code:  assert Placement.render(render_proposal(:output_type_owner, Inv.Line)) ==
+              "move F.line/1 to Inv.Line (it returns %Inv.Line{}; the owner of a type holds its " <>
+                "transitions)"
+     left:  "move F.line/1 to Inv.Line (it builds %Inv.Line{}; the owner of a type holds its transitions)"
+     right: "move F.line/1 to Inv.Line (it returns %Inv.Line{}; the owner of a type holds its transitions)"
+     stacktrace:
+       test/anchor/domain/placement_test.exs:564: (test)
+.............
+58 tests, 1 failure
+```
+
+### SWP-R: the dominated text changes
+
+Mutation:
+
+```elixir
+# before
+"move #{subject(proposal)} into #{inspect(owner)} as a private function (only "
+# after
+"move #{subject(proposal)} into #{inspect(owner)} (only "
+```
+
+First failure, verbatim:
+
+```text
+  1) test render/1 dominated text (Anchor.Domain.PlacementTest)
+     test/anchor/domain/placement_test.exs:574
+     Assertion with == failed
+     code:  assert Placement.render(render_proposal(:dominated_by, Inv)) ==
+              "move F.line/1 into Inv as a private function (only Inv calls it)"
+     left:  "move F.line/1 into Inv (only Inv calls it)"
+     right: "move F.line/1 into Inv as a private function (only Inv calls it)"
+     stacktrace:
+       test/anchor/domain/placement_test.exs:575: (test)
+.......
+58 tests, 1 failure
+```
+
+### SWP-S: the bucket text drops the context
+
+Mutation:
+
+```elixir
+# before
+"move #{subject(p)} to the #{role} bucket#{of_context(context)}#{named(module)}: "
+# after
+"move #{subject(p)} to the #{role} bucket#{of_context(if(context, do: nil, else: nil))}#{named(module)}: "
+```
+
+First failure, verbatim:
+
+```text
+  1) test render/1 bucket text names the context and module when known, and the evidence (Anchor.Domain.PlacementTest)
+     test/anchor/domain/placement_test.exs:584
+     Assertion with == failed
+     code:  assert Placement.render(
+              render_proposal(:bucket_from_effects, {:bucket, :managers, "App.B", App.B.Inv}, ["a -> b"])
+            ) == "move F.line/1 to the managers bucket of App.B (App.B.Inv): a -> b"
+     left:  "move F.line/1 to the managers bucket (App.B.Inv): a -> b"
+     right: "move F.line/1 to the managers bucket of App.B (App.B.Inv): a -> b"
+     stacktrace:
+       test/anchor/domain/placement_test.exs:585: (test)
+.........
+58 tests, 1 failure
+```
+
+### SWP-T: an unknown reason gets a default text
+
+Mutation:
+
+```elixir
+# before
+  def render(%Proposal{reason: :inert_hop,
+# after
+  def render(%Proposal{reason: reason} = p) when reason not in [:bucket_from_effects, :output_type_owner, :input_type_owner, :dominated_by, :unreachable, :dominator_subtree, :shared_module, :inert_directory, :inert_hop], do: subject(p)
+
+  def render(%Proposal{reason: :inert_hop,
+```
+
+First failure, verbatim:
+
+```text
+  1) test render/1 an unknown reason raises: there is no default text (Anchor.Domain.PlacementTest)
+     test/anchor/domain/placement_test.exs:650
+     Expected exception FunctionClauseError but nothing was raised
+     code: assert_raise FunctionClauseError, fn -> Placement.render(render_proposal(:nope, F)) end
+     stacktrace:
+       test/anchor/domain/placement_test.exs:651: (test)
+..............................
+58 tests, 1 failure
+```
+
 ## Run 23:09 UTC
 
 - **Code under test:** `Anchor.Domain.Placement.all_proposals/3`, `Anchor.Domain.Placement.facts_for_ownership/3`, `Anchor.Domain.Placement.headline/2`, `Anchor.Domain.Placement.proposals/3`, `Anchor.Domain.Placement.render/1`, `Anchor.Domain.Placement.Forwarders.aggregates/2`, `Anchor.Domain.Placement.Forwarders.app/2`, `Anchor.Domain.Placement.Forwarders.behaviour_callbacks/3`, `Anchor.Domain.Placement.Forwarders.boundary/3`, `Anchor.Domain.Placement.Forwarders.call_of/3`, `Anchor.Domain.Placement.Forwarders.callback?/2`, `Anchor.Domain.Placement.Forwarders.callers_text/1`, `Anchor.Domain.Placement.Forwarders.case_forward/2`, `Anchor.Domain.Placement.Forwarders.case_values/1`, `Anchor.Domain.Placement.Forwarders.classified_boundary/4`, `Anchor.Domain.Placement.Forwarders.compiler_generated?/1`, `Anchor.Domain.Placement.Forwarders.default_clause?/2`, `Anchor.Domain.Placement.Forwarders.forwarded_call/2`, `Anchor.Domain.Placement.Forwarders.forwarder/1`, `Anchor.Domain.Placement.Forwarders.forwarding_call/3`, `Anchor.Domain.Placement.Forwarders.literal_mfa/1`, `Anchor.Domain.Placement.Forwarders.renaming_let/3`, `Anchor.Domain.Placement.Forwarders.static_caller?/1`, `Anchor.Domain.Placement.Forwarders.true_guard?/1`, `Anchor.Domain.Placement.Forwarders.vars/1`
