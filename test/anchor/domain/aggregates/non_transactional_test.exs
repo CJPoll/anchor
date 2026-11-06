@@ -63,6 +63,12 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
               defp n29b, do: Repo.insert(%S{})
 
               def n30(fun), do: Repo.transaction(fun)
+              def n44, do: Repo.query!("DELETE FROM s")
+              def n44_in, do: Repo.transaction(fn -> n44() end)
+              def n44_computed(mod), do: mod.n44()
+              def n45, do: Repo.query!("DELETE FROM s")
+              def n45_in, do: Repo.transaction(fn -> n45() end)
+              def n45_computed(mod), do: apply(mod, :n45, [])
               def n35(mod, fun), do: mod.transaction(fun)
               def n36(args), do: apply(Repo, :insert, args)
               def n37(mod, name, args), do: apply(mod, name, args)
@@ -137,6 +143,11 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
     assert nontx(a, :n3f).keys == MapSet.new()
   end
 
+  test "a function a computed call may reach is never always in a transaction", %{analysis: a} do
+    refute MapSet.member?(a.always_in_transaction, {@n, :n44, 0})
+    refute MapSet.member?(a.always_in_transaction, {@n, :n45, 0})
+  end
+
   test "an unread transaction is no gap outside a transaction", %{analysis: a} do
     assert %{complete?: true} = nontx(a, :n30, 1)
   end
@@ -207,7 +218,9 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
              %{mfa: {@n, :n36, 1}, what: unread_apply},
              %{mfa: {@n, :n37, 3}},
              %{mfa: {@n, :n38, 2}},
-             %{mfa: {@n, :n39, 2}}
+             %{mfa: {@n, :n39, 2}},
+             %{mfa: {@n, :n44, 0}},
+             %{mfa: {@n, :n45, 0}}
            ] = a.unattributed
 
     assert computed_transaction == "a call of transaction/1 on a module held in a variable"

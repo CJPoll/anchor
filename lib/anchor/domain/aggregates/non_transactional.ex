@@ -26,11 +26,13 @@ defmodule Anchor.Domain.Aggregates.NonTransactional do
   `roots` (the public functions of the framework bucket, when the run has an
   `architecture:` section); with `roots` `nil`, every public function with no
   project caller is one. A function used as a value outside a transaction
-  body is called by code Anchor cannot see, so it is never in the set.
+  body, or one a call on a computed module may reach, is called by code Anchor
+  cannot see, so it is never in the set.
   """
 
   alias Anchor.Domain.Aggregates.Scopes
   alias Anchor.Domain.Aggregates.WriteSite
+  alias Anchor.Domain.Aggregates.WriteSites
 
   @type entry :: %{
           keys: MapSet.t(),
@@ -86,10 +88,13 @@ defmodule Anchor.Domain.Aggregates.NonTransactional do
       |> Enum.group_by(&elem(&1, 0), &Tuple.delete_at(&1, 0))
       |> with_run_callbacks(run_callbacks, functions)
 
+    unseen_callers = WriteSites.reached_by_name(functions)
+
     candidates =
       for {mfa, function} <- functions,
           Map.has_key?(by_callee, mfa),
           not root?(mfa, function, roots, by_callee),
+          not MapSet.member?(unseen_callers, mfa),
           into: MapSet.new(),
           do: mfa
 

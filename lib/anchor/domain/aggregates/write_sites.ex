@@ -1132,16 +1132,19 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
           into: MapSet.new(),
           do: to
 
+    run_callbacks |> MapSet.union(captures) |> MapSet.union(reached_by_name(facts))
+  end
+
+  @doc "The functions a call on a computed module may reach, by name and arity."
+  @spec reached_by_name(%{mfa() => function_facts()}) :: MapSet.t(mfa())
+  def reached_by_name(facts) do
     computed =
       for {_from, %{computed: computed}} <- facts, pair <- computed, into: MapSet.new(), do: pair
 
-    reachable =
-      for {{_module, name, arity} = mfa, _function} <- facts,
-          MapSet.member?(computed, {name, arity}) or MapSet.member?(computed, {name, :any}),
-          into: MapSet.new(),
-          do: mfa
-
-    run_callbacks |> MapSet.union(captures) |> MapSet.union(reachable)
+    for {{_module, name, arity} = mfa, _function} <- facts,
+        MapSet.member?(computed, {name, arity}) or MapSet.member?(computed, {name, :any}),
+        into: MapSet.new(),
+        do: mfa
   end
 
   defp transact_repos(graph, repos) do
