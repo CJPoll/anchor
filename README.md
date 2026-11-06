@@ -20,6 +20,7 @@ Anchor allows you to define rules about module dependencies and usage patterns t
 - **Maximum File Length**: Enforce maximum file length limits to encourage better code organization
 - **No Comparison in If**: Enforce descriptive function names instead of direct comparisons in if statements
 - **Struct Getter Convention**: Ensure getter functions follow a consistent naming pattern matching the fields they extract
+- **Ask before you write**: `mix anchor.explain <path|Module>` prints a module's bucket, context, what it may call and the rules that select it, for a file that does not exist yet too
 - **Flexible Configuration**: YAML-based rules with support for umbrella applications
 
 ## Installation
@@ -422,6 +423,7 @@ semantics and edge cases.
 | `allowed_functions` | `module_pattern_restrictions` | Function-name allow-list (globs). |
 | `owned_namespaces` | `struct_owned_by_module`, `struct_owned_by_module_flow` | Exact module names, default: every struct. Limits the check to structs equal to or nested under an entry, and reports a selected top-level module outside them. `[]`, a glob, an Erlang module or a malformed name fails the load. See [`struct_owned_by_module`](#struct_owned_by_module). |
 | `pure_patterns` | `no_discarded_pure_expression` | Module-name globs, default `[]`: modules whose functions are pure, beside the stdlib pure set. A non-list, a blank entry or a match-all glob (`*`, `**`) fails the load. See [`no_discarded_pure_expression`](#no_discarded_pure_expression). |
+| `max_width` | `interface` | Positive integer, optional (DND-5443): a context whose interface exports more public functions is a violation; absent, the width is only printed. `0` or a non-integer fails the load. See [`interface`](#the-interface-rule-dnd-5443). |
 | `mode`, `max_lines` | `alphabetized_functions`, `max_file_length` | Style-check parameters. `mode` is `all`, `public_only` or `separate` (a leading colon is accepted); any other token fails the load. |
 
 #### Keys each rule type accepts
@@ -441,8 +443,8 @@ The Engine column is the one engine that runs the type: `ast` rules run as
 Credo checks over source, `graph` rules run under `mix anchor.graph` over the
 compiled code (DND-5440; `layering`, DND-5442, `context_acyclic`, DND-5445,
 `aggregate_declarations`, DND-5476, `effects_match_bucket`, DND-5447,
-`struct_owned_by_module_flow`, DND-5454, and `analyses_complete`, DND-5715).
-Credo never reports a
+`struct_owned_by_module_flow`, DND-5454, `analyses_complete`, DND-5715, and
+`interface`, DND-5443). Credo never reports a
 `graph` rule as unchecked.
 
 | Rule type | Keys beyond the common ones | Relation (needs one, non-empty) | Engine |
@@ -453,6 +455,7 @@ Credo never reports a
 | `case_on_bare_arg` | none | none | `ast` |
 | `context_acyclic` | none | none | `graph` |
 | `effects_match_bucket` | none | none | `graph` |
+| `interface` | `max_width` | none | `graph` |
 | `layering` | none | none | `graph` |
 | `max_file_length` | `max_lines` | none | `ast` |
 | `module_pattern_restrictions` | `allowed_functions` | none | `ast` |
@@ -614,8 +617,8 @@ and a `bucket` must name one of its buckets; both are refused at load
 otherwise. `uses_module`, `recursive` and `min_files` are `ast` keys and are
 refused on a graph rule. A finding of a rule with `enforcement: report` prints
 `[report]` and does not fail the run. `--format json` prints `{"modules",
-"apps", "rules", "opaque", "no_core", "outside_root", "apply_sites", "dynamic_calls", "effects",
-"demand", "aggregates", "exit_code",
+"apps", "rules", "opaque", "no_core", "outside_root", "apply_sites", "interface_width",
+"dynamic_calls", "effects", "demand", "aggregates", "exit_code",
 "findings":
 [{rule_id, type, enforcement, key, file, line, message, fix}],
 "could_not_check": [...], "refused": [...], "held": [...]}`. `--only RULE_ID` (repeatable) runs only the
@@ -857,6 +860,74 @@ lib/my_app/billing/manager.ex:40: [enforce] rule 1 (id: "context_acyclic", conte
 Anchor's own `.anchor.yml` runs it over `lib/`, with a baseline holding what
 it found when it landed: one cycle through the dynamic calls of
 `Anchor.Managers.Lint` on the check modules, and `Mutator`'s `apply/3`.
+
+### The `interface` rule (DND-5443)
+
+```yaml
+rules:
+  - type: interface
+    id: interface
+    paths: ["lib/**/*.ex"]
+    max_width: 40            # optional
+
+architecture:
+  contexts:
+    depth: 2
+  buckets:
+    - name: managers
+      role: managers
+      select:
+        - paths: ["lib/**/managers/**/*.ex"]
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/**/domain/**/*.ex"]
+  calls:
+    managers: [managers, domain]
+    domain: [domain]
+  interfaces:
+    buckets: [managers]      # a managers module is its context's interface
+    exports: [MyApp.Accounts.Api]
+```
+
+A call from one context into another lands only on that context's interface:
+a module of an `interfaces.buckets` bucket, or one listed in
+`interfaces.exports`. This is Anchor's replacement for Boundary's exports and
+deps: Anchor neither reads nor requires Boundary, and a repo may run both.
+Every module is classified, so no module is left outside a boundary.
+Widening an interface (`exports`, `interfaces.buckets`) removes findings
+rather than adding baseline entries, so GREW does not see it: it is an
+ordinary config change, and review is its gate.
+
+Calls are resolved as `layering` resolves them, apps are not a bypass (a call
+from another app of an umbrella is judged the same), and a call within one
+context is not judged here. Each forbidden (caller function, callee function)
+is one violation keyed `<id>|<Caller.f/a>|-> <Callee.g/b>`; its `Fix:` names
+the one interface module that reaches the callee inside its context, or lists
+the context's interface modules. A module with no context (fewer name segments
+than `contexts.depth`) that calls or is called across contexts is one violation
+keyed `<id>|<Mod>|no context`: its boundary cannot be checked, which is never
+a pass. A call whose function name is computed is one violation too.
+
+The run summary ends with each context's interface width, the public functions
+its interface modules export (functions the compiler generates not counted),
+and `--format json` carries it as `interface_width`. With `max_width: n`, a
+context of a selected module whose width is above `n` is a violation on the
+config, keyed `<id>|<context>|width`.
+
+```
+lib/my_app/billing/invoice.ex:12: [enforce] rule 1 (id: "interface", interface) MyApp.Billing.Invoice.issue/1 (context MyApp.Billing) calls MyApp.Accounts.User.name/1, which is not part of context MyApp.Accounts's interface. Fix: call MyApp.Accounts.Users instead.
+anchor.graph: 40 modules in 1 apps, 1 rules, 1 violations (0 report-only, 0 baselined); interface width: MyApp.Accounts=6, MyApp.Billing=3
+```
+
+Anchor's own `.anchor.yml` runs it over `lib/` with a baseline. Its depth-2
+contexts are its buckets, so `interfaces.buckets` names every bucket but
+framework there, and the baseline holds what it found when it landed: the
+calls of `Anchor.Managers.Lint` into the check modules (DND-1288),
+`GraphRules.by_type/1`'s calls of each check's `rule_type/0`, the top-level
+`Anchor` module (no context at depth 2), `Mutator.generate/4`'s dynamic call,
+and the sabotage task starting `CoverageCollector`. The `.anchor.yml` comment
+on the rule names the same groups.
 
 ### The `effects_match_bucket` rule (DND-5447)
 
@@ -1291,6 +1362,83 @@ Exit 2 is a usage error (an unknown option, `--format` other than `text` or
 `--write-baseline` (the file exists, or the id names no rule with a
 `baseline:`), with a `Fix:` line.
 
+## Ask Anchor before you write: `mix anchor.explain` (DND-5446)
+
+```bash
+mix anchor.explain <path|Module> [--format text|json]
+```
+
+Before you write a module, ask Anchor what it will be held to. Given a module
+name, or a source path (one that exists, or one you are about to create), it
+prints, from `.anchor.yml` and the compiled graph only:
+
+- **classification**: the bucket and its role, the context, the app, whether
+  the module is its context's interface, and its aggregate. A module in no
+  bucket shows every bucket's selectors and the unclassified `Fix:`.
+- **may call**: its bucket's `calls` row, resolved to concrete modules: every
+  module of its own context in each callable bucket, and only the interface
+  modules of other contexts. It also lists the buckets the module must not call.
+- **rules**: every rule of either engine (Credo or graph) that selects it,
+  with its enforcement and its *shape*, the sentence its findings' `Fix:`
+  ends with.
+- **findings**: what the graph rules find on its source file, run over the
+  graph the last `mix anchor.graph` run wrote, used only when that graph's key
+  matches this build. Otherwise it prints `not computed (run mix anchor.graph)`;
+  a stale graph is never used. These are the rules' raw findings: a finding a
+  baseline holds is shown too, and a fail-closed one (a rule that could not run
+  or selects nothing) wherever it sits, while another finding on the config file
+  (an interface width) is not, so `mix anchor.graph` stays the verdict.
+
+A path that does not exist yet is classified by its path and the module name
+Elixir's file naming implies (`lib/my_app/domain/new_thing.ex` is
+`MyApp.Domain.NewThing`). Facts only a beam has (its app, behaviours, `use`s
+and exported functions) are listed under `unknown`. A bucket that only such a
+selector could still match is listed under `possible`, so a definite path
+classification never hides an ambiguity the compiled module would have. If the
+project does not compile, it still answers from the config and the paths and
+says `compile failed; beam facts unknown`. It writes no file of its own (the
+compile it runs writes `_build` as `mix compile` does; the graph artifact is
+`mix anchor.graph`'s) and calls no project module (the compile it runs
+loads them, as `mix compile` does).
+
+```text
+anchor.explain: lib/my_app/orders/manager.ex
+  module: MyApp.Orders.Manager
+  path: lib/my_app/orders/manager.ex (exists)
+classification:
+  status: classified
+  bucket: managers (role managers)
+  context: MyApp.Orders
+  app: my_app
+  interface: yes
+  aggregate: unknown (no aggregates declared)
+may call:
+  managers (any): same context: MyApp.Orders.Manager; other contexts (interface only): MyApp.Billing: MyApp.Billing.Manager
+  domain (any): same context: MyApp.Orders.Order; other contexts (interface only): none
+must not call: framework
+rules:
+  [enforce] layering (id: layering, graph): every call between two project modules is one the architecture: calls matrix allows; a call the matrix forbids goes through a bucket the caller may call
+findings: none
+```
+
+`--format json` prints `{subject, module, path, exists, notes,
+classification, may_call, must_not_call, rules, findings, unknown}` for agents;
+`findings` is `null` when not computed. Exit 0 answered; 2 usage (no subject,
+two subjects, an unknown option, or a subject that is neither a module name nor
+an `.ex` path under the project root); 3 no or invalid config, no
+`architecture:` section, or an umbrella app directory outside the project root.
+
+### One `Fix:` per finding
+
+Every finding of every rule type, Credo or graph, ends with exactly one `Fix:`.
+Each rule type declares its conforming shape (`shape/1`), and a finding whose
+message has no specific `Fix:` gets `Fix: <shape>` appended
+(`Anchor.Domain.RuleShapes`). A graph rule's `Fix:` names the instance: the
+route to call, the edge to invert. A config refusal that already carries a
+specific `Fix:` no longer gets the generic one appended after it.
+`test/anchor/domain/fix_shape_invariant_test.exs` and the graph canary hold this
+for every type.
+
 ## Generated sabotage: the functions a change touched
 
 ```bash
@@ -1664,7 +1812,7 @@ acceptable`). Anchor's own map is built by `.github/workflows/coverage-map.yml`
 | the map was written | 0 |
 | the map was written, but the suite failed (`suite_exit: 1`; `Fix: make the suite green first`) | 1 |
 | not CI and no `--local`; `MIX_ENV` not `test`; `TEST_ARGS` that set `--max-cases` (two tests at once would share their calls); another tracer already on; the map not writable | 2, with `Fix:` |
-| zero project modules or zero tests: no map is written | 3, `COULD NOT MEASURE` |
+| zero project modules or zero tests (with the suite's own message when it failed before any test), or a project module that cannot load (named, with nothing traced): no map is written | 3, `COULD NOT MEASURE` |
 
 ## Check Types
 

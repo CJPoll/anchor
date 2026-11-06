@@ -28,7 +28,10 @@ defmodule Anchor.Domain.Checks.ModulePatternRestrictionsTest do
       assert [%Violation{} = violation] =
                ModulePatternRestrictions.detect_violations(ast, [uses_rule(["changeset"])])
 
-      assert violation.message == "Module defines non-allowed function: custom"
+      assert violation.message ==
+               "Module defines non-allowed function: custom" <>
+                 ". Fix: define only the allowed functions: changeset"
+
       assert violation.trigger == "custom"
       assert violation.line == 3
     end

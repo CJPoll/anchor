@@ -5,6 +5,7 @@ defmodule Anchor.Domain.EnforcementPassesTest do
   # Sabotage record: ../../sabotage_records/lint-20261103-dnd_5648_graph_followups.md
   # Sabotage record (DND-5632): ../../sabotage_records/baseline-20261103-dnd_5648_graph_followups.md
   # Sabotage record (DND-5631, PA-E): ../../sabotage_records/failures-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (one finding, two Fix: texts): ../../sabotage_records/enforcement_passes-20261106-dnd_5443_graph_rules_b.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.EnforcementPasses
@@ -24,6 +25,18 @@ defmodule Anchor.Domain.EnforcementPassesTest do
       assert message ==
                "cannot resolve. (Found under rules in enforcement: enforce and report; " <>
                  "reported once, enforced.) Fix: name it"
+    end
+
+    test "two rules' copies differing only in their Fix: are one finding, the enforced one's" do
+      enforced = [v("cannot resolve. Fix: enforced rule's shape")]
+      reported = [v("cannot resolve. Fix: report rule's shape", %{enforcement: :report})]
+
+      assert [%Violation{enforcement: :enforce, message: message}] =
+               EnforcementPasses.merge(enforced, reported)
+
+      assert message ==
+               "cannot resolve. (Found under rules in enforcement: enforce and report; " <>
+                 "reported once, enforced.) Fix: enforced rule's shape"
     end
 
     test "violations only one pass found are kept, unchanged, enforced first" do

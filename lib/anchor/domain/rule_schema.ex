@@ -163,6 +163,7 @@ defmodule Anchor.Domain.RuleSchema do
   """
 
   alias Anchor.Domain.AllowedCallers
+  alias Anchor.Domain.Failures
   alias Anchor.Domain.FunctionRef
   alias Anchor.Domain.GlobPattern
 
@@ -208,6 +209,9 @@ defmodule Anchor.Domain.RuleSchema do
     # DND-5447: effects_match_bucket reads only the graph common keys (the
     # buckets, effects and roots are the `architecture:` section's).
     effects_match_bucket: [],
+    # DND-5443: interface reads `max_width` (optional, a positive integer: a
+    # context whose interface exports more public functions is a violation).
+    interface: ~w(max_width),
     # DND-5442: the graph engine's layering rule reads only the graph common
     # keys (its matrix is the `architecture:` section's `calls`).
     layering: [],
@@ -239,6 +243,7 @@ defmodule Anchor.Domain.RuleSchema do
     case_on_bare_arg: [],
     context_acyclic: [],
     effects_match_bucket: [],
+    interface: [],
     layering: [],
     max_file_length: [],
     module_pattern_restrictions: [],
@@ -266,6 +271,7 @@ defmodule Anchor.Domain.RuleSchema do
     case_on_bare_arg: :ast,
     context_acyclic: :graph,
     effects_match_bucket: :graph,
+    interface: :graph,
     layering: :graph,
     max_file_length: :ast,
     module_pattern_restrictions: :ast,
@@ -466,6 +472,7 @@ defmodule Anchor.Domain.RuleSchema do
          :ok <- validate_floor(rule),
          :ok <- validate_min_modules(rule),
          :ok <- validate_analyses_floors(rule),
+         :ok <- validate_max_width(rule),
          :ok <- validate_id(rule),
          :ok <- validate_enforcement(rule) do
       validate_baseline(rule)
@@ -564,26 +571,29 @@ defmodule Anchor.Domain.RuleSchema do
     end)
   end
 
+  # DND-5443: an interface rule's `max_width`. Zero would fail every context
+  # with an interface at all; a non-integer would compare as nothing.
+  defp validate_max_width(%{"max_width" => max})
+       when not is_integer(max) or max < 1 do
+    {:error,
+     "`max_width` must be a positive integer (the most public functions a context's " <>
+       "interface may export), got: #{inspect(max)}"}
+  end
+
+  defp validate_max_width(_rule), do: :ok
+
   # DND-5453: `owned_namespaces` names the namespaces whose structs are
   # checked, each one exact Elixir module name (`AllowedCallers`' grammar). A
   # glob would widen with every later module of a matching name, an Erlang
   # module is never a struct, and an empty list would check no struct. Runs
   # after `validate_string_lists/1`, so each entry is a non-blank string here.
-  defp validate_owned_namespaces(%{"owned_namespaces" => []}) do
-    {:error,
-     "`owned_namespaces: []` checks no struct; owned_namespaces lists module names, " <>
-       ~s|e.g. ["MyApp"], or leave it out to check every struct|}
-  end
+  defp validate_owned_namespaces(%{"owned_namespaces" => []}),
+    do: {:error, Failures.owned_namespaces_empty()}
 
   defp validate_owned_namespaces(%{"owned_namespaces" => namespaces}) do
     case Enum.find(namespaces, &match?({:error, _reason}, AllowedCallers.parse(&1))) do
-      nil ->
-        :ok
-
-      entry ->
-        {:error,
-         "`owned_namespaces` entry #{inspect(entry)} is not an exact Elixir module name " <>
-           ~s|(a glob, an Erlang module or a malformed name); owned_namespaces lists module names, e.g. ["MyApp"]|}
+      nil -> :ok
+      entry -> {:error, Failures.owned_namespaces_not_a_module(entry)}
     end
   end
 
@@ -599,10 +609,7 @@ defmodule Anchor.Domain.RuleSchema do
         :ok
 
       entry ->
-        {:error,
-         "`pure_patterns` entry #{inspect(entry)} declares every module pure, so every call " <>
-           "would read as having no effect; name the pure namespaces " <>
-           ~s|(e.g. ["MyApp.*.Domain.*"]), a match-all glob declares every module pure|}
+        {:error, Failures.pure_patterns_match_all(entry)}
     end
   end
 

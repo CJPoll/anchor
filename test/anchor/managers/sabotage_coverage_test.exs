@@ -5,6 +5,7 @@ defmodule Anchor.Managers.SabotageCoverageTest do
   # reports its call to the test process, so the order is asserted.
   # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5474_coverage_map.md
   # Sabotage record (DND-5642): ../../sabotage_records/sabotage-20261103-dnd_5639_sabotage_followups.md
+  # Sabotage record (DND-5690): ../../sabotage_records/sabotage-20261106-dnd_5690_preload.md
   use ExUnit.Case, async: true
 
   import Hammox
@@ -175,6 +176,21 @@ defmodule Anchor.Managers.SabotageCoverageTest do
 
     assert {3, [message]} = Sabotage.coverage(facts(), @opts)
     assert message =~ "COULD NOT MEASURE: tests: 0, modules_traced: 2; no map was written"
+    refute message =~ "The suite failed"
+    refute :write in calls()
+  end
+
+  # DND-5690: test_helper.exs raises before any test when a module of the closure
+  # cannot load. The suite's message is the only place that name is, so a
+  # zero-test exit 3 must carry it.
+  test "a suite that failed before any test: exit 3 carrying the suite's message" do
+    message = "1 module(s) of :anchor's closure failed to load:\n  Dep: :nofile\nFix: repair it"
+    expect_modules()
+    expect_traced({:failed, message}, CoverageMap.new())
+
+    assert {3, [refusal]} = Sabotage.coverage(facts(), @opts)
+    assert refusal =~ "COULD NOT MEASURE: tests: 0, modules_traced: 2; no map was written"
+    assert refusal =~ "The suite failed before any test ran: #{message}"
     refute :write in calls()
   end
 
@@ -198,6 +214,25 @@ defmodule Anchor.Managers.SabotageCoverageTest do
 
     assert {2, [message]} = Sabotage.coverage(facts(), @opts)
     assert message =~ "Fix: run without other tracers"
+  end
+
+  # DND-5690: no expectation on the suite, the collector or the store, so
+  # Hammox fails this if the run goes on past the refusal.
+  test "a project module that cannot load: exit 3 naming it, the suite never runs" do
+    collector = self()
+    expect_modules()
+
+    expect(TracingMock, :start, fn ^collector, _modules ->
+      {:error, {:not_loadable, [A, B]}}
+    end)
+
+    assert {3, [message]} = Sabotage.coverage(facts(), @opts)
+
+    assert message =~
+             "COULD NOT MEASURE: 2 project module(s) could not be loaded, so their calls " <>
+               "cannot be traced: A, B; no map was written."
+
+    assert message =~ "Fix: "
   end
 
   test "a collector that stopped: exit 3, nothing written" do

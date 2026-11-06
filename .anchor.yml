@@ -56,6 +56,7 @@ rules:
       - Anchor.Adapters.GraphArtifact
       - Anchor.Adapters.SourceReader
       - Anchor.Managers.Graph
+      - Anchor.Managers.Explain
       - Anchor.Adapters.SourcePatcher
       - Anchor.Adapters.GitStatus
       - Anchor.Adapters.TestRunner
@@ -129,7 +130,7 @@ rules:
   - type: analyses_complete
     id: analyses_complete
     paths: ["lib/**/*.ex"]
-    min_modules: 201
+    min_modules: 208
     min_functions: 501
     min_apply_sites: 101
     min_absent_parameters: 1
@@ -197,6 +198,22 @@ rules:
     owned_namespaces: ["Anchor"]
     baseline: .anchor/baselines/struct_owned_by_module_flow.txt
 
+  # --- Rule: cross-context calls land on the interface (DND-5443) ---
+  #
+  # A call from one context (depth 2: Anchor.Domain, Anchor.Managers, ...)
+  # into another must land on that context's interface: its managers bucket
+  # (`architecture: interfaces` below: here every bucket but framework), or a
+  # module listed in interfaces.exports. Anchor's replacement for Boundary's
+  # exports. The baseline holds what it found when it landed: Lint's calls
+  # into the Anchor.Check modules (DND-1288), GraphRules.by_type/1's calls of
+  # each check's rule_type/0 (also held in layering.txt), the top-level Anchor
+  # module (no context at depth 2), Mutator.generate/4's dynamic call, and
+  # the sabotage task starting CoverageCollector. It only shrinks.
+  - type: interface
+    id: interface
+    paths: ["lib/**/*.ex"]
+    baseline: .anchor/baselines/interface.txt
+
 # --- Generated sabotage (DND-5473, DND-5484) ---
 #
 # `mix anchor.sabotage run` on Anchor's own tree. Records follow ADR 003:
@@ -255,8 +272,15 @@ architecture:
     adapters: [adapters, domain]
     domain: [domain]
     managers: [managers, adapters, domain]
+  # DND-5443: Anchor's depth-2 contexts are its buckets (Anchor.Domain,
+  # Anchor.Managers, Anchor.Adapters, ...), not business contexts, so a
+  # bucket's modules are its context's interface: a call between two of them
+  # is judged by the calls matrix (layering). The interface rule then catches a
+  # call into Framework from another context (Lint into the Anchor.Check
+  # modules, DND-1288) and a module with no context. The framework bucket is
+  # left out on purpose.
   interfaces:
-    buckets: [managers]
+    buckets: [managers, domain, adapters]
   # The effects Anchor's adapters perform through calls outside the default
   # effect primitives (DND-5447): call tracing, a glob over the file system,
   # running a Mix task (the in-process test suite), and loading a module

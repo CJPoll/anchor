@@ -9,6 +9,8 @@ defmodule Anchor.Domain.GraphReportTest do
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5630_graph_hardening.md
   # DND-5441 (held, refused, verbose):
   #   ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
+  # DND-5443 (interface width):
+  #   ../../sabotage_records/interface-20261103-dnd_5443_graph_rules_b.md
   # Sabotage record (DND-5633): ../../sabotage_records/graph_runner-20261103-dnd_5648_graph_followups.md
   use ExUnit.Case, async: true
 
@@ -196,6 +198,33 @@ defmodule Anchor.Domain.GraphReportTest do
                "bound_hit" => false,
                "by_function" => %{"MyApp.X.run/1" => %{"total" => 3, "resolved" => 2, "any" => 1}}
              }
+    end
+  end
+
+  describe "interface width (DND-5443, R4)" do
+    test "the summary ends with each context's width, sorted; the JSON has interface_width" do
+      report =
+        GraphReport.new([], [], Map.put(@counts, :interface_width, %{"B" => 2, "A" => 5}))
+
+      assert GraphReport.summary(report) ==
+               "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations " <>
+                 "(0 report-only, 0 baselined); interface width: A=5, B=2"
+
+      assert JSON.decode!(GraphReport.render(report, :json))["interface_width"] ==
+               %{"A" => 5, "B" => 2}
+    end
+
+    test "no interface rule ran: nothing is printed, and the JSON is null" do
+      report = GraphReport.new([], [], @counts)
+
+      refute GraphReport.summary(report) =~ "interface width"
+      assert %{"interface_width" => nil} = JSON.decode!(GraphReport.render(report, :json))
+    end
+
+    test "a run with an interface rule and no context says so" do
+      report = GraphReport.new([], [], Map.put(@counts, :interface_width, %{}))
+
+      assert GraphReport.summary(report) =~ "; interface width: no context"
     end
   end
 

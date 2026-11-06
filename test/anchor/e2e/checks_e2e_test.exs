@@ -328,7 +328,11 @@ defmodule Anchor.E2E.ChecksE2ETest do
 
       assert [issue] = issues
       assert issue.trigger == "MyApp.Repo"
-      assert issue.message == "Module has forbidden direct dependency on MyApp.Repo"
+
+      assert issue.message ==
+               "Module has forbidden direct dependency on MyApp.Repo" <>
+                 ". Fix: do not reference MyApp.Repo from a module this rule selects; reach it through a module the rule allows"
+
       assert issue.line_no == 2
     end
 
@@ -432,7 +436,10 @@ defmodule Anchor.E2E.ChecksE2ETest do
 
       assert [issue] = issues
       assert issue.trigger == "MyApp.Schema"
-      assert issue.message == "Module must use MyApp.Schema"
+
+      assert issue.message ==
+               "Module must use MyApp.Schema" <>
+                 ". Fix: use MyApp.Schema in the module's own defmodule body"
     end
 
     test "a selected file that has the required use produces no issues" do

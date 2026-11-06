@@ -363,6 +363,9 @@ defmodule Anchor.Config do
       min_functions: rule["min_functions"],
       enforcement: RuleSchema.parse_enforcement(rule["enforcement"]),
       baseline: rule["baseline"],
+      # DND-5443: an interface rule's widest allowed interface, or nil (the
+      # width is only printed).
+      max_width: rule["max_width"],
       # Gap D (DND-140): surface an ABSENT `paths` as `nil`, not `[]`. An empty
       # list is a valid list, which `RuleMatching`'s path clause would match and
       # then shadow the `pattern`/`uses_module` selectors with `Enum.any?([], …)`.

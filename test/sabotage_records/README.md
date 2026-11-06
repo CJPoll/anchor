@@ -61,6 +61,10 @@ before coining a synonym.
 - `failures` — `Anchor.Domain.Failures`, the text of every fail-closed report
   (missing or invalid config, unparseable file, a check that crashed on a file).
 - `source` — `Anchor.Check.Source`, the AST/source acquisition edge.
+- `test_preload` — `Anchor.TestPreload` and the `test/test_helper.exs` call
+  `Anchor.TestBootTest` holds (DND-5690): the application closure loaded before
+  any test runs. The coverage tool's own refusal of a module that cannot load
+  is `sabotage`'s.
 - `sabotage_scope` — `mix anchor.sabotage scope` (DND-5472): the diff parser
   (`Anchor.Domain.Sabotage.DiffHunks`), the function spans
   (`Anchor.Domain.Sabotage.FunctionSpans`), the mapping and its counts
@@ -252,6 +256,20 @@ before coining a synonym.
 - `context_acyclic` — the `context_acyclic` graph rule (DND-5445):
   `Anchor.Domain.ContextGraph`, `GraphRules.ContextAcyclic`,
   `ViolationKey.graph_key/2` and its registration.
+- `interface` — the `interface` graph rule (DND-5443):
+  `Anchor.Domain.Interfaces`, `GraphRules.Interface`, its registration, its
+  RuleSchema row and `max_width`, and the interface width in `GraphReport`
+  and `Managers.Graph`.
+- `enforcement_passes` — one finding two rules make: `Anchor.Domain.EnforcementPasses`
+  (DND-5631, DND-5632; its `Fix:` text left out of a finding's identity, DND-5446).
+- `rule_shapes` — one `Fix:` per issue (DND-5446): `Anchor.Domain.RuleShapes`,
+  every check's `shape/1` and Fix suffix, and the generic Fix of a rejected
+  config in `Failures` (with the load refusals moved there from RuleSchema).
+- `explain` — `mix anchor.explain` (DND-5446): `Anchor.Domain.Subject`,
+  `Classification.classify_planned/3`, `Anchor.Domain.Explain`,
+  `Anchor.Managers.Explain` and the Mix task.
+- `module_map` — ADR 001's module map and its canary (DND-5620): every `lib/`
+  module has a row, under the bucket `.anchor.yml` gives it.
 - `dialyzer_boundary` — the DND-5499 spike runner
   `test/fixtures/dialyzer_boundary/run.exs` (not a check: it measures what
   Dialyzer reports for clause reachability on the fixtures beside it, so F8

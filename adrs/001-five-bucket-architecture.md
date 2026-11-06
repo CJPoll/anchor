@@ -35,6 +35,13 @@ persists one attribute in the module that uses it, is Framework, beside the
 Credo checks and the Mix tasks; the aggregate declaration modules are Domain.
 The mapping table lists them. Standard unchanged.
 
+Amended 2026-11-03 (DND-5620): the mapping table lists the graph engine's
+modules (`mix anchor.graph`, `mix anchor.explain`, and the Managers, ports,
+adapters and Domain modules behind them), and `test/anchor/adr_module_map_test.exs`
+keeps the map complete: a `lib/` module with no row, or a row whose bucket is
+not the one `.anchor.yml` gives it, fails the suite. Standard unchanged — see
+"Amendment (2026-11-03, DND-5620)" under "How this maps to Anchor".
+
 ## Context
 
 Anchor is a small library, but the class of problems the five-bucket
@@ -247,7 +254,7 @@ and are dropped rather than adapted:
 | `Anchor.Adapters.ChangeSource` | Side Effect (port) | The behaviour `Anchor.Managers.Sabotage` depends on: merge-base, diff, untracked files, show, read. Tests double it. |
 | `Anchor.Adapters.GitChangeSource` | Side Effect | The real `ChangeSource`: runs read-only `git` with `System.cmd/3` (argv, never a shell) and returns diff text and paths. |
 | `Anchor.Adapters.ConfigLoader` | Side Effect (port) | The behaviour `Anchor.Managers.Lint` depends on to load configuration; `Anchor.Adapters.ConfigFile` is its real implementation. |
-| `Anchor.Adapters.BeamSource` | Side Effect (port) | The behaviour the planned graph runner (DND-5440) depends on to read a project's compiled beams. |
+| `Anchor.Adapters.BeamSource` | Side Effect (port) | The behaviour the graph runner (`Anchor.Managers.Graph`, DND-5440) depends on to read a project's compiled beams. |
 | `Anchor.Adapters.BeamReader` | Side Effect | The real `BeamSource`: reads each `.beam` with `:beam_lib` and returns `Anchor.Domain.Graph.Beam` records or decode errors. It never loads or calls a project module. |
 | `Anchor.Adapters.BaselineStore`, `Anchor.Adapters.GitBase` | Side Effect (port) | The behaviours `Anchor.Managers.Graph` depends on to read and create a rule's baseline file and to read it at a `--base` ref (DND-5441). Tests double them. |
 | `Anchor.Adapters.BaselineFile`, `Anchor.Adapters.GitShow` | Side Effect | The real ports: the file read and the `:exclusive` create under the project root; read-only `git` with `System.cmd/3` (argv, never a shell, the ref checked by Domain first). Both return the baseline's entries, parsed by `Anchor.Domain.Baseline.parse/1`, never its bytes. |
@@ -324,6 +331,61 @@ the Manager.
 This is an amendment, not a supersession: the five-bucket rule and the
 allowed-calls matrix are unchanged and bind every subject exactly as before.
 Only the classification of subjects the table had not yet listed is added.
+
+#### Amendment (2026-11-03, DND-5620): the graph engine's modules are listed, and a test keeps the map complete
+
+The table above predates the graph engine (DND-5438 onward), so `mix
+anchor.graph`, `mix anchor.explain` and the Manager, ports, adapters and Domain
+modules behind them had no listed bucket. The rows below list them, read from
+`lib/` on main, together with the sabotage modules the table had not reached.
+The bucket of each row is the one `.anchor.yml`'s `architecture:` section
+classifies the module into: `lib/mix/tasks/` and `lib/anchor/check/` are
+Framework (and so is the `Anchor` module, by name), `lib/anchor/adapters/` and
+`lib/anchor/sabotage/` are Side Effects, `lib/anchor/domain/` is Domain, and
+`lib/anchor/managers/` is Managers.
+
+`test/anchor/adr_module_map_test.exs` holds this table to `lib/`. It reads
+every module of the compiled `:anchor` application, with the source file it
+was compiled from, and requires that each module has a row in this section (an
+exact name, or a `Namespace.*` row that covers it, the most specific row
+winning), and that the row's bucket is the bucket `.anchor.yml` classifies the
+module into (`Anchor.Domain.Classification.classify_planned/3`). A module added
+without a row, or a row whose bucket disagrees with the config, fails the
+suite and names the module and the row to add.
+
+This is an amendment, not a supersession: the five-bucket rule and the
+allowed-calls matrix are unchanged and bind every subject exactly as before.
+Only the classification of subjects the table had not yet listed is added.
+
+| Module | Bucket | Why |
+|---|---|---|
+| `Anchor` | Framework | The library's top-level module: documentation only, classified by its name (`pattern: "Anchor"`). |
+| `Mix.Tasks.Anchor.Graph`, `Mix.Tasks.Anchor.Explain` | Framework | Mix tasks (DND-5440, DND-5446): each parses argv, makes one Manager call (`Managers.Graph`, `Managers.Explain`), renders and sets the exit code. |
+| `Mix.Tasks.Anchor.Baseline` | Framework | The AST rules' baseline task (DND-5632). |
+| `Mix.Tasks.Anchor.Sabotage.*` | Framework | The sabotage subcommand tasks under `lib/mix/tasks/`. |
+| `Anchor.Sabotage.CoverageCollector` | Framework | The OTP process a coverage run starts; it lives under `lib/mix/tasks/anchor/sabotage/`, so it is bucketed with the task that starts it. |
+| `Anchor.Managers.Graph`, `Anchor.Managers.Graph.Request` | Manager | The graph use case (DND-5440): reads the config, beams, sources and baselines through their ports, builds the graph and model (Domain), runs the graph rules and judges baselines; `Request` is its input struct. |
+| `Anchor.Managers.Explain` | Manager | The explain use case (DND-5446): the same inputs as `Managers.Graph`, read only; the stored graph is used only under this build's key. It writes nothing. |
+| `Anchor.Managers.AstBaseline` | Manager | The AST rules' baseline use case behind `mix anchor.baseline` (DND-5632). |
+| `Anchor.Managers.Sabotage.Runner`, `Anchor.Managers.Sabotage.Coverage` | Manager | The sabotage run and per-test coverage use cases (DND-5473, DND-5474). |
+| `Anchor.Managers.Sabotage.Replay` | Manager | `mix anchor.sabotage replay`'s orchestration: re-applies each landed record's rows through Runner's lock and journal (DND-5485) |
+| `Anchor.Adapters.SourceSource`, `Anchor.Adapters.GraphStore`, `Anchor.Adapters.Tracing`, `Anchor.Adapters.InProcessTests`, `Anchor.Adapters.ProjectModuleSource`, `Anchor.Adapters.CoverageStore`, `Anchor.Adapters.RecordStore`, `Anchor.Adapters.TestExecution`, `Anchor.Adapters.SourceMutation` | Side Effect (port) | The behaviours the graph and sabotage Managers depend on; tests double them with Hammox. |
+| `Anchor.Adapters.BehaviourSource`, `Anchor.Adapters.LintKeys` | Side Effect (port) | What the graph runner reads of an external behaviour's callbacks (DND-5447), and the Credo run's keys `mix anchor.baseline` reads (DND-5632). |
+| `Anchor.Adapters.BehaviourReader`, `Anchor.Adapters.CredoKeys` | Side Effect | Their real implementations. |
+| `Anchor.Adapters.SourceReader`, `Anchor.Adapters.GraphArtifact` | Side Effect | The graph runner's real ports: reading source files into `SourceFacts`, and the keyed graph artifact under `_build/<env>/anchor/`. |
+| `Anchor.Adapters.CallTracer`, `Anchor.Adapters.SuiteRunner`, `Anchor.Adapters.ProjectModules`, `Anchor.Adapters.CoverageFile`, `Anchor.Adapters.RecordFile`, `Anchor.Adapters.TestRunner`, `Anchor.Adapters.SourcePatcher`, `Anchor.Adapters.GitStatus`, `Anchor.Adapters.GitWorktree`, `Anchor.Adapters.GitEnv` | Side Effect | The sabotage runner's real ports and their helpers: tracing, running the suite, writing records and coverage, patching sources, and the git environment (DND-5581). |
+| `Anchor.Sabotage.ExUnitFormatter` | Side Effect | The ExUnit formatter a sabotage run adds to the project's test command; it writes a file and calls no Anchor module. |
+| `Anchor.Domain.Graph`, `Anchor.Domain.Graph.*` | Domain | The causal graph (DND-5438): its records (`Beam`, `ModuleNode`, `FunctionNode`, `Call`, `StructUse`, `SourceFacts`, `ProjectFile`), the `Builder`, the `CoreWalker` and inlining. Pure: beam records in, graph out. |
+| `Anchor.Domain.Model`, `Anchor.Domain.Architecture`, `Anchor.Domain.Architecture.*`, `Anchor.Domain.Classification`, `Anchor.Domain.CallMatrix`, `Anchor.Domain.Interfaces` | Domain | The `architecture:` section and the classification of every module into a bucket, a context and an interface. |
+| `Anchor.Domain.GraphRule`, `Anchor.Domain.GraphRules`, `Anchor.Domain.GraphRules.*`, `Anchor.Domain.RuleShape`, `Anchor.Domain.RuleShapes` | Domain | The graph rule behaviour, its registry and the rules (`Layering`, `ContextAcyclic`, `Interface`), and every rule type's conforming shape (DND-5446). |
+| `Anchor.Domain.GraphKey`, `Anchor.Domain.GraphReport`, `Anchor.Domain.GraphReport.*`, `Anchor.Domain.BaselineBase` | Domain | The graph artifact's key, the run's report, and the base-ref comparison of baselines. |
+| `Anchor.Domain.Cfa`, `Anchor.Domain.Cfa.*`, `Anchor.Domain.HigherOrder`, `Anchor.Domain.DynamicCalls`, `Anchor.Domain.Demand`, `Anchor.Domain.Demand.*`, `Anchor.Domain.DataFlow`, `Anchor.Domain.DataFlow.*`, `Anchor.Domain.Core`, `Anchor.Domain.Digraph`, `Anchor.Domain.GraphAlgorithms`, `Anchor.Domain.ContextGraph`, `Anchor.Domain.FunctionRef` | Domain | The analyses the graph rules need: higher-order flow (DND-5497), demand (DND-5498), data flow, dynamic-call candidates, and the graph algorithms. |
+| `Anchor.Domain.Effects`, `Anchor.Domain.Roots`, `Anchor.Domain.BehaviourReceiver`, `Anchor.Domain.StructFlow`, `Anchor.Domain.StructOwnership`, `Anchor.Domain.StructTypes` | Domain | The analyses behind `effects_match_bucket` and `struct_owned_by_module_flow` (DND-5447, DND-5454), and the behaviour-typed receivers that narrow a dynamic call (DND-5633). |
+| `Anchor.Domain.AstBaseline`, `Anchor.Domain.EnforcementPasses`, `Anchor.Domain.Parity` | Domain | Report, baseline and enforce for the AST rules (DND-5632, DND-5631) and the parity of the two engines. |
+| `Anchor.Domain.Explain`, `Anchor.Domain.Subject` | Domain | What `mix anchor.explain` answers, and the subject it is asked about (DND-5446). |
+| `Collectable.Anchor.Domain.Sabotage.BoundedOutput` | Domain | The `Collectable` implementation of `Anchor.Domain.Sabotage.BoundedOutput`, defined in its file: a protocol implementation is a module of its own, in the bucket of the file that defines it. |
+| `Anchor.Domain.Checks.*` | Domain | Each Credo check's pure detection, called through `Anchor.Managers.Lint`. |
+| `Anchor.Domain.RuleSchema`, `Anchor.Domain.RuleMatching`, `Anchor.Domain.RuleCoverage`, `Anchor.Domain.Failures`, `Anchor.Domain.Violation`, `Anchor.Domain.GlobPattern`, `Anchor.Domain.AllowedCallers`, `Anchor.Domain.PureCalls`, `Anchor.Domain.EffectPrimitives` | Domain | The rule schema, rule selection, the fail-closed messages, the violation struct and the pattern grammars every rule shares. |
 
 ## Examples
 

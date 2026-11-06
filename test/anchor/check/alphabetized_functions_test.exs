@@ -34,7 +34,8 @@ defmodule Anchor.Check.AlphabetizedFunctionsTest do
     assert banana
 
     assert banana.message ==
-             "function `banana/0` is not in alphabetical order. It should appear after apple/0."
+             "function `banana/0` is not in alphabetical order. It should appear after apple/0." <>
+               " Fix: define every function of the module in alphabetical order (by name, then arity)"
 
     assert banana.line_no == 2
   end
@@ -219,7 +220,8 @@ defmodule Anchor.Check.AlphabetizedFunctionsTest do
 
     assert helper.message ==
              "private function `helper/0` appears before public functions. " <>
-               "In :separate mode, all public functions must come before private functions."
+               "In :separate mode, all public functions must come before private functions." <>
+               " Fix: define every public function before every private one, each group in alphabetical order (by name, then arity)"
 
     assert helper.line_no == 2
   end

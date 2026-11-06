@@ -104,8 +104,8 @@ defmodule Mix.Tasks.Anchor.Sabotage do
   It is CI-only by default: without `CI=true` it refuses (exit 2) unless
   `--local` is given. Exit codes: 0 written; 1 written, but the suite failed;
   2 a refusal (not CI, MIX_ENV not test, `TEST_ARGS` that set
-  `--max-cases`, another tracer on, the map not writable); 3 `COULD NOT MEASURE` (zero modules or zero tests: no map
-  written).
+  `--max-cases`, another tracer on, the map not writable); 3 `COULD NOT MEASURE` (zero modules or zero tests, or a
+  project module that cannot load: no map written).
   """
 
   use Mix.Task

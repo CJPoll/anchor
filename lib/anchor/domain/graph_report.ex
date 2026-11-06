@@ -24,7 +24,9 @@ defmodule Anchor.Domain.GraphReport do
       rule that ran needed the higher-order flow analysis (DND-5574), else
       `apply_sites/1` of it; `effects` (optional) is `nil` or absent when no
       rule that ran needed the effect inference (DND-5447), else `effects/1`
-      of it; `aggregates` (optional, DND-5476) is
+      of it; `interface_width` is `nil` when no `interface` rule ran (DND-5443),
+      else `%{context => public functions on its interface}`
+      (`Anchor.Domain.Interfaces.width/1`); `aggregates` (optional, DND-5476) is
       `%{declared, tables_unknown}` when any aggregate is declared, and the
       JSON's `aggregates` is `null` otherwise. The optional `dynamic_calls` is
       `Anchor.Domain.DynamicCalls.tally/1` of the graph (DND-5633): the
@@ -57,9 +59,10 @@ defmodule Anchor.Domain.GraphReport do
   functions (domain <a>, managers <b>, adapters <c>, framework <d>), <u>
   unresolved dynamic calls`, and `, not analysed: <k>` when some public
   function had no Core body (DND-5447). When it computed the demand analysis,
-  the summary then ends with `; demand: <f> functions, <p> parameters, <a>
-  absent, <i> imprecise functions`, and `(round bound hit on <n> functions)`
-  when it hit its bound (DND-5715).
+  the summary then has `; demand: <f> functions, <p> parameters, <a> absent,
+  <i> imprecise functions`, and `(round bound hit on <n> functions)` when it
+  hit its bound (DND-5715). When an `interface` rule ran, it then has
+  `; interface width: <context>=<n>, ...`, by context (DND-5443, R4).
   """
 
   alias Anchor.Domain.Cfa
@@ -78,7 +81,8 @@ defmodule Anchor.Domain.GraphReport do
               opaque: 0,
               no_core: 0,
               outside_root: 0,
-              apply_sites: nil
+              apply_sites: nil,
+              interface_width: nil
             },
             exit_code: 0
 
@@ -104,6 +108,7 @@ defmodule Anchor.Domain.GraphReport do
           required(:no_core) => non_neg_integer(),
           required(:outside_root) => non_neg_integer(),
           required(:apply_sites) => apply_sites() | nil,
+          optional(:interface_width) => %{String.t() => non_neg_integer()} | nil,
           optional(:dynamic_calls) => dynamic_calls() | nil,
           optional(:effects) => effects() | nil,
           optional(:demand) => demand() | nil,
@@ -250,6 +255,7 @@ defmodule Anchor.Domain.GraphReport do
       "no_core" => report.counts.no_core,
       "outside_root" => report.counts.outside_root,
       "apply_sites" => apply_sites_json(report.counts.apply_sites),
+      "interface_width" => Map.get(report.counts, :interface_width),
       "dynamic_calls" => dynamic_calls_json(Map.get(report.counts, :dynamic_calls)),
       "effects" => effects_json(Map.get(report.counts, :effects)),
       "demand" => demand_json(Map.get(report.counts, :demand)),
@@ -283,6 +289,7 @@ defmodule Anchor.Domain.GraphReport do
       dynamic_calls_note(Map.get(counts, :dynamic_calls)) <>
       effects_note(Map.get(counts, :effects)) <>
       demand_note(Map.get(counts, :demand)) <>
+      width_note(Map.get(counts, :interface_width)) <>
       aggregates_note(Map.get(counts, :aggregates))
   end
 
@@ -355,6 +362,15 @@ defmodule Anchor.Domain.GraphReport do
 
   defp round_bound_note(0), do: ""
   defp round_bound_note(count), do: " (round bound hit on #{count} functions)"
+
+  # `nil`: no interface rule ran (DND-5443).
+  defp width_note(nil), do: ""
+  defp width_note(widths) when map_size(widths) == 0, do: "; interface width: no context"
+
+  defp width_note(widths) do
+    "; interface width: " <>
+      (widths |> Enum.sort() |> Enum.map_join(", ", fn {context, n} -> "#{context}=#{n}" end))
+  end
 
   defp effects_json(nil), do: nil
 

@@ -18,7 +18,16 @@ defmodule Anchor.Domain.Checks.MustUseModule do
   """
 
   alias Anchor.Domain.DependencyAnalyzer
+  alias Anchor.Domain.RuleShapes
   alias Anchor.Domain.Violation
+
+  @behaviour Anchor.Domain.RuleShape
+
+  @impl Anchor.Domain.RuleShape
+  def shape(rule) do
+    "use #{Enum.map_join(Map.get(rule, :required_modules) || [], ", ", &inspect/1)} in the module's own " <>
+      "defmodule body"
+  end
 
   @doc """
   Returns a `%Violation{}` for each required module that `ast` does not `use`.
@@ -38,7 +47,7 @@ defmodule Anchor.Domain.Checks.MustUseModule do
 
       required
       |> Enum.reject(&(&1 in uses))
-      |> Enum.map(&build_violation/1)
+      |> Enum.map(&RuleShapes.with_shape(build_violation(&1), shape(rule)))
     end)
   end
 

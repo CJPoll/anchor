@@ -25,7 +25,10 @@ defmodule Anchor.Domain.Checks.MustUseModuleTest do
       assert [%Violation{} = violation] =
                MustUseModule.detect_violations(ast, [rule([MyApp.Schema])])
 
-      assert violation.message == "Module must use MyApp.Schema"
+      assert violation.message ==
+               "Module must use MyApp.Schema" <>
+                 ". Fix: use MyApp.Schema in the module's own defmodule body"
+
       assert violation.trigger == "MyApp.Schema"
       assert violation.line == 1
     end

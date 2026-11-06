@@ -44,7 +44,18 @@ defmodule Anchor.Domain.Checks.ModulePatternRestrictions do
 
   alias Anchor.Domain.DependencyAnalyzer
   alias Anchor.Domain.GlobPattern
+  alias Anchor.Domain.RuleShapes
   alias Anchor.Domain.Violation
+
+  @behaviour Anchor.Domain.RuleShape
+
+  @impl Anchor.Domain.RuleShape
+  def shape(rule) do
+    case Map.get(rule, :allowed_functions) || [] do
+      [] -> "define no function in a module this rule selects"
+      allowed -> "define only the allowed functions: #{Enum.join(allowed, ", ")}"
+    end
+  end
 
   @doc """
   Returns the `%Violation{}` list for `ast` against the already-typed `rules`.
@@ -65,7 +76,7 @@ defmodule Anchor.Domain.Checks.ModulePatternRestrictions do
         ast
         |> extract_defined_functions()
         |> Enum.reject(&allowed?(&1, allowed))
-        |> Enum.map(&build_violation(&1, ast))
+        |> Enum.map(&RuleShapes.with_shape(build_violation(&1, ast), shape(rule)))
       else
         []
       end

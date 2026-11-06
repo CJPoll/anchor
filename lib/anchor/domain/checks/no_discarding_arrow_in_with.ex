@@ -23,7 +23,16 @@ defmodule Anchor.Domain.Checks.NoDiscardingArrowInWith do
   the arrow is doing real pattern-matching work there.
   """
 
+  alias Anchor.Domain.RuleShapes
   alias Anchor.Domain.Violation
+
+  @behaviour Anchor.Domain.RuleShape
+
+  @impl Anchor.Domain.RuleShape
+  def shape(_rule) do
+    "write a with clause whose value is discarded as a bare expression, without a " <>
+      "discarding pattern and arrow"
+  end
 
   @doc """
   Returns the `%Violation{}` list for `ast`.
@@ -39,7 +48,12 @@ defmodule Anchor.Domain.Checks.NoDiscardingArrowInWith do
         case node do
           {:with, _meta, clauses} when is_list(clauses) and length(clauses) >= 2 ->
             with_clauses = extract_with_clauses(clauses)
-            new_violations = check_with_clauses(with_clauses)
+
+            new_violations =
+              with_clauses
+              |> check_with_clauses()
+              |> Enum.map(&RuleShapes.with_shape(&1, shape(%{})))
+
             {node, acc ++ new_violations}
 
           _ ->

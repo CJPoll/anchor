@@ -44,8 +44,10 @@ defmodule Anchor.Managers.LintTest do
 
       assert returned_file == source_file
 
-      assert [%Violation{trigger: "MyApp.Base", line: 1, message: "Module must use MyApp.Base"}] =
-               violations
+      assert [%Violation{trigger: "MyApp.Base", line: 1, message: message}] = violations
+
+      assert message ==
+               "Module must use MyApp.Base. Fix: use MyApp.Base in the module's own defmodule body"
     end
 
     test "propagates {:error, reason} when the loader fails (the Framework reports it)" do
@@ -256,7 +258,8 @@ defmodule Anchor.Managers.LintTest do
 
       assert violation.message ==
                "Module has transitive dependency on forbidden module MyApp.Repo " <>
-                 "(dependency chain: A -> B -> MyApp.Repo)"
+                 "(dependency chain: A -> B -> MyApp.Repo)" <>
+                 ". Fix: no chain of dependencies from the module reaches MyApp.Repo; cut the chain where it first enters a module that depends on it"
     end
   end
 

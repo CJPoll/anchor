@@ -98,7 +98,8 @@ defmodule Anchor.Domain.Checks.NoTransitiveDependencyTest do
                )
 
       assert violation.message ==
-               "Module has transitive dependency on forbidden module MyApp.Repo"
+               "Module has transitive dependency on forbidden module MyApp.Repo" <>
+                 ". Fix: no chain of dependencies from the module reaches MyApp.Repo; cut the chain where it first enters a module that depends on it"
 
       refute violation.message =~ "dependency chain"
       assert violation.trigger == "MyApp.Repo"

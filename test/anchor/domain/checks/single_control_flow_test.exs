@@ -33,7 +33,8 @@ defmodule Anchor.Domain.Checks.SingleControlFlowTest do
 
       assert violation.message ==
                "Function clause `f` contains 2 control-flow structures (maximum allowed: 1). " <>
-                 "Control-flow structures include: pipe chains (|>), cond, with, case, if, unless, for, and receive. Favor extracting pipe chains to helpers before extracting other structures."
+                 "Control-flow structures include: pipe chains (|>), cond, with, case, if, unless, for, and receive. Favor extracting pipe chains to helpers before extracting other structures." <>
+                 " Fix: one control structure per function clause: extract each extra pipe chain, case, cond, with, if, unless, for or receive into its own named function"
 
       assert violation.trigger == "f"
       assert violation.line == 2
