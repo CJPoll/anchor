@@ -5,6 +5,7 @@ defmodule Mix.Tasks.Anchor.SabotageCoverageTest do
   # sync: capture_io(:stderr) captures the VM-wide standard_error device, which
   # another async test's output would interleave with.
   # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5474_coverage_map.md
+  # Sabotage record (DND-5691): ../../sabotage_records/coverage_attribution-20261106-dnd_5691_causal_attribution.md
   use ExUnit.Case, async: false
 
   import ExUnit.CaptureIO

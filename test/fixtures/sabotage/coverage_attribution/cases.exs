@@ -1,4 +1,4 @@
-# DND-5691: the fixture suite. Test names are what coverage_attribution_test.exs
+# DND-5691: the fixture suite. Test names are what coverage_attribution_integration_test.exs
 # asserts on; a pair "x a" then "x b" runs in that order, at seed 0.
 
 defmodule AnchorFixtures.Attribution.CompileTime do
@@ -189,7 +189,9 @@ defmodule AnchorFixtures.Attribution.CleanCases do
   end
 
   test "n3 linked idle server" do
-    {:ok, _pid} = Agent.start_link(fn -> :idle end)
+    # Called inside the window, and still alive, idle, when the test returns.
+    {:ok, pid} = Agent.start_link(fn -> :idle end)
+    :ok = Agent.get(pid, fn :idle -> F.n3_linked() end)
   end
 
   test "n5 compiles code itself" do

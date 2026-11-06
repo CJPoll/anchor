@@ -6,10 +6,14 @@ defmodule Anchor.Adapters.CoverageFile do
   `:erlang.binary_to_term(bin, [:safe])` on read, so a file from an artifact
   can never create a new atom or an external function reference (it can
   still hold a local fun, which nothing here calls). The shape of what it
-  holds is checked by `Anchor.Domain.Sabotage.CoverageMap.check/1`.
+  holds is checked by `Anchor.Domain.Sabotage.CoverageMap.check/1`. `:safe` also
+  refuses an atom this VM has not loaded, and a map's keys are atoms of that module,
+  so the module is loaded first: a fresh VM reads a good map.
   """
 
   @behaviour Anchor.Adapters.CoverageStore
+
+  alias Anchor.Domain.Sabotage.CoverageMap
 
   @impl Anchor.Adapters.CoverageStore
   def write(path, map) do
@@ -26,6 +30,7 @@ defmodule Anchor.Adapters.CoverageFile do
   end
 
   defp decode(bin) do
+    {:module, CoverageMap} = Code.ensure_loaded(CoverageMap)
     {:ok, :erlang.binary_to_term(bin, [:safe])}
   rescue
     ArgumentError -> {:error, :undecodable}

@@ -122,7 +122,7 @@ defmodule Anchor.Integration.CoverageIntegrationTest do
         "Mix.Tasks.Anchor.Sabotage.run(#{args})"
       ],
       cd: dir,
-      env: [{"MIX_ENV", "test"}, {"CI", nil}],
+      env: [{"MIX_ENV", "test"}, {"CI", nil}, {"MIX_BUILD_PATH", nil}, {"MIX_DEPS_PATH", nil}],
       stderr_to_stdout: true
     )
   end

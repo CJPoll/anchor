@@ -9,8 +9,8 @@ defmodule Anchor.Sabotage.CoverageCollector do
   It keeps no traced value. A call becomes its `{module, name, arity}`, its pid and
   the label and word the VM read at the call. A window's `%ExUnit.Test{}` becomes
   the test's ref (`%{file, line, name, module}`, from its tags) and whether it ran.
-  A spawn event's arguments become the one pid they name, or a refusal
-  (`Anchor.Domain.Sabotage.ProcessOwnership.edge/3`).
+  A spawn event's arguments become the one pid they name, or a refusal holding the
+  module, name and argument count (`Anchor.Domain.Sabotage.ProcessOwnership.edge/3`).
 
   A call message in any other shape is an error in the state, never dropped: the
   spec that sent it did not install as the run assumes (COULD NOT MEASURE). Other
@@ -46,7 +46,10 @@ defmodule Anchor.Sabotage.CoverageCollector do
   end
 
   @impl GenServer
-  def handle_call({:finish}, _from, map), do: {:reply, {:ok, map}, map}
+  def handle_call({:finish}, _from, map) do
+    drained = drain(map)
+    {:reply, {:ok, drained}, drained}
+  end
 
   @impl GenServer
   def handle_info({:trace, pid, :call, mfa, message}, map),
@@ -55,7 +58,27 @@ defmodule Anchor.Sabotage.CoverageCollector do
   def handle_info({:trace, parent, :spawn, child, mfa}, map),
     do: {:noreply, CoverageMap.attribute(map, [spawn_event(child, parent, mfa)])}
 
+  def handle_info({:trace, pid, :call, mfa}, map),
+    do: {:noreply, CoverageMap.attribute(map, [event(pid, mfa, :no_message)])}
+
   def handle_info(_other, map), do: {:noreply, map}
+
+  # The caller's `finish` follows `:erlang.trace_delivered/1`, so every trace message
+  # is already sent. Signal order is per sender only, and an off-heap queue can take
+  # them in parallel, so some may sit behind `finish`: read to the end before answering.
+  defp drain(map) do
+    receive do
+      {:trace, _pid, _kind, _subject, _detail} = message -> map |> received(message) |> drain()
+      {:trace, _pid, _kind, _subject} = message -> map |> received(message) |> drain()
+    after
+      0 -> map
+    end
+  end
+
+  defp received(map, message) do
+    {:noreply, map} = handle_info(message, map)
+    map
+  end
 
   defp event(pid, {@event_manager, :test_started, 2}, {test, word}),
     do: {:test_started, pid, word, test_ref(test), test.module}
@@ -79,8 +102,11 @@ defmodule Anchor.Sabotage.CoverageCollector do
 
   defp spawn_event(child, parent, mfa) do
     case ProcessOwnership.edge(child, parent, mfa) do
-      {^child, ^parent, via} -> {:spawn, parent, child, via}
-      {:error, reason} -> {:error, reason}
+      {^child, ^parent, via} ->
+        {:spawn, parent, child, via}
+
+      {:error, {:task_shape, {module, name, args}}} ->
+        {:error, {:task_shape, {module, name, length(args)}}}
     end
   end
 

@@ -129,9 +129,10 @@ defmodule Anchor.Domain.Sabotage.CoverageMap do
 
   @doc """
   The bytes two builds of one commit must share: the tests' sets, the leaks and
-  ambient, with no count, stamp, pid, commit or version in them. Only meaningful
-  when both have no leak: which call lands past a window is scheduling, so a
-  leak's list can differ.
+  ambient, with no count, stamp, pid, commit or tool version in them. Only meaningful
+  when both have no leak and no process with no owner works across a window's close
+  (a cast near it, a server's timer): which call lands past a window is scheduling,
+  so those lists can differ.
   """
   @spec canonical(t()) :: binary()
   def canonical(%{version: version, tests: tests, leaks: leaks, ambient: ambient}) do
@@ -245,20 +246,20 @@ defmodule Anchor.Domain.Sabotage.CoverageMap do
     }
   end
 
+  # One runner calls test_started and then test_finished, and a tracee's events
+  # arrive in order, so a finish with no start is a trace this run cannot read.
   defp record({:test_finished, runner, word, ran?, module}, state) do
-    windows =
-      Map.update(
-        state.windows,
-        word - 1,
-        %{ref: nil, module: module, ran?: ran?},
-        &%{&1 | ran?: ran?}
-      )
+    case Map.fetch(state.windows, word - 1) do
+      {:ok, window} ->
+        %{
+          state
+          | windows: Map.put(state.windows, word - 1, %{window | ran?: ran?}),
+            runner_spans: Map.put(state.runner_spans, runner, {:module, module})
+        }
 
-    %{
-      state
-      | windows: windows,
-        runner_spans: Map.put(state.runner_spans, runner, {:module, module})
-    }
+      :error ->
+        record({:error, {:unreadable, {:test_finished, word}}}, state)
+    end
   end
 
   defp record({:module_started, runner, module}, state) do
@@ -269,10 +270,13 @@ defmodule Anchor.Domain.Sabotage.CoverageMap do
     }
   end
 
+  # A parameterized module runs once per set of parameters, each with a runner of its
+  # own, and the VM orders trace messages per tracee only: the last end by word, never
+  # the last to arrive.
   defp record({:module_finished, runner, module, word}, state) do
     %{
       state
-      | module_ends: Map.put(state.module_ends, module, word),
+      | module_ends: Map.update(state.module_ends, module, word, &max(&1, word)),
         runner_spans: Map.delete(state.runner_spans, runner)
     }
   end

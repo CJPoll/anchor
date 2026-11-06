@@ -500,7 +500,8 @@ No gate or silencing: every call is traced, because DND-5691's measurement found
 the slowest test at 3.9 s. The collector process
 (`Anchor.Sabotage.CoverageCollector`, Framework) is started by the Mix task and
 reached by the Manager only through the `Tracing` port. The `:arity` trace flag
-keeps every traced argument out of the collector. A test that turns VM-wide
+keeps every call's arguments out of the collector, and the collector reduces a spawn
+event's arguments to the one pid they name. A test that turns VM-wide
 tracing on is tagged `@moduletag :global_tracing`, and the coverage build runs
 with `--exclude global_tracing`. `run --coverage PATH` selects a mutant's tests
 from the map first (source `coverage`), then the mirror.

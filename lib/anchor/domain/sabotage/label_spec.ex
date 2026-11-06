@@ -18,7 +18,9 @@ defmodule Anchor.Domain.Sabotage.LabelSpec do
 
   Three of the functions are private to ExUnit (1.19.4). `CallTracer.start/2`
   refuses a pattern that matches no function, so an Elixir upgrade that moves
-  one is a loud COULD NOT MEASURE, never a smaller map.
+  one is a loud COULD NOT MEASURE, never a smaller map. An argument that moves at
+  the same name and arity is the same refusal: each spec that reads a struct ends in
+  a clause whose message the collector cannot read.
 
   Every call is traced: DND-5691's measurement after DND-5715 (slowest test at
   most 3.9 s in 3 builds of every call traced, against the 30 s the design set
@@ -29,6 +31,7 @@ defmodule Anchor.Domain.Sabotage.LabelSpec do
   @on_exit_handler ExUnit.OnExitHandler
   @runner ExUnit.Runner
   @label {:element, 2, {:get_seq_token}}
+  @shape_changed {:_, [], [{:message, :shape_changed}]}
 
   @type pattern :: {mfa(), [tuple()], [:global | :local]}
 
@@ -54,11 +57,6 @@ defmodule Anchor.Domain.Sabotage.LabelSpec do
     ]
   end
 
-  @doc "The modules `patterns/0` names, which must be loaded before a pattern can be set."
-  @spec modules() :: [module()]
-  def modules,
-    do: patterns() |> Enum.map(fn {{module, _f, _a}, _s, _o} -> module end) |> Enum.uniq()
-
   defp window_spec do
     [{[:_, :"$1"], [], [{:set_tcw, {:+, {:get_tcw}, 1}}, {:message, {{:"$1", {:get_tcw}}}}]}]
   end
@@ -66,7 +64,8 @@ defmodule Anchor.Domain.Sabotage.LabelSpec do
   defp module_finished_spec do
     [
       {[:_, %{__struct__: ExUnit.TestModule, name: :"$1"}], [],
-       [{:set_tcw, {:+, {:get_tcw}, 2}}, {:message, {{:"$1", {:get_tcw}}}}]}
+       [{:set_tcw, {:+, {:get_tcw}, 2}}, {:message, {{:"$1", {:get_tcw}}}}]},
+      @shape_changed
     ]
   end
 
@@ -83,7 +82,8 @@ defmodule Anchor.Domain.Sabotage.LabelSpec do
   defp setup_all_spec do
     [
       {[:_, %{__struct__: ExUnit.TestModule, name: :"$1"}, :_, :_], [],
-       [{:set_seq_token, :label, :"$1"}, {:message, {{:module, :"$1"}}}]}
+       [{:set_seq_token, :label, :"$1"}, {:message, {{:module, :"$1"}}}]},
+      @shape_changed
     ]
   end
 
@@ -92,7 +92,8 @@ defmodule Anchor.Domain.Sabotage.LabelSpec do
       {[%{__struct__: ExUnit.TestModule, name: :"$1"}, :_, :_], [],
        [{:set_seq_token, :label, :"$1"}, {:message, false}]},
       {[%{__struct__: ExUnit.Test}, :_, :_], [],
-       [{:set_seq_token, :label, {:get_tcw}}, {:message, false}]}
+       [{:set_seq_token, :label, {:get_tcw}}, {:message, false}]},
+      @shape_changed
     ]
   end
 end

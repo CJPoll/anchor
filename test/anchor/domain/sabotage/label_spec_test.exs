@@ -54,16 +54,20 @@ defmodule Anchor.Domain.Sabotage.LabelSpecTest do
              ]
     end
 
+    test "a struct spec's argument that moved is a message the collector cannot read" do
+      specs = Map.new(LabelSpec.patterns(), fn {{_m, name, _a}, spec, _flags} -> {name, spec} end)
+
+      assert message(specs.module_finished, [:not_a_runner, :not_a_module]) == :shape_changed
+      assert message(specs.run_setup_all, [:a, :b, :c, :d]) == :shape_changed
+      assert message(specs.exec_on_exit, [:a, :b, :c]) == :shape_changed
+    end
+
     test "every spec compiles for tracing" do
       for {mfa, spec, _flags} <- LabelSpec.patterns() do
         assert {:ok, _result, _flags, []} =
                  :erlang.match_spec_test([:_, :_, :_, :_], spec, :trace),
                inspect(mfa)
       end
-    end
-
-    test "modules/0 lists each module once" do
-      assert LabelSpec.modules() == [ExUnit.EventManager, ExUnit.OnExitHandler, ExUnit.Runner]
     end
   end
 end

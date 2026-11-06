@@ -1604,8 +1604,9 @@ How a run goes:
    segment (DND-5640). A record holding a killer that fails this is skipped
    and named, as is one whose kill map does not parse (said:
    `could not read kill map in <path>:<line>`). A map that cannot be read,
-   or is not a version-2 map, is exit 2
-   (`Fix: download the anchor-coverage artifact again`); one built from a
+   is exit 2 (`Fix: download the anchor-coverage artifact again`), and so is one that
+   is not a version-2 map (`Fix: download a current anchor-coverage artifact, or
+   rebuild it with mix anchor.sabotage coverage`); one built from a
    commit that is not an ancestor of `HEAD` is used, with a warning naming
    both commits.
 5. The union of the selected tests runs once with no mutant (the baseline). If
@@ -1772,8 +1773,8 @@ MIX_ENV=test mix anchor.sabotage coverage [--out PATH] [--local] [-- TEST_ARGS]
 beams in the project's ebin directories; never a dependency or the standard
 library). It writes the map test -> functions that test executed, private ones
 included, to `PATH` (default `_build/test/anchor/coverage.etf`). `TEST_ARGS`
-go to `mix test`, tag filters only (`--only`, `--exclude`, `--include`) when they
-narrow the run: the map is of the whole suite, so one that chooses files is
+go to `mix test`, filters only (`--only`, `--exclude`, `--include`,
+`--name-pattern`) when they narrow the run: the map is of the whole suite, so one that chooses files is
 refused.
 
 Every test file compiles first, then the suite runs, so no compiler runs while a
@@ -1822,13 +1823,17 @@ What this does not fail, stated plainly:
 - A test that lost its label (a message from a process with no token clears it)
   and then calls a server: that handler is ambient, listed, and selection falls
   through to the kill map or the mirror.
+- A process a parameterized module's `setup_all` started, still calling while that
+  module's next run goes: one name, so it is credited to the module. Only its last
+  run's end counts as past the module.
 
 The file is map version 2: `tests` (each test that ran, with its functions),
 `leaks`, `ambient`, the commit, the Elixir and OTP versions, `suite_exit`, and
 `counters`, which the summary line prints and which are not compared.
 `CoverageMap.canonical/1` is the part two builds of one commit must share, byte for
-byte, when neither leaked. A leak's list need not repeat: which call lands past a
-window is scheduling.
+byte, when neither leaked and no process with no owner works across a window's
+close (the cast and the timer above). Those lists need not repeat: which call lands
+past a window is scheduling.
 
 It is **CI only by default**: without `CI=true` it refuses, exit 2, and
 traces nothing (`Fix: run it in CI, or pass --local where that load is

@@ -40,7 +40,7 @@ defmodule Anchor.Adapters.SuiteRunnerTest do
     """
 
     {output, exit_code} =
-      System.cmd("elixir", ["-pa", ebin, "-S", "mix", "run", "-e", code],
+      System.cmd("timeout", ["120", "elixir", "-pa", ebin, "-S", "mix", "run", "-e", code],
         cd: dir,
         env: [{"MIX_ENV", "test"}, {"MIX_BUILD_PATH", nil}, {"MIX_DEPS_PATH", nil}],
         stderr_to_stdout: true

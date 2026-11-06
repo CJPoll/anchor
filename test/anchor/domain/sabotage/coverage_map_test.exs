@@ -200,6 +200,29 @@ defmodule Anchor.Domain.Sabotage.CoverageMapTest do
       assert sets(map) == %{"test one" => ["A.f/0"]}
     end
 
+    test "a parameterized module's end is its last by word, in either arrival order" do
+      [r1, r2, s] = [pid(), pid(), pid()]
+
+      started = [
+        {:module_started, r1, ATest},
+        {:spawn, r1, s, nil},
+        {:module_started, r2, ATest},
+        {:test_started, r2, 3, @t1, ATest},
+        {:entry, 3},
+        {:test_finished, r2, 4, true, ATest},
+        {:call, @a, s, :none, 5}
+      ]
+
+      first = {:module_finished, r1, ATest, 2}
+      last = {:module_finished, r2, ATest, 6}
+
+      for ends <- [[first, last], [last, first]] do
+        map = build(started ++ ends, %{@meta | total: 1})
+        assert map.leaks == [], inspect(ends)
+        assert sets(map) == %{"test one" => ["A.f/0"]}, inspect(ends)
+      end
+    end
+
     test "a module-owned call past the module leaks from the module" do
       [runner, s] = [pid(), pid()]
 
@@ -301,6 +324,11 @@ defmodule Anchor.Domain.Sabotage.CoverageMapTest do
 
       assert refused(row1() ++ [{:error, {:task_shape, {Task.Supervised, :noreply, []}}}]) ==
                {:error, {:task_shape, {Task.Supervised, :noreply, []}}}
+    end
+
+    test "a test finished with no start, by name" do
+      assert {:error, {:unreadable, {:test_finished, 2}}} =
+               refused([{:test_finished, pid(), 2, true, ATest}], %{@meta | total: 1})
     end
 
     test "a module that started and never finished" do

@@ -1,4 +1,4 @@
-defmodule Anchor.Adapters.CoverageAttributionTest do
+defmodule Anchor.Integration.CoverageAttributionIntegrationTest do
   # DND-5691: what the map says about a real ExUnit run, traced for real, in a VM of
   # its own (test/fixtures/sabotage/coverage_attribution). Rows are the QA plan's:
   # "a real leak fails" (l), "what must not fail" (n).
@@ -55,7 +55,7 @@ defmodule Anchor.Adapters.CoverageAttributionTest do
     # entry: finalize would have refused otherwise, as the setup's match holds.
     assert results.skipped == 1
     assert results.excluded == 1
-    assert results.total >= 30
+    assert results.total == 35
   end
 
   test "8: two builds at one seed are byte-identical", %{first: first, second: second} do
@@ -132,7 +132,8 @@ defmodule Anchor.Adapters.CoverageAttributionTest do
     end
 
     test "3: a linked process that dies with its test and never calls after", %{map: map} do
-      assert set(map, "n3 linked idle server") == []
+      assert set(map, "n3 linked idle server") == [f(:n3_linked)]
+      refute leaked?(map, "n3 linked idle server", :n3_linked)
     end
 
     test "4: a test file's module body", %{map: map} do

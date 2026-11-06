@@ -1,6 +1,6 @@
 # DND-5691: the coverage run's real parts (CallTracer, CoverageCollector,
 # CoverageMap) around a real ExUnit run, in its own VM, because nothing else can
-# trace a whole ExUnit run from inside one. Run by coverage_attribution_test.exs:
+# trace a whole ExUnit run from inside one. Run by coverage_attribution_integration_test.exs:
 #   elixir -pa <anchor ebin> run.exs <out.etf>
 # Each case's function is its own, so the map says which call went where. Nothing
 # here waits on a clock: a wait blocks on a message, or spins on a :counters word
@@ -14,7 +14,7 @@ alias Anchor.Sabotage.CoverageCollector
 defmodule AnchorFixtures.Attribution.F do
   @moduledoc false
   for name <- ~w(l1_spinner l1_after l2_released l3_unlabelled l4_grandchild l5_port l6_task
-                 l7_setup_all l8_task_reply l9_task_nolink n1_task n2_supervised n4_compile
+                 l7_setup_all l8_task_reply l9_task_nolink n1_task n2_supervised n3_linked n4_compile
                  n5_compiled n6_timer n7_call n9_late_cast n10_stale_timer n11_handler n11_own
                  n12_apply_after n13_setup_all n14_task on_exit_test on_exit_module on_exit_test_server
                  on_exit_module_server on_exit_lost_server setup_body

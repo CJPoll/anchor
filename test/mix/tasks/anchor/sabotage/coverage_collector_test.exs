@@ -157,10 +157,38 @@ defmodule Anchor.Sabotage.CoverageCollectorTest do
     assert [%{functions: ["A.f/0"]}] = map.tests
   end
 
+  test "7: a private ExUnit call whose argument moved is refused, naming it" do
+    pid = started()
+    send(pid, {:trace, self(), :call, {ExUnit.Runner, :run_setup_all, 4}, :shape_changed})
+
+    assert {:error, {:unreadable, {{ExUnit.Runner, :run_setup_all, 4}, :shape_changed}}} =
+             finalized(pid)
+  end
+
+  test "8: a call with no message is refused, never dropped" do
+    pid = started()
+    send(pid, {:trace, self(), :call, {A, :f, 0}})
+
+    assert {:error, {:unreadable, {{A, :f, 0}, :no_message}}} = finalized(pid)
+  end
+
+  test "9: finish reads what is queued behind it, so a call past it is not lost" do
+    t = spawn(fn -> :ok end)
+    send(self(), {:trace, t, :call, {A, :f, 0}, {:none, 2}})
+    send(self(), {:trace, t, :spawn, spawn(fn -> :ok end), {Kernel, :self, []}})
+
+    assert {:reply, {:ok, state}, state} =
+             CoverageCollector.handle_call({:finish}, self(), CoverageMap.new())
+
+    assert %{calls: calls, edges: [_edge]} = state
+    assert MapSet.size(calls) == 1
+    refute_received {:trace, _pid, _kind, _subject, _detail}
+  end
+
   test "6: a Task spawn in an unknown shape, or an unreadable call, is refused by name" do
     pid = started()
     send(pid, {:trace, self(), :spawn, self(), {Task.Supervised, :noreply, [:x]}})
-    assert finalized(pid) == {:error, {:task_shape, {Task.Supervised, :noreply, [:x]}}}
+    assert finalized(pid) == {:error, {:task_shape, {Task.Supervised, :noreply, 1}}}
 
     pid = started()
     send(pid, {:trace, self(), :call, {A, :f, 0}, :not_a_pair})
