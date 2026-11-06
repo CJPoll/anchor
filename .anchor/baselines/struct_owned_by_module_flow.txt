@@ -1,0 +1,6 @@
+# anchor baseline for struct_owned_by_module_flow; shrink only
+struct_owned_by_module_flow|Anchor.Domain.Enforcement.base_findings/3|Anchor.Domain.GraphReport.Finding|map update
+struct_owned_by_module_flow|Anchor.Domain.Enforcement.base_findings/3|Anchor.Domain.GraphReport.Finding|map update
+struct_owned_by_module_flow|Anchor.Managers.Graph.write_artifact/5|Anchor.Domain.GraphReport.Finding|map update
+struct_owned_by_module_flow|Anchor.Managers.Graph.write_baseline/5|Anchor.Domain.GraphReport.Finding|map update
+struct_owned_by_module_flow|Anchor.Managers.Sabotage.scope/2|Anchor.Domain.Sabotage.Scope|map update

@@ -26,7 +26,13 @@ defmodule Anchor.Domain.Model do
     * `cfa` — the higher-order flow analysis (`%Anchor.Domain.Cfa{}`,
       DND-5574), set by the runner only when a rule that runs declares
       `needs: [:cfa]` (`Anchor.Domain.GraphRule`); `nil` otherwise. `build/3`
-      never computes it.
+      never computes it;
+    * `effects` — the effects-inferred role of every function
+      (`%Anchor.Domain.Effects{}`, DND-5447), set by the runner only when a
+      rule that runs declares `needs: [:effects]`; `nil` otherwise;
+    * `facts` — `%{module => Classification.facts()}`, the facts each module
+      was classified by (DND-5447: `architecture.roots` selectors read them
+      too, `uses_module` included).
 
   An Erlang module of the project (`{:not_elixir, _}` in the graph's
   `unreadable`) is classified by its name only; a classified one is an opaque
@@ -43,13 +49,23 @@ defmodule Anchor.Domain.Model do
   alias Anchor.Domain.Architecture
   alias Anchor.Domain.Cfa
   alias Anchor.Domain.Classification
+  alias Anchor.Domain.Effects
   alias Anchor.Domain.Failures
   alias Anchor.Domain.Graph
   alias Anchor.Domain.Graph.ModuleNode
   alias Anchor.Domain.Violation
 
   @enforce_keys [:graph, :architecture, :classification, :config]
-  defstruct [:graph, :architecture, :classification, :config, aggregates: %Index{}, cfa: nil]
+  defstruct [
+    :graph,
+    :architecture,
+    :classification,
+    :config,
+    aggregates: %Index{},
+    cfa: nil,
+    effects: nil,
+    facts: %{}
+  ]
 
   @type t :: %__MODULE__{
           graph: Graph.t(),
@@ -57,7 +73,9 @@ defmodule Anchor.Domain.Model do
           classification: %{module() => Classification.t()},
           aggregates: Index.t(),
           config: Config.t(),
-          cfa: Cfa.t() | nil
+          cfa: Cfa.t() | nil,
+          effects: Effects.t() | nil,
+          facts: %{module() => Classification.facts()}
         }
 
   @doc """
@@ -96,7 +114,8 @@ defmodule Anchor.Domain.Model do
       architecture: architecture,
       classification: classification,
       config: config,
-      aggregates: Index.build(config.aggregates, graph)
+      aggregates: Index.build(config.aggregates, graph),
+      facts: Map.new(facts, &{&1.module, &1})
     }
 
     {model, uses_unknown(facts, architecture, source_facts) ++ issues ++ export_issues}

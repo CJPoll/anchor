@@ -144,6 +144,41 @@ rules:
     paths: ["lib/**/*.ex"]
     baseline: .anchor/baselines/context_acyclic.txt
 
+  # --- Rule: each function's bucket matches what it causes (DND-5447) ---
+  #
+  # `mix anchor.graph` infers every function's role from its effects (a
+  # Domain function reaches no effect, an adapter performs one, a Manager
+  # orchestrates effects through other modules; roots are Framework) and
+  # judges each public function of the domain, adapters and managers buckets
+  # against its bucket. The effects Anchor's adapters perform through
+  # libraries outside the default primitives are declared in
+  # `architecture: effects` below.
+  #
+  # The baseline holds what it found when it landed: Domain functions that
+  # apply a function their caller passes in (an unresolved call counts as an
+  # effect until DND-5500's closed-world values narrow it), GraphRules.needs/1
+  # loading the rule modules through the code server (DND-5574), and adapter
+  # functions that are pure (conversions, GitEnv's environment list, a
+  # GenServer child_spec, DiffHunks' IO.iodata_to_binary/1).
+  - type: effects_match_bucket
+    id: effects_match_bucket
+    paths: ["lib/**/*.ex"]
+    baseline: .anchor/baselines/effects_match_bucket.txt
+
+  # --- Rule: only a struct's own module changes it, by value flow (DND-5454) ---
+  #
+  # The graph half of struct ownership: a Map writer, struct/2, put_in or a
+  # map update on a value known as another module's struct through its
+  # @type t fields, a @spec return, or a match in macro-injected code.
+  # The baseline holds what it found when it landed: five updates of a
+  # GraphReport.Finding (its `enforcement:`) and of a Sabotage.Scope
+  # (`base_sha:`) outside their modules.
+  - type: struct_owned_by_module_flow
+    id: struct_owned_by_module_flow
+    paths: ["lib/**/*.ex"]
+    owned_namespaces: ["Anchor"]
+    baseline: .anchor/baselines/struct_owned_by_module_flow.txt
+
 # --- Generated sabotage (DND-5473, DND-5484) ---
 #
 # `mix anchor.sabotage run` on Anchor's own tree. Records follow ADR 003:
@@ -204,3 +239,15 @@ architecture:
     managers: [managers, adapters, domain]
   interfaces:
     buckets: [managers]
+  # The effects Anchor's adapters perform through calls outside the default
+  # effect primitives (DND-5447): call tracing, a glob over the file system,
+  # running a Mix task (the in-process test suite), and loading a module
+  # through the code server (BehaviourReader).
+  effects:
+    - ":erlang.trace"
+    - ":erlang.trace_pattern"
+    - ":erlang.trace_info"
+    - ":erlang.trace_delivered"
+    - "Path.wildcard"
+    - "Mix.Task.run"
+    - "Code.ensure_loaded?"
