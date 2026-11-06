@@ -22,7 +22,7 @@ defmodule Spike.Srv do
 
   def handle_info({:g_once, flag}, state) do
     Spike.Hot.g(0)
-    :atomics.put(flag, 1, 1)
+    :atomics.put(flag, 2, 1)
     {:noreply, state}
   end
 end
