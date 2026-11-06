@@ -25,6 +25,7 @@ defmodule Anchor.Integration.AnalysesCompleteIntegrationTest do
   alias Anchor.Domain.Cfa
   alias Anchor.Domain.Demand
   alias Anchor.Domain.GraphReport
+  alias Anchor.Domain.RuleShapes
   alias Anchor.Managers.Graph
   alias Anchor.Managers.Graph.Request
   alias AnchorFixtures.AnalysesComplete.Flow
@@ -51,6 +52,14 @@ defmodule Anchor.Integration.AnalysesCompleteIntegrationTest do
     end
 
     %{tmp: tmp, ebin: ebin}
+  end
+
+  # DND-5446: the graph half of the Fix-shape invariant, for this rule type's
+  # own canary (graph_canary_test.exs names this file in @own_canary).
+  defp assert_one_fix(report) do
+    for finding <- report.findings do
+      assert RuleShapes.fix_count(finding.message) == 1, finding.message
+    end
   end
 
   defp run(%{tmp: tmp, ebin: ebin}, deps, rule_changes \\ %{}) do
@@ -109,6 +118,7 @@ defmodule Anchor.Integration.AnalysesCompleteIntegrationTest do
     assert [finding] = report.findings
     assert finding.message =~ ~s|rule 1 (id: "analyses_complete", analyses_complete)|
     assert finding.message =~ "hit its step bound after 1 steps"
+    assert_one_fix(report)
   end
 
   test "violating: a demand analysis that hit its bound fails the run", context do
@@ -122,6 +132,7 @@ defmodule Anchor.Integration.AnalysesCompleteIntegrationTest do
     assert [bound, floor] = report.findings
     assert bound.message =~ "hit its round bound on 2 function(s)"
     assert floor.message =~ "judged 0, below min_absent_parameters 1"
+    assert_one_fix(report)
   end
 
   test "violating: a floor above what the project holds fails the run", context do
@@ -130,6 +141,7 @@ defmodule Anchor.Integration.AnalysesCompleteIntegrationTest do
     assert report.exit_code == 1
     assert [finding] = report.findings
     assert finding.message =~ "below min_functions 99"
+    assert_one_fix(report)
   end
 
   test "a beam on disk that cannot be read fails the run, naming it", context do
