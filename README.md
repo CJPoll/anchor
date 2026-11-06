@@ -997,7 +997,7 @@ aggregates:
 `transaction_functions` tell the write analysis what writes and what opens a
 transaction, and are checked for shape (exact module names, and
 `"Module.function/arity"` tokens). The load refuses, each with a `Fix:` giving this shape: a section that is not a
-mapping; an unknown key at any level; a `declare` that is not a list; an entry
+mapping; an unknown key at any level; a `declare` that is neither `none` nor a list; an entry
 that is not a mapping, has no `name`, or a `name` that is not a module-name
 token; `schemas`, `owners` or `repos` that are not lists of exact module names
 (no glob, no Erlang module); `tables` that is not a list of non-empty strings;

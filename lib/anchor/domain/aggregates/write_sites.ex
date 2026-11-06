@@ -195,7 +195,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
               optional(:capture) => mfa()
             }
           ],
-          computed: [{atom(), non_neg_integer() | :any}],
+          computed: [{atom(), non_neg_integer() | :any} | {:module, module()}],
           def_line: non_neg_integer() | nil,
           public?: boolean()
         }
@@ -787,7 +787,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
 
             acc
             |> computed_capture(args, env)
-            |> dynamic(line, what, tags, capture_of_write_name?(args, env))
+            |> dynamic(line, what, tags, capture_of_write_name?(args, env, ctx))
         end
 
       {{:ok, :erlang}, :apply} ->
@@ -824,7 +824,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
           line,
           "a call of #{name}/#{length(args)} on a module held in a variable",
           tags,
-          computed_write?(name, length(args))
+          computed_write?(name, length(args), ctx)
         )
     end
   end
@@ -913,24 +913,32 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
 
   defp computed_capture(acc, _args, _env), do: acc
 
-  defp computed_apply(acc, f, args, env) do
-    case {FunctionWalk.atom(f, env), list_length(args, env)} do
-      {{:ok, name}, {:ok, arity}} -> computed_call(acc, name, arity)
-      {{:ok, name}, _unknown} -> computed_call(acc, name, :any)
-      _computed -> acc
+  defp computed_apply(acc, m, f, args, env) do
+    case {FunctionWalk.atom(m, env), FunctionWalk.atom(f, env), list_length(args, env)} do
+      {{:ok, module}, name, _length} when name == :error or name == :repo ->
+        %{acc | computed: [{:module, module} | acc.computed]}
+
+      {_module, {:ok, name}, {:ok, arity}} ->
+        computed_call(acc, name, arity)
+
+      {_module, {:ok, name}, _unknown} ->
+        computed_call(acc, name, :any)
+
+      _computed ->
+        acc
     end
   end
 
-  defp capture_of_write_name?([_module, name, arity], env) do
+  defp capture_of_write_name?([_module, name, arity], env, ctx) do
     with {:ok, name} <- FunctionWalk.atom(name, env),
          true <- :cerl.is_literal(arity) and is_integer(:cerl.concrete(arity)) do
-      computed_write?(name, :cerl.concrete(arity))
+      computed_write?(name, :cerl.concrete(arity), ctx)
     else
       _computed -> true
     end
   end
 
-  defp capture_of_write_name?(_args, _env), do: true
+  defp capture_of_write_name?(_args, _env, _ctx), do: true
 
   # An `Ecto.Multi` call whose steps Anchor cannot read, wherever it is written:
   # a Multi only runs in a transaction, so this is never a gap outside one.
@@ -960,7 +968,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
 
   # Process.spawn/2 compiles to :erlang.spawn_opt.
   defp other_process?({:erlang, name, _arity}),
-    do: name in [:spawn, :spawn_link, :spawn_monitor, :spawn_opt]
+    do: name in [:spawn, :spawn_link, :spawn_monitor, :spawn_opt, :spawn_request]
 
   defp other_process?(_callee), do: false
 
@@ -1023,7 +1031,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
     else
       _other ->
         acc
-        |> computed_apply(f, args, env)
+        |> computed_apply(m, f, args, env)
         |> dynamic(line, "an apply/3 Anchor cannot resolve", tags, apply_write?(m, f, env, ctx))
     end
   end
@@ -1035,20 +1043,31 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   # module that is no repo, or a known name no repo call writes with.
   defp apply_write?(m, f, env, ctx) do
     case {FunctionWalk.atom(m, env), FunctionWalk.atom(f, env)} do
-      {{:ok, m}, {:ok, f}} -> MapSet.member?(ctx.repos, m) and written_name?(f)
-      {{:ok, m}, _name} -> MapSet.member?(ctx.repos, m)
-      {_module, {:ok, f}} -> written_name?(f)
+      {{:ok, m}, {:ok, f}} -> writes_on?(m, ctx) and written_name?(f, ctx)
+      {{:ok, m}, _name} -> writes_on?(m, ctx)
+      {_module, {:ok, f}} -> written_name?(f, ctx)
       _unknown -> true
     end
   end
 
-  defp written_name?(name), do: Map.has_key?(@repo_writes, name) or transaction_or_raw?(name)
+  defp writes_on?(module, ctx) do
+    module == @raw_sql_module or MapSet.member?(ctx.repos, module) or
+      Enum.any?(ctx.write_functions, &(&1.module == module))
+  end
+
+  defp written_name?(name, ctx) do
+    Map.has_key?(@repo_writes, name) or transaction_or_raw?(name) or listed_write?(name, ctx)
+  end
+
+  defp listed_write?(name, ctx), do: Enum.any?(ctx.write_functions, &(&1.function == name))
 
   defp transaction_or_raw?(name), do: name in @raw_sql or name in [:transaction, :transact]
 
   # On a module Anchor cannot name: a transaction opens no scope, so the writes
   # in its body read as outside one, and raw SQL names no table.
-  defp computed_write?(name, arity), do: repo_write?(name, arity) or transaction_or_raw?(name)
+  defp computed_write?(name, arity, ctx) do
+    repo_write?(name, arity) or transaction_or_raw?(name) or listed_write?(name, ctx)
+  end
 
   # An apply/3 has no argument nodes to read a body or a Multi step from.
   defp unread_apply?({@multi, name, _arity}, _ctx), do: name in [:append, :merge, :prepend, :run]
@@ -1186,8 +1205,9 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
     computed =
       for {_from, %{computed: computed}} <- facts, pair <- computed, into: MapSet.new(), do: pair
 
-    for {{_module, name, arity} = mfa, _function} <- facts,
-        MapSet.member?(computed, {name, arity}) or MapSet.member?(computed, {name, :any}),
+    for {{module, name, arity} = mfa, _function} <- facts,
+        MapSet.member?(computed, {name, arity}) or MapSet.member?(computed, {name, :any}) or
+          MapSet.member?(computed, {:module, module}),
         into: MapSet.new(),
         do: mfa
   end

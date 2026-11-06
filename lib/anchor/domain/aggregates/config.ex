@@ -22,7 +22,7 @@ defmodule Anchor.Domain.Aggregates.Config do
   Every refusal is `{:error, {:invalid_config, message}}`, the message
   starting with the key path (`aggregates.declare[2].schemas ...`) and ending
   with a `Fix:` that gives the conforming shape. Refused: a section that is not
-  a mapping; an unknown key at any level; a `declare` that is not a list; an
+  a mapping; an unknown key at any level; a `declare` that is neither `none` nor a list; an
   entry that is not a mapping, has no `name`, or an unknown key; a `name` that
   is not a module-name token; `schemas`, `owners` or `repos` that are not lists
   of exact module names; `tables` that is not a list of non-empty strings; two

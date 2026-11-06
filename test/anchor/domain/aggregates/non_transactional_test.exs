@@ -63,6 +63,12 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
               defp n29b, do: Repo.insert(%S{})
 
               def n30(fun), do: Repo.transaction(fun)
+              def n50(args), do: apply(Ecto.Adapters.SQL, :query!, args)
+              def n51(mod, x), do: mod.soft_delete(x, [])
+              def n52(args), do: apply(Repo, :soft_delete, args)
+              def n53(name, args), do: apply(Ecto.Adapters.SQL, name, args)
+              def n54(mod, args), do: apply(mod, :soft_delete, args)
+              def n55(name, args), do: apply(Repo, name, args)
 
               def n46, do: Repo.query!("DELETE FROM s")
 
@@ -234,6 +240,32 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
 
     assert nontx(analysis, :n9).keys == keys([@s])
     assert nontx(analysis, :n10).keys == MapSet.new()
+
+    reported = MapSet.new(analysis.unattributed, & &1.mfa)
+    assert MapSet.member?(reported, {@n, :n51, 2})
+    assert MapSet.member?(reported, {@n, :n52, 1})
+    assert MapSet.member?(reported, {@n, :n54, 2})
+  end
+
+  test "an apply of a computed name reaches every function of the module it names" do
+    store = Module.concat(@ns, Store)
+
+    source =
+      @source <>
+        """
+        defmodule #{inspect(store)} do
+          alias #{inspect(@repo)}
+          def save(x), do: Repo.insert(x)
+          def known, do: Repo.transaction(fn -> save(%#{inspect(@s)}{}) end)
+          def named(name), do: apply(__MODULE__, name, [%#{inspect(@t)}{}])
+        end
+        """
+
+    analysis = Analysis.build(graph!(source), %Config{repos: [@repo]})
+    refute MapSet.member?(analysis.always_in_transaction, {store, :save, 1})
+
+    assert [%{unresolved: seen}] = Enum.filter(analysis.sites, &(&1.mfa == {store, :save, 1}))
+    assert seen =~ "callers are not known"
   end
 
   test "unattributed: raw SQL and a write on a computed module, outside a transaction", %{
@@ -256,7 +288,10 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
              %{mfa: {@n, :n39, 2}},
              %{mfa: {@n, :n44, 0}},
              %{mfa: {@n, :n45, 0}},
-             %{mfa: {@n, :n46, 0}}
+             %{mfa: {@n, :n46, 0}},
+             %{mfa: {@n, :n50, 1}},
+             %{mfa: {@n, :n53, 2}},
+             %{mfa: {@n, :n55, 2}}
            ] = a.unattributed
 
     assert computed_transaction == "a call of transaction/1 on a module held in a variable"
