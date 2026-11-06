@@ -106,6 +106,14 @@ defmodule Anchor.Domain.GraphRules do
     |> Enum.filter(fn {rule, selected} -> selected < min_modules(rule) end)
   end
 
+  @doc """
+  Whether `key` narrows `base_key` under `module`'s `narrows?/2` (DND-5633), a
+  callback every rule has; `false` for no rule (`nil`).
+  """
+  @spec narrows?(module() | nil, String.t(), String.t()) :: boolean()
+  def narrows?(nil, _base_key, _key), do: false
+  def narrows?(module, base_key, key) when is_atom(module), do: module.narrows?(base_key, key)
+
   defp declared_needs(module) do
     if Code.ensure_loaded?(module) and function_exported?(module, :needs, 0),
       do: module.needs(),

@@ -48,6 +48,7 @@ rules:
       - YamlElixir
       - Anchor.Adapters.ConfigFile
       - Anchor.Adapters.BaselineFile
+      - Anchor.Adapters.CredoKeys
       - Anchor.Adapters.BeamReader
       - Anchor.Adapters.GitShow
       - Anchor.Adapters.GitChangeSource
@@ -66,6 +67,7 @@ rules:
       - Anchor.Sabotage.CoverageCollector
       - Anchor.Managers.Sabotage.Coverage
       - Anchor.Managers.Lint
+      - Anchor.Managers.AstBaseline
       - Anchor.Managers.Sabotage
       - Anchor.Managers.Sabotage.Replay
       - Anchor.Managers.Sabotage.Runner

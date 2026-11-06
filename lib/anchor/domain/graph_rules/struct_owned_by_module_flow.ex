@@ -63,6 +63,9 @@ defmodule Anchor.Domain.GraphRules.StructOwnedByModuleFlow do
   @impl Anchor.Domain.GraphRule
   def rule_type, do: :struct_owned_by_module_flow
 
+  @impl Anchor.Domain.GraphRule
+  def narrows?(_base_key, _key), do: false
+
   @impl Anchor.Domain.RuleShape
   def shape(_rule) do
     "only a struct's own module builds or changes it: call a function on the struct's " <>

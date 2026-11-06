@@ -52,7 +52,9 @@ before coining a synonym.
 - `lint` — `Anchor.Managers.Lint`, the pipeline-composition Manager (the public
   lint entry that composes config loading, AST acquisition, fact derivation, rule
   selection, and detection). Used for end-to-end/integration runs that mutate the
-  Manager wiring rather than a single check's Domain detection.
+  Manager wiring rather than a single check's Domain detection. Also
+  `Anchor.Domain.EnforcementPasses` (DND-5631): joining the enforce and report
+  passes' findings, one copy each.
 - `base` — `Anchor.Check.Base`, the shared Framework layer every check `use`s:
   mapping violations to Credo issues and choosing the run's shared-failure
   reporter (DND-1265).
@@ -228,11 +230,17 @@ before coining a synonym.
 - `baseline` — report, baseline, enforce (DND-5441): `Anchor.Domain.Baseline`,
   `Enforcement` and `ViolationKey`, the engine common keys in `RuleSchema`,
   report-mode detection in `Managers.Lint` and `Check.Base`, the ratchet in
-  `Managers.Graph`, `BaselineFile`, `GitShow` and the task's baseline flags.
+  `Managers.Graph`, `BaselineFile`, `GitShow` and the task's baseline flags;
+  and the ast rules' baselines (DND-5632): `Anchor.Domain.AstBaseline`,
+  `Anchor.Managers.AstBaseline`, the `LintKeys` port and its `CredoKeys`
+  adapter, and `mix anchor.baseline`.
 - `layering` — the `layering` graph rule (DND-5442):
   `Anchor.Domain.GraphRules.Layering`, `CallMatrix`, `DynamicCalls`,
   `ViolationKey.mfa/1`, its registration and Config's architecture check of
-  graph rules and known types.
+  graph rules and known types; and the dynamic-call narrowing by declared
+  behaviour, `Anchor.Domain.BehaviourReceiver` (DND-5633).
+- `parity` — `Anchor.Domain.Parity` (DND-5491): the AST/graph engine-split
+  comparison, and the parity fixture tree and test it drives.
 - `aggregates` — aggregate declarations (DND-5476): the `aggregates:`
   section (`Anchor.Domain.Aggregates.Config`), the declaration index
   (`Anchor.Domain.Aggregates.Index`), the `aggregate_declarations` graph rule

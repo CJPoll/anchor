@@ -134,7 +134,10 @@ defmodule Anchor.Check.Base do
       report_shared_failures: shared_failure_reporter?(exec, check),
       enforce_selection_floors: whole_file_set?(exec, params),
       enabled_rule_types: known_types(enabled_rule_types(exec)),
-      checks_by_type: Map.new(Anchor.checks(), &{&1.rule_type(), &1})
+      checks_by_type: Map.new(Anchor.checks(), &{&1.rule_type(), &1}),
+      # DND-5632: an ast rule's baseline path, and its keys' files, are
+      # relative to the project root, where Credo runs.
+      root: File.cwd!()
     ]
   end
 
@@ -223,8 +226,22 @@ defmodule Anchor.Check.Base do
 
       defp violations_to_issues(source_file, violations) do
         Enum.map(violations, fn %Violation{} = violation ->
-          format_issue(issue_source_file(source_file, violation), issue_opts(violation))
+          source_file
+          |> issue_source_file(violation)
+          |> format_issue(issue_opts(violation))
+          |> put_key(violation)
         end)
+      end
+
+      # DND-5632: a finding of an ast rule with a baseline carries its key and
+      # its rule's id, and a baseline issue its rule's id, so `mix
+      # anchor.baseline --write` (`Anchor.Adapters.CredoKeys`) can write it.
+      defp put_key(issue, %Violation{key: key, rule_id: rule_id}) do
+        meta =
+          [anchor_key: key, anchor_rule_id: rule_id]
+          |> Enum.reject(fn {_name, value} -> is_nil(value) end)
+
+        if meta == [], do: issue, else: %{issue | meta: List.wrap(issue.meta) ++ meta}
       end
 
       # A violation that names its own file (a config failure) sits on that

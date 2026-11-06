@@ -7,6 +7,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
   # path anchored on this file (not the cwd, which sync modules change).
   #
   # Sabotage record: ../../sabotage_records/rule_schema-20260929-dnd_1286_rule_key_allowlist.md
+  # Sabotage record (DND-5632): ../../sabotage_records/baseline-20261103-dnd_5648_graph_followups.md
   # Sabotage record (DND-5447, DND-5454 rows): ../../sabotage_records/rule_schema-20261103-dnd_5447_graph_rules_c.md
   # DND-5441 (engine common keys, enforcement, baseline, validate_architecture/3):
   #   ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
@@ -92,7 +93,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
                Config.parse_rule(rule(:no_direct_dependency, %{"forbiden_patterns" => ["*.X.*"]}))
 
       assert reason =~
-               "known keys for no_direct_dependency: allowed_callers, context_depth, enforcement, " <>
+               "known keys for no_direct_dependency: allowed_callers, baseline, context_depth, enforcement, " <>
                  "forbidden_functions, " <>
                  "forbidden_modules, " <>
                  "forbidden_patterns, id, match, min_files, paths, pattern, recursive, " <>
@@ -194,7 +195,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
       end
 
       assert RuleSchema.common_keys(:ast) ==
-               ~w(enforcement id min_files paths pattern recursive type uses_module)
+               ~w(baseline enforcement id min_files paths pattern recursive type uses_module)
 
       assert RuleSchema.common_keys(:graph) ==
                ~w(baseline bucket enforcement id min_modules paths pattern type)
@@ -231,6 +232,32 @@ defmodule Anchor.Domain.RuleSchemaTest do
         # DND-1290: the relation column is `@relations_by_type`.
         assert Enum.sort(relation) == RuleSchema.relation_keys(type),
                "README relation for #{type}"
+      end
+    end
+  end
+
+  # DND-5491: the engine split. Layering is a behaviour property, so the graph
+  # engine is its authority; the AST dependency rules are its write-time early
+  # warnings, held equal to it by test/anchor/integration/layering_parity_test.exs.
+  # A target that is not a graph type is a CompileError, proven by sabotage.
+  # Sabotage record (DND-5491): ../../sabotage_records/parity-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (DND-5491, PA-H): ../../sabotage_records/rule_schema-20261103-dnd_5648_graph_followups.md
+  describe "early_warning_of/1" do
+    test "the AST dependency rules are layering's early warnings" do
+      assert RuleSchema.early_warning_of(:no_direct_dependency) == :layering
+      assert RuleSchema.early_warning_of(:no_transitive_dependency) == :layering
+    end
+
+    test "layering, and an AST type with no entry, warn of nothing" do
+      assert RuleSchema.early_warning_of(:layering) == nil
+      assert RuleSchema.early_warning_of(:context_acyclic) == nil
+      assert RuleSchema.early_warning_of(:single_control_flow) == nil
+    end
+
+    test "every early warning is an ast type warning of a graph type" do
+      for type <- RuleSchema.rule_types(), target = RuleSchema.early_warning_of(type) do
+        assert RuleSchema.engine(type) == :ast, inspect(type)
+        assert RuleSchema.engine(target) == :graph, inspect(target)
       end
     end
   end
