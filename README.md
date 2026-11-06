@@ -1050,7 +1050,11 @@ project. A comprehension's collector (`for ..., into: target`) applies
 nothing to resolve when the target is a literal (no struct but a `MapSet`)
 or a `Map.new`/`MapSet.new`
 the function builds itself; into any other target (a parameter, which may be
-an `IO.stream/0`), it is unresolved. **An unresolved call counts as an effect**: it never makes a
+an `IO.stream/0`), it is unresolved. A call of a project function whose body
+Anchor did not read is unresolved too, naming the function and why (DND-5679):
+a function of a project module the graph could not decode (an Erlang module,
+`{:not_elixir, _}`, or a beam whose debug info is stripped) or a public
+function with no Core body. **An unresolved call counts as an effect**: it never makes a
 function look pure, and the run prints how many there were.
 
 For each module the rule selects in a bucket of role `domain`, `adapters` or

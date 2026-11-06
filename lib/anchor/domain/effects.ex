@@ -19,7 +19,11 @@ defmodule Anchor.Domain.Effects do
   Its call edges (`Anchor.Domain.Graph.Call`):
 
     * a static call of a primitive is an effect; of a project function, an
-      edge to it; of anything else (the stdlib, a dependency), nothing;
+      edge to it; of a project function whose body the graph did not read (a
+      module in `unreadable`, such as an Erlang module, `{:not_elixir, _}`, or
+      a public function with no Core body, `{:no_core, _}`), **unresolved**,
+      naming the function and why (DND-5679): what it does is unknown, never
+      pure; of anything else (the stdlib, a dependency), nothing;
     * a call on a computed module (`mod.fetch(x)`) reaches every project
       module exporting the function (`Anchor.Domain.DynamicCalls.candidates/2`,
       the resolution layering uses); with none, the receiver is outside the
@@ -132,7 +136,15 @@ defmodule Anchor.Domain.Effects do
           do: {mfa, node}
 
     known = MapSet.new(functions, &elem(&1, 0))
-    ctx = %{graph: graph, primitives: primitives, known: known, cfa: model.cfa, calls: calls}
+
+    ctx = %{
+      graph: graph,
+      primitives: primitives,
+      known: known,
+      opaque: opaque(graph, no_core),
+      cfa: model.cfa,
+      calls: calls
+    }
 
     targets = Map.new(functions, fn {mfa, node} -> {mfa, targets(mfa, node, ctx)} end)
 
@@ -220,19 +232,50 @@ defmodule Anchor.Domain.Effects do
         # project Repo) is a primitive there too, never just its body.
         for module <- modules,
             mfa <- exported(ctx.graph, module, name, arity),
-            target <- static(mfa, ctx),
+            target <- static(mfa, call.line, ctx),
             do: target
     end
   end
 
-  defp call_targets(%Call{to: {_m, _f, _a} = to}, ctx), do: static(to, ctx)
+  defp call_targets(%Call{to: {_m, _f, _a} = to} = call, ctx), do: static(to, call.line, ctx)
 
-  defp static(mfa, ctx) do
+  defp static(mfa, line, ctx) do
     cond do
       EffectPrimitives.primitive?(ctx.primitives, mfa) -> [{:primitive, mfa}]
       MapSet.member?(ctx.known, mfa) -> [{:fn, mfa}]
+      why = opaque_reason(mfa, ctx.opaque) -> [unresolved(opaque_text(mfa, why), line)]
       true -> []
     end
+  end
+
+  # The project functions whose body the graph did not read (DND-5679): every
+  # function of a module in `unreadable` that the graph holds no node for, and
+  # each public function with no Core body. A call of one is unknown.
+  defp opaque(%Graph{unreadable: unreadable, modules: modules}, no_core) do
+    unread =
+      for %{module: module, reason: reason} <- unreadable,
+          is_atom(module) and module != nil,
+          not Map.has_key?(modules, module),
+          into: %{},
+          do: {module, reason}
+
+    %{modules: unread, functions: no_core}
+  end
+
+  defp opaque_reason({module, _f, _a} = mfa, %{modules: modules, functions: functions}) do
+    cond do
+      Map.has_key?(modules, module) -> {:module, Map.fetch!(modules, module)}
+      MapSet.member?(functions, mfa) -> :no_core
+      true -> nil
+    end
+  end
+
+  defp opaque_text({module, name, arity}, :no_core),
+    do: "a call of #{Exception.format_mfa(module, name, arity)}, which has no Core body to read"
+
+  defp opaque_text({module, name, arity}, {:module, reason}) do
+    "a call of #{Exception.format_mfa(module, name, arity)}, in a project module whose body " <>
+      "Anchor did not read (#{inspect(reason, limit: 3)})"
   end
 
   defp site_targets(_mfa, _node, %{cfa: nil}), do: []
@@ -340,10 +383,13 @@ defmodule Anchor.Domain.Effects do
     end
   end
 
-  defp closure_targets({:ok, closures}, _node, ctx) do
+  defp closure_targets({:ok, closures}, node, ctx) do
     Enum.flat_map(closures, fn
-      {{_m, _f, _a} = defined_in, ordinal} when is_integer(ordinal) -> static(defined_in, ctx)
-      {_m, _f, _a} = capture -> static(capture, ctx)
+      {{_m, _f, _a} = defined_in, ordinal} when is_integer(ordinal) ->
+        static(defined_in, Core.line(node), ctx)
+
+      {_m, _f, _a} = capture ->
+        static(capture, Core.line(node), ctx)
     end)
   end
 

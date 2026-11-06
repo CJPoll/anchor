@@ -408,7 +408,10 @@ causes: a root (`Anchor.Domain.Roots`: framework-bucket public functions,
 `architecture.roots`, external behaviour callbacks, which the runner reads
 through the `Anchor.Adapters.BehaviourSource` port (`BehaviourReader`) for
 `Roots.external_behaviours/1` and passes in as `:callbacks`, so `Roots` stays
-pure; the result keeps them as `Effects.roots`) is framework; a call of an effect primitive
+pure; the result keeps them as `Effects.roots`) is framework; a call of a project
+function whose body the graph did not read (a module in `unreadable` the graph has no
+node for, or a `{:no_core, _}` function) is unresolved, named, never pure (DND-5679);
+a call of an effect primitive
 (`EffectPrimitives.primitive?/2`, its inference list, not demand's) itself or
 through its own module is adapters; reaching one through another module, or
 an unresolved call, is managers; else domain. Apply sites are read from

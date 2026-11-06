@@ -6,11 +6,18 @@ defmodule Anchor.Domain.EffectsTest do
   # test/anchor/integration/effects_canary_test.exs.
   #
   # Sabotage record: ../../sabotage_records/effects-20261103-dnd_5447_graph_rules_c.md
+  # Sabotage record (DND-5679): ../../sabotage_records/effects-20261106-dnd_5676_effects_cfa_batch.md
+  # The DND-5679 compiled case reads one Erlang and one Elixir fixture beam
+  # through BeamReader's pure decode and the builder, as cfa_test.exs does.
   use ExUnit.Case, async: true
 
+  import Anchor.Test.BeamFixtures, only: [compile_unloaded: 1]
   import Anchor.Test.EffectsModels
 
+  alias Anchor.Adapters.BeamReader
   alias Anchor.Domain.Effects
+  alias Anchor.Domain.Graph.Builder
+  alias Anchor.Test.StructFlowFixtures
 
   defp infer(modules, calls, opts \\ []),
     do: modules |> model(calls, opts) |> Effects.infer(callbacks: %{})
@@ -156,5 +163,103 @@ defmodule Anchor.Domain.EffectsTest do
     assert Effects.role(effects, {D, :g, 1}) == nil
     assert Effects.role(effects, {D, :f, 1}) == :domain
     assert effects.not_analysed == 1
+  end
+
+  describe "a call into a project function whose body was not read (DND-5679)" do
+    @erlang %{path: "ebin/filer.beam", module: :filer, reason: {:not_elixir, :erl_abstract_code}}
+
+    test "a call of an unread project module (an Erlang module) is unresolved, named, never pure" do
+      effects =
+        infer([{D, "domain", [{:f, 1}], []}], [{{D, :f, 1}, {:filer, :write, 1}}],
+          unreadable: [@erlang]
+        )
+
+      assert Effects.role(effects, {D, :f, 1}) == :managers
+      assert effects.unresolved_calls == 1
+
+      assert [{D, :f, 1}, {:unresolved, %{text: text, line: 7}}] =
+               Effects.evidence(effects, {D, :f, 1})
+
+      assert text ==
+               "a call of :filer.write/1, in a project module whose body Anchor did not read " <>
+                 "({:not_elixir, :erl_abstract_code})"
+    end
+
+    test "control: the same call into a module outside the project reaches nothing" do
+      effects = infer([{D, "domain", [{:f, 1}], []}], [{{D, :f, 1}, {:filer, :write, 1}}])
+
+      assert Effects.role(effects, {D, :f, 1}) == :domain
+      assert effects.unresolved_calls == 0
+    end
+
+    test "a module both read and listed unread (a duplicate beam) is read: its functions decide" do
+      effects =
+        infer(
+          [{D, "domain", [{:f, 1}], []}, {D2, "domain", [{:g, 1}], []}],
+          [{{D, :f, 1}, {D2, :g, 1}}],
+          unreadable: [%{path: "b/d2.beam", module: D2, reason: {:duplicate_module, "a/d2.beam"}}]
+        )
+
+      assert Effects.role(effects, {D, :f, 1}) == :domain
+    end
+
+    test "a call of a public function with no Core body is unresolved, named" do
+      effects =
+        infer(
+          [{D, "domain", [{:f, 1}], []}, {D2, "domain", [{:g, 1}, {:h, 1}], []}],
+          [{{D, :f, 1}, {D2, :g, 1}}],
+          unreadable: [%{path: "x.beam", module: D2, reason: {:no_core, [{:g, 1}]}}]
+        )
+
+      assert Effects.role(effects, {D, :f, 1}) == :managers
+
+      assert [{D, :f, 1}, {:unresolved, %{text: text}}] = Effects.evidence(effects, {D, :f, 1})
+      assert text == "a call of D2.g/1, which has no Core body to read"
+    end
+
+    test "compiled: an Erlang module that writes a file, called from a Domain function, is not pure" do
+      forms = [
+        {:attribute, 1, :module, :anchor_fixtures_effects_filer},
+        {:attribute, 1, :export, [{:write, 1}]},
+        {:function, 1, :write, 1,
+         [
+           {:clause, 1, [{:var, 1, :X}], [],
+            [
+              {:call, 1, {:remote, 1, {:atom, 1, :file}, {:atom, 1, :write_file}},
+               [{:string, 1, ~c"out"}, {:var, 1, :X}]}
+            ]}
+         ]}
+      ]
+
+      {:ok, :anchor_fixtures_effects_filer, erlang} =
+        :compile.forms(forms, [:binary, :debug_info])
+
+      elixir =
+        compile_unloaded("""
+        defmodule AnchorFixtures.EffectsTest.Pricing do
+          def save(x), do: :anchor_fixtures_effects_filer.write(x)
+          def total(xs), do: Enum.sum(xs)
+        end
+        """)
+
+      graph =
+        [{:anchor_fixtures_effects_filer, erlang} | elixir]
+        |> Enum.map(fn {module, binary} ->
+          BeamReader.decode(binary, app: :app, path: "ebin/#{module}.beam")
+        end)
+        |> Builder.build(%{})
+
+      effects = graph |> StructFlowFixtures.model() |> Effects.infer(callbacks: %{})
+
+      assert Effects.role(effects, {AnchorFixtures.EffectsTest.Pricing, :save, 1}) == :managers
+      assert Effects.role(effects, {AnchorFixtures.EffectsTest.Pricing, :total, 1}) == :domain
+
+      assert [
+               _save,
+               {:unresolved,
+                %{text: "a call of :anchor_fixtures_effects_filer.write/1, " <> _why}}
+             ] =
+               Effects.evidence(effects, {AnchorFixtures.EffectsTest.Pricing, :save, 1})
+    end
   end
 end
