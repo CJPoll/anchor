@@ -50,6 +50,7 @@ defmodule Anchor.Domain.GraphRules.StructOwnedByModuleFlow do
   @behaviour Anchor.Domain.GraphRule
   @behaviour Anchor.Domain.RuleShape
 
+  alias Anchor.Domain.Failures
   alias Anchor.Domain.Graph.FunctionNode
   alias Anchor.Domain.Graph.ModuleNode
   alias Anchor.Domain.GraphRules
@@ -80,14 +81,31 @@ defmodule Anchor.Domain.GraphRules.StructOwnedByModuleFlow do
     literal = literal_sites(graph, owners, owned)
     selected = GraphRules.select(model, rule)
 
-    writes =
+    flows =
       for module <- selected,
           %ModuleNode{} = node <- [Map.get(graph.modules, module)],
-          violation <-
-            module_writes(node, index, Map.get(owners, module, module), owned, literal, rule),
+          flow <- module_flows(node, index),
+          do: flow
+
+    judge = %{owners: owners, owned: owned, literal: literal, rule: rule}
+
+    writes =
+      for {node, mfa, function, _status, writes} <- flows,
+          violation <- function_violations(node, mfa, function, writes, judge),
           do: violation
 
-    unowned(selected, graph.modules, owned, rule) ++ writes
+    unowned(selected, graph.modules, owned, rule) ++
+      bound_hit(flows, rule, model) ++ writes
+  end
+
+  # A function whose value flow did not settle within StructFlow's pass bound
+  # (DND-5676): its writes are what the last settled pass found, so the rule
+  # fails closed naming it, never reads it as complete.
+  defp bound_hit(flows, rule, %Model{config: config}) do
+    case for({_node, mfa, _fun, {:bound_hit, _passes}, _writes} <- flows, do: mfa) do
+      [] -> []
+      mfas -> [Failures.struct_flow_bound_hit(rule, mfas, StructFlow.max_passes(), config.path)]
+    end
   end
 
   # ---- owners ----
@@ -141,15 +159,27 @@ defmodule Anchor.Domain.GraphRules.StructOwnedByModuleFlow do
 
   # ---- writes ----
 
-  defp module_writes(%ModuleNode{module: module} = node, index, owner, owned, literal, rule) do
+  # Each function of `node` with Core: its value flow's writes, and whether
+  # the flow settled (`{:bound_hit, passes}` when it did not).
+  defp module_flows(%ModuleNode{module: module} = node, index) do
     for {{name, arity}, %FunctionNode{core: core} = function} <- Enum.sort(node.functions),
-        core != nil,
-        mfa = {module, name, arity},
-        generated? <- [generated?(function)],
-        {line, writes} <- sites(core, index, module, owner, owned),
-        not MapSet.member?(literal, {mfa, line}),
-        not Enum.any?(writes, &(&1.how == :matched and not generated?)),
-        do: violation(mfa, node, outermost(writes), rule)
+        core != nil do
+      {status, writes} = flow(StructFlow.writes(core, index, module))
+      {node, {module, name, arity}, function, status, writes}
+    end
+  end
+
+  defp flow({:ok, writes}), do: {:ok, writes}
+  defp flow({:bound_hit, passes, writes}), do: {{:bound_hit, passes}, writes}
+
+  defp function_violations(%ModuleNode{module: module} = node, mfa, function, writes, judge) do
+    generated? = generated?(function)
+    owner = Map.get(judge.owners, module, module)
+
+    for {line, site} <- sites(writes, owner, judge.owned),
+        not MapSet.member?(judge.literal, {mfa, line}),
+        not Enum.any?(site, &(&1.how == :matched and not generated?)),
+        do: violation(mfa, node, outermost(site), judge.rule)
   end
 
   # The write on the value a site starts from: not a field of another write's
@@ -164,9 +194,8 @@ defmodule Anchor.Domain.GraphRules.StructOwnedByModuleFlow do
   end
 
   # The writes to another module's struct, grouped by line in first-seen order.
-  defp sites(core, index, module, owner, owned) do
-    core
-    |> StructFlow.writes(index, module)
+  defp sites(writes, owner, owned) do
+    writes
     |> Enum.filter(&other?(&1.struct, owner, owned))
     |> Enum.group_by(& &1.line)
     |> Enum.sort_by(fn {line, _writes} -> line || 0 end)

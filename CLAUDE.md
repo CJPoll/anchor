@@ -461,7 +461,11 @@ It skips the AST rule's sites: a line with another struct's `:build` or
 carry no macro `:context`. One violation per (function, line). In a `for`
 comprehension a `x = expr` line is a filter: bind a value that may be false
 with `x <- [expr]`. Fixtures that hold a `defimpl` put `@compile {:debug_info,
-true}` in its body (BeamFixtures adds it to `defmodule`s only).
+true}` in its body (BeamFixtures adds it to `defmodule`s only). StructFlow's seed
+fixpoint is bounded (`StructFlow.max_passes/0`); a function whose seeds still
+change at the last pass answers `{:bound_hit, passes, result}`, never `{:ok,
+result}`, and the rule fails closed naming it (`Failures.struct_flow_bound_hit/4`,
+DND-5676).
 
 ## Higher-order flow (DND-5497)
 
