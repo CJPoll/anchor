@@ -63,6 +63,7 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
               defp n29b, do: Repo.insert(%S{})
 
               def n30(fun), do: Repo.transaction(fun)
+              def n56(args), do: apply(#{inspect(Module.concat(@ns, Store2))}, :soft_it, args)
               def n50(args), do: apply(Ecto.Adapters.SQL, :query!, args)
               def n51(mod, x), do: mod.soft_delete(x, [])
               def n52(args), do: apply(Repo, :soft_delete, args)
@@ -235,7 +236,8 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
 
   test "a write_functions write outside a transaction is non-transactional; inside it is not" do
     {:ok, soft_delete} = FunctionRef.parse("#{inspect(@repo)}.soft_delete/2")
-    config = %Config{repos: [@repo], write_functions: [soft_delete]}
+    {:ok, soft_it} = FunctionRef.parse("#{inspect(Module.concat(@ns, Store2))}.soft_it/1")
+    config = %Config{repos: [@repo], write_functions: [soft_delete, soft_it]}
     analysis = Analysis.build(graph!(@source), config)
 
     assert nontx(analysis, :n9).keys == keys([@s])
@@ -245,6 +247,7 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
     assert MapSet.member?(reported, {@n, :n51, 2})
     assert MapSet.member?(reported, {@n, :n52, 1})
     assert MapSet.member?(reported, {@n, :n54, 2})
+    assert MapSet.member?(reported, {@n, :n56, 1})
   end
 
   test "an apply of a computed name reaches every function of the module it names" do
