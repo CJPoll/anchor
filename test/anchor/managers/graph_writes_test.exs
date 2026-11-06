@@ -115,8 +115,13 @@ defmodule Anchor.Managers.GraphWritesTest do
   } do
     report =
       run([rule(:stub_cfa_probe, "probe", 1)], beams,
-        aggregate_analysis: fn _model -> raise "never run" end
+        aggregate_analysis: fn _model ->
+          send(self(), :write_analysis_ran)
+          raise "never run"
+        end
       )
+
+    refute_received :write_analysis_ran
 
     assert [probe] = report.findings
     assert probe.message =~ "probe saw cfa:"
