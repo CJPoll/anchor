@@ -40,6 +40,7 @@ defmodule Anchor.Domain.Aggregates.WriteSitesDefaultTest do
     alias #{inspect(@listed)}
     alias #{inspect(@uow)}
     alias Ecto.Multi
+    require Logger
 
     def d4(x), do: Repo.transaction(fn -> Lib.save(x) end)
     def d5(l), do: Repo.transaction(fn -> Enum.count(l) end)
@@ -91,6 +92,14 @@ defmodule Anchor.Domain.Aggregates.WriteSitesDefaultTest do
     def d16b, do: (fn -> Repo.insert(%S{}) end).()
     def d17(pid), do: GenServer.call(pid, :save)
     def d18, do: Task.async(fn -> :ok end)
+    def d20a, do: Repo.transaction(fn -> Logger.debug(fn -> "x" end) end)
+    def d20b(c), do: Repo.transaction(fn -> Ecto.Changeset.traverse_errors(c, fn e -> e end) end)
+    def d20c(c), do: Repo.transaction(fn -> Ecto.Changeset.update_change(c, :x, fn v -> v end) end)
+    def d20d(c), do: Repo.transaction(fn -> Ecto.Changeset.validate_change(c, :x, fn _f, _v -> [] end) end)
+    def d20e(c), do: Repo.transaction(fn -> Ecto.Changeset.validate_change(c, :x, :m, fn _f, _v -> [] end) end)
+    def d20f(l), do: Repo.transaction(fn -> MapSet.new(l, fn v -> v end) end)
+    def d20g(l), do: Repo.transaction(fn -> Enum.map_join(l, fn v -> v end) end)
+
     def d19, do: Repo.transaction(fn -> #{inspect(@macros)}."MACRO-m"(__ENV__, 1) end)
   end
   """
@@ -218,6 +227,15 @@ defmodule Anchor.Domain.Aggregates.WriteSitesDefaultTest do
       assert a.counts.cleared >= 1
       assert a.counts.unread_by_callee["unread: call of GenServer.call/2"] == 2
       assert a.counts.unread_by_callee[lib_call("save/1")] == 4
+    end
+  end
+
+  describe "a function a listed function runs where it is called" do
+    for name <- [:d20a, :d20b, :d20c, :d20d, :d20e, :d20f, :d20g] do
+      @tag name: name
+      test "#{name}: HigherOrder names its place, so it is no gap", %{analysis: a, name: name} do
+        assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
+      end
     end
   end
 

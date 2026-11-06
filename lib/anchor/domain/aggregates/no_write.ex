@@ -35,6 +35,7 @@ defmodule Anchor.Domain.Aggregates.NoWrite do
     Enum,
     Enumerable,
     Float,
+    Function,
     Inspect,
     Inspect.Algebra,
     Inspect.Any,
@@ -74,6 +75,7 @@ defmodule Anchor.Domain.Aggregates.NoWrite do
     ArithmeticError,
     CaseClauseError,
     CompileError,
+    Ecto.InvalidChangesetError,
     Exception,
     FunctionClauseError,
     KeyError,
@@ -98,11 +100,13 @@ defmodule Anchor.Domain.Aggregates.NoWrite do
   # is a `Repo` call, read as a write. A function handed to one (`prepare_changes`)
   # is a gap: WriteSites checks the arguments.
   @query_modules [
+    Ecto,
     Ecto.Changeset,
     Ecto.Query,
     Ecto.Query.API,
     Ecto.Query.Builder,
     Ecto.Query.Builder.CTE,
+    Ecto.Query.Builder.Combination,
     Ecto.Query.Builder.Distinct,
     Ecto.Query.Builder.Dynamic,
     Ecto.Query.Builder.Filter,
@@ -200,6 +204,7 @@ defmodule Anchor.Domain.Aggregates.NoWrite do
                       :list_to_existing_atom,
                       :list_to_integer,
                       :list_to_tuple,
+                      :make_ref,
                       :make_tuple,
                       :map_get,
                       :map_size,
@@ -239,8 +244,7 @@ defmodule Anchor.Domain.Aggregates.NoWrite do
                       :put_in,
                       :struct,
                       :struct!,
-                      :update_in,
-                      :=~
+                      :update_in
                     ])
 
   # This node's own state, read or set: the environment, the process dictionary, the
