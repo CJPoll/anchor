@@ -6,9 +6,9 @@
 - **Code under test:** `Anchor.Domain.GraphRules.ParameterReachesSink`, `Anchor.Domain.Core.mfa_references/1`, `Anchor.Domain.DynamicCalls.computed_name_count/1`, the `:demand` wiring in `Anchor.Managers.Graph`, `Anchor.Domain.GraphReport.parameter_sinks/4` and its note, and the two rows of `Anchor.Domain.Demand.Transfer` the QA plan names.
 - **Suite run:** each mutation ran `mix test --timeout 2000 --max-cases 2 <its test files>` inside one `test-slot`, by a driver that applied it, ran the files and restored the source. The checkout's absolute path in the output reads `<worktree>`.
 
-The first table holds the last full run, and each of its sections shows the first failure, cut at 70 lines. It was rewritten in place through the critic's rounds, so `## Measured zeros` and `## Retired mutants` keep what those rewrites dropped, and `## Second run` and `## Third run` are appended after it.
+The first table holds the last full run, and each of its sections shows the first failure, cut at 70 lines. It was rewritten in place through the critic's rounds, so `## Measured zeros` and `## Retired mutants` keep what those rewrites dropped, and `## Second run` to `## Fifth run` are appended after it.
 
-**Not run in this form (`## Fourth run`, PW-A, is its bounded form):** the chain's recursion guard (`MapSet.member?(seen, step)` read as `false`). Without it `steps/3` does not terminate, so its mutant spins and allocates for the whole 2000 ms bound on the desktop (the sabotage load rule). `count/2` in the canary and `D.rec/1` in the Domain test are the rows it would fail.
+**Not run on purpose, and then run by mistake (`## Fourth run`, PW-A; the trap is in `## Fifth run`):** the chain's recursion guard (`MapSet.member?(seen, step)` read as `false`). Without it `steps/3` does not terminate, so its mutant spins and allocates for the whole 2000 ms bound on the desktop (the sabotage load rule). `count/2` in the canary and `D.rec/1` in the Domain test are the rows it would fail.
 
 | # | Mutation | Tests run | Result | Failing tests |
 |---|---|---|---|---|
@@ -1661,7 +1661,7 @@ Run summary: `30 tests, 1 failure`
 
 ## Fourth run
 
-The review floor found tests with no recorded red, because no mutation had been aimed at them. These ran against `705588e`, through the same driver and `test-slot`. PW-A is the recursion guard in a form that terminates. PW-F and PW-H stayed green.
+The review floor found tests with no recorded red, because no mutation had been aimed at them. These ran against `705588e`, through the same driver and `test-slot`. PW-A was meant as the recursion guard in a form that terminates, and did not terminate (`## Fifth run`). PW-F and PW-H stayed green.
 
 | # | Mutation | Tests run | Result | Failing tests |
 |---|---|---|---|---|
@@ -1950,4 +1950,31 @@ Run summary: `7 tests, 1 failure`
        test/anchor/domain/rule_shapes_test.exs:31: (test)
 
 .
+```
+
+## Fifth run
+
+**A trap: PW-A's red is a timeout, not an assertion.** `MapSet.size(seen) >= 3` never fires on a recursion, because a repeated step adds nothing to `seen`, so `seen` stays small and the mutant spun in `steps/3` until the 2000 ms bound on each test that reached it. PW-A's row says `red`, and what it proves is only that a chain with no working guard does not finish. It also broke the load rule the header cites, for about 2 s per test. Do not re-run it.
+
+Any mutant that truly removes the guard spins, so that break can only be killed by a timeout. What can be held by an assertion is where the chain stops. PW-J stops it early, which always terminates, and it fails on the chain text itself. It ran against `2d73cfb`, through the same driver and `test-slot`, on the Domain test alone.
+
+| # | Mutation | Tests run | Result | Failing tests |
+|---|---|---|---|---|
+| PW-J | the chain stops at its second step, not at a repeat (`lib/anchor/domain/graph_rules/parameter_reaches_sink.ex`) | `parameter_reaches_sink_test.exs` | `37 tests, 1 failure` (red) | check/2 the chain follows an absent callee, past one that is not, and stops at recursion |
+
+### PW-J — the chain stops at its second step, not at a repeat
+
+Run summary: `37 tests, 1 failure`
+
+```text
+1) test check/2 the chain follows an absent callee, past one that is not, and stops at recursion (Anchor.Domain.GraphRules.ParameterReachesSinkTest)
+     test/anchor/domain/graph_rules/parameter_reaches_sink_test.exs:109
+     Assertion with =~ failed
+     code:  assert f.message =~ "chain: D.f/1 param 1 -> D.rec/1 param 1 -> D.rec/1 param 1 (dropped)"
+     left:  "D.f/1 parameter 1 (arg1) reaches no return value and no effect (chain: D.f/1 param 1 -> D.rec/1 param 1 (dropped); call sites: 0). Fix: drop parameter 1 (arg1) of D.f/1 and stop passing it at its 0 call sites."
+     right: "chain: D.f/1 param 1 -> D.rec/1 param 1 -> D.rec/1 param 1 (dropped)"
+     stacktrace:
+       test/anchor/domain/graph_rules/parameter_reaches_sink_test.exs:119: (test)
+
+...........
 ```
