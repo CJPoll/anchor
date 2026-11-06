@@ -86,8 +86,9 @@ defmodule Anchor.Managers.GraphDemandTest do
     test = self()
 
     fn graph, cfa, effects ->
+      send(test, :demand_ran)
       demand = Demand.analyze(graph, cfa, effects)
-      send(test, {:demand_ran, cfa, effects, demand})
+      send(test, {:demand_result, cfa, effects, demand})
       demand
     end
   end
@@ -128,27 +129,28 @@ defmodule Anchor.Managers.GraphDemandTest do
     test "it is not run, and the rule that does not need it sees none", %{beams: beams} do
       report = run([rule(:stub_ok, "ok", 1)], beams)
 
-      refute_received {:demand_ran, _cfa, _effects, _demand}
+      refute_received :demand_ran
       assert report.exit_code == 0
     end
 
     test "--only narrowing away the rule that needs it: not run", %{beams: beams} do
       report = run([complete(), rule(:stub_ok, "ok", 2)], beams, only: ["ok"])
 
-      refute_received {:demand_ran, _cfa, _effects, _demand}
+      refute_received :demand_ran
       assert report.exit_code == 0
     end
   end
 
   describe "a rule that runs needs the analysis" do
-    test "it runs once, over the flow analysis and the architecture's effect tokens; a complete run is clean",
+    test "it runs once, over the flow analysis and the architecture's effect tokens",
          %{beams: beams} do
       report = run([complete(), rule(:stub_needs_cfa, "needs", 2)], beams)
 
-      assert_received {:demand_ran, %Cfa{} = cfa, ["AnchorFixtures.GraphDemandTest.Extra"],
-                       demand}
+      assert_received :demand_ran
+      refute_received :demand_ran
 
-      refute_received {:demand_ran, _cfa, _effects, _demand}
+      assert_received {:demand_result, %Cfa{} = cfa, ["AnchorFixtures.GraphDemandTest.Extra"],
+                       demand}
 
       assert cfa.counts.total == 1
       assert Demand.param(demand, {Flow, :first, 2}, 0) == :all
@@ -161,7 +163,7 @@ defmodule Anchor.Managers.GraphDemandTest do
     test "the rule alone over a complete analysis: exit 0, no finding", %{beams: beams} do
       report = run([complete()], beams)
 
-      assert_received {:demand_ran, _cfa, _effects, _demand}
+      assert_received :demand_ran
       assert report.exit_code == 0
       assert report.findings == []
     end
@@ -257,7 +259,7 @@ defmodule Anchor.Managers.GraphDemandTest do
          %{beams: beams} do
       report = run([complete()], beams, cfa: fn _graph -> raise "cfa blew up" end)
 
-      refute_received {:demand_ran, _cfa, _effects, _demand}
+      refute_received :demand_ran
       assert report.exit_code == 1
       assert [crashed] = report.findings
 
