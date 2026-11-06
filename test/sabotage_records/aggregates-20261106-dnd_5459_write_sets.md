@@ -8341,3 +8341,481 @@ the dynamic row keeps its tag when mixed (`lib/anchor/domain/aggregates/write_si
 
 ................
 ```
+
+# Twentieth run: an apply on a module that writes; a computed name reaches its module
+
+6 mutations for critic round 22's finding. WSU-LISTEDMOD survived its first run (25 tests, 0 failures); it got a test, and its row holds the red run.
+
+| # | Mutation | Tests run | Result |
+|---|---|---|---|
+| WSU-RAWMOD | an apply on the raw SQL module is no report (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs` | `25 tests, 1 failure` (red) |
+| WSU-REPOMOD | an apply on a repo is no report (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs` | `25 tests, 1 failure` (red) |
+| WSU-LISTEDNAME | a listed name on a computed module is no report (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs` | `25 tests, 1 failure` (red) |
+| WSU-MODULEREACH | a computed name on a module leaves its callers known (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs` | `25 tests, 1 failure` (red) |
+| WSU-MODULEMARK | a computed name on a module marks nothing (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs` | `25 tests, 1 failure` (red) |
+| WSU-LISTEDMOD | an apply of a listed write on its module is no report (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs` | `25 tests, 1 failure` (red) |
+
+## WSU-RAWMOD
+
+an apply on the raw SQL module is no report (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `25 tests, 1 failure`.
+
+```
+
+  1) test unattributed: raw SQL and a write on a computed module, outside a transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:271
+     match (=) failed
+     code:  assert [
+              %{mfa: {@n, :n11, 0}, what: raw, line: line},
+              %{mfa: {@n, :n12, 1}, what: computed},
+              %{mfa: {@n, :n22, 1}, what: captured},
+              %{mfa: {@n, :n23, 1}, what: computed_capture},
+              %{mfa: {@n, :n27, 1}},
+              %{mfa: {@n, :n31, 1}, what: raw_capture},
+              %{mfa: {@n, :n32, 1}, what: computed_raw},
+              %{mfa: {@n, :n33, 1}},
+              %{mfa: {@n, :n34, 2}, what: "a capture on a computed module or name"},
+              %{mfa: {@n, :n35, 2}, what: computed_transaction},
+              %{mfa: {@n, :n36, 1}, what: unread_apply},
+              %{mfa: {@n, :n37, 3}},
+              %{mfa: {@n, :n38, 2}},
+              %{mfa: {@n, :n39, 2}},
+              %{mfa: {@n, :n44, 0}},
+              %{mfa: {@n, :n45, 0}},
+              %{mfa: {@n, :n46, 0}},
+              %{mfa: {@n, :n50, 1}},
+              %{mfa: {@n, :n53, 2}},
+              %{mfa: {@n, :n55, 2}}
+            ] = a.unattributed
+     left:  [
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n11, 0}, what: raw, line: line},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n12, 1}, what: computed},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n22, 1}, what: captured},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n23, 1}, what: computed_capture},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n27, 1}},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n31, 1}, what: raw_capture},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n32, 1}, what: computed_raw},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n33, 1}},
+              %{
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n34, 2},
+                what: "a capture on a computed module or name"
+              },
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n35, 2}, what: computed_transaction},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n36, 1}, what: unread_apply},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n37, 3}},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n38, 2}},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n39, 2}},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n44, 0}},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n45, 0}},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n46, 0}},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n50, 1}},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n53, 2}},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n55, 2}}
+            ]
+     right: [
+              %{
+                line: 58,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n11,
+                 0},
+                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
+              },
+              %{
+                line: 59,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n12,
+                 1},
+                what: "a call of insert/1 on a module held in a variable"
+              },
+              %{
+                line: 125,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n22,
+                 1},
+                what: "a capture of the write AnchorFixtures.NonTransactionalTest.Repo.insert/1"
+              },
+              %{
+                line: 126,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n23,
+                 1},
+                what: "a capture on a computed module or name"
+              },
+              %{
+                line: 118,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n27,
+                 1},
+                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
+              },
+              %{
+                line: 112,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n31,
+                 1},
+                what: "a capture of the write AnchorFixtures.NonTransactionalTest.Repo.query!/1"
+              },
+              %{
+                line: 113,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n32,
+                 1},
+                what: "a call of query!/1 on a module held in a variable"
+              },
+              %{
+                line: 114,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n33,
+                 1},
+                what: "a capture of the write Ecto.Adapters.SQL.query!/1"
+              },
+              %{
+                line: 115,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n34,
+                 2},
+                what: "a capture on a computed module or name"
+              },
+              %{
+                line: 103,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n35,
+                 2},
+                what: "a call of transaction/1 on a module held in a variable"
+              },
+              %{
+                line: 104,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n36,
+                 1},
+                what: "an apply/3 Anchor cannot resolve"
+              },
+              %{
+                line: 105,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n37,
+                 3},
+                what: "an apply/3 Anchor cannot resolve"
+              },
+              %{
+                line: 106,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n38,
+                 2},
+                what: "an apply/3 Anchor cannot resolve"
+              },
+              %{
+                line: 107,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n39,
+                 2},
+                what: "an apply/3 Anchor cannot resolve"
+              },
+              %{line: 97, ...},
+              ...
+            ]
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:274: (test)
+
+..........
+```
+
+## WSU-REPOMOD
+
+an apply on a repo is no report (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `25 tests, 1 failure`.
+
+```
+
+  1) test unattributed: raw SQL and a write on a computed module, outside a transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:271
+     match (=) failed
+     code:  assert [
+              %{mfa: {@n, :n11, 0}, what: raw, line: line},
+              %{mfa: {@n, :n12, 1}, what: computed},
+              %{mfa: {@n, :n22, 1}, what: captured},
+              %{mfa: {@n, :n23, 1}, what: computed_capture},
+              %{mfa: {@n, :n27, 1}},
+              %{mfa: {@n, :n31, 1}, what: raw_capture},
+              %{mfa: {@n, :n32, 1}, what: computed_raw},
+              %{mfa: {@n, :n33, 1}},
+              %{mfa: {@n, :n34, 2}, what: "a capture on a computed module or name"},
+              %{mfa: {@n, :n35, 2}, what: computed_transaction},
+              %{mfa: {@n, :n36, 1}, what: unread_apply},
+              %{mfa: {@n, :n37, 3}},
+              %{mfa: {@n, :n38, 2}},
+              %{mfa: {@n, :n39, 2}},
+              %{mfa: {@n, :n44, 0}},
+              %{mfa: {@n, :n45, 0}},
+              %{mfa: {@n, :n46, 0}},
+              %{mfa: {@n, :n50, 1}},
+              %{mfa: {@n, :n53, 2}},
+              %{mfa: {@n, :n55, 2}}
+            ] = a.unattributed
+     left:  [
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n11, 0}, what: raw, line: line},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n12, 1}, what: computed},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n22, 1}, what: captured},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n23, 1}, what: computed_capture},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n27, 1}},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n31, 1}, what: raw_capture},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n32, 1}, what: computed_raw},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n33, 1}},
+              %{
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n34, 2},
+                what: "a capture on a computed module or name"
+              },
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n35, 2}, what: computed_transaction},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n36, 1}, what: unread_apply},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n37, 3}},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n38, 2}},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n39, 2}},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n44, 0}},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n45, 0}},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n46, 0}},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n50, 1}},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n53, 2}},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n55, 2}}
+            ]
+     right: [
+              %{
+                line: 58,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n11,
+                 0},
+                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
+              },
+              %{
+                line: 59,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n12,
+                 1},
+                what: "a call of insert/1 on a module held in a variable"
+              },
+              %{
+                line: 125,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n22,
+                 1},
+                what: "a capture of the write AnchorFixtures.NonTransactionalTest.Repo.insert/1"
+              },
+              %{
+                line: 126,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n23,
+                 1},
+                what: "a capture on a computed module or name"
+              },
+              %{
+                line: 118,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n27,
+                 1},
+                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
+              },
+              %{
+                line: 112,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n31,
+                 1},
+                what: "a capture of the write AnchorFixtures.NonTransactionalTest.Repo.query!/1"
+              },
+              %{
+                line: 113,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n32,
+                 1},
+                what: "a call of query!/1 on a module held in a variable"
+              },
+              %{
+                line: 114,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n33,
+                 1},
+                what: "a capture of the write Ecto.Adapters.SQL.query!/1"
+              },
+              %{
+                line: 115,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n34,
+                 2},
+                what: "a capture on a computed module or name"
+              },
+              %{
+                line: 103,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n35,
+                 2},
+                what: "a call of transaction/1 on a module held in a variable"
+              },
+              %{
+                line: 105,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n37,
+                 3},
+                what: "an apply/3 Anchor cannot resolve"
+              },
+              %{
+                line: 106,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n38,
+                 2},
+                what: "an apply/3 Anchor cannot resolve"
+              },
+              %{
+                line: 97,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n44,
+                 0},
+                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
+              },
+              %{
+                line: 100,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n45,
+                 0},
+                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
+              },
+              %{line: 77, ...},
+              ...
+            ]
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:274: (test)
+
+...........
+```
+
+## WSU-LISTEDNAME
+
+a listed name on a computed module is no report (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `25 tests, 1 failure`.
+
+```
+
+  1) test a write_functions write outside a transaction is non-transactional; inside it is not (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:236
+     Expected truthy, got false
+     code: assert MapSet.member?(reported, {@n, :n51, 2})
+     arguments:
+
+         # 1
+         MapSet.new([
+           {AnchorFixtures.NonTransactionalTest.N, :n11, 0},
+           {AnchorFixtures.NonTransactionalTest.N, :n12, 1},
+           {AnchorFixtures.NonTransactionalTest.N, :n22, 1},
+           {AnchorFixtures.NonTransactionalTest.N, :n23, 1},
+           {AnchorFixtures.NonTransactionalTest.N, :n27, 1},
+           {AnchorFixtures.NonTransactionalTest.N, :n31, 1},
+           {AnchorFixtures.NonTransactionalTest.N, :n32, 1},
+           {AnchorFixtures.NonTransactionalTest.N, :n33, 1},
+           {AnchorFixtures.NonTransactionalTest.N, :n34, 2},
+           {AnchorFixtures.NonTransactionalTest.N, :n35, 2},
+           {AnchorFixtures.NonTransactionalTest.N, :n36, 1},
+           {AnchorFixtures.NonTransactionalTest.N, :n37, 3},
+           {AnchorFixtures.NonTransactionalTest.N, :n38, 2},
+           {AnchorFixtures.NonTransactionalTest.N, :n39, 2},
+           {AnchorFixtures.NonTransactionalTest.N, :n44, 0},
+           {AnchorFixtures.NonTransactionalTest.N, :n45, 0},
+           {AnchorFixtures.NonTransactionalTest.N, :n46, 0},
+           {AnchorFixtures.NonTransactionalTest.N, :n50, 1},
+           {AnchorFixtures.NonTransactionalTest.N, :n53, 2},
+           {AnchorFixtures.NonTransactionalTest.N, :n55, 2}
+         ])
+
+         # 2
+         {AnchorFixtures.NonTransactionalTest.N, :n51, 2}
+
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:245: (test)
+
+............
+```
+
+## WSU-MODULEREACH
+
+a computed name on a module leaves its callers known (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `25 tests, 1 failure`.
+
+```
+
+  1) test an apply of a computed name reaches every function of the module it names (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:250
+     Expected false or nil, got true
+     code: refute MapSet.member?(analysis.always_in_transaction, {store, :save, 1})
+     arguments:
+
+         # 1
+         MapSet.new([
+           {AnchorFixtures.NonTransactionalTest.N, :n17h, 0},
+           {AnchorFixtures.NonTransactionalTest.N, :n18_step, 2},
+           {AnchorFixtures.NonTransactionalTest.N, :n20g, 0},
+           {AnchorFixtures.NonTransactionalTest.N, :n21g, 0},
+           {AnchorFixtures.NonTransactionalTest.N, :n28_step, 2},
+           {AnchorFixtures.NonTransactionalTest.N, :n29a, 0},
+           {AnchorFixtures.NonTransactionalTest.N, :n29b, 0},
+           {AnchorFixtures.NonTransactionalTest.N, :n2g, 0},
+           {AnchorFixtures.NonTransactionalTest.N, :n48, 0},
+           {AnchorFixtures.NonTransactionalTest.N, :n7_step, 2},
+           {AnchorFixtures.NonTransactionalTest.Store, :save, 1}
+         ])
+
+         # 2
+         {AnchorFixtures.NonTransactionalTest.Store, :save, 1}
+
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:265: (test)
+
+...............
+```
+
+## WSU-MODULEMARK
+
+a computed name on a module marks nothing (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `25 tests, 1 failure`.
+
+```
+
+  1) test an apply of a computed name reaches every function of the module it names (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:250
+     Expected false or nil, got true
+     code: refute MapSet.member?(analysis.always_in_transaction, {store, :save, 1})
+     arguments:
+
+         # 1
+         MapSet.new([
+           {AnchorFixtures.NonTransactionalTest.N, :n17h, 0},
+           {AnchorFixtures.NonTransactionalTest.N, :n18_step, 2},
+           {AnchorFixtures.NonTransactionalTest.N, :n20g, 0},
+           {AnchorFixtures.NonTransactionalTest.N, :n21g, 0},
+           {AnchorFixtures.NonTransactionalTest.N, :n28_step, 2},
+           {AnchorFixtures.NonTransactionalTest.N, :n29a, 0},
+           {AnchorFixtures.NonTransactionalTest.N, :n29b, 0},
+           {AnchorFixtures.NonTransactionalTest.N, :n2g, 0},
+           {AnchorFixtures.NonTransactionalTest.N, :n48, 0},
+           {AnchorFixtures.NonTransactionalTest.N, :n7_step, 2},
+           {AnchorFixtures.NonTransactionalTest.Store, :save, 1}
+         ])
+
+         # 2
+         {AnchorFixtures.NonTransactionalTest.Store, :save, 1}
+
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:265: (test)
+
+................
+```
+
+## WSU-LISTEDMOD
+
+an apply of a listed write on its module is no report (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `25 tests, 1 failure`.
+
+```
+
+  1) test a write_functions write outside a transaction is non-transactional; inside it is not (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:237
+     Expected truthy, got false
+     code: assert MapSet.member?(reported, {@n, :n56, 1})
+     arguments:
+
+         # 1
+         MapSet.new([
+           {AnchorFixtures.NonTransactionalTest.N, :n11, 0},
+           {AnchorFixtures.NonTransactionalTest.N, :n12, 1},
+           {AnchorFixtures.NonTransactionalTest.N, :n22, 1},
+           {AnchorFixtures.NonTransactionalTest.N, :n23, 1},
+           {AnchorFixtures.NonTransactionalTest.N, :n27, 1},
+           {AnchorFixtures.NonTransactionalTest.N, :n31, 1},
+           {AnchorFixtures.NonTransactionalTest.N, :n32, 1},
+           {AnchorFixtures.NonTransactionalTest.N, :n33, 1},
+           {AnchorFixtures.NonTransactionalTest.N, :n34, 2},
+           {AnchorFixtures.NonTransactionalTest.N, :n35, 2},
+           {AnchorFixtures.NonTransactionalTest.N, :n36, 1},
+           {AnchorFixtures.NonTransactionalTest.N, :n37, 3},
+           {AnchorFixtures.NonTransactionalTest.N, :n38, 2},
+           {AnchorFixtures.NonTransactionalTest.N, :n39, 2},
+           {AnchorFixtures.NonTransactionalTest.N, :n44, 0},
+           {AnchorFixtures.NonTransactionalTest.N, :n45, 0},
+           {AnchorFixtures.NonTransactionalTest.N, :n46, 0},
+           {AnchorFixtures.NonTransactionalTest.N, :n50, 1},
+           {AnchorFixtures.NonTransactionalTest.N, :n51, 2},
+           {AnchorFixtures.NonTransactionalTest.N, :n52, 1},
+           {AnchorFixtures.NonTransactionalTest.N, :n53, 2},
+           {AnchorFixtures.NonTransactionalTest.N, :n54, 2},
+           {AnchorFixtures.NonTransactionalTest.N, :n55, 2}
+         ])
+
+         # 2
+         {AnchorFixtures.NonTransactionalTest.N, :n56, 1}
+
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:250: (test)
+
+.......................
+```
