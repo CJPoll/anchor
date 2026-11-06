@@ -9,6 +9,7 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
 
   alias Anchor.Domain.Aggregates.Analysis
   alias Anchor.Domain.Aggregates.Config
+  alias Anchor.Domain.FunctionRef
 
   @ns AnchorFixtures.NonTransactionalTest
   @s Module.concat(@ns, S)
@@ -46,6 +47,11 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
               def n6, do: Ecto.Multi.run(Ecto.Multi.new(), :a, fn _r, _c -> Repo.insert(%S{}) end)
               def n7, do: Ecto.Multi.run(Ecto.Multi.new(), :a, &n7_step/2)
               def n7_step(_repo, _changes), do: Repo.insert(%T{})
+
+              def n8, do: Repo.transaction(fn -> Repo.insert(%S{}) end)
+
+              def n9, do: Repo.soft_delete(%S{}, [])
+              def n10, do: Repo.transaction(fn -> Repo.soft_delete(%S{}, []) end)
             end
             """
 
@@ -91,6 +97,19 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
        %{analysis: a} do
     assert nontx(a, :n7).keys == MapSet.new()
     assert MapSet.member?(a.always_in_transaction, {@n, :n7_step, 2})
+  end
+
+  test "a write directly in a transaction body is never non-transactional", %{analysis: a} do
+    assert nontx(a, :n8).keys == MapSet.new()
+  end
+
+  test "a write_functions write outside a transaction is non-transactional; inside it is not" do
+    {:ok, soft_delete} = FunctionRef.parse("#{inspect(@repo)}.soft_delete/2")
+    config = %Config{repos: [@repo], write_functions: [soft_delete]}
+    analysis = Analysis.build(graph!(@source), config)
+
+    assert nontx(analysis, :n9).keys == keys([@s])
+    assert nontx(analysis, :n10).keys == MapSet.new()
   end
 
   test "a Multi step is never a non-transactional write", %{analysis: a} do

@@ -81,6 +81,8 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
     end
 
     def s16, do: Repo.transaction(fn -> Ecto.Adapters.SQL.query!(Repo, "DELETE FROM t", []) end)
+
+    def s17, do: Repo.transaction(fn -> Helper.inner_calls() end)
   end
   """
 
@@ -97,6 +99,7 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
               def a(n), do: b(n - 1)
               def b(n), do: (Repo.insert(%#{inspect(@t)}{}); a(n))
               def inner, do: Repo.transaction(fn -> Repo.insert(%#{inspect(@t)}{}) end)
+              def inner_calls, do: Repo.transaction(fn -> write_t() end)
             end
 
             defmodule #{inspect(@builder)} do
@@ -184,6 +187,10 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
 
       assert [%Scope{keys: inner}] = Enum.filter(a.scopes, &(&1.mfa == {@helper, :inner, 0}))
       assert inner == keys([@t])
+    end
+
+    test "an outer scope follows the calls inside a callee's inner transaction", %{analysis: a} do
+      assert one(a, :s17).keys == keys([@t])
     end
 
     test "S10: a Multi parameter with nothing to trace is incomplete at the call", %{analysis: a} do

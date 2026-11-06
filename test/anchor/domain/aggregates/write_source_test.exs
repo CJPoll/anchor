@@ -66,6 +66,9 @@ defmodule Anchor.Domain.Aggregates.WriteSourceTest do
               def r16(r), do: Repo.insert(r)
               def r16_use(xs), do: Enum.each(xs, &r16/1)
 
+              def r17(_repo, _changes, x), do: Repo.insert(x)
+              def r17_run, do: Ecto.Multi.run(Ecto.Multi.new(), :a, __MODULE__, :r17, [%S{}])
+
               defp opaque, do: Map.new()
               defp build, do: %S{}
             end
@@ -75,6 +78,7 @@ defmodule Anchor.Domain.Aggregates.WriteSourceTest do
               def c2, do: #{inspect(@x)}.r10(%#{inspect(@t)}{})
               def make, do: %#{inspect(@t)}{}
               def c3, do: #{inspect(@x)}.r16(%#{inspect(@s)}{})
+              def c4, do: #{inspect(@x)}.r17(nil, %{}, %#{inspect(@s)}{})
             end
             """
 
@@ -163,6 +167,16 @@ defmodule Anchor.Domain.Aggregates.WriteSourceTest do
 
       assert seen ==
                "parameter 1 of #{inspect(@x)}.r16/1 is passed as a function value, so its " <>
+                 "callers are not known"
+    end
+
+    test "R10: a Multi.run callback given by module and name has callers Anchor cannot see", %{
+      sites: sites
+    } do
+      assert %{sources: [], unresolved: seen} = site(sites, :r17)
+
+      assert seen ==
+               "parameter 3 of #{inspect(@x)}.r17/3 is passed as a function value, so its " <>
                  "callers are not known"
     end
 
