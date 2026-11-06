@@ -758,7 +758,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
     %{
       sites: Enum.reverse(acc.sites),
       calls: acc.calls |> Enum.reverse() |> Enum.map(&untag_capture(&1, mixed, prescan)),
-      dynamic: acc.dynamic |> Enum.reverse() |> Enum.map(&untag_capture(&1, mixed, prescan)),
+      dynamic: acc.dynamic |> Enum.reverse() |> Enum.flat_map(&untag_unread(&1, mixed, prescan)),
       computed: acc.computed,
       cleared: acc.cleared,
       txs: prescan.txs,
@@ -767,8 +767,10 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   end
 
   # One capture of a function can be a body and another not, and Core does not say
-  # which is which: more captures than bodies, and none reads as inside (each
-  # transaction still holds its body's closure through its own `captures`).
+  # which is which: more captures than bodies, and none reads as inside. A followed
+  # function's transaction still holds its closure through its own `captures`, and a
+  # write's has `captured_write_gap/2`. A dependency's has neither, so its unread gap
+  # is read both ways (`untag_unread/3`): on the transaction and outside it.
   defp mixed_captures(acc, prescan) do
     bodies = prescan.txs |> Enum.flat_map(& &1.captures) |> Enum.frequencies()
 
@@ -780,6 +782,15 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
 
     for {to, count} <- bodies, seen[to] > count, into: MapSet.new(), do: to
   end
+
+  defp untag_unread(%{unread: true, capture: _to} = entry, mixed, prescan) do
+    case untag_capture(entry, mixed, prescan) do
+      ^entry -> [entry]
+      untagged -> [entry, untagged]
+    end
+  end
+
+  defp untag_unread(entry, mixed, prescan), do: [untag_capture(entry, mixed, prescan)]
 
   defp untag_capture(%{kind: :capture, to: to} = call, mixed, prescan),
     do: untag(call, to, mixed, prescan)

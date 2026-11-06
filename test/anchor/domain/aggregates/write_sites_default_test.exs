@@ -112,6 +112,17 @@ defmodule Anchor.Domain.Aggregates.WriteSitesDefaultTest do
     def d23(l, f), do: Repo.transaction(fn -> Enum.map(l, f) end)
     def d24(l), do: Repo.transaction(fn -> Enum.map(l, &Lib.only_here/1) end)
 
+    def d25a(x) do
+      Repo.transaction(&Lib.run/0)
+      Keyword.put(x, :f, &Lib.run/0)
+    end
+
+    def d25b do
+      f = &Lib.run/0
+      Repo.transaction(f)
+      f.()
+    end
+
     def d19, do: Repo.transaction(fn -> #{inspect(@macros)}."MACRO-m"(__ENV__, 1) end)
   end
   """
@@ -315,6 +326,17 @@ defmodule Anchor.Domain.Aggregates.WriteSitesDefaultTest do
              ]
 
       assert nontx(a, :d21a, 0).gaps == []
+    end
+
+    test "a second capture of it beside the body does not take the gap off the transaction", %{
+      analysis: a
+    } do
+      capture = String.replace(lib_call("run/0"), "call of", "capture of")
+
+      for {name, arity} <- [d25a: 1, d25b: 0] do
+        assert capture in whats(one(a, name).gaps)
+        assert capture in whats(nontx(a, name, arity).gaps)
+      end
     end
 
     test "a capture of one as a Multi.run callback is a gap of that transaction", %{analysis: a} do
