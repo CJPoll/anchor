@@ -163,6 +163,19 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
     def flush_here, do: Repo.insert(%U{})
     def s46, do: Repo.transaction(fn -> flush_here() end)
 
+    def s47 do
+      Multi.new()
+      |> Multi.merge(fn _ -> Multi.new() end)
+      |> Repo.transaction()
+    end
+
+    def s48(f), do: Repo.transaction(Builder.add_merge(Multi.new(), f))
+    def s49(f), do: Repo.transaction(Builder.add_run(Multi.new(), f))
+    def s50(m), do: Repo.transaction(Builder.add_t(m))
+    def s51(attrs), do: Repo.transaction(Builder.add_attrs(Multi.new(), attrs))
+    def s52, do: Repo.transaction(Builder.named(:a))
+    def s53(mod, f), do: Repo.transaction(Builder.add_run5(Multi.new(), mod, f))
+
     def s35 do
       Multi.new()
       |> Multi.run(:a, fn repo, _ -> repo.get(S, 1); repo.insert(%S{}) end)
@@ -202,6 +215,11 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
 
             defmodule #{inspect(@builder)} do
               def add_t(m), do: Ecto.Multi.insert(m, :b, %#{inspect(@t)}{})
+              def add_merge(m, f), do: Ecto.Multi.merge(m, f)
+              def add_run(m, f), do: Ecto.Multi.run(m, :r, f)
+              def add_run5(m, mod, f), do: Ecto.Multi.run(m, :r, mod, f, [])
+              def add_attrs(m, attrs), do: Ecto.Multi.insert(m, {:c, attrs}, %#{inspect(@t)}{})
+              def named(name), do: Ecto.Multi.insert(Ecto.Multi.new(), name, %#{inspect(@t)}{})
             end
 
             defmodule #{inspect(@uow)} do
@@ -232,7 +250,7 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
   defp scopes(analysis, name),
     do: Enum.filter(analysis.scopes, &(&1.mfa == {@x, name, arity(name)}))
 
-  defp arity(name) when name in [:s20, :s21, :s29, :s31, :s40, :s41], do: 2
+  defp arity(name) when name in [:s20, :s21, :s29, :s31, :s40, :s41, :s53], do: 2
 
   defp arity(name)
        when name in [
@@ -254,6 +272,7 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
             ],
        do: 1
 
+  defp arity(name) when name in [:s48, :s49, :s50, :s51], do: 1
   defp arity(_name), do: 0
 
   defp one(analysis, name) do
@@ -449,6 +468,37 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
     test "a zero-arity write function in the project is followed", %{analysis: a} do
       assert %Scope{complete?: true} = scope = one(a, :s46)
       assert scope.keys == keys([@u])
+    end
+
+    test "Multi.merge builds steps at run time: incomplete, in the function", %{analysis: a} do
+      assert %Scope{kind: :multi, complete?: false} = one(a, :s47)
+    end
+
+    test "Multi.merge or a Multi.run of an unknown function, in a helper, is a gap too", %{
+      analysis: a
+    } do
+      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@builder, :add_merge, 2}, _}]} =
+               one(a, :s48)
+
+      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@builder, :add_run, 2}, _}]} =
+               one(a, :s49)
+
+      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@builder, :add_run5, 3}, _}]} =
+               one(a, :s53)
+    end
+
+    test "a helper given only a Multi Anchor cannot trace is a gap at the transaction", %{
+      analysis: a
+    } do
+      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s50, 1}, _}]} = one(a, :s50)
+    end
+
+    test "a helper given a traced Multi and data, or only literals, stays complete", %{
+      analysis: a
+    } do
+      assert %Scope{complete?: true} = one(a, :s51)
+      assert %Scope{complete?: true} = scope = one(a, :s52)
+      assert scope.keys == keys([@t])
     end
 
     test "a function-taking call's first argument is data (positive control)", %{analysis: a} do

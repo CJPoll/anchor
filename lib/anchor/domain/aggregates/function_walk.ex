@@ -132,6 +132,15 @@ defmodule Anchor.Domain.Aggregates.FunctionWalk do
 
   defp deref(_node, _env, _depth), do: {:binding, :unbound}
 
+  @doc "The node `deref/2` reaches, or `node` itself when a binding stops it."
+  @spec deref_value(:cerl.cerl(), env()) :: :cerl.cerl()
+  def deref_value(node, env) do
+    case deref(node, env) do
+      {:node, value, _env} -> value
+      {:binding, _binding} -> node
+    end
+  end
+
   @doc """
   The literal atom `node` is, or is a variable bound to (`{:ok, atom}`); `:repo`
   for a `Multi.run` callback's repo argument; else `:error`.

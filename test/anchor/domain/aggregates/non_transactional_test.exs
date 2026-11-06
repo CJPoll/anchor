@@ -58,6 +58,10 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
               def n15(mod), do: Repo.transaction(fn -> mod.insert(%S{}) end)
               def n16, do: n11()
 
+              def n22(xs), do: Enum.each(xs, &Repo.insert/1)
+              def n23(mod), do: Enum.map([1], &mod.insert/1)
+              def n24(mod), do: Enum.map([1], &mod.get/1)
+
               def n20, do: Repo.transaction(&n20g/0)
               def n20g, do: Repo.insert(%S{})
 
@@ -141,8 +145,13 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
   } do
     assert [
              %{mfa: {@n, :n11, 0}, what: raw, line: line},
-             %{mfa: {@n, :n12, 1}, what: computed}
+             %{mfa: {@n, :n12, 1}, what: computed},
+             %{mfa: {@n, :n22, 1}, what: captured},
+             %{mfa: {@n, :n23, 1}, what: computed_capture}
            ] = a.unattributed
+
+    assert captured == "a capture of the write #{inspect(@repo)}.insert/1"
+    assert computed_capture == "a capture on a computed module or name"
 
     assert raw == "raw SQL (#{inspect(@repo)}.query!/1) Anchor cannot attribute"
     assert computed == "a call of insert/1 on a module held in a variable"

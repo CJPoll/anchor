@@ -587,16 +587,32 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
 
   # A project function on the trace builds (part of) the Multi: the call is
   # in the body, so its closure is; its arguments are traced when they can be.
+  # When some argument is not a literal and none traces, the Multi it was given
+  # may be the one Anchor cannot read: a gap.
   defp multi_call(node, env, {:ok, {module, name, arity}}, mfa, ctx, depth) do
     if project_function?(ctx.graph, {module, name, arity}) do
-      node
-      |> :cerl.call_args()
-      |> Enum.reduce({:ok, :multi, [FunctionWalk.id(node)], [], []}, fn arg, acc ->
-        case multi(arg, env, mfa, ctx, depth + 1) do
-          {:ok, _kind, ids, captures, gaps} -> add(acc, ids, captures, gaps)
-          :error -> acc
-        end
+      args = :cerl.call_args(node)
+      traced = Enum.map(args, &multi(&1, env, mfa, ctx, depth + 1))
+
+      unknown? =
+        Enum.all?(traced, &(&1 == :error)) and
+          Enum.any?(args, &(not plain_literal?(FunctionWalk.deref_value(&1, env))))
+
+      traced
+      |> Enum.reduce({:ok, :multi, [FunctionWalk.id(node)], [], []}, fn
+        {:ok, _kind, ids, captures, gaps}, acc -> add(acc, ids, captures, gaps)
+        :error, acc -> acc
       end)
+      |> add(
+        [],
+        [],
+        if(unknown?,
+          do: [
+            "#{format({module, name, arity})} is given a value Anchor cannot trace to an Ecto.Multi"
+          ],
+          else: []
+        )
+      )
     else
       :error
     end
@@ -665,8 +681,12 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
 
       {{:ok, :erlang}, :make_fun} ->
         case make_fun(node, env) do
-          {:capture, callee} -> project_call(acc, ctx, callee, :capture, [], env, tags, line)
-          :error -> dynamic(acc, line, "a capture on a computed module or name", tags)
+          {:capture, callee} ->
+            project_call(acc, ctx, callee, :capture, [], env, tags, line)
+
+          :error ->
+            what = "a capture on a computed module or name"
+            dynamic(acc, line, what, tags, capture_of_write_name?(args, env))
         end
 
       {{:ok, :erlang}, :apply} ->
@@ -754,6 +774,33 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
     end
   end
 
+  defp capture_of_write_name?([_module, name, arity], env) do
+    with {:ok, name} <- FunctionWalk.atom(name, env),
+         true <- :cerl.is_literal(arity) and is_integer(:cerl.concrete(arity)) do
+      repo_write?(name, :cerl.concrete(arity))
+    else
+      _computed -> true
+    end
+  end
+
+  defp capture_of_write_name?(_args, _env), do: true
+
+  # An `Ecto.Multi` call whose steps Anchor cannot read, wherever it is written:
+  # a Multi only runs in a transaction, so this is never a gap outside one.
+  defp unread_multi?(:merge, _args, _env, _ctx), do: true
+
+  defp unread_multi?(:run, [_m, _name, fun], env, ctx),
+    do: callback(fun, env, {ctx.module, nil, nil}) == :error
+
+  defp unread_multi?(:run, [_m, _name, mod, fun, args], env, _ctx) do
+    not match?(
+      {{:ok, _m}, {:ok, _f}, {:ok, _n}},
+      {FunctionWalk.atom(mod, env), FunctionWalk.atom(fun, env), list_length(args, env)}
+    )
+  end
+
+  defp unread_multi?(_name, _args, _env, _ctx), do: false
+
   defp lambda_run(acc, id, tags, line, ctx) do
     if tags -- Map.get(ctx.defined_in, id, []) == [],
       do: acc,
@@ -821,6 +868,11 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
       module == @multi and multi_write?(name, arity) ->
         add_site(acc, name, :multi, Enum.at(args, 2), env, tags, line)
 
+      module == @multi and unread_multi?(name, args, env, ctx) ->
+        dynamic(acc, line, "Ecto.Multi.#{name}/#{arity} builds steps Anchor cannot read", [
+          :run_callback | tags
+        ])
+
       write_function?(callee, ctx) and (arity > 0 or not project_function?(ctx.graph, callee)) ->
         add_site(acc, name, :write_function, Enum.at(args, 0), env, tags, line)
 
@@ -859,7 +911,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   defp project_call(acc, ctx, callee, kind, args, env, tags, line) do
     cond do
       kind == :capture and write?(callee, ctx) ->
-        dynamic(acc, line, "a capture of the write #{ViolationKey.mfa(callee)}", tags)
+        dynamic(acc, line, "a capture of the write #{ViolationKey.mfa(callee)}", tags, true)
 
       project_function?(ctx.graph, callee) ->
         tags = if kind == :capture, do: tags ++ Map.get(ctx.capture_tags, callee, []), else: tags
