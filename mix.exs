@@ -36,6 +36,10 @@ defmodule Anchor.MixProject do
       {:sourceror, "~> 1.7"},
       {:ex_doc, "~> 0.31", only: :dev, runtime: false},
       {:hammox, "~> 0.7", only: :test},
+      # DND-5480: Anchor.Backstop attaches to an Ecto repo's query event in a
+      # consumer's test VM. Every Ecto project already has it; Anchor reads
+      # telemetry maps and needs no Ecto in lib.
+      {:telemetry, "~> 1.0", optional: true},
       # DND-5459: real Ecto macro shapes (use Ecto.Schema, from/2, Ecto.Multi) for
       # the aggregate write-source fixtures; never a runtime dependency.
       {:ecto, "~> 3.12", only: :test}

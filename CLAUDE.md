@@ -219,6 +219,26 @@ load. Ecto is a test-only dependency: fixtures that pin real macro output
 (`use Ecto.Schema`, `from/2`, `Ecto.Multi`) compile against it. The canary has
 its own root, `test/fixtures/graph_canary/aggregate_write_sources/`.
 
+## The test-time backstop (DND-5480)
+
+`Anchor.Backstop` (Framework, in `lib/mix/tasks/anchor/backstop/` so the
+`architecture:` path selectors bucket it) is two calls a consumer makes:
+`attach!/1` in `test_helper.exs`, `watch/1` in its data case's setup.
+`Anchor.Managers.Backstop` loads the config and beams through their ports,
+builds the same `Aggregates.Index` the static rules read, and attaches
+`Anchor.Adapters.TelemetryRecorder` (port `WriteRecorder`) to the repo's query
+event with `EctoTransactionProbe` (port `TransactionProbe`: DND-5479's
+begin/commit/rollback events, per emitting process; never `telemetry_options`
+or `Repo.in_transaction?/0`). The handler reads only `query` and `source`
+(`Aggregates.QueryStatement`), attributes an event to a watched test by pid or
+`$callers`, and records `Aggregates.BackstopEvent`s in ETS; the verdict
+(`Aggregates.Backstop`) runs in the test's `on_exit`. What cannot be tied to a
+transaction is an escape, counted and summed at suite end, never clean. The
+VM's one session is in `:persistent_term`: a test that installs it is
+`async: false` (`telemetry_recorder_session_test.exs`), because
+`Anchor.BackstopTest` asserts none is installed. `:telemetry` is an optional
+dependency. README, *The test-time backstop*, is the user's reference.
+
 ## The causal graph (DND-5438)
 
 The graph engine reads compiled beams, never source alone, so macro output is

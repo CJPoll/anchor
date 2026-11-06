@@ -60,3 +60,7 @@ Hammox.defmock(Anchor.RecordStoreMock, for: Anchor.Adapters.RecordStore)
 # DND-5632: `mix anchor.baseline --write` runs Credo through this port
 # (`Anchor.Managers.AstBaseline.write/2` takes it as `:lint_keys`).
 Hammox.defmock(Anchor.LintKeysMock, for: Anchor.Adapters.LintKeys)
+
+# DND-5480: the backstop's recorder port (`Anchor.Managers.Backstop` takes it
+# as the `:write_recorder` option).
+Hammox.defmock(Anchor.WriteRecorderMock, for: Anchor.Adapters.WriteRecorder)
