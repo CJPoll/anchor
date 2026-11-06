@@ -28,6 +28,7 @@ defmodule Anchor.Managers.GraphRuleFailClosedTest do
     @moduledoc false
     @behaviour Anchor.Domain.GraphRule
     def rule_type, do: :stub_checks_nothing
+    def narrows?(_base_key, _key), do: false
 
     # One rule finding (keyed) and one fail-closed issue carrying a key the
     # baseline lists: the key must not hold it.

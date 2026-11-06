@@ -43,6 +43,9 @@ defmodule Anchor.Domain.GraphRules.AggregateDeclarations do
   @impl Anchor.Domain.GraphRule
   def rule_type, do: :aggregate_declarations
 
+  @impl Anchor.Domain.GraphRule
+  def narrows?(_base_key, _key), do: false
+
   @impl Anchor.Domain.RuleShape
   def shape(_rule),
     do: Config.shape() <> ", or use Anchor.Aggregate, name: <Aggregate>, schemas: [<Schema>...]"

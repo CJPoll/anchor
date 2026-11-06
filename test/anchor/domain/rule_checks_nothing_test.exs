@@ -18,6 +18,7 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
   # `Anchor.Managers.LintTest` and the e2e suite.
   #
   # Sabotage record: ../../sabotage_records/rule_schema-20260929-dnd_1290_empty_relation_list.md
+  # Sabotage record (DND-5632): ../../sabotage_records/baseline-20261103-dnd_5648_graph_followups.md
   # Sabotage record (DND-5447, DND-5454 rows): ../../sabotage_records/rule_schema-20261103-dnd_5447_graph_rules_c.md
   # The DND-1292 rows (glob metacharacters, the `***` match-all, `*?`):
   #   ../../sabotage_records/rule_schema-20260929-dnd_1292_glob_escape.md
@@ -167,11 +168,15 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
       {"positive: enforcement: :enforce", Map.put(base, "enforcement", ":enforce"), :accepted},
       {"enforcement: warn (neither)", Map.put(base, "enforcement", "warn"),
        {:refused, "`enforcement` must be report or enforce"}},
-      # An ast rule's findings are not compared with a baseline (Credo has no
-      # ratchet yet), so `baseline` there would ratchet nothing.
-      {"baseline on an ast rule (nothing reads it)",
+      # DND-5632: an ast rule's Credo check compares its findings with its
+      # baseline, under the same path rules as a graph rule's.
+      {"positive: baseline with an id",
+       Map.merge(base, %{"id" => "r", "baseline" => ".anchor/baselines/r.txt"}), :accepted},
+      {"baseline without id (entries start with it)",
        Map.put(base, "baseline", ".anchor/baselines/r.txt"),
-       {:refused, "`baseline` is read by graph rules only"}},
+       {:refused, "`baseline` needs the rule's `id`"}},
+      {"an absolute baseline path", Map.merge(base, %{"id" => "r", "baseline" => "/tmp/r.txt"}),
+       {:refused, "must be a path relative to the project root with no `..`"}},
       {"bucket on an ast rule (a graph selector)", Map.put(base, "bucket", "domain"),
        {:refused, "`bucket` applies to graph rules only"}}
     ]

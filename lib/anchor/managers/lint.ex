@@ -71,15 +71,20 @@ defmodule Anchor.Managers.Lint do
   cross into the Domain.
   """
 
+  alias Anchor.Adapters.BaselineFile
   alias Anchor.Adapters.ConfigFile
   alias Anchor.Check.Source
   alias Anchor.Config
+  alias Anchor.Domain.AstBaseline
+  alias Anchor.Domain.Baseline
   alias Anchor.Domain.DependencyAnalyzer
+  alias Anchor.Domain.EnforcementPasses
   alias Anchor.Domain.Failures
   alias Anchor.Domain.RuleCoverage
   alias Anchor.Domain.RuleMatching
   alias Anchor.Domain.RuleSchema
   alias Anchor.Domain.Violation
+  alias Anchor.Domain.ViolationKey
 
   @default_analyzer DependencyAnalyzer
   @default_config_loader ConfigFile
@@ -124,7 +129,8 @@ defmodule Anchor.Managers.Lint do
           graph_crashes: graph_crashes,
           params: params,
           report_shared_failures?: report_shared_failures?,
-          defined_modules?: lists_allowed_callers?(check_module, rules)
+          defined_modules?: lists_allowed_callers?(check_module, rules),
+          root: root!(opts, check_module, rules)
         }
 
         # Each file is parsed as it is checked and dropped afterwards, so a run
@@ -137,7 +143,20 @@ defmodule Anchor.Managers.Lint do
 
         facts = Enum.map(results, fn {_source_file, _violations, facts} -> facts end)
 
-        {:ok, file_results ++ config_results(check_module, config, facts, opts)}
+        {file_results, ratchet_violations} =
+          ratchet(file_results, own_baselined(check_module, rules), facts, run_context, opts)
+
+        # A finding two passes made (two rules forbidding one module, a
+        # check's once-per-file `alias` report) is printed once, enforced when
+        # either copy is; each baselined rule's keyed copy was judged first,
+        # so no copy is lost to its comparison (DND-5632).
+        file_results =
+          Enum.map(file_results, fn {file, violations} ->
+            {file, EnforcementPasses.unique(violations)}
+          end)
+
+        {:ok,
+         file_results ++ config_results(check_module, config, facts, opts, ratchet_violations)}
 
       {:error, reason} ->
         {:error, reason}
@@ -149,8 +168,9 @@ defmodule Anchor.Managers.Lint do
   # checked something). Each check reports the floors of its own type's rules,
   # over the files it ran on; the shared-failure reporter also names the rules
   # no enabled check reads.
-  defp config_results(check_module, config, facts, opts) do
-    case floor_violations(check_module, config, facts, opts) ++ unchecked_violations(config, opts) do
+  defp config_results(check_module, config, facts, opts, ratchet_violations) do
+    case floor_violations(check_module, config, facts, opts) ++
+           unchecked_violations(config, opts) ++ ratchet_violations do
       [] -> []
       violations -> [{:config, violations}]
     end
@@ -255,12 +275,160 @@ defmodule Anchor.Managers.Lint do
     # computed ONCE here and reused for BOTH rule selection and the check
     # context — no second AST walk. The file's `module_names` are threaded into
     # the check context so `same_context` detection can derive the file's context.
-    matching_rules = matching_rules(check_module, facts, rules)
+    {baselined, plain} =
+      check_module |> matching_rules(facts, rules) |> Enum.split_with(&baselined?/1)
 
-    violations =
-      detect(check_module, source_file, ast, matching_rules, modules_map, facts, params)
+    violations = detect(check_module, source_file, ast, plain, modules_map, facts, params)
 
-    {source_file, violations, facts}
+    keyed =
+      Enum.flat_map(baselined, fn rule ->
+        check_module
+        |> detect(source_file, ast, [rule], modules_map, facts, params)
+        |> keyed(check_module, rule, relative(source_file.filename, run_context.root))
+      end)
+
+    {source_file, violations ++ keyed, facts}
+  end
+
+  # DND-5632: a rule with a `baseline:` is detected on its own, so each of its
+  # findings carries the rule's id and its key (`ViolationKey.ast_key/3`). A
+  # key that cannot be built (a file holding `|`) is a crash on the file,
+  # reported as one, never escaping the check.
+  defp keyed(violations, check_module, rule, file) do
+    case guarded(check_module, fn -> Enum.map(violations, &key(&1, rule, file)) end) do
+      {:ok, keyed} -> keyed
+      {:crashed, violation} -> [violation]
+    end
+  end
+
+  defp key(%Violation{kind: :rule, filename: nil} = violation, rule, file),
+    do: %{violation | rule_id: rule.id, key: ViolationKey.ast_key(rule, file, violation.trigger)}
+
+  defp key(violation, _rule, _file), do: violation
+
+  defp baselined?(rule), do: is_binary(Map.get(rule, :baseline))
+
+  defp own_baselined(check_module, rules),
+    do: check_module |> own_rules(rules) |> Enum.filter(&baselined?/1)
+
+  # The project root keys an ast rule's findings and finds its baseline
+  # (DND-5632). The caller names it (`Check.Base` passes the working
+  # directory): a Manager makes no file system call of its own (ADR 001). A
+  # run with a baselined rule and no root is a caller's mistake, said so.
+  defp root!(opts, check_module, rules) do
+    case {Keyword.get(opts, :root), own_baselined(check_module, rules)} do
+      {nil, [_ | _]} ->
+        raise ArgumentError,
+              "Anchor.Managers.Lint.run/4 needs opts[:root] (the project root) when a rule " <>
+                "has a baseline: it keys each finding by its path from the root"
+
+      {root, _rules} ->
+        root
+    end
+  end
+
+  # A file's path relative to the project root, as an ast key names it.
+  defp relative(filename, root), do: filename |> Path.expand(root) |> Path.relative_to(root)
+
+  # DND-5632: each of this check's rules with a `baseline:` has its findings
+  # compared with the file (`AstBaseline.judge/4`): held ones are dropped,
+  # NEW ones stand, and STALE entries are findings on the baseline path. A
+  # run that read only some files judges only the entries on files it read,
+  # and says how many it did not. A baseline that cannot be read, or holds
+  # another rule's entry, is one fail-closed issue, and every finding stands.
+  defp ratchet(file_results, [], _facts, _run_context, _opts), do: {file_results, []}
+
+  defp ratchet(file_results, rules, facts, run_context, opts) do
+    store = Keyword.get(opts, :baseline_store, BaselineFile)
+    scope = scope(facts, run_context.root, Keyword.get(opts, :enforce_selection_floors, true))
+
+    Enum.reduce(rules, {file_results, []}, fn rule, {results, extra} ->
+      case read_entries(store, run_context.root, rule) do
+        {:ok, entries} ->
+          {held, findings} = judge_rule(rule, entries, results, scope)
+          {drop_held(results, rule.id, held), extra ++ name_rule(findings, rule)}
+
+        {:fail, violation} ->
+          {results, extra ++ name_rule([violation], rule)}
+      end
+    end)
+  end
+
+  # Each baseline issue names its rule, so `mix anchor.baseline --write`
+  # can tell the rule's check ran.
+  defp name_rule(violations, rule), do: Enum.map(violations, &%{&1 | rule_id: rule.id})
+
+  defp read_entries(store, root, %{baseline: path} = rule) do
+    case store.read(root, path) do
+      {:ok, entries} ->
+        case Baseline.foreign(rule.id, entries) do
+          [] -> {:ok, entries}
+          [entry | _rest] -> {:fail, Failures.baseline_foreign(rule, path, entry)}
+        end
+
+      {:error, reason} ->
+        {:fail, Failures.ast_baseline_unreadable(rule, path, reason)}
+    end
+  end
+
+  defp judge_rule(%{baseline: path} = rule, entries, results, scope) do
+    keys =
+      for {_file, violations} <- results,
+          %{rule_id: id, key: key} <- violations,
+          id == rule.id and is_binary(key),
+          do: key
+
+    %{held: held, stale: stale, unjudged: unjudged} =
+      AstBaseline.judge(rule.id, keys, entries, scope)
+
+    enforcement = RuleSchema.enforcement(rule)
+
+    stale =
+      Enum.map(
+        stale,
+        &(path |> Failures.baseline_stale(&1) |> Violation.with_enforcement(enforcement))
+      )
+
+    {held, stale ++ unjudged_note(path, unjudged)}
+  end
+
+  defp unjudged_note(_path, []), do: []
+  defp unjudged_note(path, unjudged), do: [Failures.ast_baseline_unjudged(path, unjudged)]
+
+  # The findings of `rule_id` whose keys are among `held` (a multiset) are
+  # dropped, in file order.
+  defp drop_held(results, rule_id, held) do
+    {results, _left} =
+      Enum.map_reduce(results, Enum.frequencies(held), fn {file, violations}, left ->
+        {kept, left} = Enum.flat_map_reduce(violations, left, &hold(&1, &2, rule_id))
+        {{file, kept}, left}
+      end)
+
+    results
+  end
+
+  defp hold(%Violation{rule_id: rule_id, key: key} = violation, left, rule_id) do
+    case Map.get(left, key, 0) do
+      0 -> {[violation], left}
+      n -> {[], Map.put(left, key, n - 1)}
+    end
+  end
+
+  defp hold(violation, left, _rule_id), do: {[violation], left}
+
+  defp scope(facts, root, whole?) do
+    files = fn keep? ->
+      for %{filename: file} = fact <- facts,
+          keep?.(fact),
+          into: MapSet.new(),
+          do: relative(file, root)
+    end
+
+    %{
+      whole?: whole?,
+      read: files.(fn _fact -> true end),
+      unparsed: files.(&(&1[:parsed?] == false))
+    }
   end
 
   defp detect(_check_module, _source_file, _ast, [], _modules_map, _facts, _params), do: []
@@ -273,7 +441,10 @@ defmodule Anchor.Managers.Lint do
   @doc """
   Runs `check_module`'s detection on one parsed file with the rules already
   selected for it, and returns the violations. The findings of rules in
-  `enforcement: report` are marked `:report` (DND-5441).
+  `enforcement: report` are marked `:report` (DND-5441). A violation both
+  passes found (one a check makes once per file, such as an unresolvable
+  `alias`) is returned once, enforced, naming both modes
+  (`Anchor.Domain.EnforcementPasses.merge/2`, DND-5631).
 
   A raise, throw or exit in the detection becomes one `:fail_closed` violation
   on that file, naming the check and the reason (DND-1310,
@@ -289,10 +460,12 @@ defmodule Anchor.Managers.Lint do
         detect_group(check_module, source_file, ast, rules, context)
 
       {report, enforce} ->
-        detect_some(check_module, source_file, ast, enforce, context) ++
-          (check_module
-           |> detect_group(source_file, ast, report, context)
-           |> Enum.map(&report_only/1))
+        EnforcementPasses.merge(
+          detect_some(check_module, source_file, ast, enforce, context),
+          check_module
+          |> detect_group(source_file, ast, report, context)
+          |> Enum.map(&report_only/1)
+        )
     end
   end
 

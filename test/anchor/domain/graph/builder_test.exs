@@ -10,6 +10,7 @@ defmodule Anchor.Domain.Graph.BuilderTest do
   # Sabotage record: ../../../sabotage_records/inlines-20261103-dnd_5551_graph_hardening.md
   # Sabotage record: ../../../sabotage_records/builder-20261103-dnd_5581_hardening_batch.md (DND-5587, DND-5588)
   # Sabotage record: ../../../sabotage_records/graph_runner-20261103-dnd_5630_graph_hardening.md (DND-5630)
+  # Sabotage record (DND-5633): ../../../sabotage_records/builder-20261103-dnd_5648_graph_followups.md
   # DND-5548 (the per-module walk guard): ../../../sabotage_records/builder-20261103-dnd_5440_graph_runner.md
   use ExUnit.Case, async: true
 
@@ -99,6 +100,21 @@ defmodule Anchor.Domain.Graph.BuilderTest do
   defp facts(file, source), do: %{file => SourceFacts.from_source(file, source)}
 
   describe "build/2 module facts" do
+    # DND-5633: a behaviour's callbacks are carried onto its node.
+    test "a behaviour's node carries its callbacks" do
+      [{module, binary}] =
+        compile_unloaded("""
+        defmodule AnchorFixtures.BuilderTest.Port do
+          @callback run([String.t()]) :: :ok
+        end
+        """)
+
+      beam = BeamReader.decode(binary, app: :demo, path: "ebin/port.beam")
+      graph = Builder.build([beam], %{})
+
+      assert Graph.module(graph, module).callbacks == [{:run, 1}]
+    end
+
     # Row 32
     test "a module node carries the elixir_v1 facts and every function with its Core", %{
       plain: plain
@@ -119,6 +135,8 @@ defmodule Anchor.Domain.Graph.BuilderTest do
       assert Keyword.get(node.attributes, :tag) == :hello
       assert [{:"::", _, [{:run, _, _}, _]}] = node.specs[{:run, 1}]
       assert {:type, _quoted} = node.types[{:t, 0}]
+      # DND-5633: a module that declares no callback has none.
+      assert node.callbacks == []
 
       assert %FunctionNode{kind: :def, line: 10, core: run_core} = node.functions[{:run, 1}]
 

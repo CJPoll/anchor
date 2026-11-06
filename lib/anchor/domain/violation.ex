@@ -57,4 +57,13 @@ defmodule Anchor.Domain.Violation do
           rule_id: String.t() | nil,
           enforcement: :enforce | :report
         }
+
+  @doc """
+  `violation` with `enforcement` (`:enforce` or `:report`); every other field
+  kept. The one place outside a struct literal that sets it.
+  """
+  @spec with_enforcement(t(), :enforce | :report) :: t()
+  def with_enforcement(%__MODULE__{} = violation, enforcement)
+      when enforcement in [:enforce, :report],
+      do: %{violation | enforcement: enforcement}
 end

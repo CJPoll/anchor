@@ -26,7 +26,10 @@ defmodule Anchor.Domain.GraphReport do
       rule that ran needed the effect inference (DND-5447), else `effects/1`
       of it; `aggregates` (optional, DND-5476) is
       `%{declared, tables_unknown}` when any aggregate is declared, and the
-      JSON's `aggregates` is `null` otherwise.
+      JSON's `aggregates` is `null` otherwise. The optional `dynamic_calls` is
+      `Anchor.Domain.DynamicCalls.tally/1` of the graph (DND-5633): the
+      dynamic calls narrowed to a declared behaviour's implementers, and those
+      fanned out to every module exporting the function.
     * `exit_code` — `exit_code/1`.
 
   ## Exit code
@@ -46,7 +49,10 @@ defmodule Anchor.Domain.GraphReport do
   each held one prints as `path:line: [held] <label> <message>`. When the run
   computed the higher-order flow analysis, the summary ends with `; apply
   sites: <r> resolved, <a> any`, and with `(step bound hit: every site reads
-  any)` after it when the analysis hit its bound (DND-5574, R6). When it
+  any)` after it when the analysis hit its bound (DND-5574, R6). When the
+  graph has a dynamic call with a known function name, it then has `;
+  dynamic calls: <f> fanned out to every exporter, <n> narrowed by behaviour`
+  (DND-5633), and the JSON's `dynamic_calls` names each call. When it
   computed the effect inference, the summary then ends with `; effects: <n>
   functions (domain <a>, managers <b>, adapters <c>, framework <d>), <u>
   unresolved dynamic calls`, and `, not analysed: <k>` when some public
@@ -94,8 +100,14 @@ defmodule Anchor.Domain.GraphReport do
           required(:no_core) => non_neg_integer(),
           required(:outside_root) => non_neg_integer(),
           required(:apply_sites) => apply_sites() | nil,
+          optional(:dynamic_calls) => dynamic_calls() | nil,
           optional(:effects) => effects() | nil,
           optional(:aggregates) => %{declared: pos_integer(), tables_unknown: non_neg_integer()}
+        }
+
+  @type dynamic_calls :: %{
+          narrowed: [{mfa(), atom(), arity()}],
+          fanned_out: [{mfa(), atom(), arity()}]
         }
 
   @type effects :: %{
@@ -207,6 +219,7 @@ defmodule Anchor.Domain.GraphReport do
       "no_core" => report.counts.no_core,
       "outside_root" => report.counts.outside_root,
       "apply_sites" => apply_sites_json(report.counts.apply_sites),
+      "dynamic_calls" => dynamic_calls_json(Map.get(report.counts, :dynamic_calls)),
       "effects" => effects_json(Map.get(report.counts, :effects)),
       "aggregates" => aggregates_json(Map.get(report.counts, :aggregates)),
       "exit_code" => report.exit_code,
@@ -235,9 +248,32 @@ defmodule Anchor.Domain.GraphReport do
       "#{counts.rules} rules, #{violations} violations " <>
       "(#{length(report_only)} report-only, #{length(report.held)} baselined)" <>
       apply_sites_note(counts.apply_sites) <>
+      dynamic_calls_note(Map.get(counts, :dynamic_calls)) <>
       effects_note(Map.get(counts, :effects)) <>
       aggregates_note(Map.get(counts, :aggregates))
   end
+
+  defp dynamic_calls_json(nil), do: nil
+
+  defp dynamic_calls_json(%{narrowed: narrowed, fanned_out: fanned_out}),
+    do: %{
+      "narrowed" => Enum.map(narrowed, &dynamic_call_text/1),
+      "fanned_out" => Enum.map(fanned_out, &dynamic_call_text/1)
+    }
+
+  defp dynamic_call_text({{module, name, arity}, callee, callee_arity}),
+    do: "#{Exception.format_mfa(module, name, arity)} -> ?.#{callee}/#{callee_arity || "?"}"
+
+  # DND-5633: a dynamic call judged against every exporter is an
+  # over-approximation, so the run says how many there were.
+  defp dynamic_calls_note(%{narrowed: [], fanned_out: []}), do: ""
+
+  defp dynamic_calls_note(%{narrowed: narrowed, fanned_out: fanned_out}),
+    do:
+      "; dynamic calls: #{length(fanned_out)} fanned out to every exporter, " <>
+        "#{length(narrowed)} narrowed by behaviour"
+
+  defp dynamic_calls_note(nil), do: ""
 
   # DND-5476: when any aggregate is declared, how many, and how many of their
   # schemas' tables could not be read (a `__schema__(:source)` that is not a

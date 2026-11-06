@@ -24,6 +24,10 @@ defmodule Anchor.Domain.GraphRules.ContextAcyclic do
   contexts it reaches, so each (caller function, arity) is one violation too,
   keyed `<id>|<Caller.f/a>|-> dynamic ?/<arity>`, like `layering`'s: the rule
   reports what it could not see itself, whatever other rules run.
+
+  A cycle whose contexts are a strict subset of a baselined cycle's narrows
+  it (`narrows?/2`, DND-5633): breaking one edge of a baselined cycle changes
+  its key, and that is not growth.
   """
 
   @behaviour Anchor.Domain.GraphRule
@@ -44,6 +48,24 @@ defmodule Anchor.Domain.GraphRules.ContextAcyclic do
   @impl Anchor.Domain.RuleShape
   def shape(_rule),
     do: "the context graph has no cycle; a dependency between contexts runs one way"
+
+  @impl Anchor.Domain.GraphRule
+  def narrows?(base_key, key) do
+    case {cycle(base_key), cycle(key)} do
+      {{id, base}, {id, contexts}} -> MapSet.subset?(contexts, base) and contexts != base
+      _not_two_cycles -> false
+    end
+  end
+
+  # `<id>|A,B,...`: a cycle key of two or more contexts; anything else is nil.
+  defp cycle(key) do
+    with [id, list] <- String.split(key, "|"),
+         [_, _ | _] = contexts <- String.split(list, ",") do
+      {id, MapSet.new(contexts)}
+    else
+      _other -> nil
+    end
+  end
 
   @impl Anchor.Domain.GraphRule
   def check(%Model{} = model, rule) do

@@ -3,6 +3,8 @@ defmodule Anchor.Domain.GraphRulesTest do
   # Pure Domain over a hand-built model.
   #
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5440_graph_runner.md
+  # Sabotage record (DND-5633): ../../sabotage_records/context_acyclic-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (FX-B): ../../sabotage_records/graph_runner-20261103-dnd_5648_graph_followups.md
   # Sabotage record (DND-5447, DND-5454 rows): ../../sabotage_records/rule_schema-20261103-dnd_5447_graph_rules_c.md
   # (needs/1, DND-5574: ../../sabotage_records/graph_runner-20261103-dnd_5574_cfa_wiring.md)
   use ExUnit.Case, async: true
@@ -82,6 +84,33 @@ defmodule Anchor.Domain.GraphRulesTest do
       |> List.flatten()
 
     Anchor.Domain.GraphRule in behaviours
+  end
+
+  # DND-5633: every rule answers narrows?/2 (a required callback), asked by
+  # name: no closure, and no check of what is loaded.
+  describe "narrows?/3" do
+    test "a rule that narrows is asked" do
+      assert GraphRules.narrows?(Anchor.Domain.GraphRules.ContextAcyclic, "c|A,B,C", "c|A,B")
+      refute GraphRules.narrows?(Anchor.Domain.GraphRules.ContextAcyclic, "c|A,B", "c|A,B,C")
+      assert GraphRules.narrows?(Anchor.Test.GraphRuleStubs.FindsNarrowing, "r|wider", "r|found")
+    end
+
+    # The gate on 370588d: narrows?/3 read function_exported?/3, false for a
+    # module not yet loaded, so "a rule that narrows is asked" passed or failed
+    # by test order. The answer must not depend on what is loaded.
+    test "a rule not yet loaded is asked all the same" do
+      stub = Anchor.Test.GraphRuleStubs.NarrowsWhenUnloaded
+      :code.purge(stub)
+      :code.delete(stub)
+      refute :code.is_loaded(stub)
+
+      assert GraphRules.narrows?(stub, "r|wider", "r|found")
+    end
+
+    test "a rule that never narrows, or no rule, says no" do
+      refute GraphRules.narrows?(Anchor.Domain.GraphRules.Layering, "c|A,B,C", "c|A,B")
+      refute GraphRules.narrows?(nil, "c|A,B,C", "c|A,B")
+    end
   end
 
   describe "select/2" do
