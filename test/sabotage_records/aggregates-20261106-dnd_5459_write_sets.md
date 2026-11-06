@@ -1880,3 +1880,221 @@ a callback of Ecto.Repo is not listed (`lib/anchor/domain/aggregates/write_sites
 
 ......................................
 ```
+
+# Third run: a traced value keeps every path it can take
+
+5 mutations of `WriteSource` for critic round 5's findings (a `try` handler, every `@spec` clause) and rule 4, swept with them. A sixth, TR-RAW (dropping `:raw_raise` from the primops that raise), survived with 25 tests, 0 failures: Core held no such primop in any `rescue`, `after` or `reraise` form the fixtures hold, so the arm was deleted rather than kept untested. An unknown primop stays unresolved.
+
+| # | Mutation | Tests run | Result |
+|---|---|---|---|
+| TR-HANDLER | a try's handler is not traced (`lib/anchor/domain/aggregates/write_source.ex`) | `write_source_test.exs` | `25 tests, 2 failures` (red) |
+| SP-ANY | one @spec clause naming a schema is enough (`lib/anchor/domain/aggregates/write_source.ex`) | `write_source_test.exs` | `25 tests, 1 failure` (red) |
+| SP-FIRST | only the first @spec clause counts (`lib/anchor/domain/aggregates/write_source.ex`) | `write_source_test.exs` | `25 tests, 2 failures` (red) |
+| RL4-RETURN | a call on a schema is always the schema (`lib/anchor/domain/aggregates/write_source.ex`) | `write_source_test.exs` | `25 tests, 1 failure` (red) |
+| RL4-FALLBACK | a schema's untraceable function is not the schema (`lib/anchor/domain/aggregates/write_source.ex`) | `write_source_test.exs` | `25 tests, 2 failures` (red) |
+
+## TR-HANDLER
+
+a try's handler is not traced (`lib/anchor/domain/aggregates/write_source.ex`). Result: `25 tests, 2 failures`.
+
+```
+
+  1) test resolve/3 (through WriteSites.find/2) a try handler that returns what Anchor cannot trace makes the write unresolved (Anchor.Domain.Aggregates.WriteSourceTest)
+     test/anchor/domain/aggregates/write_source_test.exs:255
+     match (=) failed
+     code:  assert %{sources: [], unresolved: "the result of Map.new/0"} = site(sites, :r19)
+     left:  %{sources: [], unresolved: "the result of Map.new/0"}
+     right: %Anchor.Domain.Aggregates.WriteSite{
+              mfa: {AnchorFixtures.WriteSourceTest.X, :r19, 1},
+              line: 100,
+              op: :insert,
+              via: :repo,
+              sources: [schema: AnchorFixtures.WriteSourceTest.S],
+              unresolved: nil,
+              scopes: [],
+              run_callback?: false
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_source_test.exs:258: (test)
+
+...........
+
+
+  2) test resolve/3 (through WriteSites.find/2) a try's value is its body's and its handler's, like the clauses of a case (Anchor.Domain.Aggregates.WriteSourceTest)
+     test/anchor/domain/aggregates/write_source_test.exs:249
+     match (=) failed
+     code:  assert %{sources: [schema: @s, schema: @t], unresolved: nil} = site(sites, :r18)
+     left:  %{
+              sources: [schema: AnchorFixtures.WriteSourceTest.S, schema: AnchorFixtures.WriteSourceTest.T],
+              unresolved: nil
+            }
+     right: %Anchor.Domain.Aggregates.WriteSite{
+              mfa: {AnchorFixtures.WriteSourceTest.X, :r18, 1},
+              line: 89,
+              op: :insert,
+              via: :repo,
+              sources: [schema: AnchorFixtures.WriteSourceTest.S],
+              unresolved: nil,
+              scopes: [],
+              run_callback?: false
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_source_test.exs:252: (test)
+
+....
+```
+
+## SP-ANY
+
+one @spec clause naming a schema is enough (`lib/anchor/domain/aggregates/write_source.ex`). Result: `25 tests, 1 failure`.
+
+```
+
+
+
+  1) test resolve/3 (through WriteSites.find/2) a @spec clause naming no schema falls through to the callers (Anchor.Domain.Aggregates.WriteSourceTest)
+     test/anchor/domain/aggregates/write_source_test.exs:270
+     match (=) failed
+     code:  assert %{sources: [schema: @t], unresolved: nil} = site(sites, :r22)
+     left:  %{sources: [schema: AnchorFixtures.WriteSourceTest.T], unresolved: nil}
+     right: %Anchor.Domain.Aggregates.WriteSite{
+              mfa: {AnchorFixtures.WriteSourceTest.X, :r22, 1},
+              line: 133,
+              op: :insert,
+              via: :repo,
+              sources: [schema: AnchorFixtures.WriteSourceTest.S],
+              unresolved: nil,
+              scopes: [],
+              run_callback?: false
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_source_test.exs:271: (test)
+
+........................
+```
+
+## SP-FIRST
+
+only the first @spec clause counts (`lib/anchor/domain/aggregates/write_source.ex`). Result: `25 tests, 2 failures`.
+
+```
+
+  1) test resolve/3 (through WriteSites.find/2) a @spec clause naming no schema falls through to the callers (Anchor.Domain.Aggregates.WriteSourceTest)
+     test/anchor/domain/aggregates/write_source_test.exs:270
+     match (=) failed
+     code:  assert %{sources: [schema: @t], unresolved: nil} = site(sites, :r22)
+     left:  %{sources: [schema: AnchorFixtures.WriteSourceTest.T], unresolved: nil}
+     right: %Anchor.Domain.Aggregates.WriteSite{
+              mfa: {AnchorFixtures.WriteSourceTest.X, :r22, 1},
+              line: 133,
+              op: :insert,
+              via: :repo,
+              sources: [schema: AnchorFixtures.WriteSourceTest.S],
+              unresolved: nil,
+              scopes: [],
+              run_callback?: false
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_source_test.exs:271: (test)
+
+.....
+
+
+  2) test resolve/3 (through WriteSites.find/2) every @spec clause counts: two schemas are both the parameter's (Anchor.Domain.Aggregates.WriteSourceTest)
+     test/anchor/domain/aggregates/write_source_test.exs:266
+     match (=) failed
+     code:  assert %{sources: [schema: @s, schema: @t], unresolved: nil} = site(sites, :r21)
+     left:  %{
+              sources: [schema: AnchorFixtures.WriteSourceTest.S, schema: AnchorFixtures.WriteSourceTest.T],
+              unresolved: nil
+            }
+     right: %Anchor.Domain.Aggregates.WriteSite{
+              mfa: {AnchorFixtures.WriteSourceTest.X, :r21, 1},
+              line: 129,
+              op: :insert,
+              via: :repo,
+              sources: [schema: AnchorFixtures.WriteSourceTest.S],
+              unresolved: nil,
+              scopes: [],
+              run_callback?: false
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_source_test.exs:267: (test)
+
+........
+```
+
+## RL4-RETURN
+
+a call on a schema is always the schema (`lib/anchor/domain/aggregates/write_source.ex`). Result: `25 tests, 1 failure`.
+
+```
+
+  1) test resolve/3 (through WriteSites.find/2) a schema's function that returns another schema is that schema, not its own (Anchor.Domain.Aggregates.WriteSourceTest)
+     test/anchor/domain/aggregates/write_source_test.exs:274
+     match (=) failed
+     code:  assert %{sources: [schema: @t], unresolved: nil} = site(sites, :r23)
+     left:  %{sources: [schema: AnchorFixtures.WriteSourceTest.T], unresolved: nil}
+     right: %Anchor.Domain.Aggregates.WriteSite{
+              mfa: {AnchorFixtures.WriteSourceTest.X, :r23, 0},
+              line: 78,
+              op: :insert,
+              via: :repo,
+              sources: [schema: AnchorFixtures.WriteSourceTest.W],
+              unresolved: nil,
+              scopes: [],
+              run_callback?: false
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_source_test.exs:277: (test)
+
+......................
+```
+
+## RL4-FALLBACK
+
+a schema's untraceable function is not the schema (`lib/anchor/domain/aggregates/write_source.ex`). Result: `25 tests, 2 failures`.
+
+```
+
+  1) test resolve/3 (through WriteSites.find/2) R6: a call on a schema module is the schema (rule 4) (Anchor.Domain.Aggregates.WriteSourceTest)
+     test/anchor/domain/aggregates/write_source_test.exs:185
+     match (=) failed
+     code:  assert %{sources: [schema: @s], unresolved: nil} = site(sites, :r6)
+     left:  %{sources: [schema: AnchorFixtures.WriteSourceTest.S], unresolved: nil}
+     right: %Anchor.Domain.Aggregates.WriteSite{
+              mfa: {AnchorFixtures.WriteSourceTest.X, :r6, 2},
+              line: 50,
+              op: :update,
+              via: :repo,
+              sources: [],
+              unresolved: "AnchorFixtures.WriteSourceTest.S",
+              scopes: [],
+              run_callback?: false
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_source_test.exs:186: (test)
+
+...
+
+
+  2) test resolve/3 (through WriteSites.find/2) a schema's function Anchor cannot trace is the schema (rule 4) (Anchor.Domain.Aggregates.WriteSourceTest)
+     test/anchor/domain/aggregates/write_source_test.exs:280
+     match (=) failed
+     code:  assert %{sources: [schema: @w], unresolved: nil} = site(sites, :r24)
+     left:  %{sources: [schema: AnchorFixtures.WriteSourceTest.W], unresolved: nil}
+     right: %Anchor.Domain.Aggregates.WriteSite{
+              mfa: {AnchorFixtures.WriteSourceTest.X, :r24, 0},
+              line: 79,
+              op: :insert,
+              via: :repo,
+              sources: [],
+              unresolved: "AnchorFixtures.WriteSourceTest.W",
+              scopes: [],
+              run_callback?: false
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_source_test.exs:281: (test)
+
+...................
+```
