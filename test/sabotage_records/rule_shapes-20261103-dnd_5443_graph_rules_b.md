@@ -29,6 +29,12 @@ findings to one `Fix:` (RS-H), and the graph canary names that test.
 | FA-D | the moved pure_patterns refusal loses its own Fix (`lib/anchor/domain/failures.ex`) | `failures_test.exs`, `rule_checks_nothing_test.exs`, `architecture_checks_nothing_test.exs` | `84 tests, 1 failure` (red) | one Fix: per rejected config each moved load refusal keeps its own Fix, and only it |
 | RS-G | aggregate_declarations (main's new graph type) has no shape entry (`lib/anchor/domain/rule_shapes.ex`) | `rule_shapes_test.exs` | `7 tests, 1 failure` (red) | for/1 every rule type in RuleSchema.rule_types/0 has a non-empty shape |
 | RS-H | an aggregate_declarations finding (claimed twice) carries no Fix: (`lib/anchor/domain/graph_rules/aggregate_declarations.ex`) | `aggregate_declarations_integration_test.exs` | `2 tests, 1 failure` (red) | N1: the violating module's table claim is claimed twice, at the config and at it |
+| EP-F | identity keeps the Fix: sentence (`lib/anchor/domain/enforcement_passes.ex`) | `enforcement_passes_test.exs`, `lint_baseline_test.exs` | `37 tests, 3 failures` (red) | merge/2 two rules' copies differing only in their Fix: are one finding, the enforced one's; a finding two rules make with no baseline yet, two report rules' finding keeps the baselined rule's key (for --write); a finding two rules make a report rule's copy never downgrades an enforced baselined rule's NEW finding |
+| RS-W | without_fix drops nothing (`lib/anchor/domain/rule_shapes.ex`) | `enforcement_passes_test.exs` | `15 tests, 1 failure` (red) | merge/2 two rules' copies differing only in their Fix: are one finding, the enforced one's |
+| EC-G | a Manager's effect finding carries no Fix: (`lib/anchor/domain/graph_rules/effects_match_bucket.ex`) | `effects_canary_test.exs` | `3 tests, 1 failure` (red) | the violating modules give one finding per bad function, the compliant none |
+| EC-F | the fallback role's finding carries no Fix: (`lib/anchor/domain/graph_rules/effects_match_bucket.ex`) | `effects_canary_test.exs`, `effects_match_bucket_test.exs` | `18 tests, 0 failures` (GREEN: survived) |  |
+
+After merging main at 07aef9f. EP-F and RS-W cover the identity fix; EP-F restores the unfixed behaviour. EC-G is the one-Fix assertion in effects_canary_test.exs. EC-F SURVIVES, and is a finding, not a pass: effects_match_bucket's last message clause is a fallback no (bucket role, inferred role) pair the other clauses leave reaches, so no test can reach it. It is main's code; proposed as a ticket in the MR report.
 
 ## RS-A — append_fix appends a second Fix: to a message that has one
 
@@ -1363,4 +1369,152 @@ Run summary: `2 tests, 1 failure`
        test/anchor/integration/aggregate_declarations_integration_test.exs:95: anonymous fn/2 in Anchor.Integration.AggregateDeclarationsIntegrationTest."test N1: the violating module's table claim is claimed twice, at the config and at it"/1
        (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
        test/anchor/integration/aggregate_declarations_integration_test.exs:91: (test)
+```
+
+## EP-F — identity keeps the Fix: sentence
+
+Run summary: `37 tests, 3 failures`
+
+```text
+  1) test merge/2 two rules' copies differing only in their Fix: are one finding, the enforced one's (Anchor.Domain.EnforcementPassesTest)
+     test/anchor/domain/enforcement_passes_test.exs:29
+     match (=) failed
+     code:  assert [%Violation{enforcement: :enforce, message: message}] =
+              EnforcementPasses.merge(enforced, reported)
+     left:  [%Anchor.Domain.Violation{enforcement: :enforce, message: message}]
+     right: [
+              %Anchor.Domain.Violation{
+                line: 3,
+                trigger: "alias",
+                message: "cannot resolve. Fix: enforced rule's shape",
+                filename: nil,
+                kind: :rule,
+                key: nil,
+                rule_id: nil,
+                enforcement: :enforce
+              },
+              %Anchor.Domain.Violation{
+                line: 3,
+                trigger: "alias",
+                message: "cannot resolve. Fix: report rule's shape",
+                filename: nil,
+                kind: :rule,
+                key: nil,
+                rule_id: nil,
+                enforcement: :report
+              }
+            ]
+     stacktrace:
+       test/anchor/domain/enforcement_passes_test.exs:33: (test)
+
+......
+
+  2) test a finding two rules make with no baseline yet, two report rules' finding keeps the baselined rule's key (for --write) (Anchor.Managers.LintBaselineTest)
+     test/anchor/managers/lint_baseline_test.exs:329
+     match (=) failed
+     code:  assert [{"lib/b.ex", "File", "pure|lib/b.ex|File"}] = findings(results)
+     left:  [{"lib/b.ex", "File", "pure|lib/b.ex|File"}]
+     right: [
+              {"lib/b.ex", "File", nil},
+              {"lib/b.ex", "File", "pure|lib/b.ex|File"}
+            ]
+     stacktrace:
+       test/anchor/managers/lint_baseline_test.exs:338: (test)
+
+..........
+
+  3) test a finding two rules make a report rule's copy never downgrades an enforced baselined rule's NEW finding (Anchor.Managers.LintBaselineTest)
+     test/anchor/managers/lint_baseline_test.exs:309
+     match (=) failed
+     code:  assert [%Violation{enforcement: :enforce, key: "pure|lib/b.ex|File"}] = violations
+     left:  [%Anchor.Domain.Violation{enforcement: :enforce, key: "pure|lib/b.ex|File"}]
+     right: [
+              %Anchor.Domain.Violation{
+                line: 2,
+                trigger: "File",
+                message: "Module has forbidden direct dependency on File. Fix: do not reference File from a module this rule selects; reach it through a module the rule allows",
+                filename: nil,
+                kind: :rule,
+                key: nil,
+                rule_id: nil,
+                enforcement: :report
+              },
+              %Anchor.Domain.Violation{
+                line: 2,
+                trigger: "File",
+                message: "Module has forbidden direct dependency on File. Fix: do not reference File, IO from a module this rule selects; reach it through a module the rule allows",
+                filename: nil,
+                kind: :rule,
+                key: "pure|lib/b.ex|File",
+                rule_id: "pure",
+                enforcement: :enforce
+              }
+            ]
+     stacktrace:
+       test/anchor/managers/lint_baseline_test.exs:317: (test)
+
+.........
+```
+
+## RS-W — without_fix drops nothing
+
+Run summary: `15 tests, 1 failure`
+
+```text
+  1) test merge/2 two rules' copies differing only in their Fix: are one finding, the enforced one's (Anchor.Domain.EnforcementPassesTest)
+     test/anchor/domain/enforcement_passes_test.exs:29
+     match (=) failed
+     code:  assert [%Violation{enforcement: :enforce, message: message}] =
+              EnforcementPasses.merge(enforced, reported)
+     left:  [%Anchor.Domain.Violation{enforcement: :enforce, message: message}]
+     right: [
+              %Anchor.Domain.Violation{
+                line: 3,
+                trigger: "alias",
+                message: "cannot resolve. Fix: enforced rule's shape",
+                filename: nil,
+                kind: :rule,
+                key: nil,
+                rule_id: nil,
+                enforcement: :enforce
+              },
+              %Anchor.Domain.Violation{
+                line: 3,
+                trigger: "alias",
+                message: "cannot resolve. Fix: report rule's shape",
+                filename: nil,
+                kind: :rule,
+                key: nil,
+                rule_id: nil,
+                enforcement: :report
+              }
+            ]
+     stacktrace:
+       test/anchor/domain/enforcement_passes_test.exs:33: (test)
+
+.............
+```
+
+## EC-G — a Manager's effect finding carries no Fix:
+
+Run summary: `3 tests, 1 failure`
+
+```text
+  1) test the violating modules give one finding per bad function, the compliant none (Anchor.Integration.EffectsCanaryTest)
+     test/anchor/integration/effects_canary_test.exs:73
+     AnchorFixtures.EffectsCanary.Direct.load/1 is in bucket managers (managers) but calls an effect itself: AnchorFixtures.EffectsCanary.Direct.load/1 -> File.read/1. Remedy: move the call into an adapter of this context and call the adapter.
+     code: for finding <- report.findings do
+     stacktrace:
+       (elixir 1.19.4) lib/enum.ex:1688: Enum."-map/2-lists^map/1-1-"/2
+       test/anchor/integration/effects_canary_test.exs:97: (test)
+
+.
+```
+
+## EC-F — the fallback role's finding carries no Fix:
+
+Run summary: `18 tests, 0 failures`
+
+```text
+
 ```

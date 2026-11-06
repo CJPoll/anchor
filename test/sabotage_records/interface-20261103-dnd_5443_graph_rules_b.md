@@ -40,6 +40,9 @@ final code.
 | GR-A | the summary omits the width (`lib/anchor/domain/graph_report.ex`) | `graph_report_test.exs`, `graph_canary_test.exs` | `32 tests, 4 failures` (red) | interface width (DND-5443, R4) a run with an interface rule and no context says so; interface width (DND-5443, R4) the summary ends with each context's width, sorted; the JSON has interface_width; the compliant canary modules give no findings, and the summary counts the tree; R7: a rule that needs the higher-order flow analysis gets it over the canary, with no bound hit, and the summary counts its apply sites |
 | GR-B | the JSON omits interface_width (`lib/anchor/domain/graph_report.ex`) | `graph_report_test.exs` | `24 tests, 2 failures` (red) | interface width (DND-5443, R4) no interface rule ran: nothing is printed, and the JSON is null; interface width (DND-5443, R4) the summary ends with each context's width, sorted; the JSON has interface_width |
 | MG-A | the runner never computes the width (`lib/anchor/managers/graph.ex`) | `graph_canary_test.exs` | `8 tests, 2 failures` (red) | R7: a rule that needs the higher-order flow analysis gets it over the canary, with no bound hit, and the summary counts its apply sites; the compliant canary modules give no findings, and the summary counts the tree |
+| IF-N | a dynamic call is judged against every exporter, not the narrowed targets (`lib/anchor/domain/graph_rules/interface.ex`) | `interface_test.exs` | `21 tests, 1 failure` (red) | check/2 over compiled fixtures (two apps) a behaviour-typed receiver reaches its implementers; an untyped one every exporter |
+
+After merging main at 07aef9f. IF-N is the regression test of the narrowing bug: the mutation restores the unfixed line, and its red is the red in the fix commit.
 
 ## IN-A — modules_of/2 ignores interface?
 
@@ -1196,4 +1199,25 @@ Run summary: `8 tests, 2 failures`
      right: "anchor.graph: 9 modules in 1 apps, 3 rules, 0 violations (0 report-only, 0 baselined); interface width: AnchorFixtures.CycleA=0, AnchorFixtures.GraphCanary=2, AnchorFixtures.IfaceLeft=1, AnchorFixtures.IfaceRight=1"
      stacktrace:
        test/anchor/integration/graph_canary_test.exs:94: (test)
+```
+
+## IF-N — a dynamic call is judged against every exporter, not the narrowed targets
+
+Run summary: `21 tests, 1 failure`
+
+```text
+  1) test check/2 over compiled fixtures (two apps) a behaviour-typed receiver reaches its implementers; an untyped one every exporter (Anchor.Domain.GraphRules.InterfaceTest)
+     test/anchor/domain/graph_rules/interface_test.exs:384
+     Assertion with == failed
+     code:  assert keys == [
+              "interface|#{@narrow_ns}.Billing.Runner.untyped/2|-> " <>
+                "#{@narrow_ns}.Accounts.Domain.Worker.go/1"
+            ]
+     left:  ["interface|AnchorFixtures.InterfaceTest.Narrow.Billing.Runner.typed/2|-> AnchorFixtures.InterfaceTest.Narrow.Accounts.Domain.Worker.go/1",
+             "interface|AnchorFixtures.InterfaceTest.Narrow.Billing.Runner.untyped/2|-> AnchorFixtures.InterfaceTest.Narrow.Accounts.Domain.Worker.go/1"]
+     right: ["interface|AnchorFixtures.InterfaceTest.Narrow.Billing.Runner.untyped/2|-> AnchorFixtures.InterfaceTest.Narrow.Accounts.Domain.Worker.go/1"]
+     stacktrace:
+       test/anchor/domain/graph_rules/interface_test.exs:416: (test)
+
+................
 ```
