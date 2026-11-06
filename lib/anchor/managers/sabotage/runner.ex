@@ -135,6 +135,7 @@ defmodule Anchor.Managers.Sabotage.Runner do
   alias Anchor.Domain.Sabotage.SharedRun
   alias Anchor.Domain.Sabotage.Survivors
   alias Anchor.Domain.Sabotage.TestRun
+  alias Anchor.Domain.Sabotage.TestRunRefusal
   alias Anchor.Domain.Sabotage.TestSelection
   alias Anchor.Managers.Sabotage
 
@@ -283,10 +284,7 @@ defmodule Anchor.Managers.Sabotage.Runner do
     end
   end
 
-  @doc false
-  # The adapters from `opts`; shared with the replay (DND-5485).
-  @spec ports(keyword()) :: map()
-  def ports(opts) do
+  defp ports(opts) do
     %{
       config: Keyword.get(opts, :config_loader, ConfigFile),
       change: Keyword.get(opts, :change_source, GitChangeSource),
@@ -668,7 +666,7 @@ defmodule Anchor.Managers.Sabotage.Runner do
            "(#{baseline_detail(test_run)}). Fix: make them pass first"}
 
       {:error, reason} ->
-        {:refuse, runner_error_code(reason), runner_error(reason)}
+        {:refuse, TestRunRefusal.code(reason), TestRunRefusal.message(reason)}
     end
   end
 
@@ -677,11 +675,6 @@ defmodule Anchor.Managers.Sabotage.Runner do
 
   defp baseline_detail(%TestRun{} = test_run),
     do: Outcome.reason(test_run) || Atom.to_string(test_run.status)
-
-  defp timeout_missing,
-    do:
-      "the `timeout` binary was not found, so a test run could not be bounded. " <>
-        "Fix: install coreutils timeout"
 
   # DND-5639: a mutant whose run (`SharedRun.key/2`) was already measured,
   # another target of the same `defimpl ..., for: [...]` edit selecting the
@@ -796,35 +789,13 @@ defmodule Anchor.Managers.Sabotage.Runner do
         {:ok, Map.put(outcome, :test_run, test_run)}
 
       {:error, reason} ->
-        {:refuse, runner_error_code(reason), runner_error(reason)}
+        {:refuse, TestRunRefusal.code(reason), TestRunRefusal.message(reason)}
 
       {:mutant_not_written, posix} ->
         {:refuse, 2,
          "could not write the mutant into #{mutant.file} (#{inspect(posix)}); the original " <>
            "was written back. Fix: make #{mutant.file} writable"}
     end
-  end
-
-  @doc false
-  @spec runner_error_code(term()) :: pos_integer()
-  def runner_error_code(:timeout_not_found), do: 2
-  def runner_error_code({:results_not_removed, _path, _posix}), do: 3
-  def runner_error_code({:results_dir_not_created, _dir, _posix}), do: 3
-
-  @doc false
-  @spec runner_error(term()) :: String.t()
-  def runner_error(:timeout_not_found), do: timeout_missing()
-
-  def runner_error({:results_not_removed, path, posix}) do
-    "COULD NOT MEASURE: the previous results file #{path} could not be removed " <>
-      "(#{inspect(posix)}), so a test run's failures could be an earlier run's. " <>
-      "Fix: remove #{path} by hand"
-  end
-
-  def runner_error({:results_dir_not_created, dir, posix}) do
-    "COULD NOT MEASURE: the results directory #{dir} could not be made " <>
-      "(#{inspect(posix)}), so no test run's failures can be read. Fix: make #{dir} " <>
-      "(or its parent) a writable directory"
   end
 
   defp journal_not_deleted do

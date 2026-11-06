@@ -36,6 +36,12 @@ defmodule Anchor.Managers.Sabotage.Replay do
   Adapters as `run`'s options (`Runner.ports/1`).
   """
 
+  alias Anchor.Adapters.ConfigFile
+  alias Anchor.Adapters.GitChangeSource
+  alias Anchor.Adapters.GitStatus
+  alias Anchor.Adapters.RecordFile
+  alias Anchor.Adapters.SourcePatcher
+  alias Anchor.Adapters.TestRunner
   alias Anchor.Domain.Sabotage.KillerRef
   alias Anchor.Domain.Sabotage.KillMap
   alias Anchor.Domain.Sabotage.Mutator
@@ -44,6 +50,7 @@ defmodule Anchor.Managers.Sabotage.Replay do
   alias Anchor.Domain.Sabotage.Replay
   alias Anchor.Domain.Sabotage.Replay.Result
   alias Anchor.Domain.Sabotage.TestRun
+  alias Anchor.Domain.Sabotage.TestRunRefusal
   alias Anchor.Managers.Sabotage.Runner
 
   @doc """
@@ -53,7 +60,7 @@ defmodule Anchor.Managers.Sabotage.Replay do
   """
   @spec run(map(), keyword()) :: Result.t()
   def run(%{root: root, build_path: build_path} = facts, opts) when is_binary(build_path) do
-    ports = Runner.ports(opts)
+    ports = ports(opts)
 
     Runner.locked(%Result{}, root, ports, fn ->
       case Runner.recover(%Result{}, root, ports) do
@@ -61,6 +68,19 @@ defmodule Anchor.Managers.Sabotage.Replay do
         {:refuse, result, code, message} -> %{result | refusal: {code, message}}
       end
     end)
+  end
+
+  # The ports `Runner`'s steps need here, with `run`'s defaults.
+  defp ports(opts) do
+    %{
+      config: Keyword.get(opts, :config_loader, ConfigFile),
+      change: Keyword.get(opts, :change_source, GitChangeSource),
+      patcher: Keyword.get(opts, :source_mutation, SourcePatcher),
+      git: Keyword.get(opts, :git_worktree, GitStatus),
+      tests: Keyword.get(opts, :test_execution, TestRunner),
+      records: Keyword.get(opts, :record_store, RecordFile),
+      opts: opts
+    }
   end
 
   defp checked(result, %{root: root} = facts, ports) do
@@ -243,7 +263,7 @@ defmodule Anchor.Managers.Sabotage.Replay do
           {:halt, {:refuse, 3, red_main(run)}}
 
         {:error, reason} ->
-          {:halt, {:refuse, Runner.runner_error_code(reason), Runner.runner_error(reason)}}
+          {:halt, {:refuse, TestRunRefusal.code(reason), TestRunRefusal.message(reason)}}
       end
     end)
   end
