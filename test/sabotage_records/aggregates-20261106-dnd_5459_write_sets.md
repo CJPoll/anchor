@@ -7063,3 +7063,406 @@ Repo.transact on a repo without it is silent (`lib/anchor/domain/aggregates/writ
 
 ...................................................
 ```
+
+# Fifteenth run: a listed wrapper is read at its callers; repo calls that run a function
+
+8 mutations for critic round 17's findings. WSQ-GIVENCAPTURE survived (70 tests, 0 failures): a capture is walked where it is written, so that arm was dead and was deleted, and WSQ-GIVENMULTI gave way to the two rows on the code that replaced it.
+
+| # | Mutation | Tests run | Result |
+|---|---|---|---|
+| WSQ-LISTEDTX | a listed wrapper's unread body is a gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `70 tests, 1 failure` (red) |
+| WSQ-LISTEDCOMPUTED | a listed wrapper's computed repo is reported (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `70 tests, 1 failure` (red) |
+| WSQ-LISTEDFUN | a listed wrapper's fun.() is a gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `70 tests, 1 failure` (red) |
+| WSQ-WRAPPER | no function is a listed wrapper (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `70 tests, 1 failure` (red) |
+| WSQ-CHECKOUT | Repo.checkout's function is not read (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `70 tests, 1 failure` (red) |
+| WSQ-REPOGIVEN | a callback repo's transaction function is not read (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `70 tests, 1 failure` (red) |
+| WSQ-GIVENREAD | an unread value given to a repo call is no gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `70 tests, 1 failure` (red) |
+| WSQ-GIVENMULTI2 | a function given to a repo call reads as a gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `70 tests, 1 failure` (red) |
+
+## WSQ-LISTEDTX
+
+a listed wrapper's unread body is a gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 1 failure`.
+
+```
+
+  1) test build/3 a listed wrapper runs what it is given: no gap of its own (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:712
+     match (=) failed
+     code:  assert [%Scope{complete?: true} = inner, %Scope{complete?: true} = outer] = scopes(a, name)
+     left:  [
+              %Anchor.Domain.Aggregates.Scope{complete?: true} = inner,
+              %Anchor.Domain.Aggregates.Scope{complete?: true} = outer
+            ]
+     right: [
+              %Anchor.Domain.Aggregates.Scope{
+                mfa: {AnchorFixtures.ScopesTest.X, :s83, 0},
+                ordinal: 1,
+                line: 278,
+                kind: :transaction_function,
+                writes: [
+                  %Anchor.Domain.Aggregates.WriteSite{
+                    mfa: {AnchorFixtures.ScopesTest.X, :s83, 0},
+                    line: 278,
+                    op: :insert,
+                    via: :repo,
+                    sources: [schema: AnchorFixtures.ScopesTest.S],
+                    unresolved: nil,
+                    scopes: [2, 1],
+                    run_callback?: false
+                  }
+                ],
+                keys: MapSet.new([
+                  schema: AnchorFixtures.ScopesTest.S
+                ]),
+                complete?: true,
+                gaps: []
+              },
+              %Anchor.Domain.Aggregates.Scope{
+                mfa: {AnchorFixtures.ScopesTest.X, :s83, 0},
+                ordinal: 2,
+                line: 278,
+                kind: :fun,
+                writes: [
+                  %Anchor.Domain.Aggregates.WriteSite{
+                    mfa: {AnchorFixtures.ScopesTest.X, :s83, 0},
+                    line: 278,
+                    op: :insert,
+                    via: :repo,
+                    sources: [schema: AnchorFixtures.ScopesTest.S],
+                    unresolved: nil,
+                    scopes: [2, 1],
+                    run_callback?: false
+                  }
+                ],
+                keys: MapSet.new([
+                  schema: AnchorFixtures.ScopesTest.S
+                ]),
+                complete?: false,
+                gaps: [
+                  {:dynamic_call,
+                   {AnchorFixtures.ScopesTest.X, :wrapper_tx, 1},
+                   276}
+                ]
+              }
+            ]
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:716: anonymous fn/3 in Anchor.Domain.Aggregates.ScopesTest."test build/3 a listed wrapper runs what it is given: no gap of its own"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/scopes_test.exs:715: (test)
+
+....................................................
+```
+
+## WSQ-LISTEDCOMPUTED
+
+a listed wrapper's computed repo is reported (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 1 failure`.
+
+```
+
+  1) test build/3 a listed wrapper runs what it is given: no gap of its own (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:712
+     Expected false or nil, got true
+     code: refute Enum.any?(a.unattributed, &(&1.mfa == {@uow, :transaction, 2}))
+     arguments:
+
+         # 1
+         [
+           %{
+             line: 73,
+             mfa: {AnchorFixtures.ScopesTest.UoW, :transaction, 2},
+             what: "a call of transaction/1 on a module held in a variable"
+           },
+           %{
+             line: 189,
+             mfa: {AnchorFixtures.ScopesTest.X, :s39, 1},
+             what: "a capture of the write AnchorFixtures.ScopesTest.Repo.insert/1"
+           }
+         ]
+
+         # 2
+         #Function<11.89087145/1 in Anchor.Domain.Aggregates.ScopesTest."test build/3 a listed wrapper runs what it is given: no gap of its own"/1>
+
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:723: (test)
+
+...
+```
+
+## WSQ-LISTEDFUN
+
+a listed wrapper's fun.() is a gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 1 failure`.
+
+```
+
+  1) test build/3 a listed wrapper runs what it is given: no gap of its own (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:712
+     match (=) failed
+     code:  assert [%Scope{complete?: true} = inner, %Scope{complete?: true} = outer] = scopes(a, name)
+     left:  [
+              %Anchor.Domain.Aggregates.Scope{complete?: true} = inner,
+              %Anchor.Domain.Aggregates.Scope{complete?: true} = outer
+            ]
+     right: [
+              %Anchor.Domain.Aggregates.Scope{
+                mfa: {AnchorFixtures.ScopesTest.X, :s82, 0},
+                ordinal: 1,
+                line: 277,
+                kind: :transaction_function,
+                writes: [
+                  %Anchor.Domain.Aggregates.WriteSite{
+                    mfa: {AnchorFixtures.ScopesTest.X, :s82, 0},
+                    line: 277,
+                    op: :insert,
+                    via: :repo,
+                    sources: [schema: AnchorFixtures.ScopesTest.S],
+                    unresolved: nil,
+                    scopes: [2, 1],
+                    run_callback?: false
+                  }
+                ],
+                keys: MapSet.new([
+                  schema: AnchorFixtures.ScopesTest.S
+                ]),
+                complete?: true,
+                gaps: []
+              },
+              %Anchor.Domain.Aggregates.Scope{
+                mfa: {AnchorFixtures.ScopesTest.X, :s82, 0},
+                ordinal: 2,
+                line: 277,
+                kind: :fun,
+                writes: [
+                  %Anchor.Domain.Aggregates.WriteSite{
+                    mfa: {AnchorFixtures.ScopesTest.X, :s82, 0},
+                    line: 277,
+                    op: :insert,
+                    via: :repo,
+                    sources: [schema: AnchorFixtures.ScopesTest.S],
+                    unresolved: nil,
+                    scopes: [2, 1],
+                    run_callback?: false
+                  }
+                ],
+                keys: MapSet.new([
+                  schema: AnchorFixtures.ScopesTest.S
+                ]),
+                complete?: false,
+                gaps: [
+                  {:dynamic_call,
+                   {AnchorFixtures.ScopesTest.X, :atomically, 1},
+                   200}
+                ]
+              }
+            ]
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:716: anonymous fn/3 in Anchor.Domain.Aggregates.ScopesTest."test build/3 a listed wrapper runs what it is given: no gap of its own"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/scopes_test.exs:715: (test)
+
+......................................................
+```
+
+## WSQ-WRAPPER
+
+no function is a listed wrapper (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 1 failure`.
+
+```
+
+  1) test build/3 a listed wrapper runs what it is given: no gap of its own (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:712
+     match (=) failed
+     code:  assert [%Scope{complete?: true} = inner, %Scope{complete?: true} = outer] = scopes(a, name)
+     left:  [
+              %Anchor.Domain.Aggregates.Scope{complete?: true} = inner,
+              %Anchor.Domain.Aggregates.Scope{complete?: true} = outer
+            ]
+     right: [
+              %Anchor.Domain.Aggregates.Scope{
+                mfa: {AnchorFixtures.ScopesTest.X, :s82, 0},
+                ordinal: 1,
+                line: 277,
+                kind: :transaction_function,
+                writes: [
+                  %Anchor.Domain.Aggregates.WriteSite{
+                    mfa: {AnchorFixtures.ScopesTest.X, :s82, 0},
+                    line: 277,
+                    op: :insert,
+                    via: :repo,
+                    sources: [schema: AnchorFixtures.ScopesTest.S],
+                    unresolved: nil,
+                    scopes: [2, 1],
+                    run_callback?: false
+                  }
+                ],
+                keys: MapSet.new([
+                  schema: AnchorFixtures.ScopesTest.S
+                ]),
+                complete?: true,
+                gaps: []
+              },
+              %Anchor.Domain.Aggregates.Scope{
+                mfa: {AnchorFixtures.ScopesTest.X, :s82, 0},
+                ordinal: 2,
+                line: 277,
+                kind: :fun,
+                writes: [
+                  %Anchor.Domain.Aggregates.WriteSite{
+                    mfa: {AnchorFixtures.ScopesTest.X, :s82, 0},
+                    line: 277,
+                    op: :insert,
+                    via: :repo,
+                    sources: [schema: AnchorFixtures.ScopesTest.S],
+                    unresolved: nil,
+                    scopes: [2, 1],
+                    run_callback?: false
+                  }
+                ],
+                keys: MapSet.new([
+                  schema: AnchorFixtures.ScopesTest.S
+                ]),
+                complete?: false,
+                gaps: [
+                  {:dynamic_call,
+                   {AnchorFixtures.ScopesTest.X, :atomically, 1},
+                   200}
+                ]
+              }
+            ]
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:716: anonymous fn/3 in Anchor.Domain.Aggregates.ScopesTest."test build/3 a listed wrapper runs what it is given: no gap of its own"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/scopes_test.exs:715: (test)
+
+....................
+```
+
+## WSQ-CHECKOUT
+
+Repo.checkout's function is not read (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 1 failure`.
+
+```
+
+  1) test build/3 Repo.checkout and a callback repo's transaction read the function they are given (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:726
+     match (=) failed
+     code:  assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s84, 1}, _}]} = one(a, :s84)
+     left:  %Anchor.Domain.Aggregates.Scope{
+              complete?: false,
+              gaps: [{:dynamic_call, {AnchorFixtures.ScopesTest.X, :s84, 1}, _}]
+            }
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s84, 1},
+              ordinal: 1,
+              line: 279,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              complete?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:729: (test)
+
+....
+```
+
+## WSQ-REPOGIVEN
+
+a callback repo's transaction function is not read (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 1 failure`.
+
+```
+
+  1) test build/3 Repo.checkout and a callback repo's transaction read the function they are given (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:726
+     match (=) failed
+     code:  assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s85, 1}, _}]} = one(a, :s85)
+     left:  %Anchor.Domain.Aggregates.Scope{
+              complete?: false,
+              gaps: [{:dynamic_call, {AnchorFixtures.ScopesTest.X, :s85, 1}, _}]
+            }
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s85, 1},
+              ordinal: 1,
+              line: 280,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              complete?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:730: (test)
+
+.................................................
+```
+
+## WSQ-GIVENREAD
+
+an unread value given to a repo call is no gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 1 failure`.
+
+```
+
+  1) test build/3 Repo.checkout and a callback repo's transaction read the function they are given (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:726
+     match (=) failed
+     code:  assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s84, 1}, _}]} = one(a, :s84)
+     left:  %Anchor.Domain.Aggregates.Scope{
+              complete?: false,
+              gaps: [{:dynamic_call, {AnchorFixtures.ScopesTest.X, :s84, 1}, _}]
+            }
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s84, 1},
+              ordinal: 1,
+              line: 279,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              complete?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:729: (test)
+
+...........................................
+```
+
+## WSQ-GIVENMULTI2
+
+a function given to a repo call reads as a gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 1 failure`.
+
+```
+
+  1) test build/3 Repo.checkout and a callback repo's transaction read the function they are given (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:726
+     match (=) failed
+     code:  assert %Scope{complete?: true} = scope = one(a, :s86)
+     left:  %Anchor.Domain.Aggregates.Scope{complete?: true} = scope
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s86, 0},
+              ordinal: 1,
+              line: 281,
+              kind: :fun,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.ScopesTest.X, :s86, 0},
+                  line: 281,
+                  op: :insert,
+                  via: :repo,
+                  sources: [schema: AnchorFixtures.ScopesTest.S],
+                  unresolved: nil,
+                  scopes: [1],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([schema: AnchorFixtures.ScopesTest.S]),
+              complete?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.ScopesTest.X, :s86, 0}, 281}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:732: (test)
+
+.......................
+```
