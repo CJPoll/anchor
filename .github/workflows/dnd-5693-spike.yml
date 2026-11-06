@@ -32,6 +32,9 @@ jobs:
         run: elixir logs/dnd-5693/fixture_probe.exs 2>&1 | tee fixture.log; test "${PIPESTATUS[0]}" = 0
         shell: bash
 
+      - name: Can a tracer read the callers key
+        run: elixir logs/dnd-5693/callers_probe.exs
+
       - name: Silencing exactness on the fixture, each mode twice
         shell: bash
         run: |
