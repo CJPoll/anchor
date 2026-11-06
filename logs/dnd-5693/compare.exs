@@ -151,15 +151,17 @@ case System.argv() do
       |> Enum.take(2)
     end
 
+    canonical = fn map, leaks, ambient ->
+      :crypto.hash(:sha256, :erlang.term_to_binary({Enum.sort(map), Enum.sort(leaks), Enum.sort(ambient)})) |> Base.encode16() |> binary_part(0, 16)
+    end
+
+    say.("suite a=#{inspect(a.suite, limit: 3) |> String.slice(0, 60)} b=#{inspect(b.suite, limit: 3) |> String.slice(0, 60)}")
+
     for mechanism <- [:window, :token, :spawn, :hybrid] do
       {map_a, leaks_a, ambient_a} = Mech.outputs(mechanism, a)
       {map_b, leaks_b, ambient_b} = Mech.outputs(mechanism, b)
       only_a = MapSet.difference(map_a, map_b)
       only_b = MapSet.difference(map_b, map_a)
-
-      canonical = fn map, leaks, ambient ->
-        :crypto.hash(:sha256, :erlang.term_to_binary({Enum.sort(map), Enum.sort(leaks), Enum.sort(ambient)})) |> Base.encode16() |> binary_part(0, 16)
-      end
 
       leak_diff = MapSet.size(MapSet.difference(leaks_a, leaks_b)) + MapSet.size(MapSet.difference(leaks_b, leaks_a))
       ambient_diff = MapSet.size(MapSet.difference(ambient_a, ambient_b)) + MapSet.size(MapSet.difference(ambient_b, ambient_a))
@@ -186,8 +188,23 @@ case System.argv() do
       end
     end
 
-    # Positive control: this comparison sees a one-pair change.
-    {map_a, _, _} = Mech.outputs(:hybrid, a)
-    dropped = map_a |> Enum.take(1) |> MapSet.new()
-    say.("CONTROL dropping one pair from a is seen: #{MapSet.size(MapSet.difference(map_a, MapSet.difference(map_a, dropped))) == 1}")
+    # Positive controls: the same outputs, sets and hash the lines above use, on a copy
+    # of a with one thing changed. Each line must show the change.
+    control = fn name, rows ->
+      {map_a, leaks_a, ambient_a} = Mech.outputs(:hybrid, a)
+      {map_b, leaks_b, ambient_b} = Mech.outputs(:hybrid, %{a | rows: rows})
+      seen = canonical.(map_a, leaks_a, ambient_a) != canonical.(map_b, leaks_b, ambient_b)
+
+      say.(
+        "CONTROL #{name}: hash_differs=#{seen} only_a=#{MapSet.size(MapSet.difference(map_a, map_b))} only_b=#{MapSet.size(MapSet.difference(map_b, map_a))} " <>
+          "leak_added=#{MapSet.size(MapSet.difference(leaks_b, leaks_a))} ambient_added=#{MapSet.size(MapSet.difference(ambient_b, ambient_a))}"
+      )
+    end
+
+    {{mfa, word, label, owner, origin}, count} =
+      a.rows |> Enum.sort() |> Enum.find(fn {{_mfa, _word, _label, owner, _origin}, _count} -> match?({:test, _}, owner) end)
+
+    control.("one function dropped from one test", Map.reject(a.rows, fn {{m, _w, _l, o, _or}, _c} -> m == mfa and o == owner end))
+    control.("one leak call added", Map.put(a.rows, {mfa, word + 2, label, owner, origin}, count))
+    control.("one ambient function added", Map.put(a.rows, {{:control, :ambient, 0}, word, :none, :none, [:pre_existing]}, 1))
 end

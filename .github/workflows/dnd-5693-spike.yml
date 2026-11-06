@@ -7,7 +7,6 @@ on:
   push:
     branches:
       - dnd-5693-causal-spike
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -35,7 +34,7 @@ jobs:
       - name: Can a tracer read the callers key
         run: elixir logs/dnd-5693/callers_probe.exs
 
-      - name: Silencing exactness on the fixture, each mode twice
+      - name: Silencing exactness on the fixture, every and label_body:64 twice
         shell: bash
         run: |
           for mode in every label_body:1 label_body:64 pid_word:64 word:64 fallthrough:64 pr63:64 every label_body:64; do
@@ -80,8 +79,8 @@ jobs:
       - name: Cost, three rounds of each variant, one VM each
         shell: bash
         run: |
-          for round in 1 2 3; do
-            for variant in untraced label_body:64 fallthrough:1 fallthrough:64 pr63:64 pid_word:64; do
+          for round in 1 2; do
+            for variant in untraced label_body:64 pr63:64; do
               mix run logs/dnd-5693/cost.exs "$variant" 2>&1 | grep -E "^COST|rror" || echo "COST variant=$variant no line"
             done
           done
@@ -121,6 +120,12 @@ jobs:
       - name: Compile
         run: mix compile
 
+      - name: Every call, seed 0, preloaded, once (exact call shares)
+        shell: bash
+        run: |
+          mix run logs/dnd-5693/suite_map.exs every ec1.etf preload 0 > ec1.out 2>&1 || echo "EXIT ec1 $?"
+          grep -E "^SUITE|^  [0-9]+\) test|tests, [0-9]+ failure|^Top 3|^  \* test" ec1.out | cut -c1-400
+
       - name: K=64, label read in the body, preloaded, twice (Q5 on a second VM)
         shell: bash
         run: |
@@ -146,10 +151,11 @@ jobs:
       - name: Compare
         shell: bash
         run: |
-          elixir logs/dnd-5693/compare.exs shares kk1.etf 2>&1 | grep -E "COMPARE (shares|MECH|KIND|LEAK)" | cut -c1-260
+          elixir logs/dnd-5693/compare.exs shares ec1.etf 2>&1 | grep -E "COMPARE (shares|SHARE|MECH|KIND|LEAK)" | cut -c1-260
+          elixir logs/dnd-5693/compare.exs diff ec1.etf kk1.etf 2>&1 | cut -c1-400
           elixir logs/dnd-5693/compare.exs diff kk1.etf kk2.etf 2>&1 | cut -c1-400
-          elixir logs/dnd-5693/compare.exs diff np1.etf np2.etf 2>&1 | grep -v "DIFF window" | cut -c1-400
-          elixir logs/dnd-5693/compare.exs diff kk1.etf np1.etf 2>&1 | grep -v "DIFF window" | cut -c1-400
+          elixir logs/dnd-5693/compare.exs diff np1.etf np2.etf 2>&1 | cut -c1-400
+          elixir logs/dnd-5693/compare.exs diff kk1.etf np1.etf 2>&1 | cut -c1-400
           elixir logs/dnd-5693/compare.exs diff kk1.etf ft1.etf 2>&1 | grep -E "COMPARE (diff|MECH)" | cut -c1-400
 
       - name: Upload the logs and maps

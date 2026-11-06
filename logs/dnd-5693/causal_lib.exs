@@ -47,7 +47,7 @@ defmodule Spike.Specs do
 
   # The spec of a function with `held` keys suppressed, for each shape.
   def spec(:pr63, [{_pid, word, _label} | _]) do
-    [{:_, [{:"=/=", {:get_tcw}, word}], [{:message, {:get_tcw}}]}]
+    [{:_, [{:"=/=", {:get_tcw}, word}], [{:message, {{:none, {:get_tcw}}}}]}]
   end
 
   # Guards only, and no clause matches a suppressed key: a guard failure instead
@@ -205,11 +205,16 @@ defmodule Spike.Gate do
         send(state.collector, {:spawned, child, parent, origin(spawned_mfa)})
         loop(%{state | procs: state.procs + 1})
 
-      {:trace, _pid, _proc_event, _a} ->
+      # A call message in any other shape reaches no clause here and the gate dies, so
+      # the run fails: a spec the gate cannot read is never counted as a process event.
+      {:trace, _pid, proc_event, _a} when proc_event != :call ->
         loop(%{state | procs: state.procs + 1})
 
-      {:trace, _pid, _proc_event, _a, _b} ->
+      {:trace, _pid, proc_event, _a, _b} when proc_event != :call ->
         loop(%{state | procs: state.procs + 1})
+
+      {:trace, _pid, :call, _mfa, _other} = unreadable ->
+        raise "gate: unreadable call message #{inspect(unreadable, limit: 8)}"
 
       {:sync, from} ->
         send(from, :synced)

@@ -1,6 +1,7 @@
 # DND-5693 fixture probe (throwaway, CI only): Q1, Q2, Q3, and the fixture half of Q6.
 #   elixir logs/dnd-5693/fixture_probe.exs
-# Every wait blocks on an event; there is no sleep and no time-based verdict.
+# No sleep and no time-based verdict. A wait blocks on an event, except the two that
+# spin on a shared counter: a message there would change the label being measured.
 
 defmodule Spike.Fix do
   @moduledoc false
@@ -420,7 +421,6 @@ defmodule Spike.CaseA do
       {_out, 0} = System.cmd("echo", ["x"])
       Process.register(self(), :spike_leak_port)
       send(me, :registered)
-      :persistent_term.put(:spike_leak_port_ready, true)
       counter = :persistent_term.get(:spike_port_counter)
       spin_marked(counter)
     end)
@@ -460,7 +460,7 @@ defmodule Spike.CaseA do
     end
   end
 
-  # Blocks on the other process's counter moving, yielding each turn; no clock.
+  # Spins until the other process's counter moves, yielding each turn; no clock.
   defp wait_past(counter, seen) do
     if :counters.get(counter, 1) > seen do
       :ok
