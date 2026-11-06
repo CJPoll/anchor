@@ -28,8 +28,8 @@ defmodule Anchor.Domain.Explain do
     * `must_not_call` — the buckets its row leaves out (deny by default);
     * `rules` — every rule of either engine whose selector selects it, with
       its id, type, engine, enforcement and shape (`Anchor.Domain.RuleShapes`);
-    * `findings` — the graph rules' findings on its source file when the
-      model is known, else `nil` (`not computed (run mix anchor.graph)`): a
+    * `findings` — the graph rules' findings on its source file, and every
+      fail-closed one (a rule that could not run), when the model is known, else `nil` (`not computed (run mix anchor.graph)`): a
       stale artifact is never read.
 
   `render/2` prints it as text or as the JSON agents read (`R5` keys:

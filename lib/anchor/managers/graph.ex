@@ -41,7 +41,7 @@ defmodule Anchor.Managers.Graph do
        `catch :exit`, DND-1312's lesson): a rule that crashes is one issue,
        and the other rules still run. A rule whose `needs/0` is refused, or
        whose needed analysis crashed, is one issue too and is not run;
-    7. for each rule with a `baseline:` (DND-5441): read it
+    8. for each rule with a `baseline:` (DND-5441): read it
        (`Anchor.Adapters.BaselineStore`), and under `--base REF` its copy at
        `REF` (`Anchor.Adapters.GitBase`), and judge the rule's findings
        against it (`Anchor.Domain.Enforcement`): held findings are counted,
@@ -50,10 +50,10 @@ defmodule Anchor.Managers.Graph do
        path, and every finding of the rule stands. Under `--write-baseline
        ID` that rule's baseline is created instead (`BaselineStore.create/3`
        only creates: an existing file is refused, exit 2);
-    8. write the graph artifact for `explain`/`place`
+    9. write the graph artifact for `explain`/`place`
        (`Anchor.Adapters.GraphStore`) under `<build_path>/anchor`, the build
        path the task gathered from Mix (DND-5585); the verdict never reads it;
-    9. return the `%Anchor.Domain.GraphReport{}`, with the apply-site
+   10. return the `%Anchor.Domain.GraphReport{}`, with the apply-site
        counts (`GraphReport.apply_sites/1`) when the analysis ran, and the
        effect counts (`GraphReport.effects/1`) when the effect inference ran,
        and declared aggregates' counts (`Anchor.Domain.Aggregates.Index`,

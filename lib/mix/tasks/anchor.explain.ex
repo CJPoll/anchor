@@ -20,7 +20,8 @@ defmodule Mix.Tasks.Anchor.Explain do
       buckets it must not call;
     * every rule of either engine that selects it, with its enforcement and
       its conforming shape (the text its findings' `Fix:` lines end with);
-    * the graph rules' findings on its source file, run over the last `mix
+    * the graph rules' findings on its source file, and any finding that a
+      rule could not run or selects nothing, run over the last `mix
       anchor.graph` run's graph, used only when that graph's key matches
       this build (else `not computed`). They are the raw findings: one a
       baseline holds is shown, so `mix anchor.graph` stays the verdict.
@@ -39,7 +40,8 @@ defmodule Mix.Tasks.Anchor.Explain do
 
   Exit codes: 0 answered; 2 usage (no subject, two subjects, an unknown
   option, or a subject that is neither a module name nor an `.ex` path under
-  the project root); 3 no or invalid config, or no `architecture:` section.
+  the project root); 3 no or invalid config, no `architecture:` section, or
+  an umbrella app directory outside the project root.
   """
 
   use Mix.Task

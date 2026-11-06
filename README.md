@@ -1332,8 +1332,9 @@ prints, from `.anchor.yml` and the compiled graph only:
   graph the last `mix anchor.graph` run wrote, used only when that graph's key
   matches this build. Otherwise it prints `not computed (run mix anchor.graph)`;
   a stale graph is never used. These are the rules' raw findings: a finding a
-  baseline holds is shown too, and a finding on the config file (an interface
-  width) is not, so `mix anchor.graph` stays the verdict.
+  baseline holds is shown too, and a fail-closed one (a rule that could not run
+  or selects nothing) wherever it sits, while another finding on the config file
+  (an interface width) is not, so `mix anchor.graph` stays the verdict.
 
 A path that does not exist yet is classified by its path and the module name
 Elixir's file naming implies (`lib/my_app/domain/new_thing.ex` is

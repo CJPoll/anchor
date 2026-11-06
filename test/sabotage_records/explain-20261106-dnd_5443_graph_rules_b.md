@@ -3,10 +3,10 @@
 - **Domain:** explain
 - **Branch:** dnd-5443-graph-rules-b
 - **Date:** 2026-11-06
-- **Code under test:** `Anchor.Managers.Graph` (`rule_findings/3`, `artifact_inputs/2`), `Anchor.Managers.Explain`, `Anchor.Domain.Explain`
+- **Code under test:** `Anchor.Managers.Graph` (`rule_findings/3`, `artifact_inputs/2`), `Anchor.Managers.Explain`, `Anchor.Domain.Explain`, `Mix.Tasks.Anchor.Explain`
 - **Suite run:** each mutation ran `mix test --force --timeout 2000 --max-cases 2 <its test files>` inside one `test-slot`, by a driver that applied it, ran the files and restored the source. The checkout's absolute path in the output reads `<worktree>`.
 
-RF-A and RF-B are regression tests of explain's missing analyses and floors. AI-A restores the absolute-apps_path crash, EX-M the re-classification with no source facts, EX-N the beam facts of a compiled module called unknown. Each red is the regression red in its fix commit. A first AI-A dropped the `with` altogether: Elixir type-checked the result, warned that Explain's refusal clause could never match, and the run did not compile, so the row is the `with` over the raw request.
+RF-A and RF-B are regression tests of explain's missing analyses and floors. AI-A restores the absolute-apps_path crash, EX-M the re-classification with no source facts, EX-N the beam facts of a compiled module called unknown. TX-A and TX-B cover the task's umbrella wiring, TX-C its exit 3. Each red is the regression red in its fix commit. A first AI-A dropped the `with` altogether: Elixir type-checked the result, warned that Explain's refusal clause could never match, and the run did not compile, so the row is the `with` over the raw request.
 
 | # | Mutation | Tests run | Result | Failing tests |
 |---|---|---|---|---|
@@ -21,6 +21,9 @@ RF-A and RF-B are regression tests of explain's missing analyses and floors. AI-
 | EX-L | JSON findings carry the label as their file (`lib/anchor/domain/explain.ex`) | `explain_test.exs` | `10 tests, 1 failure` (red) | build/3 with the model the findings it was given are kept |
 | EX-M | an unplaced module is re-classified with no source facts (`lib/anchor/domain/explain.ex`) | `explain_test.exs` | `12 tests, 2 failures` (red) | build/3 with the model a module in two buckets, both through its source's `use`, is ambiguous; build/3 with the model a module in two buckets, one through its source's `use`, is ambiguous |
 | EX-N | a compiled but unplaced module's beam facts are called unknown (`lib/anchor/domain/explain.ex`) | `explain_test.exs` | `12 tests, 2 failures` (red) | build/3 with the model a module in two buckets, one through its source's `use`, is ambiguous; build/3 with the model a module in the graph but in no bucket is unclassified, with every bucket's selectors and the Fix |
+| TX-A | the task gathers no umbrella ebins (`lib/mix/tasks/anchor.explain.ex`) | `anchor_explain_test.exs` | `10 tests, 1 failure` (red) | an umbrella (apps_paths injected: this test runs inside Anchor) explain reads the artifact the graph run of the same apps wrote |
+| TX-B | the task drops the apps' directories (`lib/mix/tasks/anchor.explain.ex`) | `anchor_explain_test.exs` | `10 tests, 2 failures` (red) | an umbrella (apps_paths injected: this test runs inside Anchor) an app directory outside the root exits 3 with the refusal; an umbrella (apps_paths injected: this test runs inside Anchor) explain reads the artifact the graph run of the same apps wrote |
+| TX-C | a refusal exits 0 (`lib/mix/tasks/anchor.explain.ex`) | `anchor_explain_test.exs` | `10 tests, 2 failures` (red) | an umbrella (apps_paths injected: this test runs inside Anchor) an app directory outside the root exits 3 with the refusal; no config is could-not-check: exit 3 |
 
 ## RF-A — rule_findings gives the rules no analyses
 
@@ -467,4 +470,116 @@ Run summary: `12 tests, 2 failures`
        test/anchor/domain/explain_test.exs:250: (test)
 
 .
+```
+
+## TX-A — the task gathers no umbrella ebins
+
+Run summary: `10 tests, 1 failure`
+
+```text
+  1) test an umbrella (apps_paths injected: this test runs inside Anchor) explain reads the artifact the graph run of the same apps wrote (Mix.Tasks.Anchor.ExplainTest)
+     test/mix/tasks/anchor_explain_test.exs:114
+     ** (FunctionClauseError) no function clause matching in anonymous fn/1 in Mix.Tasks.Anchor.ExplainTest."test an umbrella (apps_paths injected: this test runs inside Anchor) explain reads the artifact the graph run of the same apps wrote"/1
+
+     The following arguments were given to anonymous fn/1 in Mix.Tasks.Anchor.ExplainTest."test an umbrella (apps_paths injected: this test runs inside Anchor) explain reads the artifact the graph run of the same apps wrote"/1:
+
+         # 1
+         [anchor: "<worktree>/_build/test/lib/anchor/ebin"]
+
+     code: capture_io(fn ->
+     stacktrace:
+       anonymous fn/1 in Mix.Tasks.Anchor.ExplainTest."test an umbrella (apps_paths injected: this test runs inside Anchor) explain reads the artifact the graph run of the same apps wrote"/1
+       (anchor 0.1.0) lib/anchor/managers/graph.ex:228: Anchor.Managers.Graph.read_beams/2
+       (anchor 0.1.0) lib/anchor/managers/graph.ex:741: Anchor.Managers.Graph.read_artifact_inputs/3
+       (anchor 0.1.0) lib/anchor/managers/explain.ex:128: Anchor.Managers.Explain.model/3
+       (anchor 0.1.0) lib/anchor/managers/explain.ex:75: Anchor.Managers.Explain.explain/2
+       (anchor 0.1.0) lib/mix/tasks/anchor.explain.ex:97: Mix.Tasks.Anchor.Explain.run_parsed/3
+       test/mix/tasks/anchor_explain_test.exs:145: anonymous fn/0 in Mix.Tasks.Anchor.ExplainTest."test an umbrella (apps_paths injected: this test runs inside Anchor) explain reads the artifact the graph run of the same apps wrote"/1
+       (ex_unit 1.19.4) lib/ex_unit/capture_io.ex:325: ExUnit.CaptureIO.do_capture_gl/2
+       (ex_unit 1.19.4) lib/ex_unit/capture_io.ex:283: ExUnit.CaptureIO.do_with_io/3
+       (ex_unit 1.19.4) lib/ex_unit/capture_io.ex:152: ExUnit.CaptureIO.capture_io/1
+       test/mix/tasks/anchor_explain_test.exs:144: (test)
+
+........
+```
+
+## TX-B — the task drops the apps' directories
+
+Run summary: `10 tests, 2 failures`
+
+```text
+  1) test an umbrella (apps_paths injected: this test runs inside Anchor) an app directory outside the root exits 3 with the refusal (Mix.Tasks.Anchor.ExplainTest)
+     test/mix/tasks/anchor_explain_test.exs:155
+     ** (Mox.UnexpectedCallError) expected Anchor.BeamSourceMock.read_ebins/1 to be called 0 times but it has been called once in process #PID<0.1437.0>
+     code: capture_io(:stderr, fn ->
+     stacktrace:
+       (mox 1.2.0) lib/mox.ex:909: Mox.__dispatch__/4
+       (anchor 0.1.0) lib/anchor/managers/graph.ex:228: Anchor.Managers.Graph.read_beams/2
+       (anchor 0.1.0) lib/anchor/managers/graph.ex:741: Anchor.Managers.Graph.read_artifact_inputs/3
+       (anchor 0.1.0) lib/anchor/managers/explain.ex:128: Anchor.Managers.Explain.model/3
+       (anchor 0.1.0) lib/anchor/managers/explain.ex:75: Anchor.Managers.Explain.explain/2
+       (anchor 0.1.0) lib/mix/tasks/anchor.explain.ex:97: Mix.Tasks.Anchor.Explain.run_parsed/3
+       test/mix/tasks/anchor_explain_test.exs:162: anonymous fn/0 in Mix.Tasks.Anchor.ExplainTest."test an umbrella (apps_paths injected: this test runs inside Anchor) an app directory outside the root exits 3 with the refusal"/1
+       (ex_unit 1.19.4) lib/ex_unit/capture_io.ex:296: ExUnit.CaptureIO.do_with_io/3
+       (ex_unit 1.19.4) lib/ex_unit/capture_io.ex:166: ExUnit.CaptureIO.capture_io/2
+       test/mix/tasks/anchor_explain_test.exs:160: (test)
+
+  2) test an umbrella (apps_paths injected: this test runs inside Anchor) explain reads the artifact the graph run of the same apps wrote (Mix.Tasks.Anchor.ExplainTest)
+     test/mix/tasks/anchor_explain_test.exs:114
+     ** (FunctionClauseError) no function clause matching in anonymous fn/2 in Mix.Tasks.Anchor.ExplainTest."test an umbrella (apps_paths injected: this test runs inside Anchor) explain reads the artifact the graph run of the same apps wrote"/1
+
+     The following arguments were given to anonymous fn/2 in Mix.Tasks.Anchor.ExplainTest."test an umbrella (apps_paths injected: this test runs inside Anchor) explain reads the artifact the graph run of the same apps wrote"/1:
+
+         # 1
+         "<worktree>/_build/test/anchor"
+
+         # 2
+         "23436d60cbc9e074916b580dafa52a30aa8105c7f7995e9c31666852c08cc3ff"
+
+     code: capture_io(fn ->
+     stacktrace:
+       anonymous fn/2 in Mix.Tasks.Anchor.ExplainTest."test an umbrella (apps_paths injected: this test runs inside Anchor) explain reads the artifact the graph run of the same apps wrote"/1
+       (hammox 0.7.0) lib/hammox.ex:402: anonymous fn/2 in Hammox.protected_code/3
+       (hammox 0.7.0) lib/hammox/telemetry.ex:12: Hammox.Telemetry.NoOp.span/3
+       (hammox 0.7.0) lib/hammox.ex:398: Hammox.protected_code/3
+       (anchor 0.1.0) lib/anchor/managers/explain.ex:130: Anchor.Managers.Explain.model/3
+       (anchor 0.1.0) lib/anchor/managers/explain.ex:75: Anchor.Managers.Explain.explain/2
+       (anchor 0.1.0) lib/mix/tasks/anchor.explain.ex:97: Mix.Tasks.Anchor.Explain.run_parsed/3
+       test/mix/tasks/anchor_explain_test.exs:145: anonymous fn/0 in Mix.Tasks.Anchor.ExplainTest."test an umbrella (apps_paths injected: this test runs inside Anchor) explain reads the artifact the graph run of the same apps wrote"/1
+       (ex_unit 1.19.4) lib/ex_unit/capture_io.ex:325: ExUnit.CaptureIO.do_capture_gl/2
+       (ex_unit 1.19.4) lib/ex_unit/capture_io.ex:283: ExUnit.CaptureIO.do_with_io/3
+       (ex_unit 1.19.4) lib/ex_unit/capture_io.ex:152: ExUnit.CaptureIO.capture_io/1
+       test/mix/tasks/anchor_explain_test.exs:144: (test)
+
+.....
+```
+
+## TX-C — a refusal exits 0
+
+Run summary: `10 tests, 2 failures`
+
+```text
+  1) test an umbrella (apps_paths injected: this test runs inside Anchor) an app directory outside the root exits 3 with the refusal (Mix.Tasks.Anchor.ExplainTest)
+     test/mix/tasks/anchor_explain_test.exs:155
+     Expected to catch exit, got nothing
+     code: capture_io(:stderr, fn ->
+     stacktrace:
+       test/mix/tasks/anchor_explain_test.exs:161: anonymous fn/0 in Mix.Tasks.Anchor.ExplainTest."test an umbrella (apps_paths injected: this test runs inside Anchor) an app directory outside the root exits 3 with the refusal"/1
+       (ex_unit 1.19.4) lib/ex_unit/capture_io.ex:296: ExUnit.CaptureIO.do_with_io/3
+       (ex_unit 1.19.4) lib/ex_unit/capture_io.ex:166: ExUnit.CaptureIO.capture_io/2
+       test/mix/tasks/anchor_explain_test.exs:160: (test)
+
+.....
+
+  2) test no config is could-not-check: exit 3 (Mix.Tasks.Anchor.ExplainTest)
+     test/mix/tasks/anchor_explain_test.exs:286
+     Expected to catch exit, got nothing
+     code: capture_io(:stderr, fn ->
+     stacktrace:
+       test/mix/tasks/anchor_explain_test.exs:291: anonymous fn/0 in Mix.Tasks.Anchor.ExplainTest."test no config is could-not-check: exit 3"/1
+       (ex_unit 1.19.4) lib/ex_unit/capture_io.ex:296: ExUnit.CaptureIO.do_with_io/3
+       (ex_unit 1.19.4) lib/ex_unit/capture_io.ex:166: ExUnit.CaptureIO.capture_io/2
+       test/mix/tasks/anchor_explain_test.exs:290: (test)
+
+...
 ```

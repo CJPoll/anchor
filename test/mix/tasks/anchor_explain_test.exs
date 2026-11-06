@@ -7,6 +7,7 @@ defmodule Mix.Tasks.Anchor.ExplainTest do
   # another async test's output would interleave with.
   #
   # Sabotage record: ../../sabotage_records/explain-20261103-dnd_5443_graph_rules_b.md
+  # Sabotage record (the umbrella wiring): ../../sabotage_records/explain-20261106-dnd_5443_graph_rules_b.md
   use ExUnit.Case, async: false
 
   import Anchor.Test.BeamFixtures
@@ -17,9 +18,11 @@ defmodule Mix.Tasks.Anchor.ExplainTest do
   alias Anchor.BeamSourceMock
   alias Anchor.Config
   alias Anchor.ConfigLoaderMock
+  alias Anchor.Domain.Graph.SourceFacts
   alias Anchor.GraphStoreMock
   alias Anchor.SourceSourceMock
   alias Mix.Tasks.Anchor.Explain
+  alias Mix.Tasks.Anchor.Graph, as: GraphTask
 
   setup :verify_on_exit!
 
@@ -78,6 +81,94 @@ defmodule Mix.Tasks.Anchor.ExplainTest do
     stub(SourceSourceMock, :read, fn _root, files ->
       Map.new(files, &{&1, {:error, :enoent}})
     end)
+  end
+
+  # DND-5637's wiring: the task builds the request mix anchor.graph builds, so an
+  # umbrella's explain reads the artifact its graph run wrote. Drifted, it would
+  # say "not computed (run mix anchor.graph)" right after that run.
+  describe "an umbrella (apps_paths injected: this test runs inside Anchor)" do
+    @alpha_file "apps/alpha/lib/alpha.ex"
+    @alpha_source """
+    defmodule AnchorFixtures.AnchorExplainTaskTest.Alpha do
+      def z, do: :z
+    end
+    """
+
+    defp umbrella_config do
+      Config.parse_config(%{
+        "rules" => [%{"type" => "layering", "id" => "layering", "paths" => ["apps/**/*.ex"]}],
+        "architecture" => %{
+          "contexts" => %{"depth" => 2},
+          "buckets" => [
+            %{
+              "name" => "domain",
+              "role" => "domain",
+              "select" => [%{"paths" => ["apps/alpha/**"]}]
+            }
+          ],
+          "calls" => %{"domain" => ["domain"]}
+        }
+      })
+    end
+
+    test "explain reads the artifact the graph run of the same apps wrote" do
+      [{_module, binary}] = compile_unloaded(@alpha_source, "lib/alpha.ex")
+      beam = BeamReader.decode(binary, app: :alpha, path: "ebin/alpha.beam")
+      apps_paths = [apps_paths: %{alpha: "apps/alpha"}]
+
+      expect(ConfigLoaderMock, :load, 2, fn -> {:ok, umbrella_config()} end)
+
+      Mox.expect(BeamSourceMock, :read_ebins, 2, fn [{:alpha, ebin}] ->
+        assert String.ends_with?(ebin, "_build/test/lib/alpha/ebin")
+        [beam]
+      end)
+
+      stub(SourceSourceMock, :read, fn _root, files ->
+        Map.new(files, fn
+          @alpha_file -> {@alpha_file, SourceFacts.from_source(@alpha_file, @alpha_source)}
+          other -> {other, {:error, :enoent}}
+        end)
+      end)
+
+      expect(GraphStoreMock, :write, fn dir, key, graph ->
+        send(self(), {:written, dir, key, graph})
+        :ok
+      end)
+
+      capture_io(fn -> GraphTask.run([], opts(true) ++ apps_paths) end)
+      assert_received {:written, dir, key, graph}
+
+      expect(GraphStoreMock, :read, fn ^dir, ^key -> {:ok, graph} end)
+
+      output =
+        capture_io(fn ->
+          assert Explain.run([@alpha_file, "--format", "json"], opts(true) ++ apps_paths) == :ok
+        end)
+
+      decoded = JSON.decode!(output)
+      assert decoded["findings"] == []
+      assert decoded["unknown"] == []
+      assert decoded["classification"]["status"] == "classified"
+      assert decoded["classification"]["app"] == "alpha"
+    end
+
+    test "an app directory outside the root exits 3 with the refusal" do
+      expect(ConfigLoaderMock, :load, fn -> {:ok, umbrella_config()} end)
+      Mox.expect(BeamSourceMock, :read_ebins, 0, fn _apps -> [] end)
+
+      stderr =
+        capture_io(:stderr, fn ->
+          assert catch_exit(
+                   Explain.run(
+                     [@alpha_file],
+                     opts(true) ++ [apps_paths: %{alpha: "/elsewhere/alpha"}]
+                   )
+                 ) == {:shutdown, 3}
+        end)
+
+      assert stderr =~ "the apps_path of :alpha is /elsewhere/alpha"
+      assert stderr =~ "Fix:"
+    end
   end
 
   test "a path answers in text, and a compile failure is noted rather than fatal" do
