@@ -1,0 +1,33 @@
+name: DND-5693 spike
+
+# Throwaway (DND-5693): the causal-attribution measurements. The branch is never
+# merged. A push runs the jobs its head commit's subject names ([spike:fixture],
+# [spike:cost], [spike:suite]); no other job runs, so the gated head starts none.
+on:
+  push:
+    branches:
+      - dnd-5693-causal-spike
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fixture:
+    name: Fixture Q1 Q2 Q3 Q6
+    if: contains(github.event.head_commit.message, '[spike:fixture]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          elixir-version: "1.19.4"
+          otp-version: "28.2"
+
+      - name: Fixture probe
+        run: elixir logs/dnd-5693/fixture_probe.exs 2>&1 | tee fixture.log; test "${PIPESTATUS[0]}" = 0
+        shell: bash
