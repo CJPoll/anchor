@@ -57,8 +57,15 @@ defmodule Anchor.Adapters.SuiteRunner do
   end
 
   defp loads?(filter, file) when is_function(filter, 1), do: filter.(file)
-  defp loads?(%Regex{} = filter, file), do: Regex.match?(filter, file)
   defp loads?(filter, file) when is_binary(filter), do: filter == file
+
+  # lib/ runs no regex outside GlobPattern, so a regex filter cannot be checked here,
+  # and an unchecked one could hide a file that did not compile.
+  defp loads?(filter, _file) do
+    raise ArgumentError,
+          "test_load_filters holds #{inspect(filter)}, which the coverage run cannot check. " <>
+            "Fix: write it as a function"
+  end
 
   defp did_not_compile(files) do
     {shown, hidden} = Enum.split(files, 5)

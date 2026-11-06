@@ -18,9 +18,16 @@ defmodule Anchor.Adapters.SuiteRunnerTest do
   end
   """
 
-  defp run_suite(dir, files, args) do
+  @one_test """
+  defmodule ATest do
+    use ExUnit.Case
+    test "passes", do: :ok
+  end
+  """
+
+  defp run_suite(dir, files, args, mix_exs \\ @mix_exs) do
     File.mkdir_p!(Path.join(dir, "test"))
-    File.write!(Path.join(dir, "mix.exs"), @mix_exs)
+    File.write!(Path.join(dir, "mix.exs"), mix_exs)
     File.write!(Path.join(dir, "test/test_helper.exs"), "ExUnit.start()\n")
     for {name, body} <- files, do: File.write!(Path.join(dir, "test/#{name}"), body)
 
@@ -109,19 +116,28 @@ defmodule Anchor.Adapters.SuiteRunnerTest do
     tmp_dir: dir
   } do
     files = [
-      {"a_test.exs",
-       """
-       defmodule ATest do
-         use ExUnit.Case
-         test "passes", do: :ok
-       end
-       """},
+      {"a_test.exs", @one_test},
       {"b_test.exs", "defmodule BTest do\n  this_does_not_compile()\nend\n"}
     ]
 
     assert {{:failed, message, nil}, _output} = run_suite(dir, files, [])
     assert message =~ "did not compile"
     assert message =~ "test/b_test.exs"
+  end
+
+  # Asked only of a file that was not required, so a project with a regex filter
+  # passes when everything loaded.
+  test "a test_load_filters regex cannot judge an unloaded file: it fails, with its Fix:", %{
+    tmp_dir: dir
+  } do
+    mix_exs =
+      String.replace(@mix_exs, "deps: [],", "deps: [], test_load_filters: [~r/_test.exs/],")
+
+    assert {{:failed, message, nil}, _output} =
+             run_suite(dir, [{"a_test.exs", @one_test}, {"notes.exs", ":ok\n"}], [], mix_exs)
+
+    assert message =~ "test_load_filters holds"
+    assert message =~ "Fix: write it as a function"
   end
 
   test "a suite with no test file runs nothing, counted", %{tmp_dir: dir} do
