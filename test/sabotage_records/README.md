@@ -89,6 +89,11 @@ before coining a synonym.
   `Anchor.Domain.Roots`, `Anchor.Domain.Effects`,
   `Anchor.Domain.GraphRules.EffectsMatchBucket`, and their wiring in the graph
   runner.
+- `effect_primitives` and `graph_rules` — the words `mix anchor.sabotage run`
+  derives from `lib/anchor/domain/effect_primitives.ex` and
+  `lib/anchor/domain/graph_rules.ex` for its generated records (DND-5677,
+  DND-5675). A hand run on the same change may be appended to that generated
+  record's file.
 - `struct_flow` — the `struct_owned_by_module_flow` graph rule (DND-5454):
   `Anchor.Domain.StructTypes`, `Anchor.Domain.StructFlow`,
   `Anchor.Domain.GraphRules.StructOwnedByModuleFlow`, and the scope it shares

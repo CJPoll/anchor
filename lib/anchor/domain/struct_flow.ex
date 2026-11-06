@@ -53,7 +53,8 @@ defmodule Anchor.Domain.StructFlow do
   walked, so the walk repeats until those seeds settle, at most
   six passes (`max_passes/0`). A function whose seeds still change at the
   last pass is not settled: `known/3` and `writes/3` answer
-  `{:bound_hit, passes, result}` with what the last settled pass found, never
+  `{:bound_hit, passes, result}` with what the last pass found from the seeds
+  it started with, never
   `{:ok, result}`, so a capped analysis never reads as a complete one. The
   `struct_owned_by_module_flow` rule reports it as a fail-closed issue naming
   the function.

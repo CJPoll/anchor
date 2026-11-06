@@ -497,3 +497,36 @@ None.
 1af65c1670ed	lib/anchor/domain/cfa/eval.ex	Anchor.Domain.Cfa.Eval.invoked/2	force_condition	killed	test/anchor/domain/cfa/eval_test.exs:62 test a higher-order argument written as a literal (DND-5674) control: a module or a {dir, module} tuple may name compare/2: :any
 e96263781b40	lib/anchor/domain/cfa/eval.ex	Anchor.Domain.Cfa.Eval.invoked/2	force_condition	killed	test/anchor/domain/cfa/eval_test.exs:47 test a higher-order argument written as a literal (DND-5674) a literal capture or fn resolves to its target, under the open-world seed ; test/anchor/domain/cfa/eval_test.exs:54 test a higher-order argument written as a literal (DND-5674) a literal that is no function applies nothing: the empty set, never :any
 ```
+
+
+## Review-floor fix — `data_literal?/1` narrowed (DND-5674, hand)
+
+The review floor found `data_literal?/1`'s float, binary, list and map arms
+untested. No higher-order slot Anchor reads takes one of them (Anchor's own run
+has only `:desc` and the integer `1` at a literal site), so the arms are
+removed rather than guessed at: the function is now `term in [:asc, :desc] or
+is_integer(term)`. The `:asc`/`:desc` and integer arms are pinned by the tests
+at `eval_test.exs:54` (generated kill map above). A new control pins that any
+other literal stays with the analysis.
+
+Command: `mix test --force test/anchor/domain/cfa/eval_test.exs --timeout 2000 --max-cases 2`
+
+| # | File | Mutation | Result |
+|---|---|---|---|
+| F | `lib/anchor/domain/cfa/eval.ex` | `term in [:asc, :desc] or is_integer(term)` -> `term in [:asc, :desc] or is_integer(term) or is_list(term)` | 6 tests, 1 failure |
+
+```
+  1) test a higher-order argument written as a literal (DND-5674) control: a literal of a shape no slot takes (a list) is not guessed at: :any (Anchor.Domain.Cfa.EvalTest)
+     test/anchor/domain/cfa/eval_test.exs:68
+     Assertion with == failed
+     code:  assert Cfa.closures_at(cfa, site({@literal, :list, 1})) == :any
+     left:  {:ok, MapSet.new([])}
+     right: :any
+     stacktrace:
+       test/anchor/domain/cfa/eval_test.exs:70: (test)
+```
+
+Restored: 6 tests, 0 failures. A first try of the control with
+`[&Mod.f/1]` stayed green under F: an external capture compiles to a
+`make_fun` call, so that list is not a Core literal and never reached
+`data_literal?/1`. The control uses the literal `[:a]`.

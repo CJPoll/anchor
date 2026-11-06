@@ -789,18 +789,16 @@ defmodule Anchor.Domain.Cfa.Eval do
     end
   end
 
-  # A literal argument no library can call: a number, a binary, a list, a map
-  # or the sort directions `:asc` and `:desc`. Any other atom may be a module
-  # whose `compare/2` a sort calls, and a tuple may be `{:asc, Mod}`: those
-  # stay with the analysis.
+  # A literal argument no library can call: an integer (`Enum.with_index(list,
+  # 1)`) or the sort directions `:asc` and `:desc`, the two shapes these slots
+  # take. Any other atom may be a module whose `compare/2` a sort calls and a
+  # tuple may be `{:asc, Mod}`; no slot takes a float, binary, list or map
+  # literal, so those are not guessed at either: they stay with the analysis.
   defp applies_nothing?(node) do
     :cerl.is_literal(node) and data_literal?(:cerl.concrete(node))
   end
 
-  defp data_literal?(term) do
-    term in [:asc, :desc] or is_number(term) or is_bitstring(term) or is_list(term) or
-      (is_map(term) and not is_struct(term))
-  end
+  defp data_literal?(term), do: term in [:asc, :desc] or is_integer(term)
 
   defp pure_erlang?({:erlang, name, _arity}), do: name in @pure_erlang
   defp pure_erlang?(_mfa), do: false

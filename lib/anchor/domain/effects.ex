@@ -38,7 +38,8 @@ defmodule Anchor.Domain.Effects do
       already gives to that function), and a site reading `:any` is
       unresolved. A higher-order call given a literal where it could take a
       function (`Enum.with_index(list, 1)`) applies nothing there (the
-      analysis answers the empty set, DND-5674), and neither does the collector a comprehension with `into:` applies when its target
+      analysis answers the empty set, DND-5674), and neither does the
+      collector a comprehension with `into:` applies when its target
       is a literal (`into: %{}`; no struct but a `MapSet`) or a `Map.new`/`MapSet.new` the function
       calls itself. A target from anywhere else (a parameter, which may be an
       `IO.stream/0`) leaves the collector to the analysis, and unresolved.

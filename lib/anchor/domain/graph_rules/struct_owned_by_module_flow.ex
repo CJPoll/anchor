@@ -99,12 +99,16 @@ defmodule Anchor.Domain.GraphRules.StructOwnedByModuleFlow do
   end
 
   # A function whose value flow did not settle within StructFlow's pass bound
-  # (DND-5676): its writes are what the last settled pass found, so the rule
-  # fails closed naming it, never reads it as complete.
+  # (DND-5676): its writes are what the last pass found from the seeds it
+  # started with, so the rule fails closed naming it, never reads it as
+  # complete. The bound named is the one the flow carries.
   defp bound_hit(flows, rule, %Model{config: config}) do
-    case for({_node, mfa, _fun, {:bound_hit, _passes}, _writes} <- flows, do: mfa) do
-      [] -> []
-      mfas -> [Failures.struct_flow_bound_hit(rule, mfas, StructFlow.max_passes(), config.path)]
+    case for({_node, mfa, _fun, {:bound_hit, passes}, _writes} <- flows, do: {mfa, passes}) do
+      [] ->
+        []
+
+      [{_mfa, passes} | _rest] = hits ->
+        [Failures.struct_flow_bound_hit(rule, Enum.map(hits, &elem(&1, 0)), passes, config.path)]
     end
   end
 

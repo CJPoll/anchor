@@ -27,6 +27,7 @@ defmodule Anchor.Domain.Cfa.EvalTest do
         def asc(xs), do: Enum.sort_by(xs, &AnchorFixtures.CfaEvalTest.Literal.f/1, :asc)
         def module(xs), do: Enum.sort(xs, Date)
         def tuple(xs), do: Enum.sort(xs, {:desc, Date})
+        def list(xs), do: Enum.map(xs, [:a])
         def variable(xs, fun), do: Enum.map(xs, fun)
         def f(x), do: x
       end
@@ -62,6 +63,11 @@ defmodule Anchor.Domain.Cfa.EvalTest do
     test "control: a module or a {dir, module} tuple may name compare/2: :any", %{cfa: cfa} do
       assert Cfa.closures_at(cfa, site({@literal, :module, 1})) == :any
       assert Cfa.closures_at(cfa, site({@literal, :tuple, 1})) == :any
+    end
+
+    test "control: a literal of a shape no slot takes (a list) is not guessed at: :any",
+         %{cfa: cfa} do
+      assert Cfa.closures_at(cfa, site({@literal, :list, 1})) == :any
     end
 
     test "control: a variable argument stays as the analysis finds it (a root's parameter: :any)",

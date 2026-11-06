@@ -1067,3 +1067,31 @@ None.
 ```anchor-kills
 # id	file	mfa	operator	status	killers
 ```
+
+
+## Review-floor fix — the bound named is the one the flow carries (DND-5676, hand)
+
+`struct_owned_by_module_flow` now names the pass count carried in
+`{:bound_hit, passes}`, not a second read of `StructFlow.max_passes/0`.
+
+Command: `mix test --force test/anchor/domain/graph_rules/struct_owned_by_module_flow_test.exs --timeout 2000 --max-cases 2`
+
+| # | File | Mutation | Result |
+|---|---|---|---|
+| G | `lib/anchor/domain/graph_rules/struct_owned_by_module_flow.ex` | `..., passes, config.path)` -> `..., passes + 1, config.path)` | 14 tests, 1 failure |
+
+```
+  1) test check/2: the struct flow's pass bound (DND-5676) a function whose flow did not settle is one fail-closed issue naming it (Anchor.Domain.GraphRules.StructOwnedByModuleFlowTest)
+     test/anchor/domain/graph_rules/struct_owned_by_module_flow_test.exs:261
+     Assertion with =~ failed
+     code:  assert issue.message =~
+              "the struct value flow (Anchor.Domain.StructFlow) hit its bound of " <>
+                "#{StructFlow.max_passes()} passes on 1 function(s) " <>
+                "(AnchorFixtures.StructFlow.Rule.Deep.W.deep5/1)"
+     left:  "rule (id: \"flow\", struct_owned_by_module_flow): the struct value flow (Anchor.Domain.StructFlow) hit its bound of 7 passes on 1 function(s) (AnchorFixtures.StructFlow.Rule.Deep.W.deep5/1), so a write to a struct there may not be judged. Fix: split the function's nested anonymous functions apart, or file this line as a scale limit of Anchor. Raising the bound is the owner's call."
+     right: "the struct value flow (Anchor.Domain.StructFlow) hit its bound of 6 passes on 1 function(s) (AnchorFixtures.StructFlow.Rule.Deep.W.deep5/1)"
+     stacktrace:
+       test/anchor/domain/graph_rules/struct_owned_by_module_flow_test.exs:267: (test)
+```
+
+Restored: 14 tests, 0 failures.
