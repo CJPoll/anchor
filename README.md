@@ -612,7 +612,8 @@ and a `bucket` must name one of its buckets; both are refused at load
 otherwise. `uses_module`, `recursive` and `min_files` are `ast` keys and are
 refused on a graph rule. A finding of a rule with `enforcement: report` prints
 `[report]` and does not fail the run. `--format json` prints `{"modules",
-"apps", "rules", "opaque", "no_core", "outside_root", "apply_sites", "aggregates", "exit_code",
+"apps", "rules", "opaque", "no_core", "outside_root", "apply_sites", "dynamic_calls", "effects",
+"aggregates", "exit_code",
 "findings":
 [{rule_id, type, enforcement, key, file, line, message, fix}],
 "could_not_check": [...], "refused": [...], "held": [...]}`. `--only RULE_ID` (repeatable) runs only the

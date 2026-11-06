@@ -316,6 +316,7 @@ The engine split (DND-5491): `layering` is the authority, and
 check: ast type to graph type). `Anchor.Domain.Parity` and
 `test/anchor/integration/layering_parity_test.exs` hold them equal over the
 macro-free `test/fixtures/parity/`; its divergence list only shrinks.
+
 ## The context_acyclic rule (DND-5445)
 
 `Anchor.Domain.ContextGraph.build/2` collapses the calls of the selected

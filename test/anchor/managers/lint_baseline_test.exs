@@ -264,6 +264,36 @@ defmodule Anchor.Managers.LintBaselineTest do
       # baseline holds only File), and its key is what --write would write.
       assert [%Violation{key: "pure|lib/c.ex|alias"}] = unresolved
     end
+
+    # Whole-MR critic: an enforced and a report rule beside a baselined one.
+    # Their merge names both modes in the message, which made the keyed copy
+    # read as another finding, so the same line printed twice.
+    test "a once-per-file violation is printed once beside rules in both modes" do
+      source = """
+      defmodule MyApp.C do
+        alias @target, as: T
+        def g, do: T.go()
+        def f, do: File.read("z")
+      end
+      """
+
+      expect_entries(~w(pure|lib/c.ex|File))
+
+      plain = %{
+        type: :no_direct_dependency,
+        id: "plain",
+        pattern: "MyApp.*",
+        forbidden_modules: [System]
+      }
+
+      reported = %{plain | id: "reported"} |> Map.put(:enforcement, :report)
+
+      results = run([plain, reported, rule()], files([{source, "lib/c.ex"}]))
+      [{_file, violations}] = Enum.reject(results, &match?({:config, _}, &1))
+
+      unresolved = Enum.filter(violations, &(&1.message =~ "cannot statically resolve"))
+      assert [%Violation{key: "pure|lib/c.ex|alias"}] = unresolved
+    end
   end
 
   # DND-5632 critic round 1: a finding two rules make is one finding, and the

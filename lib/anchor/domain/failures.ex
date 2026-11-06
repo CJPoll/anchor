@@ -767,13 +767,19 @@ defmodule Anchor.Domain.Failures do
   """
   @spec both_enforcement_modes(String.t()) :: String.t()
   def both_enforcement_modes(message) do
-    note = "(Found under rules in enforcement: enforce and report; reported once, enforced.)"
-
     case String.split(message, " Fix: ", parts: 2) do
-      [text, fix] -> "#{text} #{note} Fix: #{fix}"
-      [text] -> "#{text} #{note}"
+      [text, fix] -> "#{text} #{both_modes_note()} Fix: #{fix}"
+      [text] -> "#{text} #{both_modes_note()}"
     end
   end
+
+  @doc "`message` without the note `both_enforcement_modes/1` adds: the finding it names."
+  @spec without_both_enforcement_modes(String.t()) :: String.t()
+  def without_both_enforcement_modes(message),
+    do: String.replace(message, " #{both_modes_note()}", "")
+
+  defp both_modes_note,
+    do: "(Found under rules in enforcement: enforce and report; reported once, enforced.)"
 
   @doc "The issue for a baseline `--write-baseline` could not create (DND-5441)."
   @spec baseline_not_written(String.t(), term()) :: Violation.t()

@@ -52,6 +52,24 @@ defmodule Anchor.Domain.EnforcementPassesTest do
   end
 
   describe "unique/1 (DND-5632)" do
+    # Whole-MR critic: merge/2's note is not part of what the finding is.
+    test "a copy naming both modes is the same finding as one that does not" do
+      [merged] =
+        EnforcementPasses.merge([v("a Fix: b")], [v("a Fix: b", %{enforcement: :report})])
+
+      keyed = v("a Fix: b", %{key: "pure|lib/a.ex|alias", rule_id: "pure"})
+
+      assert merged.message != keyed.message
+      assert EnforcementPasses.unique([merged, keyed]) == [keyed]
+    end
+
+    test "a different message is a different finding, note or no note" do
+      [merged] = EnforcementPasses.merge([v("a")], [v("a", %{enforcement: :report})])
+      other = v("c", %{key: "pure|lib/a.ex|alias", rule_id: "pure"})
+
+      assert EnforcementPasses.unique([merged, other]) == [merged, other]
+    end
+
     test "one copy per finding, in first-seen order" do
       assert [%Violation{trigger: "A"}, %Violation{trigger: "B"}] =
                EnforcementPasses.unique([

@@ -40,7 +40,8 @@ defmodule Anchor.Domain.EnforcementPasses do
       anchor.baseline --write` writes, so two baselined rules making one
       finding print it once each;
     * an unkeyed copy is dropped when a kept copy of the same finding (same
-      file, line, trigger, kind and message) fails at least as hard: an
+      file, line, trigger, kind and message, apart from the note `merge/2`
+      adds) fails at least as hard: an
       enforced copy covers any, a report copy covers only a report one. So a
       report rule's copy never hides an enforced finding, and an enforced
       rule's copy is never dropped for a report one.
@@ -84,7 +85,11 @@ defmodule Anchor.Domain.EnforcementPasses do
 
   defp identities(violations), do: MapSet.new(violations, &identity/1)
 
-  defp identity(%Violation{} = v), do: {v.filename, v.line, v.trigger, v.kind, v.message}
+  # What the finding is: the note `merge/2` adds says how it was found, so a
+  # copy with it and one without are one finding.
+  defp identity(%Violation{} = v) do
+    {v.filename, v.line, v.trigger, v.kind, Failures.without_both_enforcement_modes(v.message)}
+  end
 
   defp name_both(violation, in_both) do
     if MapSet.member?(in_both, identity(violation)),

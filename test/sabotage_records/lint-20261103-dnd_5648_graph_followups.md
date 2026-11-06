@@ -606,3 +606,166 @@ Run summary: `83 tests, 1 failure`
                 key: nil,
                 rule_id: nil,
 ```
+
+## Whole-MR critic: a once-per-file violation prints once beside rules in both modes
+
+**Code under test:** `Anchor.Domain.EnforcementPasses.unique/1`'s identity and `Anchor.Domain.Failures.without_both_enforcement_modes/1`.
+
+**Found by:** the whole-MR critic on 6ed556b: with an enforced rule, a report rule and a baselined rule on one check, `merge/2`'s note changed the plain copy's message, so `unique/1` read the baselined rule's keyed copy as a different finding and the same line printed twice (the DND-5631 symptom). A finding's identity now ignores that note.
+
+**Suite run:** ID-R is the new tests on the unfixed code. ID-A and ID-B were run by `sab.py` (wait 1.1 s, write, run, restore, wait 1.1 s). With every source restored: `86 tests, 0 failures` over enforcement_passes, lint_baseline, lint and failures_graph tests.
+
+| ID | Mutation | Tests | Result | Failing tests |
+|---|---|---|---|---|
+| ID-R | regression: identity holds the whole message, with the new tests (`lib/anchor/domain/enforcement_passes.ex`) | `enforcement_passes_test.exs`, `lint_baseline_test.exs` | `36 tests, 2 failures` (red) | unique/1 (DND-5632) a copy naming both modes is the same finding as one that does not; beside rules with no baseline a once-per-file violation is printed once beside rules in both modes |
+| ID-A | identity keeps the note (`lib/anchor/domain/enforcement_passes.ex`) | `enforcement_passes_test.exs`, `lint_baseline_test.exs` | `36 tests, 2 failures` (red) | unique/1 (DND-5632) a copy naming both modes is the same finding as one that does not; beside rules with no baseline a once-per-file violation is printed once beside rules in both modes |
+| ID-B | identity ignores the message altogether (`lib/anchor/domain/enforcement_passes.ex`) | `enforcement_passes_test.exs` | `14 tests, 1 failure` (red) | unique/1 (DND-5632) a different message is a different finding, note or no note |
+
+### ID-R: regression: identity holds the whole message, with the new tests
+
+Run summary: `36 tests, 2 failures`
+
+```text
+  1) test unique/1 (DND-5632) a copy naming both modes is the same finding as one that does not (Anchor.Domain.EnforcementPassesTest)
+     test/anchor/domain/enforcement_passes_test.exs:56
+     Assertion with == failed
+     code:  assert EnforcementPasses.unique([merged, keyed]) == [keyed]
+     left:  [
+              %Anchor.Domain.Violation{
+                line: 3,
+                trigger: "alias",
+                message: "a (Found under rules in enforcement: enforce and report; reported once, enforced.) Fix: b",
+                filename: nil,
+                kind: :rule,
+                key: nil,
+                rule_id: nil,
+                enforcement: :enforce
+              },
+              %Anchor.Domain.Violation{
+                line: 3,
+                trigger: "alias",
+                message: "a Fix: b",
+                filename: nil,
+                kind: :rule,
+                key: "pure|lib/a.ex|alias",
+                rule_id: "pure",
+                enforcement: :enforce
+              }
+
+  2) test beside rules with no baseline a once-per-file violation is printed once beside rules in both modes (Anchor.Managers.LintBaselineTest)
+     test/anchor/managers/lint_baseline_test.exs:271
+     match (=) failed
+     code:  assert [%Violation{key: "pure|lib/c.ex|alias"}] = unresolved
+     left:  [%Anchor.Domain.Violation{key: "pure|lib/c.ex|alias"}]
+     right: [
+              %Anchor.Domain.Violation{
+                line: 2,
+                trigger: "alias",
+                message: "Anchor cannot statically resolve the target of this `alias`, so references made through it cannot be checked for forbidden dependencies. (Found under rules in enforcement: enforce and report; reported once, enforced.) Fix: name the module literally (e.g. `alias MyApp.Foo`).",
+                filename: nil,
+                kind: :rule,
+                key: nil,
+                rule_id: nil,
+                enforcement: :enforce
+              },
+              %Anchor.Domain.Violation{
+                line: 2,
+                trigger: "alias",
+                message: "Anchor cannot statically resolve the target of this `alias`, so references made through it cannot be checked for forbidden dependencies. Fix: name the module literally (e.g. `alias MyApp.Foo`).",
+                filename: nil,
+                kind: :rule,
+                key: "pure|lib/c.ex|alias",
+                rule_id: "pure",
+                enforcement: :enforce
+```
+
+### ID-A: identity keeps the note
+
+Run summary: `36 tests, 2 failures`
+
+```text
+  1) test unique/1 (DND-5632) a copy naming both modes is the same finding as one that does not (Anchor.Domain.EnforcementPassesTest)
+     test/anchor/domain/enforcement_passes_test.exs:56
+     Assertion with == failed
+     code:  assert EnforcementPasses.unique([merged, keyed]) == [keyed]
+     left:  [
+              %Anchor.Domain.Violation{
+                line: 3,
+                trigger: "alias",
+                message: "a (Found under rules in enforcement: enforce and report; reported once, enforced.) Fix: b",
+                filename: nil,
+                kind: :rule,
+                key: nil,
+                rule_id: nil,
+                enforcement: :enforce
+              },
+              %Anchor.Domain.Violation{
+                line: 3,
+                trigger: "alias",
+                message: "a Fix: b",
+                filename: nil,
+                kind: :rule,
+                key: "pure|lib/a.ex|alias",
+                rule_id: "pure",
+                enforcement: :enforce
+              }
+
+  2) test beside rules with no baseline a once-per-file violation is printed once beside rules in both modes (Anchor.Managers.LintBaselineTest)
+     test/anchor/managers/lint_baseline_test.exs:271
+     match (=) failed
+     code:  assert [%Violation{key: "pure|lib/c.ex|alias"}] = unresolved
+     left:  [%Anchor.Domain.Violation{key: "pure|lib/c.ex|alias"}]
+     right: [
+              %Anchor.Domain.Violation{
+                line: 2,
+                trigger: "alias",
+                message: "Anchor cannot statically resolve the target of this `alias`, so references made through it cannot be checked for forbidden dependencies. (Found under rules in enforcement: enforce and report; reported once, enforced.) Fix: name the module literally (e.g. `alias MyApp.Foo`).",
+                filename: nil,
+                kind: :rule,
+                key: nil,
+                rule_id: nil,
+                enforcement: :enforce
+              },
+              %Anchor.Domain.Violation{
+                line: 2,
+                trigger: "alias",
+                message: "Anchor cannot statically resolve the target of this `alias`, so references made through it cannot be checked for forbidden dependencies. Fix: name the module literally (e.g. `alias MyApp.Foo`).",
+                filename: nil,
+                kind: :rule,
+                key: "pure|lib/c.ex|alias",
+                rule_id: "pure",
+                enforcement: :enforce
+```
+
+### ID-B: identity ignores the message altogether
+
+Run summary: `14 tests, 1 failure`
+
+```text
+  1) test unique/1 (DND-5632) a different message is a different finding, note or no note (Anchor.Domain.EnforcementPassesTest)
+     test/anchor/domain/enforcement_passes_test.exs:66
+     Assertion with == failed
+     code:  assert EnforcementPasses.unique([merged, other]) == [merged, other]
+     left:  [
+              %Anchor.Domain.Violation{
+                line: 3,
+                trigger: "alias",
+                message: "c",
+                filename: nil,
+                kind: :rule,
+                key: "pure|lib/a.ex|alias",
+                rule_id: "pure",
+                enforcement: :enforce
+              }
+            ]
+     right: [
+              %Anchor.Domain.Violation{
+                line: 3,
+                trigger: "alias",
+                message: "a (Found under rules in enforcement: enforce and report; reported once, enforced.)",
+                filename: nil,
+                kind: :rule,
+                key: nil,
+                rule_id: nil,
+```
+
