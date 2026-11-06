@@ -4,6 +4,7 @@ defmodule Anchor.Adapters.SourceReaderTest do
   #
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5440_graph_runner.md
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5630_graph_hardening.md
+  # Sabotage record (DND-5489): ../../sabotage_records/sabotage-20261106-dnd_5470_param_sink_locality.md
   use ExUnit.Case, async: true
 
   alias Anchor.Adapters.SourceReader

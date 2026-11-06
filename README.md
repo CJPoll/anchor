@@ -1851,9 +1851,9 @@ mix anchor.sabotage behaviours [--coverage PATH] [--format text|json] [--write-b
 
 A test case is a behaviour. Its **confirmed causes** are the functions it executed (the
 coverage map) and killed a mutant of (a `killed` row of a kill map). A function it only
-executed may be incidental, so it is shown and not counted. A test with no confirmed
-cause is listed as **unconfirmed**, so the gap shows: a function never mutated confirms
-nothing yet.
+executed may be incidental, so it does not count. A test with no confirmed cause is
+**unconfirmed**, and the run counts those, so the gap shows: a function never mutated
+confirms nothing yet. `--format json` lists them, and each behaviour's functions.
 
 A behaviour's **directories** are the parent directories of its confirmed causes' files.
 A behaviour whose causes sit in many directories takes many places to change, so each

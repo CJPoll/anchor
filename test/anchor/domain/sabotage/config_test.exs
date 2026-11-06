@@ -1,6 +1,7 @@
 defmodule Anchor.Domain.Sabotage.ConfigTest do
   # DND-5473: the `sabotage:` section of `.anchor.yml`, parsed and refused.
   # Sabotage record: ../../../sabotage_records/sabotage-20261103-dnd_5473_sabotage_run.md
+  # Sabotage record (DND-5489): ../../../sabotage_records/sabotage-20261106-dnd_5470_param_sink_locality.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Sabotage.Config

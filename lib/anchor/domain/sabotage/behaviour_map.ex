@@ -64,7 +64,6 @@ defmodule Anchor.Domain.Sabotage.BehaviourMap do
   end
 
   @generated "(generated)"
-  @module_of ~r/^((?:[A-Z]\w*\.)*[A-Z]\w*)\./
 
   @type t :: %{
           behaviours: [Behaviour.t()],
@@ -193,13 +192,25 @@ defmodule Anchor.Domain.Sabotage.BehaviourMap do
   end
 
   defp indexed(mfa, index) do
-    with [_all, module] <- Regex.run(@module_of, mfa),
-         %{^module => file} <- index do
-      [file]
-    else
-      _none -> []
+    case Map.fetch(index, module_of(mfa)) do
+      {:ok, file} -> [file]
+      :error -> []
     end
   end
+
+  # The leading segments that read as an alias: `A.B.f/0` is `A.B`, and `:erl.f/0`
+  # is none. The one regex compiler is `Anchor.Domain.GlobPattern` (DND-1292).
+  defp module_of(mfa) do
+    mfa
+    |> String.split(".")
+    |> Enum.take_while(&alias_segment?/1)
+    |> Enum.join(".")
+  end
+
+  defp alias_segment?(<<first, _rest::binary>> = segment),
+    do: first in ?A..?Z and not String.contains?(segment, "/")
+
+  defp alias_segment?(""), do: false
 
   defp displayed(mfa, index) do
     case indexed(mfa, index) do

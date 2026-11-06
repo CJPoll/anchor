@@ -100,8 +100,9 @@ defmodule Mix.Tasks.Anchor.Sabotage do
   Reads the coverage map (`--coverage`, or the config's `coverage_map`) and every
   record's kill map, and prints each test's confirmed causes: the functions it
   executed and killed a mutant of (`Anchor.Domain.Sabotage.BehaviourMap`), the
-  behaviours spread over the most directories first, and the tests nothing confirms
-  yet. It runs no test. The locality keys are compared with the baseline
+  behaviours spread over the most directories first, and how many tests nothing
+  confirms yet (`--format json` lists them, and each behaviour's functions). It runs
+  no test. The locality keys are compared with the baseline
   (`sabotage.behaviour_locality_baseline`): NEW when a behaviour spread to another
   directory, STALE when it shrank, and with `--base` GREW for entries the branch
   added. `--write-baseline` creates the file and never replaces one.
@@ -132,6 +133,7 @@ defmodule Mix.Tasks.Anchor.Sabotage do
 
   use Mix.Task
 
+  alias Anchor.Domain.Baseline
   alias Anchor.Domain.Failures
   alias Anchor.Domain.Sabotage.Replay
   alias Anchor.Domain.Sabotage.Report
@@ -275,7 +277,8 @@ defmodule Mix.Tasks.Anchor.Sabotage do
     switches = [coverage: :string, format: :string, write_baseline: :boolean, base: :string]
 
     with {parsed, [], []} <- OptionParser.parse(argv, strict: switches),
-         format when format != :invalid <- format(parsed[:format]) do
+         format when format != :invalid <- format(parsed[:format]),
+         true <- is_nil(parsed[:base]) or Baseline.valid_ref?(parsed[:base]) do
       {:ok,
        %{
          root: File.cwd!(),

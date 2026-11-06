@@ -2,6 +2,7 @@ defmodule Anchor.Domain.Sabotage.CoverageMapTest do
   # DND-5474: per-test coverage, windowed by strict monotonic stamps. The
   # order of events is set by their stamps, never by real time.
   # Sabotage record: ../../../sabotage_records/sabotage-20261103-dnd_5474_coverage_map.md
+  # Sabotage record (DND-5489): ../../../sabotage_records/sabotage-20261106-dnd_5470_param_sink_locality.md
   # Sabotage record (DND-5642): ../../../sabotage_records/sabotage-20261103-dnd_5639_sabotage_followups.md
   use ExUnit.Case, async: true
 

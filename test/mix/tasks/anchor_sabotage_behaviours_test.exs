@@ -66,7 +66,8 @@ defmodule Mix.Tasks.Anchor.SabotageBehavioursTest do
   for {label, argv} <- [
         {"an unknown format", ["behaviours", "--format", "xml"]},
         {"an unknown flag", ["behaviours", "--nope"]},
-        {"a stray argument", ["behaviours", "stray"]}
+        {"a stray argument", ["behaviours", "stray"]},
+        {"a ref that reads as an option", ["behaviours", "--base=--x"]}
       ] do
     test "#{label} is usage, exit 2, nothing read" do
       stderr =

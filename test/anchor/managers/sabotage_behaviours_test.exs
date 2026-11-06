@@ -133,6 +133,20 @@ defmodule Anchor.Managers.SabotageBehavioursTest do
       assert line =~ "measured nothing (:no_tests)"
     end
 
+    test "a map whose modules_traced is no count is refused, not a crash" do
+      for bad <- [
+            Map.delete(@map, :modules_traced),
+            %{@map | modules_traced: "2"},
+            %{@map | modules_traced: -1}
+          ] do
+        config()
+        coverage_read({:ok, bad})
+        assert {3, [line]} = Sabotage.behaviours(facts(), @opts)
+        assert line =~ "measured nothing (:no_modules)"
+        assert line =~ "Fix: download the anchor-coverage artifact (CI) and pass --coverage"
+      end
+    end
+
     test "no sabotage section" do
       expect(ConfigLoaderMock, :load_in, fn "/repo" -> {:ok, %Anchor.Config{sabotage: nil}} end)
       assert {3, [line]} = Sabotage.behaviours(facts(), @opts)

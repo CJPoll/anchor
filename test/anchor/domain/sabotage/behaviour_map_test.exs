@@ -1,7 +1,7 @@
 defmodule Anchor.Domain.Sabotage.BehaviourMapTest do
   # DND-5489: the functions that confirm a behaviour, and how far they spread.
   # Pure Domain.
-  # Sabotage record: ../../../../sabotage_records/sabotage-20261106-dnd_5470_param_sink_locality.md
+  # Sabotage record: ../../../sabotage_records/sabotage-20261106-dnd_5470_param_sink_locality.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Baseline
@@ -123,6 +123,15 @@ defmodule Anchor.Domain.Sabotage.BehaviourMapTest do
       behaviour = one(result)
       assert behaviour.directories == ["lib/ab"]
       assert behaviour.generated == []
+    end
+
+    test "a function name with a dot does not read as part of the module" do
+      row = killed("A.b.c/0", "")
+      index = %{"A" => "lib/a/a.ex", "A.b" => "lib/wrong/x.ex"}
+
+      assert one(BehaviourMap.build(map([test_ref(["A.b.c/0"])]), [row], index)).directories == [
+               "lib/a"
+             ]
     end
 
     test "a function with no Elixir module name has no module to look up" do
