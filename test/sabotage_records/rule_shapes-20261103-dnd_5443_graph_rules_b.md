@@ -4,7 +4,7 @@
 - **Branch:** dnd-5443-graph-rules-b
 - **Date:** 2026-11-03
 - **Code under test:** `Anchor.Domain.RuleShapes` (`for/1`, `with_fix/2`, `with_shape/2`, `append_fix/2`, `fix_count/1`), each `Anchor.Domain.Checks.*` module's `shape/1` and Fix suffix, and in `Anchor.Domain.Failures` the generic Fix of a rejected config (`with_generic_fix/2`) and the three load refusals moved there from `Anchor.Domain.RuleSchema`
-- **Suite run:** each mutation ran `mix test --force --timeout 2000 --max-cases 2 <its test files>` inside one `test-slot`, by a driver that applied it, ran the files and restored the source. Every row is red. The checkout's absolute path in the output reads `<worktree>`.
+- **Suite run:** each mutation ran `mix test --force --timeout 2000 --max-cases 2 <its test files>` inside one `test-slot`, by a driver that applied it, ran the files and restored the source. Every row is red but EC-F, a survivor recorded as a finding (see its note). The checkout's absolute path in the output reads `<worktree>`.
 
 RS-E and RS-F stand for every check: each check appends its Fix through the same
 `RuleShapes.with_shape/2` call, and `fix_shape_invariant_test.exs` holds every

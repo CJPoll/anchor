@@ -41,6 +41,9 @@ final code.
 | GR-B | the JSON omits interface_width (`lib/anchor/domain/graph_report.ex`) | `graph_report_test.exs` | `24 tests, 2 failures` (red) | interface width (DND-5443, R4) no interface rule ran: nothing is printed, and the JSON is null; interface width (DND-5443, R4) the summary ends with each context's width, sorted; the JSON has interface_width |
 | MG-A | the runner never computes the width (`lib/anchor/managers/graph.ex`) | `graph_canary_test.exs` | `8 tests, 2 failures` (red) | R7: a rule that needs the higher-order flow analysis gets it over the canary, with no bound hit, and the summary counts its apply sites; the compliant canary modules give no findings, and the summary counts the tree |
 | IF-N | a dynamic call is judged against every exporter, not the narrowed targets (`lib/anchor/domain/graph_rules/interface.ex`) | `interface_test.exs` | `21 tests, 1 failure` (red) | check/2 over compiled fixtures (two apps) a behaviour-typed receiver reaches its implementers; an untyped one every exporter |
+| IF-O | the no-interface Fix: names no remedy (`lib/anchor/domain/graph_rules/interface.ex`) | `interface_test.exs` | `22 tests, 1 failure` (red) | check/2 a callee whose context has no interface module: the Fix: says to give it one |
+
+IF-O covers the Fix: of a context with no interface module, which no test named until now.
 
 After merging main at 07aef9f. IF-N is the regression test of the narrowing bug: the mutation restores the unfixed line, and its red is the red in the fix commit.
 
@@ -1220,4 +1223,24 @@ Run summary: `21 tests, 1 failure`
        test/anchor/domain/graph_rules/interface_test.exs:416: (test)
 
 ................
+```
+
+## IF-O — the no-interface Fix: names no remedy
+
+Run summary: `22 tests, 1 failure`
+
+```text
+  1) test check/2 a callee whose context has no interface module: the Fix: says to give it one (Anchor.Domain.GraphRules.InterfaceTest)
+     test/anchor/domain/graph_rules/interface_test.exs:197
+     Assertion with =~ failed
+     code:  assert v.message =~
+              "Fix: context App.Hidden has no interface module; give it one (a module of an " <>
+                "interfaces.buckets bucket) and call that, or, if App.Hidden.Secret is meant " <>
+                "to be public, add it to interfaces.exports (a reviewed change)."
+     left:  "App.Billing.Invoice.issue/1 (context App.Billing) calls App.Hidden.Secret.read/0, which is not part of context App.Hidden's interface. Fix: context App.Hidden has an interface module; give it one (a module of an interfaces.buckets bucket) and call that, or, if App.Hidden.Secret is meant to be public, add it to interfaces.exports (a reviewed change)."
+     right: "Fix: context App.Hidden has no interface module; give it one (a module of an interfaces.buckets bucket) and call that, or, if App.Hidden.Secret is meant to be public, add it to interfaces.exports (a reviewed change)."
+     stacktrace:
+       test/anchor/domain/graph_rules/interface_test.exs:202: (test)
+
+..............
 ```

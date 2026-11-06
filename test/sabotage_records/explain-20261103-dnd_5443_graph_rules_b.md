@@ -72,10 +72,14 @@ The earlier sections quote the old text, as they ran.
 | RF-A | rule_findings gives the rules no analyses (`lib/anchor/managers/graph.ex`) | `explain_test.exs` | `13 tests, 1 failure` (red) | explain/2 a rule that needs the flow analysis and the effects is given them |
 | RF-B | rule_findings skips a rule's floor (`lib/anchor/managers/graph.ex`) | `explain_test.exs` | `13 tests, 1 failure` (red) | explain/2 a rule that selects nothing is named among the findings, as in a graph run |
 | RF-C | a crashed analysis or rule gives no finding (`lib/anchor/managers/graph.ex`) | `explain_test.exs` | `13 tests, 3 failures` (red) | explain/2 an inference that crashes is named among the findings; its rule does not run; explain/2 a flow analysis that crashes is named among the findings; its rule does not run; explain/2 a rule that raises or throws is named among the findings, never dropped |
-| MX-F | another file's findings are kept (`lib/anchor/managers/explain.ex`) | `explain_test.exs` | `13 tests, 3 failures` (red) | explain/2 a rule that needs the flow analysis and the effects is given them; explain/2 a rule that raises or throws is named among the findings, never dropped; explain/2 findings are the subject file's only: another file's finding is not shown |
-| MX-G | a fail-closed finding on another file is dropped (`lib/anchor/managers/explain.ex`) | `explain_test.exs` | `13 tests, 4 failures` (red) | explain/2 a flow analysis that crashes is named among the findings; its rule does not run; explain/2 a rule that raises or throws is named among the findings, never dropped; explain/2 an inference that crashes is named among the findings; its rule does not run; explain/2 a rule that selects nothing is named among the findings, as in a graph run |
+| MX-J | another file's findings are kept (`lib/anchor/managers/explain.ex`) | `explain_test.exs` | `13 tests, 3 failures` (red) | explain/2 a rule that needs the flow analysis and the effects is given them; explain/2 a rule that raises or throws is named among the findings, never dropped; explain/2 findings are the subject file's only: another file's finding is not shown |
+| MX-K | a fail-closed finding on another file is dropped (`lib/anchor/managers/explain.ex`) | `explain_test.exs` | `13 tests, 4 failures` (red) | explain/2 a flow analysis that crashes is named among the findings; its rule does not run; explain/2 a rule that raises or throws is named among the findings, never dropped; explain/2 an inference that crashes is named among the findings; its rule does not run; explain/2 a rule that selects nothing is named among the findings, as in a graph run |
 | EX-K | text findings name the wrong field (`lib/anchor/domain/explain.ex`) | `explain_test.exs` | `10 tests, 1 failure` (red) | build/3 with the model the findings it was given are kept |
 | EX-L | JSON findings carry the label as their file (`lib/anchor/domain/explain.ex`) | `explain_test.exs` | `10 tests, 1 failure` (red) | build/3 with the model the findings it was given are kept |
+| AI-A | artifact_inputs reads the request's raw apps_paths (`lib/anchor/managers/graph.ex`) | `explain_test.exs` | `15 tests, 2 failures` (red) | explain/2 an apps_path outside the root is could-not-check, as in a graph run; explain/2 an absolute apps_path under the root: the graph run's own key, and no crash |
+| AI-B | Explain reads an outside apps_path as no model (`lib/anchor/managers/explain.ex`) | `explain_test.exs` | `15 tests, 1 failure` (red) | explain/2 an apps_path outside the root is could-not-check, as in a graph run |
+
+AI-A restores the unfixed line of the absolute-apps_path bug (mix anchor.explain raised out of ProjectFile.place/3); the critic of the merged tree found it. A first AI-A dropped the `with` altogether: Elixir type-checked the result, warned that Explain's refusal clause could never match, and the run did not compile, so the row is the `with` over the raw request.
 
 After merging main at 07aef9f. RF-A and RF-B are the regression tests of the explain bug: RF-A restores a run without analyses, RF-B a run without floors.
 
@@ -1273,7 +1277,7 @@ Run summary: `13 tests, 3 failures`
 ........
 ```
 
-## MX-F — another file's findings are kept
+## MX-J — another file's findings are kept
 
 Run summary: `13 tests, 3 failures`
 
@@ -1388,7 +1392,7 @@ Run summary: `13 tests, 3 failures`
 ..
 ```
 
-## MX-G — a fail-closed finding on another file is dropped
+## MX-K — a fail-closed finding on another file is dropped
 
 Run summary: `13 tests, 4 failures`
 
@@ -1498,4 +1502,58 @@ Run summary: `10 tests, 1 failure`
        test/anchor/domain/explain_test.exs:213: (test)
 
 ..
+```
+
+## AI-A — artifact_inputs reads the request's raw apps_paths
+
+Run summary: `15 tests, 2 failures`
+
+```text
+  1) test explain/2 an apps_path outside the root is could-not-check, as in a graph run (Anchor.Managers.ExplainTest)
+     test/anchor/managers/explain_test.exs:395
+     ** (Mox.UnexpectedCallError) expected Anchor.BeamSourceMock.read_ebins/1 to be called 0 times but it has been called once in process #PID<0.1444.0>
+     code: ExplainManager.explain(
+     stacktrace:
+       (mox 1.2.0) lib/mox.ex:909: Mox.__dispatch__/4
+       (anchor 0.1.0) lib/anchor/managers/graph.ex:228: Anchor.Managers.Graph.read_beams/2
+       (anchor 0.1.0) lib/anchor/managers/graph.ex:741: Anchor.Managers.Graph.read_artifact_inputs/3
+       (anchor 0.1.0) lib/anchor/managers/explain.ex:128: Anchor.Managers.Explain.model/3
+       (anchor 0.1.0) lib/anchor/managers/explain.ex:75: Anchor.Managers.Explain.explain/2
+       test/anchor/managers/explain_test.exs:403: (test)
+
+..
+
+  2) test explain/2 an absolute apps_path under the root: the graph run's own key, and no crash (Anchor.Managers.ExplainTest)
+     test/anchor/managers/explain_test.exs:370
+     ** (ArgumentError) the directory must be relative to the root, got: "/proj/apps/my_app"
+     code: ExplainManager.explain(
+     stacktrace:
+       (anchor 0.1.0) lib/anchor/domain/graph/project_file.ex:99: Anchor.Domain.Graph.ProjectFile.place/3
+       (anchor 0.1.0) lib/anchor/managers/graph.ex:418: anonymous fn/2 in Anchor.Managers.Graph.source_facts/3
+       (elixir 1.19.4) lib/enum.ex:4497: Enum.flat_map_list/2
+       (anchor 0.1.0) lib/anchor/managers/graph.ex:415: Anchor.Managers.Graph.source_facts/3
+       (anchor 0.1.0) lib/anchor/managers/graph.ex:743: Anchor.Managers.Graph.read_artifact_inputs/3
+       (anchor 0.1.0) lib/anchor/managers/explain.ex:128: Anchor.Managers.Explain.model/3
+       (anchor 0.1.0) lib/anchor/managers/explain.ex:75: Anchor.Managers.Explain.explain/2
+       test/anchor/managers/explain_test.exs:389: (test)
+
+...........
+```
+
+## AI-B — Explain reads an outside apps_path as no model
+
+Run summary: `15 tests, 1 failure`
+
+```text
+  1) test explain/2 an apps_path outside the root is could-not-check, as in a graph run (Anchor.Managers.ExplainTest)
+     test/anchor/managers/explain_test.exs:395
+     ** (Mox.UnexpectedCallError) no expectation defined for Anchor.SourceSourceMock.read/2 in process #PID<0.1455.0> with args ["/proj", ["lib/my_app/managers/orders.ex"]]
+     code: ExplainManager.explain(
+     stacktrace:
+       (mox 1.2.0) lib/mox.ex:903: Mox.__dispatch__/4
+       (anchor 0.1.0) lib/anchor/managers/explain.ex:167: Anchor.Managers.Explain.read_source/3
+       (anchor 0.1.0) lib/anchor/managers/explain.ex:77: Anchor.Managers.Explain.explain/2
+       test/anchor/managers/explain_test.exs:403: (test)
+
+.........
 ```

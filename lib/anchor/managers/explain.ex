@@ -18,7 +18,9 @@ defmodule Anchor.Managers.Explain do
        (`Anchor.Managers.Graph.artifact_inputs/2`), and read the artifact
        (`Anchor.Adapters.GraphStore.read/2`). Only an artifact under that
        key is used: a missing, unreadable or stale one means no model, never
-       an old answer. A run that did not compile reads no beam;
+       an old answer. An app directory outside the root is
+       `{:error, {:could_not_check, violation}}`, as in a graph run. A run that
+       did not compile reads no beam;
     4. with the model, take every graph rule's findings as a graph run
        computes them, before any baseline
        (`Anchor.Managers.Graph.rule_findings/3`: a rule's floor, the analyses
@@ -69,8 +71,8 @@ defmodule Anchor.Managers.Explain do
     deps = deps(given)
 
     with {:ok, config} <- load_config(deps.config_loader),
-         {:ok, parsed} <- parse(argument, graph.root) do
-      {model, facts} = model(request, config, deps)
+         {:ok, parsed} <- parse(argument, graph.root),
+         {:ok, {model, facts}} <- model(request, config, deps) do
       {module, path} = place(parsed, model)
       source = read_source(deps.source_source, graph.root, path)
 
@@ -118,16 +120,20 @@ defmodule Anchor.Managers.Explain do
   end
 
   # The model of the last graph run, only when its artifact's key is this
-  # build's; `nil` otherwise. Also the source facts read for the key.
-  defp model(%{compiled?: false}, _config, _deps), do: {nil, %{}}
+  # build's; `nil` otherwise. Also the source facts read for the key. An app
+  # directory outside the root is the graph run's refusal here too.
+  defp model(%{compiled?: false}, _config, _deps), do: {:ok, {nil, %{}}}
 
   defp model(%{graph: graph_request}, config, deps) do
     case GraphManager.artifact_inputs(graph_request, Map.put(deps, :config, config)) do
       {:ok, %{key: key, dir: dir, source_facts: facts}} ->
-        {stored(deps.graph_store.read(dir, key), config, facts), facts}
+        {:ok, {stored(deps.graph_store.read(dir, key), config, facts), facts}}
 
       :none ->
-        {nil, %{}}
+        {:ok, {nil, %{}}}
+
+      {:could_not_check, violation} ->
+        {:error, {:could_not_check, violation}}
     end
   end
 

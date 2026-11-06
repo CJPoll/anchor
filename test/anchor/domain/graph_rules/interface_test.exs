@@ -28,6 +28,7 @@ defmodule Anchor.Domain.GraphRules.InterfaceTest do
     App.Accounts.Users => {"managers", "App.Accounts", true},
     App.Accounts.User => {"domain", "App.Accounts", false},
     App.Accounts.Api => {"domain", "App.Accounts", true},
+    App.Hidden.Secret => {"domain", "App.Hidden", false},
     Top => {"framework", nil, false},
     Other => {"framework", nil, false}
   }
@@ -191,6 +192,17 @@ defmodule Anchor.Domain.GraphRules.InterfaceTest do
 
       assert ["interface|Other|no context", "interface|Top|no context"] =
                model(calls) |> Interface.check(@rule) |> Enum.map(& &1.key)
+    end
+
+    test "a callee whose context has no interface module: the Fix: says to give it one" do
+      calls = [call({App.Billing.Invoice, :issue, 1}, {App.Hidden.Secret, :read, 0})]
+
+      assert [v] = Interface.check(model(calls), @rule)
+
+      assert v.message =~
+               "Fix: context App.Hidden has no interface module; give it one (a module of an " <>
+                 "interfaces.buckets bucket) and call that, or, if App.Hidden.Secret is meant " <>
+                 "to be public, add it to interfaces.exports (a reviewed change)."
     end
 
     test "a dynamic call reaching an interface and a non-interface candidate is one violation" do

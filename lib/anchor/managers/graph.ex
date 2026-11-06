@@ -722,13 +722,22 @@ defmodule Anchor.Managers.Graph do
   The inputs the graph artifact of `request`'s build is keyed by (DND-5446,
   for `mix anchor.explain`): the beams read from its ebins, each beam's source
   facts, the artifact's directory and its key, computed exactly as the run
-  that writes it computes them. `:none` when no project beam was read. `deps`
-  takes `:beam_source` and `:source_source` as `run/2` does, and the loaded
-  `:config`.
+  that writes it computes them. `:none` when no project beam was read;
+  `{:could_not_check, violation}` for an app directory outside the root, the
+  run's own refusal. `deps` takes `:beam_source` and `:source_source` as
+  `run/2` does, and the loaded `:config`.
   """
   @spec artifact_inputs(Request.t(), map()) ::
-          {:ok, %{beams: list(), source_facts: map(), dir: Path.t(), key: String.t()}} | :none
+          {:ok, %{beams: list(), source_facts: map(), dir: Path.t(), key: String.t()}}
+          | :none
+          | {:could_not_check, Violation.t()}
   def artifact_inputs(%Request{} = request, %{config: config} = deps) do
+    with {:ok, request} <- source_dirs(request, config) do
+      read_artifact_inputs(request, config, deps)
+    end
+  end
+
+  defp read_artifact_inputs(request, config, deps) do
     case read_beams(deps.beam_source, request) do
       {:ok, beams} ->
         {source_facts, _issues} = source_facts(deps.source_source, request, beams)

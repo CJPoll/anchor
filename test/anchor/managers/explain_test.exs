@@ -364,6 +364,54 @@ defmodule Anchor.Managers.ExplainTest do
       assert explain.classification["bucket"] == "domain"
     end
 
+    # DND-5655's normalising, on the path Explain takes: raw, an absolute
+    # apps_path raised out of ProjectFile.place/3 with no Fix:, and the key could
+    # not have been the one the graph run wrote under.
+    test "an absolute apps_path under the root: the graph run's own key, and no crash", %{
+      beams: beams
+    } do
+      stub(SourceSourceMock, :read, fn @root, files ->
+        Map.new(files, &{&1, {:error, :enoent}})
+      end)
+
+      request = %{graph_request() | source_dirs: %{my_app: "/proj/apps/my_app"}}
+
+      expect(ConfigLoaderMock, :load, 2, fn -> {:ok, config()} end)
+      Mox.expect(BeamSourceMock, :read_ebins, 2, fn _apps -> beams end)
+
+      expect(GraphStoreMock, :write, fn dir, key, _graph ->
+        send(self(), {:written, dir, key})
+        :ok
+      end)
+
+      GraphManager.run(request, deps())
+      assert_received {:written, dir, key}
+      expect(GraphStoreMock, :read, fn ^dir, ^key -> {:error, :enoent} end)
+
+      assert {:ok, %Explain{findings: nil}} =
+               ExplainManager.explain(
+                 %{argument: @manager_file, graph: request, compiled?: true},
+                 deps()
+               )
+    end
+
+    test "an apps_path outside the root is could-not-check, as in a graph run" do
+      request = %{graph_request() | source_dirs: %{my_app: "/elsewhere/my_app"}}
+
+      expect(ConfigLoaderMock, :load, fn -> {:ok, config()} end)
+      Mox.expect(BeamSourceMock, :read_ebins, 0, fn _apps -> [] end)
+      expect(GraphStoreMock, :read, 0, fn _dir, _key -> {:error, :enoent} end)
+
+      assert {:error, {:could_not_check, violation}} =
+               ExplainManager.explain(
+                 %{argument: @manager_file, graph: request, compiled?: true},
+                 deps()
+               )
+
+      assert violation.message =~ "the apps_path of :my_app is /elsewhere/my_app"
+      assert violation.message =~ "Fix:"
+    end
+
     test "a missing config is could-not-check (exit 3 in the task)" do
       expect(ConfigLoaderMock, :load, fn ->
         {:error, {:config_not_found, ["/proj/.anchor.yml"]}}

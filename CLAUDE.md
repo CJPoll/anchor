@@ -148,7 +148,8 @@ Every rule type has exactly one engine, `@engine_by_type` in
 `Anchor.Domain.RuleSchema` (DND-5437): `:ast` (a Credo check) or `:graph`
 (`mix anchor.graph`, DND-5440; the graph types are `layering`, DND-5442,
 `context_acyclic`, DND-5445, `aggregate_declarations`, DND-5476,
-`effects_match_bucket`, DND-5447, and `struct_owned_by_module_flow`, DND-5454). A new rule type adds its entry there too (compilation
+`effects_match_bucket`, DND-5447, `struct_owned_by_module_flow`, DND-5454, and
+`interface`, DND-5443). A new rule type adds its entry there too (compilation
 fails without it) and to the README table's Engine column (a test compares
 them). Credo never reports a `:graph` rule as unchecked
 (`RuleCoverage.unchecked/3`).
