@@ -100,6 +100,15 @@ defmodule Anchor.Domain.Aggregates.WriteSitesDefaultTest do
     def d20f(l), do: Repo.transaction(fn -> MapSet.new(l, fn v -> v end) end)
     def d20g(l), do: Repo.transaction(fn -> Enum.map_join(l, fn v -> v end) end)
 
+    def d21a, do: Repo.transaction(&Lib.run/0)
+    def d21b, do: Multi.new() |> Multi.run(:k, &Lib.step/2) |> Repo.transaction()
+    def d21c, do: Multi.new() |> Multi.run(:k, Lib, :step, []) |> Repo.transaction()
+    def d21d, do: Multi.new() |> Multi.run(:k, __MODULE__, :own_step, []) |> Repo.transaction()
+    def own_step(_repo, _changes), do: {:ok, 1}
+    def d22, do: Repo.transaction(fn -> Lib.tx(fn -> Repo.insert(%S{}) end) end)
+    def d23(l, f), do: Repo.transaction(fn -> Enum.map(l, f) end)
+    def d24(l), do: Repo.transaction(fn -> Enum.map(l, &Lib.only_here/1) end)
+
     def d19, do: Repo.transaction(fn -> #{inspect(@macros)}."MACRO-m"(__ENV__, 1) end)
   end
   """
@@ -112,7 +121,10 @@ defmodule Anchor.Domain.Aggregates.WriteSitesDefaultTest do
       repos: [@repo],
       no_write_modules: [@listed],
       write_functions: [ok!(FunctionRef.parse("#{inspect(@lib)}.soft_delete/1"))],
-      transaction_functions: [ok!(FunctionRef.parse("#{inspect(@uow)}.transaction/2"))]
+      transaction_functions: [
+        ok!(FunctionRef.parse("#{inspect(@uow)}.transaction/2")),
+        ok!(FunctionRef.parse("#{inspect(@lib)}.tx/1"))
+      ]
     }
 
     %{
@@ -290,6 +302,60 @@ defmodule Anchor.Domain.Aggregates.WriteSitesDefaultTest do
     test "of an Ecto.Multi step or a generated repo function is a gap", %{analysis: a} do
       assert whats(one(a, :d12d).gaps) == ["unread: capture of Ecto.Multi.insert/3"]
       assert whats(one(a, :d12e).gaps) == ["unread: capture of #{inspect(@repo)}.all/1"]
+    end
+  end
+
+  describe "a dependency's function a transaction or a Multi runs" do
+    test "a capture of one as the transaction's body is a gap of that transaction", %{analysis: a} do
+      assert whats(one(a, :d21a).gaps) == [
+               String.replace(lib_call("run/0"), "call of", "capture of")
+             ]
+
+      assert nontx(a, :d21a, 0).gaps == []
+    end
+
+    test "a capture of one as a Multi.run callback is a gap of that transaction", %{analysis: a} do
+      assert whats(one(a, :d21b).gaps) == [
+               String.replace(lib_call("step/2"), "call of", "capture of")
+             ]
+    end
+
+    test "Multi.run/5 on one is a gap of that transaction", %{analysis: a} do
+      assert whats(one(a, :d21c).gaps) == [
+               String.replace(lib_call("step/2"), "call of", "capture of")
+             ]
+    end
+
+    test "positive control: Multi.run/5 on a project function is no gap", %{analysis: a} do
+      assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :d21d)
+    end
+
+    test "a dependency's listed transaction function is read as a scope, never unread", %{
+      analysis: a,
+      graph: graph,
+      config: config
+    } do
+      scopes = Enum.filter(a.scopes, &(elem(&1.mfa, 1) == :d22))
+      assert length(scopes) == 2
+      assert Enum.all?(scopes, &(&1.gaps == []))
+      facts = WriteSites.facts(graph, config, WriteSites.repos(graph, config))
+      assert facts.functions[{@d, :d22, 0}].dynamic == []
+    end
+  end
+
+  describe "exactly one outcome per call" do
+    test "an unknown function handed to a listed function is a gap, and is not also cleared", %{
+      graph: graph,
+      config: config
+    } do
+      facts = WriteSites.facts(graph, config, WriteSites.repos(graph, config))
+      assert %{cleared: 0, dynamic: [_gap]} = facts.functions[{@d, :d23, 2}]
+    end
+
+    test "a capture read twice at one line counts once in unread_by_callee", %{analysis: a} do
+      assert a.counts.unread_by_callee[
+               String.replace(lib_call("only_here/1"), "call of", "capture of")
+             ] == 1
     end
   end
 

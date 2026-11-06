@@ -4,6 +4,7 @@ defmodule Anchor.Domain.GraphReportAggregatesTest do
   #
   # Sabotage record: ../../sabotage_records/aggregates-20261103-dnd_5476_aggregate_decls.md
   # DND-5459 (the writes counts): ../../sabotage_records/aggregates-20261103-dnd_5459_write_sets.md
+  # Sabotage record: ../../sabotage_records/aggregates-20261106-dnd_5889_default_deny_walker.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.GraphReport

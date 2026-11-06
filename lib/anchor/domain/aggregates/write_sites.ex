@@ -46,8 +46,8 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   call too: a `fn` defined outside a transaction body and run in it (its writes
   are found where it is defined, so they do not count as the body's); a capture
   on a computed module or name; a function run in another process (`Task`,
-  `Agent`, `spawn`), reached from a body, whose connection is not the
-  transaction's; a capture of a write itself (`&Repo.insert/1`:
+  `Agent`, `spawn`), whose connection is not the
+  transaction's (a gap with no transaction around it too); a capture of a write itself (`&Repo.insert/1`:
   its source argument is never seen); an unknown function handed to a
   library function that `Anchor.Domain.HigherOrder` says invokes it; and a
   function value handed to a listed module in a place `HigherOrder` does not
@@ -1157,16 +1157,27 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
         )
 
       module == @multi ->
-        multi_read(acc, callee, args, env, tags, line)
+        multi_read(acc, callee, args, env, tags, line, ctx)
 
       HigherOrder.invocations(callee) != [] ->
+        higher_order_call(acc, callee, args, env, tags, line, ctx)
+
+      listed_transaction?(callee, ctx) and not followed?(callee, ctx) ->
+        # A dependency's transaction function: read as a scope, in pass 1.
         acc
-        |> handed_functions(callee, args, env, tags, line, ctx)
-        |> project_call(ctx, callee, :remote, args, env, tags, line)
 
       true ->
         project_call(acc, ctx, callee, :remote, args, env, tags, line)
     end
+  end
+
+  # A function it was given that Anchor cannot follow is this call's one gap.
+  defp higher_order_call(acc, callee, args, env, tags, line, ctx) do
+    handed = handed_functions(acc, callee, args, env, tags, line, ctx)
+
+    if handed.dynamic == acc.dynamic,
+      do: project_call(handed, ctx, callee, :remote, args, env, tags, line),
+      else: handed
   end
 
   # The write is the site; a wrapper the project defines is followed too.
@@ -1176,14 +1187,29 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
       else: acc
   end
 
-  defp multi_read(acc, {_module, name, _arity} = callee, args, env, tags, line) do
+  defp multi_read(acc, {_module, name, _arity} = callee, args, env, tags, line, ctx) do
     cond do
       name not in @multi_reads -> unread(acc, line, "call of #{ViolationKey.mfa(callee)}", tags)
-      name == :run -> acc
+      name == :run -> run_target(acc, args, env, tags, line, ctx)
       unread_arguments?(callee, args, env) -> unread_arguments(acc, callee, tags, line)
       true -> acc
     end
   end
+
+  # Multi.run/5 names its callback, and a callback outside the project is no call
+  # the analysis follows. The form with a function is read at its capture.
+  defp run_target(acc, [_m, _name, mod, fun, args], env, tags, line, ctx) do
+    {:ok, module} = FunctionWalk.atom(mod, env)
+    {:ok, name} = FunctionWalk.atom(fun, env)
+    {:ok, n} = list_length(args, env)
+    callee = {module, name, n + 2}
+
+    if followed?(callee, ctx),
+      do: acc,
+      else: not_followed(acc, ctx, callee, :capture, [], env, tags, line)
+  end
+
+  defp run_target(acc, _args, _env, _tags, _line, _ctx), do: acc
 
   defp repo_function(acc, {module, name, _arity} = callee, args, env, tags, line, ctx) do
     cond do
@@ -1236,9 +1262,13 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   # The default (DND-5889): a call nothing above read is a gap at its line, unless
   # the no-write list clears it and every function it is given can be seen.
   defp not_followed(acc, ctx, callee, :capture, _args, _env, tags, line) do
-    if NoWrite.member?(callee, ctx.no_write_modules) and HigherOrder.invocations(callee) == [],
-      do: acc,
-      else: unread(acc, line, "capture of #{ViolationKey.mfa(callee)}", tags)
+    if NoWrite.member?(callee, ctx.no_write_modules) and HigherOrder.invocations(callee) == [] do
+      acc
+    else
+      # A capture given as a body is inside it, wherever the capture is written.
+      tags = tags ++ Map.get(ctx.capture_tags, callee, [])
+      acc |> unread(line, "capture of #{ViolationKey.mfa(callee)}", tags) |> mark_capture(callee)
+    end
   end
 
   defp not_followed(acc, ctx, callee, _kind, args, env, tags, line) do
@@ -1278,6 +1308,9 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
       {:binding, _binding} -> false
     end
   end
+
+  defp mark_capture(%{dynamic: [entry | rest]} = acc, callee),
+    do: %{acc | dynamic: [Map.put(entry, :capture, callee) | rest]}
 
   defp unread(acc, line, what, tags) do
     entry = %{line: line, what: "unread: #{what}", tags: tags, write?: false, unread: true}

@@ -13,11 +13,11 @@ defmodule Anchor.Domain.Aggregates.Config do
     repos: [MyApp.Repo]                       # DND-5459 reads it
     write_functions: ["MyApp.Repo.soft_delete/2"]
     transaction_functions: ["GenSaas.UnitOfWork.transaction/3"]
-    no_write_modules: [Jason]                 # a listed module's writes are not read
+    no_write_modules: [MyApp.Pdf, ":ets"]     # a listed module's writes are not read
   ```
 
-  The whole section is parsed here. `repos` and `no_write_modules` (exact module
-  names), `write_functions` and `transaction_functions` (`Anchor.Domain.FunctionRef`
+  The whole section is parsed here. `repos` (exact module names),
+  `no_write_modules` (the same, or an Erlang module with its colon), `write_functions` and `transaction_functions` (`Anchor.Domain.FunctionRef`
   tokens) are checked for shape and stored for the write analysis.
 
   Every refusal is `{:error, {:invalid_config, message}}`, the message
@@ -102,7 +102,7 @@ defmodule Anchor.Domain.Aggregates.Config do
          :ok <- no_reason(section),
          {:ok, repos} <- modules(Map.get(section, "repos", []), "aggregates.repos"),
          {:ok, no_write} <-
-           modules(Map.get(section, "no_write_modules", []), "aggregates.no_write_modules"),
+           no_write_modules(Map.get(section, "no_write_modules", [])),
          {:ok, writes} <- functions(section, "write_functions"),
          {:ok, transactions} <- functions(section, "transaction_functions") do
       {:ok,
@@ -245,6 +245,45 @@ defmodule Anchor.Domain.Aggregates.Config do
   end
 
   defp modules(tokens, path), do: bad_modules(path, "got: #{inspect(tokens)}")
+
+  # An Erlang module is written with its colon: a dependency's call on one is a gap
+  # like any other, so this key has to be able to clear it.
+  defp no_write_modules(tokens) when is_list(tokens) do
+    Enum.reduce_while(tokens, {:ok, []}, fn token, {:ok, acc} ->
+      case no_write_module(token) do
+        {:ok, module} -> {:cont, {:ok, acc ++ [module]}}
+        :error -> {:halt, bad_no_write_modules(inspect(token))}
+      end
+    end)
+  end
+
+  defp no_write_modules(tokens), do: bad_no_write_modules(inspect(tokens))
+
+  defp no_write_module(":" <> <<first, rest::binary>> = token) when first in ?a..?z do
+    if rest |> String.to_charlist() |> Enum.all?(&erlang_name_char?/1),
+      do: {:ok, token |> String.trim_leading(":") |> String.to_atom()},
+      else: :error
+  end
+
+  defp no_write_module(":" <> _not_a_name), do: :error
+
+  defp no_write_module(token) do
+    case module(token) do
+      {:ok, module} -> {:ok, module}
+      {:error, _why} -> :error
+    end
+  end
+
+  defp erlang_name_char?(char),
+    do: char in ?a..?z or char in ?A..?Z or char in ?0..?9 or char == ?_
+
+  defp bad_no_write_modules(got) do
+    refuse(
+      "aggregates.no_write_modules must be a list of module names, got: #{got}",
+      "name each module in full, as its defmodule spells it, and an Erlang module with " <>
+        "its colon (\":ets\"); #{@shape}"
+    )
+  end
 
   defp module(token) when is_binary(token) do
     case AllowedCallers.parse(token) do

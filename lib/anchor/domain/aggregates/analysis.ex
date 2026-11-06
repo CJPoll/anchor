@@ -162,11 +162,13 @@ defmodule Anchor.Domain.Aggregates.Analysis do
         |> length(),
       cleared: functions |> Map.values() |> Enum.map(& &1.cleared) |> Enum.sum(),
       unread_by_callee:
-        Enum.frequencies(
-          for {_mfa, function} <- functions,
-              %{unread: true, what: what} <- function.dynamic,
-              do: what
+        for(
+          {mfa, function} <- functions,
+          %{unread: true} = entry <- function.dynamic,
+          do: {mfa, entry.line, entry.what}
         )
+        |> Enum.uniq()
+        |> Enum.frequencies_by(&elem(&1, 2))
     }
   end
 end

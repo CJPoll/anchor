@@ -3,6 +3,7 @@ defmodule Anchor.Domain.Aggregates.ConfigTest do
   #
   # Sabotage record: ../../../sabotage_records/aggregates-20261103-dnd_5476_aggregate_decls.md
   # Sabotage record: ../../../sabotage_records/aggregates-20261103-dnd_5459_write_sets.md
+  # Sabotage record: ../../../sabotage_records/aggregates-20261106-dnd_5889_default_deny_walker.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config
@@ -107,7 +108,16 @@ defmodule Anchor.Domain.Aggregates.ConfigTest do
        "aggregates.repos must be a list of exact module names"},
       {"no_write_modules not module names",
        Map.put(@section, "no_write_modules", ["not a module"]),
-       "aggregates.no_write_modules must be a list of exact module names"},
+       "aggregates.no_write_modules must be a list of module names"},
+      {"no_write_modules an empty colon", Map.put(@section, "no_write_modules", [":"]),
+       "aggregates.no_write_modules must be a list of module names"},
+      {"no_write_modules a bad Erlang name",
+       Map.put(@section, "no_write_modules", [":not a module"]),
+       "aggregates.no_write_modules must be a list of module names"},
+      {"no_write_modules a bad Erlang start", Map.put(@section, "no_write_modules", [":Ets"]),
+       "aggregates.no_write_modules must be a list of module names"},
+      {"no_write_modules not a list", Map.put(@section, "no_write_modules", "Jason"),
+       "aggregates.no_write_modules must be a list of module names"},
       {"the second entry malformed", %{"declare" => [@entry, %{"name" => "B", "tables" => [1]}]},
        "aggregates.declare[2].tables"}
     ]
@@ -126,6 +136,11 @@ defmodule Anchor.Domain.Aggregates.ConfigTest do
                AggregatesConfig.parse(%{"no_write_modules" => ["Jason", "MyApp.Pure"]})
 
       assert {:ok, %AggregatesConfig{no_write_modules: []}} = AggregatesConfig.parse(%{})
+    end
+
+    test "an Erlang module is written with its colon" do
+      assert {:ok, %AggregatesConfig{no_write_modules: [:ets, Jason]}} =
+               AggregatesConfig.parse(%{"no_write_modules" => [":ets", "Jason"]})
     end
 
     test "it says something persists, so it cannot stand beside declare: none" do
