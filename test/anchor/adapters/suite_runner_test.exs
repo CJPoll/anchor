@@ -62,6 +62,10 @@ defmodule Anchor.Adapters.SuiteRunnerTest do
          test "the last file compiled before this ran" do
            assert :persistent_term.get(:z_compiled, false)
          end
+
+         test "one test at a time, whatever the module says" do
+           assert ExUnit.configuration()[:max_cases] == 1
+         end
        end
        """},
       {"z_late_test.exs",
@@ -74,7 +78,7 @@ defmodule Anchor.Adapters.SuiteRunnerTest do
        """}
     ]
 
-    assert {{:passed, 2}, _output} = run_suite(dir, files, [])
+    assert {{:passed, 3}, _output} = run_suite(dir, files, [])
   end
 
   test "2: a failing suite is reported, not raised", %{tmp_dir: dir} do

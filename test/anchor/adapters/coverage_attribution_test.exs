@@ -193,6 +193,7 @@ defmodule Anchor.Adapters.CoverageAttributionTest do
 
     test "on_exit calling a server is credited by the label the runner set", %{map: map} do
       assert f(:on_exit_test_server) in set(map, "on_exit")
+      refute f(:on_exit_test_server) in set(map, "n7 server call")
       assert f(:on_exit_module_server) in set(map, "s1 setup_all's work reaches this test")
 
       assert f(:on_exit_module_server) in set(

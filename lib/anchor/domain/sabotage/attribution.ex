@@ -9,7 +9,8 @@ defmodule Anchor.Domain.Sabotage.Attribution do
   would make the map depend on which test last called that server, and test
   order differs between builds at one seed.
 
-  A label that is neither a test's open word nor a module of this run is refused:
+  A label that is neither a test's open word (windows open only at odd words, so an
+  even integer never is) nor a module of this run is refused:
   it comes from something else using seq_trace, so nothing it says can be
   believed.
   """
@@ -36,8 +37,7 @@ defmodule Anchor.Domain.Sabotage.Attribution do
 
   def classify(nil, :none, _word, _context), do: :ambient
 
-  def classify(nil, label, word, %{windows: windows})
-      when is_integer(label) and rem(label, 2) == 1 do
+  def classify(nil, label, word, %{windows: windows}) when is_integer(label) do
     cond do
       not MapSet.member?(windows, label) -> {:error, {:bad_label, label}}
       label == word -> {:credit, {:test, test_number(label)}}
