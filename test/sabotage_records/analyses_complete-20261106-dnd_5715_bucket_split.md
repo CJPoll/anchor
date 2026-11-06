@@ -4,7 +4,7 @@
 - **Branch:** dnd-5715-bucket-split
 - **Date:** 2026-11-06
 - **Code under test:** `Anchor.Domain.GraphRules.AnalysesComplete`, its `Anchor.Domain.Failures` messages, its `RuleSchema` and `Anchor.Config` keys, its registration in `GraphRules.all/0`, and `mix anchor.graph` over Anchor's own lib/
-- **Suite run:** one `test-slot` held a driver that, per mutation, asserted the replaced text occurs exactly once, edited one file, ran `mix test --timeout 2000 --max-cases 2 <its test files>`, and wrote the file back. Heads: 257f359, 4e3798f. Every row compiled and ran (its summary line is quoted), so no row is a compile failure read as a test failure.
+- **Suite run:** one `test-slot` held a driver that, per mutation, asserted the replaced text occurs exactly once, edited one file, ran `mix test --timeout 2000 --max-cases 2 <its test files>`, and wrote the file back. Heads: 257f359, 4e3798f, 667ab06. Every row compiled and ran (its summary line is quoted), so no row is a compile failure read as a test failure.
 
 ## What each removed assertion became
 
@@ -29,7 +29,7 @@ No bound changed: the floors are the self tests' own values, and each analysis k
 
 ## The dogfood run under sabotage
 
-Each row applied one mutation and ran `MIX_ENV=dev mix anchor.graph`, the run CI makes. A row's exit is that command's. DF-0 is the positive control. DF-0 to DF-J ran before main came in (185 modules). After it came in, on 2dcfd17, the unsabotaged run still exits 0 and prints: `anchor.graph: 201 modules (15 functions with no Core body) in 1 apps, 5 rules, 0 violations (0 report-only, 120 baselined); apply sites: 1804 resolved, 72 any; dynamic calls: 100 fanned out to every exporter, 1 narrowed by behaviour; effects: 2914 functions (domain 2188, managers 188, adapters 114, framework 424), 30 unresolved dynamic calls; demand: 2899 functions, 5216 parameters, 79 absent, 688 imprecise functions`.
+Each row applied one mutation and ran `MIX_ENV=dev mix anchor.graph`, the run CI makes. A row's exit is that command's. DF-0 is the positive control. DF-0 to DF-J ran before main came in (185 modules). After it came in, on 667ab06, the unsabotaged run still exits 0 and prints: `anchor.graph: 208 modules (15 functions with no Core body) in 1 apps, 6 rules, 0 violations (0 report-only, 200 baselined); apply sites: 1888 resolved, 74 any; dynamic calls: 107 fanned out to every exporter, 1 narrowed by behaviour; effects: 3053 functions (domain 2308, managers 202, adapters 116, framework 427), 36 unresolved dynamic calls; demand: 3038 functions, 5461 parameters, 88 absent, 711 imprecise functions; interface width: Anchor.Adapters=57, Anchor.Aggregate=0, Anchor.Check=0, Anchor.Config=3, Anchor.Domain=548, Anchor.Managers=34, Anchor.Sabotage=7, Collectable.Anchor=1, Mix.Tasks=0`.
 
 | # | Mutation | File | Exit | What it printed |
 |---|---|---|---|---|
@@ -72,6 +72,9 @@ Each row applied one mutation and ran `MIX_ENV=dev mix anchor.graph`, the run CI
 | AC-U | the floor failure names no key | `lib/anchor/domain/failures.ex` | `failures_graph_test.exs`, `analyses_complete_test.exs` | `31 tests, 5 failures` | every kind of failure is reported together, in order; the floors (the positive controls) min_absent_parameters: below it is one fail-closed violation naming it and the count; at it, none; the floors (the positive controls) min_apply_sites: below it is one fail-closed violation naming it and the count; at it, none; the floors (the positive controls) min_functions: below it is one fail-closed violation naming it and the count; at it, none; every graph message is fail-closed, on its file, with its subject and a Fix: line |
 | AC-V | min_apply_sites is not parsed | `lib/anchor/domain/config.ex` | `config_test.exs` | `45 tests, 1 failure` | parse_rule/1 (test-matrix: config.ex -> parse_rule/1) analyses_complete's floors surfaced as atom-keyed integers, nil when absent |
 | AC-W | min_absent_parameters is not parsed | `lib/anchor/domain/config.ex` | `config_test.exs` | `45 tests, 1 failure` | parse_rule/1 (test-matrix: config.ex -> parse_rule/1) analyses_complete's floors surfaced as atom-keyed integers, nil when absent |
+| AC-X | a bound message with no Fix: line | `lib/anchor/domain/failures.ex` | `analyses_complete_integration_test.exs` | `5 tests, 1 failure` | violating: a flow analysis that hit its bound fails the run |
+| AC-Y | the rule is not in the RuleShapes table | `lib/anchor/domain/rule_shapes.ex` | `rule_shapes_test.exs` | `7 tests, 1 failure` | for/1 every rule type in RuleSchema.rule_types/0 has a non-empty shape |
+| AC-Z | the rule loses its own-canary row | `test/anchor/integration/graph_canary_test.exs` | `graph_canary_test.exs` | `10 tests, 1 failure` | every graph rule type finds its violating canary module; every finding has one Fix: |
 
 ## Failure strings (verbatim, the first failing test of each row)
 
@@ -478,4 +481,40 @@ Each row applied one mutation and ran `MIX_ENV=dev mix anchor.graph`, the run CI
      right: {501, 101, 1}
      stacktrace:
        test/anchor/domain/config_test.exs:114: (test)
+```
+
+### AC-X: a bound message with no Fix: line
+
+```
+
+  1) test violating: a flow analysis that hit its bound fails the run (Anchor.Integration.AnalysesCompleteIntegrationTest)
+     test/anchor/integration/analyses_complete_integration_test.exs:112
+     rule 1 (id: "analyses_complete", analyses_complete): the higher-order flow analysis (Anchor.Domain.Cfa) hit its step bound after 1 steps, so every apply site reads any and no closure was resolved. This is a scale limit of Anchor; file it with this line. Raising the bound is the owner's call.
+     code: assert_one_fix(report)
+     stacktrace:
+       (elixir 1.19.4) lib/enum.ex:1688: Enum."-map/2-lists^map/1-1-"/2
+       test/anchor/integration/analyses_complete_integration_test.exs:121: (test)
+```
+
+### AC-Y: the rule is not in the RuleShapes table
+
+```
+
+  1) test for/1 every rule type in RuleSchema.rule_types/0 has a non-empty shape (Anchor.Domain.RuleShapesTest)
+     test/anchor/domain/rule_shapes_test.exs:30
+     ** (FunctionClauseError) no function clause matching in Anchor.Domain.RuleShapes.for/1
+```
+
+### AC-Z: the rule loses its own-canary row
+
+```
+
+  1) test every graph rule type finds its violating canary module; every finding has one Fix: (Anchor.Integration.GraphCanaryTest)
+     test/anchor/integration/graph_canary_test.exs:271
+     Anchor.Domain.GraphRules.AnalysesComplete has no violating module in this canary. Fix: add one, or name the integration test of its own canary in @own_canary
+     code: for module <- GraphRules.all(),
+     stacktrace:
+       test/anchor/integration/graph_canary_test.exs:280: anonymous fn/3 in Anchor.Integration.GraphCanaryTest."test every graph rule type finds its violating canary module; every finding has one Fix:"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/integration/graph_canary_test.exs:278: (test)
 ```
