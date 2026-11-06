@@ -245,8 +245,8 @@ defmodule Anchor.Domain.Sabotage.CoverageMap do
       "built at #{map.commit || "(no commit)"}; wrote #{path}"
   end
 
-  defp test_shape?(%{file: f, line: l, functions: fs})
-       when is_binary(f) and is_integer(l) and l > 0,
+  defp test_shape?(%{file: f, line: l, name: n, functions: fs})
+       when is_binary(f) and is_binary(n) and is_integer(l) and l > 0,
        do: is_list(fs) and Enum.all?(fs, &is_binary/1)
 
   defp test_shape?(_test), do: false

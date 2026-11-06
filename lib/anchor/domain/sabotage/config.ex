@@ -14,6 +14,8 @@ defmodule Anchor.Domain.Sabotage.Config do
   | `coverage_map` | none | a per-test coverage map file (DND-5474), relative to the project root; `--coverage PATH` overrides |
   | `records` | below | where the run's sabotage record goes and how it is named (DND-5484) |
   | `survivors` | `.anchor/sabotage/survivors.txt` | the survivors list (DND-5483), relative to the project root; named here, it must exist; at the default path an absent file is an empty list, said loudly |
+  | `behaviour_locality_baseline` | `.anchor/baselines/behaviour-locality.txt` | the behaviour locality baseline (DND-5489), relative to the project root; named here, it must exist |
+  | `behaviour_locality_enforcement` | `report` | `report` prints the verdict and exits 0; `enforce` fails on NEW, STALE or GREW |
 
   `records` (every key optional): `dir` (default `test/sabotage_records`;
   may hold `{app}`; relative, with no `..` segment, read with a leading `./`
@@ -41,7 +43,8 @@ defmodule Anchor.Domain.Sabotage.Config do
     %{from: "lib/**/*.ex", to: "test/{rest}_test.exs"}
   ]
   @keys ~w(test_command max_mutants timeout_seconds operators effect_calls test_mirror
-           coverage_map records survivors)
+           coverage_map records survivors behaviour_locality_baseline
+           behaviour_locality_enforcement)
 
   defstruct test_command: ["mix", "test", "--max-cases", "2"],
             max_mutants: 30,
@@ -51,6 +54,8 @@ defmodule Anchor.Domain.Sabotage.Config do
             test_mirror: @default_mirror,
             coverage_map: nil,
             survivors: nil,
+            behaviour_locality_baseline: nil,
+            behaviour_locality_enforcement: :report,
             records: %{
               dir: "test/sabotage_records",
               naming: :domain_date_slot,
@@ -68,6 +73,8 @@ defmodule Anchor.Domain.Sabotage.Config do
           test_mirror: [TestMirror.rule()],
           coverage_map: String.t() | nil,
           survivors: String.t() | nil,
+          behaviour_locality_baseline: String.t() | nil,
+          behaviour_locality_enforcement: :report | :enforce,
           records: %{
             dir: String.t(),
             naming: :domain_date_slot | :ticket_nn_what,
@@ -91,7 +98,9 @@ defmodule Anchor.Domain.Sabotage.Config do
          {:ok, mirror} <- test_mirror(section),
          {:ok, coverage_map} <- coverage_map(section),
          {:ok, records} <- records(section),
-         {:ok, survivors} <- survivors(section) do
+         {:ok, survivors} <- survivors(section),
+         {:ok, locality_baseline} <- locality_baseline(section),
+         {:ok, locality_enforcement} <- locality_enforcement(section) do
       {:ok,
        %__MODULE__{
          test_command: command,
@@ -102,6 +111,8 @@ defmodule Anchor.Domain.Sabotage.Config do
          test_mirror: mirror,
          coverage_map: coverage_map,
          survivors: survivors,
+         behaviour_locality_baseline: locality_baseline,
+         behaviour_locality_enforcement: locality_enforcement,
          records: records
        }}
     end
@@ -286,6 +297,41 @@ defmodule Anchor.Domain.Sabotage.Config do
         ".anchor/sabotage/survivors.txt"
     )
   end
+
+  # DND-5489: as `survivors`, a path inside the project; `nil` is the default path,
+  # where an absent file is an empty baseline.
+  defp locality_baseline(%{"behaviour_locality_baseline" => path})
+       when is_binary(path) and path != "" do
+    if String.starts_with?(path, "/") or ".." in String.split(path, "/"),
+      do: bad_locality_baseline(path),
+      else: {:ok, path}
+  end
+
+  defp locality_baseline(%{"behaviour_locality_baseline" => path}),
+    do: bad_locality_baseline(path)
+
+  defp locality_baseline(_section), do: {:ok, nil}
+
+  defp bad_locality_baseline(path) do
+    refuse(
+      "sabotage.behaviour_locality_baseline must be a path inside the project, got: " <>
+        inspect(path),
+      "set it relative to the project root, with no .. segment, or remove it for " <>
+        ".anchor/baselines/behaviour-locality.txt"
+    )
+  end
+
+  defp locality_enforcement(%{"behaviour_locality_enforcement" => "report"}), do: {:ok, :report}
+  defp locality_enforcement(%{"behaviour_locality_enforcement" => "enforce"}), do: {:ok, :enforce}
+
+  defp locality_enforcement(%{"behaviour_locality_enforcement" => other}) do
+    refuse(
+      "sabotage.behaviour_locality_enforcement must be report or enforce, got: #{inspect(other)}",
+      "set it to report or enforce, or remove it for report"
+    )
+  end
+
+  defp locality_enforcement(_section), do: {:ok, :report}
 
   @record_keys ~w(dir naming domain_from domain_strip_prefixes adr)
   @namings %{"domain_date_slot" => :domain_date_slot, "ticket_nn_what" => :ticket_nn_what}

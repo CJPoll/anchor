@@ -17,6 +17,8 @@ defmodule Anchor.Domain.Sabotage.ConfigTest do
       assert config.effect_calls == []
       assert config.coverage_map == nil
       assert config.survivors == nil
+      assert config.behaviour_locality_baseline == nil
+      assert config.behaviour_locality_enforcement == :report
 
       assert config.records == %{
                dir: "test/sabotage_records",
@@ -47,6 +49,8 @@ defmodule Anchor.Domain.Sabotage.ConfigTest do
                  "test_mirror" => [%{"from" => "src/**/*.ex", "to" => "spec/{rest}_test.exs"}],
                  "coverage_map" => "anchor-coverage.etf",
                  "survivors" => "sabotage/survivors.txt",
+                 "behaviour_locality_baseline" => "b/locality.txt",
+                 "behaviour_locality_enforcement" => "enforce",
                  "records" => %{
                    "dir" => "apps/{app}/test/sabotage_records",
                    "naming" => "ticket_nn_what",
@@ -63,6 +67,8 @@ defmodule Anchor.Domain.Sabotage.ConfigTest do
       assert config.test_mirror == [%{from: "src/**/*.ex", to: "spec/{rest}_test.exs"}]
       assert config.coverage_map == "anchor-coverage.etf"
       assert config.survivors == "sabotage/survivors.txt"
+      assert config.behaviour_locality_baseline == "b/locality.txt"
+      assert config.behaviour_locality_enforcement == :enforce
 
       assert config.records == %{
                dir: "apps/{app}/test/sabotage_records",
@@ -77,6 +83,16 @@ defmodule Anchor.Domain.Sabotage.ConfigTest do
       {"an unknown key", %{"max_mutant" => 3}, "sabotage: unknown key(s) \"max_mutant\""},
       {"an empty coverage_map (DND-5474)", %{"coverage_map" => ""}, "sabotage.coverage_map"},
       {"a coverage_map list (DND-5474)", %{"coverage_map" => ["x"]}, "sabotage.coverage_map"},
+      {"an absolute locality baseline (DND-5489)",
+       %{"behaviour_locality_baseline" => "/tmp/b.txt"},
+       "sabotage.behaviour_locality_baseline must be a path inside the project"},
+      {"a locality baseline outside the project (DND-5489)",
+       %{"behaviour_locality_baseline" => "../b.txt"},
+       "sabotage.behaviour_locality_baseline must be a path inside the project"},
+      {"an empty locality baseline (DND-5489)", %{"behaviour_locality_baseline" => ""},
+       "sabotage.behaviour_locality_baseline must be a path inside the project"},
+      {"an unknown locality mode (DND-5489)", %{"behaviour_locality_enforcement" => "warn"},
+       "sabotage.behaviour_locality_enforcement must be report or enforce"},
       {"an empty survivors path (DND-5483)", %{"survivors" => ""},
        "sabotage.survivors must be a path inside the project"},
       {"an absolute survivors path (DND-5483)", %{"survivors" => "/tmp/s.txt"},

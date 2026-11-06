@@ -498,6 +498,18 @@ coverage build runs with `--exclude global_tracing`. `run --coverage PATH`
 selects a mutant's tests from the map first (source `coverage`), then the
 mirror.
 
+## Behaviour locality (DND-5489)
+
+`mix anchor.sabotage behaviours` (`Anchor.Managers.Sabotage.Behaviours`) joins the
+coverage map to every record's kill map. `BehaviourMap.build/3` (Domain): a test's
+confirmed causes are the functions it executed and killed a mutant of; only a `killed`
+row confirms; the key is `<file>::<full test name>`, no line. `locality_keys/1` repeats
+a key once per directory, the multiset `Baseline.compare/2` ratchets. Report mode exits
+0 except for what cannot be measured (3); a named-but-absent or malformed baseline is 1
+in both modes, since a ratchet it cannot read is no report of no drift. Anchor's own
+baseline waits for a CI map. `.github/workflows/behaviour-locality.yml` runs it after
+`Coverage map` by `workflow_run`, so `coverage-map.yml` is untouched.
+
 ## Sabotage records (DND-5484)
 
 `mix anchor.sabotage run` writes its own sabotage record after the run

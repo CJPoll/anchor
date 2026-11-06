@@ -26,6 +26,11 @@ defmodule Anchor.Domain.Sabotage.Report do
   <reason>` line each and `sabotage: no mutants generated from N changed
   functions: nothing was measured` (DND-5617); the exit code stays 0.
 
+  `render_behaviours/1` and `behaviours_exit_code/1` are the same for `mix
+  anchor.sabotage behaviours` (DND-5489): the behaviours spread over the most
+  directories, the totals, the ratchet's NEW, STALE and GREW lines, and a verdict.
+  `report` mode says what it found and exits 0; `enforce` exits 1 on any of the three.
+
   Exit codes (DND-5570, the epic's amended invariant 6): the refusal's own
   code; a dry run 0; else
 
@@ -61,6 +66,7 @@ defmodule Anchor.Domain.Sabotage.Report do
   0 becomes 2. A survivor stays 1 and an unmeasured run stays 3 (DND-5641).
   """
 
+  alias Anchor.Domain.Sabotage.BehaviourMap
   alias Anchor.Domain.Sabotage.Run
   alias Anchor.Domain.Sabotage.Survivors
 
@@ -360,6 +366,130 @@ defmodule Anchor.Domain.Sabotage.Report do
   defp mfa(%{module: module, name: name, arity: arity}), do: "#{inspect(module)}.#{name}/#{arity}"
 
   defp tsv(fields), do: Enum.map_join(fields, "\t", &to_string/1)
+
+  @behaviours_shown 20
+
+  @doc "The exit code of a measured behaviours view: only `enforce` turns drift into 1."
+  @spec behaviours_exit_code(map()) :: 0 | 1
+  def behaviours_exit_code(%{mode: :enforce} = view) do
+    if behaviours_drift?(view), do: 1, else: 0
+  end
+
+  def behaviours_exit_code(%{mode: :report}), do: 0
+
+  @doc """
+  The behaviours view, `:text` or `:json`. `view`: `map`
+  (`Anchor.Domain.Sabotage.BehaviourMap.build/3`), `mode`, `path` (the baseline),
+  `comparison` (`Anchor.Domain.Baseline.compare/2`), `grew` (entries added against
+  `base`, `nil` without one), `base`, `notes`, `format`.
+  """
+  @spec render_behaviours(map()) :: [String.t()]
+  def render_behaviours(%{format: :json} = view), do: [behaviours_json(view)]
+
+  def render_behaviours(view) do
+    view.notes ++
+      Enum.map(BehaviourMap.top(view.map, @behaviours_shown), &behaviour_line/1) ++
+      behaviours_totals(view) ++
+      Enum.map(view.comparison.new, &"NEW #{&1}: this behaviour reaches one more directory") ++
+      Enum.map(view.comparison.stale, &"STALE #{&1}: this behaviour reaches one fewer directory") ++
+      Enum.map(view.grew || [], &"GREW #{&1}: added to the baseline since #{view.base}") ++
+      [behaviours_verdict(view)]
+  end
+
+  defp behaviour_line(behaviour) do
+    Enum.join(
+      [
+        length(behaviour.directories),
+        behaviour.test_key,
+        Enum.join(behaviour.directories, " "),
+        Enum.join(generated_note(behaviour), " ")
+      ],
+      "\t"
+    )
+    |> String.trim_trailing()
+  end
+
+  defp generated_note(%{generated: []}), do: []
+  defp generated_note(%{generated: mfas}), do: [BehaviourMap.generated() | mfas]
+
+  defp behaviours_totals(%{map: map}) do
+    [
+      "behaviours: #{length(map.behaviours)} confirmed, #{length(map.unconfirmed)} unconfirmed " <>
+        "(no killed mutant among what they executed)"
+    ] ++ unmatched_line(map.unmatched_killers) ++ not_executed_line(map.not_executed)
+  end
+
+  defp unmatched_line([]), do: []
+
+  defp unmatched_line(killers) do
+    [
+      "behaviours: #{length(killers)} killers name no test of the map, so they confirm " <>
+        "nothing (first: #{hd(killers)}). Fix: rebuild the map, or run sabotage again for a " <>
+        "renamed test"
+    ]
+  end
+
+  defp not_executed_line(0), do: []
+
+  defp not_executed_line(count) do
+    [
+      "behaviours: #{count} kills are of a function the map says their test never executed, " <>
+        "so they confirm nothing. Fix: rebuild the map from the current tree"
+    ]
+  end
+
+  defp behaviours_verdict(view) do
+    counts =
+      "#{length(view.comparison.new)} NEW, #{length(view.comparison.stale)} STALE" <>
+        grew_count(view.grew)
+
+    cond do
+      not behaviours_drift?(view) ->
+        "behaviour locality: clean against #{view.path} (#{view.mode} mode)"
+
+      view.mode == :enforce ->
+        "behaviour locality: FAILED, #{counts} against #{view.path}. Fix: bring a NEW behaviour " <>
+          "back to fewer directories, and delete the lines of a STALE one"
+
+      true ->
+        "behaviour locality: #{counts} against #{view.path} (report mode, not failing)"
+    end
+  end
+
+  defp grew_count(nil), do: ""
+  defp grew_count(grew), do: ", #{length(grew)} GREW"
+
+  defp behaviours_drift?(view) do
+    view.comparison.new != [] or view.comparison.stale != [] or (view.grew || []) != []
+  end
+
+  defp behaviours_json(view) do
+    JSON.encode!(%{
+      "mode" => to_string(view.mode),
+      "baseline" => view.path,
+      "new" => view.comparison.new,
+      "stale" => view.comparison.stale,
+      "grew" => view.grew,
+      "failed" => behaviours_exit_code(view) == 1,
+      "notes" => view.notes,
+      "unconfirmed" => view.map.unconfirmed,
+      "unmatched_killers" => view.map.unmatched_killers,
+      "not_executed" => view.map.not_executed,
+      "behaviours" =>
+        Enum.map(BehaviourMap.top(view.map, length(view.map.behaviours)), &behaviour_json/1)
+    })
+  end
+
+  defp behaviour_json(behaviour) do
+    %{
+      "test" => behaviour.test_key,
+      "directories" => behaviour.directories,
+      "confirmed" => behaviour.confirmed,
+      "generated" => behaviour.generated,
+      "executed_only" => behaviour.executed_only,
+      "executed_only_directories" => behaviour.executed_only_directories
+    }
+  end
 
   defp lines(lines), do: Enum.join(lines, "\n")
 end

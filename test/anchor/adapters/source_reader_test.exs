@@ -11,6 +11,23 @@ defmodule Anchor.Adapters.SourceReaderTest do
 
   @moduletag :tmp_dir
 
+  test "list/1: the project's lib sources, relative and sorted, and nothing else",
+       %{tmp_dir: tmp_dir} do
+    for path <- [
+          "lib/b/b.ex",
+          "lib/a.ex",
+          "lib/a.exs",
+          "apps/x/lib/x.ex",
+          "test/t.ex",
+          "apps/x/test/y.ex"
+        ] do
+      File.mkdir_p!(Path.dirname(Path.join(tmp_dir, path)))
+      File.write!(Path.join(tmp_dir, path), "")
+    end
+
+    assert SourceReader.list(tmp_dir) == ["apps/x/lib/x.ex", "lib/a.ex", "lib/b/b.ex"]
+  end
+
   test "each path relative to the root becomes its facts; unparseable and missing files are errors, never dropped",
        %{tmp_dir: tmp_dir} do
     File.mkdir_p!(Path.join(tmp_dir, "lib"))

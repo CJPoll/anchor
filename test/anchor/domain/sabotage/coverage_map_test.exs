@@ -37,6 +37,20 @@ defmodule Anchor.Domain.Sabotage.CoverageMapTest do
 
   defp sets(map), do: Map.new(map.tests, &{&1.name, &1.functions})
 
+  describe "check/1, a test's name (DND-5489)" do
+    test "a test with no string name is no usable map: a key is built from it" do
+      test_ref = %{file: "test/a_test.exs", line: 1, functions: []}
+      map = %{version: 1, commit: nil, tests: [test_ref]}
+
+      assert CoverageMap.check(map) == {:error, :not_a_map}
+
+      assert CoverageMap.check(%{map | tests: [Map.put(test_ref, :name, :atom)]}) ==
+               {:error, :not_a_map}
+
+      assert {:ok, _map} = CoverageMap.check(%{map | tests: [Map.put(test_ref, :name, "test a")]})
+    end
+  end
+
   describe "attribute/2 and finalize/2" do
     test "1: each call goes to the window it happened in" do
       map = build(row1())

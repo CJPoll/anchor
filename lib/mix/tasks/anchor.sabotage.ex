@@ -1,5 +1,5 @@
 defmodule Mix.Tasks.Anchor.Sabotage do
-  @shortdoc "Generated sabotage: scope, run, restore, replay and coverage"
+  @shortdoc "Generated sabotage: scope, run, restore, replay, coverage and behaviours"
 
   @moduledoc """
   Generated sabotage for the functions a change touched, the **Framework**
@@ -92,6 +92,28 @@ defmodule Mix.Tasks.Anchor.Sabotage do
   every row drifted, a record that could not be read, the killers fail with
   no mutant: main is red).
 
+  ## behaviours (DND-5489)
+
+      mix anchor.sabotage behaviours [--coverage PATH] [--format text|json]
+                                     [--write-baseline] [--base REF]
+
+  Reads the coverage map (`--coverage`, or the config's `coverage_map`) and every
+  record's kill map, and prints each test's confirmed causes: the functions it
+  executed and killed a mutant of (`Anchor.Domain.Sabotage.BehaviourMap`), the
+  behaviours spread over the most directories first, and the tests nothing confirms
+  yet. It runs no test. The locality keys are compared with the baseline
+  (`sabotage.behaviour_locality_baseline`): NEW when a behaviour spread to another
+  directory, STALE when it shrank, and with `--base` GREW for entries the branch
+  added. `--write-baseline` creates the file and never replaces one.
+
+  Exit codes: 0 measured, in `report` mode whatever the verdict, or the baseline
+  written; 1 in `enforce` mode (`sabotage.behaviour_locality_enforcement`) NEW,
+  STALE or GREW, and in either mode a baseline named in the config that is absent,
+  or a malformed one; 2 usage, or `--write-baseline` over an existing file;
+  3 `COULD NOT MEASURE` (no loadable `sabotage:` config, no usable coverage map or
+  one with no tests, a record that cannot be read, no `killed` row anywhere, the
+  baseline unreadable here or at `--base`).
+
   ## coverage (DND-5474)
 
       MIX_ENV=test mix anchor.sabotage coverage [--out PATH] [--local] [-- TEST_ARGS]
@@ -126,6 +148,8 @@ defmodule Mix.Tasks.Anchor.Sabotage do
          mix anchor.sabotage restore
          mix anchor.sabotage replay [--max N|all] [--records DIR_GLOB]...
          MIX_ENV=test mix anchor.sabotage coverage [--out PATH] [--local] [-- TEST_ARGS]
+         mix anchor.sabotage behaviours [--coverage PATH] [--format text|json]
+                                        [--write-baseline] [--base REF]
   Fix: use one of these forms; --max takes a positive integer or `all`\
   """
 
@@ -169,6 +193,17 @@ defmodule Mix.Tasks.Anchor.Sabotage do
     case OptionParser.parse(own, strict: [out: :string, local: :boolean]) do
       {parsed, [], []} -> coverage(parsed, test_args, opts)
       _invalid -> usage()
+    end
+  end
+
+  def run(["behaviours" | argv], opts) do
+    case behaviours_facts(argv) do
+      {:ok, facts} ->
+        {code, lines} = Sabotage.behaviours(facts, opts)
+        emit(code, lines)
+
+      :usage ->
+        usage()
     end
   end
 
@@ -228,6 +263,27 @@ defmodule Mix.Tasks.Anchor.Sabotage do
          globs = Keyword.get_values(parsed, :records),
          true <- Enum.all?(globs, &Replay.inside?/1) do
       {:ok, %{root: File.cwd!(), build_path: Mix.Project.build_path(), max: max, records: globs}}
+    else
+      _invalid -> :usage
+    end
+  end
+
+  @doc false
+  # The facts `behaviours` passes the Manager, from its argv; exposed for its test.
+  @spec behaviours_facts([String.t()]) :: {:ok, map()} | :usage
+  defp behaviours_facts(argv) do
+    switches = [coverage: :string, format: :string, write_baseline: :boolean, base: :string]
+
+    with {parsed, [], []} <- OptionParser.parse(argv, strict: switches),
+         format when format != :invalid <- format(parsed[:format]) do
+      {:ok,
+       %{
+         root: File.cwd!(),
+         coverage: parsed[:coverage],
+         format: format,
+         write_baseline: Keyword.get(parsed, :write_baseline, false),
+         base: parsed[:base]
+       }}
     else
       _invalid -> :usage
     end

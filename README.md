@@ -1582,6 +1582,8 @@ sabotage:
     domain_strip_prefixes: []        # e.g. ["MyApp.Domain.", "MyApp."]; the longest match is dropped
     adr: "the repo's sabotage-record ADR"  # named next to each test still lacking a red
   survivors: .anchor/sabotage/survivors.txt  # the survivors list (DND-5483); named here, it must exist
+  behaviour_locality_baseline: .anchor/baselines/behaviour-locality.txt  # DND-5489; named here, it must exist
+  behaviour_locality_enforcement: report  # or enforce: fail on NEW, STALE or GREW
 ```
 
 ```gitignore
@@ -1839,6 +1841,51 @@ acceptable`). Anchor's own map is built by `.github/workflows/coverage-map.yml`
 | the map was written, but the suite failed (`suite_exit: 1`; `Fix: make the suite green first`) | 1 |
 | not CI and no `--local`; `MIX_ENV` not `test`; `TEST_ARGS` that set `--max-cases` (two tests at once would share their calls); another tracer already on; the map not writable | 2, with `Fix:` |
 | zero project modules or zero tests (with the suite's own message when it failed before any test), or a project module that cannot load (named, with nothing traced): no map is written | 3, `COULD NOT MEASURE` |
+
+
+### Sabotage: behaviours and how far they spread
+
+```bash
+mix anchor.sabotage behaviours [--coverage PATH] [--format text|json] [--write-baseline] [--base REF]
+```
+
+A test case is a behaviour. Its **confirmed causes** are the functions it executed (the
+coverage map) and killed a mutant of (a `killed` row of a kill map). A function it only
+executed may be incidental, so it is shown and not counted. A test with no confirmed
+cause is listed as **unconfirmed**, so the gap shows: a function never mutated confirms
+nothing yet.
+
+A behaviour's **directories** are the parent directories of its confirmed causes' files.
+A behaviour whose causes sit in many directories takes many places to change, so each
+directory is one line of a shrink-only baseline, keyed `<test file>::<full test name>`.
+There is no line number in the key, so moving a test changes nothing. A cause with no
+source file shows as `(generated)` and counts as no directory.
+
+The command runs no test. It prints up to 20 behaviours, widest first, the totals, then:
+
+| Line | Meaning |
+|---|---|
+| `NEW <key>` | the behaviour reaches one more directory than the baseline holds |
+| `STALE <key>` | it reaches one fewer: delete that line |
+| `GREW <key>` | with `--base`: the branch added this line to the baseline |
+
+Killers that name no test of the map, and kills of a function the map says their test
+never ran, confirm nothing and are counted on their own lines.
+
+`--write-baseline` creates `sabotage.behaviour_locality_baseline` (default
+`.anchor/baselines/behaviour-locality.txt`) and never replaces one. A default path with
+no file is an empty baseline, and says so.
+
+| Condition | Exit |
+|---|---|
+| measured, in `report` mode (the default), whatever the verdict; the baseline written | 0 |
+| in `enforce` mode: NEW, STALE or GREW | 1 |
+| in either mode: a baseline named in the config that is absent, or a malformed one | 1 |
+| usage; `--write-baseline` over an existing file | 2 |
+| no `sabotage:` config; no usable coverage map (`Fix: download the anchor-coverage artifact (CI) and pass --coverage`) or one with no tests; a record that cannot be read; no `killed` row anywhere (`nothing confirms any cause yet`); the baseline unreadable, here or at `--base` | 3 |
+
+Anchor runs it in report mode after each successful coverage map on main
+(`.github/workflows/behaviour-locality.yml`).
 
 ## Check Types
 
