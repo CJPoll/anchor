@@ -30,7 +30,6 @@ effects_match_bucket|Anchor.Domain.RuleCoverage.missing_allowed_callers/2|manage
 effects_match_bucket|Anchor.Domain.RuleCoverage.missing_allowed_callers/3|managers
 effects_match_bucket|Anchor.Domain.RuleCoverage.unchecked/2|managers
 effects_match_bucket|Anchor.Domain.RuleCoverage.unchecked/3|managers
-effects_match_bucket|Anchor.Domain.Sabotage.DiffHunks.parse/1|adapters
 effects_match_bucket|Anchor.Domain.Sabotage.Mutator.generate/3|managers
 effects_match_bucket|Anchor.Domain.Sabotage.Mutator.generate/4|managers
 effects_match_bucket|Anchor.Sabotage.ExUnitFormatter.child_spec/1|domain

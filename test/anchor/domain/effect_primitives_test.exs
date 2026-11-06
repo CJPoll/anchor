@@ -3,7 +3,7 @@ defmodule Anchor.Domain.EffectPrimitivesTest do
   # the demand analysis, keyed by the callee as Core names it.
   #
   # Sabotage record: ../../sabotage_records/demand-20261103-dnd_5498_demand.md
-  # Sabotage record (DND-5677): ../../sabotage_records/effects-20261106-dnd_5676_effects_cfa_batch.md
+  # Sabotage record (DND-5677, DND-5678): ../../sabotage_records/effects-20261106-dnd_5676_effects_cfa_batch.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.EffectPrimitives
@@ -216,6 +216,35 @@ defmodule Anchor.Domain.EffectPrimitivesTest do
       assert EffectPrimitives.inference_kind({File, :read, 1}) == :effect
       assert EffectPrimitives.inference_kind({System, :get_env, 1}) == :effect
       assert EffectPrimitives.inference_kind({Req, :get, 1}) == nil
+    end
+  end
+
+  describe "the pure IO helpers (DND-5678)" do
+    test "iodata and chardata conversions are no primitive, in either Core spelling" do
+      for mfa <- [
+            {IO, :iodata_to_binary, 1},
+            {:erlang, :iolist_to_binary, 1},
+            {IO, :iodata_length, 1},
+            {:erlang, :iolist_size, 1},
+            {IO, :chardata_to_string, 1}
+          ] do
+        refute EffectPrimitives.primitive?(primitives(), mfa), inspect(mfa)
+        assert EffectPrimitives.inference_kind(mfa) == nil, inspect(mfa)
+      end
+    end
+
+    test "control: every other IO function is still a primitive, the same names at another arity too" do
+      for mfa <- [
+            {IO, :puts, 1},
+            {IO, :write, 2},
+            {IO, :inspect, 2},
+            {IO, :binread, 2},
+            {IO, :chardata_to_string, 2},
+            {IO, :iodata_to_binary, 2}
+          ] do
+        assert EffectPrimitives.primitive?(primitives(), mfa), inspect(mfa)
+        assert EffectPrimitives.inference_kind(mfa) == :effect, inspect(mfa)
+      end
     end
   end
 end

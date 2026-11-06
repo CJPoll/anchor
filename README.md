@@ -1043,7 +1043,9 @@ localtime/universaltime/system_time/monotonic_time/time_offset`,
 `:crypto.strong_rand_bytes/1`, `:crypto.rand_seed`, `System.unique_integer`),
 DND-5677: a chain that ends in one says so in the `Fix:` ("reads the clock",
 "draws a random value"); and every project module declaring `@behaviour
-Ecto.Repo`. `architecture.effects` adds to them; nothing removes one. A call is
+Ecto.Repo`. `IO.iodata_to_binary/1`, `IO.iodata_length/1` and
+`IO.chardata_to_string/1` are pure and no primitive, by exact name and arity
+(DND-5678). `architecture.effects` adds to them; nothing removes one. A call is
 matched by every name it may have been written as (`System.unique_integer/0`
 reaches Core as `:erlang.unique_integer/0`, DND-5613).
 

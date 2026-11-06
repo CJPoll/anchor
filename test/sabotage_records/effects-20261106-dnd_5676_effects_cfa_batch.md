@@ -1860,3 +1860,162 @@ ee60daedff8d	lib/anchor/domain/effects.ex	Anchor.Domain.Effects.closure_targets/
 c197a8d97370	lib/anchor/domain/effects.ex	Anchor.Domain.Effects.opaque_reason/2	force_condition	killed	test/anchor/domain/effects_test.exs:221 test a call into a project function whose body was not read (DND-5679) a module both read and listed unread (a duplicate beam) is read: its functions decide ; test/anchor/domain/effects_test.exs:307 test apply sites read from the flow analysis (compiled, Model.cfa set) a closure the analysis resolves to a pure capture reaches nothing ; test/anchor/domain/effects_test.exs:82 test an effect reached only through another module is managers, with the chain ; test/anchor/domain/effects_test.exs:232 test a call into a project function whose body was not read (DND-5679) a call of a public function with no Core body is unresolved, named ; test/anchor/domain/effects_test.exs:313 test apply sites read from the flow analysis (compiled, Model.cfa set) a closure from outside the project is unresolved, named ; test/anchor/domain/effects_test.exs:102 test recursion between modules reaches the fixpoint ; test/anchor/domain/effects_test.exs:117 test an unresolved dynamic call counts as an effect ; test/anchor/domain/effects_test.exs:246 test a call into a project function whose body was not read (DND-5679) compiled: an Erlang module that writes a file, called from a Domain function, is not pure ; test/anchor/domain/effects_test.exs:177 test counts per role are reported ; test/anchor/domain/effects_test.exs:183 test a public function with no Core body is not analysed, and counted ; test/anchor/domain/effects_test.exs:197 test a call into a project function whose body was not read (DND-5679) a call of an unread project module (an Erlang module) is unresolved, named, never pure ; test/anchor/domain/effects_test.exs:130 test a call on a computed module that no project module can receive is unresolved ; test/anchor/domain/effects_test.exs:298 test apply sites read from the flow analysis (compiled, Model.cfa set) a closure the analysis resolves to an effect capture reaches that effect ; test/anchor/domain/effects_test.exs:214 test a call into a project function whose body was not read (DND-5679) control: the same call into a module outside the project reaches nothing ; test/anchor/domain/effects_test.exs:138 test a dynamic call resolved to pure implementations stays pure ; test/anchor/domain/effects_test.exs:60 test a function with no effect reachable is domain, with no evidence ; test/anchor/domain/effects_test.exs:154 test a dynamic call resolved to an effectful implementation reaches its effect ; test/anchor/domain/effects_test.exs:74 test a primitive reached through the module's own private helper is adapters ; test/anchor/domain/effects_test.exs:67 test a direct primitive call is adapters ; test/anchor/domain/effects_test.exs:164 test a dynamic call whose candidate is a declared effect reaches that effect ; test/anchor/domain/effects_test.exs:91 test a root is framework even when it reaches effects
 cd073251ea44	lib/anchor/domain/effects.ex	Anchor.Domain.Effects.opaque_reason/2	return_input	invalid	
 ```
+
+## Third run — the pure IO helpers by exact MFA (DND-5678)
+
+- **Domain:** effects
+- **Branch:** dnd-5676-effects-cfa-batch
+- **Date:** 2026-11-06
+- **Ticket:** DND-5678
+- **Code under test:** `Anchor.Domain.EffectPrimitives` (@pure_inference, inference_row?/1, inference_kind/1)
+- **Suite run:** `mix test --timeout 2000 --max-cases 2 <files>` per mutation, through test-slot; files: `test/anchor/domain/effect_primitives_test.exs`, `test/anchor/domain/graph_rules/effects_match_bucket_test.exs`
+
+Each mutation was applied to the committed tree, the named test files run, and the file restored with `git checkout --`.
+
+| Mutation | File | Change | Result |
+|---|---|---|---|
+| A | `lib/anchor/domain/effect_primitives.ex` | `and not listed?(@pure_inference, mfa)` -> `and not listed?(@pure_inference, {:none, :none, 0})` | 43 tests, 2 failures |
+| B | `lib/anchor/domain/effect_primitives.ex` | `{"IO", :iodata_length, 1},` -> `` | 43 tests, 2 failures |
+| C | `lib/anchor/domain/effect_primitives.ex` | `{"IO", :chardata_to_string, 1}` -> `{"IO", :chardata_to_string, 9}` | 43 tests, 2 failures |
+| D | `lib/anchor/domain/effect_primitives.ex` | `{"IO", :iodata_to_binary, 1},` -> `{"IO", :iodata_to_binary, :*},` | 23 tests, 1 failure |
+| E | `lib/anchor/domain/effect_primitives.ex` | `candidates = mfa \|> Inlines.candidates() \|> Enum.filter(&inference_row?/1)` -> `candidates = mfa \|> Inlines.candidates() \|> Enum.filter(&listed?(@inference_rows, &1))` | 23 tests, 1 failure |
+
+### A
+
+```
+1) test the pure IO helpers (DND-5678) iodata and chardata conversions are no primitive, in either Core spelling (Anchor.Domain.EffectPrimitivesTest)
+     test/anchor/domain/effect_primitives_test.exs:223
+     {IO, :iodata_to_binary, 1}
+     code: for mfa <- [
+     stacktrace:
+       test/anchor/domain/effect_primitives_test.exs:231: anonymous fn/2 in Anchor.Domain.EffectPrimitivesTest."test the pure IO helpers (DND-5678) iodata and chardata conversions are no primitive, in either Core spelling"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/effect_primitives_test.exs:224: (test)
+
+.........................
+
+  2) test pure IO helpers (DND-5678) a domain function converting iodata is clean; one writing with IO.puts is an issue (Anchor.Domain.GraphRules.EffectsMatchBucketTest)
+     test/anchor/domain/graph_rules/effects_match_bucket_test.exs:223
+     match (=) failed
+     code:  assert [say] = check(modules, calls)
+     left:  [say]
+     right: [
+              %Anchor.Domain.Violation{
+                line: 11,
+                trigger: "D.render/1",
+                message: "D.render/1 is in bucket domain (domain) but reaches an effect. Fix: move D.render/1 to the adapters bucket: D.render/1 -> IO.iodata_to_binary/1",
+                filename: "lib/domain/D.ex",
+                kind: :rule,
+                key: "effects|D.r
+```
+
+### B
+
+```
+1) test the pure IO helpers (DND-5678) iodata and chardata conversions are no primitive, in either Core spelling (Anchor.Domain.EffectPrimitivesTest)
+     test/anchor/domain/effect_primitives_test.exs:223
+     {IO, :iodata_length, 1}
+     code: for mfa <- [
+     stacktrace:
+       test/anchor/domain/effect_primitives_test.exs:231: anonymous fn/2 in Anchor.Domain.EffectPrimitivesTest."test the pure IO helpers (DND-5678) iodata and chardata conversions are no primitive, in either Core spelling"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/effect_primitives_test.exs:224: (test)
+
+...............
+
+  2) test pure IO helpers (DND-5678) a domain function converting iodata is clean; one writing with IO.puts is an issue (Anchor.Domain.GraphRules.EffectsMatchBucketTest)
+     test/anchor/domain/graph_rules/effects_match_bucket_test.exs:223
+     match (=) failed
+     code:  assert [say] = check(modules, calls)
+     left:  [say]
+     right: [
+              %Anchor.Domain.Violation{
+                line: 11,
+                trigger: "D.say/1",
+                message: "D.say/1 is in bucket domain (domain) but reaches an effect. Fix: move D.say/1 to the adapters bucket: D.say/1 -> IO.puts/1",
+                filename: "lib/domain/D.ex",
+                kind: :rule,
+                key: "effects|D.say/1|adapters",
+                rule_
+```
+
+### C
+
+```
+1) test the pure IO helpers (DND-5678) iodata and chardata conversions are no primitive, in either Core spelling (Anchor.Domain.EffectPrimitivesTest)
+     test/anchor/domain/effect_primitives_test.exs:223
+     {IO, :chardata_to_string, 1}
+     code: for mfa <- [
+     stacktrace:
+       test/anchor/domain/effect_primitives_test.exs:231: anonymous fn/2 in Anchor.Domain.EffectPrimitivesTest."test the pure IO helpers (DND-5678) iodata and chardata conversions are no primitive, in either Core spelling"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/effect_primitives_test.exs:224: (test)
+
+.......................
+
+  2) test pure IO helpers (DND-5678) a domain function converting iodata is clean; one writing with IO.puts is an issue (Anchor.Domain.GraphRules.EffectsMatchBucketTest)
+     test/anchor/domain/graph_rules/effects_match_bucket_test.exs:223
+     match (=) failed
+     code:  assert [say] = check(modules, calls)
+     left:  [say]
+     right: [
+              %Anchor.Domain.Violation{
+                line: 11,
+                trigger: "D.say/1",
+                message: "D.say/1 is in bucket domain (domain) but reaches an effect. Fix: move D.say/1 to the adapters bucket: D.say/1 -> IO.puts/1",
+                filename: "lib/domain/D.ex",
+                kind: :rule,
+                key: "effects|D.say/1|adapters",
+```
+
+### D
+
+```
+1) test the pure IO helpers (DND-5678) control: every other IO function is still a primitive, the same names at another arity too (Anchor.Domain.EffectPrimitivesTest)
+     test/anchor/domain/effect_primitives_test.exs:236
+     {IO, :iodata_to_binary, 2}
+     code: for mfa <- [
+     stacktrace:
+       test/anchor/domain/effect_primitives_test.exs:245: anonymous fn/2 in Anchor.Domain.EffectPrimitivesTest."test the pure IO helpers (DND-5678) control: every other IO function is still a primitive, the same names at another arity too"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/effect_primitives_test.exs:237: (test)
+
+....................
+Finished in 0.08 seconds (0.08s async, 0.00s sync)
+23 tests, 1 failure
+```
+
+### E
+
+```
+1) test the pure IO helpers (DND-5678) iodata and chardata conversions are no primitive, in either Core spelling (Anchor.Domain.EffectPrimitivesTest)
+     test/anchor/domain/effect_primitives_test.exs:223
+     {IO, :iodata_to_binary, 1}
+     code: for mfa <- [
+     stacktrace:
+       test/anchor/domain/effect_primitives_test.exs:232: anonymous fn/2 in Anchor.Domain.EffectPrimitivesTest."test the pure IO helpers (DND-5678) iodata and chardata conversions are no primitive, in either Core spelling"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/effect_primitives_test.exs:224: (test)
+
+........
+Finished in 0.08 seconds (0.08s async, 0.00s sync)
+23 tests, 1 failure
+```
+
+### Rows that stayed green
+
+- D (the exemption widened from arity 1 to every arity, a name pattern) reddened only the control that `IO.iodata_to_binary/2` is still a primitive: the exemption is by MFA, and that control is its guard. The rule test calls arity 1 only.
+- E (the kind ignoring the exemption) reddened only the kind assertion; `primitive?/2` does not read the kind.
+
+### Regression (bug fix, before and after)
+
+`mix test --timeout 2000 --max-cases 2 test/anchor/domain/effect_primitives_test.exs test/anchor/domain/graph_rules/effects_match_bucket_test.exs test/anchor/domain/sabotage/diff_hunks_test.exs`, lib at de23330 (before) and at the fix (after):
+
+```
+before: 54 tests, 2 failures
+  2) test pure IO helpers (DND-5678) a domain function converting iodata is clean; one writing with IO.puts is an issue (Anchor.Domain.GraphRules.EffectsMatchBucketTest)
+     code:  assert [say] = check(modules, calls)
+     right: [%Anchor.Domain.Violation{trigger: "D.render/1",
+              message: "D.render/1 is in bucket domain (domain) but reaches an effect. Fix: move D.render/1 to the adapters bucket: D.render/1 -> IO.iodata_to_binary/1", ...
+after: 54 tests, 0 failures
+```

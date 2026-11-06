@@ -54,6 +54,11 @@ defmodule Anchor.Domain.EffectPrimitives do
       `:crypto.rand_seed`, `System.unique_integer`/`:erlang.unique_integer`;
     * `:effect`: every other row.
 
+  Three functions of `IO` are pure and no primitive, named by exact MFA
+  (DND-5678): `IO.iodata_to_binary/1`, `IO.iodata_length/1` and
+  `IO.chardata_to_string/1`, in either Core spelling (`:erlang.iolist_to_binary/1`
+  is `IO.iodata_to_binary/1`).
+
   `Enum.random/1` and its kin are stdlib functions that call `:rand` inside
   `Enum`, where the graph does not look, so they are rows of their own.
   `build/2` adds `architecture.effects` and every project module that
@@ -228,6 +233,16 @@ defmodule Anchor.Domain.EffectPrimitives do
   @inference_rows Enum.map(@inference_modules, &{&1, :*, :*}) ++
                     @inference_functions ++ @clock_functions ++ @random_functions
 
+  # DND-5678: the functions of an effect module above that are pure, by exact
+  # MFA (never by a name pattern): converting iodata or chardata touches no
+  # device. `IO.iodata_to_binary/1` reaches Core as `:erlang.iolist_to_binary/1`
+  # and `IO.iodata_length/1` as `:erlang.iolist_size/1`.
+  @pure_inference [
+    {"IO", :iodata_to_binary, 1},
+    {"IO", :iodata_length, 1},
+    {"IO", :chardata_to_string, 1}
+  ]
+
   @typedoc """
   The effect primitives of one run (`build/2`): the extra tokens of
   `architecture.effects` and the project's `Ecto.Repo` modules, beside the
@@ -301,7 +316,7 @@ defmodule Anchor.Domain.EffectPrimitives do
   def primitive?(%{extra: extra, repos: repos}, {module, function, arity} = mfa) do
     MapSet.member?(repos, module) or
       Enum.any?(extra, &extra_matches?(&1, module, function, arity)) or
-      mfa |> Inlines.candidates() |> Enum.any?(&listed?(@inference_rows, &1))
+      mfa |> Inlines.candidates() |> Enum.any?(&inference_row?/1)
   end
 
   @doc """
@@ -313,12 +328,12 @@ defmodule Anchor.Domain.EffectPrimitives do
   """
   @spec inference_kind(mfa()) :: :clock | :random | :effect | nil
   def inference_kind(mfa) do
-    candidates = Inlines.candidates(mfa)
+    candidates = mfa |> Inlines.candidates() |> Enum.filter(&inference_row?/1)
 
     cond do
       Enum.any?(candidates, &listed?(@clock_functions, &1)) -> :clock
       Enum.any?(candidates, &listed?(@random_functions, &1)) -> :random
-      Enum.any?(candidates, &listed?(@inference_rows, &1)) -> :effect
+      candidates != [] -> :effect
       true -> nil
     end
   end
@@ -369,6 +384,10 @@ defmodule Anchor.Domain.EffectPrimitives do
 
   defp extra_matches?(%FunctionRef{} = ref, module, function, arity),
     do: FunctionRef.matches?(ref, module, function, arity)
+
+  # A default inference row names `mfa`, and no pure exception does.
+  defp inference_row?(mfa),
+    do: listed?(@inference_rows, mfa) and not listed?(@pure_inference, mfa)
 
   defp listed?(rows, {module, function, arity}) do
     name = module_name(module)
