@@ -252,6 +252,14 @@ defmodule AnchorFixtures.Attribution.CleanCases do
     end)
   end
 
+  # The runner took no label from this test's last message, so only exec_on_exit's
+  # own label reaches the on_exit callback's server call.
+  test "on_exit after the test lost its label" do
+    on_exit(fn -> :ok = GenServer.call(server(), :on_exit_lost_server) end)
+    send(clean(), {:send, self(), :ping})
+    receive(do: (:ping -> :ok))
+  end
+
   @tag skip: "a skipped test still opens a window, and has no process"
   test "skipped" do
     flunk("never runs")
