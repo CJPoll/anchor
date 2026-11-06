@@ -291,8 +291,10 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
         }
       })
 
-    assert {%Anchor.Domain.Model{aggregate_analysis: analysis}, _issues} =
+    assert {%Anchor.Domain.Model{} = model, _issues} =
              Anchor.Domain.Model.build(graph, config, %{})
+
+    analysis = Anchor.Domain.Model.aggregate_analysis(model)
 
     refute MapSet.member?(analysis.always_in_transaction, {fw, :entry, 0})
     assert MapSet.member?(analysis.always_in_transaction, {@n, :n2g, 0})
@@ -314,9 +316,10 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
         }
       })
 
-    assert {%Anchor.Domain.Model{aggregate_analysis: nil, aggregates: index}, _issues} =
+    assert {%Anchor.Domain.Model{aggregates: index} = model, _issues} =
              Anchor.Domain.Model.build(graph, config, %{})
 
+    assert Anchor.Domain.Model.aggregate_analysis(model) == nil
     assert index.none == "no database"
   end
 end

@@ -25,7 +25,8 @@ defmodule Anchor.Domain.GraphRule do
   that runs needs `:cfa`, the analysis is not run and `Model.cfa` is `nil`.
   `[:effects]` (DND-5447) asks for the effect inference
   (`Anchor.Domain.Effects`), stored on `Model.effects`; it reads the flow
-  analysis, so a rule that needs it names `:cfa` too.
+  analysis, so a rule that needs it names `:cfa` too. `[:aggregate_analysis]`
+  (DND-5459) asks for the write analysis, stored on `Model.aggregate_analysis`.
   `Anchor.Domain.GraphRules.needs/1` reads and checks it.
   """
 
@@ -36,7 +37,7 @@ defmodule Anchor.Domain.GraphRule do
   @callback check(Anchor.Domain.Model.t(), rule :: map()) :: [Anchor.Domain.Violation.t()]
 
   @doc "The analyses this rule reads from the model (`:cfa`, `Model.cfa`); `[]` when absent."
-  @callback needs() :: [:cfa | :effects]
+  @callback needs() :: [:aggregate_analysis | :cfa | :effects]
 
   @optional_callbacks needs: 0
 end

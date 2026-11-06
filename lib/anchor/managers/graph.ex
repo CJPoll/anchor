@@ -167,6 +167,7 @@ defmodule Anchor.Managers.Graph do
       graph_rules: Keyword.get(deps, :graph_rules, GraphRules.all()),
       cfa: Keyword.get(deps, :cfa, &analyze_cfa/1),
       effects: Keyword.get(deps, :effects, &Effects.infer/2),
+      aggregate_analysis: Keyword.get(deps, :aggregate_analysis, &Model.aggregate_analysis/1),
       behaviour_source: Keyword.get(deps, :behaviour_source, BehaviourReader)
     }
   end
@@ -244,11 +245,13 @@ defmodule Anchor.Managers.Graph do
     model = %{model | cfa: analysis(cfa)}
     effects = effects(rules, model, cfa, deps)
     model = %{model | effects: effects_analysis(effects)}
+    writes = writes(rules, model, deps)
+    model = %{model | aggregate_analysis: writes_analysis(writes)}
 
     deps =
       Map.merge(deps, %{base: base_config(deps.git_base, request, config), now: config.rules})
 
-    analyses = %{cfa: cfa, effects: effects}
+    analyses = %{cfa: cfa, effects: effects, writes: writes}
     ran = Enum.map(rules, &run_rule(&1, model, analyses, config.path, request, deps))
 
     artifact_notes =
@@ -328,6 +331,27 @@ defmodule Anchor.Managers.Graph do
 
   defp effects_analysis({:ok, %Effects{} = effects}), do: effects
   defp effects_analysis(_none_or_crashed), do: nil
+
+  # DND-5459: the write analysis, like the others: once, only when a rule that
+  # runs needs it, guarded.
+  defp writes(rules, model, deps) do
+    if Enum.any?(rules, fn {_rule, _module, needs} -> needs?(needs, :aggregate_analysis) end),
+      do: guarded(fn -> writes!(deps.aggregate_analysis.(model)) end),
+      else: nil
+  end
+
+  defp writes!(%Analysis{} = analysis), do: analysis
+  defp writes!(nil), do: nil
+
+  defp writes!(other),
+    do:
+      raise(
+        ArgumentError,
+        "the analysis returned #{inspect(other, limit: 5)}, not an %Analysis{}"
+      )
+
+  defp writes_analysis({:ok, %Analysis{} = analysis}), do: analysis
+  defp writes_analysis(_none_or_crashed), do: nil
 
   # The analysis runs once, and only when a rule that runs needs it: `nil`
   # when none does, else the guarded result.
@@ -556,7 +580,7 @@ defmodule Anchor.Managers.Graph do
 
   defp run_check(
          {:ok, needs},
-         %{effects: {:crashed, kind, reason, stacktrace}},
+         %{effects: {:crashed, kind, reason, stacktrace}} = analyses,
          rule,
          module,
          model,
@@ -566,6 +590,21 @@ defmodule Anchor.Managers.Graph do
       do:
         {:crashed,
          rule |> Failures.rule_effects_crashed(kind, reason, stacktrace, path) |> fail_closed()},
+      else: run_check({:ok, needs}, %{analyses | effects: nil}, rule, module, model, path)
+  end
+
+  defp run_check(
+         {:ok, needs},
+         %{writes: {:crashed, kind, reason, stacktrace}},
+         rule,
+         module,
+         model,
+         path
+       ) do
+    if :aggregate_analysis in needs,
+      do:
+        {:crashed,
+         rule |> Failures.rule_writes_crashed(kind, reason, stacktrace, path) |> fail_closed()},
       else: check(rule, module, model, path)
   end
 

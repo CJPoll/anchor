@@ -40,6 +40,9 @@ defmodule Anchor.Domain.GraphRules.AggregateWriteSources do
   @impl Anchor.Domain.GraphRule
   def rule_type, do: :aggregate_write_sources
 
+  @impl Anchor.Domain.GraphRule
+  def needs, do: [:aggregate_analysis]
+
   @impl Anchor.Domain.RuleShape
   def shape(_rule),
     do:

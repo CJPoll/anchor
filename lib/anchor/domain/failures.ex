@@ -530,6 +530,24 @@ defmodule Anchor.Domain.Failures do
   end
 
   @doc """
+  The issue for a graph rule whose needed write analysis
+  (`Anchor.Domain.Aggregates.Analysis`, DND-5459) crashed: it is not run, since
+  without the writes it would check nothing.
+  """
+  @spec rule_writes_crashed(map(), atom(), term(), Exception.stacktrace(), String.t() | nil) ::
+          Violation.t()
+  def rule_writes_crashed(rule, kind, reason, stacktrace, config_path) do
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "#{rule_label(rule)} could not run: the write analysis it needs " <>
+        "(Anchor.Domain.Aggregates.Analysis) crashed: " <>
+        "#{crash_summary(kind, reason, stacktrace)}, so it checked nothing. " <>
+        "Fix: this is an Anchor bug; file it with this line."
+    )
+  end
+
+  @doc """
   The issue for an `effects_match_bucket` rule (DND-5447) that selects modules
   of a judged bucket (`infer: true`, role domain, adapters or managers) of
   which not one public function was analysed: the bucket is below the rule's

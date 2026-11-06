@@ -108,6 +108,13 @@ defmodule Anchor.Domain.FailuresGraphTest do
         e -> Failures.rule_effects_crashed(rule, :error, e, __STACKTRACE__, nil)
       end
 
+    writes_crashed =
+      try do
+        raise "writes blew up"
+      rescue
+        e -> Failures.rule_writes_crashed(rule, :error, e, __STACKTRACE__, nil)
+      end
+
     [
       {"graph_no_architecture", Failures.graph_no_architecture("proj/.anchor.yml"),
        "proj/.anchor.yml",
@@ -263,6 +270,12 @@ defmodule Anchor.Domain.FailuresGraphTest do
        [
          ~s|rule 2 (id: "web", layering) could not run: the effect inference it needs | <>
            "(Anchor.Domain.Effects) crashed: RuntimeError: effects blew up",
+         "so it checked nothing. Fix: this is an Anchor bug; file it with this line."
+       ]},
+      {"rule_writes_crashed", writes_crashed, ".anchor.yml",
+       [
+         ~s|rule 2 (id: "web", layering) could not run: the write analysis it needs | <>
+           "(Anchor.Domain.Aggregates.Analysis) crashed: RuntimeError: writes blew up",
          "so it checked nothing. Fix: this is an Anchor bug; file it with this line."
        ]},
       {"effects_bucket_unanalysed",

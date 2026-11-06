@@ -25,10 +25,8 @@ defmodule Anchor.Domain.Model do
     * `aggregate_analysis` — the write analysis
       (`%Anchor.Domain.Aggregates.Analysis{}`, DND-5459): every write, its
       source, every transaction's write set and the writes outside
-      transactions. Built only when the config has an `aggregates:` section
-      that is not `declare: none` (DND-5659),
-      else `nil`. Its roots are the public functions of the framework
-      bucket's modules (none when no bucket has the framework role);
+      transactions. Set by the runner, only when a rule that runs needs it
+      (`aggregate_analysis/1` builds it), else `nil`;
     * `config` — the `%Anchor.Config{}`;
     * `cfa` — the higher-order flow analysis (`%Anchor.Domain.Cfa{}`,
       DND-5574), set by the runner only when a rule that runs declares
@@ -125,7 +123,6 @@ defmodule Anchor.Domain.Model do
       classification: classification,
       config: config,
       aggregates: Index.build(config.aggregates, graph),
-      aggregate_analysis: analysis(graph, config, classification),
       facts: Map.new(facts, &{&1.module, &1})
     }
 
@@ -150,20 +147,6 @@ defmodule Anchor.Domain.Model do
     }
   end
 
-  # DND-5459: the write analysis, only with an `aggregates:` section. Its
-  # roots are the framework bucket's public functions; with no framework
-  # bucket, every public function with no project caller is one. Under
-  # `declare: none` (DND-5659) there is nothing to analyse: the
-  # aggregate_declarations rule reports every module that persists.
-  defp analysis(_graph, %Config{aggregates: nil}, _classification), do: nil
-
-  defp analysis(_graph, %Config{aggregates: %{none: reason}}, _classification) when reason != nil,
-    do: nil
-
-  defp analysis(graph, %Config{aggregates: aggregates}, classification) do
-    Analysis.build(graph, aggregates, roots: roots(graph, classification))
-  end
-
   defp roots(graph, classification) do
     framework = for {module, %Classification{role: :framework}} <- classification, do: module
 
@@ -176,6 +159,24 @@ defmodule Anchor.Domain.Model do
           into: MapSet.new(),
           do: {module, name, arity}
     end
+  end
+
+  @doc """
+  The write analysis of `model` (DND-5459), `nil` with no `aggregates:` section.
+  Its roots are the framework bucket's public functions; with no framework
+  bucket, every public function with no project caller is one. Under
+  `declare: none` (DND-5659) there is nothing to analyse: the
+  aggregate_declarations rule reports every module that persists.
+  """
+  @spec aggregate_analysis(t()) :: Analysis.t() | nil
+  def aggregate_analysis(%__MODULE__{config: %Config{aggregates: nil}}), do: nil
+
+  def aggregate_analysis(%__MODULE__{config: %Config{aggregates: %{none: reason}}})
+      when reason != nil,
+      do: nil
+
+  def aggregate_analysis(%__MODULE__{config: %Config{aggregates: aggregates}} = model) do
+    Analysis.build(model.graph, aggregates, roots: roots(model.graph, model.classification))
   end
 
   @doc """

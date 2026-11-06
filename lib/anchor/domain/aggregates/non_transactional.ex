@@ -3,7 +3,7 @@ defmodule Anchor.Domain.Aggregates.NonTransactional do
   The writes made outside every transaction (DND-5459) — a **Domain** module
   (ADR 001). Pure. DND-5477's atomicity rule reads them.
 
-  `build/2`: for each function `f`, `nontx[f]` is `f`'s `Repo` and
+  `build/3`: for each function `f`, `nontx[f]` is `f`'s `Repo` and
   `write_functions` writes outside every transaction body in `f`, plus
   `nontx[g]` for every project function `g` that `f` calls outside a body;
   per strongly connected component, so recursion terminates
@@ -17,7 +17,7 @@ defmodule Anchor.Domain.Aggregates.NonTransactional do
   Each entry is complete when no dynamic call and no unresolved write is
   reached.
 
-  `always_in_transaction/2`: the functions that are not roots and whose every
+  `always_in_transaction/3`: the functions that are not roots and whose every
   project call site is inside a transaction body or is a `Multi.run` callback
   (inline, or a capture in `run_callbacks`), or inside a function that is
   itself always in a transaction (the greatest fixpoint, so mutual recursion
