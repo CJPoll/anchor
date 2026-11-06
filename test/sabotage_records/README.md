@@ -93,6 +93,10 @@ before coining a synonym.
   `Anchor.Domain.StructTypes`, `Anchor.Domain.StructFlow`,
   `Anchor.Domain.GraphRules.StructOwnedByModuleFlow`, and the scope it shares
   with the AST rule, `Anchor.Domain.StructOwnership`.
+- `mix` and `record_file` — the words `mix anchor.sabotage run`'s own records
+  derive (`domain_from: module` after `domain_strip_prefixes`) for
+  `Mix.Tasks.Anchor.Sabotage` and `Anchor.Adapters.RecordFile`; a hand record
+  for that code stays under `sabotage`.
 - `sabotage` — the causal sabotage generator (DND-5471): every
   `Anchor.Domain.Sabotage.*` module that makes mutants (`Mutator`,
   `Operators`, `OrphanCheck`, `SourceTree`, `Patch`, `MutantId`,
@@ -104,7 +108,8 @@ before coining a synonym.
   `GitStatus` and `TestRunner`, and `Anchor.Sabotage.ExUnitFormatter`; the
   survivors list (DND-5483: `Survivors`) and the replay (DND-5485: `Replay`,
   `KillerRef`, `TestRunRefusal`, `Anchor.Managers.Sabotage.Replay`); behaviour
-  locality (DND-5489: `BehaviourMap`, `Anchor.Managers.Sabotage.Behaviours`).
+  locality (DND-5489: `BehaviourMap`, `Anchor.Managers.Sabotage.Behaviours`); verify (DND-5516: `Verify`, `Anchor.Managers.Sabotage.Verify`) and the
+  nightly scan (DND-5490: `ScanReport`, `Scope.all/1`, `Plan.shard/3`).
   `sabotage_scope` stays the word for the diff scope.
 - `dependency_analyzer` — `Anchor.Domain.DependencyAnalyzer`, the pure AST
   walk behind every dependency fact (module names, references, calls, uses,
