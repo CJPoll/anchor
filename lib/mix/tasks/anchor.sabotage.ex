@@ -271,7 +271,7 @@ defmodule Mix.Tasks.Anchor.Sabotage do
   @doc false
   # The facts `behaviours` passes the Manager, from its argv; exposed for its test.
   @spec behaviours_facts([String.t()]) :: {:ok, map()} | :usage
-  defp behaviours_facts(argv) do
+  def behaviours_facts(argv) do
     switches = [coverage: :string, format: :string, write_baseline: :boolean, base: :string]
 
     with {parsed, [], []} <- OptionParser.parse(argv, strict: switches),
