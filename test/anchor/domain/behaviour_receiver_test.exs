@@ -119,6 +119,25 @@ defmodule Anchor.Domain.BehaviourReceiverTest do
               def swapped(args, suite) when is_list(args), do: suite.run(args)
               def swapped(suite, _other), do: suite.run([])
 
+              # A capture on an untyped parameter beside a typed direct call:
+              # the same edge shape, so the @spec must not narrow it.
+              @spec captured(#{@ns}.Port.t(), module()) :: {:ok, function()}
+              def captured(suite, other) do
+                suite.run([])
+                {:ok, &other.run/1}
+              end
+
+              # Only a capture, on a typed parameter: that is evidence.
+              @spec captured_typed(#{@ns}.Port.t()) :: function()
+              def captured_typed(suite), do: &suite.run/1
+
+              # A capture on a name bound inside: no parameter.
+              @spec captured_inner(#{@ns}.Port.t(), [module()]) :: function()
+              def captured_inner(_port, modules) do
+                inner = hd(modules)
+                &inner.run/1
+              end
+
               # A behaviour no project module implements: no evidence of
               # where the call goes, so it is judged against every exporter.
               @spec lonely(#{@ns}.Lonely.t(), [String.t()]) :: :ok
@@ -208,6 +227,26 @@ defmodule Anchor.Domain.BehaviourReceiverTest do
       graph: graph
     } do
       assert BehaviourReceiver.behaviour(graph, call(graph, :mixed, 2)) == :none
+    end
+
+    # Whole-MR critic: a capture is the same edge as a direct call, and its
+    # receiver was never read, so another parameter's @spec narrowed it.
+    test "a capture on an untyped parameter keeps the function's calls fanned out", %{
+      graph: graph
+    } do
+      for %Call{from: {_module, :captured, 2}} = call <- graph.calls do
+        assert BehaviourReceiver.behaviour(graph, call) == :none
+        assert DynamicCalls.targets(graph, call) == Enum.sort([mod(Impl), task()])
+      end
+
+      assert {{mod(Manager), :captured, 2}, :run, 1} in DynamicCalls.tally(graph).fanned_out
+    end
+
+    test "a capture on a typed parameter narrows, one on an inner name does not", %{graph: graph} do
+      assert BehaviourReceiver.behaviour(graph, call(graph, :captured_typed, 1)) ==
+               {:ok, mod(Port)}
+
+      assert BehaviourReceiver.behaviour(graph, call(graph, :captured_inner, 2)) == :none
     end
 
     # Review floor (2026-11-03): the name-to-position map was built across

@@ -444,3 +444,108 @@ Run summary: `13 tests, 1 failure`
        test/anchor/domain/behaviour_receiver_test.exs:227: (test)
 ```
 
+
+## Whole-MR critic (DND-5633): a capture's receiver is read like a direct call's
+
+**Code under test:** `Anchor.Domain.BehaviourReceiver.behaviour/2`, its receiver collection in `receiver_params/3`.
+
+**Found by:** the whole-MR critic on 87b1e6f: `CoreWalker` records `&other.run/1` as `{:dynamic, :run, 1, :variable}`, the same edge as `suite.run(x)`, but its `erlang:make_fun` shape was never read as a receiver. So in `def f(suite, other), do: {suite.run(1), &other.run/1}` with `suite` typed, the `@spec` narrowed the capture too, and a forbidden edge through `other` went unjudged. Every source of that edge shape is now read: `grep ':variable' core_walker.ex` shows the direct call (line 192), the capture (line 153) and `apply V(...)` (line 224, name `nil`, which `behaviour/2` refuses).
+
+**Suite run:** CP-R is the new tests on the unfixed code. CP-A and CP-B were run by `sab.py` (wait 1.1 s, write, run, restore, wait 1.1 s). With every source restored: `20 tests, 0 failures` over behaviour_receiver and dynamic_calls tests; `MIX_ENV=dev mix anchor.graph` reports 0 violations.
+
+| ID | Mutation | Tests | Result | Failing tests |
+|---|---|---|---|---|
+| CP-R | regression: a capture's receiver is not read, with the new tests (`lib/anchor/domain/behaviour_receiver.ex`) | `behaviour_receiver_test.exs` | `15 tests, 2 failures` (red) | behaviour/2 and DynamicCalls.targets/2 a capture on an untyped parameter keeps the function's calls fanned out; behaviour/2 and DynamicCalls.targets/2 a capture on a typed parameter narrows, one on an inner name does not |
+| CP-A | a capture's arguments are not read (`lib/anchor/domain/behaviour_receiver.ex`) | `behaviour_receiver_test.exs` | `15 tests, 2 failures` (red) | behaviour/2 and DynamicCalls.targets/2 a capture on an untyped parameter keeps the function's calls fanned out; behaviour/2 and DynamicCalls.targets/2 a capture on a typed parameter narrows, one on an inner name does not |
+| CP-B | a capture of another arity is read as this one (`lib/anchor/domain/behaviour_receiver.ex`) | `behaviour_receiver_test.exs` | `15 tests, 2 failures` (red) | behaviour/2 and DynamicCalls.targets/2 a capture on a typed parameter narrows, one on an inner name does not; behaviour/2 and DynamicCalls.targets/2 a capture on an untyped parameter keeps the function's calls fanned out |
+
+### CP-R: regression: a capture's receiver is not read, with the new tests
+
+Run summary: `15 tests, 2 failures`
+
+```text
+  1) test behaviour/2 and DynamicCalls.targets/2 a capture on an untyped parameter keeps the function's calls fanned out (Anchor.Domain.BehaviourReceiverTest)
+     test/anchor/domain/behaviour_receiver_test.exs:234
+     Assertion with == failed
+     code:  assert BehaviourReceiver.behaviour(graph, call) == :none
+     left:  {:ok, AnchorFixtures.BehaviourReceiverTest.Port}
+     right: :none
+     stacktrace:
+       test/anchor/domain/behaviour_receiver_test.exs:238: anonymous fn/3 in Anchor.Domain.BehaviourReceiverTest."test behaviour/2 and DynamicCalls.targets/2 a capture on an untyped parameter keeps the function's calls fanned out"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/behaviour_receiver_test.exs:237: (test)
+
+....
+
+  2) test behaviour/2 and DynamicCalls.targets/2 a capture on a typed parameter narrows, one on an inner name does not (Anchor.Domain.BehaviourReceiverTest)
+     test/anchor/domain/behaviour_receiver_test.exs:245
+     Assertion with == failed
+     code:  assert BehaviourReceiver.behaviour(graph, call(graph, :captured_typed, 1)) == {:ok, mod(Port)}
+     left:  :none
+     right: {:ok, AnchorFixtures.BehaviourReceiverTest.Port}
+     stacktrace:
+       test/anchor/domain/behaviour_receiver_test.exs:246: (test)
+
+......
+```
+
+### CP-A: a capture's arguments are not read
+
+Run summary: `15 tests, 2 failures`
+
+```text
+  1) test behaviour/2 and DynamicCalls.targets/2 a capture on an untyped parameter keeps the function's calls fanned out (Anchor.Domain.BehaviourReceiverTest)
+     test/anchor/domain/behaviour_receiver_test.exs:234
+     Assertion with == failed
+     code:  assert BehaviourReceiver.behaviour(graph, call) == :none
+     left:  {:ok, AnchorFixtures.BehaviourReceiverTest.Port}
+     right: :none
+     stacktrace:
+       test/anchor/domain/behaviour_receiver_test.exs:238: anonymous fn/3 in Anchor.Domain.BehaviourReceiverTest."test behaviour/2 and DynamicCalls.targets/2 a capture on an untyped parameter keeps the function's calls fanned out"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/behaviour_receiver_test.exs:237: (test)
+
+...
+
+  2) test behaviour/2 and DynamicCalls.targets/2 a capture on a typed parameter narrows, one on an inner name does not (Anchor.Domain.BehaviourReceiverTest)
+     test/anchor/domain/behaviour_receiver_test.exs:245
+     Assertion with == failed
+     code:  assert BehaviourReceiver.behaviour(graph, call(graph, :captured_typed, 1)) == {:ok, mod(Port)}
+     left:  :none
+     right: {:ok, AnchorFixtures.BehaviourReceiverTest.Port}
+     stacktrace:
+       test/anchor/domain/behaviour_receiver_test.exs:246: (test)
+
+.
+```
+
+### CP-B: a capture of another arity is read as this one
+
+Run summary: `15 tests, 2 failures`
+
+```text
+  1) test behaviour/2 and DynamicCalls.targets/2 a capture on a typed parameter narrows, one on an inner name does not (Anchor.Domain.BehaviourReceiverTest)
+     test/anchor/domain/behaviour_receiver_test.exs:245
+     Assertion with == failed
+     code:  assert BehaviourReceiver.behaviour(graph, call(graph, :captured_typed, 1)) == {:ok, mod(Port)}
+     left:  :none
+     right: {:ok, AnchorFixtures.BehaviourReceiverTest.Port}
+     stacktrace:
+       test/anchor/domain/behaviour_receiver_test.exs:246: (test)
+
+.....
+
+  2) test behaviour/2 and DynamicCalls.targets/2 a capture on an untyped parameter keeps the function's calls fanned out (Anchor.Domain.BehaviourReceiverTest)
+     test/anchor/domain/behaviour_receiver_test.exs:234
+     Assertion with == failed
+     code:  assert BehaviourReceiver.behaviour(graph, call) == :none
+     left:  {:ok, AnchorFixtures.BehaviourReceiverTest.Port}
+     right: :none
+     stacktrace:
+       test/anchor/domain/behaviour_receiver_test.exs:238: anonymous fn/3 in Anchor.Domain.BehaviourReceiverTest."test behaviour/2 and DynamicCalls.targets/2 a capture on an untyped parameter keeps the function's calls fanned out"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/behaviour_receiver_test.exs:237: (test)
+
+.....
+```
+

@@ -14,8 +14,8 @@ defmodule Anchor.Domain.BehaviourReceiver do
 
     * `recv` is a parameter of the calling function, used as nothing but that
       parameter: no other binding in the function (a nested `fn`, a `let`, a
-      clause pattern) has its name, and every call of `f/arity` in the
-      function on a variable receiver is on such a parameter;
+      clause pattern) has its name, and every call or capture of `f/arity` in
+      the function on a variable receiver is on such a parameter;
     * the function has exactly one `@spec`, and it types each of those
       parameters as `B.t()` for one module `B` of the project;
     * `B` declares `@type t :: module()` and `f/arity` among its
@@ -85,8 +85,10 @@ defmodule Anchor.Domain.BehaviourReceiver do
   end
 
   # The parameter positions of the function's every `call V:'name'(args)` on
-  # a variable `V` with `arity` arguments; `:none` when one is on a variable
-  # that is not a parameter, or a parameter's name is bound again inside.
+  # a variable `V` with `arity` arguments, and every capture `&V.name/arity`
+  # (`Anchor.Domain.Graph.CoreWalker` records both as the one edge); `:none`
+  # when one is on a variable that is not a parameter, or a parameter's name
+  # is bound again inside.
   defp receiver_params(core, name, arity) do
     {aliases, nested, inner} = parameters(core)
     rebound = inner |> Enum.map(&rebound/1) |> Enum.reduce(nested, &MapSet.union/2)
@@ -95,7 +97,10 @@ defmodule Anchor.Domain.BehaviourReceiver do
       Enum.flat_map(inner, fn tree ->
         :cerl_trees.fold(
           fn node, acc ->
-            if call_on_var?(node, name, arity), do: [var(node) | acc], else: acc
+            case receiver_var(node, name, arity) do
+              nil -> acc
+              receiver -> [receiver | acc]
+            end
           end,
           [],
           tree
@@ -164,13 +169,35 @@ defmodule Anchor.Domain.BehaviourReceiver do
     if Enum.all?(vars, &:cerl.is_c_var/1), do: Enum.map(vars, &:cerl.var_name/1), else: nil
   end
 
-  defp call_on_var?(node, name, arity) do
-    :cerl.is_c_call(node) and :cerl.is_c_var(:cerl.call_module(node)) and
-      :cerl.is_literal(:cerl.call_name(node)) and
-      :cerl.concrete(:cerl.call_name(node)) == name and :cerl.call_arity(node) == arity
+  # The variable a direct call or a capture of `name/arity` is on, or nil.
+  defp receiver_var(node, name, arity) do
+    if :cerl.is_c_call(node),
+      do: call_receiver(:cerl.call_module(node), :cerl.call_name(node), node, name, arity),
+      else: nil
   end
 
-  defp var(node), do: node |> :cerl.call_module() |> :cerl.var_name()
+  defp call_receiver(module, called, node, name, arity) do
+    cond do
+      :cerl.is_c_var(module) and literal?(called, name) and :cerl.call_arity(node) == arity ->
+        :cerl.var_name(module)
+
+      literal?(module, :erlang) and literal?(called, :make_fun) ->
+        capture_receiver(:cerl.call_args(node), name, arity)
+
+      true ->
+        nil
+    end
+  end
+
+  defp capture_receiver([module, fun, fun_arity], name, arity) do
+    if :cerl.is_c_var(module) and literal?(fun, name) and literal?(fun_arity, arity),
+      do: :cerl.var_name(module),
+      else: nil
+  end
+
+  defp capture_receiver(_args, _name, _arity), do: nil
+
+  defp literal?(node, value), do: :cerl.is_literal(node) and :cerl.concrete(node) == value
 
   # Every variable name bound inside the body: a nested fun's parameters, a
   # let's variables, a clause's pattern variables, a try's and a receive's.
