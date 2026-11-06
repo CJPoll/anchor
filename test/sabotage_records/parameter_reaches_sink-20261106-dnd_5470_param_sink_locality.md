@@ -6,7 +6,7 @@
 - **Code under test:** `Anchor.Domain.GraphRules.ParameterReachesSink`, `Anchor.Domain.Core.mfa_references/1`, `Anchor.Domain.DynamicCalls.computed_name_count/1`, the `:demand` wiring in `Anchor.Managers.Graph`, `Anchor.Domain.GraphReport.parameter_sinks/4` and its note, and the two rows of `Anchor.Domain.Demand.Transfer` the QA plan names.
 - **Suite run:** each mutation ran `mix test --timeout 2000 --max-cases 2 <its test files>` inside one `test-slot`, by a driver that applied it, ran the files and restored the source. The checkout's absolute path in the output reads `<worktree>`.
 
-The first table holds the last full run, and each of its sections shows the first failure, cut at 70 lines. It was rewritten in place through the critic's rounds, so `## Measured zeros` and `## Retired mutants` keep what those rewrites dropped, and `## Second run` is appended after it.
+The first table holds the last full run, and each of its sections shows the first failure, cut at 70 lines. It was rewritten in place through the critic's rounds, so `## Measured zeros` and `## Retired mutants` keep what those rewrites dropped, and `## Second run` and `## Third run` are appended after it.
 
 **Not run:** the chain's recursion guard (`MapSet.member?(seen, step)` read as `false`). Without it `steps/3` does not terminate, so its mutant spins and allocates for the whole 2000 ms bound on the desktop (the sabotage load rule). `count/2` in the canary and `D.rec/1` in the Domain test are the rows it would fail.
 
@@ -1503,4 +1503,158 @@ Run summary: `37 tests, 2 failures`
        test/anchor/domain/graph_rules/parameter_reaches_sink_test.exs:341: (test)
 
 .......
+```
+
+## Third run
+
+The critic's eighth round found nothing held which number lands in which field of the counts, so these mutations ran against `40c989d`, through the same driver and `test-slot`.
+
+| # | Mutation | Tests run | Result | Failing tests |
+|---|---|---|---|---|
+| PR-S1 | precise and any swap (`lib/anchor/domain/graph_report.ex`) | `graph_report_test.exs`, `parameter_reaches_sink_canary_test.exs` | `33 tests, 2 failures` (red) | parameter_sinks/4: each number lands in its own field, summed over the rules; the summary prints the precision counts, and the apply site that fell to any |
+| PR-S2 | the summary swaps exempt and not analysed (`lib/anchor/domain/graph_report.ex`) | `graph_report_test.exs`, `parameter_reaches_sink_canary_test.exs` | `33 tests, 2 failures` (red) | parameter_sinks/4: each number lands in its own field, summed over the rules; the summary prints the precision counts, and the apply site that fell to any |
+| PR-S3 | the summary swaps precise and any (`lib/anchor/domain/graph_report.ex`) | `graph_report_test.exs`, `parameter_reaches_sink_canary_test.exs` | `33 tests, 2 failures` (red) | parameter_sinks/4: each number lands in its own field, summed over the rules; the summary prints the precision counts, and the apply site that fell to any |
+| PR-S4 | the summary swaps imprecise and computed names (`lib/anchor/domain/graph_report.ex`) | `graph_report_test.exs`, `parameter_reaches_sink_canary_test.exs` | `33 tests, 2 failures` (red) | parameter_sinks/4: each number lands in its own field, summed over the rules; the summary prints the precision counts, and the apply site that fell to any |
+| PR-S5 | two rules' counts are not summed (`lib/anchor/domain/graph_report.ex`) | `graph_report_test.exs` | `30 tests, 1 failure` (red) | parameter_sinks/4: each number lands in its own field, summed over the rules |
+
+### PR-S1 — precise and any swap
+
+Run summary: `33 tests, 2 failures`
+
+```text
+1) test parameter_sinks/4: each number lands in its own field, summed over the rules (Anchor.Domain.GraphReportTest)
+     test/anchor/domain/graph_report_test.exs:364
+     Assertion with == failed
+     code:  assert counts == %{
+              precise: 11,
+              any: 7,
+              imprecise: 5,
+              computed_names: 13,
+              judged: 21,
+              exempt: 32,
+              not_analysed: 43
+            }
+     left:  %{
+              any: 11,
+              not_analysed: 43,
+              precise: 7,
+              imprecise: 5,
+              computed_names: 13,
+              judged: 21,
+              exempt: 32
+            }
+     right: %{
+              any: 7,
+              not_analysed: 43,
+              precise: 11,
+              imprecise: 5,
+              computed_names: 13,
+              judged: 21,
+              exempt: 32
+            }
+     stacktrace:
+       test/anchor/domain/graph_report_test.exs:375: (test)
+
+.
+```
+
+### PR-S2 — the summary swaps exempt and not analysed
+
+Run summary: `33 tests, 2 failures`
+
+```text
+1) test parameter_sinks/4: each number lands in its own field, summed over the rules (Anchor.Domain.GraphReportTest)
+     test/anchor/domain/graph_report_test.exs:364
+     Assertion with =~ failed
+     code:  assert GraphReport.summary(report) =~
+              "; parameter_reaches_sink: 11 apply sites precise, 7 fell to any, " <>
+                "5 imprecise parameters, 13 calls of a computed name, " <>
+                "21 functions judged, 32 exempt, 43 not analysed"
+     left:  "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 baselined); parameter_reaches_sink: 11 apply sites precise, 7 fell to any, 5 imprecise parameters, 13 calls of a computed name, 21 functions judged, 43 exempt, 32 not analysed"
+     right: "; parameter_reaches_sink: 11 apply sites precise, 7 fell to any, 5 imprecise parameters, 13 calls of a computed name, 21 functions judged, 32 exempt, 43 not analysed"
+     stacktrace:
+       test/anchor/domain/graph_report_test.exs:387: (test)
+
+................
+```
+
+### PR-S3 — the summary swaps precise and any
+
+Run summary: `33 tests, 2 failures`
+
+```text
+1) test parameter_sinks/4: each number lands in its own field, summed over the rules (Anchor.Domain.GraphReportTest)
+     test/anchor/domain/graph_report_test.exs:364
+     Assertion with =~ failed
+     code:  assert GraphReport.summary(report) =~
+              "; parameter_reaches_sink: 11 apply sites precise, 7 fell to any, " <>
+                "5 imprecise parameters, 13 calls of a computed name, " <>
+                "21 functions judged, 32 exempt, 43 not analysed"
+     left:  "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 baselined); parameter_reaches_sink: 7 apply sites precise, 11 fell to any, 5 imprecise parameters, 13 calls of a computed name, 21 functions judged, 32 exempt, 43 not analysed"
+     right: "; parameter_reaches_sink: 11 apply sites precise, 7 fell to any, 5 imprecise parameters, 13 calls of a computed name, 21 functions judged, 32 exempt, 43 not analysed"
+     stacktrace:
+       test/anchor/domain/graph_report_test.exs:387: (test)
+
+...............
+```
+
+### PR-S4 — the summary swaps imprecise and computed names
+
+Run summary: `33 tests, 2 failures`
+
+```text
+1) test parameter_sinks/4: each number lands in its own field, summed over the rules (Anchor.Domain.GraphReportTest)
+     test/anchor/domain/graph_report_test.exs:364
+     Assertion with =~ failed
+     code:  assert GraphReport.summary(report) =~
+              "; parameter_reaches_sink: 11 apply sites precise, 7 fell to any, " <>
+                "5 imprecise parameters, 13 calls of a computed name, " <>
+                "21 functions judged, 32 exempt, 43 not analysed"
+     left:  "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 baselined); parameter_reaches_sink: 11 apply sites precise, 7 fell to any, 13 imprecise parameters, 5 calls of a computed name, 21 functions judged, 32 exempt, 43 not analysed"
+     right: "; parameter_reaches_sink: 11 apply sites precise, 7 fell to any, 5 imprecise parameters, 13 calls of a computed name, 21 functions judged, 32 exempt, 43 not analysed"
+     stacktrace:
+       test/anchor/domain/graph_report_test.exs:387: (test)
+
+........
+```
+
+### PR-S5 — two rules' counts are not summed
+
+Run summary: `30 tests, 1 failure`
+
+```text
+1) test parameter_sinks/4: each number lands in its own field, summed over the rules (Anchor.Domain.GraphReportTest)
+     test/anchor/domain/graph_report_test.exs:364
+     Assertion with == failed
+     code:  assert counts == %{
+              precise: 11,
+              any: 7,
+              imprecise: 5,
+              computed_names: 13,
+              judged: 21,
+              exempt: 32,
+              not_analysed: 43
+            }
+     left:  %{
+              any: 7,
+              not_analysed: 3,
+              precise: 11,
+              imprecise: 5,
+              computed_names: 13,
+              judged: 1,
+              exempt: 2
+            }
+     right: %{
+              any: 7,
+              not_analysed: 43,
+              precise: 11,
+              imprecise: 5,
+              computed_names: 13,
+              judged: 21,
+              exempt: 32
+            }
+     stacktrace:
+       test/anchor/domain/graph_report_test.exs:375: (test)
+
+......
 ```
