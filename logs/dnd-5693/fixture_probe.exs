@@ -520,7 +520,7 @@ defmodule Spike.Probe do
        ]},
       {"no-token silenced by guard",
        [{:_, [{:not, {:is_seq_trace}}], [{:message, false}]}, {:_, [], [{:message, {{@label}}}]}]},
-      {"self plus tcw guard (no label read)",
+      {"self plus tcw guard, compile only: the pid is the probe's, so the guard cannot match (fixture_k measures it)",
        [{:_, [{:"==", {:self}, {:const, self()}}, {:"==", {:get_tcw}, 0}], [{:message, false}]}, {:_, [], [{:message, :traced}]}]}
     ]
 
