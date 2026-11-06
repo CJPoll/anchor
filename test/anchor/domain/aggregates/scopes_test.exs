@@ -228,6 +228,7 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
 
     def s71(fun), do: Repo.transaction(fn -> Helper.tx_any(fun) end)
     def s72(fun), do: Repo.transaction(fn -> Repo.transaction(fun) end)
+    def s80, do: Repo.transaction(fn -> #{inspect(@custom_repo)}.transact(fn -> :ok end) end)
     def s74(sqls), do: Repo.transaction(fn -> Enum.each(sqls, &Repo.query!/1) end)
     def s75(sqls), do: Repo.transaction(fn -> Enum.map(sqls, &Ecto.Adapters.SQL.query!(Repo, &1)) end)
     def s76(sqls), do: Repo.transaction(fn -> Enum.each(sqls, &Ecto.Adapters.SQL.query!/1) end)
@@ -686,6 +687,12 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
       assert %Scope{complete?: false} = one(a, :s77)
       assert %Scope{complete?: false} = one(a, :s78)
       assert %Scope{complete?: false} = one(a, :s79)
+    end
+
+    test "Repo.transact on a repo that does not export it is a gap, not a silent no-op", %{
+      analysis: a
+    } do
+      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s80, 0}, _}]} = one(a, :s80)
     end
 
     test "a transaction nested in a body: its gap is a gap of the outer one", %{analysis: a} do

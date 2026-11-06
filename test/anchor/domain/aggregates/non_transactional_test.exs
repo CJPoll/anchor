@@ -63,6 +63,15 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
               defp n29b, do: Repo.insert(%S{})
 
               def n30(fun), do: Repo.transaction(fun)
+              def n35(mod, fun), do: mod.transaction(fun)
+              def n36(args), do: apply(Repo, :insert, args)
+              def n37(mod, name, args), do: apply(mod, name, args)
+              def n38(mod, args), do: apply(mod, :query!, args)
+              def n39(name, args), do: apply(Repo, name, args)
+              def n40(args), do: apply(String, :upcase, args)
+              def n41(name, args), do: apply(String, name, args)
+              def n42(mod, args), do: apply(mod, :upcase, args)
+              def n43(args), do: apply(Repo, :get, args)
               def n31(sqls), do: Enum.each(sqls, &Repo.query!/1)
               def n32(mod), do: mod.query!("DELETE FROM s")
               def n33(sqls), do: Enum.each(sqls, &Ecto.Adapters.SQL.query!/1)
@@ -193,8 +202,16 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
              %{mfa: {@n, :n31, 1}, what: raw_capture},
              %{mfa: {@n, :n32, 1}, what: computed_raw},
              %{mfa: {@n, :n33, 1}},
-             %{mfa: {@n, :n34, 2}, what: "a capture on a computed module or name"}
+             %{mfa: {@n, :n34, 2}, what: "a capture on a computed module or name"},
+             %{mfa: {@n, :n35, 2}, what: computed_transaction},
+             %{mfa: {@n, :n36, 1}, what: unread_apply},
+             %{mfa: {@n, :n37, 3}},
+             %{mfa: {@n, :n38, 2}},
+             %{mfa: {@n, :n39, 2}}
            ] = a.unattributed
+
+    assert computed_transaction == "a call of transaction/1 on a module held in a variable"
+    assert unread_apply == "an apply/3 Anchor cannot resolve"
 
     assert raw_capture == "a capture of the write #{inspect(@repo)}.query!/1"
     assert computed_raw == "a call of query!/1 on a module held in a variable"

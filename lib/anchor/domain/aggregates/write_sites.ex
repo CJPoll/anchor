@@ -756,7 +756,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
           line,
           "a call of #{name}/#{length(args)} on a module held in a variable",
           tags,
-          repo_write?(name, length(args)) or name in @raw_sql
+          computed_write?(name, length(args))
         )
     end
   end
@@ -817,7 +817,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   defp capture_of_write_name?([_module, name, arity], env) do
     with {:ok, name} <- FunctionWalk.atom(name, env),
          true <- :cerl.is_literal(arity) and is_integer(:cerl.concrete(arity)) do
-      repo_write?(name, :cerl.concrete(arity)) or name in @raw_sql
+      computed_write?(name, :cerl.concrete(arity))
     else
       _computed -> true
     end
@@ -904,23 +904,42 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   end
 
   defp erlang_apply(acc, [m, f, args], env, tags, line, ctx) do
-    with {:ok, m} <- FunctionWalk.atom(m, env),
-         {:ok, f} <- FunctionWalk.atom(f, env),
+    with {:ok, module} <- FunctionWalk.atom(m, env),
+         {:ok, name} <- FunctionWalk.atom(f, env),
          {:ok, n} <- list_length(args, env) do
-      if unread_apply?({m, f, n}, ctx) do
-        dynamic(acc, line, "an apply of #{ViolationKey.mfa({m, f, n})} Anchor does not read", [
-          :unread_transaction | tags
-        ])
+      if unread_apply?({module, name, n}, ctx) do
+        what = "an apply of #{ViolationKey.mfa({module, name, n})} Anchor does not read"
+        dynamic(acc, line, what, [:unread_transaction | tags])
       else
-        literal_call(acc, {m, f, n}, [], env, tags, line, ctx)
+        literal_call(acc, {module, name, n}, [], env, tags, line, ctx)
       end
     else
-      _other -> dynamic(acc, line, "an apply/3 Anchor cannot resolve", tags)
+      _other ->
+        dynamic(acc, line, "an apply/3 Anchor cannot resolve", tags, apply_write?(m, f, env, ctx))
     end
   end
 
   defp erlang_apply(acc, _args, _env, tags, line, _ctx),
     do: dynamic(acc, line, "an apply/2 Anchor cannot resolve", tags)
+
+  # What is not known may write, unless what is known says it cannot: a name on a
+  # module that is no repo, or a known name no repo call writes with.
+  defp apply_write?(m, f, env, ctx) do
+    case {FunctionWalk.atom(m, env), FunctionWalk.atom(f, env)} do
+      {{:ok, m}, {:ok, f}} -> MapSet.member?(ctx.repos, m) and written_name?(f)
+      {{:ok, m}, _name} -> MapSet.member?(ctx.repos, m)
+      {_module, {:ok, f}} -> written_name?(f)
+      _unknown -> true
+    end
+  end
+
+  defp written_name?(name), do: Map.has_key?(@repo_writes, name) or transaction_or_raw?(name)
+
+  defp transaction_or_raw?(name), do: name in @raw_sql or name in [:transaction, :transact]
+
+  # On a module Anchor cannot name: a transaction opens no scope, so the writes
+  # in its body read as outside one, and raw SQL names no table.
+  defp computed_write?(name, arity), do: repo_write?(name, arity) or transaction_or_raw?(name)
 
   # An apply/3 has no argument nodes to read a body or a Multi step from.
   defp unread_apply?({@multi, name, _arity}, _ctx), do: name in [:append, :merge, :prepend, :run]
@@ -969,8 +988,12 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
     end
   end
 
-  defp repo_function(acc, {_module, name, _arity} = callee, args, env, tags, line, ctx) do
+  defp repo_function(acc, {module, name, _arity} = callee, args, env, tags, line, ctx) do
     cond do
+      name == :transact and not MapSet.member?(ctx.transact, module) ->
+        what = "#{ViolationKey.mfa(callee)}, which this repo's code does not define"
+        dynamic(acc, line, what, tags, true)
+
       name in @repo_functions ->
         acc
 

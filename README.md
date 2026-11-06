@@ -1174,8 +1174,9 @@ alias, a pipe and an `@repo` attribute are already resolved):
   (a `fn` defined outside the body, a capture of a write, an unknown function
   handed to a library function that invokes it), or an unresolved write, makes
   it **incomplete**. Calls into dependencies are not followed.
-- **Outside a transaction,** raw SQL or a write on a computed module is reported:
-  no schema or table names what it writes.
+- **Outside a transaction,** raw SQL, a write or transaction on a computed
+  module, and an `apply/3` that may be one are reported: no schema or table
+  names what it writes.
 
 The summary line ends `; writes: <W> found, <R> resolved, <U> unresolved;
 transactions: <S>, <C> complete, <I> incomplete; <G> gaps outside a transaction`
@@ -1206,7 +1207,7 @@ architecture:
 | Finding | Example message |
 |---|---|
 | A write whose source is unresolved (at the write) | `Repo.insert in MyApp.X.save/1 writes a value Anchor cannot trace to a schema or table (parameter 1 of MyApp.X.save/1 has no @spec and no project caller). Fix: pass a struct, changeset or schema the call can see; add @spec with Schema.t() for the parameter; or list a wrapper under aggregates.write_functions.` |
-| Raw SQL, or a write on a computed module, outside every transaction (at the call) | `MyApp.X.purge/0 writes, or may write, outside any transaction in a way no schema or table names: raw SQL (MyApp.Repo.query!/1) Anchor cannot attribute. Fix: write through a schema with Repo, or name the module the call is on.` |
+| Raw SQL, or a write or transaction on a computed module, outside every transaction (at the call) | `MyApp.X.purge/0 writes, or may write, outside any transaction in a way no schema or table names: raw SQL (MyApp.Repo.query!/1) Anchor cannot attribute. Fix: write through a schema with Repo, or name the module the call is on.` |
 | An incomplete transaction (at the transaction) | `transaction 1 in MyApp.X.run/1 reaches 1 call(s) Anchor cannot resolve (first: MyApp.X.run/1 line 12), so its write set is incomplete. Fix: call a named function instead of a variable, ...` |
 
 The key is `<id>|<M.f/a>|unresolved <op> <seen>`, `<id>|<M.f/a>|unattributed <what>` or `<id>|<M.f/a>|incomplete
