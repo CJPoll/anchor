@@ -4,6 +4,8 @@ defmodule Anchor.Domain.FailuresTest do
   # and carries a `Fix:` line.
   #
   # Sabotage record: ../../sabotage_records/failures-20260929-dnd_1265_anchor_fail_closed.md
+  # DND-5446 (one Fix: per issue; the moved refusals):
+  #   ../../sabotage_records/rule_shapes-20261103-dnd_5443_graph_rules_b.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Failures
@@ -261,6 +263,40 @@ defmodule Anchor.Domain.FailuresTest do
         )
 
       assert violation.message =~ "against it: ArgumentError: x. Fix: "
+    end
+  end
+
+  # DND-5446: every issue carries exactly one `Fix:`. A rejected rule whose
+  # reason names its own Fix keeps that one; the generic Fix is only for a
+  # reason with none.
+  describe "one Fix: per rejected config" do
+    defp rejected(reason),
+      do:
+        Failures.config_violation({:config_load_failed, ".anchor.yml", {:invalid_rule, reason}}).message
+
+    test "a reason with no Fix gets the generic one, once" do
+      message = rejected("rule 2: unknown rule type \"x\"")
+
+      assert message =~
+               ~s|rule 2: unknown rule type "x". Fix: correct .anchor.yml to match |
+
+      assert length(String.split(message, "Fix:")) == 2
+    end
+
+    test "each moved load refusal keeps its own Fix, and only it" do
+      for {reason, fix} <- [
+            {Failures.owned_namespaces_empty(),
+             ~s|Fix: list module names, e.g. ["MyApp"], or leave owned_namespaces out|},
+            {Failures.owned_namespaces_not_a_module("App.*"),
+             ~s|Fix: list module names, e.g. ["MyApp"]|},
+            {Failures.pure_patterns_match_all("*"),
+             ~s|Fix: name the pure namespaces, e.g. ["MyApp.*.Domain.*"]|}
+          ] do
+        message = rejected("rule 1: " <> reason)
+        assert message =~ fix
+        assert length(String.split(message, "Fix:")) == 2, message
+        refute message =~ "correct .anchor.yml to match"
+      end
     end
   end
 end

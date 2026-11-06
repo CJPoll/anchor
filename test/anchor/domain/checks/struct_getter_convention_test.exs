@@ -27,7 +27,8 @@ defmodule Anchor.Domain.Checks.StructGetterConventionTest do
       assert [%Violation{} = violation] = StructGetterConvention.detect_violations(ast)
 
       assert violation.message ==
-               "Getter function `get_name` should be named `name` to match the field it extracts"
+               "Getter function `get_name` should be named `name` to match the field it extracts" <>
+                 ". Fix: name a getter after the field it returns, and define it in the struct's own module"
 
       assert violation.trigger == "get_name"
       assert violation.line == 3
@@ -73,7 +74,8 @@ defmodule Anchor.Domain.Checks.StructGetterConventionTest do
       assert [%Violation{} = violation] = StructGetterConvention.detect_violations(ast)
 
       assert violation.message ==
-               "Getter for `Other.name` should be defined in `Other` (not in `A`)"
+               "Getter for `Other.name` should be defined in `Other` (not in `A`)" <>
+                 ". Fix: name a getter after the field it returns, and define it in the struct's own module"
 
       assert violation.trigger == "name"
       assert violation.line == 2
@@ -91,7 +93,8 @@ defmodule Anchor.Domain.Checks.StructGetterConventionTest do
       assert [%Violation{} = violation] = StructGetterConvention.detect_violations(ast)
 
       assert violation.message ==
-               "Getter for `Other.Thing.name` should be defined in `Other.Thing` (not in `A`)"
+               "Getter for `Other.Thing.name` should be defined in `Other.Thing` (not in `A`)" <>
+                 ". Fix: name a getter after the field it returns, and define it in the struct's own module"
     end
 
     test "resolves a multi-alias `A.{B}` form to the real foreign module" do
@@ -106,7 +109,8 @@ defmodule Anchor.Domain.Checks.StructGetterConventionTest do
       assert [%Violation{} = violation] = StructGetterConvention.detect_violations(ast)
 
       assert violation.message ==
-               "Getter for `Other.Thing.name` should be defined in `Other.Thing` (not in `A`)"
+               "Getter for `Other.Thing.name` should be defined in `Other.Thing` (not in `A`)" <>
+                 ". Fix: name a getter after the field it returns, and define it in the struct's own module"
     end
 
     test "a bare literal struct with no alias resolves to Elixir.<Name> and is foreign" do

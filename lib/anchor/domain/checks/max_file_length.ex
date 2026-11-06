@@ -30,7 +30,16 @@ defmodule Anchor.Domain.Checks.MaxFileLength do
   `max_lines` was silently ignored end-to-end).
   """
 
+  alias Anchor.Domain.RuleShapes
   alias Anchor.Domain.Violation
+
+  @behaviour Anchor.Domain.RuleShape
+
+  @impl Anchor.Domain.RuleShape
+  def shape(rule) do
+    "at most #{get_max_lines(rule)} lines of code per file; split the module into smaller " <>
+      "modules, each with one responsibility"
+  end
 
   @default_max_lines 400
 
@@ -52,7 +61,12 @@ defmodule Anchor.Domain.Checks.MaxFileLength do
       max_lines = get_max_lines(rule)
 
       if code_line_count > max_lines do
-        [build_violation(filename, code_line_count, max_lines)]
+        [
+          RuleShapes.with_shape(
+            build_violation(filename, code_line_count, max_lines),
+            shape(rule)
+          )
+        ]
       else
         []
       end

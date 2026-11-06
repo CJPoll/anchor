@@ -41,10 +41,15 @@ never an adapter.
 
 | Bucket | Modules |
 |---|---|
-| Framework | `Anchor.Check.*` (Credo checks, `Anchor.Check.Base`, `Anchor.Check.Source`), `Anchor.Aggregate` (the compile-time macro, DND-5476), `Mix.Tasks.Anchor.*` (`lib/mix/tasks/`; `Mix.Tasks.Anchor.Sabotage`), `Anchor.Sabotage.CoverageCollector` (an OTP process, in `lib/mix/tasks/anchor/sabotage/` so `mix anchor.graph` buckets it as Framework) |
-| Managers | `Anchor.Managers.Lint`, `Anchor.Managers.AstBaseline`, `Anchor.Managers.Sabotage` (`.Runner`, `.Coverage`, `.Replay`) |
-| Side Effects | ports: `Anchor.Adapters.ConfigLoader`, `ChangeSource`, `BeamSource`, `Tracing`, `InProcessTests`, `ProjectModuleSource`, `CoverageStore`, `BaselineStore`, `GitBase`, `LintKeys`; adapters: `ConfigFile`, `CredoKeys`, `GitChangeSource`, `BeamReader`, `CallTracer`, `SuiteRunner`, `ProjectModules`, `CoverageFile`, `RecordFile` (port `RecordStore`), `BaselineFile`, `GitShow` (`lib/anchor/adapters/`); `GitEnv`, the environment the git adapters run git with (DND-5581) |
-| Domain | everything under `lib/anchor/domain/`, including `Anchor.Domain.Sabotage.*` (`Mutator`, `Operators`, `DiffHunks`, `FunctionSpans`, `Scope`, `CoverageMap`, `Record`, `RecordNaming`, `KillMap`, `ChangedTests`, `TestPath`: the one rule for a path handed to `mix test`, DND-5640) and `Anchor.Domain.Graph.*` |
+| Framework | `Anchor.Check.*` (Credo checks, `Anchor.Check.Base`, `Anchor.Check.Source`), `Anchor.Aggregate` (the compile-time macro, DND-5476), `Mix.Tasks.Anchor.*` (`lib/mix/tasks/`; `Mix.Tasks.Anchor.Sabotage`, `.Graph`, `.Explain`), the `Anchor` module (by name), `Anchor.Sabotage.CoverageCollector` (an OTP process, in `lib/mix/tasks/anchor/sabotage/` so `mix anchor.graph` buckets it as Framework) |
+| Managers | `Anchor.Managers.Lint`, `Anchor.Managers.AstBaseline`, `Anchor.Managers.Sabotage` (`.Runner`, `.Coverage`, `.Replay`), `Anchor.Managers.Graph` (`.Request`), `Anchor.Managers.Explain` |
+| Side Effects | ports: `Anchor.Adapters.ConfigLoader`, `ChangeSource`, `BeamSource`, `Tracing`, `InProcessTests`, `ProjectModuleSource`, `CoverageStore`, `BaselineStore`, `GitBase`, `LintKeys`, `SourceSource`, `GraphStore`, `TestExecution`, `SourceMutation`, `BehaviourSource`; adapters: `ConfigFile`, `CredoKeys`, `GitChangeSource`, `BeamReader`, `BehaviourReader`, `CallTracer`, `SuiteRunner`, `ProjectModules`, `CoverageFile`, `RecordFile` (port `RecordStore`), `BaselineFile`, `GitShow`, `SourceReader`, `GraphArtifact`, `TestRunner`, `SourcePatcher`, `GitStatus`, `GitWorktree` (`lib/anchor/adapters/`); `GitEnv`, the environment the git adapters run git with (DND-5581); `Anchor.Sabotage.ExUnitFormatter` (`lib/anchor/sabotage/`) |
+| Domain | everything under `lib/anchor/domain/`, including `Anchor.Domain.Sabotage.*` (`Mutator`, `Operators`, `DiffHunks`, `FunctionSpans`, `Scope`, `CoverageMap`, `Record`, `RecordNaming`, `KillMap`, `ChangedTests`, `TestPath`: the one rule for a path handed to `mix test`, DND-5640) and `Anchor.Domain.Graph.*`, the graph rules (`GraphRules.*`), `Model`, `Classification`, `Interfaces`, `Explain`, `Subject`, `RuleShapes` |
+
+ADR 001's module map (*How this maps to Anchor*) lists every `lib/` module
+with its bucket; `test/anchor/adr_module_map_test.exs` fails on a module with
+no row, or a row whose bucket disagrees with `.anchor.yml` (DND-5620). A new
+module gets its row in the same change.
 
 ### Key Architectural Decisions
 
@@ -146,7 +151,8 @@ Every rule type has exactly one engine, `@engine_by_type` in
 `Anchor.Domain.RuleSchema` (DND-5437): `:ast` (a Credo check) or `:graph`
 (`mix anchor.graph`, DND-5440; the graph types are `layering`, DND-5442,
 `context_acyclic`, DND-5445, `aggregate_declarations`, DND-5476,
-`effects_match_bucket`, DND-5447, and `struct_owned_by_module_flow`, DND-5454). A new rule type adds its entry there too (compilation
+`effects_match_bucket`, DND-5447, `struct_owned_by_module_flow`, DND-5454, and
+`interface`, DND-5443). A new rule type adds its entry there too (compilation
 fails without it) and to the README table's Engine column (a test compares
 them). Credo never reports a `:graph` rule as unchecked
 (`RuleCoverage.unchecked/3`).
@@ -355,7 +361,8 @@ public, non-root, non-`__name__` functions of `domain`/`adapters`/`managers`
 buckets with `infer: true`. Its canary is its own tree,
 `test/fixtures/graph_canary/effects/`, run by
 `test/anchor/integration/effects_canary_test.exs`. Anchor's own config
-declares its extra effects (tracing, `Path.wildcard`, `Mix.Task.run`) and a
+declares its extra effects (tracing, `Path.wildcard`, `Mix.Task.run`,
+`Code.ensure_loaded?`) and a
 first-landing baseline.
 
 ## The struct_owned_by_module_flow rule (DND-5454)

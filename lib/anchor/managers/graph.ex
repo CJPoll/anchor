@@ -41,7 +41,7 @@ defmodule Anchor.Managers.Graph do
        `catch :exit`, DND-1312's lesson): a rule that crashes is one issue,
        and the other rules still run. A rule whose `needs/0` is refused, or
        whose needed analysis crashed, is one issue too and is not run;
-    7. for each rule with a `baseline:` (DND-5441): read it
+    8. for each rule with a `baseline:` (DND-5441): read it
        (`Anchor.Adapters.BaselineStore`), and under `--base REF` its copy at
        `REF` (`Anchor.Adapters.GitBase`), and judge the rule's findings
        against it (`Anchor.Domain.Enforcement`): held findings are counted,
@@ -50,10 +50,10 @@ defmodule Anchor.Managers.Graph do
        path, and every finding of the rule stands. Under `--write-baseline
        ID` that rule's baseline is created instead (`BaselineStore.create/3`
        only creates: an existing file is refused, exit 2);
-    8. write the graph artifact for `explain`/`place`
+    9. write the graph artifact for `explain`/`place`
        (`Anchor.Adapters.GraphStore`) under `<build_path>/anchor`, the build
        path the task gathered from Mix (DND-5585); the verdict never reads it;
-    9. return the `%Anchor.Domain.GraphReport{}`, with the apply-site
+   10. return the `%Anchor.Domain.GraphReport{}`, with the apply-site
        counts (`GraphReport.apply_sites/1`) when the analysis ran, and the
        effect counts (`GraphReport.effects/1`) when the effect inference ran,
        and declared aggregates' counts (`Anchor.Domain.Aggregates.Index`,
@@ -108,6 +108,7 @@ defmodule Anchor.Managers.Graph do
   alias Anchor.Domain.GraphReport
   alias Anchor.Domain.GraphReport.Finding
   alias Anchor.Domain.GraphRules
+  alias Anchor.Domain.Interfaces
   alias Anchor.Domain.Model
   alias Anchor.Domain.Roots
   alias Anchor.Domain.Violation
@@ -204,11 +205,7 @@ defmodule Anchor.Managers.Graph do
     by_type = GraphRules.by_type(modules)
     only = Map.get(request.opts, :only, [])
 
-    all =
-      for rule <- config.rules,
-          module = Map.get(by_type, rule.type),
-          module != nil,
-          do: {rule, module}
+    all = rules_with_modules(config, by_type)
 
     ids = Enum.map(all, fn {rule, _module} -> Map.get(rule, :id) end)
 
@@ -216,6 +213,13 @@ defmodule Anchor.Managers.Graph do
       [] -> {:ok, Enum.filter(all, fn {rule, _module} -> only == [] or rule[:id] in only end)}
       unknown -> {:could_not_check, Failures.graph_unknown_only(unknown, config.path)}
     end
+  end
+
+  defp rules_with_modules(config, by_type) do
+    for rule <- config.rules,
+        module = Map.get(by_type, rule.type),
+        module != nil,
+        do: {rule, module}
   end
 
   # Every beam read came from a project ebin, so every one is the project's,
@@ -247,16 +251,12 @@ defmodule Anchor.Managers.Graph do
     unreadable_issues =
       empty_app_issues(request.apps, beams) ++ unreadable_issues(graph)
 
-    rules = Enum.map(rules, fn {rule, module} -> {rule, module, guarded_needs(module)} end)
-    cfa = cfa(rules, graph, deps.cfa)
-    model = %{model | cfa: analysis(cfa)}
-    effects = effects(rules, model, cfa, deps)
-    model = %{model | effects: effects_analysis(effects)}
+    rules = with_needs(rules)
+    {model, analyses} = analysed(rules, model, deps)
 
     deps =
       Map.merge(deps, %{base: base_config(deps.git_base, request, config), now: config.rules})
 
-    analyses = %{cfa: cfa, effects: effects}
     ran = Enum.map(rules, &run_rule(&1, model, analyses, config.path, request, deps))
 
     artifact_notes =
@@ -275,12 +275,54 @@ defmodule Anchor.Managers.Graph do
       |> Map.put(:no_core, no_core_count(graph))
       |> Map.put(:outside_root, outside_root_count(graph))
       |> Map.put(:apply_sites, GraphReport.apply_sites(model.cfa))
+      |> Map.put(:interface_width, interface_width(rules, model))
       |> Map.put(:dynamic_calls, DynamicCalls.tally(graph))
       |> put_effects(GraphReport.effects(model.effects))
       |> put_aggregates(model.aggregates),
       held: Enum.flat_map(ran, & &1.held),
       refused: Enum.flat_map(ran, & &1.refused)
     )
+  end
+
+  @doc """
+  The findings every graph rule of `config` makes over `model`, as a run
+  computes them (for `mix anchor.explain`): each rule's floor, the analyses the
+  rules need, each check guarded (a rule that crashes, or whose analysis did, is
+  a fail-closed finding naming it). No baseline judges them, so these are the
+  raw findings. `deps` takes `:graph_rules`, `:cfa`, `:effects` and
+  `:behaviour_source` as `run/2` does.
+  """
+  @spec rule_findings(Model.t(), Config.t(), keyword()) :: [Finding.t()]
+  def rule_findings(%Model{} = model, %Config{} = config, deps \\ []) do
+    deps = deps(deps)
+
+    rules =
+      config
+      |> rules_with_modules(GraphRules.by_type(deps.graph_rules))
+      |> with_needs()
+
+    {model, analyses} = analysed(rules, model, deps)
+
+    Enum.flat_map(rules, fn {rule, module, needs} ->
+      floor_findings(rule, model, config.path) ++
+        checked(run_check(needs, analyses, rule, module, model, config.path))
+    end)
+  end
+
+  defp checked({:ok, findings}), do: findings
+  defp checked({:crashed, finding}), do: [finding]
+
+  defp with_needs(rules),
+    do: Enum.map(rules, fn {rule, module} -> {rule, module, guarded_needs(module)} end)
+
+  # The model with the analyses the rules need, and those analyses as computed
+  # (`{:crashed, ...}` included), for `run_check/6`.
+  defp analysed(rules, model, deps) do
+    cfa = cfa(rules, model.graph, deps.cfa)
+    model = %{model | cfa: analysis(cfa)}
+    effects = effects(rules, model, cfa, deps)
+
+    {%{model | effects: effects_analysis(effects)}, %{cfa: cfa, effects: effects}}
   end
 
   # DND-5476: the declared aggregates and their unknown tables are counted
@@ -296,6 +338,13 @@ defmodule Anchor.Managers.Graph do
   end
 
   defp analyze_cfa(graph), do: Cfa.analyze(graph, Cfa.default_seed(graph))
+
+  # DND-5443 (R4): each context's interface width, printed when an interface
+  # rule ran; `nil` otherwise, so a run without one prints nothing about it.
+  defp interface_width(rules, model) do
+    if Enum.any?(rules, fn {rule, _module, _needs} -> rule.type == :interface end),
+      do: Interfaces.width(model)
+  end
 
   # DND-5447: the effect inference runs once, after the flow analysis it
   # reads, and only when a rule that runs needs it: `nil` when none does or
@@ -669,22 +718,63 @@ defmodule Anchor.Managers.Graph do
   defp violations!(other),
     do: raise(ArgumentError, "check/2 returned #{inspect(other, limit: 5)}, not a list")
 
+  @doc """
+  The inputs the graph artifact of `request`'s build is keyed by (DND-5446,
+  for `mix anchor.explain`): the beams read from its ebins, each beam's source
+  facts, the artifact's directory and its key, computed exactly as the run
+  that writes it computes them. `:none` when no project beam was read;
+  `{:could_not_check, violation}` for an app directory outside the root, the
+  run's own refusal. `deps` takes `:beam_source` and `:source_source` as
+  `run/2` does, and the loaded `:config`.
+  """
+  @spec artifact_inputs(Request.t(), map()) ::
+          {:ok, %{beams: list(), source_facts: map(), dir: Path.t(), key: String.t()}}
+          | :none
+          | {:could_not_check, Violation.t()}
+  def artifact_inputs(%Request{} = request, %{config: config} = deps) do
+    with {:ok, request} <- source_dirs(request, config) do
+      read_artifact_inputs(request, config, deps)
+    end
+  end
+
+  defp read_artifact_inputs(request, config, deps) do
+    case read_beams(deps.beam_source, request) do
+      {:ok, beams} ->
+        {source_facts, _issues} = source_facts(deps.source_source, request, beams)
+
+        {:ok,
+         %{
+           beams: beams,
+           source_facts: source_facts,
+           dir: artifact_dir(request),
+           key: artifact_key(request, beams, source_facts, config)
+         }}
+
+      {:could_not_check, _violation} ->
+        :none
+    end
+  end
+
+  defp artifact_dir(request), do: Path.join(request.build_path, "anchor")
+
   # The key covers every input the graph was built from: the project root
   # (DND-5638: the facts' paths are relative to it), the beams and each
   # source file's facts (DND-5586), the config and Anchor's version.
-  defp write_artifact(store, request, {beams, source_facts}, config, graph) do
-    dir = Path.join(request.build_path, "anchor")
+  defp artifact_key(request, beams, source_facts, config) do
+    GraphKey.key(
+      Path.expand(request.root),
+      beam_entries(beams),
+      Enum.map(source_facts, fn {file, facts} ->
+        {file, :erlang.term_to_binary(facts, [:deterministic])}
+      end),
+      :erlang.term_to_binary(config, [:deterministic]),
+      version()
+    )
+  end
 
-    key =
-      GraphKey.key(
-        Path.expand(request.root),
-        beam_entries(beams),
-        Enum.map(source_facts, fn {file, facts} ->
-          {file, :erlang.term_to_binary(facts, [:deterministic])}
-        end),
-        :erlang.term_to_binary(config, [:deterministic]),
-        version()
-      )
+  defp write_artifact(store, request, {beams, source_facts}, config, graph) do
+    dir = artifact_dir(request)
+    key = artifact_key(request, beams, source_facts, config)
 
     case store.write(dir, key, graph) do
       :ok ->
@@ -722,7 +812,8 @@ defmodule Anchor.Managers.Graph do
       opaque: opaque,
       no_core: 0,
       outside_root: 0,
-      apply_sites: nil
+      apply_sites: nil,
+      interface_width: nil
     }
 
   # Every function the graph has no Core body for: no call in it was read, so

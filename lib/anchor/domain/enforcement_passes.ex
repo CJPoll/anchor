@@ -7,7 +7,8 @@ defmodule Anchor.Domain.EnforcementPasses do
   once per file, whatever the rules (an `alias`/`import`/`require` it cannot
   resolve, a dynamic call), then came once from each pass: the same line
   printed twice. `merge/2` keeps one copy of each violation both passes found
-  (same file, line, trigger, kind and message): the enforced one, since the
+  (same file, line, trigger, kind and message, apart from the rule's own
+  `Fix:` sentence): the enforced one, since the
   finding fails the run through its enforced rule, with its message naming both
   modes (`Anchor.Domain.Failures.both_enforcement_modes/1`). A violation only
   one pass found is kept as it is.
@@ -17,6 +18,7 @@ defmodule Anchor.Domain.EnforcementPasses do
   """
 
   alias Anchor.Domain.Failures
+  alias Anchor.Domain.RuleShapes
   alias Anchor.Domain.Violation
 
   @doc """
@@ -41,7 +43,7 @@ defmodule Anchor.Domain.EnforcementPasses do
       finding print it once each;
     * an unkeyed copy is dropped when a kept copy of the same finding (same
       file, line, trigger, kind and message, apart from the note `merge/2`
-      adds) fails at least as hard: an
+      adds and the rule's own `Fix:`) fails at least as hard: an
       enforced copy covers any, a report copy covers only a report one. So a
       report rule's copy never hides an enforced finding, and an enforced
       rule's copy is never dropped for a report one.
@@ -85,10 +87,12 @@ defmodule Anchor.Domain.EnforcementPasses do
 
   defp identities(violations), do: MapSet.new(violations, &identity/1)
 
-  # What the finding is: the note `merge/2` adds says how it was found, so a
-  # copy with it and one without are one finding.
+  # What the finding is: the note `merge/2` adds says how it was found, and the
+  # `Fix:` is each rule's own shape (DND-5446), so copies differing only in those
+  # are one finding.
   defp identity(%Violation{} = v) do
-    {v.filename, v.line, v.trigger, v.kind, Failures.without_both_enforcement_modes(v.message)}
+    {v.filename, v.line, v.trigger, v.kind,
+     v.message |> Failures.without_both_enforcement_modes() |> RuleShapes.without_fix()}
   end
 
   defp name_both(violation, in_both) do

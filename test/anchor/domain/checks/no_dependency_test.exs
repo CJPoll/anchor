@@ -39,7 +39,8 @@ defmodule Anchor.Domain.Checks.NoDependencyTest do
       assert [%Violation{} = violation] = detect(source, rule)
 
       assert violation.message ==
-               "Module has forbidden direct dependency on WaltUi.Contacts.Adapters.Repositories.Repository"
+               "Module has forbidden direct dependency on WaltUi.Contacts.Adapters.Repositories.Repository" <>
+                 ". Fix: do not reference *.Adapters.* from a module this rule selects; reach it through a module the rule allows"
 
       assert violation.trigger == "WaltUi.Contacts.Adapters.Repositories.Repository"
       assert violation.line == 3

@@ -54,6 +54,38 @@ defmodule Anchor.Domain.Failures do
           | term()
 
   @doc """
+  The load refusal of a `struct_owned_by_module` rule with `owned_namespaces:
+  []` (DND-5453; moved here from `Anchor.Domain.RuleSchema` by DND-5446).
+  """
+  @spec owned_namespaces_empty() :: String.t()
+  def owned_namespaces_empty do
+    "`owned_namespaces: []` checks no struct. Fix: list module names, " <>
+      ~s|e.g. ["MyApp"], or leave owned_namespaces out to check every struct|
+  end
+
+  @doc """
+  The load refusal of an `owned_namespaces` entry that is not one exact Elixir
+  module name (DND-5453; moved here by DND-5446).
+  """
+  @spec owned_namespaces_not_a_module(String.t()) :: String.t()
+  def owned_namespaces_not_a_module(entry) do
+    "`owned_namespaces` entry #{inspect(entry)} is not an exact Elixir module name " <>
+      "(a glob, an Erlang module or a malformed name). Fix: list module names, " <>
+      ~s|e.g. ["MyApp"]|
+  end
+
+  @doc """
+  The load refusal of a `pure_patterns` entry made of wildcards only, which
+  declares every module pure (DND-5451; moved here by DND-5446).
+  """
+  @spec pure_patterns_match_all(String.t()) :: String.t()
+  def pure_patterns_match_all(entry) do
+    "`pure_patterns` entry #{inspect(entry)} declares every module pure, so every call " <>
+      "would read as having no effect. Fix: name the pure namespaces, " <>
+      ~s|e.g. ["MyApp.*.Domain.*"]|
+  end
+
+  @doc """
   Builds the violation for a config that could not be found or loaded.
   """
   @spec config_violation(config_reason()) :: Violation.t()
@@ -368,11 +400,15 @@ defmodule Anchor.Domain.Failures do
     graph_issue(
       file,
       Map.get(facts, :line),
-      "#{inspect(module)} is in no architecture bucket. Fix: add a selector that matches " <>
-        "#{file} to the bucket this module belongs in (mix anchor.explain #{file} shows the " <>
-        "candidates)."
+      "#{unclassified_name(module, file)} is in no architecture bucket. Fix: add a selector " <>
+        "that matches #{file} to the bucket this module belongs in (mix anchor.explain #{file} " <>
+        "shows the candidates)."
     )
   end
+
+  # A planned path outside lib/ implies no module: the file is what is unclassified.
+  defp unclassified_name(nil, file), do: file
+  defp unclassified_name(module, _file), do: inspect(module)
 
   @doc """
   The issue for a module that two or more buckets select (DND-5440), naming
@@ -1190,14 +1226,23 @@ defmodule Anchor.Domain.Failures do
       "Fix: correct the YAML syntax in #{path}."
   end
 
+  # DND-5446: every issue carries exactly one `Fix:`. A refusal that already
+  # names its own (the `architecture:` section's, a top-level key's) keeps it,
+  # and the generic one is used only when nothing more specific exists.
   defp load_failed_message(path, {kind, message}) when kind in [:invalid_rule, :invalid_config] do
-    "Anchor rejected #{path}, so no Anchor rule was checked: #{message}. " <>
-      "Fix: correct #{path} to match #{@schema_pointer}."
+    "Anchor rejected #{path}, so no Anchor rule was checked: " <>
+      with_generic_fix(message, "correct #{path} to match #{@schema_pointer}.")
   end
 
   defp load_failed_message(path, detail) do
     "Anchor could not load #{path} (#{inspect(detail)}), so no Anchor rule was checked. " <>
       "Fix: correct #{path} to match #{@schema_pointer}."
+  end
+
+  defp with_generic_fix(message, fix) do
+    if String.contains?(message, "Fix:"),
+      do: message,
+      else: "#{message}. Fix: #{fix}"
   end
 
   # DND-5628: a symlink on a baseline's path, which Anchor refuses to follow.

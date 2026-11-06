@@ -77,7 +77,21 @@ defmodule Anchor.Domain.Checks.NoDependency do
   alias Anchor.Domain.DependencyAnalyzer
   alias Anchor.Domain.FunctionRef
   alias Anchor.Domain.GlobPattern
+  alias Anchor.Domain.RuleShapes
   alias Anchor.Domain.Violation
+
+  @behaviour Anchor.Domain.RuleShape
+
+  @impl Anchor.Domain.RuleShape
+  def shape(rule) do
+    forbidden =
+      Enum.map(Map.get(rule, :forbidden_modules) || [], &inspect/1) ++
+        (Map.get(rule, :forbidden_patterns) || []) ++
+        Enum.map(Map.get(rule, :forbidden_functions) || [], &FunctionRef.to_string/1)
+
+    "do not reference #{Enum.join(forbidden, ", ")} from a module this rule selects; reach " <>
+      "it through a module the rule allows"
+  end
 
   @doc """
   Returns the `%Violation{}` list for `ast` against the already-selected `rules`.
@@ -144,7 +158,7 @@ defmodule Anchor.Domain.Checks.NoDependency do
           file_context
         )
       end)
-      |> Enum.map(&build_violation/1)
+      |> Enum.map(&RuleShapes.with_shape(build_violation(&1), shape(rule)))
     end)
     |> Enum.concat(function_violations(ast, rules))
     |> Enum.concat(unresolved_violations(ast))
@@ -167,9 +181,16 @@ defmodule Anchor.Domain.Checks.NoDependency do
     else
       references = DependencyAnalyzer.attributed_function_references(ast)
 
-      Enum.flat_map(rules, &forbidden_calls(rule_calls(&1, references), forbidden_functions(&1))) ++
+      Enum.flat_map(rules, &rule_forbidden_calls(&1, references)) ++
         Enum.flat_map(references.dynamic, &dynamic_violation(&1, reachable_refs(&1, rules)))
     end
+  end
+
+  defp rule_forbidden_calls(rule, references) do
+    references
+    |> then(&rule_calls(rule, &1))
+    |> forbidden_calls(forbidden_functions(rule))
+    |> Enum.map(&RuleShapes.with_shape(&1, shape(rule)))
   end
 
   defp forbidden_functions(rule), do: Map.get(rule, :forbidden_functions) || []

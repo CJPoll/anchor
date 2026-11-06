@@ -30,7 +30,8 @@ defmodule Anchor.Domain.Checks.NoDiscardingArrowInWithTest do
 
       assert violation.message ==
                "Unnecessary arrow (<-) in with clause. Pattern `_` only discards the value. " <>
-                 "Remove the arrow and pattern to simplify"
+                 "Remove the arrow and pattern to simplify" <>
+                 ". Fix: write a with clause whose value is discarded as a bare expression, without a discarding pattern and arrow"
 
       assert violation.trigger == "_"
       assert violation.line == 3
