@@ -56,6 +56,10 @@ defmodule Anchor.Domain.Aggregates.RealEctoTest do
     def e6_scoped(q), do: e6_prefix(q, "tenant_a")
     defp e6_prefix(q, prefix), do: Repo.delete_all(put_query_prefix(q, prefix))
     def e6_table(v), do: Repo.delete_all(where(from(t in "threads"), [t], t.x == ^v))
+    def e6_prefixed, do: Repo.delete_all(put_query_prefix(from(t in "threads"), "tenant_a"))
+    def e6_prefixed_pin(v) do
+      Repo.delete_all(put_query_prefix(from(t in "threads", where: t.x == ^v), "tenant_a"))
+    end
 
     def e4 do
       Multi.new()
@@ -119,6 +123,8 @@ defmodule Anchor.Domain.Aggregates.RealEctoTest do
 
   test "E6: a table named by from/2 still reaches through a query call", %{analysis: a} do
     assert %{sources: [{:table, "threads"}], unresolved: nil} = site(a, :e6_table)
+    assert %{sources: [{:table, "threads"}], unresolved: nil} = site(a, :e6_prefixed)
+    assert %{sources: [{:table, "threads"}], unresolved: nil} = site(a, :e6_prefixed_pin)
   end
 
   test "every callback of Ecto.Repo is a write, raw SQL, or known to write nothing" do
