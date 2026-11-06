@@ -15,12 +15,36 @@ defmodule Anchor.Domain.EffectsTest do
   import Anchor.Test.EffectsModels
 
   alias Anchor.Adapters.BeamReader
+  alias Anchor.Domain.Cfa
   alias Anchor.Domain.Effects
   alias Anchor.Domain.Graph.Builder
   alias Anchor.Test.StructFlowFixtures
 
   defp infer(modules, calls, opts \\ []),
     do: modules |> model(calls, opts) |> Effects.infer(callbacks: %{})
+
+  # DND-5678: the apply-site tests' compiled fixture, with Cfa (see that describe).
+  setup_all do
+    modules =
+      compile_unloaded("""
+      defmodule AnchorFixtures.EffectsTest.Apply do
+        def reads(path), do: (f = &File.read!/1; f.(path))
+        def upcase(text), do: (f = &String.upcase/1; f.(text))
+        def run(f, x), do: f.(x)
+      end
+      """)
+
+    graph =
+      modules
+      |> Enum.map(fn {module, binary} ->
+        BeamReader.decode(binary, app: :app, path: "ebin/#{module}.beam")
+      end)
+      |> Builder.build(%{})
+
+    model = StructFlowFixtures.model(graph)
+    model = %{model | cfa: Cfa.analyze(graph, Cfa.default_seed(graph))}
+    %{apply_effects: Effects.infer(model, callbacks: %{})}
+  end
 
   @adapter_modules [
     {M, "managers", [{:run, 1}], []},
@@ -98,7 +122,9 @@ defmodule Anchor.Domain.EffectsTest do
 
     assert Effects.role(effects, {D, :f, 2}) == :managers
     assert effects.unresolved_calls == 1
-    assert [{D, :f, 2}, {:unresolved, %{line: 7}}] = Effects.evidence(effects, {D, :f, 2})
+
+    assert [{D, :f, 2}, {:unresolved, %{line: 7, text: "a call of a computed function ?/1"}}] =
+             Effects.evidence(effects, {D, :f, 2})
   end
 
   test "a call on a computed module that no project module can receive is unresolved" do
@@ -260,6 +286,38 @@ defmodule Anchor.Domain.EffectsTest do
                 %{text: "a call of :anchor_fixtures_effects_filer.write/1, " <> _why}}
              ] =
                Effects.evidence(effects, {AnchorFixtures.EffectsTest.Pricing, :save, 1})
+    end
+  end
+
+  describe "apply sites read from the flow analysis (compiled, Model.cfa set)" do
+    # The hand-built models above carry no flow analysis; these run Cfa over a
+    # compiled fixture (setup_all above), as the runner does, so an apply
+    # site's closures decide.
+    @apply AnchorFixtures.EffectsTest.Apply
+
+    test "a closure the analysis resolves to an effect capture reaches that effect", %{
+      apply_effects: effects
+    } do
+      assert Effects.role(effects, {@apply, :reads, 1}) == :adapters
+
+      assert Effects.evidence(effects, {@apply, :reads, 1}) ==
+               [{@apply, :reads, 1}, {:primitive, {File, :read!, 1}}]
+    end
+
+    test "a closure the analysis resolves to a pure capture reaches nothing", %{
+      apply_effects: effects
+    } do
+      assert Effects.role(effects, {@apply, :upcase, 1}) == :domain
+    end
+
+    test "a closure from outside the project is unresolved, named", %{apply_effects: effects} do
+      assert Effects.role(effects, {@apply, :run, 2}) == :managers
+
+      assert [
+               _run,
+               {:unresolved, %{text: "an application of a closure from outside the project"}}
+             ] =
+               Effects.evidence(effects, {@apply, :run, 2})
     end
   end
 end
