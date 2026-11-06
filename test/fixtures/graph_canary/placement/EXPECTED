@@ -1,3 +1,4 @@
+directory_placement|directory|AnchorFixtures.PlacementTest.Billing.Domain.Rounding|lib/placement/domain/statement
 effects_match_bucket|AnchorFixtures.PlacementTest.Billing.Domain.Leaky.read/1|adapters
 effects_match_bucket|AnchorFixtures.PlacementTest.Billing.Managers.Calc.total/1|domain
 function_placement|function|AnchorFixtures.PlacementTest.Billing.Domain.Format.invoice_line/1|AnchorFixtures.PlacementTest.Billing.Domain.Invoice.Line

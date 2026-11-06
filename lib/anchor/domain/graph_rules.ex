@@ -42,6 +42,7 @@ defmodule Anchor.Domain.GraphRules do
   alias Anchor.Domain.GraphRules.AggregateWriteSources
   alias Anchor.Domain.GraphRules.AnalysesComplete
   alias Anchor.Domain.GraphRules.ContextAcyclic
+  alias Anchor.Domain.GraphRules.DirectoryPlacement
   alias Anchor.Domain.GraphRules.EffectsMatchBucket
   alias Anchor.Domain.GraphRules.FunctionPlacement
   alias Anchor.Domain.GraphRules.Interface
@@ -64,6 +65,7 @@ defmodule Anchor.Domain.GraphRules do
     ContextAcyclic,
     AggregateDeclarations,
     AggregateWriteSources,
+    DirectoryPlacement,
     EffectsMatchBucket,
     FunctionPlacement,
     Interface,

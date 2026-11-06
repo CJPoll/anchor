@@ -63,6 +63,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
     analyses_complete: "min_function",
     case_on_bare_arg: "pahts",
     context_acyclic: "min_module",
+    directory_placement: "min_module",
     effects_match_bucket: "min_module",
     function_placement: "min_module",
     interface: "max_widht",

@@ -267,6 +267,7 @@ defmodule Anchor.Integration.GraphCanaryTest do
     aggregate_write_sources:
       "test/anchor/integration/aggregate_write_sources_integration_test.exs",
     analyses_complete: "test/anchor/integration/analyses_complete_integration_test.exs",
+    directory_placement: "test/anchor/integration/placement_invariant_test.exs",
     effects_match_bucket: "test/anchor/integration/effects_canary_test.exs",
     function_placement: "test/anchor/integration/placement_invariant_test.exs",
     no_inert_hop: "test/anchor/integration/placement_invariant_test.exs",

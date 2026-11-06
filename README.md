@@ -444,7 +444,8 @@ Credo checks over source, `graph` rules run under `mix anchor.graph` over the
 compiled code (DND-5440; `layering`, DND-5442, `context_acyclic`, DND-5445,
 `aggregate_declarations`, DND-5476, `aggregate_write_sources`, DND-5459,
 `effects_match_bucket`, DND-5447, `function_placement`, DND-5448,
-`no_inert_hop`, DND-5461, `parameter_reaches_sink`, DND-5470, `reachable_from_root`, DND-5448,
+`no_inert_hop`, DND-5461, `directory_placement`, DND-5462,
+`parameter_reaches_sink`, DND-5470, `reachable_from_root`, DND-5448,
 `struct_owned_by_module_flow`, DND-5454,
 `analyses_complete`, DND-5715, and `interface`, DND-5443). Credo never reports a
 `graph` rule as unchecked.
@@ -458,6 +459,7 @@ compiled code (DND-5440; `layering`, DND-5442, `context_acyclic`, DND-5445,
 | `case_on_bare_arg` | none | none | `ast` |
 | `context_acyclic` | none | none | `graph` |
 | `effects_match_bucket` | none | none | `graph` |
+| `directory_placement` | none | none | `graph` |
 | `function_placement` | none | none | `graph` |
 | `interface` | `max_width` | none | `graph` |
 | `layering` | none | none | `graph` |
@@ -1299,7 +1301,7 @@ unrelated places) get no move from rules 2 to 4; rule 1 still names their bucket
 **Every run prints the model's precision**, whenever a rule needed it:
 
 ```text
-; placement: 42 functions placed, 3 with no @spec (ownership unknown), 0 ambiguous owner, 0 with no clause to slice, 1 calls of a computed name, reachability lost at 1 call sites
+; placement: 42 functions placed, 3 with no @spec (ownership unknown), 0 ambiguous owner, 0 with no clause to slice, 1 calls of a computed name, reachability lost at 1 call sites, 0 modules not placed (no source)
 ```
 
 A project module a function holds as a value (`children = [M, {N, arg}]`) reaches that
@@ -1363,6 +1365,59 @@ is not judged inert. The evidence lists the static callers, or says `dynamic cal
 
 ```text
 lib/billing/domain/totals.ex:2: [enforce] rule 1 (id: "no_inert_hop", no_inert_hop) Billing.Domain.Totals.sum/1 only forwards to Billing.Domain.Math.sum/1, and the hop crosses no boundary. Fix: inline Billing.Domain.Totals.sum/1: its callers (BillingWeb.Show.run/1) call Billing.Domain.Math.sum/1 directly (it forwards without crossing a bucket, context, app, aggregate, interface or callback boundary)
+```
+
+### The `directory_placement` rule (DND-5462)
+
+```yaml
+rules:
+  - type: directory_placement
+    id: directory_placement
+    paths: ["lib/**/*.ex"]
+
+architecture:
+  contexts:
+    depth: 2
+  buckets:
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/**/domain/**/*.ex"]
+    - name: web
+      role: framework
+      select:
+        - paths: ["lib/**/web/**/*.ex"]
+  calls:
+    domain: [domain]
+    web: [domain]
+```
+
+The placement model's call graph collapsed to modules gives each module an immediate
+dominator, from every module that holds a root. A directory is a dominator subtree inside
+one bucket of one context:
+
+- **Dominated.** A module whose immediate dominator `d` is another module of its bucket and
+  context belongs in `d`'s companion directory, `d`'s source path without `.ex`
+  (`lib/billing/domain/invoice.ex` gives `lib/billing/domain/invoice/`); `d` stays where it
+  is, the directory's public module. Direct dominance only, so a chain nests one level per
+  move.
+- **Shared.** A module reached from unrelated places (its dominator is the virtual root) and
+  holding no root belongs at its bucket root, the deepest directory holding every module of
+  that bucket in that context. The proposal says `no tie-break evidence` until the
+  co-causation tie-break (DND-5475) can pick a caller's directory. Callers in several
+  contexts propose a library context, naming them, with no path invented. Callers all in
+  one other context are the context rules' question, and get no directory proposal.
+- **Inert directory.** A directory below its bucket root holding two or more modules of one
+  bucket and context, none reached only through a module of that directory or its companion
+  module (`<dir>.ex`), encapsulates nothing: flatten it.
+
+A generated module, or one with no source file, is not placed, and the precision line
+counts it (`<m> modules not placed (no source)`). A module violation sits at its
+`defmodule` line; a directory's on the first file in it. With no roots the rule fails
+closed.
+
+```text
+lib/billing/domain/rounding.ex:2: [enforce] rule 1 (id: "directory_placement", directory_placement) Billing.Domain.Rounding sits in lib/billing/domain, but only Billing.Domain.Invoice reaches it. Fix: move Billing.Domain.Rounding from lib/billing/domain to lib/billing/domain/invoice (only Billing.Domain.Invoice reaches it; Billing.Domain.Invoice is the directory's public module)
 ```
 
 ### The `parameter_reaches_sink` rule (DND-5470)

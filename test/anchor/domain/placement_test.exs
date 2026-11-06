@@ -610,6 +610,43 @@ defmodule Anchor.Domain.PlacementTest do
                "inline F.line/1: its callers (dynamic callers only) call N.g/1 directly"
     end
 
+    test "directory texts (DND-5462)" do
+      dir = fn reason, subject, proposed, evidence ->
+        %Proposal{
+          level: :directory,
+          subject: subject,
+          current: "lib/b/domain",
+          proposed: proposed,
+          rule: :directory_placement,
+          reason: reason,
+          evidence: evidence
+        }
+      end
+
+      assert Placement.render(
+               dir.(:dominator_subtree, Rnd, "lib/b/domain/invoice", ["dominated by Inv"])
+             ) ==
+               "move Rnd from lib/b/domain to lib/b/domain/invoice (only Inv reaches it; Inv is " <>
+                 "the directory's public module)"
+
+      assert Placement.render(
+               dir.(:shared_module, K, "lib/b/domain", [
+                 "reached from 3 unrelated callers: A, B, C",
+                 "no tie-break evidence"
+               ])
+             ) ==
+               "move K to lib/b/domain (reached from 3 unrelated callers: shared, not a private " <>
+                 "helper); no tie-break evidence"
+
+      assert Placement.render(
+               dir.(:shared_module, K, {:library_context, ["b", "c"]}, ["reached from 2"])
+             ) == "move K to a library context used by b, c"
+
+      assert Placement.render(dir.(:inert_directory, "lib/b/domain/util", "lib/b/domain", [])) ==
+               "flatten lib/b/domain/util into lib/b/domain (no module in it is reached only " <>
+                 "through it)"
+    end
+
     test "an unknown reason raises: there is no default text" do
       assert_raise FunctionClauseError, fn -> Placement.render(render_proposal(:nope, F)) end
     end
@@ -698,6 +735,63 @@ defmodule Anchor.Domain.PlacementTest do
                "F.line/1 only forwards to N.g/1, and the hop crosses no boundary. Fix: inline " <>
                  "F.line/1: its callers (A.x/1) call N.g/1 directly (it forwards without crossing " <>
                  "a bucket, context, app, aggregate, interface or callback boundary)"
+    end
+
+    test "a module subject sits at its defmodule; a directory's on its first file (DND-5462)" do
+      model =
+        Anchor.Test.DirectoryModels.directory_model(
+          [{W, "framework", "b"}, {U1, "domain", "b"}, {U2, "domain", "b"}],
+          [],
+          %{
+            W => "lib/b/web/w.ex",
+            U1 => "lib/b/domain/util/u1.ex",
+            U2 => "lib/b/domain/util/u2.ex"
+          }
+        )
+
+      base = %Proposal{
+        level: :directory,
+        subject: U2,
+        current: "lib/b/domain/util",
+        proposed: "lib/b/domain/util/u1",
+        rule: :directory_placement,
+        reason: :dominator_subtree,
+        evidence: ["dominated by U1"],
+        key: "directory_placement|directory|U2|lib/b/domain/util/u1"
+      }
+
+      module = Placement.to_violation(base, model, %{id: "d"})
+
+      assert {module.filename, module.line, module.trigger, module.key} ==
+               {"lib/b/domain/util/u2.ex", 3, "U2", "d|directory|U2|lib/b/domain/util/u1"}
+
+      assert module.message =~ ~r/^U2 sits in lib\/b\/domain\/util, but only U1 reaches it. Fix: /
+
+      dir = %Proposal{
+        base
+        | subject: "lib/b/domain/util",
+          proposed: "lib/b/domain",
+          reason: :inert_directory,
+          key: "directory_placement|directory|lib/b/domain/util|lib/b/domain"
+      }
+
+      violation = Placement.to_violation(dir, model, %{id: "d"})
+
+      assert {violation.filename, violation.trigger} ==
+               {"lib/b/domain/util/u1.ex", "lib/b/domain/util"}
+
+      assert violation.message =~ ~r/^lib\/b\/domain\/util encapsulates nothing: /
+      assert Placement.subject_modules(dir, model) == [U1, U2]
+
+      shared = %Proposal{
+        base
+        | subject: U1,
+          reason: :shared_module,
+          evidence: ["reached from 2 x"]
+      }
+
+      assert Placement.to_violation(shared, model, %{id: "d"}).message =~
+               ~r/^U1 is shared: no one module reaches it. Fix: /
     end
 
     test "each effects sentence names the bucket and what the inference found" do

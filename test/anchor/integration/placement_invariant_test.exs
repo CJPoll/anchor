@@ -100,6 +100,10 @@ defmodule Anchor.Integration.PlacementInvariantTest do
     {report, placement, model}
   end
 
+  # Every level's proposals: what the checks report, and what `mix anchor.propose` lists.
+  defp all_proposals(placement, model),
+    do: Enum.flat_map([:function, :directory], &Placement.proposals(placement, model, &1))
+
   defp without_violating(beams),
     do: Enum.reject(beams, &(&1.elixir.relative_file in @violating))
 
@@ -115,7 +119,7 @@ defmodule Anchor.Integration.PlacementInvariantTest do
     beams: beams
   } do
     {report, placement, model} = run(beams)
-    proposals = placement |> Placement.proposals(model, :function) |> Map.new(&{&1.key, &1})
+    proposals = placement |> all_proposals(model) |> Map.new(&{&1.key, &1})
 
     assert map_size(proposals) == length(@expected)
 
@@ -153,6 +157,14 @@ defmodule Anchor.Integration.PlacementInvariantTest do
               {:inline, {AnchorFixtures.PlacementTest.Billing.Domain.Statement, :total, 1}}}
 
     assert {:bucket_from_effects, {:bucket, :adapters, _context, nil}} = reasons["Leaky"]
+
+    # DND-5462: only Statement reaches Rounding, so its directory is Statement's.
+    assert [%{subject: rounding, reason: :dominator_subtree, proposed: dir}] =
+             Placement.proposals(placement, model, :directory)
+
+    assert {rounding, dir} ==
+             {AnchorFixtures.PlacementTest.Billing.Domain.Rounding,
+              "lib/placement/domain/statement"}
   end
 
   test "the same function captured by a reachable one is reachable", %{beams: beams} do
@@ -303,11 +315,12 @@ defmodule Anchor.Integration.PlacementInvariantTest do
     beams: beams
   } do
     {_report, placement, model} = run(beams)
-    proposals = Placement.proposals(placement, model, :function)
+    proposals = all_proposals(placement, model)
 
     assert proposals |> Enum.map(& &1.reason) |> Enum.uniq() |> Enum.sort() == [
              :bucket_from_effects,
              :dominated_by,
+             :dominator_subtree,
              :inert_hop,
              :input_type_owner,
              :output_type_owner,

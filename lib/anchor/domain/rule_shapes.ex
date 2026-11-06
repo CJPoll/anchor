@@ -28,6 +28,7 @@ defmodule Anchor.Domain.RuleShapes do
     analyses_complete: GraphRules.AnalysesComplete,
     case_on_bare_arg: Checks.CaseOnBareArg,
     context_acyclic: GraphRules.ContextAcyclic,
+    directory_placement: GraphRules.DirectoryPlacement,
     effects_match_bucket: GraphRules.EffectsMatchBucket,
     function_placement: GraphRules.FunctionPlacement,
     interface: GraphRules.Interface,
