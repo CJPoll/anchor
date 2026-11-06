@@ -1,0 +1,42 @@
+# The AST/graph parity tree (DND-5491). Macro-free: every call is one both
+# engines can see. Buckets select by pattern only, so
+# Anchor.Domain.Parity.ast_rules_for/1 can write the matrix as AST rules.
+# The matrix is transitively closed (a row lists every bucket its allowed
+# buckets reach), so a transitive AST finding always passes through a call
+# the graph flags. test/anchor/integration/layering_parity_test.exs runs both
+# engines over lib/.
+rules:
+  - type: layering
+    id: layering
+    pattern: "AnchorFixtures.Parity.*"
+
+architecture:
+  contexts:
+    depth: 3
+  buckets:
+    - name: framework
+      role: framework
+      select:
+        - pattern: "AnchorFixtures.Parity.*.Web.*"
+    - name: ui
+      role: ui
+      select:
+        - pattern: "AnchorFixtures.Parity.*.Ui.*"
+    - name: managers
+      role: managers
+      select:
+        - pattern: "AnchorFixtures.Parity.*.Managers.*"
+    - name: adapters
+      role: adapters
+      select:
+        - pattern: "AnchorFixtures.Parity.*.Adapters.*"
+    - name: domain
+      role: domain
+      select:
+        - pattern: "AnchorFixtures.Parity.*.Domain.*"
+  calls:
+    framework: [framework, ui, managers, adapters, domain]
+    ui: [ui, domain]
+    managers: [managers, adapters, domain]
+    adapters: [adapters, domain, "managers:other_context"]
+    domain: [domain]

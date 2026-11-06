@@ -4,6 +4,8 @@ defmodule Anchor.Adapters.BaselineFileTest do
   #
   # Sabotage record: ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
   # DND-5628 (symlinks): ../../sabotage_records/baseline_symlink-20261103-dnd_5441_graph_rules_a.md
+  # Sabotage record (DND-5647): ../../sabotage_records/baseline-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (DND-5647, SW-G): ../../sabotage_records/failures-20261103-dnd_5648_graph_followups.md
   use ExUnit.Case, async: true
 
   alias Anchor.Adapters.BaselineFile
@@ -123,6 +125,102 @@ defmodule Anchor.Adapters.BaselineFileTest do
       assert :ok = BaselineFile.create(root, ".anchor/baselines/r.txt", "r|A|x\n")
       assert BaselineFile.read(root, ".anchor/baselines/r.txt") == {:ok, ["r|A|x"]}
       assert File.ls!(Path.join(root, ".anchor/baselines")) == ["r.txt"]
+    end
+  end
+
+  # DND-5647: a directory swapped for a symlink between the lstat walk and the
+  # write redirected the write outside the root. The write step is a seam
+  # (`:before_write`), so the swap happens at a fixed point: no timing, no
+  # race. After the write the real path is checked, and what was written
+  # outside is removed.
+  describe "a directory swapped for a symlink after the check (DND-5647)" do
+    setup %{tmp_dir: tmp_dir} do
+      root = Path.join(tmp_dir, "root")
+      outside = Path.join(tmp_dir, "outside")
+      File.mkdir_p!(Path.join(root, ".anchor/baselines"))
+      File.mkdir_p!(outside)
+      %{root: root, outside: outside}
+    end
+
+    defp swap(root, outside) do
+      fn ->
+        File.rm_rf!(Path.join(root, ".anchor/baselines"))
+        File.ln_s!(outside, Path.join(root, ".anchor/baselines"))
+      end
+    end
+
+    test "the write is refused, naming where it went, and nothing remains outside", %{
+      root: root,
+      outside: outside
+    } do
+      assert {:error, {:escaped_root, real}} =
+               BaselineFile.create(root, ".anchor/baselines/r.txt", "r|A|x\n",
+                 before_write: swap(root, outside)
+               )
+
+      assert String.ends_with?(real, "/outside/r.txt")
+      assert File.ls!(outside) == []
+    end
+
+    test "a swap of a directory higher on the path is caught too", %{
+      root: root,
+      outside: outside
+    } do
+      File.mkdir_p!(Path.join(outside, "baselines"))
+
+      swap_anchor = fn ->
+        File.rm_rf!(Path.join(root, ".anchor"))
+        File.ln_s!(outside, Path.join(root, ".anchor"))
+      end
+
+      assert {:error, {:escaped_root, _real}} =
+               BaselineFile.create(root, ".anchor/baselines/r.txt", "r|A|x\n",
+                 before_write: swap_anchor
+               )
+
+      assert File.ls!(Path.join(outside, "baselines")) == []
+    end
+
+    test "a sibling whose name starts with the root's is outside it", %{
+      tmp_dir: tmp_dir,
+      root: root
+    } do
+      sibling = Path.join(tmp_dir, "root_sibling")
+      File.mkdir_p!(sibling)
+
+      assert {:error, {:escaped_root, _real}} =
+               BaselineFile.create(root, ".anchor/baselines/r.txt", "r|A|x\n",
+                 before_write: swap(root, sibling)
+               )
+
+      assert File.ls!(sibling) == []
+    end
+
+    test "positive control: with no swap the hook runs and the file is written", %{
+      root: root,
+      outside: outside
+    } do
+      parent = self()
+
+      assert :ok =
+               BaselineFile.create(root, ".anchor/baselines/r.txt", "r|A|x\n",
+                 before_write: fn -> send(parent, :hook_ran) end
+               )
+
+      assert_received :hook_ran
+      assert File.read!(Path.join(root, ".anchor/baselines/r.txt")) == "r|A|x\n"
+      assert File.ls!(outside) == []
+    end
+
+    test "a root reached through a symlink is its real path, not an escape", %{
+      tmp_dir: tmp_dir,
+      root: root
+    } do
+      alias_root = Path.join(tmp_dir, "alias")
+      File.ln_s!(root, alias_root)
+
+      assert :ok = BaselineFile.create(alias_root, ".anchor/baselines/r.txt", "r|A|x\n")
+      assert File.read!(Path.join(root, ".anchor/baselines/r.txt")) == "r|A|x\n"
     end
   end
 end

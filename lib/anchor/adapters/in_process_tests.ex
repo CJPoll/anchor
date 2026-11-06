@@ -10,5 +10,13 @@ defmodule Anchor.Adapters.InProcessTests do
   that does not compile, a suite that ran nothing).
   """
 
+  @typedoc """
+  A module implementing this behaviour. A parameter whose `@spec` says
+  `InProcessTests.t()` is what lets `mix anchor.graph` judge a call on it
+  against this behaviour's implementers only (DND-5633,
+  `Anchor.Domain.BehaviourReceiver`).
+  """
+  @type t :: module()
+
   @callback run(args :: [String.t()]) :: :passed | {:failed, String.t()}
 end

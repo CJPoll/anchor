@@ -14,6 +14,8 @@ defmodule Anchor.Domain.Graph.ModuleNode do
       reads as written, without the caller argument (DND-5550).
     * `:types` — `%{{name, arity} => {kind, quoted type}}`, kind `:type`,
       `:typep` or `:opaque`.
+    * `:callbacks` — the `{name, arity}` of each callback the module declares
+      as a behaviour (`@callback`, `@macrocallback`), sorted (DND-5633).
     * `:struct_fields` — the struct's field names, or `nil` for no struct.
     * `:functions` — `%{{name, arity} => %FunctionNode{}}`.
     * `:generated?` — `true` when the module's source file has no literal
@@ -36,6 +38,7 @@ defmodule Anchor.Domain.Graph.ModuleNode do
     attributes: [],
     specs: %{},
     types: %{},
+    callbacks: [],
     functions: %{},
     generated?: :unknown
   ]
@@ -49,6 +52,7 @@ defmodule Anchor.Domain.Graph.ModuleNode do
           attributes: keyword(),
           specs: %{{atom(), arity()} => [Macro.t()]},
           types: %{{atom(), arity()} => {:type | :typep | :opaque, Macro.t()}},
+          callbacks: [{atom(), arity()}],
           struct_fields: [atom()] | nil,
           functions: %{{atom(), arity()} => Anchor.Domain.Graph.FunctionNode.t()},
           generated?: boolean() | :unknown

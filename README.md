@@ -409,7 +409,7 @@ semantics and edge cases.
 | `min_files` | any rule | Positive integer, default `1`. The fewest files the rule must select in a whole-project run; fewer is an issue. See [A rule that checks nothing](#a-rule-that-checks-nothing). |
 | `id` | any rule | A name for the rule, unique in the file. It appears beside the rule's position in its load errors and floor reports (`rule 2 (id: "web-no-repo", ...)`). A rule with a `baseline` needs one. |
 | `enforcement` | any rule | `enforce` (default) or `report` (a leading colon is accepted). A `report` rule's findings print and never fail the run; fail-closed issues still fail. See [Adopting a rule](#adopting-a-rule-report-baseline-enforce-dnd-5441). |
-| `baseline` | graph rules | A path relative to the project root, no `..` (convention `.anchor/baselines/<id>.txt`): the rule's shrink-only baseline. Needs `id`. Refused on an `ast` rule. |
+| `baseline` | any rule | A path relative to the project root, no `..` (convention `.anchor/baselines/<id>.txt`): the rule's shrink-only baseline. Needs `id`. A graph rule's is judged by `mix anchor.graph`, an ast rule's by its Credo check and `mix anchor.baseline` (DND-5632). |
 | `bucket` | graph rules | Selector: the modules of that `architecture:` bucket. Must name one of its buckets. |
 | `min_modules` | graph rules | Positive integer, default `1`: the fewest modules the rule must select; fewer is an issue. A graph rule's floor (`min_files` is refused there). |
 | `forbidden_modules` / `required_modules` | `no_direct_dependency`, `no_transitive_dependency` / `must_use_module` | Exact module tokens (see the token syntax below). |
@@ -614,7 +614,8 @@ and a `bucket` must name one of its buckets; both are refused at load
 otherwise. `uses_module`, `recursive` and `min_files` are `ast` keys and are
 refused on a graph rule. A finding of a rule with `enforcement: report` prints
 `[report]` and does not fail the run. `--format json` prints `{"modules",
-"apps", "rules", "opaque", "no_core", "outside_root", "apply_sites", "aggregates", "exit_code",
+"apps", "rules", "opaque", "no_core", "outside_root", "apply_sites", "dynamic_calls", "effects",
+"aggregates", "exit_code",
 "findings":
 [{rule_id, type, enforcement, key, file, line, message, fix}],
 "could_not_check": [...], "refused": [...], "held": [...]}`. `--only RULE_ID` (repeatable) runs only the
@@ -633,8 +634,9 @@ findings can only shrink along the way:
    --strict` lists them and still passes.
 2. **Baseline.** Give the rule an `id` and `baseline:
    .anchor/baselines/<id>.txt`, then run `mix anchor.graph --write-baseline
-   <id>`: it writes the rule's current finding keys, sorted, and refuses
-   (exit 2) when the file exists. Review the file in the change that adds it.
+   <id>` (a graph rule) or `mix anchor.baseline --write <id>` (an ast rule):
+   it writes the rule's current finding keys, sorted, and refuses (exit 2)
+   when the file exists. Review the file in the change that adds it.
 3. **Enforce.** Drop `enforcement: report`. A finding the baseline holds is
    counted (`<H> baselined`; `--verbose` prints each as `[held]`). A finding
    it does not hold (NEW) fails. A baseline line no finding matches (STALE)
@@ -650,9 +652,41 @@ findings). A key is `<rule id>|<subject>|<detail>` (or `<rule id>|<subject>`
 for a finding with no target, such as a `context_acyclic` cycle), such as
 `layering|MyApp.Web.Page.show/2|-> MyApp.Repo.get/2`: no line numbers and no
 message text, so moving code does not churn it. Every entry starts with the
-rule's id; a file holding another rule's entry is refused. `baseline` is read
-by graph rules only: on an `ast` rule it is refused at load, because Credo
-compares no baseline yet.
+rule's id; a file holding another rule's entry is refused.
+
+### Baselines for ast rules (DND-5632)
+
+An `ast` rule (a Credo check) takes the same `baseline:` and the same
+ratchet. Its key is `<rule id>|<file>|<trigger>`, the file relative to the
+project root and the trigger the check highlights (the forbidden module, the
+function), such as `pure|lib/my_app/domain/order.ex|File`: no line and no
+message, so moving code within a file does not churn it.
+
+* **Every `mix credo` run** compares the rule's findings with its baseline,
+  inside the rule's own check: a held finding is dropped, a NEW one stands,
+  and a line no finding matches is a STALE issue on the baseline path (exit
+  status 0 for a `report` rule). A baseline that cannot be read, or holds
+  another rule's entry, is one issue there, and every finding stands.
+* **A narrowed run** (`mix credo lib/a.ex`, `--files-included`, a watch
+  rerun) judges only the lines on files it read: a line on a file it did not
+  read, or could not parse, is not STALE, and one report-only NOTE counts
+  them (`NOTE: 2 entries of .anchor/baselines/pure.txt name a file this run
+  did not read or could not parse, so they were not judged STALE. Fix: run
+  mix credo over the whole project ...`). A whole run judges every line, so
+  a line on a deleted file is STALE.
+* **`mix anchor.baseline --write <id>`** compiles the project, runs Credo
+  over the whole file set (its report is not printed) and creates the rule's
+  baseline from its finding keys, sorted. It only creates (exit 2 when the
+  file exists). A rule whose check `.credo.exs` does not enable has no
+  findings, so it writes nothing: COULD NOT MEASURE (exit 3).
+* **`mix anchor.baseline --base REF`** fails every line the branch added to
+  an ast rule's baseline since `REF` (GREW), found by the rule's id in the
+  config at `REF`, exactly as `mix anchor.graph --base` judges a graph
+  rule's (the first-landing NOTEs and the read failures are the same). CI
+  runs it on a pull request. It prints one line per finding and
+  `anchor.baseline: <B> ast baselines, <V> violations (<P> report-only)`.
+  Exit codes: 0 pass or written, 1 GREW or an unreadable/unwritable
+  baseline, 2 usage or a refused write, 3 COULD NOT MEASURE.
 
 ### The `layering` rule (DND-5442)
 
@@ -707,12 +741,24 @@ a literal module are calls too.
   of them can be the receiver, whether it declares a `@behaviour` or not.
   When no project module exports it (`Mix.shell().info(msg)`), the call
   reaches no bucket of the project, and there is nothing to judge.
+  The one narrowing is declared (DND-5633): when the receiver is a parameter
+  the function's one `@spec` types as `B.t()`, where `B` is a project module
+  with `@type t :: module()` and the function among its `@callback`s, the call
+  is judged against the modules that declare `@behaviour B` and export it.
+  A `@spec` is a declaration Dialyzer checks, not Anchor. Never on the
+  function name alone. Each run ends its summary with `; dynamic calls: <f>
+  fanned out to every exporter, <n> narrowed by behaviour`, and the JSON's
+  `dynamic_calls` names each (`"MyApp.M.run/2 -> ?.fetch/1"`).
 - A call whose function name is computed (`apply(MyApp.Repo, op, args)`,
   `mod.op_var(x)`, `&MyApp.Repo.op_var/1`) is one violation too, keyed
   `-> dynamic ?/n`: its target cannot be checked. Only applying a variable
   (`fun.(x)`) is a closure application, not judged by this rule; `apply(fun,
   args)` compiles to the same shape as `apply/3` with a computed name, so it
   is reported, and `fun.(args)` is the form that is not.
+- Under `--base`, a `context_acyclic` cycle entry the branch replaced with a
+  strict subset of its contexts (one edge of the cycle was broken) is a
+  report-only NOTE, not GREW: a narrower entry is not growth (a rule's
+  `narrows?/2`, DND-5633).
 - One violation per caller function and callee function, at the first such
   call's line, keyed `<id>|<Caller.f/a>|-> <Callee.g/b>` (an unresolved call
   is `-> dynamic fetch/1`). The message names both modules' bucket and
@@ -726,6 +772,43 @@ lib/my_app/web/page.ex:12: [enforce] rule 1 (id: "layering", layering) MyApp.Web
 
 Anchor's own `.anchor.yml` runs it over `lib/` with a baseline,
 `.anchor/baselines/layering.txt`, holding what it found when it landed.
+
+### The engine split: `layering` is the authority (DND-5491)
+
+Layering is a property of what the program does, so the graph engine is its
+authority: `layering` judges every call the compiler produced, including
+calls a macro injects. The AST dependency rules, `no_direct_dependency` and
+`no_transitive_dependency`, stay as its **write-time early warnings**: they
+run before compile (in a pre-write hook, on one file), with the exact line
+of the reference. `Anchor.Domain.RuleSchema.early_warning_of/1` declares the
+pairing, and compilation fails if an early warning names anything but an
+ast type warning of a graph type.
+
+| Rule type | Engine | Role |
+|---|---|---|
+| `layering` | graph | the authority on which bucket may call which |
+| `no_direct_dependency` | ast | early warning of `layering` |
+| `no_transitive_dependency` | ast | early warning of `layering` |
+
+The two are held equal by a test, not by trust.
+`test/anchor/integration/layering_parity_test.exs` runs both engines over the
+macro-free tree `test/fixtures/parity/` (five buckets, two contexts: allowed
+calls, forbidden direct calls through an alias, a capture and `apply/3` with
+a literal module, a forbidden transitive chain, `other_context` allowed and
+refused). The AST rules come from the tree's own `architecture:` section
+(`Anchor.Domain.Parity.ast_rules_for/1`: each row forbids the buckets it
+omits, directly and transitively, and an `other_context` entry forbids its
+bucket within the caller's context). Any `(caller, callee)` pair one engine
+flags and the other does not fails the test, naming the pair and the engine
+that flagged it; a transitive AST finding must pass through a call the graph
+flags. The derivation needs `pattern:` bucket selectors and a matrix with no
+`same_context` entry (no AST rule can say "only outside the caller's
+context"); anything else raises.
+
+Known divergences are listed in the test with a reason each, and the list
+only shrinks (a listed pair that no longer diverges fails the test). At
+landing it holds one: a dynamic call (`mod.save(x)`), which the graph
+resolves to every module exporting `save/1` and the AST cannot see.
 
 ### The `context_acyclic` rule (DND-5445)
 
@@ -1151,6 +1234,7 @@ line.
 | `--only` naming no graph rule of the config | 3 | the config path | `COULD NOT MEASURE: --only "typo" names no graph rule of .anchor.yml, so the run would check nothing. Fix: ...` |
 | No `architecture:` section | 3 | the config path | `COULD NOT MEASURE: .anchor.yml has no architecture: section, so mix anchor.graph could classify no module and run no graph rule. Fix: add an architecture: section ...` |
 | `mix compile` fails | mix's own | | |
+| An umbrella `apps_path` that is absolute and outside the project root (DND-5655; an absolute one under the root is made relative) | 3 | the config | `COULD NOT MEASURE: the apps_path of :alpha is /elsewhere/alpha, outside the project root /work/my_app, so its source paths cannot be keyed against the root. Fix: set apps_path in the umbrella's mix.exs to a directory under the project root ...` |
 | Zero project modules read | 3 | the first ebin | `COULD NOT MEASURE: read 0 modules from _build/dev/lib/my_app/ebin. Fix: run mix compile in this project; ...` |
 | One app of the project read no module while another did (an umbrella app not compiled, under another build path, or renamed; DND-5584) | 1 | that app's ebin | `read 0 modules for app :other from _build/dev/lib/other/ebin, so none of its code was checked. Fix: run mix compile for :other; ...` |
 | A beam with no `debug_info` (or stripped) | 1 | the beam | `MyApp.X was compiled without debug_info, so Anchor cannot read it. Fix: remove debug_info: false from the project's elixirc_options ...` |
@@ -1181,12 +1265,13 @@ line.
 | A graph rule that raises, throws or exits | 1 | the config | `rule 2 (id: "web", layering) could not run: RuntimeError: ... Fix: this is an Anchor bug; file it with this line.` The other rules still run. |
 | A `baseline:` file that is missing, unreadable, not UTF-8, or holds another rule's entry | 1 | the baseline path | `rule 2 (id: "web", layering)'s baseline .anchor/baselines/web.txt could not be read (:enoent), so none of its findings is held. Fix: create it with mix anchor.graph --write-baseline web ...` |
 | A symlink on a baseline's path, a directory or the file, on disk or at `--base REF` (DND-5628) | 1 | the baseline path | `rule 2 (id: "web", layering)'s baseline .anchor/baselines/web.txt was not read: .anchor is a symlink, and Anchor never follows one out of the project root, so none of its findings is held. Fix: replace the symlink .anchor with a real directory or file inside the project, ...` `--write-baseline` creates nothing through one. |
+| A directory on the baseline's path replaced by a symlink while `--write-baseline` writes it (DND-5647): the written file's real path is checked after the write | 1 | the baseline path | `Anchor did not create .anchor/baselines/web.txt: a directory on its path became a symlink while it was written, so the file landed at /elsewhere/web.txt, outside the project root, and was removed there. Fix: find what is replacing directories in this checkout during the run, ...` |
 | A baseline entry no finding matches (STALE) | 1 (0 for a `report` rule) | the baseline path | `web\|A.f/1\|-> B.g/0 in .anchor/baselines/web.txt matches no finding (it was fixed). Fix: delete that line ...` |
 | A baseline entry the branch added since `--base REF` (GREW) | 1 (0 for a `report` rule) | the baseline path | `... was added to .anchor/baselines/web.txt since main. Fix: fix the finding instead; a baseline only shrinks ...` |
 | A baseline that could not be read at `--base REF` (git failed) | 1 | the baseline path | `Anchor could not read .anchor/baselines/web.txt at main (...), so whether the branch added to it (GREW) could not be judged. Fix: ...` |
 | A baseline absent at `--base REF` (first landing) | 0 | the baseline path | `NOTE: first landing of .anchor/baselines/web.txt (absent at main); review is the gate. ...` |
 | A rule id with no baseline at `--base REF` (DND-5629: the base copy is found by the rule's `id` in the config at REF, so renaming `baseline:` is still judged; a rule there with no `baseline:` compares with an empty one, every entry GREW) | 0 | the baseline path | `NOTE: first landing of rule "web": no rule with that id had a baseline at main; rules with a baseline at main that this config no longer has: "old_web". Fix: review every line ...` |
-| The config at `--base REF` cannot be read or loaded (DND-5629) | 1 | the config | `Anchor could not read .anchor.yml at main (...), so no baseline's copy there could be found by its rule's id and GREW could not be judged. Fix: ...` |
+| The config at `--base REF` cannot be read or loaded (DND-5629); one issue per run, naming every baselined rule it left unjudged, whose findings all stand (DND-5648) | 1 | the config | `Anchor could not read .anchor.yml at main (...), so no baseline's copy there could be found by its rule's id and GREW could not be judged for rules "layering", "context_acyclic". Fix: ...` |
 | `--write-baseline` that could not create the file (not `:exists`: `:eacces`, ...) | 1 | the baseline path | `Anchor could not create .anchor/baselines/web.txt (:eacces). Fix: make its directory writable.` |
 | `--write-baseline` that created the file | 0 | the baseline path | `anchor.graph wrote 3 entries to .anchor/baselines/web.txt. Fix: review it in this change; from here it only shrinks.` (`[report]`) |
 | `--write-baseline` over an existing file, or naming no rule with a `baseline:` | 2 | the baseline path, or the config | `.anchor/baselines/web.txt exists; --write-baseline only creates, and never rewrites a baseline. Fix: ...` |
@@ -1286,6 +1371,7 @@ mutable site`).
 ```bash
 mix anchor.sabotage run [--base REF] [--max N|all] [--only ID]... [--dry-run] [--coverage PATH]
                         [--no-record] [--domain D] [--ticket KEY] [--slot S]
+                        [--print-survivor-lines]
 mix anchor.sabotage restore
 ```
 
@@ -1318,6 +1404,7 @@ sabotage:
     domain_from: module              # or context_dir: the directory under lib/<app>/
     domain_strip_prefixes: []        # e.g. ["MyApp.Domain.", "MyApp."]; the longest match is dropped
     adr: "the repo's sabotage-record ADR"  # named next to each test still lacking a red
+  survivors: .anchor/sabotage/survivors.txt  # the survivors list (DND-5483); named here, it must exist
 ```
 
 ```gitignore
@@ -1431,10 +1518,97 @@ function with no literal clause is listed as an error, never as killed.
 | every measured mutant killed or timed out (an `invalid` one beside them changes nothing) | 0 |
 | zero changed functions from a good diff read (an empty scope: `sabotage: 0 changed functions in <base>..HEAD`) | 0 |
 | changed functions that yielded no mutant at all (every edit skipped, no literal clause, a `defimpl` target not a literal, no mutable site): one `sabotage: no mutant from M.f/a (file): <reason>` line per function, then `sabotage: no mutants generated from N changed functions: nothing was measured` (DND-5617) | 0 |
-| a mutant survived, crashed or had no test, beside a measured one (a survivors list that gives one a reason will exempt it: DND-5483) | 1 |
+| a mutant survived or had no test and is not on the survivors list (NEW), beside a measured one; a mutant crashed beside a measured one; a survivors entry now killed or no longer generated (STALE); a malformed survivors entry; a survivors file named in `sabotage.survivors` that does not exist (DND-5483) | 1 |
 | mutants were run and none was measured (all `invalid`, `crashed` or without a test) | 3, `COULD NOT MEASURE` with `Fix:` |
 | a record that could not be named (above); a record that could not be written, when every measured mutant passed (after the outcomes: a survivor stays 1 and an unmeasured run 3, each with `sabotage: record not written: <why>`; DND-5641); a dirty target file; the journal not git-ignored; the run lock or a journal another live run holds; a host with no `/proc`; a leftover journal whose file changed; a restore that did not reproduce the original (the journal is kept); an unknown `--only` id; no `timeout` binary; bad flags | 2, with `Fix:` |
-| no loadable config or no `sabotage:` section; the scope could not be measured; the baseline fails; changed functions whose files cannot be read | 3, `COULD NOT MEASURE` with `Fix:` |
+| no loadable config or no `sabotage:` section; the scope could not be measured; the baseline fails; changed functions whose files cannot be read; the survivors file, or its copy at `--base`, cannot be read (DND-5483) | 3, `COULD NOT MEASURE` with `Fix:` |
+
+### Sabotage: the survivors list
+
+Some mutants no test can kill: dropping a log line nobody asserts on, or
+narrowing a clause that only exists as a defensive fallback. Each such
+survivor is listed, with its reason, in `.anchor/sabotage/survivors.txt`
+(`sabotage.survivors` names another path; DND-5483):
+
+```text
+# One entry per line; blank lines and `#` lines are ignored.
+3f9a01c2b7de lib/calc.ex Calc.validate/1 delete_statement  # logging only; no behaviour depends on it
+```
+
+The reason is required, and a placeholder (`TODO`, `TBD`, `FIXME`, the
+`<why no test can kill it>` the run prints, or nothing) is refused. So is a
+bad id, a missing field, an unknown operator or a duplicate id: the run
+refuses before applying any mutant, exit 1, naming each entry.
+
+`run` judges the list for the functions in its scope (the changed functions
+and the functions of the mutants it generated), through the same comparator
+as the graph baselines (`Anchor.Domain.Baseline.compare/2`), keyed on the
+mutant id:
+
+| Case | Printed | Exit |
+|---|---|---|
+| a `survived` or `no_tests` mutant the list does not hold | `NEW survivor <id> ...`, then a `Fix:` with the exact line to add | 1 |
+| a listed mutant now killed, timed out or invalid, or no longer generated (its function changed) | `STALE survivor <id> ... Fix: delete its line from <path>` | 1 |
+| an entry whose id names a mutant of another file, function or operator | `survivors file <path>, entry N (...)` with a `Fix:` | 1 |
+| a listed survivor | its run line ends `listed in <path>: <reason>` | 0 |
+| a listed mutant past the cap, left out by `--only`, whose run crashed, or whose function could not be mutated this run | `survivor <id> ... not judged (...)` | 0 |
+| an entry for a function outside the scope | nothing | 0 |
+
+The default path absent is an empty list (`no survivors file at ...: every
+survivor is NEW`); a path named in the config that is absent is exit 1. A
+crashed mutant cannot be listed: it fails the run as before.
+
+The list only shrinks without review. The run reads the list's copy at
+`--base` (default `origin/main`, the ref the scope reads) and prints the
+entries this branch adds under `Survivors added by this branch: review each
+reason` (all of them, said so, when the base has no list). That block never
+changes the exit code: adding a survivor is allowed, and the reviewer sees
+it. A base copy that cannot be read for any reason but its absence is exit 3.
+
+`--print-survivor-lines` prints, at the end, the line to add for each NEW
+survivor, with the placeholder reason to replace. The run never writes the
+list.
+
+### Sabotage: replaying landed records
+
+```bash
+mix anchor.sabotage replay [--max N|all] [--records DIR_GLOB]...
+```
+
+A record proves a test failed once; a test can lose that power later (an
+assertion loosened, a setup changed). `replay` (DND-5485) reads every
+`killed` or `timeout` row of the `anchor-kills` blocks under
+`sabotage.records.dir` (or each `--records` directory glob, inside the
+project), and for each row:
+
+1. regenerates the mutants of its `Module.fun/arity` on the current tree,
+   with every operator, and finds the one with the recorded id (ids do not
+   depend on lines, so a moved function still replays);
+2. checks its killers' test files exist;
+3. applies the mutant under `run`'s journal and lock, runs the killers by
+   file and test name (`<file> --only test:<full name>`, so a moved test
+   still runs), and restores the file.
+
+Before any row, every killer runs once with no mutant; if any fails, main is
+red and nothing can be judged (exit 3). The cap is `--max` (else
+`max_mutants`); rows past it are listed `not replayed (cap)`. A `timeout`
+row that names no test (`(timeout)`) runs the killer files of its
+function's other killed rows in the same record, whole, and says so.
+
+| Row | Printed | Exit |
+|---|---|---|
+| a killer failed (or the run timed out) | `still killed <id> ...` | 0 |
+| every killer passed | `LOST POWER <id> M.f/a operator (<record>)`, each killer on `no longer failed by:`, and a `Fix:` | 1 |
+| the run crashed | `CRASHED <id> ...` with a `Fix:` | 1 |
+| it cannot be replayed as recorded: its file is gone or outside the project, a symlink is on its file's or a killer's path, its function is gone, no mutant has its id (the function changed), a killer's file or test is gone, a killer does not read as a test, a row killed by the time bound has no killed row to take its killer files from, it no longer compiles | `drifted (<reason>) <id> ...` | never on its own |
+| zero rows, every row drifted, or a record that could not be read | `COULD NOT MEASURE` with `Fix:` | 3 |
+
+A record whose kill map does not parse is named (`could not read ...`), and
+the replay ends exit 3 however its other rows fare, unless a row lost power or
+crashed (exit 1): its kills went unchecked. Like `run`, a replay refuses (exit 2) on a dirty row file, the run
+lock held, or the journal not git-ignored, and never writes a record or the
+survivors list. Anchor runs it weekly and on demand in CI
+(`.github/workflows/sabotage-replay.yml`, `--max all`).
 
 ### Sabotage: the per-test coverage map
 

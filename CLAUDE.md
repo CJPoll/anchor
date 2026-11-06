@@ -42,8 +42,8 @@ never an adapter.
 | Bucket | Modules |
 |---|---|
 | Framework | `Anchor.Check.*` (Credo checks, `Anchor.Check.Base`, `Anchor.Check.Source`), `Anchor.Aggregate` (the compile-time macro, DND-5476), `Mix.Tasks.Anchor.*` (`lib/mix/tasks/`; `Mix.Tasks.Anchor.Sabotage`), `Anchor.Sabotage.CoverageCollector` (an OTP process, in `lib/mix/tasks/anchor/sabotage/` so `mix anchor.graph` buckets it as Framework) |
-| Managers | `Anchor.Managers.Lint`, `Anchor.Managers.Sabotage` (`.Runner`, `.Coverage`) |
-| Side Effects | ports: `Anchor.Adapters.ConfigLoader`, `ChangeSource`, `BeamSource`, `Tracing`, `InProcessTests`, `ProjectModuleSource`, `CoverageStore`, `BaselineStore`, `GitBase`; adapters: `ConfigFile`, `GitChangeSource`, `BeamReader`, `CallTracer`, `SuiteRunner`, `ProjectModules`, `CoverageFile`, `RecordFile` (port `RecordStore`), `BaselineFile`, `GitShow` (`lib/anchor/adapters/`); `GitEnv`, the environment the git adapters run git with (DND-5581) |
+| Managers | `Anchor.Managers.Lint`, `Anchor.Managers.AstBaseline`, `Anchor.Managers.Sabotage` (`.Runner`, `.Coverage`, `.Replay`) |
+| Side Effects | ports: `Anchor.Adapters.ConfigLoader`, `ChangeSource`, `BeamSource`, `Tracing`, `InProcessTests`, `ProjectModuleSource`, `CoverageStore`, `BaselineStore`, `GitBase`, `LintKeys`; adapters: `ConfigFile`, `CredoKeys`, `GitChangeSource`, `BeamReader`, `CallTracer`, `SuiteRunner`, `ProjectModules`, `CoverageFile`, `RecordFile` (port `RecordStore`), `BaselineFile`, `GitShow` (`lib/anchor/adapters/`); `GitEnv`, the environment the git adapters run git with (DND-5581) |
 | Domain | everything under `lib/anchor/domain/`, including `Anchor.Domain.Sabotage.*` (`Mutator`, `Operators`, `DiffHunks`, `FunctionSpans`, `Scope`, `CoverageMap`, `Record`, `RecordNaming`, `KillMap`, `ChangedTests`, `TestPath`: the one rule for a path handed to `mix test`, DND-5640) and `Anchor.Domain.Graph.*` |
 
 ### Key Architectural Decisions
@@ -254,16 +254,30 @@ Every rule takes `enforcement: report | enforce`. A report finding is
 `Violation.enforcement: :report`: `Anchor.Managers.Lint.detect_file/5`
 detects report rules apart from enforced ones (one call as before when there
 are none), and `Anchor.Check.Base` gives their issues exit status 0 and low
-priority. Graph rules also take `baseline:`: `Anchor.Managers.Graph` reads it
+priority. A violation both passes found (a check's once-per-file report, such
+as an unresolvable `alias`) is kept once, enforced, naming both modes
+(`Anchor.Domain.EnforcementPasses.merge/2`, DND-5631). Graph rules also take `baseline:`: `Anchor.Managers.Graph` reads it
 through `Anchor.Adapters.BaselineStore` (`BaselineFile`; `create/3` opens
-`:exclusive`, never overwriting), and under `--base REF` its copy at `REF`
+`:exclusive`, never overwriting; after the write the file's real path must be
+under the root's, or it is removed and an issue, DND-5647, with `create/4`'s
+`before_write:` as the test seam), and under `--base REF` its copy at `REF`
 through `Anchor.Adapters.GitBase` (`GitShow`: argv only, the ref checked by
 `Anchor.Domain.Baseline.valid_ref?/1` first). `Anchor.Domain.Baseline` parses
 and compares (multisets: NEW, STALE, held; GREW against base), and
 `Anchor.Domain.Enforcement.judge/4` turns the result into findings. A key is
 `Anchor.Domain.ViolationKey.graph_key/3`: `<id or type>|<subject>|<detail>`,
-no line, no message. `baseline` on an `ast` rule is refused at load until
-Credo compares baselines.
+no line, no message.
+
+An `ast` rule takes `baseline:` too (DND-5632). `Anchor.Managers.Lint`
+detects each baselined rule on its own pass (so each finding carries
+`rule_id` and `ViolationKey.ast_key/3`, `<id>|<file>|<trigger>`), then
+`Anchor.Domain.AstBaseline.judge/4` compares it with the file over the files
+the run read (a narrowed run, `Check.Base.whole_file_set?/2` false, never
+reads an unread file's entry as STALE, and notes them). `Check.Base` puts
+`anchor_key`/`anchor_rule_id` on the Credo issue's `meta`. `mix
+anchor.baseline` (`Anchor.Managers.AstBaseline`) writes a baseline (`--write
+ID`, through the `Anchor.Adapters.LintKeys` port, `CredoKeys`: a muted
+`Credo.run/1`) and judges GREW (`--base REF`).
 
 ## The layering rule (DND-5442)
 
@@ -275,7 +289,16 @@ by default: a bucket and scope the caller's `calls` row lists).
 `Anchor.Domain.DynamicCalls.candidates/2`: every project module with a `def`
 of that name and arity (any arity for `nil`), behaviour or not, each judged
 as a static call; none means the call reaches no project module, and nothing
-is judged. A call with a computed function name (`{:dynamic, nil, ...}`) is
+is judged. `DynamicCalls.targets/2` narrows only on declared evidence
+(DND-5633, `Anchor.Domain.BehaviourReceiver`): a receiver parameter the
+caller's one `@spec` types as `B.t()` (`B` a project behaviour with `@type t
+:: module()` and the callback) reaches `B`'s implementers only; the summary
+counts the narrowed and fanned-out calls (`DynamicCalls.tally/1`). A port
+held in a Manager's options map gets that type through a small function with
+the spec (`Sabotage.Coverage.run_suite/2`). Every rule answers `narrows?/2`
+(a required callback, so asking never depends on what is loaded); a rule whose
+key can narrow (a cycle) says yes, so the narrower entry is a NOTE under
+`--base`, not GREW. A call with a computed function name (`{:dynamic, nil, ...}`) is
 one unresolved violation (`DynamicCalls.computed_name_message/2`), except a
 variable application
 (`kind: :apply`, receiver `:variable`: `fun.(x)`), the one closure form,
@@ -286,6 +309,14 @@ pair, at its first line. The canary has a framework bucket with
 `.anchor.yml` runs the rule with a baseline (Lint's calls into
 `Anchor.Check`, DND-1288, most of them dynamic calls fanned out to every
 check module exporting the function).
+
+
+The engine split (DND-5491): `layering` is the authority, and
+`RuleSchema.early_warning_of/1` names `no_direct_dependency` and
+`no_transitive_dependency` its write-time early warnings (a compile-time
+check: ast type to graph type). `Anchor.Domain.Parity` and
+`test/anchor/integration/layering_parity_test.exs` hold them equal over the
+macro-free `test/fixtures/parity/`; its divergence list only shrinks.
 
 ## The context_acyclic rule (DND-5445)
 
@@ -469,3 +500,26 @@ named per `sabotage.records` (`RecordNaming`: anchor and crew
 (source `kill_map`, after `coverage`, before `mirror`) and what DND-5485
 replays. `RecordFile.create/3` never overwrites; a README is never written;
 nothing is staged or committed. The date is a fact the Mix task reads.
+
+## The survivors list (DND-5483)
+
+`mix anchor.sabotage run` judges `.anchor/sabotage/survivors.txt`
+(`sabotage.survivors`; `Anchor.Domain.Sabotage.Survivors`): a survivor not
+listed is NEW, a listed mutant now killed or no longer generated is STALE,
+both exit 1; the entries a branch adds against `--base` are printed for
+review. It reads the list through the graph's baseline ports
+(`BaselineStore`, `GitBase`) and compares through `Baseline.compare/2`: never
+a second comparator. It is not a graph baseline (`.anchor/baselines/`), and
+the run never writes it.
+
+## Replay (DND-5485)
+
+`mix anchor.sabotage replay` re-applies each landed record's `killed` and
+`timeout` rows (`Anchor.Domain.Sabotage.Replay`, `KillerRef`; the Manager
+`Anchor.Managers.Sabotage.Replay` calls `Runner`'s lock, journal and
+`mutant_outcome/6`, so the journal discipline is one code path). Killers run
+by name (`--only test:<name>`); a row whose killers all pass is LOST POWER
+(exit 1), one that cannot be replayed as recorded is drifted, and zero rows
+or every row drifted is exit 3. A row's file must be inside the project
+(`Replay.inside?/1`) before it is read or written. CI:
+`.github/workflows/sabotage-replay.yml` (weekly, `workflow_dispatch`).

@@ -49,6 +49,9 @@ defmodule Anchor.Domain.GraphRules.EffectsMatchBucket do
   def rule_type, do: :effects_match_bucket
 
   @impl Anchor.Domain.GraphRule
+  def narrows?(_base_key, _key), do: false
+
+  @impl Anchor.Domain.GraphRule
   def needs, do: [:cfa, :effects]
 
   @impl Anchor.Domain.RuleShape

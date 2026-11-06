@@ -16,6 +16,7 @@ defmodule Anchor.Domain.Sabotage.ConfigTest do
       assert config.operators == Operators.all()
       assert config.effect_calls == []
       assert config.coverage_map == nil
+      assert config.survivors == nil
 
       assert config.records == %{
                dir: "test/sabotage_records",
@@ -45,6 +46,7 @@ defmodule Anchor.Domain.Sabotage.ConfigTest do
                  "effect_calls" => ["Notifier.push/1"],
                  "test_mirror" => [%{"from" => "src/**/*.ex", "to" => "spec/{rest}_test.exs"}],
                  "coverage_map" => "anchor-coverage.etf",
+                 "survivors" => "sabotage/survivors.txt",
                  "records" => %{
                    "dir" => "apps/{app}/test/sabotage_records",
                    "naming" => "ticket_nn_what",
@@ -60,6 +62,7 @@ defmodule Anchor.Domain.Sabotage.ConfigTest do
       assert config.effect_calls == ["Notifier.push/1"]
       assert config.test_mirror == [%{from: "src/**/*.ex", to: "spec/{rest}_test.exs"}]
       assert config.coverage_map == "anchor-coverage.etf"
+      assert config.survivors == "sabotage/survivors.txt"
 
       assert config.records == %{
                dir: "apps/{app}/test/sabotage_records",
@@ -74,6 +77,12 @@ defmodule Anchor.Domain.Sabotage.ConfigTest do
       {"an unknown key", %{"max_mutant" => 3}, "sabotage: unknown key(s) \"max_mutant\""},
       {"an empty coverage_map (DND-5474)", %{"coverage_map" => ""}, "sabotage.coverage_map"},
       {"a coverage_map list (DND-5474)", %{"coverage_map" => ["x"]}, "sabotage.coverage_map"},
+      {"an empty survivors path (DND-5483)", %{"survivors" => ""},
+       "sabotage.survivors must be a path inside the project"},
+      {"an absolute survivors path (DND-5483)", %{"survivors" => "/tmp/s.txt"},
+       "sabotage.survivors must be a path inside the project"},
+      {"a survivors path with a .. segment (DND-5483)", %{"survivors" => "a/../../s.txt"},
+       "sabotage.survivors must be a path inside the project"},
       {"an unknown records key (DND-5484)", %{"records" => %{"dirr" => "x"}},
        "sabotage.records: unknown key(s) \"dirr\""},
       {"an unknown naming (DND-5484)", %{"records" => %{"naming" => "by_date"}},
