@@ -2023,7 +2023,8 @@ mutable site`).
 ```bash
 mix anchor.sabotage run [--base REF] [--max N|all] [--only ID]... [--dry-run] [--coverage PATH]
                         [--no-record] [--domain D] [--ticket KEY] [--slot S]
-                        [--print-survivor-lines]
+                        [--print-survivor-lines] [--scope diff|all] [--shard I/N|auto]
+                        [--report PATH]
 mix anchor.sabotage restore
 ```
 
@@ -2059,6 +2060,7 @@ sabotage:
   survivors: .anchor/sabotage/survivors.txt  # the survivors list (DND-5483); named here, it must exist
   behaviour_locality_baseline: .anchor/baselines/behaviour-locality.txt  # DND-5489; named here, it must exist
   behaviour_locality_enforcement: report  # or enforce: fail on NEW, STALE or GREW
+  scan_shards: 7                     # the nightly scan's shards (DND-5490): --shard auto is days since 1970-01-01 mod 7
 ```
 
 ```gitignore
@@ -2173,7 +2175,7 @@ function with no literal clause is listed as an error, never as killed.
 | every measured mutant killed or timed out (an `invalid` one beside them changes nothing) | 0 |
 | zero changed functions from a good diff read (an empty scope: `sabotage: 0 changed functions in <base>..HEAD`) | 0 |
 | changed functions that yielded no mutant at all (every edit skipped, no literal clause, a `defimpl` target not a literal, no mutable site): one `sabotage: no mutant from M.f/a (file): <reason>` line per function, then `sabotage: no mutants generated from N changed functions: nothing was measured` (DND-5617) | 0 |
-| a mutant survived or had no test and is not on the survivors list (NEW), beside a measured one; a mutant crashed beside a measured one; a survivors entry now killed or no longer generated (STALE); a malformed survivors entry; a survivors file named in `sabotage.survivors` that does not exist (DND-5483) | 1 |
+| a mutant survived or had no test and is not on the survivors list (NEW), beside a measured one; a mutant crashed beside a measured one; a survivors entry now killed or no longer generated (STALE); a malformed survivors entry; a survivors file named in `sabotage.survivors` that does not exist (DND-5483) | 1 (a scan with `--report`: 0, see the nightly scan below) |
 | mutants were run and none was measured (all `invalid`, `crashed` or without a test) | 3, `COULD NOT MEASURE` with `Fix:` |
 | a record that could not be named (above); a record that could not be written, when every measured mutant passed (after the outcomes: a survivor stays 1 and an unmeasured run 3, each with `sabotage: record not written: <why>`; DND-5641); a dirty target file; the journal not git-ignored; the run lock or a journal another live run holds; a host with no `/proc`; a leftover journal whose file changed; a restore that did not reproduce the original (the journal is kept); an unknown `--only` id; no `timeout` binary; bad flags | 2, with `Fix:` |
 | no loadable config or no `sabotage:` section; the scope could not be measured; the baseline fails; changed functions whose files cannot be read; the survivors file, or its copy at `--base`, cannot be read (DND-5483) | 3, `COULD NOT MEASURE` with `Fix:` |
@@ -2224,6 +2226,43 @@ it. A base copy that cannot be read for any reason but its absence is exit 3.
 survivor, with the placeholder reason to replace. The run never writes the
 list.
 
+### Sabotage: verifying a branch's records
+
+```bash
+mix anchor.sabotage verify --base REF [--format text|json]
+```
+
+The cheap check a gate runs once a branch's `run` has committed its record
+(DND-5516). For the functions the diff since `REF` changes (the scope above),
+it regenerates every mutant id from the working tree's source and checks each
+is covered: by its latest row (records in path order, blocks in file order)
+in the `anchor-kills` blocks of the records the branch added or appended to,
+when that row is `killed`, `timeout` or `invalid`, or by a survivors entry
+with that id, file, function and operator. It compiles nothing, runs no test,
+applies no mutant and writes nothing, so it takes seconds and loads nothing.
+
+A record is append-only, a block per run. A changed function's latest block
+(records in path order, blocks in file order) is its last run; a row of that
+block whose id the current source no longer generates means the function
+changed after it was sabotaged. Older blocks are history.
+
+| Finding | Line | Exit |
+|---|---|---|
+| a mutant with no covering row and no survivors entry | `UNCOVERED <id> <file> <M.f/a> <operator>: ...` | 1 |
+| a row of a changed function's last run that is no longer generated | `STALE RECORD <path>: <M.f/a> changed after it was sabotaged ...` | 1 |
+| a survivors entry with an empty, `TODO` or placeholder reason, a duplicate id, a malformed line, or an id that names another file, function or operator; a survivors file `sabotage.survivors` names that is absent | `BAD SURVIVOR <path>, entry N: ...` | 1 |
+| a record the branch added or appended to whose kill map does not parse (it covers nothing) | `BAD RECORD <path>:<line>: ...` | 1 |
+| a landed record the branch deleted | `RECORD REMOVED <path>: ...` | 1 |
+| a changed function no literal clause defines | `NOT IN SOURCE <M.f/a>: ...` | unchanged |
+| a survivors entry the branch added against `REF` | `REVIEW survivor added: ...` | unchanged |
+| every mutant covered | `sabotage verify: F functions, M mutants, all covered (K killed, S survivors, I invalid)` (`K` counts timeouts too) | 0 |
+| no changed function | `sabotage verify: no changed functions` | 0 |
+| no `--base`, a `REF` git cannot read or Anchor refuses, an unknown flag | the usage, with a `Fix:` | 2 |
+| no `sabotage:` config; the scope, a record or the survivors list (or its copy at `REF`) cannot be read; changed source files in which no function, outside hunk or macro was found; one mutant id generated twice | `COULD NOT MEASURE: ...` with a `Fix:` | 3 |
+
+Every failure line ends with exactly one `Fix:`. `--format json` prints the
+verdict's fields, and its exit code, for agents.
+
 ### Sabotage: replaying landed records
 
 ```bash
@@ -2264,6 +2303,42 @@ crashed (exit 1): its kills went unchecked. Like `run`, a replay refuses (exit 2
 lock held, or the journal not git-ignored, and never writes a record or the
 survivors list. Anchor runs it weekly and on demand in CI
 (`.github/workflows/sabotage-replay.yml`, `--max all`).
+
+### Sabotage: the nightly improvement scan
+
+```bash
+mix anchor.sabotage run --scope all --shard I/N|auto --max all --report PATH [--coverage MAP]
+```
+
+Diff-scoped sabotage only checks what a branch touched; code that landed
+before the tool, or was never touched since, is never sabotaged. The scan
+runs the generator over every function with a literal clause in the
+project's `lib` files (`--scope all`, DND-5490), one shard at a time:
+`--shard I/N` keeps the mutants whose id, read as a hexadecimal number, is
+`I` modulo `N`. An id hashes the mutant's function, operator and target,
+never its line, so shards `0..N-1` together hold every mutant exactly once.
+`--shard auto` runs the day's shard, the days since 1970-01-01 modulo
+`sabotage.scan_shards` (default 7), so any 7 nights in a row scan all of main,
+across a new year too, and no night runs everything.
+
+`--report PATH` writes the report, markdown at `PATH` and its term beside it
+as `.etf` (`Anchor.Domain.Sabotage.ScanReport`), and never a record
+(`--scope all` writes none either). Its first line says how tests were
+selected: from the coverage map, or, with none, from the kill maps and the
+test mirror. Then the shard, the totals by status and by module, the
+**findings** (the survivors the survivors list does not hold), and the
+functions whose mutants had no test. Survivors never fail a scan: it exits 0
+when it measured, 2 when the report could not be written (or a refusal), 3
+`COULD NOT MEASURE` (no function in scope, a failing baseline, nothing
+measured). A malformed `--shard` or `--scope` is a usage error, 2.
+
+Anchor runs it nightly and on demand in CI (`.github/workflows/sabotage-scan.yml`):
+it downloads the latest `anchor-coverage` artifact main's Coverage map
+workflow uploaded (none is said, not a failure), runs the day's shard with
+`--max all`, writes the report to the job summary and uploads it as the
+`anchor-sabotage-scan` artifact. The job's token only reads. Whoever reads
+the summary files one ticket per module with findings; the job files nothing
+and fixes nothing.
 
 ### Sabotage: the per-test coverage map
 

@@ -40,6 +40,12 @@ defmodule Anchor.Domain.Sabotage.Run do
       (`Anchor.Domain.Sabotage.Survivors`, DND-5483);
     * `print_survivor_lines` — print the line to add for each new survivor
       (`--print-survivor-lines`); nothing is written.
+    * `scan` — `nil`, or a scan run's `%{report, shard, coverage}` (DND-5490:
+      `--report PATH`, `--shard`, the coverage map it selected with, `nil` when
+      none): the run writes the report instead of records, and its exit code
+      ignores survivors;
+    * `report` — the report files written (`[markdown, etf]`), or
+      `report_error`, why they could not be.
   """
 
   alias Anchor.Domain.Sabotage.Mutant
@@ -65,7 +71,10 @@ defmodule Anchor.Domain.Sabotage.Run do
             scope_functions: [],
             not_selected: [],
             survivors: nil,
-            print_survivor_lines: false
+            print_survivor_lines: false,
+            scan: nil,
+            report: [],
+            report_error: nil
 
   @type selection :: {atom(), [String.t()]}
   @type outcome :: %{
@@ -102,6 +111,15 @@ defmodule Anchor.Domain.Sabotage.Run do
                 judgement: Anchor.Domain.Sabotage.Survivors.Judgement.t(),
                 grew: Anchor.Domain.Sabotage.Survivors.grew()
               },
-          print_survivor_lines: boolean()
+          print_survivor_lines: boolean(),
+          scan:
+            nil
+            | %{
+                report: String.t(),
+                shard: nil | {non_neg_integer(), pos_integer()},
+                coverage: String.t() | nil
+              },
+          report: [String.t()],
+          report_error: String.t() | nil
         }
 end

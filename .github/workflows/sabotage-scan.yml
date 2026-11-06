@@ -1,0 +1,97 @@
+name: Sabotage scan
+
+# DND-5490: the nightly improvement scan. Diff-scoped sabotage only checks what
+# a branch touched; this runs the generator over every function of main, one
+# shard a night (`--shard auto`: days since 1970-01-01 mod
+# sabotage.scan_shards, default 7), so any N nights in a row scan all of main and no night runs everything. Its
+# survivors that the survivors list does not hold are FINDINGS: they go to the
+# job summary and the anchor-sabotage-scan artifact, and a person files one
+# ticket per module with findings. Nothing is fixed automatically, and
+# survivors never fail the job: it fails only when it could not measure (no
+# function in scope, a failing baseline, a missing build). Never on a pull
+# request.
+
+on:
+  schedule:
+    - cron: "41 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: sabotage-scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    name: Sabotage scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Elixir
+        id: beam
+        uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          elixir-version: "1.19.4"
+          otp-version: "28.2"
+
+      - name: Restore deps and _build cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-mix-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      # Each mutant runs `mix test` (MIX_ENV=test); compile the test build first
+      # so the first mutant does not pay for it alone.
+      - name: Compile (test)
+        env:
+          MIX_ENV: test
+        run: mix compile --warnings-as-errors
+
+      # The latest coverage map main's Coverage map workflow uploaded. With none
+      # (no run yet, or the download fails) the scan selects tests from the kill
+      # maps and the test mirror, and the report's first line says so.
+      - name: Download the latest coverage map
+        run: |
+          run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow coverage-map.yml \
+            --branch main --event push --status success --limit 1 \
+            --json databaseId --jq '.[0].databaseId // empty') || run_id=""
+          if [ -n "$run_id" ] &&
+            gh run download "$run_id" --repo "$GITHUB_REPOSITORY" \
+              --name anchor-coverage --dir "$RUNNER_TEMP/coverage"; then
+            echo "SCAN_COVERAGE=--coverage=$RUNNER_TEMP/coverage/anchor-coverage.etf" >> "$GITHUB_ENV"
+          else
+            echo "No anchor-coverage artifact: selecting from the kill maps and the test mirror."
+          fi
+
+      # A fresh checkout is clean, so every target file is committed code. The
+      # base is HEAD: the survivors this run adds against main are none.
+      - name: Scan (mix anchor.sabotage run --scope all --shard auto)
+        run: mix anchor.sabotage run --scope all --shard auto --max all --base HEAD --report "$RUNNER_TEMP/scan/sabotage-scan.md" $SCAN_COVERAGE
+
+      - name: Write the totals and findings to the job summary
+        run: cat "$RUNNER_TEMP/scan/sabotage-scan.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: anchor-sabotage-scan
+          path: |
+            ${{ runner.temp }}/scan/sabotage-scan.md
+            ${{ runner.temp }}/scan/sabotage-scan.etf
+          retention-days: 30
+          if-no-files-found: error

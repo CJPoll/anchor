@@ -42,9 +42,9 @@ never an adapter.
 | Bucket | Modules |
 |---|---|
 | Framework | `Anchor.Check.*` (Credo checks, `Anchor.Check.Base`, `Anchor.Check.Source`), `Anchor.Aggregate` (the compile-time macro, DND-5476), `Anchor.Backstop` (the test-time backstop, DND-5480, in `lib/mix/tasks/anchor/backstop/`), `Mix.Tasks.Anchor.*` (`lib/mix/tasks/`; `Mix.Tasks.Anchor.Sabotage`, `.Graph`, `.Explain`), the `Anchor` module (by name), `Anchor.Sabotage.CoverageCollector` (an OTP process, in `lib/mix/tasks/anchor/sabotage/` so `mix anchor.graph` buckets it as Framework) |
-| Managers | `Anchor.Managers.Lint`, `Anchor.Managers.AstBaseline`, `Anchor.Managers.Sabotage` (`.Runner`, `.Coverage`, `.CoverageCompare`, `.Replay`, `.Behaviours`), `Anchor.Managers.Graph` (`.Request`), `Anchor.Managers.Explain`, `Anchor.Managers.Backstop` |
+| Managers | `Anchor.Managers.Lint`, `Anchor.Managers.AstBaseline`, `Anchor.Managers.Sabotage` (`.Runner`, `.Coverage`, `.CoverageCompare`, `.Replay`, `.Behaviours`, `.Verify`), `Anchor.Managers.Graph` (`.Request`), `Anchor.Managers.Explain`, `Anchor.Managers.Backstop` |
 | Side Effects | ports: `Anchor.Adapters.ConfigLoader`, `ChangeSource`, `BeamSource`, `Tracing`, `InProcessTests`, `ProjectModuleSource`, `CoverageStore`, `BaselineStore`, `GitBase`, `LintKeys`, `SourceSource`, `GraphStore`, `TestExecution`, `SourceMutation`, `BehaviourSource`, `WriteRecorder`, `TransactionProbe`; adapters: `ConfigFile`, `CredoKeys`, `GitChangeSource`, `BeamReader`, `BehaviourReader`, `CallTracer`, `SuiteRunner`, `ProjectModules`, `CoverageFile`, `RecordFile` (port `RecordStore`), `BaselineFile`, `GitShow`, `SourceReader`, `GraphArtifact`, `TestRunner`, `SourcePatcher`, `GitStatus`, `GitWorktree`, `TelemetryRecorder`, `EctoTransactionProbe` (`lib/anchor/adapters/`); `GitEnv`, the environment the git adapters run git with (DND-5581); `Anchor.Sabotage.ExUnitFormatter` (`lib/anchor/sabotage/`) |
-| Domain | everything under `lib/anchor/domain/`, including `Anchor.Domain.Sabotage.*` (`Mutator`, `Operators`, `DiffHunks`, `FunctionSpans`, `Scope`, `CoverageMap`, `Record`, `RecordNaming`, `KillMap`, `ChangedTests`, `TestPath`: the one rule for a path handed to `mix test`, DND-5640) and `Anchor.Domain.Graph.*`, the graph rules (`GraphRules.*`), `Model`, `Classification`, `Interfaces`, `Explain`, `Subject`, `RuleShapes`, `Placement` (`.CallGraph`, `.FunctionFacts`, `.Ownership`, `.Rules`), `Proposal` |
+| Domain | everything under `lib/anchor/domain/`, including `Anchor.Domain.Sabotage.*` (`Mutator`, `Operators`, `DiffHunks`, `FunctionSpans`, `Scope`, `CoverageMap`, `Record`, `RecordNaming`, `KillMap`, `ChangedTests`, `TestPath`: the one rule for a path handed to `mix test`, DND-5640; `Verify`, the verdict of `mix anchor.sabotage verify`, DND-5516; `ScanReport`, the nightly scan's report, DND-5490) and `Anchor.Domain.Graph.*`, the graph rules (`GraphRules.*`), `Model`, `Classification`, `Interfaces`, `Explain`, `Subject`, `RuleShapes`, `Placement` (`.CallGraph`, `.FunctionFacts`, `.Ownership`, `.Rules`), `Proposal` |
 
 ADR 001's module map (*How this maps to Anchor*) lists every `lib/` module
 with its bucket; `test/anchor/adr_module_map_test.exs` fails on a module with
@@ -645,7 +645,8 @@ baseline waits for a CI map. `.github/workflows/behaviour-locality.yml` runs it 
 
 ## Sabotage records (DND-5484)
 
-`mix anchor.sabotage run` writes its own sabotage record after the run
+A diff-scoped `mix anchor.sabotage run` writes its own sabotage record after the run
+(a scan, `--scope all` or `--report`, writes none: DND-5490)
 (`Anchor.Domain.Sabotage.Record`, the golden file
 `test/fixtures/sabotage/record_golden.md` is the authority for its text),
 named per `sabotage.records` (`RecordNaming`: anchor and crew
@@ -660,7 +661,7 @@ nothing is staged or committed. The date is a fact the Mix task reads.
 `mix anchor.sabotage run` judges `.anchor/sabotage/survivors.txt`
 (`sabotage.survivors`; `Anchor.Domain.Sabotage.Survivors`): a survivor not
 listed is NEW, a listed mutant now killed or no longer generated is STALE,
-both exit 1; the entries a branch adds against `--base` are printed for
+both exit 1 (a scan's survivors are findings and exit 0, DND-5490); the entries a branch adds against `--base` are printed for
 review. It reads the list through the graph's baseline ports
 (`BaselineStore`, `GitBase`) and compares through `Baseline.compare/2`: never
 a second comparator. It is not a graph baseline (`.anchor/baselines/`), and
@@ -677,3 +678,25 @@ by name (`--only test:<name>`); a row whose killers all pass is LOST POWER
 or every row drifted is exit 3. A row's file must be inside the project
 (`Replay.inside?/1`) before it is read or written. CI:
 `.github/workflows/sabotage-replay.yml` (weekly, `workflow_dispatch`).
+
+## Verify (DND-5516)
+
+`mix anchor.sabotage verify --base REF` (`Anchor.Managers.Sabotage.Verify`, Domain
+`Anchor.Domain.Sabotage.Verify`) regenerates the mutant ids of the changed functions
+and checks each against the kill maps of the records the branch added or appended to
+(`KillMap.parse_blocks/1`; an id's latest row decides, records in path order, blocks in
+file order) and the survivors list. It compiles nothing, runs no test and writes
+nothing. A changed function's latest block is its last run: a row of it no longer
+generated is STALE. A deleted landed record is RECORD REMOVED. Exit 0, 1, 2 usage, 3
+COULD NOT MEASURE; every failure line has one `Fix:`.
+
+## Nightly scan (DND-5490)
+
+`run --scope all` scopes every literal function in lib (`Scope.all/1`); `--shard I/N`
+keeps the mutants whose hex id is I mod N (`Plan.shard/3`), `--shard auto` the day's
+shard, days since 1970-01-01 mod `sabotage.scan_shards` (`Plan.shard_of_day/2`).
+`--report PATH` writes `ScanReport` (markdown and `.etf`, `RecordStore.write_report/4`)
+and never a record; a scan's exit (`Report.scan_code/2`) ignores survivors: 3 measured
+nothing, 2 report not written, else 0. CI: `.github/workflows/sabotage-scan.yml`
+(nightly, `workflow_dispatch`, read-only token); `test/anchor/sabotage_scan_workflow_test.exs`
+holds its command and triggers.

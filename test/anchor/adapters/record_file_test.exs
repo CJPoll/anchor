@@ -44,4 +44,40 @@ defmodule Anchor.Adapters.RecordFileTest do
 
     assert RecordFile.read(root, "apps/core/test/sabotage_records/a.md") == {:ok, "x"}
   end
+
+  test "DND-5490: write_report writes the markdown and its .etf, overwriting both", %{
+    tmp_dir: root
+  } do
+    # Sabotage record: ../../sabotage_records/sabotage-20261106-dnd_5490_scan.md
+    term = :erlang.term_to_binary(%{findings: []})
+
+    assert RecordFile.write_report(root, "out/scan.md", "old\n", "old") ==
+             {:ok, [Path.join(root, "out/scan.md"), Path.join(root, "out/scan.etf")]}
+
+    assert {:ok, _paths} = RecordFile.write_report(root, "out/scan.md", "# scan\n", term)
+    assert File.read!(Path.join(root, "out/scan.md")) == "# scan\n"
+    assert File.read!(Path.join(root, "out/scan.etf")) == term
+
+    absolute = Path.join(root, "abs/scan.md")
+    assert {:ok, [^absolute, _etf]} = RecordFile.write_report("/elsewhere", absolute, "x", term)
+  end
+
+  test "DND-5490: write_report says why it could not write, at each step", %{tmp_dir: root} do
+    # Sabotage record: ../../sabotage_records/sabotage-20261106-dnd_5490_scan.md
+    File.write!(Path.join(root, "file"), "x")
+    # The directory cannot be made: a file is in its place.
+    assert RecordFile.write_report(root, "file/scan.md", "m", "t") == {:error, :enotdir}
+    # The directory cannot be made for want of permission: that cause, never
+    # the :enoent the write after it would hit.
+    File.mkdir_p!(Path.join(root, "ro"))
+    File.chmod!(Path.join(root, "ro"), 0o500)
+    on_exit(fn -> File.chmod(Path.join(root, "ro"), 0o700) end)
+    assert RecordFile.write_report(root, "ro/sub/scan.md", "m", "t") == {:error, :eacces}
+    # The markdown cannot be written: a directory is at its path.
+    File.mkdir_p!(Path.join(root, "a/scan.md"))
+    assert RecordFile.write_report(root, "a/scan.md", "m", "t") == {:error, :eisdir}
+    # The .etf cannot be written: a directory is at its path.
+    File.mkdir_p!(Path.join(root, "b/scan.etf"))
+    assert RecordFile.write_report(root, "b/scan.md", "m", "t") == {:error, :eisdir}
+  end
 end
