@@ -24,6 +24,7 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
   @uow Module.concat(@ns, UoW)
   @x Module.concat(@ns, X)
   @custom_repo Module.concat(@ns, CustomRepo)
+  @lib Module.concat(@ns, Lib)
 
   @x_source """
   defmodule #{inspect(@x)} do
@@ -151,6 +152,17 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
       Repo.transaction(fn -> apply(m, :each, [xs, fun]) end)
     end
 
+    def atomically(fun), do: fun.()
+    def s42, do: atomically(fn -> Repo.insert(%S{}) end)
+
+    def local_write(x), do: x
+    def s44, do: Repo.transaction(fn -> local_write(%T{}) end)
+
+    def s45, do: Repo.transaction(fn -> #{inspect(@lib)}.flush() end)
+
+    def flush_here, do: Repo.insert(%U{})
+    def s46, do: Repo.transaction(fn -> flush_here() end)
+
     def s35 do
       Multi.new()
       |> Multi.run(:a, fn repo, _ -> repo.get(S, 1); repo.insert(%S{}) end)
@@ -182,6 +194,8 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
               def insert(x, _opts \\\\ []), do: x
               def update(x, _opts \\\\ []), do: x
               def soft(x), do: update(x)
+              def transaction(fun), do: fun.()
+              def with_tx, do: transaction(fn -> update(%#{inspect(@s)}{}) end)
               def reload(x), do: update(x)
               def query(x), do: update(x)
             end
@@ -200,8 +214,16 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
 
     config = %Config{
       repos: [@repo, @custom_repo],
-      write_functions: [elem(FunctionRef.parse("#{inspect(@helper)}.audit/1"), 1)],
-      transaction_functions: [elem(FunctionRef.parse("#{inspect(@uow)}.transaction/2"), 1)]
+      write_functions: [
+        elem(FunctionRef.parse("#{inspect(@helper)}.audit/1"), 1),
+        elem(FunctionRef.parse("#{inspect(@x)}.local_write/1"), 1),
+        elem(FunctionRef.parse("#{inspect(@lib)}.flush/0"), 1),
+        elem(FunctionRef.parse("#{inspect(@x)}.flush_here/0"), 1)
+      ],
+      transaction_functions: [
+        elem(FunctionRef.parse("#{inspect(@uow)}.transaction/2"), 1),
+        elem(FunctionRef.parse("#{inspect(@x)}.atomically/1"), 1)
+      ]
     }
 
     %{analysis: Analysis.build(graph, config)}
@@ -355,7 +377,7 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
       analysis: a
     } do
       assert a.sites |> Enum.filter(&(elem(&1.mfa, 0) == @custom_repo)) |> Enum.map(& &1.mfa) ==
-               [{@custom_repo, :soft, 1}]
+               [{@custom_repo, :soft, 1}, {@custom_repo, :with_tx, 0}]
     end
 
     test "a function value made by a call, handed to Enum, makes the scope incomplete", %{
@@ -396,6 +418,37 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
     test "an apply of a function-taking call hides its arguments, so it is a gap", %{analysis: a} do
       assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s41, 2}, _line}]} =
                one(a, :s41)
+    end
+
+    test "a local call of a transaction function is a scope", %{analysis: a} do
+      assert %Scope{kind: :transaction_function, complete?: true} = scope = one(a, :s42)
+      assert scope.keys == keys([@s])
+    end
+
+    test "a local Repo.transaction, in a function written on the repo, is a scope", %{
+      analysis: a
+    } do
+      assert [%Scope{kind: :fun} = scope] =
+               Enum.filter(a.scopes, &(&1.mfa == {@custom_repo, :with_tx, 0}))
+
+      assert scope.keys == keys([@s])
+    end
+
+    test "a local call of a write function is a write", %{analysis: a} do
+      assert %Scope{complete?: true} = scope = one(a, :s44)
+      assert scope.keys == keys([@t])
+    end
+
+    test "a zero-arity write function in a library is an unresolved write, never dropped", %{
+      analysis: a
+    } do
+      assert %Scope{complete?: false, gaps: [{:unresolved_write, site}]} = one(a, :s45)
+      assert site.unresolved == "a write with no source argument"
+    end
+
+    test "a zero-arity write function in the project is followed", %{analysis: a} do
+      assert %Scope{complete?: true} = scope = one(a, :s46)
+      assert scope.keys == keys([@u])
     end
 
     test "a function-taking call's first argument is data (positive control)", %{analysis: a} do
@@ -504,7 +557,7 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
     assert a.counts.incomplete == Enum.count(a.scopes, &(not &1.complete?))
     assert a.counts.writes == length(a.sites)
     assert a.counts.unresolved == length(Enum.filter(a.sites, & &1.unresolved))
-    assert a.counts.unresolved == 2
-    assert a.counts.resolved == a.counts.writes - 2
+    assert a.counts.unresolved == 3
+    assert a.counts.resolved == a.counts.writes - 3
   end
 end

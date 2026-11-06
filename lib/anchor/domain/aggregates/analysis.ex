@@ -121,7 +121,7 @@ defmodule Anchor.Domain.Aggregates.Analysis do
       always_in_transaction: always,
       tables: tables,
       repos: repos |> MapSet.to_list() |> Enum.sort(),
-      counts: counts(sites, scopes, nontx)
+      counts: counts(sites, scopes, nontx, always)
     }
   end
 
@@ -137,7 +137,7 @@ defmodule Anchor.Domain.Aggregates.Analysis do
     rows |> Enum.uniq_by(&{&1.mfa, &1.what}) |> Enum.sort_by(&{&1.mfa, &1.line})
   end
 
-  defp counts(sites, scopes, nontx) do
+  defp counts(sites, scopes, nontx, always) do
     unresolved = Enum.count(sites, &(not WriteSite.resolved?(&1)))
     incomplete = Enum.count(scopes, &(not &1.complete?))
 
@@ -148,7 +148,12 @@ defmodule Anchor.Domain.Aggregates.Analysis do
       scopes: length(scopes),
       complete: length(scopes) - incomplete,
       incomplete: incomplete,
-      outside_gaps: nontx |> Map.values() |> Enum.flat_map(& &1.gaps) |> Enum.uniq() |> length()
+      outside_gaps:
+        nontx
+        |> Enum.reject(fn {mfa, _entry} -> MapSet.member?(always, mfa) end)
+        |> Enum.flat_map(fn {_mfa, entry} -> entry.gaps end)
+        |> Enum.uniq()
+        |> length()
     }
   end
 end

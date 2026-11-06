@@ -142,10 +142,7 @@ defmodule Anchor.Domain.Aggregates.InferenceTest do
   end
 
   test "F8: a gap outside every transaction is an error, never declare: none" do
-    outside =
-      put_in(analysis([], []).nontx[{App.Plain, :write, 0}].gaps, [
-        {:dynamic_call, {App.Plain, :write, 0}, 4}
-      ])
+    outside = %{analysis([], []) | counts: %{counts() | outside_gaps: 1}}
 
     assert {:error, why} = Inference.render_yaml(outside)
     assert why =~ "1 call(s) Anchor cannot attribute"
@@ -155,6 +152,16 @@ defmodule Anchor.Domain.Aggregates.InferenceTest do
     assert {:error, why} = Inference.render_yaml(%Analysis{no_repo?: true})
     assert why =~ "no Ecto repo"
     assert why =~ "write declare: none by hand"
+  end
+
+  test "F8: a proposal beside an incomplete transaction says so in the YAML" do
+    some = %{
+      analysis([scope(1, schema: App.S)], [])
+      | counts: %{counts() | scopes: 2, incomplete: 1}
+    }
+
+    assert {:ok, yaml} = Inference.render_yaml(some)
+    assert yaml =~ "# 1 of 2 transaction(s) incomplete: this proposal may miss tables"
   end
 
   test "F8: a proposal with unresolved writes beside it says so in the YAML" do

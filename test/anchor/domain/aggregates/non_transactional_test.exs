@@ -58,6 +58,12 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
               def n15(mod), do: Repo.transaction(fn -> mod.insert(%S{}) end)
               def n16, do: n11()
 
+              def n20, do: Repo.transaction(&n20g/0)
+              def n20g, do: Repo.insert(%S{})
+
+              def n21, do: Repo.transaction(&n21g/0)
+              def n21g, do: Repo.query!("DELETE FROM s")
+
               def n17, do: Repo.transaction(fn -> n17h() end)
               defp n17h, do: Repo.query!("DELETE FROM s")
 
@@ -176,8 +182,20 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
     assert Map.has_key?(analysis.nontx, {sql_repo, :purge, 0})
   end
 
+  test "a function captured as a transaction's body is inside it", %{analysis: a} do
+    assert nontx(a, :n20).keys == MapSet.new()
+    assert MapSet.member?(a.always_in_transaction, {@n, :n20g, 0})
+    assert MapSet.member?(a.always_in_transaction, {@n, :n21g, 0})
+  end
+
   test "the gaps outside every transaction are counted", %{analysis: a} do
-    gaps = a.nontx |> Map.values() |> Enum.flat_map(& &1.gaps) |> Enum.uniq()
+    gaps =
+      a.nontx
+      |> Enum.reject(fn {mfa, _entry} -> MapSet.member?(a.always_in_transaction, mfa) end)
+      |> Enum.flat_map(fn {_mfa, entry} -> entry.gaps end)
+      |> Enum.uniq()
+
+    refute Enum.any?(gaps, &match?({:dynamic_call, {@n, :n17h, 0}, _line}, &1))
 
     assert a.counts.outside_gaps == length(gaps)
     assert Enum.any?(gaps, &match?({:dynamic_call, {@n, :n13, 1}, _line}, &1))

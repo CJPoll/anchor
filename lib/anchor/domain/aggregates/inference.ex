@@ -96,8 +96,7 @@ defmodule Anchor.Domain.Aggregates.Inference do
 
   # What the analysis found, for the message: the repos always, then the
   # schemas, writes, transactions and calls it could not attribute.
-  defp evidence(%Analysis{counts: counts, scopes: scopes, nontx: nontx} = analysis) do
-    outside = nontx |> Map.values() |> Enum.flat_map(& &1.gaps) |> Enum.uniq() |> length()
+  defp evidence(%Analysis{counts: counts, scopes: scopes} = analysis) do
     schemas = analysis.tables |> Map.values() |> List.flatten() |> Enum.uniq() |> length()
 
     [
@@ -105,15 +104,25 @@ defmodule Anchor.Domain.Aggregates.Inference do
       schemas > 0 && "#{schemas} schema(s)",
       counts.writes > 0 && "#{counts.writes} write(s) found, #{counts.unresolved} unresolved",
       scopes != [] && "#{length(scopes)} transaction(s)",
-      outside > 0 && "#{outside} call(s) Anchor cannot attribute outside a transaction"
+      counts.outside_gaps > 0 &&
+        "#{counts.outside_gaps} call(s) Anchor cannot attribute outside a transaction"
     ]
     |> Enum.filter(&is_binary/1)
   end
 
-  defp unresolved_note(%{unresolved: 0}), do: ""
+  defp unresolved_note(%{unresolved: unresolved, writes: writes, incomplete: incomplete} = counts) do
+    unresolved_line(unresolved, writes) <> incomplete_line(incomplete, counts.scopes)
+  end
 
-  defp unresolved_note(%{unresolved: unresolved, writes: writes}),
+  defp unresolved_line(0, _writes), do: ""
+
+  defp unresolved_line(unresolved, writes),
     do: "# #{unresolved} of #{writes} write(s) unresolved: this proposal may miss tables\n"
+
+  defp incomplete_line(0, _scopes), do: ""
+
+  defp incomplete_line(incomplete, scopes),
+    do: "# #{incomplete} of #{scopes} transaction(s) incomplete: this proposal may miss tables\n"
 
   defp declarations_yaml(proposals) do
     entries =

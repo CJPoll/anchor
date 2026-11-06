@@ -316,6 +316,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
       events
       |> Enum.flat_map(fn
         {:call, node, env, _tags} -> transaction(node, env, mfa, ctx)
+        {:apply, node, env, _tags} -> local_transaction(node, env, mfa, ctx)
         _event -> []
       end)
       |> Enum.with_index(1)
@@ -328,9 +329,18 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
         end)
       end)
 
+    # A function captured as a body is inside it, wherever the capture is written.
+    capture_tags =
+      for %{captures: captures, ordinal: ordinal} <- txs,
+          callee <- captures,
+          reduce: %{} do
+        acc -> Map.update(acc, callee, [ordinal], &(&1 ++ [ordinal]))
+      end
+
     %{
       txs: Enum.map(txs, &Map.drop(&1, [:ids])),
       tags: tags,
+      capture_tags: capture_tags,
       run_lambdas: MapSet.new(run.lambdas),
       run_captures: run.captures
     }
@@ -418,21 +428,32 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
 
   defp transaction(node, env, mfa, ctx) do
     case call(node, env) do
-      {:ok, {module, name, arity} = callee} ->
-        args = :cerl.call_args(node)
+      {:ok, callee} -> transaction_call(callee, :cerl.call_args(node), node, env, mfa, ctx)
+      _other -> []
+    end
+  end
 
-        cond do
-          repo_transaction?(ctx, module, name, arity) ->
-            [tx_body(hd(args), node, env, mfa, ctx)]
+  # A local call is an apply in Core.
+  defp local_transaction(node, env, {module, _name, _arity} = mfa, ctx) do
+    op = :cerl.apply_op(node)
 
-          Enum.any?(ctx.transaction_functions, &FunctionRef.matches?(&1, module, name, arity)) ->
-            [transaction_function(args, node, env, mfa, ctx, callee)]
+    if fname?(op) do
+      {f, a} = :cerl.var_name(op)
+      transaction_call({module, f, a}, :cerl.apply_args(node), node, env, mfa, ctx)
+    else
+      []
+    end
+  end
 
-          true ->
-            []
-        end
+  defp transaction_call({module, name, arity} = callee, args, node, env, mfa, ctx) do
+    cond do
+      repo_transaction?(ctx, module, name, arity) ->
+        [tx_body(hd(args), node, env, mfa, ctx)]
 
-      _other ->
+      Enum.any?(ctx.transaction_functions, &FunctionRef.matches?(&1, module, name, arity)) ->
+        [transaction_function(args, node, env, mfa, ctx, callee)]
+
+      true ->
         []
     end
   end
@@ -613,7 +634,12 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
     acc = %{sites: [], calls: [], dynamic: []}
 
     defined_in = for {:fun, id, tags} <- events, into: %{}, do: {id, tags}
-    ctx = ctx |> Map.put(:defined_in, defined_in) |> Map.put(:module, elem(mfa, 0))
+
+    ctx =
+      ctx
+      |> Map.put(:defined_in, defined_in)
+      |> Map.put(:module, elem(mfa, 0))
+      |> Map.put(:capture_tags, prescan.capture_tags)
 
     acc =
       Enum.reduce(events, acc, fn event, acc -> classify(event, mfa, def_line, ctx, acc) end)
@@ -687,7 +713,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
         {f, a} = :cerl.var_name(op)
         args = :cerl.apply_args(node)
 
-        if MapSet.member?(ctx.repos, elem(mfa, 0)),
+        if MapSet.member?(ctx.repos, elem(mfa, 0)) or write_function?({module, f, a}, ctx),
           do: literal_call(acc, {module, f, a}, args, env, tags, line, ctx),
           else: project_call(acc, ctx, {module, f, a}, :local, args, env, tags, line)
 
@@ -795,7 +821,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
       module == @multi and multi_write?(name, arity) ->
         add_site(acc, name, :multi, Enum.at(args, 2), env, tags, line)
 
-      arity > 0 and Enum.any?(ctx.write_functions, &FunctionRef.matches?(&1, module, name, arity)) ->
+      write_function?(callee, ctx) and (arity > 0 or not project_function?(ctx.graph, callee)) ->
         add_site(acc, name, :write_function, Enum.at(args, 0), env, tags, line)
 
       name in @raw_sql and (module == @raw_sql_module or MapSet.member?(ctx.repos, module)) ->
@@ -836,6 +862,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
         dynamic(acc, line, "a capture of the write #{ViolationKey.mfa(callee)}", tags)
 
       project_function?(ctx.graph, callee) ->
+        tags = if kind == :capture, do: tags ++ Map.get(ctx.capture_tags, callee, []), else: tags
         call = %{to: callee, kind: kind, args: args, env: env, tags: tags, line: line}
         %{acc | calls: [call | acc.calls]}
 
@@ -844,10 +871,13 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
     end
   end
 
-  defp write?({module, name, arity}, ctx) do
+  defp write?({module, name, arity} = callee, ctx) do
     (MapSet.member?(ctx.repos, module) and repo_write?(name, arity)) or
-      Enum.any?(ctx.write_functions, &FunctionRef.matches?(&1, module, name, arity))
+      write_function?(callee, ctx)
   end
+
+  defp write_function?({module, name, arity}, ctx),
+    do: Enum.any?(ctx.write_functions, &FunctionRef.matches?(&1, module, name, arity))
 
   defp raw_sql({:repo, name}, arity),
     do: "raw SQL (repo.#{name}/#{arity} in a Multi.run callback) Anchor cannot attribute"
