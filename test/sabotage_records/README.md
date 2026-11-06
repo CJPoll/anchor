@@ -252,6 +252,8 @@ before coining a synonym.
   `Anchor.Domain.Interfaces`, `GraphRules.Interface`, its registration, its
   RuleSchema row and `max_width`, and the interface width in `GraphReport`
   and `Managers.Graph`.
+- `enforcement_passes` — one finding two rules make: `Anchor.Domain.EnforcementPasses`
+  (DND-5631, DND-5632; its `Fix:` text left out of a finding's identity, DND-5446).
 - `rule_shapes` — one `Fix:` per issue (DND-5446): `Anchor.Domain.RuleShapes`,
   every check's `shape/1` and Fix suffix, and the generic Fix of a rejected
   config in `Failures` (with the load refusals moved there from RuleSchema).

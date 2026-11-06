@@ -192,6 +192,7 @@ defmodule Anchor.Domain.Explain do
       "status" => issue.status,
       "bucket" => nil,
       "context" => Classification.context_of(module, arch.context_depth),
+      "app" => facts.app && Atom.to_string(facts.app),
       "aggregate" => aggregate(model, module),
       "selectors" => selectors(arch, Classification.matching_selectors(facts, arch)),
       "fix" => issue.message

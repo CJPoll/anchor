@@ -1372,8 +1372,8 @@ findings: none
 classification, may_call, must_not_call, rules, findings, unknown}` for agents;
 `findings` is `null` when not computed. Exit 0 answered; 2 usage (no subject,
 two subjects, an unknown option, or a subject that is neither a module name nor
-an `.ex` path under the project root); 3 no or invalid config, or no
-`architecture:` section.
+an `.ex` path under the project root); 3 no or invalid config, no
+`architecture:` section, or an umbrella app directory outside the project root.
 
 ### One `Fix:` per finding
 
