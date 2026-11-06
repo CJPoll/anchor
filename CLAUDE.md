@@ -195,12 +195,15 @@ writes it recognises, what each writes, the write set of each transaction it
 recognises over its call closure, and the writes with no transaction read around
 them, all read from Core. Every `call` and `apply` is a site, a followed project
 function, a call `Aggregates.NoWrite` clears, or a gap at its line (DND-5889): a
-new case belongs in the default, never in a new reader. What is not read by
+new case of those belongs in the default, never in a new reader. What is not read by
 construction is the no-write list, `aggregates.no_write_modules`, an unknown value
 given to one of them and dependencies' own internals (README, *What it does not
 read*, the whole list).
-`Aggregates.FunctionWalk` is the one walk over a function's Core (node ids,
-`let`/`case` bindings, transaction-body tags); `WriteSites` finds the repos,
+`Aggregates.FunctionWalk` is the one walk over a function's Core for sites (node
+ids, `let`/`case` bindings, transaction-body tags); `Aggregates.MultiRoots` is a
+second, separate walk over what a helper returns (DND-5884): a Core shape it does
+not name reads as `:unknown`, so a transaction given that helper is a gap, and a
+new shape a helper returns goes there. `WriteSites` finds the repos,
 writes, transactions and calls; `WriteSource` traces a write's source (rules
 1-9 in its moduledoc; a new Core shape goes there with a row in
 `write_source_test.exs`); `Scopes` and `NonTransactional` summarise per SCC;

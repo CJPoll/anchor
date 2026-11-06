@@ -5,7 +5,7 @@
 - **Date:** 2026-11-06
 - **Code under test:** `Anchor.Domain.Aggregates.WriteSites` (the default of `project_call/8`, `multi_read/7`, `transaction_function/6`), `NoWrite`, `Scopes`, `Analysis`, `Config`, `Inference`, `GraphReport.summary/1`, `AggregateWriteSources`, `HigherOrder`
 - **Suite run:** a driver: one exact, unique anchor per mutation, `mix test --timeout 2000 --max-cases 2 <its test files>` inside `test-slot`, every failure block kept (cut at 3500 bytes), the source restored from bytes with its mtime moved past the last write. `git status` was clean after the run.
-- **Passes:** 55 mutations on the ticket's last code. All red. `0 failures, 23 invalid` is `setup_all` crashing, so the file ran no test: that is red. Rows that first failed to compile were rewritten and re-run; none of those runs counts.
+- **Passes:** 55 mutations on the ticket's last code. All red. `0 failures, 41 invalid` (`SC-GAPORDER`) is `setup_all` crashing, so the file ran no test: that shows the clause exists, and `SC-GAPCONST` in the sixth run shows its order. Rows that first failed to compile were rewritten and re-run; none of those runs is kept.
 - **Not mutated:** every entry of the no-write list. `NW-ENUM`, `NW-QUERYABLE`, `NW-CHANGESET` and `NW-GENSERVER` stand for the class: an entry is an assumption the count and a critic hold (the design says so), and no test asserts a measurement's number.
 
 | # | Mutation | Tests run | Result |
@@ -5894,4 +5894,536 @@ Finished in 0.4 seconds (0.4s async, 0.00s sync)
 48 tests, 1 failure
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
 ```
+
+
+## Sixth run: what runs a value, and the arities of a repo's functions
+
+Sixth run, the whole MR's fixes after the critic's round 9 and the review floor: `given_value/6`, `harmless_functions/7`, the arities of `@repo_functions`, `Scopes.sort_gaps/1`. `GV-NOGAP`, `HF-NORUN` and `RF-NAME` are the regressions, each restoring the unfixed read. `SC-GAPCONST` first survived, which was a finding of its own: nothing tested the order of unread gaps, and `SC-GAPORDER` above showed only that the clause exists, since deleting it crashes `setup_all`. The file got `Scopes.sort_gaps/1`'s test. `GV-NOGAP` first failed to compile and was rewritten.
+
+**Passes on this record.** This file was regenerated in place, where ADR 003 asks for an append, until the second run above. Every row of every earlier form was red and no row was lost but one:
+
+- 45 rows, at the ticket's first code.
+- 53 rows, after the first critic round; `HO-LOGGER` was here.
+- 53 rows, after the second critic round: `HO-LOGGER` replaced by `NW-LOGGERFN`, because that fix removed the `HigherOrder` row it mutated, so it has no successor.
+- 55 rows, after the third critic round: the table at the top of this file.
+
+Earlier failure output is not kept. It was replaced, not lost to a survivor: `HO-LOGGER` read `HigherOrder loses the row: {Logger, :__do_log__, 4} => [{1, 0}]`, `write_sites_default_test.exs`, `37 tests, 1 failure` (red).
+
+| # | Mutation | Tests run | Result |
+|---|---|---|---|
+| GV-NOGAP | the finding: a value given to a repo call in a body it is not in is no gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `59 tests, 3 failures` (red) |
+| GV-ALWAYS | every value given to a repo call is a gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `58 tests, 7 failures` (red) |
+| GV-CHECKOUT | Repo.checkout does not check what it is given (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `58 tests, 2 failures` (red) |
+| GV-NESTED | a nested Repo.transaction does not check what it is given (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `58 tests, 1 failure` (red) |
+| GV-MULTI | a Multi's steps are not checked (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `58 tests, 1 failure` (red) |
+| GV-LAMBDA | a fn is not checked (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `58 tests, 3 failures` (red) |
+| GV-CALLTAGS | a call's tags are not kept (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `58 tests, 1 failure` (red) |
+| HF-NORUN | the finding: a fn bound elsewhere and logged reads as cleared (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `58 tests, 2 failures` (red) |
+| RF-NAME | the finding: a repo function matches by name at any arity (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `58 tests, 1 failure` (red) |
+| RF-TABLE | the table loses an arity of `get` (`lib/anchor/domain/aggregates/write_sites.ex`) | `real_ecto_test.exs` | `13 tests, 1 failure` (red) |
+| SC-GAPCONST | an unread gap sorts as a constant, so a set of them has no order (`lib/anchor/domain/aggregates/scopes.ex`) | `write_sites_default_test.exs` | `59 tests, 1 failure` (red) |
+
+### GV-NOGAP
+
+the finding: a value given to a repo call in a body it is not in is no gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `59 tests, 3 failures`.
+
+```
+  1) test a value bound outside a body and given to a repo call inside it a callback's repo.transaction is a gap of the transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:553
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d31e)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d31e,
+               0},
+              ordinal: 1,
+              line: 195,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:554: (test)
+
+...............
+
+  2) test a value bound outside a body and given to a repo call inside it Repo.checkout is a gap of the body (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:543
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d31a)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d31a,
+               0},
+              ordinal: 1,
+              line: 175,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:544: (test)
+
+...................
+
+  3) test a value bound outside a body and given to a repo call inside it a nested transaction is a gap of the outer body, for a fn or a Multi (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:547
+     d31b
+     code: for name <- [:d31b, :d31c, :d31d] do
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:549: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test a value bound outside a body and given to a repo call inside it a nested transaction is a gap of the outer body, for a fn or a Multi"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:548: (test)
+
+..
+Finished in 0.5 seconds (0.5s async, 0.00s sync)
+59 tests, 3 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/scopes.ex" was set to the future, resetting to now
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+### GV-ALWAYS
+
+every value given to a repo call is a gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `58 tests, 7 failures`.
+
+```
+  1) test a dependency's function a transaction or a Multi runs a dependency's listed transaction function is read as a scope, never unread (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:469
+     Assertion with == failed
+     code:  assert facts.functions[{@d, :d22, 0}].dynamic == []
+     left:  [
+              %{
+                line: 115,
+                tags: [],
+                what: "a value given to a repo call in a body it is not in",
+                write?: false
+              }
+            ]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:478: (test)
+
+...
+
+  2) test a fn run where the walk did not read it row 13: called and given to Multi.run is a gap at the call (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:520
+     match (=) failed
+     code:  assert [{:dynamic_call, {@d, :d30b, 0}, _line}] = nontx(a, :d30b, 0).gaps
+     left:  [{:dynamic_call, {AnchorFixtures.WriteSitesDefaultTest.D, :d30b, 0}, _line}]
+     right: [
+              {:dynamic_call,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :d30b, 0},
+               140},
+              {:dynamic_call,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :d30b, 0},
+               141}
+            ]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:521: (test)
+
+................
+
+  3) test exactly one outcome per call an unknown function handed to a listed function is a gap, and is not also cleared (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:483
+     match (=) failed
+     code:  assert %{cleared: 0, dynamic: [_gap]} = facts.functions[{@d, :d23, 2}]
+     left:  %{cleared: 0, dynamic: [_gap]}
+     right: %{
+              dynamic: [
+                %{
+                  line: 116,
+                  tags: [1],
+                  what: "the function handed to Enum.map/2",
+                  write?: false
+                },
+                %{
+                  line: 116,
+                  tags: [],
+                  what: "a value given to a repo call in a body it is not in",
+                  write?: false
+                }
+              ],
+              computed: [],
+              sites: [],
+              txs: [
+                %{
+                  line: 116,
+                  kind: :fun,
+                  ordinal: 1,
+                  captures: [],
+                  gaps: []
+                }
+              ],
+              calls: [],
+              cleared: 0,
+              def_line: 116,
+              public?: true
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:488: (test)
+
+..
+
+  4) test a value bound outside a body and given to a repo call inside it positive: given to two transactions at no body is no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:563
+     Assertion with == failed
+     code:  assert nontx(a, :d31i, 0).gaps == []
+     left:  [
+              {:dynamic_call,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :d31i, 0},
+               209},
+              {:dynamic_call,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :d31i, 0},
+               210}
+            ]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_defaul
+```
+
+
+### GV-CHECKOUT
+
+Repo.checkout does not check what it is given (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `58 tests, 2 failures`.
+
+```
+  1) test a value bound outside a body and given to a repo call inside it Repo.checkout is a gap of the body (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:543
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d31a)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d31a,
+               0},
+              ordinal: 1,
+              line: 175,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:544: (test)
+
+.
+
+  2) test a value bound outside a body and given to a repo call inside it a callback's repo.transaction is a gap of the transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:553
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d31e)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d31e,
+               0},
+              ordinal: 1,
+              line: 195,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:554: (test)
+
+.......................................................
+Finished in 0.5 seconds (0.5s async, 0.00s sync)
+58 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### GV-NESTED
+
+a nested Repo.transaction does not check what it is given (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `58 tests, 1 failure`.
+
+```
+  1) test a value bound outside a body and given to a repo call inside it a nested transaction is a gap of the outer body, for a fn or a Multi (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:547
+     d31b
+     code: for name <- [:d31b, :d31c, :d31d] do
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:549: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test a value bound outside a body and given to a repo call inside it a nested transaction is a gap of the outer body, for a fn or a Multi"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:548: (test)
+
+............................................
+Finished in 0.5 seconds (0.5s async, 0.00s sync)
+58 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### GV-MULTI
+
+a Multi's steps are not checked (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `58 tests, 1 failure`.
+
+```
+  1) test a value bound outside a body and given to a repo call inside it a nested transaction is a gap of the outer body, for a fn or a Multi (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:547
+     d31c
+     code: for name <- [:d31b, :d31c, :d31d] do
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:549: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test a value bound outside a body and given to a repo call inside it a nested transaction is a gap of the outer body, for a fn or a Multi"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:548: (test)
+
+..............
+Finished in 0.6 seconds (0.6s async, 0.00s sync)
+58 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### GV-LAMBDA
+
+a fn is not checked (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `58 tests, 3 failures`.
+
+```
+  1) test a value bound outside a body and given to a repo call inside it a nested transaction is a gap of the outer body, for a fn or a Multi (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:547
+     d31b
+     code: for name <- [:d31b, :d31c, :d31d] do
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:549: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test a value bound outside a body and given to a repo call inside it a nested transaction is a gap of the outer body, for a fn or a Multi"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:548: (test)
+
+.....
+
+  2) test a value bound outside a body and given to a repo call inside it Repo.checkout is a gap of the body (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:543
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d31a)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d31a,
+               0},
+              ordinal: 1,
+              line: 175,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:544: (test)
+
+..................
+
+  3) test a value bound outside a body and given to a repo call inside it a callback's repo.transaction is a gap of the transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:553
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d31e)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d31e,
+               0},
+              ordinal: 1,
+              line: 195,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:554: (test)
+
+....................
+Finished in 0.7 seconds (0.7s async, 0.00s sync)
+58 tests, 3 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### GV-CALLTAGS
+
+a call's tags are not kept (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `58 tests, 1 failure`.
+
+```
+  1) test a value bound outside a body and given to a repo call inside it positive: written inside the body is no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:557
+     ** (MatchError) no match of right hand side value:
+
+         [
+           %Anchor.Domain.Aggregates.Scope{
+             mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d31h, 0},
+             ordinal: 2,
+             line: 202,
+             kind: :fun,
+             writes: [
+               %Anchor.Domain.Aggregates.WriteSite{
+                 mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d31h, 0},
+                 line: 203,
+                 op: :insert,
+                 via: :multi,
+                 sources: [schema: AnchorFixtures.WriteSitesDefaultTest.S],
+                 unresolved: nil,
+                 scopes: [2, 1],
+                 run_callback?: false
+               }
+             ],
+             keys: MapSet.new([schema: AnchorFixtures.WriteSitesDefaultTest.S]),
+             no_gap_noticed?: false,
+             gaps: [
+               {:dynamic_call, {AnchorFixtures.WriteSitesDefaultTest.D, :d31h, 0}, 203}
+             ]
+           }
+         ]
+
+     code: for name <- [:d31f, :d31g, :d31h] do
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:559: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test a value bound outside a body and given to a repo call inside it positive: written inside the body is no gap"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:558: (test)
+
+.......................
+Finished in 0.7 seconds (0.7s async, 0.00s sync)
+58 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### HF-NORUN
+
+the finding: a fn bound elsewhere and logged reads as cleared (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `58 tests, 2 failures`.
+
+```
+  1) test a fn at a harmless argument bound outside the body and logged in it is a gap of the body (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:570
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d32a)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d32a,
+               0},
+              ordinal: 1,
+              line: 215,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:571: (test)
+
+..................................
+
+  2) test a fn at a harmless argument a default bound outside the body is a gap too, on the safe side (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:574
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d32c)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d32c,
+               1},
+              ordinal: 1,
+              line: 225,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:575: (test)
+
+...........
+Finished in 0.6 seconds (0.6s async, 0.00s sync)
+58 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### RF-NAME
+
+the finding: a repo function matches by name at any arity (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `58 tests, 1 failure`.
+
+```
+  1) test a call on a repo a function it defines at a generated name and another arity is followed (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:584
+     Assertion with == failed
+     code:  assert keys == MapSet.new(schema: @s)
+     left:  MapSet.new([])
+     right: MapSet.new([schema: AnchorFixtures.WriteSitesDefaultTest.S])
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:588: (test)
+
+.............
+Finished in 0.5 seconds (0.5s async, 0.00s sync)
+58 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### RF-TABLE
+
+the table loses an arity of `get` (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `13 tests, 1 failure`.
+
+```
+  1) test every callback of Ecto.Repo is a write, raw SQL, or known to write nothing (Anchor.Domain.Aggregates.RealEctoTest)
+     test/anchor/domain/aggregates/real_ecto_test.exs:171
+     Assertion with == failed
+     code:  assert Ecto.Repo.behaviour_info(:callbacks)
+            |> Enum.reject(fn {name, arity} -> arity in Map.get(known, name, []) end) == []
+     left:  [get: 3]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/real_ecto_test.exs:174: (test)
+
+............
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+13 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### SC-GAPCONST
+
+an unread gap sorts as a constant, so a set of them has no order (`lib/anchor/domain/aggregates/scopes.ex`). Result: `59 tests, 1 failure`.
+
+```
+  1) test Scopes.sort_gaps/1 unread gaps sort by function, line and text (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:584
+     Assertion with == failed
+     code:  assert Anchor.Domain.Aggregates.Scopes.sort_gaps([late, early_b, early_a]) == [early_a, early_b, late]
+     left:  [
+              {:unread,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :a, 0}, 2,
+               "unread: a"},
+              {:unread,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :a, 0}, 1,
+               "unread: b"},
+              {:unread,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :a, 0}, 1,
+               "unread: a"}
+            ]
+     right: [
+              {:unread,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :a, 0}, 1,
+               "unread: a"},
+              {:unread,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :a, 0}, 1,
+               "unread: b"},
+              {:unread,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :a, 0}, 2,
+               "unread: a"}
+            ]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:589: (test)
+
+........................
+Finished in 0.6 seconds (0.6s async, 0.00s sync)
+59 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/scopes.ex" was set to the future, resetting to now
+```
+
 

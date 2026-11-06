@@ -23,6 +23,7 @@ defmodule Anchor.Domain.Aggregates.WriteSitesDefaultTest do
   @lib Module.concat(@ns, Lib)
   @listed Module.concat(@ns, Listed)
   @macros Module.concat(@ns, Macros)
+  @written Module.concat(@ns, WrittenRepo)
 
   @source """
   defmodule #{inspect(@uow)} do
@@ -33,6 +34,13 @@ defmodule Anchor.Domain.Aggregates.WriteSitesDefaultTest do
 
   defmodule #{inspect(@macros)} do
     defmacro m(x), do: x
+  end
+
+  defmodule #{inspect(@written)} do
+    def insert(x, _opts \\\\ []), do: x
+    def transaction(f, _opts \\\\ []), do: f
+    def get(x, id, _opts \\\\ []), do: {x, id}
+    def get(x, _id, _tenant, :audited), do: insert(x)
   end
 
   defmodule #{inspect(@d)} do
@@ -167,6 +175,64 @@ defmodule Anchor.Domain.Aggregates.WriteSitesDefaultTest do
       f = fn -> Repo.insert(%S{}) end
       Repo.transaction(fn -> f.() end)
     end
+
+    def d31a do
+      f = fn -> Repo.insert(%S{}) end
+      Repo.transaction(fn -> Repo.checkout(f) end)
+    end
+
+    def d31b do
+      f = fn -> Repo.insert(%S{}) end
+      Repo.transaction(fn -> Repo.transaction(f) end)
+    end
+
+    def d31c do
+      f = fn _repo, _changes -> Repo.insert(%S{}) end
+      Repo.transaction(fn -> Multi.new() |> Multi.run(:a, f) |> Repo.transaction() end)
+    end
+
+    def d31d do
+      m = Multi.new() |> Multi.insert(:a, %S{})
+      Repo.transaction(fn -> Repo.transaction(m) end)
+    end
+
+    def d31e do
+      f = fn -> Repo.insert(%S{}) end
+      Multi.new() |> Multi.run(:a, fn repo, _ -> repo.transaction(f) end) |> Repo.transaction()
+    end
+
+    def d31f, do: Repo.transaction(fn -> Repo.transaction(fn -> Repo.insert(%S{}) end) end)
+    def d31g, do: Repo.transaction(fn -> Repo.checkout(fn -> Repo.insert(%S{}) end) end)
+
+    def d31h do
+      Repo.transaction(fn ->
+        Multi.new() |> Multi.insert(:a, %S{}) |> Repo.transaction()
+      end)
+    end
+
+    def d31i do
+      f = fn -> Repo.insert(%S{}) end
+      Repo.transaction(f)
+      Repo.transaction(f)
+    end
+
+    def d32a do
+      f = fn -> Repo.insert(%S{}) end
+      Repo.transaction(fn -> Logger.info(f) end)
+    end
+
+    def d32b do
+      f = fn -> "x" end
+      Logger.info(f)
+    end
+
+    def d32c(m) do
+      f = fn -> Repo.insert(%S{}) end
+      Repo.transaction(fn -> Map.get(m, :k, f) end)
+    end
+
+    def d33a, do: Repo.transaction(fn -> #{inspect(@written)}.get(%S{}, 1, 2, :audited) end)
+    def d33b, do: Repo.transaction(fn -> #{inspect(@written)}.get(%S{}, 1) end)
   end
   """
 
@@ -175,7 +241,7 @@ defmodule Anchor.Domain.Aggregates.WriteSitesDefaultTest do
     graph = graph!(source)
 
     config = %Config{
-      repos: [@repo],
+      repos: [@repo, @written],
       no_write_modules: [@listed],
       write_functions: [ok!(FunctionRef.parse("#{inspect(@lib)}.soft_delete/1"))],
       transaction_functions: [
@@ -468,6 +534,73 @@ defmodule Anchor.Domain.Aggregates.WriteSitesDefaultTest do
     test "positive: only given to the transaction is no gap", %{analysis: a} do
       assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :d30f)
       assert nontx(a, :d30f, 0).gaps == []
+    end
+  end
+
+  describe "a value bound outside a body and given to a repo call inside it" do
+    defp scopes(a, name), do: Enum.filter(a.scopes, &(elem(&1.mfa, 1) == name))
+
+    test "Repo.checkout is a gap of the body", %{analysis: a} do
+      assert %Scope{no_gap_noticed?: false} = one(a, :d31a)
+    end
+
+    test "a nested transaction is a gap of the outer body, for a fn or a Multi", %{analysis: a} do
+      for name <- [:d31b, :d31c, :d31d] do
+        assert scopes(a, name) |> Enum.count(&(not &1.no_gap_noticed?)) == 1, "#{name}"
+      end
+    end
+
+    test "a callback's repo.transaction is a gap of the transaction", %{analysis: a} do
+      assert %Scope{no_gap_noticed?: false} = one(a, :d31e)
+    end
+
+    test "positive: written inside the body is no gap", %{analysis: a} do
+      for name <- [:d31f, :d31g, :d31h] do
+        assert [] = scopes(a, name) |> Enum.reject(& &1.no_gap_noticed?), "#{name}"
+      end
+    end
+
+    test "positive: given to two transactions at no body is no gap", %{analysis: a} do
+      assert [%Scope{no_gap_noticed?: true}, %Scope{no_gap_noticed?: true}] = scopes(a, :d31i)
+      assert nontx(a, :d31i, 0).gaps == []
+    end
+  end
+
+  describe "a fn at a harmless argument" do
+    test "bound outside the body and logged in it is a gap of the body", %{analysis: a} do
+      assert %Scope{no_gap_noticed?: false} = one(a, :d32a)
+    end
+
+    test "a default bound outside the body is a gap too, on the safe side", %{analysis: a} do
+      assert %Scope{no_gap_noticed?: false} = one(a, :d32c)
+    end
+
+    test "positive: logged where it is bound is no gap", %{analysis: a} do
+      assert nontx(a, :d32b, 0).gaps == []
+    end
+  end
+
+  describe "Scopes.sort_gaps/1" do
+    test "unread gaps sort by function, line and text" do
+      late = {:unread, {@d, :a, 0}, 2, "unread: a"}
+      early_b = {:unread, {@d, :a, 0}, 1, "unread: b"}
+      early_a = {:unread, {@d, :a, 0}, 1, "unread: a"}
+
+      assert Anchor.Domain.Aggregates.Scopes.sort_gaps([late, early_b, early_a]) ==
+               [early_a, early_b, late]
+    end
+  end
+
+  describe "a call on a repo" do
+    test "a function it defines at a generated name and another arity is followed", %{
+      analysis: a
+    } do
+      assert %Scope{no_gap_noticed?: true, keys: keys} = one(a, :d33a)
+      assert keys == MapSet.new([{:schema, @s}])
+    end
+
+    test "positive: the generated arity is Ecto's, and reads nothing", %{analysis: a} do
+      assert %Scope{no_gap_noticed?: true, writes: []} = one(a, :d33b)
     end
   end
 

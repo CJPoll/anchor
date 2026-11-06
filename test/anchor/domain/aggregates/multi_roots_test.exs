@@ -95,6 +95,7 @@ defmodule Anchor.Domain.Aggregates.MultiRootsTest do
     def ping(m, n), do: if(n == 0, do: m, else: pong(m, n - 1))
     def pong(m, n), do: ping(m, n)
     def literal_multi, do: %Multi{}
+    def reduced(xs), do: Enum.reduce(xs, Multi.new(), fn x, m -> Multi.put(m, x, 1) end)
     def defaults, do: %{at: DateTime.utc_now()}
     #{for i <- 0..59, do: "def chain#{i}(m) do\n  _a = chain#{i + 1}(m)\n  chain#{i + 1}(m)\nend\n"}
     def chain60(m), do: m
@@ -201,6 +202,7 @@ defmodule Anchor.Domain.Aggregates.MultiRootsTest do
       assert roots(g, :tagged, 1) == :unknown
       assert roots(g, :from_lib, 0) == :unknown
       assert roots(g, :called_fn, 1) == :unknown
+      assert roots(g, :reduced, 1) == :unknown
     end
 
     test "a recursive helper is unknown, direct or through another", %{graph: g} do

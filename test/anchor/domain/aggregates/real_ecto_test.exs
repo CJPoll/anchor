@@ -169,12 +169,10 @@ defmodule Anchor.Domain.Aggregates.RealEctoTest do
   end
 
   test "every callback of Ecto.Repo is a write, raw SQL, or known to write nothing" do
-    known =
-      MapSet.union(MapSet.new(Map.keys(WriteSites.repo_writes())), WriteSites.repo_functions())
+    known = Map.merge(WriteSites.repo_writes(), WriteSites.repo_functions())
 
     assert Ecto.Repo.behaviour_info(:callbacks)
-           |> Keyword.keys()
-           |> Enum.reject(&MapSet.member?(known, &1)) == []
+           |> Enum.reject(fn {name, arity} -> arity in Map.get(known, name, []) end) == []
   end
 
   test "DND-5889: Ecto's own expansion, and what `use Ecto.Schema` generates, is no gap", %{

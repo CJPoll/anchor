@@ -261,6 +261,7 @@ before coining a synonym.
   (`Anchor.Domain.Aggregates.Index`), the `aggregate_declarations` graph rule
   and the `use Anchor.Aggregate` macro; the write analysis (DND-5459:
   `FunctionWalk`, `WriteSites`, `WriteSource`, `Scopes`, `NonTransactional`,
+  `NoWrite`, `MultiRoots`,
   `Inference`, `Analysis` and the `aggregate_write_sources` graph rule); and
   `declare: none` (DND-5659: `Config`'s `none`, `Persistence`, the
   `:persists_under_none` issue).

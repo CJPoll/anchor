@@ -270,10 +270,11 @@ defmodule Anchor.Domain.Aggregates.NoWrite do
     "Elixir.System": @system_functions
   }
 
-  # A function here comes to no gap. A default comes back as a value: nothing here
+  # A function here is no unread call. A default comes back as a value: nothing here
   # runs it, and project code that runs it is a gap of its own, at that call. A log
   # message may be data or a function (so no `HigherOrder` row), and a function there
-  # runs on the spot.
+  # runs on the spot. An inline fn is read where it is written; `WriteSites` holds one
+  # bound under other tags to the rule for any run.
   @harmless_function_argument MapSet.new([
                                 {Keyword, :get, 3},
                                 {Logger, :__do_log__, 4},

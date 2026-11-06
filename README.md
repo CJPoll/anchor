@@ -1196,7 +1196,8 @@ aggregates:
 
 `declare` names the aggregates; `repos`, `write_functions` and
 `transaction_functions` tell the write analysis what writes and what opens a
-transaction, and are checked for shape (exact module names, and
+transaction, and `no_write_modules` (*What it does not read*) what it clears
+unread, Erlang modules included, and are checked for shape (exact module names, and
 `"Module.function/arity"` tokens). The load refuses, each with a `Fix:` giving this shape: a section that is not a
 mapping; an unknown key at any level; a `declare` that is neither `none` nor a list; an entry
 that is not a mapping, has no `name`, or a `name` that is not a module-name
@@ -1335,7 +1336,7 @@ does not define, and a call on a computed module.
 
 The load refuses (exit 3, each with a `Fix:` naming both forms): `none`
 without a `reason:` or with a blank one; a `reason:` without `none`; `none`
-beside `repos`, `write_functions` or `transaction_functions`; a `declare`
+beside `repos`, `write_functions`, `transaction_functions` or `no_write_modules`; a `declare`
 string other than `none`; and an explicit `declare: []`, so "nothing" is
 always said on purpose. A missing `aggregates:` section keeps the fail-closed
 checks-nothing violation above. Under `none` no write analysis is built, and
@@ -1396,7 +1397,10 @@ module is a gap too, unless `Anchor.Domain.HigherOrder` names that place.
 
 A `fn` is read once, where it is defined and in any transaction it is given to. A
 run of it anywhere else is a gap there, so a `fn` both called and passed to a
-transaction (`f.(); Repo.transaction(f)`) is a gap at the call (DND-5885).
+transaction (`f.(); Repo.transaction(f)`) is a gap at the call (DND-5885). So is a
+`fn` or a Multi bound outside a body and given to a repo call inside it
+(`Repo.checkout`, a nested `Repo.transaction`), and a `fn` bound outside a body and
+logged inside it.
 
 A Multi that comes back from a project helper is read from what the helper returns
 (DND-5884): an argument it is built on that Anchor cannot trace is a gap, even when
@@ -1416,7 +1420,9 @@ What is left is not read by construction:
 - **dependencies' own internals,** for a function listed in
   `aggregates.write_functions` or a listed module alike;
 - **an unknown value given to a listed module,** which Anchor cannot tell from
-  data, in a place `HigherOrder` does not name.
+  data, in a place `HigherOrder` does not name;
+- **a function a repo defines at a name and arity `use Ecto.Repo` generates.** Anchor
+  reads that call as Ecto's. The same name at another arity is followed.
 
 ```yaml
 aggregates:

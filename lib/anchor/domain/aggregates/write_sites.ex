@@ -151,43 +151,43 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
 
   # What `use Ecto.Repo` generates beside the writes and the raw SQL: the
   # analysis does not walk these. A test holds this to Ecto.Repo's callbacks.
-  @repo_functions [
-    :__adapter__,
-    :aggregate,
-    :all,
-    :all_by,
-    :checked_out?,
-    :checkout,
-    :child_spec,
-    :config,
-    :default_options,
-    :disconnect_all,
-    :exists?,
-    :explain,
-    :get,
-    :get!,
-    :get_by,
-    :get_by!,
-    :get_dynamic_repo,
-    :in_transaction?,
-    :init,
-    :load,
-    :one,
-    :one!,
-    :preload,
-    :prepare_query,
-    :prepare_transaction,
-    :put_dynamic_repo,
-    :reload,
-    :reload!,
-    :rollback,
-    :start_link,
-    :stop,
-    :stream,
-    :to_sql,
-    :transact,
-    :transaction
-  ]
+  @repo_functions %{
+    __adapter__: [0],
+    aggregate: [2, 3, 4],
+    all: [1, 2],
+    all_by: [2, 3],
+    checked_out?: [0],
+    checkout: [1, 2],
+    child_spec: [1],
+    config: [0],
+    default_options: [1],
+    disconnect_all: [1, 2],
+    exists?: [1, 2],
+    explain: [2, 3],
+    get: [2, 3],
+    get!: [2, 3],
+    get_by: [2, 3],
+    get_by!: [2, 3],
+    get_dynamic_repo: [0],
+    in_transaction?: [0],
+    init: [2],
+    load: [2],
+    one: [1, 2],
+    one!: [1, 2],
+    preload: [2, 3],
+    prepare_query: [3],
+    prepare_transaction: [2],
+    put_dynamic_repo: [1],
+    reload: [1, 2],
+    reload!: [1, 2],
+    rollback: [1],
+    start_link: [0, 1],
+    stop: [0, 1],
+    stream: [1, 2],
+    to_sql: [2],
+    transact: [1, 2],
+    transaction: [1, 2]
+  }
 
   @raw_sql_module Ecto.Adapters.SQL
 
@@ -249,9 +249,9 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   @spec repo_writes() :: %{atom() => Range.t()}
   def repo_writes, do: @repo_writes
 
-  @doc "The functions `use Ecto.Repo` generates that are no writes and no raw SQL."
-  @spec repo_functions() :: MapSet.t(atom())
-  def repo_functions, do: MapSet.new(@repo_functions)
+  @doc "The functions `use Ecto.Repo` generates that are no writes and no raw SQL, with their arities."
+  @spec repo_functions() :: %{atom() => [arity()]}
+  def repo_functions, do: @repo_functions
 
   @doc """
   The repo modules: the graph modules whose beam declares
@@ -675,7 +675,8 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   # A project function on the trace builds (part of) the Multi: the call is
   # in the body, so its closure is; its arguments are traced when they can be.
   # `MultiRoots` says which arguments the Multi it returns is built on: only there
-  # is what Anchor cannot trace, or an argument's own gap, this transaction's.
+  # does what Anchor cannot trace, or an argument's own gap, make a gap. Every traced
+  # argument stays in the body, on the safe side, for what it writes.
   defp multi_helper(node, args, {module, name, arity}, env, mfa, ctx, depth) do
     if project_function?(ctx.graph, {module, name, arity}) do
       callee = {module, name, arity}
@@ -742,7 +743,12 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
 
     acc = %{sites: [], calls: [], dynamic: [], computed: [], cleared: 0}
 
-    defined_in = for {:fun, id, tags} <- events, into: %{}, do: {id, tags}
+    defined_in =
+      Map.new(events, fn
+        {:fun, id, tags} -> {id, tags}
+        {kind, node, _env, tags} when kind in [:call, :apply] -> {FunctionWalk.id(node), tags}
+        {_kind, _node, _tags} -> {nil, []}
+      end)
 
     ctx =
       ctx
@@ -869,7 +875,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
           name in @given_a_function ->
             given_function(acc, "repo.#{name}/#{length(args)}", args, env, tags, line, ctx)
 
-          name in @repo_functions ->
+          repo_function?(name, length(args)) ->
             acc
 
           true ->
@@ -954,11 +960,30 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
 
     if callback(arg, env, mfa) == :error and multi(arg, env, mfa, ctx) == :error,
       do: dynamic(acc, line, "#{what} is given a value Anchor cannot read", tags),
-      else: acc
+      else: given_value(acc, arg, env, tags, line, ctx)
   end
 
   defp given_function(acc, what, [], _env, tags, line, _ctx),
     do: dynamic(acc, line, "#{what} is given a value Anchor cannot read", tags)
+
+  # A value given to a repo call runs there. It is read under the tags where it is
+  # defined, and under those of the transaction it opens: a body around this call
+  # that it is not in is a body the walk did not read it in.
+  defp given_value(acc, arg, env, tags, line, ctx) do
+    if Enum.any?(given_ids(arg, env, ctx), &(tags -- Map.get(ctx.defined_in, &1, tags) != [])),
+      do: dynamic(acc, line, "a value given to a repo call in a body it is not in", tags),
+      else: acc
+  end
+
+  defp given_ids(arg, env, ctx) do
+    mfa = {ctx.module, nil, nil}
+
+    case {callback(arg, env, mfa), multi(arg, env, mfa, ctx)} do
+      {{:lambda, id}, _multi} -> [id]
+      {_callback, {:ok, _kind, ids, _captures, _gaps}} -> ids
+      _other -> []
+    end
+  end
 
   # What a computed module may reach, by name: its parameters have callers Anchor
   # cannot see. A computed name too is a report at the call itself.
@@ -1078,7 +1103,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   # dynamic calls would be reported against every project with a repo.
   defp generated_on_repo?({module, name, arity}, repos) do
     MapSet.member?(repos, module) and
-      (repo_write?(name, arity) or name in @raw_sql or name in @repo_functions)
+      (repo_write?(name, arity) or name in @raw_sql or repo_function?(name, arity))
   end
 
   defp erlang_apply(acc, [m, f, args], env, tags, line, ctx) do
@@ -1228,7 +1253,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
 
   defp run_target(acc, _args, _env, _tags, _line, _ctx), do: acc
 
-  defp repo_function(acc, {module, name, _arity} = callee, args, env, tags, line, ctx) do
+  defp repo_function(acc, {module, name, arity} = callee, args, env, tags, line, ctx) do
     cond do
       name == :checkout ->
         given_function(acc, ViolationKey.mfa(callee), args, env, tags, line, ctx)
@@ -1237,7 +1262,10 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
         what = "#{ViolationKey.mfa(callee)}, which this repo's code does not define"
         dynamic(acc, line, what, tags, true)
 
-      name in @repo_functions ->
+      name in [:transaction, :transact] and arity in [1, 2] ->
+        given_value(acc, hd(args), env, tags, line, ctx)
+
+      repo_function?(name, arity) ->
         acc
 
       project_function?(ctx.graph, callee) ->
@@ -1297,7 +1325,21 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
         unread_arguments(acc, callee, tags, line)
 
       true ->
-        %{acc | cleared: acc.cleared + 1}
+        harmless_functions(%{acc | cleared: acc.cleared + 1}, callee, args, env, tags, line, ctx)
+    end
+  end
+
+  # A log message runs on the spot, so a fn bound under other tags is a run the walk
+  # did not read. A default only comes back: the same answer is on the safe side.
+  defp harmless_functions(acc, callee, args, env, tags, line, ctx) do
+    if NoWrite.harmless_function_argument?(callee) do
+      for arg <- args,
+          {:lambda, id} <- [callback(arg, env, {ctx.module, nil, nil})],
+          reduce: acc do
+        acc -> lambda_run(acc, id, tags, line, ctx)
+      end
+    else
+      acc
     end
   end
 
@@ -1442,6 +1484,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   end
 
   defp repo_write?(name, arity), do: arity in Map.get(@repo_writes, name, [])
+  defp repo_function?(name, arity), do: arity in Map.get(@repo_functions, name, [])
   defp multi_write?(name, arity), do: arity in Map.get(@multi_writes, name, [])
 
   defp format({module, name, arity}), do: FunctionRef.format(module, name, arity)
