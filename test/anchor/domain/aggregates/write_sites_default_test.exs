@@ -22,10 +22,15 @@ defmodule Anchor.Domain.Aggregates.WriteSitesDefaultTest do
   # No module of this name exists: a dependency, as Anchor sees one.
   @lib Module.concat(@ns, Lib)
   @listed Module.concat(@ns, Listed)
+  @macros Module.concat(@ns, Macros)
 
   @source """
   defmodule #{inspect(@uow)} do
     def transaction(_first, _second), do: :ok
+  end
+
+  defmodule #{inspect(@macros)} do
+    defmacro m(x), do: x
   end
 
   defmodule #{inspect(@d)} do
@@ -84,6 +89,7 @@ defmodule Anchor.Domain.Aggregates.WriteSitesDefaultTest do
     def d16b, do: (fn -> Repo.insert(%S{}) end).()
     def d17(pid), do: GenServer.call(pid, :save)
     def d18, do: Task.async(fn -> :ok end)
+    def d19, do: Repo.transaction(fn -> #{inspect(@macros)}."MACRO-m"(__ENV__, 1) end)
   end
   """
 
@@ -206,6 +212,12 @@ defmodule Anchor.Domain.Aggregates.WriteSitesDefaultTest do
       assert a.counts.cleared >= 1
       assert a.counts.unread_by_callee["unread: call of GenServer.call/2"] == 2
       assert a.counts.unread_by_callee[lib_call("save/1")] == 4
+    end
+  end
+
+  describe "a project function the analysis does not walk" do
+    test "a macro's own function is a gap, never a call to nowhere", %{analysis: a} do
+      assert whats(one(a, :d19).gaps) == ["unread: call of #{inspect(@macros)}.MACRO-m/2"]
     end
   end
 

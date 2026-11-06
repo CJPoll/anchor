@@ -1228,14 +1228,10 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
     end
   end
 
-  # What the analysis walks: a project function with a body, def or defp, that
-  # `use Ecto.Repo` did not generate.
-  defp followed?({module, name, arity} = callee, ctx) do
-    match?(
-      %FunctionNode{core: core, kind: kind} when core != nil and kind in [:def, :defp],
-      Graph.function(ctx.graph, callee)
-    ) and not generated_on_repo?({module, name, arity}, ctx.repos)
-  end
+  # What the analysis walks: a project function with a body that `use Ecto.Repo`
+  # did not generate.
+  defp followed?(callee, ctx),
+    do: project_function?(ctx.graph, callee) and not generated_on_repo?(callee, ctx.repos)
 
   # The default (DND-5889): a call nothing above read is a gap at its line, unless
   # the no-write list clears it and every function it is given can be seen.
