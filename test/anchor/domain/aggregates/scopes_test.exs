@@ -73,7 +73,7 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
 
     def s12(xs), do: Repo.transaction(fn -> Enum.each(xs, &Helper.write_s/1) end)
 
-    def s13(x), do: Repo.transaction(fn -> Repo.insert(%S{}); JSON.encode!(x) end)
+    def s13(x), do: Repo.transaction(fn -> Repo.insert(%S{}); Code.ensure_loaded(x) end)
 
     def s14, do: Repo.transaction(fn -> Repo.insert(%S{}); Repo.query!("UPDATE t SET x = 1") end)
 
@@ -867,7 +867,7 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
          %{analysis: a} do
       assert %Scope{
                no_gap_noticed?: false,
-               gaps: [{:unread, {@x, :s13, 1}, _line, "unread: call of JSON.encode!/1"}]
+               gaps: [{:unread, {@x, :s13, 1}, _line, "unread: call of Code.ensure_loaded/1"}]
              } = scope = one(a, :s13)
 
       assert scope.keys == keys([@s])

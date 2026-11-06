@@ -51,6 +51,8 @@ defmodule Anchor.Domain.Aggregates.WriteSitesDefaultTest do
     def d8c, do: Repo.transaction(fn -> Listed.run(fn -> :ok end) end)
     def d8d(x), do: Repo.transaction(fn -> Listed.run(x) end)
     def d8e(l), do: Repo.transaction(fn -> Enum.map(l, fn x -> x end) end)
+    def d8f(o), do: Repo.transaction(fn -> Keyword.get(o, :f, &own/0) end)
+    def d8g(cs), do: Repo.transaction(fn -> Ecto.Changeset.prepare_changes(cs, fn c -> c end) end)
     def own, do: :ok
 
     def d9, do: Repo.transaction(fn -> first() end)
@@ -173,6 +175,9 @@ defmodule Anchor.Domain.Aggregates.WriteSitesDefaultTest do
 
       assert whats(one(a, :d8c).gaps) ==
                ["unread: a function handed to #{inspect(@listed)}.run/1"]
+
+      assert whats(one(a, :d8g).gaps) ==
+               ["unread: a function handed to Ecto.Changeset.prepare_changes/2"]
     end
 
     test "row 8: positive controls: data to a listed module, a function HigherOrder names", %{
@@ -180,6 +185,7 @@ defmodule Anchor.Domain.Aggregates.WriteSitesDefaultTest do
     } do
       assert %Scope{no_gap_noticed?: true} = one(a, :d8d)
       assert %Scope{no_gap_noticed?: true} = one(a, :d8e)
+      assert %Scope{no_gap_noticed?: true} = one(a, :d8f)
     end
 
     test "row 9: reached through two project calls, a gap on the scope that reaches it only", %{

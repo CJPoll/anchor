@@ -22,6 +22,14 @@ defmodule Anchor.Domain.HigherOrder do
   """
 
   @invokers %{
+    # Ecto.Changeset, Logger and MapSet (`prepare_changes/2` is not here: it runs in a
+    # transaction the changeset's write opens, later)
+    {Ecto.Changeset, :traverse_errors, 2} => [{1, 1}],
+    {Ecto.Changeset, :update_change, 3} => [{2, 1}],
+    {Ecto.Changeset, :validate_change, 3} => [{2, 2}],
+    {Ecto.Changeset, :validate_change, 4} => [{3, 2}],
+    {Logger, :__do_log__, 4} => [{1, 0}],
+    {MapSet, :new, 2} => [{1, 1}],
     # Enum
     {Enum, :all?, 2} => [{1, 1}],
     {Enum, :any?, 2} => [{1, 1}],
@@ -47,6 +55,7 @@ defmodule Anchor.Domain.HigherOrder do
     {Enum, :map, 2} => [{1, 1}],
     {Enum, :map_every, 3} => [{2, 1}],
     {Enum, :map_intersperse, 3} => [{2, 1}],
+    {Enum, :map_join, 2} => [{1, 1}],
     {Enum, :map_join, 3} => [{2, 1}],
     {Enum, :map_reduce, 3} => [{2, 2}],
     {Enum, :max_by, 2} => [{1, 1}],

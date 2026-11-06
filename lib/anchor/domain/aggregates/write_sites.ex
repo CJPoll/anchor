@@ -1263,9 +1263,10 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   defp unread_arguments?(callee, args, env) do
     named = for {index, _arity} <- HigherOrder.invocations(callee), do: index
 
-    args
-    |> Enum.with_index()
-    |> Enum.any?(fn {arg, index} -> index not in named and function_value?(arg, env) end)
+    not NoWrite.gives_back?(callee) and
+      args
+      |> Enum.with_index()
+      |> Enum.any?(fn {arg, index} -> index not in named and function_value?(arg, env) end)
   end
 
   defp unread_arguments(acc, callee, tags, line),
