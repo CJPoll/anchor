@@ -3702,3 +3702,462 @@ the error does not name the gaps outside a transaction (`lib/anchor/domain/aggre
 
 .......
 ```
+
+# Seventh run: a Multi's unread steps and a captured write
+
+10 mutations for critic round 9's findings. WSJ-COMPUTEDCAP's first form was a compile error under `warnings_as_errors` (an unused function) and was re-anchored. WSJ-OUTSIDEMULTI survived its first run (52 tests, 0 failures), and `n25` was added; the row holds the red run.
+
+| # | Mutation | Tests run | Result |
+|---|---|---|---|
+| WSJ-COMPUTEDCAP | a capture on a computed module is not reported (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs` | `17 tests, 1 failure` (red) |
+| WSJ-OUTSIDEMULTI | a Multi gap in a helper counts outside a transaction (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs` | `17 tests, 1 failure` (red) |
+| WSJ-CAPTUREFLAG | a capture of a write outside a transaction is not reported (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs` | `17 tests, 1 failure` (red) |
+| WSJ-COMPUTEDREAD | a capture of a read on a computed module is reported (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs` | `17 tests, 1 failure` (red) |
+| WSJ-MERGE | Multi.merge in a helper is no gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `52 tests, 1 failure` (red) |
+| WSJ-RUN3 | a Multi.run of an unknown function in a helper is no gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `52 tests, 1 failure` (red) |
+| WSJ-RUN5 | a Multi.run by computed module in a helper is no gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `52 tests, 1 failure` (red) |
+| WSJ-UNKNOWN | a helper given an untraced Multi is no gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `52 tests, 1 failure` (red) |
+| WSJ-ANYTRACED | a helper given a traced Multi and data is a gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `52 tests, 2 failures` (red) |
+| WSJ-LITERALS | a helper given only literals is a gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `52 tests, 1 failure` (red) |
+
+## WSJ-COMPUTEDCAP
+
+a capture on a computed module is not reported (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `17 tests, 1 failure`.
+
+```
+
+  1) test unattributed: raw SQL and a write on a computed module, outside a transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:144
+     match (=) failed
+     code:  assert [
+              %{mfa: {@n, :n11, 0}, what: raw, line: line},
+              %{mfa: {@n, :n12, 1}, what: computed},
+              %{mfa: {@n, :n22, 1}, what: captured},
+              %{mfa: {@n, :n23, 1}, what: computed_capture}
+            ] = a.unattributed
+     left:  [
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n11, 0}, what: raw, line: line},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n12, 1}, what: computed},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n22, 1}, what: captured},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n23, 1}, what: computed_capture}
+            ]
+     right: [
+              %{
+                line: 58,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n11,
+                 0},
+                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
+              },
+              %{
+                line: 59,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n12,
+                 1},
+                what: "a call of insert/1 on a module held in a variable"
+              },
+              %{
+                line: 66,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n22,
+                 1},
+                what: "a capture of the write AnchorFixtures.NonTransactionalTest.Repo.insert/1"
+              }
+            ]
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:147: (test)
+
+.....
+```
+
+## WSJ-OUTSIDEMULTI
+
+a Multi gap in a helper counts outside a transaction (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `17 tests, 1 failure`.
+
+```
+
+  1) test the gaps outside every transaction are counted (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:201
+     Expected false or nil, got true
+     code: refute Enum.any?(gaps, &match?({:dynamic_call, {@n, :n25, 2}, _line}, &1))
+     arguments:
+
+         # 1
+         [
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n11, 0}, 58},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n9, 0}, 86},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n22, 1}, 66},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n24, 1}, 68},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n13, 1}, 60},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n12, 1}, 59},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n23, 1}, 67},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n25, 2}, 64}
+         ]
+
+         # 2
+         #Function<5.11320840/1 in Anchor.Domain.Aggregates.NonTransactionalTest."test the gaps outside every transaction are counted"/1>
+
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:209: (test)
+
+............
+```
+
+## WSJ-CAPTUREFLAG
+
+a capture of a write outside a transaction is not reported (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `17 tests, 1 failure`.
+
+```
+
+  1) test unattributed: raw SQL and a write on a computed module, outside a transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:143
+     match (=) failed
+     code:  assert [
+              %{mfa: {@n, :n11, 0}, what: raw, line: line},
+              %{mfa: {@n, :n12, 1}, what: computed},
+              %{mfa: {@n, :n22, 1}, what: captured},
+              %{mfa: {@n, :n23, 1}, what: computed_capture}
+            ] = a.unattributed
+     left:  [
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n11, 0}, what: raw, line: line},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n12, 1}, what: computed},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n22, 1}, what: captured},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n23, 1}, what: computed_capture}
+            ]
+     right: [
+              %{
+                line: 58,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n11,
+                 0},
+                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
+              },
+              %{
+                line: 59,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n12,
+                 1},
+                what: "a call of insert/1 on a module held in a variable"
+              },
+              %{
+                line: 66,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n23,
+                 1},
+                what: "a capture on a computed module or name"
+              }
+            ]
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:146: (test)
+
+.
+```
+
+## WSJ-COMPUTEDREAD
+
+a capture of a read on a computed module is reported (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `17 tests, 1 failure`.
+
+```
+
+  1) test unattributed: raw SQL and a write on a computed module, outside a transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:143
+     match (=) failed
+     code:  assert [
+              %{mfa: {@n, :n11, 0}, what: raw, line: line},
+              %{mfa: {@n, :n12, 1}, what: computed},
+              %{mfa: {@n, :n22, 1}, what: captured},
+              %{mfa: {@n, :n23, 1}, what: computed_capture}
+            ] = a.unattributed
+     left:  [
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n11, 0}, what: raw, line: line},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n12, 1}, what: computed},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n22, 1}, what: captured},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n23, 1}, what: computed_capture}
+            ]
+     right: [
+              %{
+                line: 58,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n11,
+                 0},
+                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
+              },
+              %{
+                line: 59,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n12,
+                 1},
+                what: "a call of insert/1 on a module held in a variable"
+              },
+              %{
+                line: 65,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n22,
+                 1},
+                what: "a capture of the write AnchorFixtures.NonTransactionalTest.Repo.insert/1"
+              },
+              %{
+                line: 66,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n23,
+                 1},
+                what: "a capture on a computed module or name"
+              },
+              %{
+                line: 67,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n24,
+                 1},
+                what: "a capture on a computed module or name"
+              }
+            ]
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:146: (test)
+
+...........
+```
+
+## WSJ-MERGE
+
+Multi.merge in a helper is no gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `52 tests, 1 failure`.
+
+```
+
+  1) test build/3 Multi.merge or a Multi.run of an unknown function, in a helper, is a gap too (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:477
+     match (=) failed
+     code:  assert %Scope{complete?: false, gaps: [{:dynamic_call, {@builder, :add_merge, 2}, _}]} = one(a, :s48)
+     left:  %Anchor.Domain.Aggregates.Scope{
+              complete?: false,
+              gaps: [{:dynamic_call, {AnchorFixtures.ScopesTest.Builder, :add_merge, 2}, _}]
+            }
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s48, 1},
+              ordinal: 1,
+              line: 213,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              complete?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:480: (test)
+
+......
+```
+
+## WSJ-RUN3
+
+a Multi.run of an unknown function in a helper is no gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `52 tests, 1 failure`.
+
+```
+
+  1) test build/3 Multi.merge or a Multi.run of an unknown function, in a helper, is a gap too (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:477
+     match (=) failed
+     code:  assert %Scope{complete?: false, gaps: [{:dynamic_call, {@builder, :add_run, 2}, _}]} = one(a, :s49)
+     left:  %Anchor.Domain.Aggregates.Scope{
+              complete?: false,
+              gaps: [{:dynamic_call, {AnchorFixtures.ScopesTest.Builder, :add_run, 2}, _}]
+            }
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s49, 1},
+              ordinal: 1,
+              line: 214,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              complete?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:483: (test)
+
+...................
+```
+
+## WSJ-RUN5
+
+a Multi.run by computed module in a helper is no gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `52 tests, 1 failure`.
+
+```
+
+
+
+  1) test build/3 Multi.merge or a Multi.run of an unknown function, in a helper, is a gap too (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:477
+     match (=) failed
+     code:  assert %Scope{complete?: false, gaps: [{:dynamic_call, {@builder, :add_run5, 3}, _}]} = one(a, :s53)
+     left:  %Anchor.Domain.Aggregates.Scope{
+              complete?: false,
+              gaps: [{:dynamic_call, {AnchorFixtures.ScopesTest.Builder, :add_run5, 3}, _}]
+            }
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s53, 2},
+              ordinal: 1,
+              line: 218,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              complete?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:486: (test)
+
+...................................................
+```
+
+## WSJ-UNKNOWN
+
+a helper given an untraced Multi is no gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `52 tests, 1 failure`.
+
+```
+
+  1) test build/3 a helper given only a Multi Anchor cannot trace is a gap at the transaction (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:490
+     match (=) failed
+     code:  assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s50, 1}, _}]} = one(a, :s50)
+     left:  %Anchor.Domain.Aggregates.Scope{
+              complete?: false,
+              gaps: [{:dynamic_call, {AnchorFixtures.ScopesTest.X, :s50, 1}, _}]
+            }
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s50, 1},
+              ordinal: 1,
+              line: 215,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.ScopesTest.Builder, :add_t,
+                   1},
+                  line: 60,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.ScopesTest.T],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([schema: AnchorFixtures.ScopesTest.T]),
+              complete?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:493: (test)
+
+........................
+```
+
+## WSJ-ANYTRACED
+
+a helper given a traced Multi and data is a gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `52 tests, 2 failures`.
+
+```
+
+  1) test build/3 Multi.merge or a Multi.run of an unknown function, in a helper, is a gap too (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:477
+     match (=) failed
+     code:  assert %Scope{complete?: false, gaps: [{:dynamic_call, {@builder, :add_merge, 2}, _}]} = one(a, :s48)
+     left:  %Anchor.Domain.Aggregates.Scope{
+              complete?: false,
+              gaps: [{:dynamic_call, {AnchorFixtures.ScopesTest.Builder, :add_merge, 2}, _}]
+            }
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s48, 1},
+              ordinal: 1,
+              line: 213,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              complete?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.ScopesTest.Builder, :add_merge, 2},
+                 61},
+                {:dynamic_call,
+                 {AnchorFixtures.ScopesTest.X, :s48, 1}, 213}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:480: (test)
+
+............................................
+
+
+  2) test build/3 a helper given a traced Multi and data, or only literals, stays complete (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:496
+     match (=) failed
+     code:  assert %Scope{complete?: true} = one(a, :s51)
+     left:  %Anchor.Domain.Aggregates.Scope{complete?: true}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s51, 1},
+              ordinal: 1,
+              line: 216,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.ScopesTest.Builder,
+                   :add_attrs, 2},
+                  line: 64,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.ScopesTest.T],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([schema: AnchorFixtures.ScopesTest.T]),
+              complete?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.ScopesTest.X, :s51, 1}, 216}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:499: (test)
+
+.
+```
+
+## WSJ-LITERALS
+
+a helper given only literals is a gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `52 tests, 1 failure`.
+
+```
+
+  1) test build/3 a helper given a traced Multi and data, or only literals, stays complete (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:496
+     match (=) failed
+     code:  assert %Scope{complete?: true} = scope = one(a, :s52)
+     left:  %Anchor.Domain.Aggregates.Scope{complete?: true} = scope
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s52, 0},
+              ordinal: 1,
+              line: 217,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.ScopesTest.Builder, :named,
+                   1},
+                  line: 65,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.ScopesTest.T],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([schema: AnchorFixtures.ScopesTest.T]),
+              complete?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.ScopesTest.X, :s52, 0}, 217}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:500: (test)
+
+.........................................
+```
