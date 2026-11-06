@@ -1390,11 +1390,14 @@ code that writes. So every `call` and `apply` is one of: a form read above; a
 project function, followed; a call on the no-write list, cleared and counted; or
 a gap at its line. A dependency call, say, is `unread: call of Lib.save/1`: the
 transaction around it is incomplete, and a function with no transaction around
-it has a gap. So is a Multi handed to a helper that does not trace to it, a `fn`
-both called and passed to a transaction, and a `transaction_functions` call with a
-non-literal argument Anchor cannot trace beside the one it can. A function value
-handed to a listed module is a gap too, unless `Anchor.Domain.HigherOrder` names
-that place. Other gaps count the same way: nothing here reads as no write.
+it has a gap. So is a `transaction_functions` call with a non-literal argument
+Anchor cannot trace beside the one it can. A function value handed to a listed
+module is a gap too, unless `Anchor.Domain.HigherOrder` names that place.
+
+Two reads are still false, and their tickets remove them:
+
+- a Multi handed to a helper that also calls `Multi.new/0` (DND-5884);
+- a `fn` bound once and both called and passed to a transaction (DND-5885).
 
 What is left is not read by construction:
 
