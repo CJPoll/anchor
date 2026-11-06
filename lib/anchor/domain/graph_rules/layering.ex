@@ -50,6 +50,9 @@ defmodule Anchor.Domain.GraphRules.Layering do
   @impl Anchor.Domain.GraphRule
   def rule_type, do: :layering
 
+  @impl Anchor.Domain.GraphRule
+  def narrows?(_base_key, _key), do: false
+
   @impl Anchor.Domain.RuleShape
   def shape(_rule) do
     "every call between two project modules is one the architecture: calls matrix allows; " <>

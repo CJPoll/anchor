@@ -294,7 +294,7 @@ defmodule Anchor.Managers.GraphBaselineTest do
       assert message =~ "NOTE: #{@key} in #{@path} narrows #{wider}"
     end
 
-    test "positive control: a rule with no narrows?/2 reads the same files as GREW", %{
+    test "positive control: a rule that never narrows reads the same files as GREW", %{
       beam: beam
     } do
       expect_run([rule()], beam)

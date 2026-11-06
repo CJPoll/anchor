@@ -755,7 +755,7 @@ a literal module are calls too.
 - Under `--base`, a `context_acyclic` cycle entry the branch replaced with a
   strict subset of its contexts (one edge of the cycle was broken) is a
   report-only NOTE, not GREW: a narrower entry is not growth (a rule's
-  optional `narrows?/2`, DND-5633).
+  `narrows?/2`, DND-5633).
 - One violation per caller function and callee function, at the first such
   call's line, keyed `<id>|<Caller.f/a>|-> <Callee.g/b>` (an unresolved call
   is `-> dynamic fetch/1`). The message names both modules' bucket and

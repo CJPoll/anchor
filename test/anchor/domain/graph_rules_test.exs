@@ -86,16 +86,28 @@ defmodule Anchor.Domain.GraphRulesTest do
     Anchor.Domain.GraphRule in behaviours
   end
 
-  # DND-5633: a rule's narrows?/2, or one that narrows nothing. Asked by
-  # name (no closure, no module loading in Domain), any rule module.
+  # DND-5633: every rule answers narrows?/2 (a required callback), asked by
+  # name: no closure, and no check of what is loaded.
   describe "narrows?/3" do
-    test "a rule declaring narrows?/2 is asked" do
+    test "a rule that narrows is asked" do
       assert GraphRules.narrows?(Anchor.Domain.GraphRules.ContextAcyclic, "c|A,B,C", "c|A,B")
       refute GraphRules.narrows?(Anchor.Domain.GraphRules.ContextAcyclic, "c|A,B", "c|A,B,C")
       assert GraphRules.narrows?(Anchor.Test.GraphRuleStubs.FindsNarrowing, "r|wider", "r|found")
     end
 
-    test "a rule without it, or no rule, narrows nothing" do
+    # The gate on 370588d: narrows?/3 read function_exported?/3, false for a
+    # module not yet loaded, so "a rule that narrows is asked" passed or failed
+    # by test order. The answer must not depend on what is loaded.
+    test "a rule not yet loaded is asked all the same" do
+      stub = Anchor.Test.GraphRuleStubs.NarrowsWhenUnloaded
+      :code.purge(stub)
+      :code.delete(stub)
+      refute :code.is_loaded(stub)
+
+      assert GraphRules.narrows?(stub, "r|wider", "r|found")
+    end
+
+    test "a rule that never narrows, or no rule, says no" do
       refute GraphRules.narrows?(Anchor.Domain.GraphRules.Layering, "c|A,B,C", "c|A,B")
       refute GraphRules.narrows?(nil, "c|A,B,C", "c|A,B")
     end

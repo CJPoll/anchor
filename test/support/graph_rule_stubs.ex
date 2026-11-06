@@ -12,6 +12,7 @@ defmodule Anchor.Test.GraphRuleStubs do
     @moduledoc false
     @behaviour Anchor.Domain.GraphRule
     def rule_type, do: :stub_ok
+    def narrows?(_base_key, _key), do: false
     def check(_model, _rule), do: []
   end
 
@@ -19,6 +20,7 @@ defmodule Anchor.Test.GraphRuleStubs do
     @moduledoc false
     @behaviour Anchor.Domain.GraphRule
     def rule_type, do: :stub_finds
+    def narrows?(_base_key, _key), do: false
 
     # One violation per selected module, on its source file.
     def check(model, rule) do
@@ -48,10 +50,22 @@ defmodule Anchor.Test.GraphRuleStubs do
       do: String.ends_with?(base_key, "|wider") and String.ends_with?(key, "|found")
   end
 
+  # Declares narrows?/2 and is used by exactly one test, which unloads it to
+  # prove the answer does not depend on whether a module is loaded. Not in
+  # all/0, so no other test can load it behind that test's back.
+  defmodule NarrowsWhenUnloaded do
+    @moduledoc false
+    @behaviour Anchor.Domain.GraphRule
+    def rule_type, do: :stub_narrows_when_unloaded
+    def check(_model, _rule), do: []
+    def narrows?(base_key, key), do: {base_key, key} == {"r|wider", "r|found"}
+  end
+
   defmodule Raises do
     @moduledoc false
     @behaviour Anchor.Domain.GraphRule
     def rule_type, do: :stub_raises
+    def narrows?(_base_key, _key), do: false
     def check(_model, _rule), do: raise("rule blew up")
   end
 
@@ -59,6 +73,7 @@ defmodule Anchor.Test.GraphRuleStubs do
     @moduledoc false
     @behaviour Anchor.Domain.GraphRule
     def rule_type, do: :stub_throws
+    def narrows?(_base_key, _key), do: false
     def check(_model, _rule), do: throw(:thrown)
   end
 
@@ -66,6 +81,7 @@ defmodule Anchor.Test.GraphRuleStubs do
     @moduledoc false
     @behaviour Anchor.Domain.GraphRule
     def rule_type, do: :stub_exits
+    def narrows?(_base_key, _key), do: false
     def check(_model, _rule), do: exit(:gone)
   end
 
@@ -73,6 +89,7 @@ defmodule Anchor.Test.GraphRuleStubs do
     @moduledoc false
     @behaviour Anchor.Domain.GraphRule
     def rule_type, do: :stub_malformed
+    def narrows?(_base_key, _key), do: false
     # Not a list of violations: the runner must report it, not crash.
     def check(_model, _rule), do: :oops
   end
@@ -102,6 +119,7 @@ defmodule Anchor.Test.GraphRuleStubs do
     @moduledoc false
     @behaviour Anchor.Domain.GraphRule
     def rule_type, do: :stub_cfa_probe
+    def narrows?(_base_key, _key), do: false
     def check(model, rule), do: Anchor.Test.GraphRuleStubs.cfa_probe(model, rule)
   end
 
@@ -109,6 +127,7 @@ defmodule Anchor.Test.GraphRuleStubs do
     @moduledoc false
     @behaviour Anchor.Domain.GraphRule
     def rule_type, do: :stub_needs_cfa
+    def narrows?(_base_key, _key), do: false
     def needs, do: [:cfa, :cfa]
     def check(model, rule), do: Anchor.Test.GraphRuleStubs.cfa_probe(model, rule)
   end
@@ -117,6 +136,7 @@ defmodule Anchor.Test.GraphRuleStubs do
     @moduledoc false
     @behaviour Anchor.Domain.GraphRule
     def rule_type, do: :stub_needs_unknown
+    def narrows?(_base_key, _key), do: false
     def needs, do: [:cfa, :nope]
     def check(_model, _rule), do: []
   end
@@ -125,6 +145,7 @@ defmodule Anchor.Test.GraphRuleStubs do
     @moduledoc false
     @behaviour Anchor.Domain.GraphRule
     def rule_type, do: :stub_needs_non_list
+    def narrows?(_base_key, _key), do: false
     def needs, do: :cfa
     def check(_model, _rule), do: []
   end

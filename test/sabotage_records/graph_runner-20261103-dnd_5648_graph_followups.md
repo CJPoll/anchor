@@ -526,3 +526,143 @@ Run summary: `64 tests, 3 failures`
 .......................
 ```
 
+
+## narrows?/2 is required: the answer does not depend on what is loaded
+
+**Code under test:** `Anchor.Domain.GraphRules.narrows?/3` and the `Anchor.Domain.GraphRule` contract. This replaces the form FX-B mutated above.
+
+**Found by:** the integration gate on 370588d: `narrows?/3 a rule declaring narrows?/2 is asked` failed (2543 tests, 1 failure), though the same test had passed on that tree before. `function_exported?/3` answers false for a module not yet loaded, so the verdict depended on test order, and on whether a caller had already run the rule. Reading `__info__/1` instead removed the load dependence, but `effects_match_bucket` rightly refused it as an unresolved call. The fix: `narrows?/2` is a required callback, every rule answers, and `module.narrows?/2` autoloads like any remote call.
+
+**Suite run:** NL-R is the new test on the unfixed code, which also reproduced the gate's failure. NL-A and NL-B were run by `sab.py` (wait 1.1 s, write, run, restore, wait 1.1 s). `a rule that narrows is asked` fails under NL-A only when no earlier test loaded its stub, as here; `a rule not yet loaded is asked all the same` unloads its own stub, so it fails under NL-A in any order. With the source restored: `15 tests, 0 failures` under `--seed` 1, 2, 3 and 4, and `MIX_ENV=dev mix anchor.graph` reports 0 violations.
+
+| ID | Mutation | Tests | Result | Failing tests |
+|---|---|---|---|---|
+| NL-R | regression: narrows?/3 reading function_exported?/3 (370588d), with the new test (`lib/anchor/domain/graph_rules.ex`) | `graph_rules_test.exs` | `15 tests, 2 failures` (red) | narrows?/3 a rule declaring narrows?/2 is asked; narrows?/3 a rule not yet loaded is asked all the same |
+| NL-A | the load-dependent check comes back (`lib/anchor/domain/graph_rules.ex`) | `graph_rules_test.exs` | `15 tests, 2 failures` (red) | narrows?/3 a rule that narrows is asked; narrows?/3 a rule not yet loaded is asked all the same |
+| NL-B | narrows?/3 asks no rule (`lib/anchor/domain/graph_rules.ex`) | `graph_rules_test.exs`, `enforcement_test.exs`, `graph_baseline_test.exs` | `54 tests, 4 failures` (red) | narrows?/3 a rule not yet loaded is asked all the same; narrows?/3 a rule that narrows is asked; judge/4 an added entry narrowing a removed one is a report NOTE, not GREW; run/2 --base REF (GREW) an entry narrowing one removed since REF is a NOTE, by the rule's narrows?/2 |
+
+### NL-R: regression: narrows?/3 reading function_exported?/3 (370588d), with the new test
+
+Run summary: `15 tests, 2 failures`
+
+```text
+  1) test narrows?/3 a rule declaring narrows?/2 is asked (Anchor.Domain.GraphRulesTest)
+     test/anchor/domain/graph_rules_test.exs:92
+     Expected truthy, got false
+     code: assert GraphRules.narrows?(Anchor.Test.GraphRuleStubs.FindsNarrowing, "r|wider", "r|found")
+     stacktrace:
+       test/anchor/domain/graph_rules_test.exs:95: (test)
+
+.....
+
+  2) test narrows?/3 a rule not yet loaded is asked all the same (Anchor.Domain.GraphRulesTest)
+     test/anchor/domain/graph_rules_test.exs:101
+     Expected truthy, got false
+     code: assert GraphRules.narrows?(stub, "r|wider", "r|found")
+     arguments:
+
+         # 1
+         Anchor.Test.GraphRuleStubs.NarrowsWhenUnloaded
+
+         # 2
+         "r|wider"
+
+         # 3
+         "r|found"
+
+     stacktrace:
+       test/anchor/domain/graph_rules_test.exs:107: (test)
+
+......
+```
+
+### NL-A: the load-dependent check comes back
+
+Run summary: `15 tests, 2 failures`
+
+```text
+  1) test narrows?/3 a rule that narrows is asked (Anchor.Domain.GraphRulesTest)
+     test/anchor/domain/graph_rules_test.exs:92
+     Expected truthy, got false
+     code: assert GraphRules.narrows?(Anchor.Domain.GraphRules.ContextAcyclic, "c|A,B,C", "c|A,B")
+     stacktrace:
+       test/anchor/domain/graph_rules_test.exs:93: (test)
+
+  2) test narrows?/3 a rule not yet loaded is asked all the same (Anchor.Domain.GraphRulesTest)
+     test/anchor/domain/graph_rules_test.exs:101
+     Expected truthy, got false
+     code: assert GraphRules.narrows?(stub, "r|wider", "r|found")
+     arguments:
+
+         # 1
+         Anchor.Test.GraphRuleStubs.NarrowsWhenUnloaded
+
+         # 2
+         "r|wider"
+
+         # 3
+         "r|found"
+
+     stacktrace:
+       test/anchor/domain/graph_rules_test.exs:107: (test)
+
+.......
+```
+
+### NL-B: narrows?/3 asks no rule
+
+Run summary: `54 tests, 4 failures`
+
+```text
+  1) test narrows?/3 a rule not yet loaded is asked all the same (Anchor.Domain.GraphRulesTest)
+     test/anchor/domain/graph_rules_test.exs:101
+     Expected truthy, got false
+     code: assert GraphRules.narrows?(stub, "r|wider", "r|found")
+     arguments:
+
+         # 1
+         Anchor.Test.GraphRuleStubs.NarrowsWhenUnloaded
+
+         # 2
+         "r|wider"
+
+         # 3
+         "r|found"
+
+     stacktrace:
+       test/anchor/domain/graph_rules_test.exs:107: (test)
+
+......
+
+  2) test narrows?/3 a rule that narrows is asked (Anchor.Domain.GraphRulesTest)
+     test/anchor/domain/graph_rules_test.exs:92
+     Expected truthy, got false
+     code: assert GraphRules.narrows?(Anchor.Domain.GraphRules.ContextAcyclic, "c|A,B,C", "c|A,B")
+     stacktrace:
+       test/anchor/domain/graph_rules_test.exs:93: (test)
+
+..
+
+  3) test judge/4 an added entry narrowing a removed one is a report NOTE, not GREW (Anchor.Domain.EnforcementTest)
+     test/anchor/domain/enforcement_test.exs:131
+     Assertion with == failed
+     code:  assert note.enforcement == :report
+     left:  :enforce
+     right: :report
+     stacktrace:
+       test/anchor/domain/enforcement_test.exs:137: (test)
+
+..........
+
+  4) test run/2 --base REF (GREW) an entry narrowing one removed since REF is a NOTE, by the rule's narrows?/2 (Anchor.Managers.GraphBaselineTest)
+     test/anchor/managers/graph_baseline_test.exs:281
+     Assertion with == failed
+     code:  assert report.exit_code == 0
+     left:  1
+     right: 0
+     stacktrace:
+       test/anchor/managers/graph_baseline_test.exs:292: (test)
+
+..........................
+```
+

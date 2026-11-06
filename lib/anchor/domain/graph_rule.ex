@@ -30,12 +30,13 @@ defmodule Anchor.Domain.GraphRule do
 
   ## Narrowed keys (DND-5633)
 
-  A rule whose key names a set that can shrink (a cycle's contexts) may
-  declare `narrows?/2`: `true` when `key` is a narrowing of `base_key` (the
-  same finding, covering less). Under `--base`, an entry added since the ref
-  that narrows an entry removed since it is not growth
-  (`Anchor.Domain.Enforcement`): a report-only NOTE names both. A rule with no
-  `narrows?/2` narrows nothing.
+  Every rule answers `narrows?/2`: `true` when `key` is a narrowing of
+  `base_key` (the same finding, covering less). Only a rule whose key names a
+  set that can shrink (a cycle's contexts) ever says so; the rest answer
+  `false`. Under `--base`, an entry added since the ref that narrows an entry
+  removed since it is not growth (`Anchor.Domain.Enforcement`): a report-only
+  NOTE names both. It is required, not optional, so asking needs no check of
+  what a module exports, and the answer cannot depend on what is loaded.
   """
 
   @doc "The rule type this module checks (a key of RuleSchema's `@engine_by_type`, engine `:graph`)."
@@ -50,5 +51,5 @@ defmodule Anchor.Domain.GraphRule do
   @doc "Whether baseline key `key` is a narrowing of `base_key`; see the moduledoc."
   @callback narrows?(base_key :: String.t(), key :: String.t()) :: boolean()
 
-  @optional_callbacks needs: 0, narrows?: 2
+  @optional_callbacks needs: 0
 end

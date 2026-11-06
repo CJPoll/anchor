@@ -294,8 +294,9 @@ caller's one `@spec` types as `B.t()` (`B` a project behaviour with `@type t
 :: module()` and the callback) reaches `B`'s implementers only; the summary
 counts the narrowed and fanned-out calls (`DynamicCalls.tally/1`). A port
 held in a Manager's options map gets that type through a small function with
-the spec (`Sabotage.Coverage.run_suite/2`). A rule whose key can narrow (a
-cycle) declares `narrows?/2`, so the narrower entry is a NOTE under
+the spec (`Sabotage.Coverage.run_suite/2`). Every rule answers `narrows?/2`
+(a required callback, so asking never depends on what is loaded); a rule whose
+key can narrow (a cycle) says yes, so the narrower entry is a NOTE under
 `--base`, not GREW. A call with a computed function name (`{:dynamic, nil, ...}`) is
 one unresolved violation (`DynamicCalls.computed_name_message/2`), except a
 variable application
