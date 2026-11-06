@@ -56,6 +56,7 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
               def n13(mod), do: mod.get(S, 1)
               def n14, do: Repo.transaction(fn -> Repo.query!("DELETE FROM s") end)
               def n15(mod), do: Repo.transaction(fn -> mod.insert(%S{}) end)
+              def n16, do: n11()
 
               def n9, do: Repo.soft_delete(%S{}, [])
               def n10, do: Repo.transaction(fn -> Repo.soft_delete(%S{}, []) end)
