@@ -84,11 +84,11 @@ defmodule Anchor.Managers.SabotageReplayTest do
 
   @failure %{file: "test/calc_test.exs", line: 4, name: "test adds", text: "Assertion failed"}
 
-  defp expect_until_plan(records) do
+  defp expect_until_plan(records, config \\ %SabotageConfig{}) do
     expect(SourceMutationMock, :read_journal, fn @root -> call(:read_journal, :none) end)
 
     expect(ConfigLoaderMock, :load_in, fn @root ->
-      call(:config, {:ok, %Anchor.Config{rules: [], sabotage: %SabotageConfig{}}})
+      call(:config, {:ok, %Anchor.Config{rules: [], sabotage: config}})
     end)
 
     expect(GitWorktreeMock, :ignored?, fn @root, ".anchor/sabotage/in-flight.json" ->
@@ -384,6 +384,29 @@ defmodule Anchor.Managers.SabotageReplayTest do
     assert length(result.not_replayed) == 2
     assert Replay.render(result) =~ "not replayed (cap)"
     assert Replay.exit_code(result) == 0
+  end
+
+  test "no --max: the cap is the config's max_mutants" do
+    [first, second] = mutants()
+
+    expect_until_plan(
+      %{"test/sabotage_records/a.md" => record([first, second])},
+      %SabotageConfig{max_mutants: 1}
+    )
+
+    expect_clean()
+    expect_patcher(1)
+
+    expect(TestExecutionMock, :run, 2, fn _argv, @args, _opts ->
+      if :baseline in calls_so_far(),
+        do: test_run(:failed, [@failure]),
+        else: call(:baseline, test_run(:passed))
+    end)
+
+    result = Sabotage.replay(%{@facts | max: nil}, @opts)
+
+    assert [{_item, :still_killed}] = result.results
+    assert length(result.not_replayed) == 1
   end
 
   test "zero rows: exit 3, naming the directories searched; a malformed kill map is named" do

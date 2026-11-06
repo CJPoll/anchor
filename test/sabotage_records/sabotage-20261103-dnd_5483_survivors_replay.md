@@ -766,3 +766,20 @@ a write the test did not expect: Hammox fails it. Each row ran `mix test --force
 
 After every row was restored, each file named above was green (`48 tests, 0
 failures`).
+
+## The replay's task and its cap (critic, whole MR)
+
+The weekly job fails only through the task's exit code, and no test reached it;
+nor did any reach the documented cap with no `--max`. The test file drives
+`mix anchor.sabotage replay` itself, every adapter doubled.
+
+| # | Mutation | Tests failed | First failure, verbatim |
+|---|---|---|---|
+| H1 | the task never exits non-zero | 2 of 14: "a row lost power: exit 1, and the row is printed", "no rows: exit 3, COULD NOT MEASURE is printed" | `Expected to catch exit, got nothing` |
+| H2 | every failure is exit 1 | 1 of 14: "no rows: exit 3 ..." | `left:  {:shutdown, 1}` |
+| H3 | every run is exit 1 | 2 of 14: "no rows: exit 3 ...", "every row still killed: exit 0, and the row is printed" | `left:  {:shutdown, 1}` |
+| H4 | the result never printed | 3 of 14: each of the three | `left:  ""` |
+| H5 | no `--max` lifts the cap | 1 of 19: "no --max: the cap is the config's max_mutants" | `** (Mox.UnexpectedCallError) expected Anchor.SourceMutationMock.write_journal/2 to be called once but it has been called 2 times` |
+
+After every row was restored, each file named above was green (`33 tests, 0
+failures`).
