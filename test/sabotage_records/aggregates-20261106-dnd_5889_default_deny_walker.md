@@ -5,56 +5,58 @@
 - **Date:** 2026-11-06
 - **Code under test:** `Anchor.Domain.Aggregates.WriteSites` (the default of `project_call/8`, `multi_read/7`, `transaction_function/6`), `NoWrite`, `Scopes`, `Analysis`, `Config`, `Inference`, `GraphReport.summary/1`, `AggregateWriteSources`, `HigherOrder`
 - **Suite run:** a driver: one exact, unique anchor per mutation, `mix test --timeout 2000 --max-cases 2 <its test files>` inside `test-slot`, every failure block kept (cut at 3500 bytes), the source restored from bytes with its mtime moved past the last write. `git status` was clean after the run.
-- **Passes:** 53 mutations on the ticket's last code. All red. `0 failures, 23 invalid` is `setup_all` crashing, so the file ran no test: that is red. Rows that first failed to compile were rewritten and re-run; none of those runs counts.
+- **Passes:** 55 mutations on the ticket's last code. All red. `0 failures, 23 invalid` is `setup_all` crashing, so the file ran no test: that is red. Rows that first failed to compile were rewritten and re-run; none of those runs counts.
 - **Not mutated:** every entry of the no-write list. `NW-ENUM`, `NW-QUERYABLE`, `NW-CHANGESET` and `NW-GENSERVER` stand for the class: an entry is an assumption the count and a critic hold (the design says so), and no test asserts a measurement's number.
 
 | # | Mutation | Tests run | Result |
 |---|---|---|---|
-| DD-DEFAULT | restore the dropping default: an unlisted call reads as no write (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs`, `scopes_test.exs` | `112 tests, 9 failures` (red) |
-| DD-CAPTURE | a capture of an unlisted function is dropped (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `40 tests, 7 failures` (red) |
-| DD-CAPTAGS | a capture given as a body is not inside it (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `40 tests, 2 failures` (red) |
-| DD-HOCAPTURE | a capture of a listed function that runs its argument is cleared (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `40 tests, 1 failure` (red) |
-| DD-RUN5 | Multi.run/5 on a dependency reads as no write (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `40 tests, 1 failure` (red) |
-| DD-RUN5PROJECT | Multi.run/5 on a project function is unread (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `40 tests, 1 failure` (red) |
-| DD-TXDEP | a dependency's listed transaction function is also unread (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `40 tests, 1 failure` (red) |
-| DD-ONEOUTCOME | a gap on a handed function is also cleared (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `40 tests, 1 failure` (red) |
-| DD-FUNARG | a function handed to a listed module is not checked (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `40 tests, 2 failures` (red) |
-| DD-NAMED | a place HigherOrder names counts as an unread function too (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `40 tests, 8 failures` (red) |
-| DD-DATA | any argument to a listed module counts as a function (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `40 tests, 14 failures` (red) |
-| DD-APPLYARGS | an apply/3 of a listed function with arguments is cleared (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `40 tests, 1 failure` (red) |
-| DD-ZEROARGS | an apply/3 with no arguments counts as unread (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `40 tests, 6 failures` (red) |
-| DD-CLEARED | a cleared call is not counted (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `40 tests, 2 failures` (red) |
-| DD-UNREADMARK | an unread call is a plain dynamic gap, with no name (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs`, `scopes_test.exs` | `112 tests, 19 failures` (red) |
-| DD-GENERATED | a function use Ecto.Repo generates counts as followed (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `40 tests, 1 failure` (red) |
-| DD-WFSITE | a dependency's write function is also an unread call (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `40 tests, 1 failure` (red) |
-| DD-MULTINAME | an Ecto.Multi name nothing knows reads as no write (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `40 tests, 1 failure` (red) |
-| DD-MULTIREAD | Multi.new is unread (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs`, `real_ecto_test.exs` | `53 tests, 7 failures` (red) |
-| DD-MULTIFUN | a function handed to a Multi read is not checked (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `40 tests, 1 failure` (red) |
-| DD-OTHERPROCESS | a function in another process is no gap outside a transaction (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs`, `non_transactional_test.exs` | `59 tests, 2 failures` (red) |
-| DD-PARTLY | an untraced argument beside a traced body is no gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `40 tests, 1 failure` (red) |
-| DD-LITERAL | a literal beside a traced body counts as untraced (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `40 tests, 1 failure` (red) |
-| DD-LISTWIRED | aggregates.no_write_modules never reaches the walker (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `40 tests, 2 failures` (red) |
-| NW-GENSERVER | GenServer on the list (`lib/anchor/domain/aggregates/no_write.ex`) | `no_write_test.exs`, `write_sites_default_test.exs` | `45 tests, 4 failures` (red) |
-| NW-ENUM | Enum off the list (`lib/anchor/domain/aggregates/no_write.ex`) | `no_write_test.exs`, `write_sites_default_test.exs` | `45 tests, 8 failures` (red) |
+| DD-DEFAULT | restore the dropping default: an unlisted call reads as no write (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs`, `scopes_test.exs` | `113 tests, 9 failures` (red) |
+| DD-CAPTURE | a capture of an unlisted function is dropped (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 8 failures` (red) |
+| DD-CAPTAGS | a capture given as a body is not inside it (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 3 failures` (red) |
+| DD-MIXEDKEEP | a dependency capture beside a body reads only as outside (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| DD-MIXEDOUT | a dependency capture beside a body reads only as inside (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| DD-HOCAPTURE | a capture of a listed function that runs its argument is cleared (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| DD-RUN5 | Multi.run/5 on a dependency reads as no write (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| DD-RUN5PROJECT | Multi.run/5 on a project function is unread (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| DD-TXDEP | a dependency's listed transaction function is also unread (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| DD-ONEOUTCOME | a gap on a handed function is also cleared (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| DD-FUNARG | a function handed to a listed module is not checked (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 2 failures` (red) |
+| DD-NAMED | a place HigherOrder names counts as an unread function too (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 8 failures` (red) |
+| DD-DATA | any argument to a listed module counts as a function (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 14 failures` (red) |
+| DD-APPLYARGS | an apply/3 of a listed function with arguments is cleared (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| DD-ZEROARGS | an apply/3 with no arguments counts as unread (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 6 failures` (red) |
+| DD-CLEARED | a cleared call is not counted (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 2 failures` (red) |
+| DD-UNREADMARK | an unread call is a plain dynamic gap, with no name (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs`, `scopes_test.exs` | `113 tests, 20 failures` (red) |
+| DD-GENERATED | a function use Ecto.Repo generates counts as followed (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| DD-WFSITE | a dependency's write function is also an unread call (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| DD-MULTINAME | an Ecto.Multi name nothing knows reads as no write (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| DD-MULTIREAD | Multi.new is unread (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs`, `real_ecto_test.exs` | `54 tests, 7 failures` (red) |
+| DD-MULTIFUN | a function handed to a Multi read is not checked (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| DD-OTHERPROCESS | a function in another process is no gap outside a transaction (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs`, `non_transactional_test.exs` | `60 tests, 2 failures` (red) |
+| DD-PARTLY | an untraced argument beside a traced body is no gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| DD-LITERAL | a literal beside a traced body counts as untraced (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| DD-LISTWIRED | aggregates.no_write_modules never reaches the walker (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 2 failures` (red) |
+| NW-GENSERVER | GenServer on the list (`lib/anchor/domain/aggregates/no_write.ex`) | `no_write_test.exs`, `write_sites_default_test.exs` | `46 tests, 4 failures` (red) |
+| NW-ENUM | Enum off the list (`lib/anchor/domain/aggregates/no_write.ex`) | `no_write_test.exs`, `write_sites_default_test.exs` | `46 tests, 8 failures` (red) |
 | NW-QUERYABLE | Ecto.Queryable off the list: real Ecto expansion gives a gap (`lib/anchor/domain/aggregates/no_write.ex`) | `real_ecto_test.exs` | `13 tests, 1 failure` (red) |
 | NW-CHANGESET | Ecto.Changeset off the list (`lib/anchor/domain/aggregates/no_write.ex`) | `no_write_test.exs`, `real_ecto_test.exs` | `18 tests, 2 failures` (red) |
-| NW-GIVESBACK | a function given to Keyword.get/3 is a gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `40 tests, 2 failures` (red) |
-| NW-GIVESBACKTABLE | any listed function counts as harmless (`lib/anchor/domain/aggregates/no_write.ex`) | `no_write_test.exs`, `write_sites_default_test.exs` | `45 tests, 3 failures` (red) |
-| NW-LOGGERFN | a function as a log message is a gap (`lib/anchor/domain/aggregates/no_write.ex`) | `no_write_test.exs`, `write_sites_default_test.exs` | `45 tests, 2 failures` (red) |
+| NW-GIVESBACK | a function given to Keyword.get/3 is a gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `41 tests, 2 failures` (red) |
+| NW-GIVESBACKTABLE | any listed function counts as harmless (`lib/anchor/domain/aggregates/no_write.ex`) | `no_write_test.exs`, `write_sites_default_test.exs` | `46 tests, 3 failures` (red) |
+| NW-LOGGERFN | a function as a log message is a gap (`lib/anchor/domain/aggregates/no_write.ex`) | `no_write_test.exs`, `write_sites_default_test.exs` | `46 tests, 2 failures` (red) |
 | NW-PROCESS | every function of a module held by function is cleared (`lib/anchor/domain/aggregates/no_write.ex`) | `no_write_test.exs` | `5 tests, 1 failure` (red) |
-| HO-TRAVERSE | HigherOrder loses the row: {Ecto.Changeset, :traverse_errors, 2} => [{1, 1}], (`lib/anchor/domain/higher_order.ex`) | `write_sites_default_test.exs` | `40 tests, 1 failure` (red) |
-| HO-UPDATE | HigherOrder loses the row: {Ecto.Changeset, :update_change, 3} => [{2, 1}], (`lib/anchor/domain/higher_order.ex`) | `write_sites_default_test.exs` | `40 tests, 1 failure` (red) |
-| HO-VALIDATE3 | HigherOrder loses the row: {Ecto.Changeset, :validate_change, 3} => [{2, 2}], (`lib/anchor/domain/higher_order.ex`) | `write_sites_default_test.exs` | `40 tests, 1 failure` (red) |
-| HO-VALIDATE4 | HigherOrder loses the row: {Ecto.Changeset, :validate_change, 4} => [{3, 2}], (`lib/anchor/domain/higher_order.ex`) | `write_sites_default_test.exs` | `40 tests, 1 failure` (red) |
-| HO-MAPSET | HigherOrder loses the row: {MapSet, :new, 2} => [{1, 1}], (`lib/anchor/domain/higher_order.ex`) | `write_sites_default_test.exs` | `40 tests, 1 failure` (red) |
-| HO-MAPJOIN | HigherOrder loses the row: {Enum, :map_join, 2} => [{1, 1}], (`lib/anchor/domain/higher_order.ex`) | `write_sites_default_test.exs` | `40 tests, 1 failure` (red) |
+| HO-TRAVERSE | HigherOrder loses the row: {Ecto.Changeset, :traverse_errors, 2} => [{1, 1}], (`lib/anchor/domain/higher_order.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| HO-UPDATE | HigherOrder loses the row: {Ecto.Changeset, :update_change, 3} => [{2, 1}], (`lib/anchor/domain/higher_order.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| HO-VALIDATE3 | HigherOrder loses the row: {Ecto.Changeset, :validate_change, 3} => [{2, 2}], (`lib/anchor/domain/higher_order.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| HO-VALIDATE4 | HigherOrder loses the row: {Ecto.Changeset, :validate_change, 4} => [{3, 2}], (`lib/anchor/domain/higher_order.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| HO-MAPSET | HigherOrder loses the row: {MapSet, :new, 2} => [{1, 1}], (`lib/anchor/domain/higher_order.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
+| HO-MAPJOIN | HigherOrder loses the row: {Enum, :map_join, 2} => [{1, 1}], (`lib/anchor/domain/higher_order.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
 | NW-LISTED | a listed module is not cleared (`lib/anchor/domain/aggregates/no_write.ex`) | `no_write_test.exs` | `5 tests, 1 failure` (red) |
 | NW-LISTEDFN | listing a module held by function clears nothing more (`lib/anchor/domain/aggregates/no_write.ex`) | `no_write_test.exs` | `5 tests, 1 failure` (red) |
-| SC-NONTX | an unread call is no gap with no transaction around it (`lib/anchor/domain/aggregates/scopes.ex`) | `write_sites_default_test.exs`, `non_transactional_test.exs` | `59 tests, 8 failures` (red) |
-| SC-GAPORDER | an unread gap has no sort order (`lib/anchor/domain/aggregates/scopes.ex`) | `write_sites_default_test.exs` | `40 tests, 0 failures, 40 invalid` (red) |
-| AN-CLEARED | the cleared calls are not summed (`lib/anchor/domain/aggregates/analysis.ex`) | `write_sites_default_test.exs`, `real_ecto_test.exs` | `53 tests, 2 failures` (red) |
-| AN-UNREAD | the unread calls by callee are empty (`lib/anchor/domain/aggregates/analysis.ex`) | `write_sites_default_test.exs` | `40 tests, 2 failures` (red) |
-| AN-DEDUPE | a call read twice at one line counts twice (`lib/anchor/domain/aggregates/analysis.ex`) | `write_sites_default_test.exs` | `40 tests, 1 failure` (red) |
+| SC-NONTX | an unread call is no gap with no transaction around it (`lib/anchor/domain/aggregates/scopes.ex`) | `write_sites_default_test.exs`, `non_transactional_test.exs` | `60 tests, 9 failures` (red) |
+| SC-GAPORDER | an unread gap has no sort order (`lib/anchor/domain/aggregates/scopes.ex`) | `write_sites_default_test.exs` | `41 tests, 0 failures, 41 invalid` (red) |
+| AN-CLEARED | the cleared calls are not summed (`lib/anchor/domain/aggregates/analysis.ex`) | `write_sites_default_test.exs`, `real_ecto_test.exs` | `54 tests, 2 failures` (red) |
+| AN-UNREAD | the unread calls by callee are empty (`lib/anchor/domain/aggregates/analysis.ex`) | `write_sites_default_test.exs` | `41 tests, 2 failures` (red) |
+| AN-DEDUPE | a call read twice at one line counts twice (`lib/anchor/domain/aggregates/analysis.ex`) | `write_sites_default_test.exs` | `41 tests, 1 failure` (red) |
 | CF-PARSE | no_write_modules is parsed and dropped (`lib/anchor/domain/aggregates/config.ex`) | `config_test.exs` | `48 tests, 2 failures` (red) |
 | CF-ERLANG | an Erlang module is refused under no_write_modules (`lib/anchor/domain/aggregates/config.ex`) | `config_test.exs` | `48 tests, 1 failure` (red) |
 | CF-ERLANGCHAR | any character passes in an Erlang name (`lib/anchor/domain/aggregates/config.ex`) | `config_test.exs` | `48 tests, 1 failure` (red) |
@@ -66,57 +68,11 @@
 
 ## DD-DEFAULT
 
-restore the dropping default: an unlisted call reads as no write (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `112 tests, 9 failures`.
+restore the dropping default: an unlisted call reads as no write (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `113 tests, 9 failures`.
 
 ```
-  1) test a project function the analysis does not walk a macro's own function is a gap, never a call to nowhere (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:258
-     Assertion with == failed
-     code:  assert whats(one(a, :d19).gaps) == ["unread: call of #{inspect(@macros)}.MACRO-m/2"]
-     left:  []
-     right: ["unread: call of AnchorFixtures.WriteSitesDefaultTest.Macros.MACRO-m/2"]
-     stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:259: (test)
-
-...
-
-  2) test a call the walker does not read the counts hold the cleared calls and the unread ones by callee (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:241
-     Assertion with == failed
-     code:  assert a.counts.unread_by_callee["unread: call of GenServer.call/2"] == 2
-     left:  nil
-     right: 2
-     stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:243: (test)
-
-....
-
-  3) test a call the walker does not read row 10: with no transaction, a gap on the root's nontx and on no scope (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:223
-     match (=) failed
-     code:  assert [{:unread, {@d, :d10, 1}, _line, what}] = nontx(a, name, arity).gaps
-     left:  [{:unread, {AnchorFixtures.WriteSitesDefaultTest.D, :d10, 1}, _line, what}]
-     right: []
-     stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:225: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test a call the walker does not read row 10: with no transaction, a gap on the root's nontx and on no scope"/1
-       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
-       test/anchor/domain/aggregates/write_sites_default_test.exs:224: (test)
-
-..
-
-  4) test a call the walker does not read row 6: GenServer.call/2 is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:183
-     Assertion with == failed
-     code:  assert whats(one(a, :d6).gaps) == ["unread: call of GenServer.call/2"]
-     left:  []
-     right: ["unread: call of GenServer.call/2"]
-     stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:184: (test)
-
-....
-
-  5) test a call the walker does not read row 4: an unlisted dependency call is a gap at its line, naming it; the scope is incomplete (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:155
+  1) test a call the walker does not read row 4: an unlisted dependency call is a gap at its line, naming it; the scope is incomplete (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:166
      match (=) failed
      The following variables were pinned:
        line = 40
@@ -136,167 +92,268 @@ restore the dropping default: an unlisted call reads as no write (`lib/anchor/do
               gaps: []
             }
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:159: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:170: (test)
 
-............
 
-  6) test a call the walker does not read row 9: reached thro
+
+  2) test a call the walker does not read a function run in another process is a gap with no transaction around it too (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:245
+     Assertion with == failed
+     code:  assert whats(nontx(a, :d17, 1).gaps) == ["unread: call of GenServer.call/2"]
+     left:  []
+     right: ["unread: call of GenServer.call/2"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:249: (test)
+
+........
+
+  3) test a project function the analysis does not walk a macro's own function is a gap, never a call to nowhere (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:269
+     Assertion with == failed
+     code:  assert whats(one(a, :d19).gaps) == ["unread: call of #{inspect(@macros)}.MACRO-m/2"]
+     left:  []
+     right: ["unread: call of AnchorFixtures.WriteSitesDefaultTest.Macros.MACRO-m/2"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:270: (test)
+
+
+
+  4) test an apply with a literal module and name of an unlisted dependency is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:388
+     Assertion with == failed
+     code:  assert whats(one(a, :d13a).gaps) == [lib_call("save/1")]
+     left:  []
+     right: ["unread: call of AnchorFixtures.WriteSitesDefaultTest.Lib.save/1"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:389: (test)
+
+
+
+  5) test a call the walker does not read row 9: reached through two project calls, a gap on the scope that reaches it only (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:226
+     match (=) failed
+     code:  assert [{:unread, {@d, :second, 0}, _line, what}] = one(a, :d9).gaps
+     left:  [{:unread, {AnchorFixtures.WriteSitesDefaultTest.D, :second, 0}, _line, what}]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:229: (test)
+
+
+
+  6) test a call the walker does not read row 6: GenServer.call/2 is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:194
+     Assertion with == failed
+     code:  assert whats(one(a, :d6).gaps) == ["unread: call of GenServer.call/2"]
+     left:  []
 ```
 
 ## DD-CAPTURE
 
-a capture of an unlisted function is dropped (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `40 tests, 7 failures`.
+a capture of an unlisted function is dropped (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 8 failures`.
 
 ```
-  1) test a dependency's function a transaction or a Multi runs a capture of one as the transaction's body is a gap of that transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:312
+  1) test a dependency's function a transaction or a Multi runs a second capture of it beside the body does not take the gap off the transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:331
+     Assertion with in failed
+     code:  assert capture in whats(one(a, name).gaps)
+     left:  "unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.run/0"
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:337: anonymous fn/4 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test a dependency's function a transaction or a Multi runs a second capture of it beside the body does not take the gap off the transaction"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:336: (test)
+
+.................
+
+  2) test a dependency's function a transaction or a Multi runs a capture of one as a Multi.run callback is a gap of that transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:342
+     Assertion with == failed
+     code:  assert whats(one(a, :d21b).gaps) == [String.replace(lib_call("step/2"), "call of", "capture of")]
+     left:  []
+     right: ["unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.step/2"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:343: (test)
+
+...
+
+  3) test a dependency's function a transaction or a Multi runs a capture of one as the transaction's body is a gap of that transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:323
      Assertion with == failed
      code:  assert whats(one(a, :d21a).gaps) == [String.replace(lib_call("run/0"), "call of", "capture of")]
      left:  []
      right: ["unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.run/0"]
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:313: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:324: (test)
 
-..
 
-  2) test exactly one outcome per call a capture read twice at one line counts once in unread_by_callee (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:358
+
+  4) test exactly one outcome per call a capture read twice at one line counts once in unread_by_callee (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:380
      Assertion with == failed
      code:  assert a.counts.unread_by_callee[String.replace(lib_call("only_here/1"), "call of", "capture of")] == 1
      left:  nil
      right: 1
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:359: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:381: (test)
 
-......
+.....
 
-  3) test a dependency's function a transaction or a Multi runs Multi.run/5 on one is a gap of that transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:326
-     Assertion with == failed
-     code:  assert whats(one(a, :d21c).gaps) == [String.replace(lib_call("step/2"), "call of", "capture of")]
-     left:  []
-     right: ["unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.step/2"]
-     stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:327: (test)
-
-....
-
-  4) test a capture of a listed function that runs its argument is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:301
+  5) test a capture of a listed function that runs its argument is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:312
      Assertion with == failed
      code:  assert whats(one(a, :d12c).gaps) == ["unread: capture of Enum.map/2"]
      left:  []
      right: ["unread: capture of Enum.map/2"]
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:302: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:313: (test)
 
+.
 
+  6) test a capture of an Ecto.Multi step or a generated repo function is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:316
+     Assertion with == failed
+     code:  assert whats(one(a, :d12d).gaps) == ["unread: capture of Ecto.Multi.insert/3"]
+     left:  []
+     right: ["unread: capture of Ecto.Multi.insert/3"]
+     stacktrace:
+       test/anchor/domain/aggregates/write
+```
 
-  5) test a dependency's function a transaction or a Multi runs a capture of one as a Multi.run callback is a gap of that transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:320
+## DD-CAPTAGS
+
+a capture given as a body is not inside it (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 3 failures`.
+
+```
+  1) test a dependency's function a transaction or a Multi runs a capture of one as a Multi.run callback is a gap of that transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:342
      Assertion with == failed
      code:  assert whats(one(a, :d21b).gaps) == [String.replace(lib_call("step/2"), "call of", "capture of")]
      left:  []
      right: ["unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.step/2"]
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:321: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:343: (test)
 
-...
+......
 
-  6) test a capture of an unlisted dependency is a gap; of a listed function it is cleared (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:293
-     Assertion with == failed
-     code:  assert whats(one(a, :d12a).gaps) == [lib_call("save/1") |> String.replace("call of", "capture of")]
-     left:  []
-     right: ["unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.save/1"]
-     stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:294: (test)
-
-..............
-
-  7) test a capture of an Ecto.Multi step or a generated repo function is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:305
-     Assertion with == failed
-```
-
-## DD-CAPTAGS
-
-a capture given as a body is not inside it (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `40 tests, 2 failures`.
-
-```
-  1) test a dependency's function a transaction or a Multi runs a capture of one as the transaction's body is a gap of that transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:312
+  2) test a dependency's function a transaction or a Multi runs a capture of one as the transaction's body is a gap of that transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:323
      Assertion with == failed
      code:  assert whats(one(a, :d21a).gaps) == [String.replace(lib_call("run/0"), "call of", "capture of")]
      left:  []
      right: ["unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.run/0"]
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:313: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:324: (test)
 
-..................................
+.......
 
-  2) test a dependency's function a transaction or a Multi runs a capture of one as a Multi.run callback is a gap of that transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:320
-     Assertion with == failed
-     code:  assert whats(one(a, :d21b).gaps) == [String.replace(lib_call("step/2"), "call of", "capture of")]
-     left:  []
-     right: ["unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.step/2"]
+  3) test a dependency's function a transaction or a Multi runs a second capture of it beside the body does not take the gap off the transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:331
+     Assertion with in failed
+     code:  assert capture in whats(one(a, name).gaps)
+     left:  "unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.run/0"
+     right: []
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:321: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:337: anonymous fn/4 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test a dependency's function a transaction or a Multi runs a second capture of it beside the body does not take the gap off the transaction"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:336: (test)
 
-...
+....
 Finished in 0.4 seconds (0.4s async, 0.00s sync)
-40 tests, 2 failures
+41 tests, 3 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+## DD-MIXEDKEEP
+
+a dependency capture beside a body reads only as outside (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 1 failure`.
+
+```
+  1) test a dependency's function a transaction or a Multi runs a second capture of it beside the body does not take the gap off the transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:331
+     Assertion with in failed
+     code:  assert capture in whats(one(a, name).gaps)
+     left:  "unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.run/0"
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:337: anonymous fn/4 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test a dependency's function a transaction or a Multi runs a second capture of it beside the body does not take the gap off the transaction"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:336: (test)
+
+.......................
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+41 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+## DD-MIXEDOUT
+
+a dependency capture beside a body reads only as inside (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 1 failure`.
+
+```
+  1) test a dependency's function a transaction or a Multi runs a second capture of it beside the body does not take the gap off the transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:331
+     Assertion with in failed
+     code:  assert capture in whats(nontx(a, name, arity).gaps)
+     left:  "unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.run/0"
+     right: ["unread: a function handed to Keyword.put/3"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:338: anonymous fn/4 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test a dependency's function a transaction or a Multi runs a second capture of it beside the body does not take the gap off the transaction"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:336: (test)
+
+....
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+41 tests, 1 failure
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
 ```
 
 ## DD-HOCAPTURE
 
-a capture of a listed function that runs its argument is cleared (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `40 tests, 1 failure`.
+a capture of a listed function that runs its argument is cleared (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 1 failure`.
 
 ```
   1) test a capture of a listed function that runs its argument is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:301
+     test/anchor/domain/aggregates/write_sites_default_test.exs:312
      Assertion with == failed
      code:  assert whats(one(a, :d12c).gaps) == ["unread: capture of Enum.map/2"]
      left:  []
      right: ["unread: capture of Enum.map/2"]
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:302: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:313: (test)
 
-....................................
+..........................
 Finished in 0.4 seconds (0.4s async, 0.00s sync)
-40 tests, 1 failure
+41 tests, 1 failure
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
 ```
 
 ## DD-RUN5
 
-Multi.run/5 on a dependency reads as no write (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `40 tests, 1 failure`.
+Multi.run/5 on a dependency reads as no write (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 1 failure`.
 
 ```
   1) test a dependency's function a transaction or a Multi runs Multi.run/5 on one is a gap of that transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:326
+     test/anchor/domain/aggregates/write_sites_default_test.exs:348
      Assertion with == failed
      code:  assert whats(one(a, :d21c).gaps) == [String.replace(lib_call("step/2"), "call of", "capture of")]
      left:  []
      right: ["unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.step/2"]
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:327: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:349: (test)
 
-.....................................
+.................................
 Finished in 0.4 seconds (0.4s async, 0.00s sync)
-40 tests, 1 failure
+41 tests, 1 failure
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
 ```
 
 ## DD-RUN5PROJECT
 
-Multi.run/5 on a project function is unread (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `40 tests, 1 failure`.
+Multi.run/5 on a project function is unread (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 1 failure`.
 
 ```
   1) test a dependency's function a transaction or a Multi runs positive control: Multi.run/5 on a project function is no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:332
+     test/anchor/domain/aggregates/write_sites_default_test.exs:354
      match (=) failed
      code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :d21d)
      left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
@@ -317,21 +374,21 @@ Multi.run/5 on a project function is unread (`lib/anchor/domain/aggregates/write
               ]
             }
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:333: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:355: (test)
 
-..............
+.............................
 Finished in 0.4 seconds (0.4s async, 0.00s sync)
-40 tests, 1 failure
+41 tests, 1 failure
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
 ```
 
 ## DD-TXDEP
 
-a dependency's listed transaction function is also unread (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `40 tests, 1 failure`.
+a dependency's listed transaction function is also unread (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 1 failure`.
 
 ```
   1) test a dependency's function a transaction or a Multi runs a dependency's listed transaction function is read as a scope, never unread (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:336
+     test/anchor/domain/aggregates/write_sites_default_test.exs:358
      Expected truthy, got false
      code: assert Enum.all?(scopes, &(&1.gaps == []))
      arguments:
@@ -395,24 +452,24 @@ a dependency's listed transaction function is also unread (`lib/anchor/domain/ag
          ]
 
          # 2
-         #Function<4.13848980/1 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test a dependency's function a transaction or a Multi runs a dependency's listed transaction function is read as a scope, never unread"/1>
+         #Function<4.15630406/1 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test a dependency's function a transaction or a Multi runs a dependency's listed transaction function is read as a scope, never unread"/1>
 
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:343: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:365: (test)
 
-..................................
+.......................
 Finished in 0.4 seconds (0.4s async, 0.00s sync)
-40 tests, 1 failure
+41 tests, 1 failure
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
 ```
 
 ## DD-ONEOUTCOME
 
-a gap on a handed function is also cleared (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `40 tests, 1 failure`.
+a gap on a handed function is also cleared (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 1 failure`.
 
 ```
   1) test exactly one outcome per call an unknown function handed to a listed function is a gap, and is not also cleared (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:350
+     test/anchor/domain/aggregates/write_sites_default_test.exs:372
      match (=) failed
      code:  assert %{cleared: 0, dynamic: [_gap]} = facts.functions[{@d, :d23, 2}]
      left:  %{cleared: 0, dynamic: [_gap]}
@@ -442,52 +499,102 @@ a gap on a handed function is also cleared (`lib/anchor/domain/aggregates/write_
               public?: true
             }
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:355: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:377: (test)
 
-...........................
+.......................................
 Finished in 0.4 seconds (0.4s async, 0.00s sync)
-40 tests, 1 failure
+41 tests, 1 failure
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
 ```
 
 ## DD-FUNARG
 
-a function handed to a listed module is not checked (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `40 tests, 2 failures`.
+a function handed to a listed module is not checked (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 2 failures`.
 
 ```
   1) test the forms DND-5459 reads stay the rest of Ecto.Multi reads; a name it does not know is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:279
+     test/anchor/domain/aggregates/write_sites_default_test.exs:290
      Assertion with == failed
      code:  assert whats(one(a, :d15b).gaps) == ["unread: a function handed to Ecto.Multi.put/3"]
      left:  []
      right: ["unread: a function handed to Ecto.Multi.put/3"]
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:281: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:292: (test)
 
-..............
+.........................
 
   2) test a call the walker does not read row 8: a function given to a listed module where HigherOrder names no place is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:195
+     test/anchor/domain/aggregates/write_sites_default_test.exs:206
      Assertion with == failed
      code:  assert whats(one(a, :d8a).gaps) == ["unread: a function handed to Keyword.put/3"]
      left:  []
      right: ["unread: a function handed to Keyword.put/3"]
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:197: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:208: (test)
 
-.....................
+..........
 Finished in 0.4 seconds (0.4s async, 0.00s sync)
-40 tests, 2 failures
+41 tests, 2 failures
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
 ```
 
 ## DD-NAMED
 
-a place HigherOrder names counts as an unread function too (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `40 tests, 8 failures`.
+a place HigherOrder names counts as an unread function too (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 8 failures`.
 
 ```
-  1) test a function value, or data, that needs no following d20f: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:251
+  1) test a function value, or data, that needs no following d20c: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:262
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d20c,
+               1},
+              ordinal: 1,
+              line: 95,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:unread,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d20c, 1},
+                 95,
+                 "unread: a function handed to Ecto.Changeset.update_change/3"}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:263: (test)
+
+
+
+  2) test a call the walker does not read row 8: positive controls: data to a listed module, a function HigherOrder names (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:218
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true} = one(a, :d8e)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d8e, 1},
+              ordinal: 1,
+              line: 49,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:unread,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d8e, 1},
+                 49, "unread: a function handed to Enum.map/2"}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:222: (test)
+
+..
+
+  3) test a function value, or data, that needs no following d20f: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:262
      match (=) failed
      code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
      left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
@@ -507,102 +614,26 @@ a place HigherOrder names counts as an unread function too (`lib/anchor/domain/a
               ]
             }
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:252: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:263: (test)
 
-....
+.................
 
-  2) test a function value, or data, that needs no following d20g: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:251
+  4) test a function value, or data, that needs no following d20g: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:262
      match (=) failed
      code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
      left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
      right: %Anchor.Domain.Aggregates.Scope{
               mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d20g,
-               1},
-              ordinal: 1,
-              line: 99,
-              kind: :fun,
-              writes: [],
-              keys: MapSet.new([]),
-              no_gap_noticed?: false,
-              gaps: [
-                {:unread,
-                 {AnchorFixtures.WriteSitesDefaultTest.D, :d20g, 1},
-                 99, "unread: a function handed to Enum.map_join/2"}
-              ]
-            }
-     stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:252: (test)
-
-....
-
-  3) test a call the walker does not read row 8: positive controls: data to a listed module, a function HigherOrder names (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:207
-     match (=) failed
-     code:  assert %Scope{no_gap_noticed?: true} = one(a, :d8e)
-     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true}
-     right: %Anchor.Domain.Aggregates.Scope{
-              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d8e, 1},
-              ordinal: 1,
-              line: 49,
-              kind: :fun,
-              writes: [],
-              keys: MapSet.new([]),
-              no_gap_noticed?: false,
-              gaps: [
-                {:unread,
-                 {AnchorFixtures.WriteSitesDefaultTest.D, :d8e, 1},
-                 49, "unread: a function handed to Enum.map/2"}
-              ]
-            }
-     stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:211: (test)
-
-.
-
-  4) test a capture of an unlisted dependency is a gap; of a listed function it is cleared (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:293
-     match (=) failed
-     code:  assert %Scope{no_gap_noticed?: true} = one(a, :d12b)
-     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true}
-     right: %Anchor.Domain.Aggregates.Scope{
-              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d12b,
-               1},
-              ordinal: 1,
 ```
 
 ## DD-DATA
 
-any argument to a listed module counts as a function (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `40 tests, 14 failures`.
+any argument to a listed module counts as a function (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 14 failures`.
 
 ```
-  1) test a function value, or data, that needs no following d20g: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:251
-     match (=) failed
-     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
-     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
-     right: %Anchor.Domain.Aggregates.Scope{
-              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d20g,
-               1},
-              ordinal: 1,
-              line: 99,
-              kind: :fun,
-              writes: [],
-              keys: MapSet.new([]),
-              no_gap_noticed?: false,
-              gaps: [
-                {:unread,
-                 {AnchorFixtures.WriteSitesDefaultTest.D, :d20g, 1},
-                 99, "unread: a function handed to Enum.map_join/2"}
-              ]
-            }
-     stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:252: (test)
-
-.
-
-  2) test a function value, or data, that needs no following d20d: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:251
+  1) test a function value, or data, that needs no following d20d: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:262
      match (=) failed
      code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
      left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
@@ -623,122 +654,109 @@ any argument to a listed module counts as a function (`lib/anchor/domain/aggrega
               ]
             }
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:252: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:263: (test)
 
-..
 
-  3) test a function value, or data, that needs no following d20e: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:251
+
+  2) test a function value, or data, that needs no following d20i: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:262
      match (=) failed
      code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
      left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
      right: %Anchor.Domain.Aggregates.Scope{
-              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d20e,
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d20i,
                1},
               ordinal: 1,
-              line: 97,
+              line: 92,
               kind: :fun,
               writes: [],
               keys: MapSet.new([]),
               no_gap_noticed?: false,
               gaps: [
                 {:unread,
-                 {AnchorFixtures.WriteSitesDefaultTest.D, :d20e, 1},
-                 97,
-                 "unread: a function handed to Ecto.Changeset.validate_change/4"}
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d20i, 1},
+                 92,
+                 "unread: a function handed to String.Chars.to_string/1"}
               ]
             }
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:252: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:263: (test)
+
+...
+
+  3) test a function value, or data, that needs no following d20f: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:262
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d20f,
+               1},
+              ordinal: 1,
+              line: 98,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:unread,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d20f, 1},
+                 98, "unread: a function handed to MapSet.new/2"}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:263: (test)
 
 
 
-  4) test a call the walker does not read row 10: with no transaction, a gap on the root's nontx and on no scope (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:223
-     Assertion with == failed
-     code:  assert nontx(a, :d10_clean, 1).gaps == []
-     left:  [
-              {:unread,
-               {AnchorFixtures.WriteSitesDefaultTest.D, :d10_clean,
-                1}, 61, "unread: a function handed to
+  4) test a capture of an unlisted dependency is a gap; of a listed function it is cleared (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:304
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true} = one(a, :d12b)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d12b,
 ```
 
 ## DD-APPLYARGS
 
-an apply/3 of a listed function with arguments is cleared (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `40 tests, 1 failure`.
+an apply/3 of a listed function with arguments is cleared (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 1 failure`.
 
 ```
   1) test an apply with a literal module and name of a listed function with arguments is a gap: Anchor has no argument nodes (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:370
+     test/anchor/domain/aggregates/write_sites_default_test.exs:392
      Assertion with == failed
      code:  assert whats(one(a, :d13b).gaps) == ["unread: a function handed to Map.put/3"]
      left:  []
      right: ["unread: a function handed to Map.put/3"]
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:373: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:395: (test)
 
-........
+.........................
 Finished in 0.4 seconds (0.4s async, 0.00s sync)
-40 tests, 1 failure
+41 tests, 1 failure
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
 ```
 
 ## DD-ZEROARGS
 
-an apply/3 with no arguments counts as unread (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `40 tests, 6 failures`.
+an apply/3 with no arguments counts as unread (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 6 failures`.
 
 ```
-  1) test a dependency's function a transaction or a Multi runs Multi.run/5 on one is a gap of that transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:326
-     Assertion with == failed
-     code:  assert whats(one(a, :d21c).gaps) == [String.replace(lib_call("step/2"), "call of", "capture of")]
-     left:  ["unread: a function handed to Ecto.Multi.new/0",
-             "unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.step/2"]
-     right: ["unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.step/2"]
-     stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:327: (test)
-
-...................
-
-  2) test the forms DND-5459 reads stay the rest of Ecto.Multi reads; a name it does not know is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:279
+  1) test the forms DND-5459 reads stay the rest of Ecto.Multi reads; a name it does not know is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:290
      Assertion with == failed
      code:  assert whats(one(a, :d15).gaps) == ["unread: call of Ecto.Multi.not_a_function/1"]
      left:  ["unread: a function handed to Ecto.Multi.new/0",
              "unread: call of Ecto.Multi.not_a_function/1"]
      right: ["unread: call of Ecto.Multi.not_a_function/1"]
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:280: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:291: (test)
 
-...
+........
 
-  3) test an apply with a literal module and name of a listed function with no arguments is cleared (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:376
-     match (=) failed
-     code:  assert %Scope{no_gap_noticed?: true} = one(a, :d13c)
-     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true}
-     right: %Anchor.Domain.Aggregates.Scope{
-              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d13c,
-               0},
-              ordinal: 1,
-              line: 77,
-              kind: :fun,
-              writes: [],
-              keys: MapSet.new([]),
-              no_gap_noticed?: false,
-              gaps: [
-                {:unread,
-                 {AnchorFixtures.WriteSitesDefaultTest.D, :d13c, 0},
-                 77, "unread: a function handed to Enum.to_list/0"}
-              ]
-            }
-     stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:377: (test)
-
-
-
-  4) test the forms DND-5459 reads stay row 11: a repo write, a Multi step, a listed write function, raw SQL: sites as before (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:264
+  2) test the forms DND-5459 reads stay row 11: a repo write, a Multi step, a listed write function, raw SQL: sites as before (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:275
      match (=) failed
      code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
      left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
@@ -763,148 +781,178 @@ an apply/3 with no arguments counts as unread (`lib/anchor/domain/aggregates/wri
                   run_callback?: false
                 }
               ],
-              keys: MapS
+              keys: MapSet.new([
+                schema: AnchorFixtures.WriteSitesDefaultTest.S
+              ]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:unread,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d11b, 0},
+                 64,
+                 "unread: a function handed to Ecto.Multi.new/0"}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:284: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test the forms DND-5459 reads stay row 11: a repo write, a Multi step, a listed write function, raw SQL: sites as before"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:283: (test)
+
+..
+
+  3) test a dependency's function a transaction or a Multi runs Multi.run/5 on one is a gap of that transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:348
+     Assertion with == failed
+     code:  assert whats(one(a, :d21c).gaps) == [String.replace(lib_call("step/2"), "call of", "capture of")]
+     left:  ["unread: a function handed to Ecto.Multi.new/0",
+             "unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.step/2"]
+     right: ["unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.step/2"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:349: (test)
+
+..............
+
+  4) test a dependency's function a transaction or a Multi runs a capture of one as a Multi.run callback is a gap of that transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     tes
 ```
 
 ## DD-CLEARED
 
-a cleared call is not counted (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `40 tests, 2 failures`.
+a cleared call is not counted (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 2 failures`.
 
 ```
-  1) test a call the walker does not read the counts hold the cleared calls and the unread ones by callee (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:241
-     Assertion with >= failed
-     code:  assert a.counts.cleared >= 1
-     left:  0
-     right: 1
-     stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:242: (test)
-
-.....
-
-  2) test a call the walker does not read row 5: every cleared call is counted, none from a form read another way (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:171
+  1) test a call the walker does not read row 5: every cleared call is counted, none from a form read another way (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:182
      Assertion with == failed
      code:  assert facts.functions[{@d, :d5, 1}].cleared == 1
      left:  0
      right: 1
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:177: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:188: (test)
 
-...............................
+......
+
+  2) test a call the walker does not read the counts hold the cleared calls and the unread ones by callee (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:252
+     Assertion with >= failed
+     code:  assert a.counts.cleared >= 1
+     left:  0
+     right: 1
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:253: (test)
+
+................................
 Finished in 0.4 seconds (0.4s async, 0.00s sync)
-40 tests, 2 failures
+41 tests, 2 failures
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
 ```
 
 ## DD-UNREADMARK
 
-an unread call is a plain dynamic gap, with no name (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `112 tests, 19 failures`.
+an unread call is a plain dynamic gap, with no name (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `113 tests, 20 failures`.
 
 ```
-  1) test a call the walker does not read the counts hold the cleared calls and the unread ones by callee (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:241
+  1) test a call the walker does not read a function run in another process is a gap with no transaction around it too (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:245
      Assertion with == failed
-     code:  assert a.counts.unread_by_callee["unread: call of GenServer.call/2"] == 2
-     left:  nil
-     right: 2
-     stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:243: (test)
-
-
-
-  2) test a call the walker does not read row 6: GenServer.call/2 is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:183
-     Assertion with == failed
-     code:  assert whats(one(a, :d6).gaps) == ["unread: call of GenServer.call/2"]
+     code:  assert whats(nontx(a, :d17, 1).gaps) == ["unread: call of GenServer.call/2"]
      left:  []
      right: ["unread: call of GenServer.call/2"]
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:184: (test)
-
-
-
-  3) test a capture of an unlisted dependency is a gap; of a listed function it is cleared (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:293
-     Assertion with == failed
-     code:  assert whats(one(a, :d12a).gaps) == [lib_call("save/1") |> String.replace("call of", "capture of")]
-     left:  []
-     right: ["unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.save/1"]
-     stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:294: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:249: (test)
 
 .
 
-  4) test a capture of a listed function that runs its argument is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:301
+  2) test a dependency's function a transaction or a Multi runs Multi.run/5 on one is a gap of that transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:348
+     Assertion with == failed
+     code:  assert whats(one(a, :d21c).gaps) == [String.replace(lib_call("step/2"), "call of", "capture of")]
+     left:  []
+     right: ["unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.step/2"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:349: (test)
+
+
+
+  3) test a capture of an Ecto.Multi step or a generated repo function is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:316
+     Assertion with == failed
+     code:  assert whats(one(a, :d12d).gaps) == ["unread: capture of Ecto.Multi.insert/3"]
+     left:  []
+     right: ["unread: capture of Ecto.Multi.insert/3"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:317: (test)
+
+.
+
+  4) test a call the walker does not read row 9: reached through two project calls, a gap on the scope that reaches it only (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:226
+     match (=) failed
+     code:  assert [{:unread, {@d, :second, 0}, _line, what}] = one(a, :d9).gaps
+     left:  [{:unread, {AnchorFixtures.WriteSitesDefaultTest.D, :second, 0}, _line, what}]
+     right: [
+              {:dynamic_call,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :second, 0},
+               57}
+            ]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:229: (test)
+
+
+
+  5) test a capture of a listed function that runs its argument is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:312
      Assertion with == failed
      code:  assert whats(one(a, :d12c).gaps) == ["unread: capture of Enum.map/2"]
      left:  []
      right: ["unread: capture of Enum.map/2"]
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:302: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:313: (test)
 
-.
 
-  5) test exactly one outcome per call a capture read twice at one line counts once in unread_by_callee (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:358
+
+  6) test a capture of an unlisted dependency is a gap; of a listed function it is cleared (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:304
      Assertion with == failed
-     code:  assert a.counts.unread_by_callee[String.replace(lib_call("only_here/1"), "call of", "capture of")] == 1
-     left:  nil
-     right: 1
-     stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:359: (test)
-
-...
-
-  6) test a project function the analysis does not walk a macro's own function is a gap, never a call to nowhere (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:258
-     Assertion with == failed
-     code:  assert whats(one(a, :d19).gaps) == ["unread: call of #{inspect(@macros)}.MACRO-m/2"]
+     code:  assert whats(one(a, :d12a).gaps) == [lib_call("save/1") |> String.replace("call of", "capture of")]
      left:  []
-     right: ["unread: call of AnchorFixtures.WriteSitesDefaultTest.Macros.MACRO-m/2"]
+     right: ["unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.save/1"]
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:259: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:305: (test)
 
-.....
 
-  7) test a call the walker does not read row 10: with no transaction, a gap on the root's nontx and on no scope (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:223
-     match (=) failed
-     code:  assert [{:unread, {@d, :d10, 1}, _line, what}] = nontx(a, name, arity).gaps
-     left:  [{:unread, {AnchorFixtures.WriteSitesDefaultTest.D, :d10, 1}, _line, what}]
-     right: [
-              {:dynamic_call,
-               {AnchorFixt
+
+  7) test a project function the analysis does not walk a macro's own function is a gap, never a call to nowhere (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:269
+     Assertion
 ```
 
 ## DD-GENERATED
 
-a function use Ecto.Repo generates counts as followed (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `40 tests, 1 failure`.
+a function use Ecto.Repo generates counts as followed (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 1 failure`.
 
 ```
   1) test a capture of an Ecto.Multi step or a generated repo function is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:305
+     test/anchor/domain/aggregates/write_sites_default_test.exs:316
      Assertion with == failed
      code:  assert whats(one(a, :d12e).gaps) == ["unread: capture of #{inspect(@repo)}.all/1"]
      left:  []
      right: ["unread: capture of AnchorFixtures.WriteSitesDefaultTest.Repo.all/1"]
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:307: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:318: (test)
 
-.................
+..............
 Finished in 0.4 seconds (0.4s async, 0.00s sync)
-40 tests, 1 failure
+41 tests, 1 failure
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
 ```
 
 ## DD-WFSITE
 
-a dependency's write function is also an unread call (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `40 tests, 1 failure`.
+a dependency's write function is also an unread call (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 1 failure`.
 
 ```
   1) test the forms DND-5459 reads stay row 11: a repo write, a Multi step, a listed write function, raw SQL: sites as before (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:264
+     test/anchor/domain/aggregates/write_sites_default_test.exs:275
      match (=) failed
      code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
      left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
@@ -941,39 +989,39 @@ a dependency's write function is also an unread call (`lib/anchor/domain/aggrega
               ]
             }
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:273: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test the forms DND-5459 reads stay row 11: a repo write, a Multi step, a listed write function, raw SQL: sites as before"/1
+       test/anchor/domain/aggregates/write_sites_default_test.exs:284: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test the forms DND-5459 reads stay row 11: a repo write, a Multi step, a listed write function, raw SQL: sites as before"/1
        (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
-       test/anchor/domain/aggregates/write_sites_default_test.exs:272: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:283: (test)
 
-.................
+....................
 Finished in 0.4 seconds (0.4s async, 0.00s sync)
-40 tests, 1 failure
+41 tests, 1 failure
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
 ```
 
 ## DD-MULTINAME
 
-an Ecto.Multi name nothing knows reads as no write (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `40 tests, 1 failure`.
+an Ecto.Multi name nothing knows reads as no write (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 1 failure`.
 
 ```
   1) test the forms DND-5459 reads stay the rest of Ecto.Multi reads; a name it does not know is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:279
+     test/anchor/domain/aggregates/write_sites_default_test.exs:290
      Assertion with == failed
      code:  assert whats(one(a, :d15).gaps) == ["unread: call of Ecto.Multi.not_a_function/1"]
      left:  []
      right: ["unread: call of Ecto.Multi.not_a_function/1"]
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:280: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:291: (test)
 
-........................
+..
 Finished in 0.4 seconds (0.4s async, 0.00s sync)
-40 tests, 1 failure
+41 tests, 1 failure
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
 ```
 
 ## DD-MULTIREAD
 
-Multi.new is unread (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `53 tests, 7 failures`.
+Multi.new is unread (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `54 tests, 7 failures`.
 
 ```
   1) test E4: a real Multi pipeline's scope keys are exactly the written schemas (Anchor.Domain.Aggregates.RealEctoTest)
@@ -983,7 +1031,7 @@ Multi.new is unread (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `53
      stacktrace:
        test/anchor/domain/aggregates/real_ecto_test.exs:191: (test)
 
-
+.........
 
   2) test DND-5889: Ecto's own expansion, and what `use Ecto.Schema` generates, is no gap (Anchor.Domain.Aggregates.RealEctoTest)
      test/anchor/domain/aggregates/real_ecto_test.exs:180
@@ -994,85 +1042,101 @@ Multi.new is unread (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `53
      stacktrace:
        test/anchor/domain/aggregates/real_ecto_test.exs:183: (test)
 
-........
+....
 
-  3) test a dependency's function a transaction or a Multi runs Multi.run/5 on one is a gap of that transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:326
-     Assertion with == failed
-     code:  assert whats(one(a, :d21c).gaps) == [String.replace(lib_call("step/2"), "call of", "capture of")]
-     left:  ["unread: call of Ecto.Multi.new/0",
-             "unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.step/2"]
-     right: ["unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.step/2"]
-     stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:327: (test)
-
-..........
-
-  4) test a dependency's function a transaction or a Multi runs a capture of one as a Multi.run callback is a gap of that transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:320
-     Assertion with == failed
-     code:  assert whats(one(a, :d21b).gaps) == [String.replace(lib_call("step/2"), "call of", "capture of")]
-     left:  ["unread: call of Ecto.Multi.new/0",
-             "unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.step/2"]
-     right: ["unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.step/2"]
-     stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:321: (test)
-
-...........
-
-  5) test the forms DND-5459 reads stay the rest of Ecto.Multi reads; a name it does not know is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:279
+  3) test the forms DND-5459 reads stay the rest of Ecto.Multi reads; a name it does not know is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:290
      Assertion with == failed
      code:  assert whats(one(a, :d15).gaps) == ["unread: call of Ecto.Multi.not_a_function/1"]
      left:  ["unread: call of Ecto.Multi.new/0",
              "unread: call of Ecto.Multi.not_a_function/1"]
      right: ["unread: call of Ecto.Multi.not_a_function/1"]
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:280: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:291: (test)
 
-....
+.
 
-  6) test the forms DND-5459 reads stay row 11: a repo write, a Multi step, a listed write function, raw SQL: sites as before (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:264
+  4) test a dependency's function a transaction or a Multi runs positive control: Multi.run/5 on a project function is no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:354
      match (=) failed
-     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :d21d)
      left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
      right: %Anchor.Domain.Aggregates.Scope{
-              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d11b,
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d21d,
                0},
               ordinal: 1,
-              line: 64,
+              line: 104,
               kind: :multi,
-              writes: [
-                %Anchor.Domain.Aggregates.WriteSite{
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:unread,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d21d, 0},
+                 104, "unread: call of Ecto.Multi.new/0"}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:355: (test)
+
+...
+
+  5) test a dependency's function a transaction or a Multi runs Multi.run/5 on one is a gap of that transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:348
+     Assertion with == failed
+     code:  assert whats(one(a, :d21c).gaps) == [String.replace(lib_call("step/2"), "call of", "capture of")]
+     left:  ["unread: call of Ecto.Multi.new/0",
+             "unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.step/2"]
+     right: ["unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.step/2"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:349: (test)
+
+........
+
+  6) test the forms DND-5459 reads stay row 11: a repo write, a Multi step, a listed write function, raw SQL: sites as before (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:275
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
+     left:  %Anchor.Domain.Aggregates.Scope{
 ```
 
 ## DD-MULTIFUN
 
-a function handed to a Multi read is not checked (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `40 tests, 1 failure`.
+a function handed to a Multi read is not checked (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 1 failure`.
 
 ```
   1) test the forms DND-5459 reads stay the rest of Ecto.Multi reads; a name it does not know is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:279
+     test/anchor/domain/aggregates/write_sites_default_test.exs:290
      Assertion with == failed
      code:  assert whats(one(a, :d15b).gaps) == ["unread: a function handed to Ecto.Multi.put/3"]
      left:  []
      right: ["unread: a function handed to Ecto.Multi.put/3"]
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:281: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:292: (test)
 
-...............
+.....................
 Finished in 0.4 seconds (0.4s async, 0.00s sync)
-40 tests, 1 failure
+41 tests, 1 failure
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
 ```
 
 ## DD-OTHERPROCESS
 
-a function in another process is no gap outside a transaction (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `59 tests, 2 failures`.
+a function in another process is no gap outside a transaction (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `60 tests, 2 failures`.
 
 ```
-  1) test the gaps with no transaction read around them are counted (Anchor.Domain.Aggregates.NonTransactionalTest)
+  1) test a call the walker does not read a function run in another process is a gap with no transaction around it too (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:245
+     match (=) failed
+     code:  assert [{:dynamic_call, {@d, :d18, 0}, _line}] = nontx(a, :d18, 0).gaps
+     left:  [{:dynamic_call, {AnchorFixtures.WriteSitesDefaultTest.D, :d18, 0}, _line}]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:248: (test)
+
+...............
+
+  2) test the gaps with no transaction read around them are counted (Anchor.Domain.Aggregates.NonTransactionalTest)
      test/anchor/domain/aggregates/non_transactional_test.exs:305
      Expected truthy, got false
      code: assert Enum.any?(gaps, &match?({:dynamic_call, {@n, :n26, 0}, _line}, &1))
@@ -1081,33 +1145,33 @@ a function in another process is no gap outside a transaction (`lib/anchor/domai
          # 1
          [
            {:dynamic_call,
-            {AnchorFixtures.NonTransactionalTest.N, :n34, 2}, 101},
-           {:dynamic_call,
-            {AnchorFixtures.NonTransactionalTest.N, :n48, 0}, 83},
-           {:dynamic_call,
-            {AnchorFixtures.NonTransactionalTest.N, :n38, 2}, 92},
-           {:dynamic_call,
-            {AnchorFixtures.NonTransactionalTest.N, :n52, 1}, 70},
-           {:dynamic_call,
-            {AnchorFixtures.NonTransactionalTest.N, :n55, 2}, 73},
-           {:dynamic_call,
-            {AnchorFixtures.NonTransactionalTest.N, :n56, 1}, 67},
+            {AnchorFixtures.NonTransactionalTest.N, :n27, 1}, 104},
            {:dynamic_call,
             {AnchorFixtures.NonTransactionalTest.N, :n32, 1}, 99},
            {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n43, 1}, 97},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n38, 2}, 92},
+           {:dynamic_call,
             {AnchorFixtures.NonTransactionalTest.N, :n37, 3}, 91},
            {:dynamic_call,
-            {AnchorFixtures.NonTransactionalTest.N, :n33, 1}, 100},
+            {AnchorFixtures.NonTransactionalTest.N, :n35, 2}, 89},
            {:dynamic_call,
-            {AnchorFixtures.NonTransactionalTest.N, :n17h, 0}, 120},
+            {AnchorFixtures.NonTransactionalTest.N, :n56, 1}, 67},
            {:dynamic_call,
-            {AnchorFixtures.NonTransactionalTest.N, :n22, 1}, 109},
+            {AnchorFixtures.NonTransactionalTest.N, :n41, 2}, 95},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n48, 0}, 83},
            {:dynamic_call,
             {AnchorFixtures.NonTransactionalTest.N, :n36, 1}, 90},
            {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n51, 2}, 69},
+           {:dynamic_call,
             {AnchorFixtures.NonTransactionalTest.N, :n11, 0}, 58},
            {:dynamic_call,
-            {AnchorFixtures.NonTransactionalTest.N, :n42, 2}, 96},
+            {AnchorFixtures.NonTransactionalTest.N, :n33, 1}, 100},
+           {:dynamic_call,
+            {AnchorFixtures.NonTransactionalTest.N, :n54, 2}, 72},
            {:dynamic_call, ...},
            ...
          ]
@@ -1118,30 +1182,19 @@ a function in another process is no gap outside a transaction (`lib/anchor/domai
      stacktrace:
        test/anchor/domain/aggregates/non_transactional_test.exs:314: (test)
 
-...................
-
-  2) test a call the walker does not read a function run in another process is a gap with no transaction around it too (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:234
-     match (=) failed
-     code:  assert [{:dynamic_call, {@d, :d18, 0}, _line}] = nontx(a, :d18, 0).gaps
-     left:  [{:dynamic_call, {AnchorFixtures.WriteSitesDefaultTest.D, :d18, 0}, _line}]
-     right: []
-     stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:237: (test)
-
-....................................
+.
 Finished in 0.5 seconds (0.5s async, 0.00s sync)
-59 tests, 2 failures
+60 tests, 2 failures
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
 ```
 
 ## DD-PARTLY
 
-an untraced argument beside a traced body is no gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `40 tests, 1 failure`.
+an untraced argument beside a traced body is no gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 1 failure`.
 
 ```
   1) test a transaction_functions call row 14: one argument traced and one not is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:382
+     test/anchor/domain/aggregates/write_sites_default_test.exs:404
      match (=) failed
      code:  assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@d, :d14a, 1}, _}]} = one(a, :d14a)
      left:  %Anchor.Domain.Aggregates.Scope{
@@ -1176,21 +1229,21 @@ an untraced argument beside a traced body is no gap (`lib/anchor/domain/aggregat
               gaps: []
             }
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:383: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:405: (test)
 
-.................
+............................
 Finished in 0.4 seconds (0.4s async, 0.00s sync)
-40 tests, 1 failure
+41 tests, 1 failure
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
 ```
 
 ## DD-LITERAL
 
-a literal beside a traced body counts as untraced (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `40 tests, 1 failure`.
+a literal beside a traced body counts as untraced (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 1 failure`.
 
 ```
   1) test a transaction_functions call row 14: positive control: the other argument a literal is no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:387
+     test/anchor/domain/aggregates/write_sites_default_test.exs:409
      match (=) failed
      code:  assert %Scope{no_gap_noticed?: true, keys: keys} = one(a, :d14b)
      left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, keys: keys}
@@ -1226,32 +1279,32 @@ a literal beside a traced body counts as untraced (`lib/anchor/domain/aggregates
               ]
             }
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:388: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:410: (test)
 
-..............
+.............................
 Finished in 0.4 seconds (0.4s async, 0.00s sync)
-40 tests, 1 failure
+41 tests, 1 failure
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
 ```
 
 ## DD-LISTWIRED
 
-aggregates.no_write_modules never reaches the walker (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `40 tests, 2 failures`.
+aggregates.no_write_modules never reaches the walker (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 2 failures`.
 
 ```
   1) test a call the walker does not read row 8: a function given to a listed module where HigherOrder names no place is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:195
+     test/anchor/domain/aggregates/write_sites_default_test.exs:206
      Assertion with == failed
      code:  assert whats(one(a, :d8c).gaps) == ["unread: a function handed to #{inspect(@listed)}.run/1"]
      left:  ["unread: call of AnchorFixtures.WriteSitesDefaultTest.Listed.run/1"]
      right: ["unread: a function handed to AnchorFixtures.WriteSitesDefaultTest.Listed.run/1"]
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:200: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:211: (test)
 
-........
+..................
 
   2) test a call the walker does not read row 8: positive controls: data to a listed module, a function HigherOrder names (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:207
+     test/anchor/domain/aggregates/write_sites_default_test.exs:218
      match (=) failed
      code:  assert %Scope{no_gap_noticed?: true} = one(a, :d8d)
      left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true}
@@ -1271,17 +1324,17 @@ aggregates.no_write_modules never reaches the walker (`lib/anchor/domain/aggrega
               ]
             }
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:210: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:221: (test)
 
-.....
+.............
 Finished in 0.4 seconds (0.4s async, 0.00s sync)
-40 tests, 2 failures
+41 tests, 2 failures
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
 ```
 
 ## NW-GENSERVER
 
-GenServer on the list (`lib/anchor/domain/aggregates/no_write.ex`). Result: `45 tests, 4 failures`.
+GenServer on the list (`lib/anchor/domain/aggregates/no_write.ex`). Result: `46 tests, 4 failures`.
 
 ```
   1) test member?/2 what hands work to another process, or runs code, is never cleared (Anchor.Domain.Aggregates.NoWriteTest)
@@ -1293,49 +1346,49 @@ GenServer on the list (`lib/anchor/domain/aggregates/no_write.ex`). Result: `45 
        (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
        test/anchor/domain/aggregates/no_write_test.exs:24: (test)
 
-.......
+.........
 
   2) test a call the walker does not read row 6: GenServer.call/2 is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:183
+     test/anchor/domain/aggregates/write_sites_default_test.exs:194
      Assertion with == failed
      code:  assert whats(one(a, :d6).gaps) == ["unread: call of GenServer.call/2"]
      left:  []
      right: ["unread: call of GenServer.call/2"]
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:184: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:195: (test)
 
-..............
+...
 
-  3) test a call the walker does not read a function run in another process is a gap with no transaction around it too (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:234
-     Assertion with == failed
-     code:  assert whats(nontx(a, :d17, 1).gaps) == ["unread: call of GenServer.call/2"]
-     left:  []
-     right: ["unread: call of GenServer.call/2"]
-     stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:238: (test)
-
-
-
-  4) test a call the walker does not read the counts hold the cleared calls and the unread ones by callee (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:241
+  3) test a call the walker does not read the counts hold the cleared calls and the unread ones by callee (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:252
      Assertion with == failed
      code:  assert a.counts.unread_by_callee["unread: call of GenServer.call/2"] == 2
      left:  nil
      right: 2
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:243: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:254: (test)
 
-................
+..........................
+
+  4) test a call the walker does not read a function run in another process is a gap with no transaction around it too (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:245
+     Assertion with == failed
+     code:  assert whats(nontx(a, :d17, 1).gaps) == ["unread: call of GenServer.call/2"]
+     left:  []
+     right: ["unread: call of GenServer.call/2"]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:249: (test)
+
+.
 Finished in 0.4 seconds (0.4s async, 0.00s sync)
-45 tests, 4 failures
+46 tests, 4 failures
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/no_write.ex" was set to the future, resetting to now
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
 ```
 
 ## NW-ENUM
 
-Enum off the list (`lib/anchor/domain/aggregates/no_write.ex`). Result: `45 tests, 8 failures`.
+Enum off the list (`lib/anchor/domain/aggregates/no_write.ex`). Result: `46 tests, 8 failures`.
 
 ```
   1) test member?/2 a pure library call is cleared (Anchor.Domain.Aggregates.NoWriteTest)
@@ -1345,10 +1398,34 @@ Enum off the list (`lib/anchor/domain/aggregates/no_write.ex`). Result: `45 test
      stacktrace:
        test/anchor/domain/aggregates/no_write_test.exs:11: (test)
 
-........
+......
 
-  2) test an apply with a literal module and name of a listed function with no arguments is cleared (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:376
+  2) test a call the walker does not read row 8: positive controls: data to a listed module, a function HigherOrder names (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:218
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true} = one(a, :d8e)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d8e, 1},
+              ordinal: 1,
+              line: 49,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:unread,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d8e, 1},
+                 49, "unread: call of Enum.map/2"}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:222: (test)
+
+.
+
+  3) test an apply with a literal module and name of a listed function with no arguments is cleared (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:398
      match (=) failed
      code:  assert %Scope{no_gap_noticed?: true} = one(a, :d13c)
      left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true}
@@ -1368,62 +1445,37 @@ Enum off the list (`lib/anchor/domain/aggregates/no_write.ex`). Result: `45 test
               ]
             }
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:377: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:399: (test)
 
-...
+.
 
-  3) test a call the walker does not read row 5: every cleared call is counted, none from a form read another way (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:171
+  4) test a call the walker does not read row 10: with no transaction, a gap on the root's nontx and on no scope (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:234
      Assertion with == failed
-     code:  assert facts.functions[{@d, :d5, 1}].cleared == 1
-     left:  0
-     right: 1
+     code:  assert nontx(a, :d10_clean, 1).gaps == []
+     left:  [
+              {:unread,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :d10_clean,
+                1}, 61, "unread: call of Enum.count/1"}
+            ]
+     right: []
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:177: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:242: (test)
 
-........
+..................
 
-  4) test a capture of an unlisted dependency is a gap; of a listed function it is cleared (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:293
+  5) test a function value, or data, that needs no following d20g: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:262
      match (=) failed
-     code:  assert %Scope{no_gap_noticed?: true} = one(a, :d12b)
-     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true}
-     right: %Anchor.Domain.Aggregates.Scope{
-              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d12b,
-               1},
-              ordinal: 1,
-              line: 70,
-              kind: :fun,
-              writes: [],
-              keys: MapSet.new([]),
-              no_gap_noticed?: false,
-              gaps: [
-                {:unread,
-                 {AnchorFixtures.WriteSitesDefaultTest.D, :d12b, 1},
-                 70, "unread: call of Enum.map/2"}
-              ]
-            }
-     stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:298: (test)
-
-....
-
-  5) test a call the walker does not read row 5: a call on the no-write list is no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:167
-     match (=) failed
-     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :d5)
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
      left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
      right: %Anchor.Domain.Aggregates.Scope{
-              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d5, 1},
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d20g,
+               1},
               ordinal: 1,
-              line: 41,
+              line: 99,
               kind: :fun,
-              writes: [],
-              keys: MapSet.new([]),
-              no_gap_noticed?: false,
-              gaps: [
-                {:unread,
-                 {AnchorFixtures.WriteSitesDefault
+              writes: [
 ```
 
 ## NW-QUERYABLE
@@ -1440,7 +1492,7 @@ Ecto.Queryable off the list: real Ecto expansion gives a gap (`lib/anchor/domain
      stacktrace:
        test/anchor/domain/aggregates/real_ecto_test.exs:183: (test)
 
-....
+...........
 Finished in 0.1 seconds (0.1s async, 0.00s sync)
 13 tests, 1 failure
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/no_write.ex" was set to the future, resetting to now
@@ -1458,7 +1510,7 @@ Ecto.Changeset off the list (`lib/anchor/domain/aggregates/no_write.ex`). Result
      stacktrace:
        test/anchor/domain/aggregates/no_write_test.exs:14: (test)
 
-......
+.........
 
   2) test DND-5889: Ecto's own expansion, and what `use Ecto.Schema` generates, is no gap (Anchor.Domain.Aggregates.RealEctoTest)
      test/anchor/domain/aggregates/real_ecto_test.exs:180
@@ -1474,7 +1526,7 @@ Ecto.Changeset off the list (`lib/anchor/domain/aggregates/no_write.ex`). Result
      stacktrace:
        test/anchor/domain/aggregates/real_ecto_test.exs:183: (test)
 
-......
+.......
 Finished in 0.1 seconds (0.1s async, 0.00s sync)
 18 tests, 2 failures
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/no_write.ex" was set to the future, resetting to now
@@ -1482,11 +1534,37 @@ warning: mtime (modified time) for "lib/anchor/domain/aggregates/no_write.ex" wa
 
 ## NW-GIVESBACK
 
-a function given to Keyword.get/3 is a gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `40 tests, 2 failures`.
+a function given to Keyword.get/3 is a gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `41 tests, 2 failures`.
 
 ```
-  1) test a call the walker does not read row 8: positive controls: data to a listed module, a function HigherOrder names (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:207
+  1) test a function value, or data, that needs no following d20a: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:262
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d20a,
+               0},
+              ordinal: 1,
+              line: 90,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:unread,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d20a, 0},
+                 90,
+                 "unread: a function handed to Logger.__do_log__/4"}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:263: (test)
+
+.............
+
+  2) test a call the walker does not read row 8: positive controls: data to a listed module, a function HigherOrder names (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:218
      match (=) failed
      code:  assert %Scope{no_gap_noticed?: true} = one(a, :d8f)
      left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true}
@@ -1505,44 +1583,18 @@ a function given to Keyword.get/3 is a gap (`lib/anchor/domain/aggregates/write_
               ]
             }
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:212: (test)
-
-....
-
-  2) test a function value, or data, that needs no following d20a: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:251
-     match (=) failed
-     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
-     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
-     right: %Anchor.Domain.Aggregates.Scope{
-              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d20a,
-               0},
-              ordinal: 1,
-              line: 90,
-              kind: :fun,
-              writes: [],
-              keys: MapSet.new([]),
-              no_gap_noticed?: false,
-              gaps: [
-                {:unread,
-                 {AnchorFixtures.WriteSitesDefaultTest.D, :d20a, 0},
-                 90,
-                 "unread: a function handed to Logger.__do_log__/4"}
-              ]
-            }
-     stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:252: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:223: (test)
 
 ..
-Finished in 0.4 seconds (0.4s async, 0.00s sync)
-40 tests, 2 failures
+Finished in 0.5 seconds (0.5s async, 0.00s sync)
+41 tests, 2 failures
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/no_write.ex" was set to the future, resetting to now
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
 ```
 
 ## NW-GIVESBACKTABLE
 
-any listed function counts as harmless (`lib/anchor/domain/aggregates/no_write.ex`). Result: `45 tests, 3 failures`.
+any listed function counts as harmless (`lib/anchor/domain/aggregates/no_write.ex`). Result: `46 tests, 3 failures`.
 
 ```
   1) test harmless_function_argument?/1 a default handed back and a log message; any other is not (Anchor.Domain.Aggregates.NoWriteTest)
@@ -1552,38 +1604,38 @@ any listed function counts as harmless (`lib/anchor/domain/aggregates/no_write.e
      stacktrace:
        test/anchor/domain/aggregates/no_write_test.exs:64: (test)
 
-.........................
+.....
 
   2) test a call the walker does not read row 8: a function given to a listed module where HigherOrder names no place is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:195
+     test/anchor/domain/aggregates/write_sites_default_test.exs:206
      Assertion with == failed
      code:  assert whats(one(a, :d8a).gaps) == ["unread: a function handed to Keyword.put/3"]
      left:  []
      right: ["unread: a function handed to Keyword.put/3"]
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:197: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:208: (test)
 
-..........
+................
 
   3) test the forms DND-5459 reads stay the rest of Ecto.Multi reads; a name it does not know is a gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:279
+     test/anchor/domain/aggregates/write_sites_default_test.exs:290
      Assertion with == failed
      code:  assert whats(one(a, :d15b).gaps) == ["unread: a function handed to Ecto.Multi.put/3"]
      left:  []
      right: ["unread: a function handed to Ecto.Multi.put/3"]
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:281: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:292: (test)
 
-.......
+...................
 Finished in 0.4 seconds (0.4s async, 0.00s sync)
-45 tests, 3 failures
+46 tests, 3 failures
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/no_write.ex" was set to the future, resetting to now
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
 ```
 
 ## NW-LOGGERFN
 
-a function as a log message is a gap (`lib/anchor/domain/aggregates/no_write.ex`). Result: `45 tests, 2 failures`.
+a function as a log message is a gap (`lib/anchor/domain/aggregates/no_write.ex`). Result: `46 tests, 2 failures`.
 
 ```
   1) test harmless_function_argument?/1 a default handed back and a log message; any other is not (Anchor.Domain.Aggregates.NoWriteTest)
@@ -1593,10 +1645,10 @@ a function as a log message is a gap (`lib/anchor/domain/aggregates/no_write.ex`
      stacktrace:
        test/anchor/domain/aggregates/no_write_test.exs:63: (test)
 
-....................................
+........................................
 
   2) test a function value, or data, that needs no following d20a: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:251
+     test/anchor/domain/aggregates/write_sites_default_test.exs:262
      match (=) failed
      code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
      left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
@@ -1617,11 +1669,11 @@ a function as a log message is a gap (`lib/anchor/domain/aggregates/no_write.ex`
               ]
             }
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:252: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:263: (test)
 
-......
+..
 Finished in 0.4 seconds (0.4s async, 0.00s sync)
-45 tests, 2 failures
+46 tests, 2 failures
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/no_write.ex" was set to the future, resetting to now
 ```
 
@@ -1639,7 +1691,7 @@ every function of a module held by function is cleared (`lib/anchor/domain/aggre
        (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
        test/anchor/domain/aggregates/no_write_test.exs:24: (test)
 
-...
+..
 Finished in 0.03 seconds (0.03s async, 0.00s sync)
 5 tests, 1 failure
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/no_write.ex" was set to the future, resetting to now
@@ -1647,11 +1699,11 @@ warning: mtime (modified time) for "lib/anchor/domain/aggregates/no_write.ex" wa
 
 ## HO-TRAVERSE
 
-HigherOrder loses the row: {Ecto.Changeset, :traverse_errors, 2} => [{1, 1}], (`lib/anchor/domain/higher_order.ex`). Result: `40 tests, 1 failure`.
+HigherOrder loses the row: {Ecto.Changeset, :traverse_errors, 2} => [{1, 1}], (`lib/anchor/domain/higher_order.ex`). Result: `41 tests, 1 failure`.
 
 ```
   1) test a function value, or data, that needs no following d20b: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:251
+     test/anchor/domain/aggregates/write_sites_default_test.exs:262
      match (=) failed
      code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
      left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
@@ -1672,22 +1724,22 @@ HigherOrder loses the row: {Ecto.Changeset, :traverse_errors, 2} => [{1, 1}], (`
               ]
             }
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:252: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:263: (test)
 
 ...............................
-Finished in 0.4 seconds (0.4s async, 0.00s sync)
-40 tests, 1 failure
+Finished in 0.5 seconds (0.5s async, 0.00s sync)
+41 tests, 1 failure
 warning: mtime (modified time) for "lib/anchor/domain/higher_order.ex" was set to the future, resetting to now
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/no_write.ex" was set to the future, resetting to now
 ```
 
 ## HO-UPDATE
 
-HigherOrder loses the row: {Ecto.Changeset, :update_change, 3} => [{2, 1}], (`lib/anchor/domain/higher_order.ex`). Result: `40 tests, 1 failure`.
+HigherOrder loses the row: {Ecto.Changeset, :update_change, 3} => [{2, 1}], (`lib/anchor/domain/higher_order.ex`). Result: `41 tests, 1 failure`.
 
 ```
   1) test a function value, or data, that needs no following d20c: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:251
+     test/anchor/domain/aggregates/write_sites_default_test.exs:262
      match (=) failed
      code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
      left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
@@ -1708,21 +1760,21 @@ HigherOrder loses the row: {Ecto.Changeset, :update_change, 3} => [{2, 1}], (`li
               ]
             }
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:252: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:263: (test)
 
-.............
+...........
 Finished in 0.4 seconds (0.4s async, 0.00s sync)
-40 tests, 1 failure
+41 tests, 1 failure
 warning: mtime (modified time) for "lib/anchor/domain/higher_order.ex" was set to the future, resetting to now
 ```
 
 ## HO-VALIDATE3
 
-HigherOrder loses the row: {Ecto.Changeset, :validate_change, 3} => [{2, 2}], (`lib/anchor/domain/higher_order.ex`). Result: `40 tests, 1 failure`.
+HigherOrder loses the row: {Ecto.Changeset, :validate_change, 3} => [{2, 2}], (`lib/anchor/domain/higher_order.ex`). Result: `41 tests, 1 failure`.
 
 ```
   1) test a function value, or data, that needs no following d20d: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:251
+     test/anchor/domain/aggregates/write_sites_default_test.exs:262
      match (=) failed
      code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
      left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
@@ -1743,21 +1795,21 @@ HigherOrder loses the row: {Ecto.Changeset, :validate_change, 3} => [{2, 2}], (`
               ]
             }
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:252: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:263: (test)
 
-......................................
+.........................
 Finished in 0.4 seconds (0.4s async, 0.00s sync)
-40 tests, 1 failure
+41 tests, 1 failure
 warning: mtime (modified time) for "lib/anchor/domain/higher_order.ex" was set to the future, resetting to now
 ```
 
 ## HO-VALIDATE4
 
-HigherOrder loses the row: {Ecto.Changeset, :validate_change, 4} => [{3, 2}], (`lib/anchor/domain/higher_order.ex`). Result: `40 tests, 1 failure`.
+HigherOrder loses the row: {Ecto.Changeset, :validate_change, 4} => [{3, 2}], (`lib/anchor/domain/higher_order.ex`). Result: `41 tests, 1 failure`.
 
 ```
   1) test a function value, or data, that needs no following d20e: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:251
+     test/anchor/domain/aggregates/write_sites_default_test.exs:262
      match (=) failed
      code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
      left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
@@ -1778,21 +1830,21 @@ HigherOrder loses the row: {Ecto.Changeset, :validate_change, 4} => [{3, 2}], (`
               ]
             }
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:252: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:263: (test)
 
-...
+....................
 Finished in 0.4 seconds (0.4s async, 0.00s sync)
-40 tests, 1 failure
+41 tests, 1 failure
 warning: mtime (modified time) for "lib/anchor/domain/higher_order.ex" was set to the future, resetting to now
 ```
 
 ## HO-MAPSET
 
-HigherOrder loses the row: {MapSet, :new, 2} => [{1, 1}], (`lib/anchor/domain/higher_order.ex`). Result: `40 tests, 1 failure`.
+HigherOrder loses the row: {MapSet, :new, 2} => [{1, 1}], (`lib/anchor/domain/higher_order.ex`). Result: `41 tests, 1 failure`.
 
 ```
   1) test a function value, or data, that needs no following d20f: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:251
+     test/anchor/domain/aggregates/write_sites_default_test.exs:262
      match (=) failed
      code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
      left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
@@ -1812,21 +1864,21 @@ HigherOrder loses the row: {MapSet, :new, 2} => [{1, 1}], (`lib/anchor/domain/hi
               ]
             }
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:252: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:263: (test)
 
-
+..............................
 Finished in 0.4 seconds (0.4s async, 0.00s sync)
-40 tests, 1 failure
+41 tests, 1 failure
 warning: mtime (modified time) for "lib/anchor/domain/higher_order.ex" was set to the future, resetting to now
 ```
 
 ## HO-MAPJOIN
 
-HigherOrder loses the row: {Enum, :map_join, 2} => [{1, 1}], (`lib/anchor/domain/higher_order.ex`). Result: `40 tests, 1 failure`.
+HigherOrder loses the row: {Enum, :map_join, 2} => [{1, 1}], (`lib/anchor/domain/higher_order.ex`). Result: `41 tests, 1 failure`.
 
 ```
   1) test a function value, or data, that needs no following d20g: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:251
+     test/anchor/domain/aggregates/write_sites_default_test.exs:262
      match (=) failed
      code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
      left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
@@ -1846,11 +1898,11 @@ HigherOrder loses the row: {Enum, :map_join, 2} => [{1, 1}], (`lib/anchor/domain
               ]
             }
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:252: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:263: (test)
 
-.......................
-Finished in 0.4 seconds (0.4s async, 0.00s sync)
-40 tests, 1 failure
+...................................
+Finished in 0.5 seconds (0.5s async, 0.00s sync)
+41 tests, 1 failure
 warning: mtime (modified time) for "lib/anchor/domain/higher_order.ex" was set to the future, resetting to now
 ```
 
@@ -1866,7 +1918,7 @@ a listed module is not cleared (`lib/anchor/domain/aggregates/no_write.ex`). Res
      stacktrace:
        test/anchor/domain/aggregates/no_write_test.exs:47: (test)
 
-
+...
 Finished in 0.03 seconds (0.03s async, 0.00s sync)
 5 tests, 1 failure
 warning: mtime (modified time) for "lib/anchor/domain/higher_order.ex" was set to the future, resetting to now
@@ -1893,33 +1945,30 @@ warning: mtime (modified time) for "lib/anchor/domain/aggregates/no_write.ex" wa
 
 ## SC-NONTX
 
-an unread call is no gap with no transaction around it (`lib/anchor/domain/aggregates/scopes.ex`). Result: `59 tests, 8 failures`.
+an unread call is no gap with no transaction around it (`lib/anchor/domain/aggregates/scopes.ex`). Result: `60 tests, 9 failures`.
 
 ```
-  1) test N3: a callee also called outside: the outside caller has its keys (Anchor.Domain.Aggregates.NonTransactionalTest)
-     test/anchor/domain/aggregates/non_transactional_test.exs:150
+  1) test a captured run callback's own entry is empty; a direct caller still has its writes (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:268
      Assertion with == failed
-     code:  assert nontx(a, :n3h).keys == keys([@t])
+     code:  assert nontx(a, :n19_direct).keys == keys([@s])
      left:  MapSet.new([])
-     right: MapSet.new([schema: AnchorFixtures.NonTransactionalTest.T])
+     right: MapSet.new([schema: AnchorFixtures.NonTransactionalTest.S])
      stacktrace:
-       test/anchor/domain/aggregates/non_transactional_test.exs:152: (test)
+       test/anchor/domain/aggregates/non_transactional_test.exs:271: (test)
 
-...
+.
 
-  2) test N1: a function's own writes and its callees' outside a transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
-     test/anchor/domain/aggregates/non_transactional_test.exs:138
+  2) test a capture beside a body capture of one function is outside the transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:156
      Assertion with == failed
-     code:  assert nontx(a, :n1f).keys == keys([@s, @t])
-     left:  MapSet.new([schema: AnchorFixtures.NonTransactionalTest.S])
-     right: MapSet.new([
-              schema: AnchorFixtures.NonTransactionalTest.S,
-              schema: AnchorFixtures.NonTransactionalTest.T
-            ])
+     code:  assert nontx(a, :n47_run).keys == keys([@s])
+     left:  MapSet.new([])
+     right: MapSet.new([schema: AnchorFixtures.NonTransactionalTest.S])
      stacktrace:
-       test/anchor/domain/aggregates/non_transactional_test.exs:139: (test)
+       test/anchor/domain/aggregates/non_transactional_test.exs:159: (test)
 
-.....
+.
 
   3) test N4: recursion terminates at the fixpoint (Anchor.Domain.Aggregates.NonTransactionalTest)
      test/anchor/domain/aggregates/non_transactional_test.exs:172
@@ -1950,45 +1999,48 @@ an unread call is no gap with no transaction around it (`lib/anchor/domain/aggre
      stacktrace:
        test/anchor/domain/aggregates/non_transactional_test.exs:312: (test)
 
-..
 
-  5) test a captured run callback's own entry is empty; a direct caller still has its writes (Anchor.Domain.Aggregates.NonTransactionalTest)
-     test/anchor/domain/aggregates/non_transactional_test.exs:268
+
+  5) test N1: a function's own writes and its callees' outside a transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:138
      Assertion with == failed
-     code:  assert nontx(a, :n19_direct).keys == keys([@s])
-     left:  MapSet.new([])
-     right: MapSet.new([schema: AnchorFixtures.NonTransactionalTest.S])
+     code:  assert nontx(a, :n1f).keys == keys([@s, @t])
+     left:  MapSet.new([schema: AnchorFixtures.NonTransactionalTest.S])
+     right: MapSet.new([
+              schema: AnchorFixtures.NonTransactionalTest.S,
+              schema: AnchorFixtures.NonTransactionalTest.T
+            ])
      stacktrace:
-       test/anchor/domain/aggregates/non_transactional_test.exs:271: (test)
+       test/anchor/domain/aggregates/non_transactional_test.exs:139: (test)
 
 
 
-  6) test a capture beside a body capture of one function is outside the transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
-     test/anchor/domain/aggregates/non_transactional_test.exs:156
+  6) test N3: a callee also called outside: the outside caller has its keys (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:150
      Assertion with == failed
-     code:  assert nontx(a, :n47_run).keys == keys([@s])
+     code:  assert nontx(a, :n3h).keys == keys([@t])
      left:  MapSet.new([])
-     right: MapSet.new([schema: AnchorFixtures.NonTransactionalTest.S])
+     right: MapSet.new([schema: AnchorFixtures.NonTransactionalTest.T])
      stacktrace:
-       test/anchor/domain/aggregates/non_transactional_test.exs:159: (test)
+       test/anchor/domain/aggregates/non_transactional_test.exs:152: (test)
 
-.........
+...................
 
   7) test a call the walker does not read a function run in another process is a gap with no transaction around it too (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:234
-     matc
+     test/anchor/domain/aggregates/write_sites_default_test.exs:245
+     ma
 ```
 
 ## SC-GAPORDER
 
-an unread gap has no sort order (`lib/anchor/domain/aggregates/scopes.ex`). Result: `40 tests, 0 failures, 40 invalid`.
+an unread gap has no sort order (`lib/anchor/domain/aggregates/scopes.ex`). Result: `41 tests, 0 failures, 41 invalid`.
 
 ```
 Compiling 16 files (.ex)
 Generated anchor app
-Running ExUnit with seed: 215560, max_cases: 2
+Running ExUnit with seed: 857719, max_cases: 2
 
-????????????????????????????????????????
+?????????????????????????????????????????
 
   0) Anchor.Domain.Aggregates.WriteSitesDefaultTest: failure on setup_all callback, all tests have been invalidated
      ** (FunctionClauseError) no function clause matching in Anchor.Domain.Aggregates.Scopes.gap_order/1
@@ -2016,18 +2068,18 @@ Running ExUnit with seed: 215560, max_cases: 2
        (elixir 1.19.4) lib/enum.ex:4497: Enum.flat_map_list/2
        (elixir 1.19.4) lib/enum.ex:4500: Enum.flat_map_list/2
        (anchor 0.1.0) lib/anchor/domain/aggregates/analysis.ex:113: Anchor.Domain.Aggregates.Analysis.analyse/3
-       test/anchor/domain/aggregates/write_sites_default_test.exs:134: Anchor.Domain.Aggregates.WriteSitesDefaultTest.__ex_unit_setup_all_0/1
+       test/anchor/domain/aggregates/write_sites_default_test.exs:145: Anchor.Domain.Aggregates.WriteSitesDefaultTest.__ex_unit_setup_all_0/1
        test/anchor/domain/aggregates/write_sites_default_test.exs:1: Anchor.Domain.Aggregates.WriteSitesDefaultTest.__ex_unit__/2
 
 
 Finished in 0.4 seconds (0.4s async, 0.00s sync)
-40 tests, 0 failures, 40 invalid
+41 tests, 0 failures, 41 invalid
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/scopes.ex" was set to the future, resetting to now
 ```
 
 ## AN-CLEARED
 
-the cleared calls are not summed (`lib/anchor/domain/aggregates/analysis.ex`). Result: `53 tests, 2 failures`.
+the cleared calls are not summed (`lib/anchor/domain/aggregates/analysis.ex`). Result: `54 tests, 2 failures`.
 
 ```
   1) test DND-5889: Ecto's own expansion, and what `use Ecto.Schema` generates, is no gap (Anchor.Domain.Aggregates.RealEctoTest)
@@ -2038,72 +2090,72 @@ the cleared calls are not summed (`lib/anchor/domain/aggregates/analysis.ex`). R
      stacktrace:
        test/anchor/domain/aggregates/real_ecto_test.exs:185: (test)
 
-.........
+......
 
   2) test a call the walker does not read the counts hold the cleared calls and the unread ones by callee (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:241
+     test/anchor/domain/aggregates/write_sites_default_test.exs:252
      Assertion with >= failed
      code:  assert a.counts.cleared >= 1
      left:  0
      right: 1
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:242: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:253: (test)
 
-................................
-Finished in 0.4 seconds (0.4s async, 0.00s sync)
-53 tests, 2 failures
+......................................
+Finished in 0.5 seconds (0.5s async, 0.00s sync)
+54 tests, 2 failures
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/analysis.ex" was set to the future, resetting to now
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/scopes.ex" was set to the future, resetting to now
 ```
 
 ## AN-UNREAD
 
-the unread calls by callee are empty (`lib/anchor/domain/aggregates/analysis.ex`). Result: `40 tests, 2 failures`.
+the unread calls by callee are empty (`lib/anchor/domain/aggregates/analysis.ex`). Result: `41 tests, 2 failures`.
 
 ```
-  1) test exactly one outcome per call a capture read twice at one line counts once in unread_by_callee (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:358
-     Assertion with == failed
-     code:  assert a.counts.unread_by_callee[String.replace(lib_call("only_here/1"), "call of", "capture of")] == 1
-     left:  nil
-     right: 1
-     stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:359: (test)
-
-...............................
-
-  2) test a call the walker does not read the counts hold the cleared calls and the unread ones by callee (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:241
+  1) test a call the walker does not read the counts hold the cleared calls and the unread ones by callee (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:252
      Assertion with == failed
      code:  assert a.counts.unread_by_callee["unread: call of GenServer.call/2"] == 2
      left:  nil
      right: 2
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:243: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:254: (test)
 
-...
+..................
+
+  2) test exactly one outcome per call a capture read twice at one line counts once in unread_by_callee (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:380
+     Assertion with == failed
+     code:  assert a.counts.unread_by_callee[String.replace(lib_call("only_here/1"), "call of", "capture of")] == 1
+     left:  nil
+     right: 1
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:381: (test)
+
+.....................
 Finished in 0.4 seconds (0.4s async, 0.00s sync)
-40 tests, 2 failures
+41 tests, 2 failures
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/analysis.ex" was set to the future, resetting to now
 ```
 
 ## AN-DEDUPE
 
-a call read twice at one line counts twice (`lib/anchor/domain/aggregates/analysis.ex`). Result: `40 tests, 1 failure`.
+a call read twice at one line counts twice (`lib/anchor/domain/aggregates/analysis.ex`). Result: `41 tests, 1 failure`.
 
 ```
   1) test exactly one outcome per call a capture read twice at one line counts once in unread_by_callee (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
-     test/anchor/domain/aggregates/write_sites_default_test.exs:358
+     test/anchor/domain/aggregates/write_sites_default_test.exs:380
      Assertion with == failed
      code:  assert a.counts.unread_by_callee[String.replace(lib_call("only_here/1"), "call of", "capture of")] == 1
      left:  2
      right: 1
      stacktrace:
-       test/anchor/domain/aggregates/write_sites_default_test.exs:359: (test)
+       test/anchor/domain/aggregates/write_sites_default_test.exs:381: (test)
 
-..........................
-Finished in 0.4 seconds (0.4s async, 0.00s sync)
-40 tests, 1 failure
+........................
+Finished in 0.5 seconds (0.5s async, 0.00s sync)
+41 tests, 1 failure
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/analysis.ex" was set to the future, resetting to now
 ```
 
@@ -2130,7 +2182,7 @@ no_write_modules is parsed and dropped (`lib/anchor/domain/aggregates/config.ex`
      stacktrace:
        test/anchor/domain/aggregates/config_test.exs:142: (test)
 
-......
+..............................
 
   2) test parse/1, no_write_modules (DND-5889) the modules are stored, and absent is an empty list (Anchor.Domain.Aggregates.ConfigTest)
      test/anchor/domain/aggregates/config_test.exs:134
@@ -2150,7 +2202,7 @@ no_write_modules is parsed and dropped (`lib/anchor/domain/aggregates/config.ex`
      stacktrace:
        test/anchor/domain/aggregates/config_test.exs:135: (test)
 
-....................
+...
 Finished in 0.1 seconds (0.1s async, 0.00s sync)
 48 tests, 2 failures
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/analysis.ex" was set to the future, resetting to now
@@ -2174,7 +2226,7 @@ an Erlang module is refused under no_write_modules (`lib/anchor/domain/aggregate
      stacktrace:
        test/anchor/domain/aggregates/config_test.exs:142: (test)
 
-....
+.....................................
 Finished in 0.1 seconds (0.1s async, 0.00s sync)
 48 tests, 1 failure
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/config.ex" was set to the future, resetting to now
@@ -2224,7 +2276,7 @@ any character passes in an Erlang name (`lib/anchor/domain/aggregates/config.ex`
        test/anchor/domain/aggregates/config_test.exs:237: Anchor.Domain.Aggregates.ConfigTest.assert_refused/2
        test/anchor/domain/aggregates/config_test.exs:128: (test)
 
-.....................
+......................
 Finished in 0.1 seconds (0.1s async, 0.00s sync)
 48 tests, 1 failure
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/config.ex" was set to the future, resetting to now
@@ -2235,7 +2287,17 @@ warning: mtime (modified time) for "lib/anchor/domain/aggregates/config.ex" was 
 no_write_modules is an unknown key (`lib/anchor/domain/aggregates/config.ex`). Result: `48 tests, 8 failures`.
 
 ```
-  1) test parse/1 C3: refused: no_write_modules an empty colon (Anchor.Domain.Aggregates.ConfigTest)
+  1) test parse/1, no_write_modules (DND-5889) it says something persists, so it cannot stand beside declare: none (Anchor.Domain.Aggregates.ConfigTest)
+     test/anchor/domain/aggregates/config_test.exs:146
+     got: aggregates: unknown key(s) "no_write_modules". Fix: remove or correct it; the keys are declare, reason, repos, transaction_functions, write_functions; aggregates: declare: - name: <Aggregate>, schemas: [<Schema>...], tables: ["<table>"...], owners: [<Module>...]
+     code: assert_refused(
+     stacktrace:
+       test/anchor/domain/aggregates/config_test.exs:238: Anchor.Domain.Aggregates.ConfigTest.assert_refused/2
+       test/anchor/domain/aggregates/config_test.exs:147: (test)
+
+.....
+
+  2) test parse/1 C3: refused: no_write_modules a bad Erlang start (Anchor.Domain.Aggregates.ConfigTest)
      test/anchor/domain/aggregates/config_test.exs:127
      got: aggregates: unknown key(s) "no_write_modules". Fix: remove or correct it; the keys are declare, reason, repos, transaction_functions, write_functions; aggregates: declare: - name: <Aggregate>, schemas: [<Schema>...], tables: ["<table>"...], owners: [<Module>...]
      code: assert_refused(section, expected)
@@ -2243,9 +2305,19 @@ no_write_modules is an unknown key (`lib/anchor/domain/aggregates/config.ex`). R
        test/anchor/domain/aggregates/config_test.exs:238: Anchor.Domain.Aggregates.ConfigTest.assert_refused/2
        test/anchor/domain/aggregates/config_test.exs:128: (test)
 
-................
 
-  2) test parse/1, no_write_modules (DND-5889) an Erlang module is written with its colon (Anchor.Domain.Aggregates.ConfigTest)
+
+  3) test parse/1 C3: refused: no_write_modules not module names (Anchor.Domain.Aggregates.ConfigTest)
+     test/anchor/domain/aggregates/config_test.exs:127
+     got: aggregates: unknown key(s) "no_write_modules". Fix: remove or correct it; the keys are declare, reason, repos, transaction_functions, write_functions; aggregates: declare: - name: <Aggregate>, schemas: [<Schema>...], tables: ["<table>"...], owners: [<Module>...]
+     code: assert_refused(section, expected)
+     stacktrace:
+       test/anchor/domain/aggregates/config_test.exs:238: Anchor.Domain.Aggregates.ConfigTest.assert_refused/2
+       test/anchor/domain/aggregates/config_test.exs:128: (test)
+
+.
+
+  4) test parse/1, no_write_modules (DND-5889) an Erlang module is written with its colon (Anchor.Domain.Aggregates.ConfigTest)
      test/anchor/domain/aggregates/config_test.exs:141
      match (=) failed
      code:  assert {:ok, %AggregatesConfig{no_write_modules: [:ets, Jason]}} =
@@ -2257,34 +2329,17 @@ no_write_modules is an unknown key (`lib/anchor/domain/aggregates/config.ex`). R
      stacktrace:
        test/anchor/domain/aggregates/config_test.exs:142: (test)
 
-.......
+.....
 
-  3) test parse/1 C3: refused: no_write_modules not a list (Anchor.Domain.Aggregates.ConfigTest)
-     test/anchor/domain/aggregates/config_test.exs:127
-     got: aggregates: unknown key(s) "no_write_modules". Fix: remove or correct it; the keys are declare, reason, repos, transaction_functions, write_functions; aggregates: declare: - name: <Aggregate>, schemas: [<Schema>...], tables: ["<table>"...], owners: [<Module>...]
-     code: assert_refused(section, expected)
-     stacktrace:
-       test/anchor/domain/aggregates/config_test.exs:238: Anchor.Domain.Aggregates.ConfigTest.assert_refused/2
-       test/anchor/domain/aggregates/config_test.exs:128: (test)
-
-.
-
-  4) test parse/1 C3: refused: no_write_modules not module names (Anchor.Domain.Aggregates.ConfigTest)
-     test/anchor/domain/aggregates/config_test.exs:127
-     got: aggregates: unknown key(s) "no_write_modules". Fix: remove or correct it; the keys are declare, reason, repos, transaction_functions, write_functions; aggregates: declare: - name: <Aggregate>, schemas: [<Schema>...], tables: ["<table>"...], owners: [<Module>...]
-     code: assert_refused(section, expected)
-     stacktrace:
-       test/anchor/domain/aggregates/config_test.exs:238: Anchor.Domain.Aggregates.ConfigTest.assert_refused/2
-       test/anchor/domain/aggregates/config_test.exs:128: (test)
-
-...
-
-  5) test parse/1 C3: refused: no_write_modules a bad Erlang start (Anchor.Domain.Aggregates.ConfigTest)
-     test/anchor/domain/aggregates/config_test.exs:127
-     got: aggregates: unknown key(s) "no_write_modules". Fix: remove or correct it; the keys are declare, reason, repos, transaction_functions, write_functions; aggregates: declare: - name: <Aggregate>, schemas: [<Schema>...], tables: ["<table>"...], owners: [<Module>...]
-     code: assert_refused(section, expected)
-     stacktrace:
-       test/anchor/domain/aggregates/config_test.exs:238: Anchor.Domain.Aggregates.ConfigTest.asse
+  5) test parse/1, no_write_modules (DND-5889) the modules are stored, and absent is an empty list (Anchor.Domain.Aggregates.ConfigTest)
+     test/anchor/domain/aggregates/config_test.exs:134
+     match (=) failed
+     code:  assert {:ok, %AggregatesConfig{no_write_modules: [Jason, MyApp.Pure]}} =
+              AggregatesConfig.parse(%{"no_write_modules" => ["Jason", "MyApp.Pure"]})
+     left:  {:ok, %Anchor.Domain.Aggregates.Config{no_write_modules: [Jason, MyApp.Pure]}}
+     right: {:error,
+             {:invalid_config,
+              "aggregates: unknown key
 ```
 
 ## GR-CLEARED
@@ -2334,7 +2389,7 @@ the summary keeps the run-wide sentence (`lib/anchor/domain/graph_report.ex`). R
      stacktrace:
        test/anchor/domain/graph_report_aggregates_test.exs:58: (test)
 
-..
+.
 Finished in 0.02 seconds (0.02s async, 0.00s sync)
 4 tests, 1 failure
 warning: mtime (modified time) for "lib/anchor/domain/graph_report.ex" was set to the future, resetting to now
@@ -2360,7 +2415,7 @@ the proposal keeps the run-wide sentence (`lib/anchor/domain/aggregates/inferenc
      stacktrace:
        test/anchor/domain/aggregates/inference_test.exs:182: (test)
 
-..............
+...............
 Finished in 0.1 seconds (0.1s async, 0.00s sync)
 17 tests, 1 failure
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/inference.ex" was set to the future, resetting to now
@@ -2382,7 +2437,7 @@ the rule's message does not name the unread call (`lib/anchor/domain/graph_rules
        test/anchor/integration/aggregate_write_sources_integration_test.exs:98: (test)
 
 .
-Finished in 0.1 seconds (0.1s async, 0.00s sync)
+Finished in 0.09 seconds (0.09s async, 0.00s sync)
 2 tests, 1 failure
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/inference.ex" was set to the future, resetting to now
 warning: mtime (modified time) for "lib/anchor/domain/graph_rules/aggregate_write_sources.ex" was set to the future, resetting to now
