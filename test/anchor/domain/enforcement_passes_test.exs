@@ -26,6 +26,18 @@ defmodule Anchor.Domain.EnforcementPassesTest do
                  "reported once, enforced.) Fix: name it"
     end
 
+    test "two rules' copies differing only in their Fix: are one finding, the enforced one's" do
+      enforced = [v("cannot resolve. Fix: enforced rule's shape")]
+      reported = [v("cannot resolve. Fix: report rule's shape", %{enforcement: :report})]
+
+      assert [%Violation{enforcement: :enforce, message: message}] =
+               EnforcementPasses.merge(enforced, reported)
+
+      assert message ==
+               "cannot resolve. (Found under rules in enforcement: enforce and report; " <>
+                 "reported once, enforced.) Fix: enforced rule's shape"
+    end
+
     test "violations only one pass found are kept, unchanged, enforced first" do
       enforced = [v("a", %{trigger: "A"})]
       reported = [v("b", %{trigger: "B", enforcement: :report})]

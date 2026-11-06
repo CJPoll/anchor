@@ -89,6 +89,14 @@ defmodule Anchor.Domain.RuleShapes do
   @spec fix_count(String.t()) :: non_neg_integer()
   def fix_count(message), do: length(String.split(message, @fix)) - 1
 
+  @doc """
+  `message` without its `Fix:` sentence: the finding, apart from how to fix it.
+  Two rules that make one finding differ only there (each ends it with its own
+  shape).
+  """
+  @spec without_fix(String.t()) :: String.t()
+  def without_fix(message), do: message |> String.split(" #{@fix}", parts: 2) |> hd()
+
   defp sentence(message) do
     trimmed = String.trim_trailing(message)
     if String.ends_with?(trimmed, [".", "!", "?"]), do: trimmed, else: trimmed <> "."
