@@ -6427,3 +6427,895 @@ warning: mtime (modified time) for "lib/anchor/domain/aggregates/scopes.ex" was 
 ```
 
 
+
+## Seventh run: one rule for whatever runs a value
+
+Seventh run, the closure pass over everything that runs a value: `value_ran/6`, `read_here?/4`, `function_parts/3`, `value_parts/3`, `listed_call/7`. `VR-RUNSSUB` and `LC-NOCHECK` are the regressions for critic round 10's two findings. `VR-CHECKOUT`, `VR-NESTED` and `VR-HARMLESS` replace `GV-CHECKOUT`, `GV-NESTED` and `HF-NORUN` of the sixth run, whose code this replaces; `GV-NOGAP`, `GV-ALWAYS`, `GV-MULTI`, `GV-LAMBDA` have `VR-OPENSOFF`, `VR-OPENSEQ`, `VR-PARTMULTI`, `VR-PARTLAMBDA` as successors.
+
+A first `VR-RUNSDEFAULT`, on `Map.get(ctx.defined_in, id, tags)`, survived: every id comes from a node the walk visited, so the default never ran. The default was deleted for `Map.fetch!`, and the row with it. A first `LC-NOFOLLOW` also survived, because nothing tested a listed function's own writes; the file got `d35`. `VR-HARMLESS` and `LC-NOTLISTED` first failed to compile and were rewritten. None of those first runs is kept.
+
+| # | Mutation | Tests run | Result |
+|---|---|---|---|
+| VR-RUNSSUB | the finding: a form that opens no scope uses the subset test (`Repo.transaction(f); Repo.checkout(f)`, `f.(); Repo.transaction(f)`) (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `70 tests, 3 failures` (red) |
+| VR-OPENSEQ | a form that opens a scope uses equality: every value given to a transaction is a gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `70 tests, 9 failures` (red) |
+| VR-OPENSOFF | a form that opens a scope checks nothing (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `70 tests, 3 failures` (red) |
+| VR-RUNSOFF | a form that opens no scope checks nothing (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `70 tests, 9 failures` (red) |
+| VR-CAPTURES | a capture bound outside a body and run in it is no call from here (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `70 tests, 2 failures` (red) |
+| VR-TOPLEVEL | a capture given to a top-level transaction is a call outside it too (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `70 tests, 2 failures` (red) |
+| VR-PARTLAMBDA | a fn is no part of what a form runs (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `70 tests, 8 failures` (red) |
+| VR-PARTCAPTURE | a capture is no part of what a form runs (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `70 tests, 2 failures` (red) |
+| VR-PARTMULTI | a Multi is no part of what a form runs (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `70 tests, 2 failures` (red) |
+| VR-CHECKOUT | Repo.checkout does not check what it is given (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `70 tests, 5 failures` (red) |
+| VR-NESTED | a nested Repo.transaction does not check what it is given (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `70 tests, 1 failure` (red) |
+| VR-HARMLESS | a value at a log message is not checked (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `70 tests, 3 failures` (red) |
+| VR-HARMLESSDATA | a log message computed outside the body is traced as a Multi: a false gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `70 tests, 1 failure` (red) |
+| LC-NOCHECK | the finding: a listed function does not check what it is given (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `70 tests, 2 failures` (red) |
+| LC-NOFOLLOW | a listed function the project defines is not followed (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs`, `scopes_test.exs` | `142 tests, 1 failure` (red) |
+| LC-NOTLISTED | a listed function takes the plain project path (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs`, `scopes_test.exs` | `142 tests, 4 failures` (red) |
+| LC-LOCAL | a local call of a listed function does not reach `literal_call/7` (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `70 tests, 1 failure` (red) |
+
+### VR-RUNSSUB
+
+the finding: a form that opens no scope uses the subset test (`Repo.transaction(f); Repo.checkout(f)`, `f.(); Repo.transaction(f)`) (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 3 failures`.
+
+```
+  1) test a fn run where the walk did not read it row 13: called and passed to a transaction is a gap at the call (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:593
+     match (=) failed
+     code:  assert [{:dynamic_call, {@d, :d30a, 0}, _line}] = nontx(a, :d30a, 0).gaps
+     left:  [{:dynamic_call, {AnchorFixtures.WriteSitesDefaultTest.D, :d30a, 0}, _line}]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:595: (test)
+
+...............
+
+  2) test the one rule: a form that opens a scope, or anything else Repo.checkout beside a transaction is a gap outside: it opens no scope (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:648
+     match (=) failed
+     code:  assert [{:dynamic_call, {@d, :d34a, 0}, _line}] = nontx(a, :d34a, 0).gaps
+     left:  [{:dynamic_call, {AnchorFixtures.WriteSitesDefaultTest.D, :d34a, 0}, _line}]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:649: (test)
+
+.......................
+
+  3) test a fn run where the walk did not read it row 13: called and given to Multi.run is a gap at the call (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:598
+     match (=) failed
+     code:  assert [{:dynamic_call, {@d, :d30b, 0}, _line}] = nontx(a, :d30b, 0).gaps
+     left:  [{:dynamic_call, {AnchorFixtures.WriteSitesDefaultTest.D, :d30b, 0}, _line}]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:599: (test)
+
+
+Finished in 0.6 seconds (0.6s async, 0.00s sync)
+70 tests, 3 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### VR-OPENSEQ
+
+a form that opens a scope uses equality: every value given to a transaction is a gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 9 failures`.
+
+```
+  1) test a fn run where the walk did not read it positive: only given to the transaction is no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:612
+     Assertion with == failed
+     code:  assert nontx(a, :d30f, 0).gaps == []
+     left:  [
+              {:dynamic_call,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :d30f, 0},
+               175}
+            ]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:614: (test)
+
+..
+
+  2) test a fn run where the walk did not read it row 13: called and given to Multi.run is a gap at the call (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:598
+     match (=) failed
+     code:  assert [{:dynamic_call, {@d, :d30b, 0}, _line}] = nontx(a, :d30b, 0).gaps
+     left:  [{:dynamic_call, {AnchorFixtures.WriteSitesDefaultTest.D, :d30b, 0}, _line}]
+     right: [
+              {:dynamic_call,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :d30b, 0},
+               150},
+              {:dynamic_call,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :d30b, 0},
+               151}
+            ]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:599: (test)
+
+...
+
+  3) test the one rule: a form that opens a scope, or anything else Repo.checkout beside a transaction is a gap outside: it opens no scope (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:648
+     match (=) failed
+     code:  assert [{:dynamic_call, {@d, :d34a, 0}, _line}] = nontx(a, :d34a, 0).gaps
+     left:  [{:dynamic_call, {AnchorFixtures.WriteSitesDefaultTest.D, :d34a, 0}, _line}]
+     right: [
+              {:dynamic_call,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :d34a, 0},
+               225},
+              {:dynamic_call,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :d34a, 0},
+               226}
+            ]
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:649: (test)
+
+.......
+
+  4) test a value bound outside a body and given to a repo call inside it positive: given to two transactions at no body is no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:641
+     Assertion with == failed
+     code:  assert nontx(a, :d31i, 0).gaps == []
+     left:  [
+              {:dynamic_call,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :d31i, 0},
+               219},
+              {:dynamic_call,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :d31i, 0},
+               220}
+            ]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:643: (test)
+
+
+
+  5) test exactly one outcome per call an unknown function handed to a listed function is a gap, and is not also cleared (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:561
+     match (=) failed
+     code:  assert %{cleared: 0, dynamic: [_gap]} = facts.functions[{@d, :d23, 2}]
+     left:  %{cleared: 0, dynamic: [_gap]}
+     right: %{
+              dynamic: [
+                %{
+                  line: 126,
+                  tags: [1],
+                  what: "the function handed to Enum.map/2",
+                  write?: false
+                },
+                %{
+```
+
+
+### VR-OPENSOFF
+
+a form that opens a scope checks nothing (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 3 failures`.
+
+```
+  1) test a value bound outside a body and given to a repo call inside it a nested transaction is a gap of the outer body, for a fn or a Multi (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:625
+     d31b
+     code: for name <- [:d31b, :d31c, :d31d] do
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:627: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test a value bound outside a body and given to a repo call inside it a nested transaction is a gap of the outer body, for a fn or a Multi"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:626: (test)
+
+.................
+
+  2) test the one rule: a form that opens a scope, or anything else a listed function in a body, given a value bound outside, is a gap of the body (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:656
+     ** (MatchError) no match of right hand side value:
+
+         []
+
+     code: for name <- [:d34b, :d34c, :d34d] do
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:660: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test the one rule: a form that opens a scope, or anything else a listed function in a body, given a value bound outside, is a gap of the body"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:659: (test)
+
+.........................................
+
+  3) test the one rule: a form that opens a scope, or anything else a local call of a listed function is held to the same rule (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:669
+     match (=) failed
+     code:  assert [%Scope{kind: :fun}] = Enum.reject(scopes(a, :local_listed), & &1.no_gap_noticed?)
+     left:  [%Anchor.Domain.Aggregates.Scope{kind: :fun}]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:670: (test)
+
+.
+Finished in 0.6 seconds (0.6s async, 0.00s sync)
+70 tests, 3 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### VR-RUNSOFF
+
+a form that opens no scope checks nothing (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 9 failures`.
+
+```
+  1) test a fn run where the walk did not read it run in a transaction it is not given to is a gap there (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:602
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d30c)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d30c,
+               1},
+              ordinal: 1,
+              line: 157,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:603: (test)
+
+.
+
+  2) test the one rule: a form that opens a scope, or anything else Repo.checkout beside a transaction is a gap outside: it opens no scope (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:648
+     match (=) failed
+     code:  assert [{:dynamic_call, {@d, :d34a, 0}, _line}] = nontx(a, :d34a, 0).gaps
+     left:  [{:dynamic_call, {AnchorFixtures.WriteSitesDefaultTest.D, :d34a, 0}, _line}]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:649: (test)
+
+...
+
+  3) test a value bound outside a body and given to a repo call inside it a callback's repo.transaction is a gap of the transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:631
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d31e)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d31e,
+               0},
+              ordinal: 1,
+              line: 205,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:632: (test)
+
+
+
+  4) test a fn at a harmless argument a default bound outside the body is a gap too, on the safe side (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:712
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d32c)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d32c,
+               1},
+              ordinal: 1,
+              line: 302,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:713: (test)
+
+.....
+
+  5) test the one rule: a form that opens a scope, or anything else a fn run through a callback's checkout, bound outside the fn, keeps its rule (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:700
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d34n)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.D
+```
+
+
+### VR-CAPTURES
+
+a capture bound outside a body and run in it is no call from here (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 2 failures`.
+
+```
+  1) test the one rule: a form that opens a scope, or anything else a capture given to a transaction and checked out beside it writes outside too (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:688
+     match (=) failed
+     code:  assert [_write] = nontx(a, :d34h, 0).sites
+     left:  [_write]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:693: (test)
+
+.
+
+  2) test the one rule: a form that opens a scope, or anything else a capture bound outside a body and run inside it reads the body's write (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:679
+     d34e
+     code: for name <- [:d34e, :d34f, :d34g] do
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:684: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test the one rule: a form that opens a scope, or anything else a capture bound outside a body and run inside it reads the body's write"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:682: (test)
+
+.........
+Finished in 0.6 seconds (0.6s async, 0.00s sync)
+70 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### VR-TOPLEVEL
+
+a capture given to a top-level transaction is a call outside it too (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 2 failures`.
+
+```
+  1) test a dependency's function a transaction or a Multi runs a capture of one as the transaction's body is a gap of that transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:512
+     Assertion with == failed
+     code:  assert nontx(a, :d21a, 0).gaps == []
+     left:  [
+              {:unread,
+               {AnchorFixtures.WriteSitesDefaultTest.D, :d21a, 0},
+               120,
+               "unread: capture of AnchorFixtures.WriteSitesDefaultTest.Lib.run/0"}
+            ]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:517: (test)
+
+..............
+
+  2) test the one rule: a form that opens a scope, or anything else positive: a capture given only to a transaction is no write outside (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:696
+     Assertion with == failed
+     code:  assert nontx(a, :d34k, 0).sites == []
+     left:  [
+              %Anchor.Domain.Aggregates.WriteSite{
+                mfa: {AnchorFixtures.WriteSitesDefaultTest.D,
+                 :own_write, 0},
+                line: 282,
+                op: :insert,
+                via: :repo,
+                sources: [
+                  schema: AnchorFixtures.WriteSitesDefaultTest.S
+                ],
+                unresolved: nil,
+                scopes: [],
+                run_callback?: false
+              }
+            ]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:697: (test)
+
+...........
+Finished in 0.6 seconds (0.6s async, 0.00s sync)
+70 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### VR-PARTLAMBDA
+
+a fn is no part of what a form runs (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 8 failures`.
+
+```
+  1) test a fn at a harmless argument a default bound outside the body is a gap too, on the safe side (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:712
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d32c)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d32c,
+               1},
+              ordinal: 1,
+              line: 302,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:713: (test)
+
+.
+
+  2) test the one rule: a form that opens a scope, or anything else a local call of a listed function is held to the same rule (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:669
+     match (=) failed
+     code:  assert [%Scope{kind: :fun}] = Enum.reject(scopes(a, :local_listed), & &1.no_gap_noticed?)
+     left:  [%Anchor.Domain.Aggregates.Scope{kind: :fun}]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:670: (test)
+
+..
+
+  3) test a value bound outside a body and given to a repo call inside it a callback's repo.transaction is a gap of the transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:631
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d31e)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d31e,
+               0},
+              ordinal: 1,
+              line: 205,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:632: (test)
+
+..........
+
+  4) test the one rule: a form that opens a scope, or anything else Repo.checkout beside a transaction is a gap outside: it opens no scope (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:648
+     match (=) failed
+     code:  assert [{:dynamic_call, {@d, :d34a, 0}, _line}] = nontx(a, :d34a, 0).gaps
+     left:  [{:dynamic_call, {AnchorFixtures.WriteSitesDefaultTest.D, :d34a, 0}, _line}]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:649: (test)
+
+.....
+
+  5) test a value bound outside a body and given to a repo call inside it a nested transaction is a gap of the outer body, for a fn or a Multi (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:625
+     d31b
+     code: for name <- [:d31b, :d31c, :d31d] do
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:627: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test a value bound outside a body and given to a repo call inside it a nested transaction is a gap of the outer body, for a fn or a Multi"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/do
+```
+
+
+### VR-PARTCAPTURE
+
+a capture is no part of what a form runs (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 2 failures`.
+
+```
+  1) test the one rule: a form that opens a scope, or anything else a capture bound outside a body and run inside it reads the body's write (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:679
+     d34e
+     code: for name <- [:d34e, :d34f, :d34g] do
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:684: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test the one rule: a form that opens a scope, or anything else a capture bound outside a body and run inside it reads the body's write"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:682: (test)
+
+..............................
+
+  2) test the one rule: a form that opens a scope, or anything else a capture given to a transaction and checked out beside it writes outside too (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:688
+     match (=) failed
+     code:  assert [_write] = nontx(a, :d34h, 0).sites
+     left:  [_write]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:693: (test)
+
+...............................
+Finished in 0.6 seconds (0.6s async, 0.00s sync)
+70 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### VR-PARTMULTI
+
+a Multi is no part of what a form runs (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 2 failures`.
+
+```
+  1) test the one rule: a form that opens a scope, or anything else a listed function in a body, given a value bound outside, is a gap of the body (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:656
+     ** (MatchError) no match of right hand side value:
+
+         []
+
+     code: for name <- [:d34b, :d34c, :d34d] do
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:660: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test the one rule: a form that opens a scope, or anything else a listed function in a body, given a value bound outside, is a gap of the body"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:659: (test)
+
+...............................
+
+  2) test a value bound outside a body and given to a repo call inside it a nested transaction is a gap of the outer body, for a fn or a Multi (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:625
+     d31c
+     code: for name <- [:d31b, :d31c, :d31d] do
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:627: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test a value bound outside a body and given to a repo call inside it a nested transaction is a gap of the outer body, for a fn or a Multi"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:626: (test)
+
+...................................
+Finished in 0.6 seconds (0.6s async, 0.00s sync)
+70 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### VR-CHECKOUT
+
+Repo.checkout does not check what it is given (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 5 failures`.
+
+```
+  1) test a value bound outside a body and given to a repo call inside it a callback's repo.transaction is a gap of the transaction (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:631
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d31e)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d31e,
+               0},
+              ordinal: 1,
+              line: 205,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:632: (test)
+
+.......
+
+  2) test the one rule: a form that opens a scope, or anything else a capture given to a transaction and checked out beside it writes outside too (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:688
+     match (=) failed
+     code:  assert [_write] = nontx(a, :d34h, 0).sites
+     left:  [_write]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:693: (test)
+
+..................................
+
+  3) test a value bound outside a body and given to a repo call inside it Repo.checkout is a gap of the body (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:621
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d31a)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d31a,
+               0},
+              ordinal: 1,
+              line: 185,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:622: (test)
+
+..
+
+  4) test the one rule: a form that opens a scope, or anything else a capture bound outside a body and run inside it reads the body's write (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:679
+     d34e
+     code: for name <- [:d34e, :d34f, :d34g] do
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:684: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test the one rule: a form that opens a scope, or anything else a capture bound outside a body and run inside it reads the body's write"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:682: (test)
+
+.................
+
+  5) test the one rule: a form that opens a scope, or anything else Repo.checkout beside a transaction is a gap outside: it opens no scope (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:648
+     match (=) failed
+     code:  assert [{:dynamic_call, {@d, :d34a, 0}, _line}] = nontx(a, :d34a, 0).gaps
+     left:  [{:dynamic_call, {AnchorFixtures.WriteSitesDefaultTest.D, :d34a, 0}, _line}]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_
+```
+
+
+### VR-NESTED
+
+a nested Repo.transaction does not check what it is given (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 1 failure`.
+
+```
+  1) test a value bound outside a body and given to a repo call inside it a nested transaction is a gap of the outer body, for a fn or a Multi (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:625
+     d31b
+     code: for name <- [:d31b, :d31c, :d31d] do
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:627: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test a value bound outside a body and given to a repo call inside it a nested transaction is a gap of the outer body, for a fn or a Multi"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:626: (test)
+
+..............................................................
+Finished in 0.6 seconds (0.6s async, 0.00s sync)
+70 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### VR-HARMLESS
+
+a value at a log message is not checked (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 3 failures`.
+
+```
+  1) test the one rule: a form that opens a scope, or anything else a capture bound outside a body and run inside it reads the body's write (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:679
+     d34g
+     code: for name <- [:d34e, :d34f, :d34g] do
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:684: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test the one rule: a form that opens a scope, or anything else a capture bound outside a body and run inside it reads the body's write"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:682: (test)
+
+......................
+
+  2) test a fn at a harmless argument bound outside the body and logged in it is a gap of the body (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:708
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d32a)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d32a,
+               0},
+              ordinal: 1,
+              line: 287,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:709: (test)
+
+..........
+
+  3) test a fn at a harmless argument a default bound outside the body is a gap too, on the safe side (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:712
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d32c)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d32c,
+               1},
+              ordinal: 1,
+              line: 302,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:713: (test)
+
+.....
+Finished in 0.6 seconds (0.6s async, 0.00s sync)
+70 tests, 3 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### VR-HARMLESSDATA
+
+a log message computed outside the body is traced as a Multi: a false gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 1 failure`.
+
+```
+  1) test a fn at a harmless argument positive: data computed outside the body and logged in it is no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:716
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true} = one(a, :d32d)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d32d,
+               0},
+              ordinal: 1,
+              line: 297,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d32d, 0},
+                 297}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:717: (test)
+
+.......................
+Finished in 0.6 seconds (0.6s async, 0.00s sync)
+70 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### LC-NOCHECK
+
+the finding: a listed function does not check what it is given (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 2 failures`.
+
+```
+  1) test the one rule: a form that opens a scope, or anything else a local call of a listed function is held to the same rule (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:669
+     match (=) failed
+     code:  assert [%Scope{kind: :fun}] = Enum.reject(scopes(a, :local_listed), & &1.no_gap_noticed?)
+     left:  [%Anchor.Domain.Aggregates.Scope{kind: :fun}]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:670: (test)
+
+...
+
+  2) test the one rule: a form that opens a scope, or anything else a listed function in a body, given a value bound outside, is a gap of the body (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:656
+     ** (MatchError) no match of right hand side value:
+
+         []
+
+     code: for name <- [:d34b, :d34c, :d34d] do
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:660: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test the one rule: a form that opens a scope, or anything else a listed function in a body, given a value bound outside, is a gap of the body"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:659: (test)
+
+.................
+Finished in 0.6 seconds (0.6s async, 0.00s sync)
+70 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### LC-NOFOLLOW
+
+a listed function the project defines is not followed (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `142 tests, 1 failure`.
+
+```
+  1) test the one rule: a form that opens a scope, or anything else a listed function the project defines is followed, for its own writes (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:665
+     match (=) failed
+     code:  assert [_write] = nontx(a, :d35, 0).sites
+     left:  [_write]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:666: (test)
+
+.................
+Finished in 0.9 seconds (0.9s async, 0.00s sync)
+142 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### LC-NOTLISTED
+
+a listed function takes the plain project path (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `142 tests, 4 failures`.
+
+```
+  1) test the one rule: a form that opens a scope, or anything else a listed function in a body, given a value bound outside, is a gap of the body (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:656
+     ** (MatchError) no match of right hand side value:
+
+         []
+
+     code: for name <- [:d34b, :d34c, :d34d] do
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:660: anonymous fn/3 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test the one rule: a form that opens a scope, or anything else a listed function in a body, given a value bound outside, is a gap of the body"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/aggregates/write_sites_default_test.exs:659: (test)
+
+....
+
+  2) test a dependency's function a transaction or a Multi runs a dependency's listed transaction function is read as a scope, never unread (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:547
+     Expected truthy, got false
+     code: assert Enum.all?(scopes, &(&1.gaps == []))
+     arguments:
+
+         # 1
+         [
+           %Anchor.Domain.Aggregates.Scope{
+             mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d22, 0},
+             ordinal: 1,
+             line: 125,
+             kind: :transaction_function,
+             writes: [
+               %Anchor.Domain.Aggregates.WriteSite{
+                 mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d22, 0},
+                 line: 125,
+                 op: :insert,
+                 via: :repo,
+                 sources: [
+                   schema: AnchorFixtures.WriteSitesDefaultTest.S
+                 ],
+                 unresolved: nil,
+                 scopes: [2, 1],
+                 run_callback?: false
+               }
+             ],
+             keys: MapSet.new([
+               schema: AnchorFixtures.WriteSitesDefaultTest.S
+             ]),
+             no_gap_noticed?: true,
+             gaps: []
+           },
+           %Anchor.Domain.Aggregates.Scope{
+             mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d22, 0},
+             ordinal: 2,
+             line: 125,
+             kind: :fun,
+             writes: [
+               %Anchor.Domain.Aggregates.WriteSite{
+                 mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d22, 0},
+                 line: 125,
+                 op: :insert,
+                 via: :repo,
+                 sources: [
+                   schema: AnchorFixtures.WriteSitesDefaultTest.S
+                 ],
+                 unresolved: nil,
+                 scopes: [2, 1],
+                 run_callback?: false
+               }
+             ],
+             keys: MapSet.new([
+               schema: AnchorFixtures.WriteSitesDefaultTest.S
+             ]),
+             no_gap_noticed?: false,
+             gaps: [
+               {:unread,
+                {AnchorFixtures.WriteSitesDefaultTest.D, :d22, 0}, 125,
+                "unread: call of AnchorFixtures.WriteSitesDefaultTest.Lib.tx/1"}
+             ]
+           }
+         ]
+
+         # 2
+         #Function<5.25410521/1 in Anchor.Domain.Aggregates.WriteSitesDefaultTest."test a dependency's function a transaction or a Multi runs a dependency's listed transaction function is read as a scope, never unread"/1>
+
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:554: (test)
+
+......
+```
+
+### LC-LOCAL
+
+a local call of a listed function does not reach `literal_call/7` (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `70 tests, 1 failure`.
+
+```
+  1) test the one rule: a form that opens a scope, or anything else a local call of a listed function is held to the same rule (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:669
+     match (=) failed
+     code:  assert [%Scope{kind: :fun}] = Enum.reject(scopes(a, :local_listed), & &1.no_gap_noticed?)
+     left:  [%Anchor.Domain.Aggregates.Scope{kind: :fun}]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:670: (test)
+
+..........................................
+Finished in 0.6 seconds (0.6s async, 0.00s sync)
+70 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+

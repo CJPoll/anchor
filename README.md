@@ -1398,9 +1398,12 @@ module is a gap too, unless `Anchor.Domain.HigherOrder` names that place.
 A `fn` is read once, where it is defined and in any transaction it is given to. A
 run of it anywhere else is a gap there, so a `fn` both called and passed to a
 transaction (`f.(); Repo.transaction(f)`) is a gap at the call (DND-5885). So is a
-`fn` or a Multi bound outside a body and given to a repo call inside it
-(`Repo.checkout`, a nested `Repo.transaction`), and a `fn` bound outside a body and
-logged inside it.
+`fn` or a Multi bound outside a body and given to a repo call or a
+`transaction_functions` call inside it, and a `fn` bound outside a body and logged
+inside it. The rule is one: a form that opens a transaction (`Repo.transaction`,
+`Repo.transact`, a `transaction_functions` call) needs the bodies around it to be
+among the value's own; anything else that runs a value needs exactly the value's
+own, so `Repo.transaction(f); Repo.checkout(f)` is a gap at the checkout.
 
 A Multi that comes back from a project helper is read from what the helper returns
 (DND-5884): an argument it is built on that Anchor cannot trace is a gap, even when

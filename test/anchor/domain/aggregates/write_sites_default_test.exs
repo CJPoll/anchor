@@ -30,6 +30,16 @@ defmodule Anchor.Domain.Aggregates.WriteSitesDefaultTest do
     def transaction(_first, _second), do: :ok
     def outer(g), do: transaction(fn -> #{inspect(@repo)}.insert(%#{inspect(@s)}{}) end, g)
     def pass_on(f, g), do: transaction(f, g)
+
+    def audited(f) do
+      #{inspect(@repo)}.insert(%#{inspect(@s)}{})
+      f
+    end
+
+    def local_listed do
+      f = fn -> #{inspect(@repo)}.insert(%#{inspect(@s)}{}) end
+      #{inspect(@repo)}.transaction(fn -> transaction(f, :log) end)
+    end
   end
 
   defmodule #{inspect(@macros)} do
@@ -216,6 +226,68 @@ defmodule Anchor.Domain.Aggregates.WriteSitesDefaultTest do
       Repo.transaction(f)
     end
 
+    def d34a do
+      f = fn -> Repo.insert(%S{}) end
+      Repo.transaction(f)
+      Repo.checkout(f)
+    end
+
+    def d34b do
+      f = fn -> Repo.insert(%S{}) end
+      Repo.transaction(fn -> UoW.transaction(f, :log) end)
+    end
+
+    def d34c do
+      m = Multi.new() |> Multi.insert(:a, %S{})
+      Repo.transaction(fn -> Lib.tx(m) end)
+    end
+
+    def d34d do
+      f = fn -> Repo.insert(%S{}) end
+      Repo.transaction(fn -> Lib.tx(f) end)
+    end
+
+    def d34e do
+      f = &own_write/0
+      Repo.transaction(fn -> Repo.checkout(f) end)
+    end
+
+    def d34f do
+      f = &own_write/0
+      Repo.transaction(fn -> Repo.transaction(f) end)
+    end
+
+    def d34g do
+      f = &own_write/0
+      Repo.transaction(fn -> Logger.info(f) end)
+    end
+
+    def d34h do
+      f = &own_write/0
+      Repo.transaction(f)
+      Repo.checkout(f)
+    end
+
+    def d34i, do: Repo.transaction(fn -> UoW.transaction(fn -> Repo.insert(%S{}) end, :log) end)
+    def d34j, do: Repo.transaction(fn -> Lib.tx(fn -> Repo.insert(%S{}) end) end)
+    def d34k, do: Repo.transaction(&own_write/0)
+    def d34l, do: UoW.transaction(fn -> Repo.insert(%S{}) end, :log)
+
+    def d34m do
+      f = fn -> Repo.insert(%S{}) end
+      Repo.checkout(f)
+    end
+
+    def d34n do
+      f = fn _repo, _changes -> Repo.insert(%S{}) end
+      Multi.new()
+      |> Multi.run(:a, fn repo, _ -> repo.checkout(fn -> f.(repo, %{}) end) end)
+      |> Repo.transaction()
+    end
+
+    def own_write, do: Repo.insert(%S{})
+    def d35, do: UoW.audited(fn -> :ok end)
+
     def d32a do
       f = fn -> Repo.insert(%S{}) end
       Repo.transaction(fn -> Logger.info(f) end)
@@ -224,6 +296,11 @@ defmodule Anchor.Domain.Aggregates.WriteSitesDefaultTest do
     def d32b do
       f = fn -> "x" end
       Logger.info(f)
+    end
+
+    def d32d do
+      m = own_write()
+      Repo.transaction(fn -> Logger.info(m) end)
     end
 
     def d32c(m) do
@@ -248,6 +325,7 @@ defmodule Anchor.Domain.Aggregates.WriteSitesDefaultTest do
         ok!(FunctionRef.parse("#{inspect(@uow)}.transaction/2")),
         ok!(FunctionRef.parse("#{inspect(@uow)}.outer/1")),
         ok!(FunctionRef.parse("#{inspect(@uow)}.pass_on/2")),
+        ok!(FunctionRef.parse("#{inspect(@uow)}.audited/1")),
         ok!(FunctionRef.parse("#{inspect(@lib)}.tx/1"))
       ]
     }
@@ -566,6 +644,66 @@ defmodule Anchor.Domain.Aggregates.WriteSitesDefaultTest do
     end
   end
 
+  describe "the one rule: a form that opens a scope, or anything else" do
+    test "Repo.checkout beside a transaction is a gap outside: it opens no scope", %{analysis: a} do
+      assert [{:dynamic_call, {@d, :d34a, 0}, _line}] = nontx(a, :d34a, 0).gaps
+    end
+
+    test "positive: Repo.checkout where the fn is defined is no gap", %{analysis: a} do
+      assert nontx(a, :d34m, 0).gaps == []
+    end
+
+    test "a listed function in a body, given a value bound outside, is a gap of the body", %{
+      analysis: a
+    } do
+      for name <- [:d34b, :d34c, :d34d] do
+        assert [%Scope{kind: :fun}] = Enum.reject(scopes(a, name), & &1.no_gap_noticed?),
+               "#{name}"
+      end
+    end
+
+    test "a listed function the project defines is followed, for its own writes", %{analysis: a} do
+      assert [_write] = nontx(a, :d35, 0).sites
+    end
+
+    test "a local call of a listed function is held to the same rule", %{analysis: a} do
+      assert [%Scope{kind: :fun}] = Enum.reject(scopes(a, :local_listed), & &1.no_gap_noticed?)
+    end
+
+    test "positive: a listed function given an inline fn is no gap", %{analysis: a} do
+      for name <- [:d34i, :d34j, :d34l] do
+        assert [] = scopes(a, name) |> Enum.reject(& &1.no_gap_noticed?), "#{name}"
+      end
+    end
+
+    test "a capture bound outside a body and run inside it reads the body's write", %{
+      analysis: a
+    } do
+      for name <- [:d34e, :d34f, :d34g] do
+        assert %Scope{keys: keys} = Enum.find(scopes(a, name), &(&1.kind == :fun))
+        assert keys == MapSet.new([{:schema, @s}]), "#{name}"
+      end
+    end
+
+    test "a capture given to a transaction and checked out beside it writes outside too", %{
+      analysis: a
+    } do
+      assert [%Scope{keys: keys}] = scopes(a, :d34h)
+      assert keys == MapSet.new([{:schema, @s}])
+      assert [_write] = nontx(a, :d34h, 0).sites
+    end
+
+    test "positive: a capture given only to a transaction is no write outside", %{analysis: a} do
+      assert nontx(a, :d34k, 0).sites == []
+    end
+
+    test "a fn run through a callback's checkout, bound outside the fn, keeps its rule", %{
+      analysis: a
+    } do
+      assert %Scope{no_gap_noticed?: false} = one(a, :d34n)
+    end
+  end
+
   describe "a fn at a harmless argument" do
     test "bound outside the body and logged in it is a gap of the body", %{analysis: a} do
       assert %Scope{no_gap_noticed?: false} = one(a, :d32a)
@@ -573,6 +711,10 @@ defmodule Anchor.Domain.Aggregates.WriteSitesDefaultTest do
 
     test "a default bound outside the body is a gap too, on the safe side", %{analysis: a} do
       assert %Scope{no_gap_noticed?: false} = one(a, :d32c)
+    end
+
+    test "positive: data computed outside the body and logged in it is no gap", %{analysis: a} do
+      assert %Scope{no_gap_noticed?: true} = one(a, :d32d)
     end
 
     test "positive: logged where it is bound is no gap", %{analysis: a} do

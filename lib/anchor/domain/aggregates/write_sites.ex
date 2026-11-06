@@ -909,9 +909,10 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
         {f, a} = :cerl.var_name(op)
         args = :cerl.apply_args(node)
 
-        if MapSet.member?(ctx.repos, elem(mfa, 0)) or write_function?({module, f, a}, ctx),
-          do: literal_call(acc, {module, f, a}, args, env, tags, line, ctx),
-          else: project_call(acc, ctx, {module, f, a}, :local, args, env, tags, line)
+        if MapSet.member?(ctx.repos, elem(mfa, 0)) or write_function?({module, f, a}, ctx) or
+             listed_transaction?({module, f, a}, ctx),
+           do: literal_call(acc, {module, f, a}, args, env, tags, line, ctx),
+           else: project_call(acc, ctx, {module, f, a}, :local, args, env, tags, line)
 
       true ->
         applied(acc, op, env, tags, line, {ctx, module})
@@ -960,28 +961,63 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
 
     if callback(arg, env, mfa) == :error and multi(arg, env, mfa, ctx) == :error,
       do: dynamic(acc, line, "#{what} is given a value Anchor cannot read", tags),
-      else: given_value(acc, arg, env, tags, line, ctx)
+      else: value_ran(acc, :runs, value_parts(arg, env, ctx), tags, line, ctx)
   end
 
   defp given_function(acc, what, [], _env, tags, line, _ctx),
     do: dynamic(acc, line, "#{what} is given a value Anchor cannot read", tags)
 
-  # A value given to a repo call runs there. It is read under the tags where it is
-  # defined, and under those of the transaction it opens: a body around this call
-  # that it is not in is a body the walk did not read it in.
-  defp given_value(acc, arg, env, tags, line, ctx) do
-    if Enum.any?(given_ids(arg, env, ctx), &(tags -- Map.get(ctx.defined_in, &1, tags) != [])),
-      do: dynamic(acc, line, "a value given to a repo call in a body it is not in", tags),
-      else: acc
+  # The one rule for a value the walk reads once, under the tags where it is defined
+  # (those include any transaction it is given to). Every form that runs it comes
+  # here, and the form decides what the tags must be:
+  #
+  #   * `:opens`: `Repo.transaction`, `Repo.transact`, a `transaction_functions` call.
+  #     The value holds that transaction's tag too, so the tags around the call must
+  #     be among its own. A top-level call has none.
+  #   * `:runs`: anything else (`f.()`, a `HigherOrder` place, a log message,
+  #     `Repo.checkout`, a callback's `repo.transaction`, on which no scope opens).
+  #     The tags must be exactly its own.
+  #
+  # Otherwise the walk did not read this run, and it is a gap here. A capture holds no
+  # tags: it is a call from here, except where a top-level `:opens` already holds it.
+  defp value_ran(acc, form, {ids, captures}, tags, line, ctx) do
+    acc =
+      if Enum.all?(ids, &read_here?(form, &1, tags, ctx)),
+        do: acc,
+        else: unread_run(acc, line, tags)
+
+    if form == :opens and tags == [] do
+      acc
+    else
+      Enum.reduce(captures, acc, fn callee, acc ->
+        project_call(acc, ctx, callee, :capture, [], %{}, tags, line)
+      end)
+    end
   end
 
-  defp given_ids(arg, env, ctx) do
-    mfa = {ctx.module, nil, nil}
+  defp read_here?(:opens, id, tags, ctx), do: tags -- Map.fetch!(ctx.defined_in, id) == []
 
-    case {callback(arg, env, mfa), multi(arg, env, mfa, ctx)} do
-      {{:lambda, id}, _multi} -> [id]
-      {_callback, {:ok, _kind, ids, _captures, _gaps}} -> ids
-      _other -> []
+  defp read_here?(:runs, id, tags, ctx),
+    do: MapSet.new(tags) == MapSet.new(Map.fetch!(ctx.defined_in, id))
+
+  defp unread_run(acc, line, tags),
+    do: dynamic(acc, line, "a value run where the walk did not read it", tags)
+
+  defp function_parts(arg, env, ctx) do
+    case callback(arg, env, {ctx.module, nil, nil}) do
+      {:lambda, id} -> {[id], []}
+      {:capture, callee} -> {[], [callee]}
+      :error -> {[], []}
+    end
+  end
+
+  defp value_parts(arg, env, ctx) do
+    with {[], []} <- function_parts(arg, env, ctx),
+         {:ok, _kind, ids, captures, _gaps} <- multi(arg, env, {ctx.module, nil, nil}, ctx) do
+      {ids, captures}
+    else
+      :error -> {[], []}
+      parts -> parts
     end
   end
 
@@ -1057,14 +1093,8 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
 
   defp other_process?(_callee), do: false
 
-  # A fn is walked once, under the tags where it is defined, which are also those
-  # of any transaction it is given to. Run under any other tags, the walk did not
-  # read this run: in a transaction it is not in, or outside the one it was given to.
-  defp lambda_run(acc, id, tags, line, ctx) do
-    if MapSet.new(tags) == MapSet.new(Map.get(ctx.defined_in, id, [])),
-      do: acc,
-      else: dynamic(acc, line, "a fn run where the walk did not read it", tags)
-  end
+  defp lambda_run(acc, id, tags, line, ctx),
+    do: value_ran(acc, :runs, {[id], []}, tags, line, ctx)
 
   # The functions handed to a library call `HigherOrder` knows: an inline fn or
   # a capture is followed from here, under this call's tags; anything else is a
@@ -1187,6 +1217,9 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
       name in @raw_sql and (module == @raw_sql_module or MapSet.member?(ctx.repos, module)) ->
         dynamic(acc, line, raw_sql(module, name, arity), tags, true)
 
+      listed_transaction?(callee, ctx) ->
+        listed_call(acc, callee, args, env, tags, line, ctx)
+
       MapSet.member?(ctx.repos, module) ->
         repo_function(acc, callee, args, env, tags, line, ctx)
 
@@ -1204,13 +1237,22 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
       HigherOrder.invocations(callee) != [] ->
         higher_order_call(acc, callee, args, env, tags, line, ctx)
 
-      listed_transaction?(callee, ctx) and not followed?(callee, ctx) ->
-        # A dependency's transaction function: read as a scope, in pass 1.
-        acc
-
       true ->
         project_call(acc, ctx, callee, :remote, args, env, tags, line)
     end
+  end
+
+  # Read as a scope, in pass 1. Each argument it may run is held to `value_ran/6`, and
+  # a wrapper the project defines is followed too.
+  defp listed_call(acc, callee, args, env, tags, line, ctx) do
+    acc =
+      Enum.reduce(args, acc, fn arg, acc ->
+        value_ran(acc, :opens, value_parts(arg, env, ctx), tags, line, ctx)
+      end)
+
+    if followed?(callee, ctx),
+      do: project_call(acc, ctx, callee, :remote, args, env, tags, line),
+      else: acc
   end
 
   # A function it was given that Anchor cannot follow is this call's one gap.
@@ -1263,7 +1305,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
         dynamic(acc, line, what, tags, true)
 
       name in [:transaction, :transact] and arity in [1, 2] ->
-        given_value(acc, hd(args), env, tags, line, ctx)
+        value_ran(acc, :opens, value_parts(hd(args), env, ctx), tags, line, ctx)
 
       repo_function?(name, arity) ->
         acc
@@ -1333,11 +1375,9 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   # did not read. A default only comes back: the same answer is on the safe side.
   defp harmless_functions(acc, callee, args, env, tags, line, ctx) do
     if NoWrite.harmless_function_argument?(callee) do
-      for arg <- args,
-          {:lambda, id} <- [callback(arg, env, {ctx.module, nil, nil})],
-          reduce: acc do
-        acc -> lambda_run(acc, id, tags, line, ctx)
-      end
+      Enum.reduce(args, acc, fn arg, acc ->
+        value_ran(acc, :runs, function_parts(arg, env, ctx), tags, line, ctx)
+      end)
     else
       acc
     end
