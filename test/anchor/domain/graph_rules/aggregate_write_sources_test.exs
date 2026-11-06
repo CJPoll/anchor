@@ -3,6 +3,7 @@ defmodule Anchor.Domain.GraphRules.AggregateWriteSourcesTest do
   # hand-built models whose analysis holds what it reports; V5 loads a config.
   #
   # Sabotage record: ../../../sabotage_records/aggregates-20261103-dnd_5459_write_sets.md
+  # and ../../../sabotage_records/aggregates-20261106-dnd_5459_write_sets.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config

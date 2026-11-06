@@ -2098,3 +2098,814 @@ a schema's untraceable function is not the schema (`lib/anchor/domain/aggregates
 
 ...................
 ```
+
+# Fourth run: a capture from its call, one table, writes outside
+
+15 mutations for critic round 6's findings. These replace the second run's WSF-HANDED, WSF-HANDEDBINDING, WSF-HANDEDLAMBDA, WSF-HANDEDERROR, WSF-LAST, WSF-TRAILING and WSF-FIRSTARG, whose code (`@function_taking` and reading the last non-literal argument) is gone: `Anchor.Domain.HigherOrder` is the one table now. AN-COUNT survived its first run (14 tests, 0 failures), because no fixture reached a gap through a caller; `n16` was added, and the row holds the red run.
+
+| # | Mutation | Tests run | Result |
+|---|---|---|---|
+| WSG-CAPTUREUSE | a capture handed to a library is not followed from the call (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `43 tests, 2 failures` (red) |
+| WSG-TABLE | a function HigherOrder knows is not read (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `43 tests, 8 failures` (red) |
+| WSG-INDEX | the wrong argument is read as the function (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `43 tests, 5 failures` (red) |
+| WSG-NOARGS | an apply hiding its arguments is no gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `43 tests, 1 failure` (red) |
+| WSG-LITERAL | a literal in an invoked position is a gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `43 tests, 1 failure` (red) |
+| WSG-HANDEDBINDING | a fun parameter handed over is no gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `43 tests, 3 failures` (red) |
+| WSG-RAWFLAG | raw SQL on a repo is not flagged as a write (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs` | `14 tests, 1 failure` (red) |
+| WSG-COMPUTEDFLAG | a write on a computed module is not flagged (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs` | `14 tests, 1 failure` (red) |
+| WSG-READFLAG | a read on a computed module is flagged (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs` | `14 tests, 1 failure` (red) |
+| AN-OUTSIDE | unattributed holds writes inside a transaction too (`lib/anchor/domain/aggregates/analysis.ex`) | `non_transactional_test.exs` | `14 tests, 1 failure` (red) |
+| AN-COUNT | the gaps outside a transaction are not counted (`lib/anchor/domain/aggregates/analysis.ex`) | `non_transactional_test.exs` | `14 tests, 1 failure` (red) |
+| RL-UNATTRIBUTED | unattributed writes are not reported (`lib/anchor/domain/graph_rules/aggregate_write_sources.ex`) | `aggregate_write_sources_test.exs` | `12 tests, 2 failures` (red) |
+| RL-UNATTSELECT | unattributed writes ignore the selector (`lib/anchor/domain/graph_rules/aggregate_write_sources.ex`) | `aggregate_write_sources_test.exs` | `12 tests, 1 failure` (red) |
+| RL-ONLYRAW | selected raw SQL alone reads as checking nothing (`lib/anchor/domain/graph_rules/aggregate_write_sources.ex`) | `aggregate_write_sources_test.exs` | `12 tests, 1 failure` (red) |
+| RP-NOTE | the summary does not count the gaps (`lib/anchor/domain/graph_report.ex`) | `graph_report_aggregates_test.exs` | `4 tests, 1 failure` (red) |
+
+## WSG-CAPTUREUSE
+
+a capture handed to a library is not followed from the call (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `43 tests, 2 failures`.
+
+```
+
+  1) test build/3 a capture from outside the body, handed to Enum in it, is followed (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:381
+     Assertion with == failed
+     code:  assert scope.keys == keys([@s])
+     left:  MapSet.new([])
+     right: MapSet.new([schema: AnchorFixtures.ScopesTest.S])
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:383: (test)
+
+
+
+
+  2) test build/3 a capture of a write from outside the body, handed in it, is a gap (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:386
+     match (=) failed
+     code:  assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s39, 1}, _line}]} = one(a, :s39)
+     left:  %Anchor.Domain.Aggregates.Scope{
+              complete?: false,
+              gaps: [{:dynamic_call, {AnchorFixtures.ScopesTest.X, :s39, 1}, _line}]
+            }
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s39, 1},
+              ordinal: 1,
+              line: 179,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              complete?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:387: (test)
+
+.................
+```
+
+## WSG-TABLE
+
+a function HigherOrder knows is not read (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `43 tests, 8 failures`.
+
+```
+
+  1) test build/3 a fun parameter handed to Enum in the body makes the scope incomplete (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:314
+     match (=) failed
+     code:  assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s20, 2}, _line}]} = one(a, :s20)
+     left:  %Anchor.Domain.Aggregates.Scope{
+              complete?: false,
+              gaps: [{:dynamic_call, {AnchorFixtures.ScopesTest.X, :s20, 2}, _line}]
+            }
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s20, 2},
+              ordinal: 1,
+              line: 131,
+              kind: :fun,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.ScopesTest.X, :s20, 2},
+                  line: 131,
+                  op: :insert,
+                  via: :repo,
+                  sources: [schema: AnchorFixtures.ScopesTest.S],
+                  unresolved: nil,
+                  scopes: [1],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([schema: AnchorFixtures.ScopesTest.S]),
+              complete?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:315: (test)
+
+
+
+
+  2) test build/3 an apply of a function-taking call hides its arguments, so it is a gap (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:396
+     match (=) failed
+     code:  assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s41, 2}, _line}]} = one(a, :s41)
+     left:  %Anchor.Domain.Aggregates.Scope{
+              complete?: false,
+              gaps: [{:dynamic_call, {AnchorFixtures.ScopesTest.X, :s41, 2}, _line}]
+            }
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s41, 2},
+              ordinal: 1,
+              line: 186,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              complete?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:397: (test)
+
+.......
+
+
+  3) test build/3 a function value made by a call, handed to Enum, makes the scope incomplete (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:361
+     match (=) failed
+     code:  assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s30, 1}, _line}]} = one(a, :s30)
+     left:  %Anchor.Domain.Aggregates.Scope{
+              complete?: false,
+              gaps: [{:dynamic_call, {AnchorFixtures.ScopesTest.X, :s30, 1}, _line}]
+            }
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s30, 1},
+              ordinal: 1,
+              line: 158,
+              kind: :fun,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.ScopesTest.Helper, :write_s,
+                   1},
+                  line: 38,
+                  op: :insert,
+                  via: :repo,
+                  sources: [schema: AnchorFixtures.ScopesTest.S],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([schema: AnchorFixtures.ScopesTest.S]),
+              complete?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:364: (test)
+
+..........
+
+
+  4) test build/3 a capture of a write from outside the body, handed in it, is a gap (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:386
+     match (=) failed
+     code:  assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s39, 1}, _line}]} = one(a, :s39)
+     left:  %Anchor.Domain.Aggregates.Scope{
+              complete?: false,
+              gaps: [{:dynamic_call, {AnchorFixtures.ScopesTest.X, :s39, 1}, _line}]
+            }
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s39, 1},
+              ordinal: 1,
+              line: 179,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              complete?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:387: (test)
+
+..
+
+
+  5) test build/3 every function HigherOrder knows takes a function: Enum.into/3 (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:391
+     match (=) failed
+     code:  assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s40, 2}, _line}]} = one(a, :s40)
+     left:  %Anchor.Domain.Aggregates.Scope{
+              complete?: false,
+              gaps: [{:dynamic_call, {AnchorFixtures.ScopesTest.X, :s40, 2}, _line}]
+            }
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s40, 2},
+              ordinal: 1,
+              line: 182,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              complete?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:392: (test)
+
+.......
+
+
+  6) test build/3 a capture from outside the body, handed to Enum in it, is followed (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:381
+     Assertion with == failed
+     code:  assert scope.keys == keys([@s])
+     left:  MapSet.new([])
+     right: MapSet.new([schema: AnchorFixtures.ScopesTest.S])
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:383: (test)
+
+
+
+
+  7) test build/3 a fn from outside the body handed to Enum in it makes the scope incomplete (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:326
+     match (=) failed
+     code:  assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s22, 1}, _line}]} = one(a, :s22)
+     left:  %Anchor.Domain.Aggregates.Scope{
+              complete?: false,
+              gaps: [{:dynamic_call, {AnchorFixtures.ScopesTest.X, :s22, 1}, _line}]
+            }
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s22, 1},
+              ordinal: 1,
+              line: 137,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              complete?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:329: (test)
+
+
+
+
+  8) test build/3 the function is found before a trailing literal (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:368
+     match (=) failed
+     code:  assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s31, 2}, _line}]} = one(a, :s31)
+     left:  %Anchor.Domain.Aggregates.Scope{
+              complete?: false,
+              gaps: [{:dynamic_call, {AnchorFixtures.ScopesTest.X, :s31, 2}, _line}]
+            }
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s31, 2},
+              ordinal: 1,
+              line: 160,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              complete?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:369: (test)
+
+.....
+```
+
+## WSG-INDEX
+
+the wrong argument is read as the function (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `43 tests, 5 failures`.
+
+```
+
+  1) test build/3 every function HigherOrder knows takes a function: Enum.into/3 (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:391
+     match (=) failed
+     code:  assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s40, 2}, _line}]} = one(a, :s40)
+     left:  %Anchor.Domain.Aggregates.Scope{
+              complete?: false,
+              gaps: [{:dynamic_call, {AnchorFixtures.ScopesTest.X, :s40, 2}, _line}]
+            }
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s40, 2},
+              ordinal: 1,
+              line: 182,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              complete?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:392: (test)
+
+.
+
+
+  2) test build/3 S12: a capture passed to Enum is followed (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:467
+     Expected truthy, got false
+     code: assert one(a, :s12).complete?
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:469: (test)
+
+.....
+
+
+  3) test build/3 an inline fn handed to Enum in the body is walked, with no gap of its own (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:333
+     match (=) failed
+     code:  assert [unresolved_write: %{mfa: {@x, :s23, 1}}] = one(a, :s23).gaps
+     left:  [unresolved_write: %{mfa: {AnchorFixtures.ScopesTest.X, :s23, 1}}]
+     right: [
+              {:dynamic_call,
+               {AnchorFixtures.ScopesTest.X, :s23, 1}, 140},
+              {:unresolved_write,
+               %Anchor.Domain.Aggregates.WriteSite{
+                 mfa: {AnchorFixtures.ScopesTest.X, :s23, 1},
+                 line: 140,
+                 op: :insert,
+                 via: :repo,
+                 sources: [],
+                 unresolved: "parameter 1 of an anonymous function",
+                 scopes: [1],
+                 run_callback?: false
+               }}
+            ]
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:336: (test)
+
+..
+
+
+  4) test build/3 an inline fn before a trailing literal is walked, with no gap (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:373
+     match (=) failed
+     code:  assert %Scope{complete?: true} = one(a, :s36)
+     left:  %Anchor.Domain.Aggregates.Scope{complete?: true}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s36, 1},
+              ordinal: 1,
+              line: 168,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              complete?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.ScopesTest.X, :s36, 1}, 168}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:374: (test)
+
+.
+
+
+  5) test build/3 a capture from outside the body, handed to Enum in it, is followed (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:381
+     match (=) failed
+     code:  assert %Scope{complete?: true} = scope = one(a, :s38)
+     left:  %Anchor.Domain.Aggregates.Scope{complete?: true} = scope
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s38, 1},
+              ordinal: 1,
+              line: 174,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              complete?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.ScopesTest.X, :s38, 1}, 174}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:382: (test)
+
+.........
+```
+
+## WSG-NOARGS
+
+an apply hiding its arguments is no gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `43 tests, 1 failure`.
+
+```
+
+  1) test build/3 an apply of a function-taking call hides its arguments, so it is a gap (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:396
+     match (=) failed
+     code:  assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s41, 2}, _line}]} = one(a, :s41)
+     left:  %Anchor.Domain.Aggregates.Scope{
+              complete?: false,
+              gaps: [{:dynamic_call, {AnchorFixtures.ScopesTest.X, :s41, 2}, _line}]
+            }
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s41, 2},
+              ordinal: 1,
+              line: 186,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              complete?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:397: (test)
+
+...................
+```
+
+## WSG-LITERAL
+
+a literal in an invoked position is a gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `43 tests, 1 failure`.
+
+```
+
+  1) test build/3 an inline fn before a trailing literal is walked, with no gap (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:373
+     match (=) failed
+     code:  assert %Scope{complete?: true} = one(a, :s36)
+     left:  %Anchor.Domain.Aggregates.Scope{complete?: true}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s36, 1},
+              ordinal: 1,
+              line: 168,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              complete?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.ScopesTest.X, :s36, 1}, 168}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:374: (test)
+
+...................
+```
+
+## WSG-HANDEDBINDING
+
+a fun parameter handed over is no gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `43 tests, 3 failures`.
+
+```
+
+  1) test build/3 every function HigherOrder knows takes a function: Enum.into/3 (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:391
+     match (=) failed
+     code:  assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s40, 2}, _line}]} = one(a, :s40)
+     left:  %Anchor.Domain.Aggregates.Scope{
+              complete?: false,
+              gaps: [{:dynamic_call, {AnchorFixtures.ScopesTest.X, :s40, 2}, _line}]
+            }
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s40, 2},
+              ordinal: 1,
+              line: 182,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              complete?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:392: (test)
+
+..........
+
+
+  2) test build/3 a fun parameter handed to Enum in the body makes the scope incomplete (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:314
+     match (=) failed
+     code:  assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s20, 2}, _line}]} = one(a, :s20)
+     left:  %Anchor.Domain.Aggregates.Scope{
+              complete?: false,
+              gaps: [{:dynamic_call, {AnchorFixtures.ScopesTest.X, :s20, 2}, _line}]
+            }
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s20, 2},
+              ordinal: 1,
+              line: 131,
+              kind: :fun,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.ScopesTest.X, :s20, 2},
+                  line: 131,
+                  op: :insert,
+                  via: :repo,
+                  sources: [schema: AnchorFixtures.ScopesTest.S],
+                  unresolved: nil,
+                  scopes: [1],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([schema: AnchorFixtures.ScopesTest.S]),
+              complete?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:315: (test)
+
+..................
+
+
+  3) test build/3 the function is found before a trailing literal (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:368
+     match (=) failed
+     code:  assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s31, 2}, _line}]} = one(a, :s31)
+     left:  %Anchor.Domain.Aggregates.Scope{
+              complete?: false,
+              gaps: [{:dynamic_call, {AnchorFixtures.ScopesTest.X, :s31, 2}, _line}]
+            }
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s31, 2},
+              ordinal: 1,
+              line: 160,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              complete?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:369: (test)
+
+..........
+```
+
+## WSG-RAWFLAG
+
+raw SQL on a repo is not flagged as a write (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `14 tests, 1 failure`.
+
+```
+
+  1) test unattributed: raw SQL and a write on a computed module, outside a transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:123
+     match (=) failed
+     code:  assert [%{mfa: {@n, :n11, 0}, what: raw, line: line}, %{mfa: {@n, :n12, 1}, what: computed}] =
+              a.unattributed
+     left:  [
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n11, 0}, what: raw, line: line},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n12, 1}, what: computed}
+            ]
+     right: [
+              %{
+                line: 59,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n12,
+                 1},
+                what: "a call of insert/1 on a module held in a variable"
+              }
+            ]
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:126: (test)
+
+.....
+```
+
+## WSG-COMPUTEDFLAG
+
+a write on a computed module is not flagged (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `14 tests, 1 failure`.
+
+```
+
+  1) test unattributed: raw SQL and a write on a computed module, outside a transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:123
+     match (=) failed
+     code:  assert [%{mfa: {@n, :n11, 0}, what: raw, line: line}, %{mfa: {@n, :n12, 1}, what: computed}] =
+              a.unattributed
+     left:  [
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n11, 0}, what: raw, line: line},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n12, 1}, what: computed}
+            ]
+     right: [
+              %{
+                line: 58,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n11,
+                 0},
+                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
+              }
+            ]
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:126: (test)
+
+..........
+```
+
+## WSG-READFLAG
+
+a read on a computed module is flagged (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `14 tests, 1 failure`.
+
+```
+
+  1) test unattributed: raw SQL and a write on a computed module, outside a transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:123
+     match (=) failed
+     code:  assert [%{mfa: {@n, :n11, 0}, what: raw, line: line}, %{mfa: {@n, :n12, 1}, what: computed}] =
+              a.unattributed
+     left:  [
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n11, 0}, what: raw, line: line},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n12, 1}, what: computed}
+            ]
+     right: [
+              %{
+                line: 58,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n11,
+                 0},
+                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
+              },
+              %{
+                line: 59,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n12,
+                 1},
+                what: "a call of insert/1 on a module held in a variable"
+              },
+              %{
+                line: 60,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n13,
+                 1},
+                what: "a call of get/2 on a module held in a variable"
+              }
+            ]
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:126: (test)
+
+..........
+```
+
+## AN-OUTSIDE
+
+unattributed holds writes inside a transaction too (`lib/anchor/domain/aggregates/analysis.ex`). Result: `14 tests, 1 failure`.
+
+```
+
+  1) test unattributed: raw SQL and a write on a computed module, outside a transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:123
+     match (=) failed
+     code:  assert [%{mfa: {@n, :n11, 0}, what: raw, line: line}, %{mfa: {@n, :n12, 1}, what: computed}] =
+              a.unattributed
+     left:  [
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n11, 0}, what: raw, line: line},
+              %{mfa: {AnchorFixtures.NonTransactionalTest.N, :n12, 1}, what: computed}
+            ]
+     right: [
+              %{
+                line: 58,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n11,
+                 0},
+                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
+              },
+              %{
+                line: 59,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n12,
+                 1},
+                what: "a call of insert/1 on a module held in a variable"
+              },
+              %{
+                line: 61,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n14,
+                 0},
+                what: "raw SQL (AnchorFixtures.NonTransactionalTest.Repo.query!/1) Anchor cannot attribute"
+              },
+              %{
+                line: 62,
+                mfa: {AnchorFixtures.NonTransactionalTest.N, :n15,
+                 1},
+                what: "a call of insert/1 on a module held in a variable"
+              }
+            ]
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:126: (test)
+
+.........
+```
+
+## AN-COUNT
+
+the gaps outside a transaction are not counted (`lib/anchor/domain/aggregates/analysis.ex`). Result: `14 tests, 1 failure`.
+
+```
+
+  1) test the gaps outside every transaction are counted (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:136
+     Assertion with == failed
+     code:  assert a.counts.outside_gaps == length(gaps)
+     left:  5
+     right: 4
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:139: (test)
+
+.
+```
+
+## RL-UNATTRIBUTED
+
+unattributed writes are not reported (`lib/anchor/domain/graph_rules/aggregate_write_sources.ex`). Result: `12 tests, 2 failures`.
+
+```
+
+  1) test check/2 raw SQL outside a transaction is reported, keyed without its line, with a Fix (Anchor.Domain.GraphRules.AggregateWriteSourcesTest)
+     test/anchor/domain/graph_rules/aggregate_write_sources_test.exs:114
+     match (=) failed
+     code:  assert [finding] = AggregateWriteSources.check(model(analysis), @rule)
+     left:  [finding]
+     right: []
+     stacktrace:
+       test/anchor/domain/graph_rules/aggregate_write_sources_test.exs:117: (test)
+
+...
+
+
+  2) test check/2 selected modules holding only raw SQL have writes: no checks-nothing failure (Anchor.Domain.GraphRules.AggregateWriteSourcesTest)
+     test/anchor/domain/graph_rules/aggregate_write_sources_test.exs:136
+     match (=) failed
+     code:  assert [%{line: 40}] = AggregateWriteSources.check(model(analysis), @rule)
+     left:  [%{line: 40}]
+     right: []
+     stacktrace:
+       test/anchor/domain/graph_rules/aggregate_write_sources_test.exs:139: (test)
+
+...
+```
+
+## RL-UNATTSELECT
+
+unattributed writes ignore the selector (`lib/anchor/domain/graph_rules/aggregate_write_sources.ex`). Result: `12 tests, 1 failure`.
+
+```
+
+  1) test check/2 unattributed writes outside the selector are not reported (Anchor.Domain.GraphRules.AggregateWriteSourcesTest)
+     test/anchor/domain/graph_rules/aggregate_write_sources_test.exs:129
+     Assertion with == failed
+     code:  assert AggregateWriteSources.check(model(analysis), @rule) == []
+     left:  [
+              %Anchor.Domain.Violation{
+                line: 40,
+                trigger: "raw SQL (App.Repo.query!/1) Anchor cannot attribute",
+                message: "Other.Thing.purge/0 writes, or may write, outside any transaction in a way no schema or table names: raw SQL (App.Repo.query!/1) Anchor cannot attribute. Fix: write through a schema with Repo, or name the module the call is on.",
+                filename: ".anchor.yml",
+                kind: :rule,
+                key: "writes|Other.Thing.purge/0|unattributed raw SQL (App.Repo.query!/1) Anchor cannot attribute",
+                rule_id: "writes",
+                enforcement: :enforce
+              }
+            ]
+     right: []
+     stacktrace:
+       test/anchor/domain/graph_rules/aggregate_write_sources_test.exs:133: (test)
+
+.......
+```
+
+## RL-ONLYRAW
+
+selected raw SQL alone reads as checking nothing (`lib/anchor/domain/graph_rules/aggregate_write_sources.ex`). Result: `12 tests, 1 failure`.
+
+```
+
+  1) test check/2 selected modules holding only raw SQL have writes: no checks-nothing failure (Anchor.Domain.GraphRules.AggregateWriteSourcesTest)
+     test/anchor/domain/graph_rules/aggregate_write_sources_test.exs:136
+     match (=) failed
+     code:  assert [%{line: 40}] = AggregateWriteSources.check(model(analysis), @rule)
+     left:  [%{line: 40}]
+     right: [
+              %Anchor.Domain.Violation{
+                line: nil,
+                trigger: nil,
+                message: "rule (id: \"writes\", aggregate_write_sources) checks nothing: no write found in paths [\"lib/app/**\"]. Fix: correct the selector or aggregates.repos.",
+                filename: ".anchor.yml",
+                kind: :fail_closed,
+                key: nil,
+                rule_id: nil,
+                enforcement: :enforce
+              }
+            ]
+     stacktrace:
+       test/anchor/domain/graph_rules/aggregate_write_sources_test.exs:139: (test)
+
+......
+```
+
+## RP-NOTE
+
+the summary does not count the gaps (`lib/anchor/domain/graph_report.ex`). Result: `4 tests, 1 failure`.
+
+```
+
+
+
+  1) test the write analysis's counts are in the summary and the JSON (Anchor.Domain.GraphReportAggregatesTest)
+     test/anchor/domain/graph_report_aggregates_test.exs:42
+     Assertion with == failed
+     code:  assert GraphReport.summary(report) ==
+              "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 " <>
+                "baselined); writes: 7 found, 5 resolved, 2 unresolved; transactions: 3, 2 " <>
+                "complete, 1 incomplete; 4 gaps outside a transaction"
+     left:  "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 baselined); writes: 7 found, 5 resolved, 2 unresolved; transactions: 3, 2 complete, 1 incomplete"
+     right: "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 baselined); writes: 7 found, 5 resolved, 2 unresolved; transactions: 3, 2 complete, 1 incomplete; 4 gaps outside a transaction"
+     stacktrace:
+       test/anchor/domain/graph_report_aggregates_test.exs:55: (test)
+
+...
+```
