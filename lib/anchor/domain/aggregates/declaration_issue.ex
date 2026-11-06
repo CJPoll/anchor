@@ -12,11 +12,15 @@ defmodule Anchor.Domain.Aggregates.DeclarationIssue do
       * `:not_a_schema` — a schema module with no `__schema__/1`;
       * `:empty_aggregate` — an aggregate with no schemas and no tables;
       * `:malformed_attribute` — an `@anchor_aggregate` value of the wrong
-        shape (the module contributes nothing).
+        shape (the module contributes nothing);
+      * `:persists_under_none` — under `aggregates: declare: none`, a module
+        that persists (`Anchor.Domain.Aggregates.Persistence`), at
+        `{:module, ...}` (DND-5659).
     * `subject` — what it is about: a module, or a table name (a string).
     * `aggregates` — the aggregate names involved, sorted.
     * `site` — where it sits (`t:Anchor.Domain.Aggregates.Declaration.site/0`).
-    * `detail` — for `:malformed_attribute`, what is wrong; else `nil`.
+    * `detail` — for `:malformed_attribute`, what is wrong; for
+      `:persists_under_none`, why the module persists; else `nil`.
   """
 
   alias Anchor.Domain.Aggregates.Declaration
@@ -31,6 +35,7 @@ defmodule Anchor.Domain.Aggregates.DeclarationIssue do
           | :unknown_owner
           | :empty_aggregate
           | :malformed_attribute
+          | :persists_under_none
 
   @type t :: %__MODULE__{
           kind: kind(),

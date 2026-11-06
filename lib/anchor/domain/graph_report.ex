@@ -28,7 +28,12 @@ defmodule Anchor.Domain.GraphReport do
       else `%{context => public functions on its interface}`
       (`Anchor.Domain.Interfaces.width/1`); `aggregates` (optional, DND-5476) is
       `%{declared, tables_unknown}` when any aggregate is declared, and the
-      JSON's `aggregates` is `null` otherwise. The optional `dynamic_calls` is
+      JSON's `aggregates` is `null` otherwise; `writes` (optional, DND-5459)
+      is the write analysis's counts, its gaps with no transaction read around
+      them among them
+      (`Anchor.Domain.Aggregates.Analysis`),
+      when the run made one with a repo, and the JSON's `writes` is `null`
+      otherwise. The optional `dynamic_calls` is
       `Anchor.Domain.DynamicCalls.tally/1` of the graph (DND-5633): the
       dynamic calls narrowed to a declared behaviour's implementers, and those
       fanned out to every module exporting the function.
@@ -112,7 +117,16 @@ defmodule Anchor.Domain.GraphReport do
           optional(:dynamic_calls) => dynamic_calls() | nil,
           optional(:effects) => effects() | nil,
           optional(:demand) => demand() | nil,
-          optional(:aggregates) => %{declared: pos_integer(), tables_unknown: non_neg_integer()}
+          optional(:aggregates) => %{declared: pos_integer(), tables_unknown: non_neg_integer()},
+          optional(:writes) => %{
+            writes: non_neg_integer(),
+            resolved: non_neg_integer(),
+            unresolved: non_neg_integer(),
+            scopes: non_neg_integer(),
+            no_gap_noticed: non_neg_integer(),
+            incomplete: non_neg_integer(),
+            outside_gaps: non_neg_integer()
+          }
         }
 
   @type dynamic_calls :: %{
@@ -260,6 +274,7 @@ defmodule Anchor.Domain.GraphReport do
       "effects" => effects_json(Map.get(report.counts, :effects)),
       "demand" => demand_json(Map.get(report.counts, :demand)),
       "aggregates" => aggregates_json(Map.get(report.counts, :aggregates)),
+      "writes" => writes_json(Map.get(report.counts, :writes)),
       "exit_code" => report.exit_code,
       "findings" => Enum.map(report.findings, &Finding.to_json/1),
       "could_not_check" => Enum.map(report.could_not_check, &Finding.to_json/1),
@@ -275,7 +290,10 @@ defmodule Anchor.Domain.GraphReport do
   every `:report` finding and `H` every held one. Opaque (Erlang) modules,
   functions with no Core body and modules compiled from outside the root are
   counted when there are any, and so are declared aggregates (DND-5476:
-  `; aggregates: <N> declared, <U> tables unknown`).
+  `; aggregates: <N> declared, <U> tables unknown`) and the write analysis
+  (DND-5459: `; writes: <W> read, <R> resolved, <U> unresolved; transactions:
+  <S> read, <N> no gap noticed, <I> incomplete; <G> gaps with no transaction
+  read around them; forms not listed in the README are not read`).
   """
   @spec summary(t()) :: String.t()
   def summary(%__MODULE__{counts: counts} = report) do
@@ -290,8 +308,27 @@ defmodule Anchor.Domain.GraphReport do
       effects_note(Map.get(counts, :effects)) <>
       demand_note(Map.get(counts, :demand)) <>
       width_note(Map.get(counts, :interface_width)) <>
-      aggregates_note(Map.get(counts, :aggregates))
+      aggregates_note(Map.get(counts, :aggregates)) <>
+      writes_note(Map.get(counts, :writes))
   end
+
+  # DND-5459: the writes and transactions the analysis read, and how many it
+  # could not judge: an unresolved write or an incomplete transaction is
+  # counted, never read as clean.
+  defp writes_note(nil), do: ""
+
+  defp writes_note(writes) do
+    "; writes: #{writes.writes} read, #{writes.resolved} resolved, " <>
+      "#{writes.unresolved} unresolved; transactions: #{writes.scopes} read, " <>
+      "#{writes.no_gap_noticed} no gap noticed, #{writes.incomplete} incomplete; " <>
+      "#{writes.outside_gaps} gaps with no transaction read around them; " <>
+      "forms not listed in the README are not read"
+  end
+
+  defp writes_json(nil), do: nil
+
+  defp writes_json(writes),
+    do: Map.new(writes, fn {key, value} -> {Atom.to_string(key), value} end)
 
   defp dynamic_calls_json(nil), do: nil
 

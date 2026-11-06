@@ -442,14 +442,15 @@ another type (`match` on a `no_transitive_dependency` rule) is unknown too.
 The Engine column is the one engine that runs the type: `ast` rules run as
 Credo checks over source, `graph` rules run under `mix anchor.graph` over the
 compiled code (DND-5440; `layering`, DND-5442, `context_acyclic`, DND-5445,
-`aggregate_declarations`, DND-5476, `effects_match_bucket`, DND-5447,
-`struct_owned_by_module_flow`, DND-5454, `analyses_complete`, DND-5715, and
-`interface`, DND-5443). Credo never reports a
+`aggregate_declarations`, DND-5476, `aggregate_write_sources`, DND-5459,
+`effects_match_bucket`, DND-5447, `struct_owned_by_module_flow`, DND-5454,
+`analyses_complete`, DND-5715, and `interface`, DND-5443). Credo never reports a
 `graph` rule as unchecked.
 
 | Rule type | Keys beyond the common ones | Relation (needs one, non-empty) | Engine |
 |---|---|---|---|
 | `aggregate_declarations` | none | none | `graph` |
+| `aggregate_write_sources` | none | none | `graph` |
 | `alphabetized_functions` | `mode` | none | `ast` |
 | `analyses_complete` | `min_absent_parameters`, `min_apply_sites`, `min_functions` | none | `graph` |
 | `case_on_bare_arg` | none | none | `ast` |
@@ -618,7 +619,7 @@ otherwise. `uses_module`, `recursive` and `min_files` are `ast` keys and are
 refused on a graph rule. A finding of a rule with `enforcement: report` prints
 `[report]` and does not fail the run. `--format json` prints `{"modules",
 "apps", "rules", "opaque", "no_core", "outside_root", "apply_sites", "interface_width",
-"dynamic_calls", "effects", "demand", "aggregates", "exit_code",
+"dynamic_calls", "effects", "demand", "aggregates", "writes", "exit_code",
 "findings":
 [{rule_id, type, enforcement, key, file, line, message, fix}],
 "could_not_check": [...], "refused": [...], "held": [...]}`. `--only RULE_ID` (repeatable) runs only the
@@ -1193,11 +1194,11 @@ aggregates:
   transaction_functions: ["GenSaas.UnitOfWork.transaction/3"]
 ```
 
-Only `declare` has a meaning yet; `repos`, `write_functions` and
-`transaction_functions` are checked for shape (exact module names, and
-`"Module.function/arity"` tokens) and kept for the rules that read them. The
-load refuses, each with a `Fix:` giving this shape: a section that is not a
-mapping; an unknown key at any level; a `declare` that is not a list; an entry
+`declare` names the aggregates; `repos`, `write_functions` and
+`transaction_functions` tell the write analysis what writes and what opens a
+transaction, and are checked for shape (exact module names, and
+`"Module.function/arity"` tokens). The load refuses, each with a `Fix:` giving this shape: a section that is not a
+mapping; an unknown key at any level; a `declare` that is neither `none` nor a list; an entry
 that is not a mapping, has no `name`, or a `name` that is not a module-name
 token; `schemas`, `owners` or `repos` that are not lists of exact module names
 (no glob, no Erlang module); `tables` that is not a list of non-empty strings;
@@ -1279,7 +1280,8 @@ declaration shape:
 | A schema module that is not an Ecto schema | `MyApp.Plain in aggregate MyApp.A is not an Ecto schema (no __schema__/1). Fix: list the schema module, or list its table under tables:: ...` |
 | An aggregate with no schemas and no tables | `aggregate MyApp.A declares no schemas and no tables. Fix: add schemas: or tables:, or delete the declaration: ...` |
 | An `@anchor_aggregate` of the wrong shape (the module contributes nothing) | `@anchor_aggregate on MyApp.X is not [name: atom, schemas: [atom], tables: [binary], owner: boolean]: it has no name. Fix: write it in this shape: ...` |
-| No aggregate declared at all (fail-closed: never baselined, never report-only) | `rule 1 (id: "aggregate_declarations", aggregate_declarations) checks nothing: no aggregate is declared in .anchor.yml or by an @anchor_aggregate attribute. Fix: declare one or remove the rule: ...` |
+| No aggregate declared at all, and no `declare: none` (fail-closed: never baselined, never report-only) | `rule 1 (id: "aggregate_declarations", aggregate_declarations) checks nothing: no aggregate is declared in .anchor.yml or by an @anchor_aggregate attribute. Fix: declare one or remove the rule: ...` |
+| Under `declare: none`, a module that persists (DND-5659) | `MyApp.Thread persists (it exports __schema__/1 (an Ecto schema)), but .anchor.yml says aggregates: declare: none (no database). Fix: declare the aggregate and remove declare: none: ...` |
 
 An issue of the config section is always reported; one of a module's
 attribute is reported when the rule's selector selects that module. The key
@@ -1292,9 +1294,152 @@ A module the selector leaves out still declares: its declarations count
 toward the index and toward "declared", and only its issues are left out of
 the report.
 
-Anchor's own `.anchor.yml` does not run the rule: Anchor has no database and
-declares no aggregate, so the rule could only say it checks nothing, which
-fails the run in either enforcement mode.
+#### A repo with no persistence: `declare: none` (DND-5659)
+
+A repo that persists nothing says so on purpose, with a reason, instead of
+leaving the rule out:
+
+```yaml
+rules:
+  - type: aggregate_declarations
+    id: aggregate_declarations
+    paths: ["lib/**/*.ex"]
+
+aggregates:
+  declare: none
+  reason: "this service has no database: it reads files and calls APIs"
+
+architecture:
+  contexts:
+    depth: 2
+  buckets:
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/**/*.ex"]
+  calls:
+    domain: [domain]
+```
+
+Under `none` the rule is not vacuous, and makes no checks-nothing violation:
+it fails every selected module that persists, one violation at its
+`defmodule` line keyed `<id>|<Module>|persists_under_none - <Module>`, whose
+`Fix:` is to declare the aggregate and remove `declare: none`. A module
+persists when it exports `__schema__/1` (`use Ecto.Schema`), declares
+`@behaviour Ecto.Repo`, declares `@anchor_aggregate`, or calls a Repo write
+(a write on a module whose name ends in `Repo`), raw SQL (`query`, `query!`,
+`query_many`, `query_many!`) on such a module, any function of `Ecto.Repo` or
+`Ecto.Multi`, or an `Ecto.Adapters.*` module; the first of these that holds
+is the reason the message gives. Not seen: a read through a repo the project
+does not define, and a call on a computed module.
+
+The load refuses (exit 3, each with a `Fix:` naming both forms): `none`
+without a `reason:` or with a blank one; a `reason:` without `none`; `none`
+beside `repos`, `write_functions` or `transaction_functions`; a `declare`
+string other than `none`; and an explicit `declare: []`, so "nothing" is
+always said on purpose. A missing `aggregates:` section keeps the fail-closed
+checks-nothing violation above. Under `none` no write analysis is built, and
+a config that also enables `aggregate_write_sources` is refused at load (exit
+3): that rule reads a repo's writes, and `none` says there is no repo.
+
+Anchor's own `.anchor.yml` runs the rule this way: `declare: none`, enforced,
+no baseline.
+
+### Writes and transactions: the `aggregate_write_sources` rule (DND-5459)
+
+When a rule needs it, `mix anchor.graph` reads the database writes and
+transactions it recognises from the compiled code (each function's Core Erlang,
+so an alias, a pipe and an `@repo` attribute are already resolved). It reports
+what it read; it does not claim to have seen all of them.
+
+#### What it reads
+
+- **Repos** are the modules whose beam declares `@behaviour Ecto.Repo`, plus
+  `aggregates.repos`.
+- **Writes** are the `Repo` writes on a repo (`insert`, `insert!`, `update`,
+  `update!`, `delete`, `delete!`, `insert_or_update`, `insert_or_update!`,
+  `insert_all`, `update_all`, `delete_all`), the `Ecto.Multi` writes (the same
+  without bangs), the `aggregates.write_functions` entries, and a `Repo` write
+  on the repo argument of a `Multi.run` callback. Raw SQL (`query`, `query!`,
+  `query_many`, `query_many!` on a repo or a callback's repo, and
+  `Ecto.Adapters.SQL.query*`) writes what no schema or table names: it is a
+  gap, so a transaction that runs it is incomplete.
+- **Each write's source** (its schema or table) is traced through Core: a
+  struct, a changeset built from one, a schema module, a call on a schema, a
+  `from` query, a literal table, `{table, schema}`, a parameter whose `@spec`
+  is `Schema.t()`, or else the arguments its project callers pass. Anything
+  else is **unresolved**, reported with what was seen, never dropped.
+- **Transactions** are `Repo.transaction/1,2` (and `Repo.transact/1,2` when the
+  repo exports it) and `aggregates.transaction_functions` calls, given a
+  function, a capture or an `Ecto.Multi`. A transaction's write set is the
+  writes read in its body and those of the project functions it calls,
+  transitively. A call Anchor cannot resolve, a function value it cannot follow
+  (a `fn` defined outside the body, a capture of a write, an unknown function
+  handed to a library function that invokes it), or an unresolved write, makes
+  it **incomplete**. Calls into dependencies are not followed.
+- **With no transaction read around it,** raw SQL, a write or transaction on a
+  computed module, and an `apply/3` that may be one are reported, in the function
+  they are written in: no schema or table names what it writes. A caller's
+  transaction may still hold it; the report says what was read.
+
+#### What it does not read
+
+- a function handed to a library `Anchor.Domain.HigherOrder` does not know;
+- a Multi handed to a helper that also calls `Multi.new/0` (DND-5884);
+- a `fn` bound once and both called and passed to a transaction (DND-5885);
+- a `transaction_functions` call with one traced and one untraced function
+  argument;
+- dependencies' own writes;
+- any other form.
+
+An absent write is not evidence of no write; DND-5889 makes each such form a gap
+at its line.
+
+The summary line ends `; writes: <W> read, <R> resolved, <U> unresolved;
+transactions: <S> read, <N> no gap noticed, <I> incomplete; <G> gaps with no
+transaction read around them; forms not listed in the README are not read` (the
+JSON's `writes`, whose keys include `no_gap_noticed`). `no gap noticed` is a count
+of what Anchor noticed, not a statement that a write set is whole. An unresolved
+write, an incomplete transaction and a call Anchor could not follow with no
+transaction read around it are counted.
+
+```yaml
+rules:
+  - type: aggregate_write_sources
+    id: aggregate_write_sources
+    paths: ["lib/**/*.ex"]
+
+aggregates:
+  repos: [MyApp.Repo]
+
+architecture:
+  contexts:
+    depth: 2
+  buckets:
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/**/*.ex"]
+  calls:
+    domain: [domain]
+```
+
+| Finding | Example message |
+|---|---|
+| A write whose source is unresolved (at the write) | `Repo.insert in MyApp.X.save/1 writes a value Anchor cannot trace to a schema or table (parameter 1 of MyApp.X.save/1 has no @spec and no project caller). Fix: pass a struct, changeset or schema the call can see; add @spec with Schema.t() for the parameter; or list a wrapper under aggregates.write_functions.` |
+| Raw SQL, or a write or transaction on a computed module, with no transaction read around it (at the call) | `MyApp.X.purge/0 writes, or may write, with no transaction read around it in a way no schema or table names: raw SQL (MyApp.Repo.query!/1) Anchor cannot attribute. Fix: write through a schema with Repo, or name the module the call is on.` |
+| An incomplete transaction (at the transaction) | `transaction 1 in MyApp.X.run/1 reaches 1 call(s) Anchor cannot resolve (first: MyApp.X.run/1 line 12), so its write set is incomplete. Fix: call a named function instead of a variable, ...` |
+
+The key is `<id>|<M.f/a>|unresolved <op> <seen>`, `<id>|<M.f/a>|unattributed <what>` or `<id>|<M.f/a>|incomplete
+<ordinal>`, where the ordinal is the transaction's position in its function:
+no line number. The rule's selector chooses whose findings are reported.
+
+`Anchor.Domain.Aggregates.Inference` turns the analysis into proposed
+aggregates: the connected components of the co-write graph (each
+transaction's written schemas are written together), printed as the exact
+`aggregates:` YAML above. Its first line is always `# read from the forms Anchor
+recognises; a write in any other form is not in this proposal`. `mix anchor.propose
+--level aggregate` prints it once DND-5449's `mix anchor.propose` lands.
 
 ### Graph rows of the fail-closed table
 
@@ -1328,6 +1473,7 @@ line.
 | An ambiguous module | 1 | its source file, at its `defmodule` line | `MyApp.X is in buckets domain (by paths [...]) and framework (by uses_module GenServer). Fix: narrow one selector; buckets never take precedence.` |
 | A bucket below its `min_modules` | 1 | the config | `architecture bucket domain selects 3 modules, below min_modules 10. Fix: correct the selector; lowering min_modules is the owner's call.` |
 | An `interfaces.exports` entry that names no module | 1 | the config | `architecture interfaces.exports names MyApp.Gone, which is no module of the project ... Fix: ...` |
+| An `aggregates:` section with `declare: []`, or `declare: none` with no `reason:` (DND-5659) | 3 | the config path | `aggregates.declare is an empty list, which says nothing on purpose. Fix: write declare: none with reason: "<why this repo persists nothing>" and no other key, or list the aggregates: ...` |
 | An `aggregates:` section of the wrong shape (DND-5476) | 3 | the config path | `aggregates.declare[1].schemas must be a list of exact module names: "MyApp.*" is not an exact Elixir module name (no glob, no Erlang module). Fix: name each module in full, as its defmodule spells it; aggregates: declare: - name: <Aggregate>, ...` |
 | An `analyses_complete` rule when the flow analysis hit its step bound (DND-5715) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "analyses_complete", analyses_complete): the higher-order flow analysis (Anchor.Domain.Cfa) hit its step bound after 40 steps, so every apply site reads any and no closure was resolved. Fix: this is a scale limit of Anchor; ...` |
 | An `analyses_complete` rule when the demand analysis hit its round bound (DND-5715) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "analyses_complete", analyses_complete): the demand analysis (Anchor.Domain.Demand) hit its round bound on 2 function(s) (MyApp.X.f/1, MyApp.X.g/2), so their parameters read as used without being judged. Fix: this is a scale limit of Anchor; ...` |
@@ -1335,6 +1481,11 @@ line.
 | An `analyses_complete` rule when the analyses judged fewer than a floor it declares (DND-5715) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "analyses_complete", analyses_complete): the whole-program analyses judged 3, below min_functions 501, so they may be judging nothing. Fix: find what stopped them reading this code; ...` |
 | An `aggregate_declarations` rule with no aggregate declared anywhere (DND-5476) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "aggregate_declarations", aggregate_declarations) checks nothing: no aggregate is declared in .anchor.yml or by an @anchor_aggregate attribute. Fix: declare one or remove the rule: ...` |
 | A schema whose `__schema__(:source)` is not a literal (DND-5476) | 0 | the summary | counted as `; aggregates: <N> declared, <U> tables unknown`, never dropped |
+| An `aggregate_write_sources` rule beside `aggregates: declare: none` (DND-5659) | 3 | the config path | `rule 1 (id: "aggregate_write_sources"): aggregate_write_sources reads the writes of a project with a repo, but .anchor.yml says aggregates: declare: none. Fix: remove the rule, or declare the aggregates and the repo instead of none.` |
+| An `aggregate_write_sources` rule with no `aggregates:` section (DND-5459) | 3 | the config path | `rule 1 (id: "aggregate_write_sources"): aggregate_write_sources needs an aggregates: section in .anchor.yml. Fix: add aggregates: (repos:, declare:) or remove the rule.` |
+| An `aggregate_write_sources` rule in a project with no Ecto repo (DND-5459) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "aggregate_write_sources", aggregate_write_sources): no Ecto repo found: no module declares @behaviour Ecto.Repo and aggregates.repos is empty. Fix: list the repo under aggregates.repos.` |
+| An `aggregate_write_sources` rule whose modules hold no write (DND-5459) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "aggregate_write_sources", aggregate_write_sources) checks nothing: no write found in paths ["lib/**/*.ex"]. Fix: correct the selector or aggregates.repos.` |
+| A write Anchor cannot trace, or a transaction that reaches one or a call it cannot resolve (DND-5459) | the rule's enforcement | the write or transaction | an `aggregate_write_sources` finding, and counted in the summary as `; writes: ... unresolved; transactions: ... incomplete` |
 | A graph rule below its `min_modules` | 1 | the config | `rule 2 (id: "web", layering) selects 0 modules, below min_modules 1. Fix: correct the selector; ...` |
 | A graph rule that raises, throws or exits | 1 | the config | `rule 2 (id: "web", layering) could not run: RuntimeError: ... Fix: this is an Anchor bug; file it with this line.` The other rules still run. |
 | A `baseline:` file that is missing, unreadable, not UTF-8, or holds another rule's entry | 1 | the baseline path | `rule 2 (id: "web", layering)'s baseline .anchor/baselines/web.txt could not be read (:enoent), so none of its findings is held. Fix: create it with mix anchor.graph --write-baseline web ...` |
@@ -1350,10 +1501,11 @@ line.
 | `--write-baseline` that created the file | 0 | the baseline path | `anchor.graph wrote 3 entries to .anchor/baselines/web.txt. Fix: review it in this change; from here it only shrinks.` (`[report]`) |
 | `--write-baseline` over an existing file, or naming no rule with a `baseline:` | 2 | the baseline path, or the config | `.anchor/baselines/web.txt exists; --write-baseline only creates, and never rewrites a baseline. Fix: ...` |
 | A `--base` ref with a character git must not see (a leading `-`, a space, `;`, `$`, `:`) | 2 | | usage, with a `Fix:` line |
-| A graph rule whose `needs/0` names an analysis the runner does not compute, or is not a list (DND-5574) | 1 | the config | `rule 2 (id: "web", layering) could not run: ArgumentError: MyApp.Rule.needs/0 names [:nope], which the graph runner does not compute (it computes [:cfa, :effects, :demand]), so it checked nothing. Fix: this is an Anchor bug; file it with this line.` The rule is not run; the other rules still run. |
+| A graph rule whose `needs/0` names an analysis the runner does not compute, or is not a list (DND-5574) | 1 | the config | `rule 2 (id: "web", layering) could not run: ArgumentError: MyApp.Rule.needs/0 names [:nope], which the graph runner does not compute (it computes [:aggregate_analysis, :cfa, :effects, :demand]), so it checked nothing. Fix: this is an Anchor bug; file it with this line.` The rule is not run; the other rules still run. |
 | The higher-order flow analysis a rule needs raises, throws or exits (DND-5574) | 1 | the config | `rule 2 (id: "web", layering) could not run: the higher-order flow analysis it needs (Anchor.Domain.Cfa) crashed: RuntimeError: ..., so it checked nothing. Fix: this is an Anchor bug; file it with this line.` One per rule that needs it; the rules that do not still run. |
 | The effect inference a rule needs raises, throws or exits, or returns no `%Effects{}` (DND-5447) | 1 | the config | `rule 2 (id: "effects", effects_match_bucket) could not run: the effect inference it needs (Anchor.Domain.Effects) crashed: RuntimeError: ..., so it checked nothing. Fix: this is an Anchor bug; file it with this line.` One per rule that needs it; the rules that do not still run. |
 | The demand analysis a rule needs raises, throws or exits, or returns no `%Demand{}` (DND-5715) | 1 | the config | `rule 1 (id: "analyses_complete", analyses_complete) could not run: the demand analysis it needs (Anchor.Domain.Demand) crashed: ... Fix: this is an Anchor bug; file it with this line.` The other rules still run. |
+| The write analysis a rule needs raises, throws or exits, or returns no `%Analysis{}` (DND-5459) | 1 | the config | `rule 2 (id: "writes", aggregate_write_sources) could not run: the write analysis it needs (Anchor.Domain.Aggregates.Analysis) crashed: RuntimeError: ..., so it checked nothing. Fix: this is an Anchor bug; file it with this line.` |
 | An `effects_match_bucket` rule selects modules of a judged bucket of which no public function was analysed (DND-5447) | 1 | the config | `rule 4 (id: "effects", effects_match_bucket) judged no public function of bucket domain: the modules it selects there have none that was analysed (every one is a root, generated, or has no Core body), so the bucket is below the rule's floor. Fix: select modules of domain with public functions, or set infer: false on domain in a reviewed change.` |
 | Findings of a `report` rule | 0 | the finding | printed `[report]` |
 

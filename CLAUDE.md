@@ -151,8 +151,9 @@ Every rule type has exactly one engine, `@engine_by_type` in
 `Anchor.Domain.RuleSchema` (DND-5437): `:ast` (a Credo check) or `:graph`
 (`mix anchor.graph`, DND-5440; the graph types are `layering`, DND-5442,
 `context_acyclic`, DND-5445, `aggregate_declarations`, DND-5476,
-`effects_match_bucket`, DND-5447, `struct_owned_by_module_flow`, DND-5454, and
-`analyses_complete`, DND-5715, and `interface`, DND-5443). A new rule type adds its entry there too (compilation
+`aggregate_write_sources`, DND-5459, `effects_match_bucket`, DND-5447,
+`struct_owned_by_module_flow`, DND-5454, `analyses_complete`, DND-5715, and
+`interface`, DND-5443). A new rule type adds its entry there too (compilation
 fails without it) and to the README table's Engine column (a test compares
 them). Credo never reports a `:graph` rule as unchecked
 (`RuleCoverage.unchecked/3`).
@@ -168,7 +169,14 @@ the shared canary's counts do not move). A rule's fail-closed violation
 (`kind: :fail_closed`, here "checks nothing") is an issue of the run: the
 runner enforces it under `enforcement: report` and never holds it in a
 baseline. A schema's table is read from its
-`__schema__(:source)` clause in Core, never by calling it.
+`__schema__(:source)` clause in Core, never by calling it. A repo with no
+persistence writes `aggregates: declare: none` with a required `reason:`
+(DND-5659): the index keeps it in `none`, `Anchor.Domain.Aggregates.Persistence`
+finds every module that persists, each a `:persists_under_none` issue at
+`{:module, ...}`, and the rule makes no checks-nothing violation; Model builds no
+write analysis. An explicit `declare: []` is refused. Anchor's own
+`.anchor.yml` runs the rule that way, enforced, no baseline; the canary is
+`test/fixtures/graph_canary/aggregates_none/`.
 
 The optional top-level `architecture:` section (DND-5437) is parsed by
 `Anchor.Domain.Architecture.parse/1` into `%Anchor.Config{architecture: ...}`
@@ -178,6 +186,28 @@ a table in `test/anchor/domain/architecture_checks_nothing_test.exs` (a test
 fails until it does). `Anchor.Domain.Classification` classifies a module's facts
 into exactly one bucket, with no precedence between buckets; the graph runner
 (below) reads the section at run time.
+
+## Writes and transactions (DND-5459)
+
+When a rule needs it (`needs: [:aggregate_analysis]`), the runner computes
+`Model.aggregate_analysis` (`Anchor.Domain.Aggregates.Analysis`): the database
+writes it recognises, what each writes, the write set of each transaction it
+recognises over its call closure, and the writes with no transaction read around
+them, all read from Core. A form it does not recognise is not in the result, so
+an absent write is not evidence of no write (README, *What it does not read*).
+`Aggregates.FunctionWalk` is the one walk over a function's Core (node ids,
+`let`/`case` bindings, transaction-body tags); `WriteSites` finds the repos,
+writes, transactions and calls; `WriteSource` traces a write's source (rules
+1-9 in its moduledoc; a new Core shape goes there with a row in
+`write_source_test.exs`); `Scopes` and `NonTransactional` summarise per SCC;
+`Inference` proposes aggregates and renders the `aggregates:` YAML. Nothing is
+loaded or called. An unresolved write or a dynamic call is a gap, counted in
+the summary (`; writes: ...; transactions: ...`), never dropped; no repo is a
+fail-closed issue of the `aggregate_write_sources` rule, and a rule type in
+`RuleSchema.needs_aggregates?/1` with no `aggregates:` section is refused at
+load. Ecto is a test-only dependency: fixtures that pin real macro output
+(`use Ecto.Schema`, `from/2`, `Ecto.Multi`) compile against it. The canary has
+its own root, `test/fixtures/graph_canary/aggregate_write_sources/`.
 
 ## The causal graph (DND-5438)
 

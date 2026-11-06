@@ -214,6 +214,14 @@ defmodule Anchor.Domain.EffectPrimitives do
   end
 
   @doc """
+  Whether a call of `mfa` is a `Repo` write: a write function on a module
+  whose last name segment ends in `Repo` (DND-5659 reads it to find the
+  modules that persist).
+  """
+  @spec repo_write?(mfa()) :: boolean()
+  def repo_write?({module, function, _arity}), do: repo_write?(module, function)
+
+  @doc """
   The default effect primitives of effect inference (DND-5447), as
   `{module_name, function | :*, arity | :*}` rows, whole modules first.
   """

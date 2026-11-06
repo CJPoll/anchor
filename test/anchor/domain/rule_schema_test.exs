@@ -13,6 +13,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
   # DND-5441 (engine common keys, enforcement, baseline, validate_architecture/3):
   #   ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
   # DND-5476 (aggregate_declarations rows): ../../sabotage_records/aggregates-20261103-dnd_5476_aggregate_decls.md
+  # DND-5459 (aggregate_write_sources rows): ../../sabotage_records/aggregates-20261103-dnd_5459_write_sets.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config
@@ -54,6 +55,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
   # key of its own, the typo is of the `paths` selector.
   @typos %{
     aggregate_declarations: "min_module",
+    aggregate_write_sources: "min_module",
     alphabetized_functions: "mdoe",
     analyses_complete: "min_function",
     case_on_bare_arg: "pahts",

@@ -6,7 +6,7 @@ defmodule Anchor.Domain.GraphRules do
   `all/0` lists every module implementing `Anchor.Domain.GraphRule`. The rule
   modules ship with their rule tickets, not with the runner (DND-5440): each
   (`layering`, DND-5442; `context_acyclic`, DND-5445; `aggregate_declarations`,
-  DND-5476; `interface`, DND-5443; struct flow,
+  DND-5476; `aggregate_write_sources`, DND-5459; `interface`, DND-5443; struct flow,
   ...) adds its module here and its type to `Anchor.Domain.RuleSchema` with
   engine `:graph`. A test
   holds the two sets equal, so a graph type with no module (scheduled but
@@ -39,6 +39,7 @@ defmodule Anchor.Domain.GraphRules do
 
   alias Anchor.Domain.GlobPattern
   alias Anchor.Domain.GraphRules.AggregateDeclarations
+  alias Anchor.Domain.GraphRules.AggregateWriteSources
   alias Anchor.Domain.GraphRules.AnalysesComplete
   alias Anchor.Domain.GraphRules.ContextAcyclic
   alias Anchor.Domain.GraphRules.EffectsMatchBucket
@@ -50,7 +51,7 @@ defmodule Anchor.Domain.GraphRules do
   @default_min_modules 1
 
   # What the runner computes on demand (`Anchor.Managers.Graph`).
-  @provided_needs [:cfa, :effects, :demand]
+  @provided_needs [:aggregate_analysis, :cfa, :effects, :demand]
 
   # Every module implementing `Anchor.Domain.GraphRule`. The rule tickets add
   # theirs here (see the moduledoc).
@@ -58,6 +59,7 @@ defmodule Anchor.Domain.GraphRules do
     Layering,
     ContextAcyclic,
     AggregateDeclarations,
+    AggregateWriteSources,
     EffectsMatchBucket,
     Interface,
     StructOwnedByModuleFlow,
@@ -81,7 +83,7 @@ defmodule Anchor.Domain.GraphRules do
   without duplicates. Raises `ArgumentError` when it names one
   the runner does not compute (#{inspect(@provided_needs)}) or is not a list.
   """
-  @spec needs(module()) :: [:cfa | :effects | :demand]
+  @spec needs(module()) :: [:aggregate_analysis | :cfa | :effects | :demand]
   def needs(module) do
     module
     |> declared_needs()

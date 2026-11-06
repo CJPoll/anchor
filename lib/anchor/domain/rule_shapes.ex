@@ -23,6 +23,7 @@ defmodule Anchor.Domain.RuleShapes do
 
   @modules %{
     aggregate_declarations: GraphRules.AggregateDeclarations,
+    aggregate_write_sources: GraphRules.AggregateWriteSources,
     alphabetized_functions: Checks.AlphabetizedFunctions,
     analyses_complete: GraphRules.AnalysesComplete,
     case_on_bare_arg: Checks.CaseOnBareArg,

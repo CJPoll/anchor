@@ -3,6 +3,7 @@ defmodule Anchor.Domain.GraphReportAggregatesTest do
   # and JSON. Pure Domain, from hand-built counts.
   #
   # Sabotage record: ../../sabotage_records/aggregates-20261103-dnd_5476_aggregate_decls.md
+  # DND-5459 (the writes counts): ../../sabotage_records/aggregates-20261103-dnd_5459_write_sets.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.GraphReport
@@ -36,5 +37,42 @@ defmodule Anchor.Domain.GraphReportAggregatesTest do
 
     refute GraphReport.summary(report) =~ "aggregates"
     assert %{"aggregates" => nil} = JSON.decode!(GraphReport.render(report, :json))
+  end
+
+  test "the write analysis's counts are in the summary and the JSON" do
+    writes = %{
+      writes: 7,
+      resolved: 5,
+      unresolved: 2,
+      scopes: 3,
+      no_gap_noticed: 2,
+      incomplete: 1,
+      outside_gaps: 4
+    }
+
+    report = GraphReport.new([], [], Map.put(@counts, :writes, writes))
+
+    assert GraphReport.summary(report) ==
+             "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 " <>
+               "baselined); writes: 7 read, 5 resolved, 2 unresolved; transactions: 3 read, 2 " <>
+               "no gap noticed, 1 incomplete; 4 gaps with no transaction read around them; " <>
+               "forms not listed in the README are not read"
+
+    assert JSON.decode!(GraphReport.render(report, :json))["writes"] == %{
+             "writes" => 7,
+             "resolved" => 5,
+             "unresolved" => 2,
+             "outside_gaps" => 4,
+             "scopes" => 3,
+             "no_gap_noticed" => 2,
+             "incomplete" => 1
+           }
+  end
+
+  test "positive control: no write analysis, the summary says nothing and the JSON is null" do
+    report = GraphReport.new([], [], @counts)
+
+    refute GraphReport.summary(report) =~ "writes"
+    assert %{"writes" => nil} = JSON.decode!(GraphReport.render(report, :json))
   end
 end

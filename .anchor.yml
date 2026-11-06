@@ -116,9 +116,16 @@ rules:
     required_modules:
       - Anchor.Check.Base
 
-  # (No aggregate_declarations rule, DND-5476: Anchor has no database and
-  # declares no aggregate, so the rule could only say it checks nothing, a
-  # fail-closed issue that fails the run in any enforcement mode.)
+  # --- Rule: aggregate declarations (DND-5476, DND-5659) ---
+  #
+  # Anchor has no database, and says so on purpose: `aggregates: declare:
+  # none` below. Under it the rule is not vacuous: every module of lib/ that
+  # persists (an Ecto schema, an Ecto.Repo, an @anchor_aggregate, a call of a
+  # Repo write, Ecto.Repo, Ecto.Multi or an Ecto adapter) fails the run.
+  # Enforced, no baseline.
+  - type: aggregate_declarations
+    id: aggregate_declarations
+    paths: ["lib/**/*.ex"]
 
   # --- Rule: the whole-program analyses finish over Anchor itself (DND-5715) ---
   #
@@ -214,6 +221,15 @@ rules:
     id: interface
     paths: ["lib/**/*.ex"]
     baseline: .anchor/baselines/interface.txt
+
+# --- Aggregates (DND-5659) ---
+#
+# Anchor persists nothing: it reads beams, source and YAML, and writes only
+# reports and artifacts to files. The aggregate_declarations rule above
+# fails any module of lib/ that persists.
+aggregates:
+  declare: none
+  reason: "Anchor has no database: it reads beams, source and YAML and writes files"
 
 # --- Generated sabotage (DND-5473, DND-5484) ---
 #

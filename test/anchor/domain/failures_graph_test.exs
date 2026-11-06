@@ -15,6 +15,7 @@ defmodule Anchor.Domain.FailuresGraphTest do
   # DND-5628 (the symlink rows): ../../sabotage_records/baseline_symlink-20261103-dnd_5441_graph_rules_a.md
   # Sabotage record (DND-5647, DND-5648, DND-5655): ../../sabotage_records/failures-20261103-dnd_5648_graph_followups.md
   # DND-5476 (aggregate_declarations rows): ../../sabotage_records/aggregates-20261103-dnd_5476_aggregate_decls.md
+  # DND-5459 (aggregate_no_repo, aggregate_writes_none rows): ../../sabotage_records/aggregates-20261103-dnd_5459_write_sets.md
   # DND-5715 (analyses_*, rule_demand_crashed): ../../sabotage_records/analyses_complete-20261106-dnd_5715_bucket_split.md
   use ExUnit.Case, async: true
 
@@ -116,6 +117,13 @@ defmodule Anchor.Domain.FailuresGraphTest do
         raise "effects blew up"
       rescue
         e -> Failures.rule_effects_crashed(rule, :error, e, __STACKTRACE__, nil)
+      end
+
+    writes_crashed =
+      try do
+        raise "writes blew up"
+      rescue
+        e -> Failures.rule_writes_crashed(rule, :error, e, __STACKTRACE__, nil)
       end
 
     [
@@ -295,6 +303,18 @@ defmodule Anchor.Domain.FailuresGraphTest do
          ~s|rule 2 (id: "web", layering) checks nothing: no aggregate is declared in .anchor.yml|,
          "Fix: declare one or remove the rule: <shape>"
        ]},
+      {"aggregate_no_repo", Failures.aggregate_no_repo(rule, "proj/.anchor.yml"),
+       "proj/.anchor.yml",
+       [
+         ~s|rule 2 (id: "web", layering): no Ecto repo found: no module declares @behaviour Ecto.Repo|,
+         "Fix: list the repo under aggregates.repos."
+       ]},
+      {"aggregate_writes_none", Failures.aggregate_writes_none(rule, "bucket domain", nil),
+       ".anchor.yml",
+       [
+         ~s|rule 2 (id: "web", layering) checks nothing: no write found in bucket domain.|,
+         "Fix: correct the selector or aggregates.repos."
+       ]},
       {"rule_crashed", crashed, "proj/.anchor.yml",
        [
          ~s|rule 2 (id: "web", layering) could not run: RuntimeError: rule blew up|,
@@ -351,6 +371,12 @@ defmodule Anchor.Domain.FailuresGraphTest do
        [
          ~s|rule 2 (id: "web", layering) could not run: the effect inference it needs | <>
            "(Anchor.Domain.Effects) crashed: RuntimeError: effects blew up",
+         "so it checked nothing. Fix: this is an Anchor bug; file it with this line."
+       ]},
+      {"rule_writes_crashed", writes_crashed, ".anchor.yml",
+       [
+         ~s|rule 2 (id: "web", layering) could not run: the write analysis it needs | <>
+           "(Anchor.Domain.Aggregates.Analysis) crashed: RuntimeError: writes blew up",
          "so it checked nothing. Fix: this is an Anchor bug; file it with this line."
        ]},
       {"effects_bucket_unanalysed",

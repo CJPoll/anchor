@@ -1,0 +1,326 @@
+defmodule Anchor.Domain.Aggregates.WriteSourceTest do
+  # DND-5459: what each write writes, traced through Core by rules 1-9.
+  # Fixtures are compiled in the test and read through the real BeamReader and
+  # Graph.Builder (`Anchor.Test.WriteFixtures`); nothing is loaded.
+  #
+  # Sabotage record: ../../../sabotage_records/aggregates-20261103-dnd_5459_write_sets.md
+  # and ../../../sabotage_records/aggregates-20261106-dnd_5459_write_sets.md
+  use ExUnit.Case, async: true
+
+  import Anchor.Test.WriteFixtures
+
+  alias Anchor.Domain.Aggregates.Config
+  alias Anchor.Domain.Aggregates.WriteSites
+  alias Anchor.Domain.Aggregates.WriteSource
+
+  @ns AnchorFixtures.WriteSourceTest
+  @s Module.concat(@ns, S)
+  @t Module.concat(@ns, T)
+  @repo Module.concat(@ns, Repo)
+  @x Module.concat(@ns, X)
+  @c Module.concat(@ns, C)
+  @w Module.concat(@ns, W)
+
+  @source schema(@s, "s") <>
+            schema(@t, "t") <>
+            repo(@repo) <>
+            """
+            defmodule #{inspect(@w)} do
+              def __schema__(:source), do: "w"
+              def make_t, do: %#{inspect(@t)}{}
+              def opaque, do: Map.new()
+            end
+
+            defmodule #{inspect(@x)} do
+              alias #{inspect(@repo)}
+              alias #{inspect(@s)}
+              alias #{inspect(@t)}
+
+              def r1, do: Repo.insert(%S{id: 1})
+              def r2(rows), do: Repo.insert_all(S, rows)
+              def r3(rows), do: Repo.insert_all("t", rows)
+              def r4(rows), do: Repo.insert_all({"t", S}, rows)
+
+              def r5 do
+                cs = Ecto.Changeset.change(%S{}, id: 1)
+                Repo.insert(cs)
+              end
+
+              def r6(record, attrs), do: Repo.update(S.changeset(record, attrs))
+
+              def r7(flag) do
+                x = if flag, do: %S{}, else: %T{}
+                Repo.insert(x)
+              end
+
+              def r8(flag) do
+                x = if flag, do: %S{}, else: opaque()
+                Repo.insert(x)
+              end
+
+              @spec r9(S.t()) :: term()
+              def r9(r), do: Repo.update(Ecto.Changeset.change(r))
+
+              def r10(r), do: Repo.insert(r)
+              def r11(r), do: Repo.insert(r)
+
+              def r12a(r, 0), do: Repo.insert(r)
+              def r12a(r, n), do: r12b(r, n - 1)
+              def r12b(r, n), do: r12a(r, n)
+
+              def r13, do: Repo.insert(build())
+              def r14, do: Repo.insert(Map.new())
+              def r15, do: Repo.insert(#{inspect(@c)}.make())
+              def r40(x), do: Repo.insert(x)
+              def r40_static, do: r40(%S{})
+              def r40_computed(mod), do: mod.r40(%T{})
+              def r41(x), do: Repo.insert(x)
+              def r41_static, do: r41(%S{})
+              def r41_computed(mod), do: apply(mod, :r41, [%T{}])
+              def r42(x), do: Repo.insert(x)
+              def r42_static, do: r42(%S{})
+              def r42_computed(mod, args), do: apply(mod, :r42, args)
+              def r43(x), do: Repo.insert(x)
+              def r43_static, do: r43(%S{})
+              def r43_computed(mod), do: &mod.r43/1
+              def r44(x), do: Repo.insert(x)
+              def r44_static, do: r44(%T{})
+              def r44_other_arity(mod), do: mod.r44(%S{}, 1)
+              def r16(r), do: Repo.insert(r)
+              def r16_use(xs), do: Enum.each(xs, &r16/1)
+
+              def r23, do: Repo.insert(#{inspect(@w)}.make_t())
+              def r24, do: Repo.insert(#{inspect(@w)}.opaque())
+
+              def r18(x) do
+                source =
+                  try do
+                    build_for(x)
+                  rescue
+                    _ -> %T{}
+                  end
+
+                Repo.insert(source)
+              end
+
+              def r19(x) do
+                source =
+                  try do
+                    build_for(x)
+                  rescue
+                    _ -> opaque()
+                  end
+
+                Repo.insert(source)
+              end
+
+              def r20(x) do
+                source =
+                  try do
+                    build_for(x)
+                  after
+                    :ok
+                  end
+
+                Repo.insert(source)
+              end
+
+              def r20b(x) do
+                source =
+                  try do
+                    build_for(x)
+                  rescue
+                    e in ArgumentError -> reraise e, __STACKTRACE__
+                  end
+
+                Repo.insert(source)
+              end
+
+              defp build_for(_x), do: %S{}
+
+              @spec r21(S.t()) :: term()
+              @spec r21(T.t()) :: term()
+              def r21(r), do: Repo.insert(r)
+
+              @spec r22(S.t()) :: term()
+              @spec r22(binary()) :: term()
+              def r22(r), do: Repo.insert(r)
+
+              def r17(_repo, _changes, x), do: Repo.insert(x)
+              def r17_run, do: Ecto.Multi.run(Ecto.Multi.new(), :a, __MODULE__, :r17, [%S{}])
+
+              defp opaque, do: Map.new()
+              defp build, do: %S{}
+            end
+
+            defmodule #{inspect(@c)} do
+              def c1, do: #{inspect(@x)}.r10(%#{inspect(@s)}{})
+              def c2, do: #{inspect(@x)}.r10(%#{inspect(@t)}{})
+              def make, do: %#{inspect(@t)}{}
+              def c3, do: #{inspect(@x)}.r16(%#{inspect(@s)}{})
+              def c5, do: #{inspect(@x)}.r22(%#{inspect(@t)}{})
+              def c4, do: #{inspect(@x)}.r17(nil, %{}, %#{inspect(@s)}{})
+            end
+            """
+
+  setup_all do
+    graph = graph!(@source)
+    {:ok, sites} = WriteSites.find(graph, %Config{repos: [@repo]})
+    %{sites: sites, graph: graph}
+  end
+
+  defp site(sites, name) do
+    case Enum.filter(sites, fn site -> elem(site.mfa, 1) == name end) do
+      [site] -> site
+      other -> flunk("expected one write in #{name}, got #{inspect(other)}")
+    end
+  end
+
+  describe "resolve/3 (through WriteSites.find/2)" do
+    test "R1: a struct literal is its schema", %{sites: sites} do
+      assert %{sources: [{:schema, @s}], unresolved: nil} = site(sites, :r1)
+    end
+
+    test "R2: a schema module is its schema", %{sites: sites} do
+      assert %{sources: [{:schema, @s}], unresolved: nil} = site(sites, :r2)
+    end
+
+    test "R3: a literal table is a table", %{sites: sites} do
+      assert %{sources: [{:table, "t"}], unresolved: nil} = site(sites, :r3)
+    end
+
+    test "R4: {table, schema} is the table", %{sites: sites} do
+      assert %{sources: [{:table, "t"}], unresolved: nil} = site(sites, :r4)
+    end
+
+    test "R5: a changeset built from a struct is the struct's schema", %{sites: sites} do
+      assert %{sources: [{:schema, @s}], unresolved: nil} = site(sites, :r5)
+    end
+
+    test "R6: a call on a schema module is the schema (rule 4)", %{sites: sites} do
+      assert %{sources: [{:schema, @s}], unresolved: nil} = site(sites, :r6)
+    end
+
+    test "R7: branches union", %{sites: sites} do
+      assert %{sources: [{:schema, @s}, {:schema, @t}], unresolved: nil} = site(sites, :r7)
+    end
+
+    test "R8: one unresolvable branch makes the value unresolved", %{sites: sites} do
+      assert %{sources: [], unresolved: seen} = site(sites, :r8)
+      assert seen =~ "Map.new/0"
+    end
+
+    test "R9: a parameter whose @spec is S.t() is S (rule 7a)", %{sites: sites} do
+      assert %{sources: [{:schema, @s}], unresolved: nil} = site(sites, :r9)
+    end
+
+    test "R10: a parameter with no spec is the union of its callers' arguments (rule 7b)", %{
+      sites: sites
+    } do
+      assert %{sources: [{:schema, @s}, {:schema, @t}], unresolved: nil} = site(sites, :r10)
+    end
+
+    test "R11: a parameter with no spec and no caller is unresolved, saying so", %{sites: sites} do
+      assert %{sources: [], unresolved: seen} = site(sites, :r11)
+      assert seen == "parameter 1 of #{inspect(@x)}.r11/1 has no @spec and no project caller"
+    end
+
+    test "R12: a parameter passed round a recursion is a parameter cycle, and terminates", %{
+      sites: sites
+    } do
+      assert %{sources: [], unresolved: "parameter cycle"} = site(sites, :r12a)
+    end
+
+    test "R13: a call into a project function is what it returns (rule 8)", %{sites: sites} do
+      assert %{sources: [{:schema, @s}], unresolved: nil} = site(sites, :r13)
+    end
+
+    test "R13: a remote call into a project function is what it returns (rule 8)", %{
+      sites: sites
+    } do
+      assert %{sources: [{:schema, @t}], unresolved: nil} = site(sites, :r15)
+    end
+
+    test "a parameter of a function a computed call may reach has callers Anchor cannot see", %{
+      sites: sites
+    } do
+      for name <- [:r40, :r41, :r42, :r43] do
+        assert %{sources: [], unresolved: seen} = site(sites, name)
+        assert seen =~ "callers are not known"
+      end
+
+      assert %{sources: [{:schema, @t}], unresolved: nil} = site(sites, :r44)
+    end
+
+    test "R10: a parameter of a captured function has callers Anchor cannot see", %{
+      sites: sites
+    } do
+      assert %{sources: [], unresolved: seen} = site(sites, :r16)
+
+      assert seen ==
+               "parameter 1 of #{inspect(@x)}.r16/1 is passed as a function value or called on a " <>
+                 "computed module, so its callers are not known"
+    end
+
+    test "R10: a Multi.run callback given by module and name has callers Anchor cannot see", %{
+      sites: sites
+    } do
+      assert %{sources: [], unresolved: seen} = site(sites, :r17)
+
+      assert seen ==
+               "parameter 3 of #{inspect(@x)}.r17/3 is passed as a function value or called on a " <>
+                 "computed module, so its callers are not known"
+    end
+
+    test "a try's value is its body's and its handler's, like the clauses of a case", %{
+      sites: sites
+    } do
+      assert %{sources: [{:schema, @s}, {:schema, @t}], unresolved: nil} = site(sites, :r18)
+    end
+
+    test "a try handler that returns what Anchor cannot trace makes the write unresolved", %{
+      sites: sites
+    } do
+      assert %{sources: [], unresolved: "the result of Map.new/0"} = site(sites, :r19)
+    end
+
+    test "a handler that only raises adds nothing: after, and reraise", %{sites: sites} do
+      assert %{sources: [{:schema, @s}], unresolved: nil} = site(sites, :r20)
+      assert %{sources: [{:schema, @s}], unresolved: nil} = site(sites, :r20b)
+    end
+
+    test "every @spec clause counts: two schemas are both the parameter's", %{sites: sites} do
+      assert %{sources: [{:schema, @s}, {:schema, @t}], unresolved: nil} = site(sites, :r21)
+    end
+
+    test "a @spec clause naming no schema falls through to the callers", %{sites: sites} do
+      assert %{sources: [{:schema, @t}], unresolved: nil} = site(sites, :r22)
+    end
+
+    test "a schema's function that returns another schema is that schema, not its own", %{
+      sites: sites
+    } do
+      assert %{sources: [{:schema, @t}], unresolved: nil} = site(sites, :r23)
+    end
+
+    test "a schema's function Anchor cannot trace is the schema (rule 4)", %{sites: sites} do
+      assert %{sources: [{:schema, @w}], unresolved: nil} = site(sites, :r24)
+    end
+
+    test "R14: anything else is unresolved, naming what was seen and no line", %{sites: sites} do
+      assert %{sources: [], unresolved: seen} = site(sites, :r14)
+      assert seen == "the result of Map.new/0"
+      refute seen =~ "line"
+    end
+  end
+
+  describe "key/2" do
+    test "a table exactly one schema derives is that schema; two keep the table", %{graph: graph} do
+      tables = WriteSource.tables(graph)
+      assert WriteSource.key({:table, "t"}, tables) == {:schema, @t}
+      assert WriteSource.key({:table, "nope"}, tables) == {:table, "nope"}
+      assert WriteSource.key({:table, "s"}, Map.put(tables, "s", [@s, @t])) == {:table, "s"}
+      assert WriteSource.key({:schema, @s}, tables) == {:schema, @s}
+    end
+  end
+end

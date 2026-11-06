@@ -198,6 +198,9 @@ defmodule Anchor.Domain.RuleSchema do
     # DND-5476: aggregate_declarations reads only the graph common keys (the
     # declarations are the `aggregates:` section's and the modules').
     aggregate_declarations: [],
+    # DND-5459: aggregate_write_sources reads only the graph common keys (its
+    # repos, write and transaction functions are the `aggregates:` section's).
+    aggregate_write_sources: [],
     alphabetized_functions: ~w(mode),
     # DND-5715: analyses_complete's floors on what the analyses judged (its
     # bounds are the analyses' own).
@@ -238,6 +241,7 @@ defmodule Anchor.Domain.RuleSchema do
   # the type has no relation to require (see the moduledoc for why, per type).
   @relations_by_type %{
     aggregate_declarations: [],
+    aggregate_write_sources: [],
     alphabetized_functions: [],
     analyses_complete: [],
     case_on_bare_arg: [],
@@ -266,6 +270,7 @@ defmodule Anchor.Domain.RuleSchema do
   # authoritative engine per type; compilation fails when a type has none.
   @engine_by_type %{
     aggregate_declarations: :graph,
+    aggregate_write_sources: :graph,
     alphabetized_functions: :ast,
     analyses_complete: :graph,
     case_on_bare_arg: :ast,
@@ -290,6 +295,11 @@ defmodule Anchor.Domain.RuleSchema do
   }
 
   @engines [:ast, :graph]
+
+  # DND-5459: the graph types that read the write analysis, which only an
+  # `aggregates:` section configures; a config enabling one without the section
+  # is refused at load (`Anchor.Config`). Later aggregate rules add theirs.
+  @needs_aggregates [:aggregate_write_sources]
 
   # DND-5491: the engine split. An `:ast` type here is a write-time early
   # warning of the `:graph` type it maps to, which is the authority: it runs
@@ -410,6 +420,10 @@ defmodule Anchor.Domain.RuleSchema do
   @spec known_keys(atom()) :: [String.t()]
   def known_keys(type),
     do: Enum.sort(common_keys(engine(type)) ++ Map.fetch!(@keys_by_type, type))
+
+  @doc "Whether a rule of `type` needs the `aggregates:` section (DND-5459)."
+  @spec needs_aggregates?(atom()) :: boolean()
+  def needs_aggregates?(type), do: type in @needs_aggregates
 
   @doc """
   The relation keys of `type`, sorted: a rule of the type must carry at least
