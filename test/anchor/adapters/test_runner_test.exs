@@ -223,4 +223,38 @@ defmodule Anchor.Adapters.TestRunnerTest do
       assert Outcome.reason(run) == "test run crashed: killed by signal 9 (exit 137)"
     end
   end
+
+  # DND-5485: the frames are decoded with `[:safe]`, which refuses an atom the
+  # VM does not have. The task's VM (`mix anchor.sabotage run` or `replay`)
+  # never loads ExUnit or the formatter, so `:suite_started` existed nowhere:
+  # every real run crashed on its baseline. This test VM has the atom, so the
+  # decode runs in a fresh `elixir` VM with only Anchor's ebin on the path,
+  # and the frames come in as bytes, so the script creates no atom itself.
+  test "R1: the frames decode in a VM that never loaded ExUnit or the formatter", %{tmp_dir: dir} do
+    # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5483_survivors_replay.md
+    ebin = TestRunner |> :code.which() |> to_string() |> Path.dirname()
+
+    frames =
+      [{:suite_started}, {:suite_finished, 1, 0, 0}]
+      |> Enum.map(&:erlang.term_to_binary/1)
+      |> Enum.map_join(&(<<byte_size(&1)::32>> <> &1))
+      |> Base.encode16()
+
+    script = """
+    results = #{inspect(Path.join(dir, "results.bin"))}
+    false = Code.loaded?(ExUnit.Formatter)
+    false = Code.loaded?(Anchor.Sabotage.ExUnitFormatter)
+    runner = fn _timeout, _argv, opts ->
+      File.write!(results, Base.decode16!(#{inspect(frames)}))
+      {Enum.into([], Keyword.fetch!(opts, :into)), 0}
+    end
+    {:ok, run} =
+      Anchor.Adapters.TestRunner.run(["anchor-fake"], [],
+        cd: #{inspect(dir)}, results_path: results, timeout_seconds: 5, command_runner: runner)
+    IO.puts("status=" <> Atom.to_string(run.status))
+    """
+
+    {out, code} = System.cmd("elixir", ["-pa", ebin, "-e", script], stderr_to_stdout: true)
+    assert {code, out} == {0, "status=passed\n"}
+  end
 end

@@ -42,7 +42,7 @@ never an adapter.
 | Bucket | Modules |
 |---|---|
 | Framework | `Anchor.Check.*` (Credo checks, `Anchor.Check.Base`, `Anchor.Check.Source`), `Anchor.Aggregate` (the compile-time macro, DND-5476), `Mix.Tasks.Anchor.*` (`lib/mix/tasks/`; `Mix.Tasks.Anchor.Sabotage`, `.Graph`, `.Explain`), the `Anchor` module (by name), `Anchor.Sabotage.CoverageCollector` (an OTP process, in `lib/mix/tasks/anchor/sabotage/` so `mix anchor.graph` buckets it as Framework) |
-| Managers | `Anchor.Managers.Lint`, `Anchor.Managers.AstBaseline`, `Anchor.Managers.Sabotage` (`.Runner`, `.Coverage`), `Anchor.Managers.Graph` (`.Request`), `Anchor.Managers.Explain` |
+| Managers | `Anchor.Managers.Lint`, `Anchor.Managers.AstBaseline`, `Anchor.Managers.Sabotage` (`.Runner`, `.Coverage`, `.Replay`), `Anchor.Managers.Graph` (`.Request`), `Anchor.Managers.Explain` |
 | Side Effects | ports: `Anchor.Adapters.ConfigLoader`, `ChangeSource`, `BeamSource`, `Tracing`, `InProcessTests`, `ProjectModuleSource`, `CoverageStore`, `BaselineStore`, `GitBase`, `LintKeys`, `SourceSource`, `GraphStore`, `TestExecution`, `SourceMutation`; adapters: `ConfigFile`, `CredoKeys`, `GitChangeSource`, `BeamReader`, `CallTracer`, `SuiteRunner`, `ProjectModules`, `CoverageFile`, `RecordFile` (port `RecordStore`), `BaselineFile`, `GitShow`, `SourceReader`, `GraphArtifact`, `TestRunner`, `SourcePatcher`, `GitStatus`, `GitWorktree` (`lib/anchor/adapters/`); `GitEnv`, the environment the git adapters run git with (DND-5581); `Anchor.Sabotage.ExUnitFormatter` (`lib/anchor/sabotage/`) |
 | Domain | everything under `lib/anchor/domain/`, including `Anchor.Domain.Sabotage.*` (`Mutator`, `Operators`, `DiffHunks`, `FunctionSpans`, `Scope`, `CoverageMap`, `Record`, `RecordNaming`, `KillMap`, `ChangedTests`, `TestPath`: the one rule for a path handed to `mix test`, DND-5640) and `Anchor.Domain.Graph.*`, the graph rules (`GraphRules.*`), `Model`, `Classification`, `Interfaces`, `Explain`, `Subject`, `RuleShapes` |
 
@@ -485,3 +485,26 @@ named per `sabotage.records` (`RecordNaming`: anchor and crew
 (source `kill_map`, after `coverage`, before `mirror`) and what DND-5485
 replays. `RecordFile.create/3` never overwrites; a README is never written;
 nothing is staged or committed. The date is a fact the Mix task reads.
+
+## The survivors list (DND-5483)
+
+`mix anchor.sabotage run` judges `.anchor/sabotage/survivors.txt`
+(`sabotage.survivors`; `Anchor.Domain.Sabotage.Survivors`): a survivor not
+listed is NEW, a listed mutant now killed or no longer generated is STALE,
+both exit 1; the entries a branch adds against `--base` are printed for
+review. It reads the list through the graph's baseline ports
+(`BaselineStore`, `GitBase`) and compares through `Baseline.compare/2`: never
+a second comparator. It is not a graph baseline (`.anchor/baselines/`), and
+the run never writes it.
+
+## Replay (DND-5485)
+
+`mix anchor.sabotage replay` re-applies each landed record's `killed` and
+`timeout` rows (`Anchor.Domain.Sabotage.Replay`, `KillerRef`; the Manager
+`Anchor.Managers.Sabotage.Replay` calls `Runner`'s lock, journal and
+`mutant_outcome/6`, so the journal discipline is one code path). Killers run
+by name (`--only test:<name>`); a row whose killers all pass is LOST POWER
+(exit 1), one that cannot be replayed as recorded is drifted, and zero rows
+or every row drifted is exit 3. A row's file must be inside the project
+(`Replay.inside?/1`) before it is read or written. CI:
+`.github/workflows/sabotage-replay.yml` (weekly, `workflow_dispatch`).

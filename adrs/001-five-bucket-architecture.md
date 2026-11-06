@@ -368,6 +368,7 @@ Only the classification of subjects the table had not yet listed is added.
 | `Anchor.Managers.Explain` | Manager | The explain use case (DND-5446): the same inputs as `Managers.Graph`, read only; the stored graph is used only under this build's key. It writes nothing. |
 | `Anchor.Managers.AstBaseline` | Manager | The AST rules' baseline use case behind `mix anchor.baseline` (DND-5632). |
 | `Anchor.Managers.Sabotage.Runner`, `Anchor.Managers.Sabotage.Coverage` | Manager | The sabotage run and per-test coverage use cases (DND-5473, DND-5474). |
+| `Anchor.Managers.Sabotage.Replay` | Manager | `mix anchor.sabotage replay`'s orchestration: re-applies each landed record's rows through Runner's lock and journal (DND-5485) |
 | `Anchor.Adapters.SourceSource`, `Anchor.Adapters.GraphStore`, `Anchor.Adapters.Tracing`, `Anchor.Adapters.InProcessTests`, `Anchor.Adapters.ProjectModuleSource`, `Anchor.Adapters.CoverageStore`, `Anchor.Adapters.RecordStore`, `Anchor.Adapters.TestExecution`, `Anchor.Adapters.SourceMutation` | Side Effect (port) | The behaviours the graph and sabotage Managers depend on; tests double them with Hammox. |
 | `Anchor.Adapters.BehaviourSource`, `Anchor.Adapters.LintKeys` | Side Effect (port) | What the graph runner reads of an external behaviour's callbacks (DND-5447), and the Credo run's keys `mix anchor.baseline` reads (DND-5632). |
 | `Anchor.Adapters.BehaviourReader`, `Anchor.Adapters.CredoKeys` | Side Effect | Their real implementations. |

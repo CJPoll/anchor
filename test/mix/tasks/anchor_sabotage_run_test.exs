@@ -16,7 +16,11 @@ defmodule Mix.Tasks.Anchor.SabotageRunTest do
   alias Anchor.ChangeSourceMock
   alias Anchor.ConfigLoaderMock
   alias Anchor.Domain.Sabotage.Config, as: SabotageConfig
+  alias Anchor.Domain.Sabotage.Journal
+  alias Anchor.Domain.Sabotage.Mutator
+  alias Anchor.Domain.Sabotage.TestRun
   alias Anchor.GitWorktreeMock
+  alias Anchor.RecordStoreMock
   alias Anchor.SourceMutationMock
   alias Anchor.TestExecutionMock
   alias Mix.Tasks.Anchor.Sabotage
@@ -69,6 +73,147 @@ defmodule Mix.Tasks.Anchor.SabotageRunTest do
       capture_io(fn -> assert catch_exit(Sabotage.run(argv, @opts)) == {:shutdown, 2} end)
 
     assert output =~ ".anchor/sabotage/in-flight.json cannot be read"
+  end
+
+  test "DND-5485: replay_facts/1 maps --max and --records; a glob outside the project is usage" do
+    # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5483_survivors_replay.md
+    assert {:ok, %{max: :all, records: ["a/*/records", "b"]}} =
+             Sabotage.replay_facts(["--max", "all", "--records", "a/*/records", "--records", "b"])
+
+    assert {:ok, %{max: nil, records: [], build_path: build_path}} = Sabotage.replay_facts([])
+    assert build_path == Mix.Project.build_path()
+
+    for argv <- [
+          ["--max", "0"],
+          ["--records", "../x"],
+          ["--records", "/abs"],
+          ["extra"],
+          ["--bogus"]
+        ] do
+      assert Sabotage.replay_facts(argv) == :usage, inspect(argv)
+    end
+  end
+
+  test "DND-5485: replay with a bad flag is a usage error, exit 2, naming the replay form" do
+    stderr =
+      capture_io(:stderr, fn ->
+        assert catch_exit(Sabotage.run(["replay", "--records", "../x"], @opts)) == {:shutdown, 2}
+      end)
+
+    assert stderr =~ "mix anchor.sabotage replay [--max N|all] [--records DIR_GLOB]..."
+  end
+
+  describe "DND-5485: replay's rendering and exit code" do
+    # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5483_survivors_replay.md
+    @replay_source "defmodule Calc do\n  def add(a, b) do\n    a + b\n  end\nend\n"
+    @replay_opts [
+      config_loader: ConfigLoaderMock,
+      change_source: ChangeSourceMock,
+      source_mutation: SourceMutationMock,
+      git_worktree: GitWorktreeMock,
+      test_execution: TestExecutionMock,
+      record_store: RecordStoreMock
+    ]
+
+    defp expect_replay_records(paths_and_text) do
+      expect(SourceMutationMock, :read_journal, fn _root -> :none end)
+
+      expect(ConfigLoaderMock, :load_in, fn _root ->
+        {:ok, %Anchor.Config{rules: [], sabotage: %SabotageConfig{}}}
+      end)
+
+      expect(GitWorktreeMock, :ignored?, fn _root, _path -> {:ok, true} end)
+      expect(RecordStoreMock, :list, fn _root, _glob -> Map.keys(paths_and_text) end)
+
+      expect(RecordStoreMock, :read, map_size(paths_and_text), fn _root, path ->
+        {:ok, Map.fetch!(paths_and_text, path)}
+      end)
+    end
+
+    # One killed row; the killer passes at the baseline, then ends as given.
+    defp expect_one_row(under_mutant) do
+      {:ok, %{mutants: [mutant | _rest]}} =
+        Mutator.generate(@replay_source, "lib/calc.ex", {Calc, :add, 2})
+
+      row =
+        Enum.join(
+          [
+            mutant.id,
+            "lib/calc.ex",
+            "Calc.add/2",
+            to_string(mutant.operator),
+            "killed",
+            "test/calc_test.exs:4 test adds"
+          ],
+          "\t"
+        )
+
+      expect_replay_records(%{
+        "test/sabotage_records/a.md" =>
+          "```anchor-kills\n# id\tfile\tmfa\toperator\tstatus\tkillers\n#{row}\n```\n"
+      })
+
+      expect(SourceMutationMock, :symlinked, fn _root, _paths -> [] end)
+      expect(ChangeSourceMock, :read, fn _root, "lib/calc.ex" -> {:ok, @replay_source} end)
+      expect(SourceMutationMock, :existing, fn paths -> paths end)
+      expect(GitWorktreeMock, :dirty_paths, fn _root, _paths -> {:ok, []} end)
+      expect(SourceMutationMock, :write_journal, fn _root, _entry -> :ok end)
+      expect(SourceMutationMock, :write_file, 2, fn _path, _bytes -> :ok end)
+      expect(SourceMutationMock, :touch_ahead, 2, fn _path -> :ok end)
+
+      expect(SourceMutationMock, :sha256_file, fn _path ->
+        {:ok, Journal.sha256(@replay_source)}
+      end)
+
+      expect(SourceMutationMock, :delete_journal, fn _root -> :ok end)
+
+      TestExecutionMock
+      |> expect(:run, fn _argv, _args, _opts -> {:ok, replay_run(:passed, [])} end)
+      |> expect(:run, fn _argv, _args, _opts -> {:ok, under_mutant} end)
+    end
+
+    defp replay_run(status, failures) do
+      %TestRun{status: status, total: 1, failures: failures, exit_code: 0, output_head: ""}
+    end
+
+    test "every row still killed: exit 0, and the row is printed" do
+      failure = %{file: "test/calc_test.exs", line: 4, name: "test adds", text: "failed"}
+      expect_one_row(replay_run(:failed, [failure]))
+
+      out = capture_io(fn -> assert Sabotage.run(["replay"], @replay_opts) == :ok end)
+
+      assert out =~ "still killed "
+      assert out =~ "1 replayed, 1 still killed, 0 LOST POWER"
+    end
+
+    test "a row lost power: exit 1, and the row is printed" do
+      expect_one_row(replay_run(:passed, []))
+
+      out =
+        capture_io(fn ->
+          assert catch_exit(Sabotage.run(["replay"], @replay_opts)) == {:shutdown, 1}
+        end)
+
+      assert out =~ "LOST POWER "
+      assert out =~ "no longer failed by: test/calc_test.exs:4 test adds"
+    end
+
+    test "no rows: exit 3, COULD NOT MEASURE is printed" do
+      expect_replay_records(%{"test/sabotage_records/a.md" => "# a hand record\n"})
+
+      out =
+        capture_io(fn ->
+          assert catch_exit(Sabotage.run(["replay"], @replay_opts)) == {:shutdown, 3}
+        end)
+
+      assert out =~ "COULD NOT MEASURE: anchor.sabotage replay found no killed or timeout row"
+    end
+  end
+
+  test "DND-5483: run_facts/1 maps --print-survivor-lines; off by default" do
+    # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5483_survivors_replay.md
+    assert {:ok, %{print_survivor_lines: true}} = Sabotage.run_facts(["--print-survivor-lines"])
+    assert {:ok, %{print_survivor_lines: false}} = Sabotage.run_facts([])
   end
 
   test "DND-5484: run_facts/1 maps the record flags; without --no-record a record is written" do
@@ -134,13 +279,23 @@ defmodule Mix.Tasks.Anchor.SabotageRunTest do
     expect(GitWorktreeMock, :dirty_paths, fn ^root, ["lib/calc.ex"] -> {:ok, []} end)
     expect(SourceMutationMock, :existing, fn [] -> [] end)
     expect(SourceMutationMock, :save_run, save_run)
+    # DND-5483: the survivors list, empty here and on the base.
+    expect(Anchor.BaselineStoreMock, :read, fn ^root, ".anchor/sabotage/survivors.txt" ->
+      {:ok, []}
+    end)
+
+    expect(Anchor.GitBaseMock, :show, fn ^root, "origin/main", ".anchor/sabotage/survivors.txt" ->
+      {:ok, []}
+    end)
 
     opts = [
       config_loader: ConfigLoaderMock,
       change_source: ChangeSourceMock,
       source_mutation: SourceMutationMock,
       git_worktree: GitWorktreeMock,
-      test_execution: TestExecutionMock
+      test_execution: TestExecutionMock,
+      baseline_store: Anchor.BaselineStoreMock,
+      git_base: Anchor.GitBaseMock
     ]
 
     capture_io(fn -> assert Sabotage.run(["run"], opts) == :ok end)

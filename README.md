@@ -1469,6 +1469,7 @@ mutable site`).
 ```bash
 mix anchor.sabotage run [--base REF] [--max N|all] [--only ID]... [--dry-run] [--coverage PATH]
                         [--no-record] [--domain D] [--ticket KEY] [--slot S]
+                        [--print-survivor-lines]
 mix anchor.sabotage restore
 ```
 
@@ -1501,6 +1502,7 @@ sabotage:
     domain_from: module              # or context_dir: the directory under lib/<app>/
     domain_strip_prefixes: []        # e.g. ["MyApp.Domain.", "MyApp."]; the longest match is dropped
     adr: "the repo's sabotage-record ADR"  # named next to each test still lacking a red
+  survivors: .anchor/sabotage/survivors.txt  # the survivors list (DND-5483); named here, it must exist
 ```
 
 ```gitignore
@@ -1614,10 +1616,97 @@ function with no literal clause is listed as an error, never as killed.
 | every measured mutant killed or timed out (an `invalid` one beside them changes nothing) | 0 |
 | zero changed functions from a good diff read (an empty scope: `sabotage: 0 changed functions in <base>..HEAD`) | 0 |
 | changed functions that yielded no mutant at all (every edit skipped, no literal clause, a `defimpl` target not a literal, no mutable site): one `sabotage: no mutant from M.f/a (file): <reason>` line per function, then `sabotage: no mutants generated from N changed functions: nothing was measured` (DND-5617) | 0 |
-| a mutant survived, crashed or had no test, beside a measured one (a survivors list that gives one a reason will exempt it: DND-5483) | 1 |
+| a mutant survived or had no test and is not on the survivors list (NEW), beside a measured one; a mutant crashed beside a measured one; a survivors entry now killed or no longer generated (STALE); a malformed survivors entry; a survivors file named in `sabotage.survivors` that does not exist (DND-5483) | 1 |
 | mutants were run and none was measured (all `invalid`, `crashed` or without a test) | 3, `COULD NOT MEASURE` with `Fix:` |
 | a record that could not be named (above); a record that could not be written, when every measured mutant passed (after the outcomes: a survivor stays 1 and an unmeasured run 3, each with `sabotage: record not written: <why>`; DND-5641); a dirty target file; the journal not git-ignored; the run lock or a journal another live run holds; a host with no `/proc`; a leftover journal whose file changed; a restore that did not reproduce the original (the journal is kept); an unknown `--only` id; no `timeout` binary; bad flags | 2, with `Fix:` |
-| no loadable config or no `sabotage:` section; the scope could not be measured; the baseline fails; changed functions whose files cannot be read | 3, `COULD NOT MEASURE` with `Fix:` |
+| no loadable config or no `sabotage:` section; the scope could not be measured; the baseline fails; changed functions whose files cannot be read; the survivors file, or its copy at `--base`, cannot be read (DND-5483) | 3, `COULD NOT MEASURE` with `Fix:` |
+
+### Sabotage: the survivors list
+
+Some mutants no test can kill: dropping a log line nobody asserts on, or
+narrowing a clause that only exists as a defensive fallback. Each such
+survivor is listed, with its reason, in `.anchor/sabotage/survivors.txt`
+(`sabotage.survivors` names another path; DND-5483):
+
+```text
+# One entry per line; blank lines and `#` lines are ignored.
+3f9a01c2b7de lib/calc.ex Calc.validate/1 delete_statement  # logging only; no behaviour depends on it
+```
+
+The reason is required, and a placeholder (`TODO`, `TBD`, `FIXME`, the
+`<why no test can kill it>` the run prints, or nothing) is refused. So is a
+bad id, a missing field, an unknown operator or a duplicate id: the run
+refuses before applying any mutant, exit 1, naming each entry.
+
+`run` judges the list for the functions in its scope (the changed functions
+and the functions of the mutants it generated), through the same comparator
+as the graph baselines (`Anchor.Domain.Baseline.compare/2`), keyed on the
+mutant id:
+
+| Case | Printed | Exit |
+|---|---|---|
+| a `survived` or `no_tests` mutant the list does not hold | `NEW survivor <id> ...`, then a `Fix:` with the exact line to add | 1 |
+| a listed mutant now killed, timed out or invalid, or no longer generated (its function changed) | `STALE survivor <id> ... Fix: delete its line from <path>` | 1 |
+| an entry whose id names a mutant of another file, function or operator | `survivors file <path>, entry N (...)` with a `Fix:` | 1 |
+| a listed survivor | its run line ends `listed in <path>: <reason>` | 0 |
+| a listed mutant past the cap, left out by `--only`, whose run crashed, or whose function could not be mutated this run | `survivor <id> ... not judged (...)` | 0 |
+| an entry for a function outside the scope | nothing | 0 |
+
+The default path absent is an empty list (`no survivors file at ...: every
+survivor is NEW`); a path named in the config that is absent is exit 1. A
+crashed mutant cannot be listed: it fails the run as before.
+
+The list only shrinks without review. The run reads the list's copy at
+`--base` (default `origin/main`, the ref the scope reads) and prints the
+entries this branch adds under `Survivors added by this branch: review each
+reason` (all of them, said so, when the base has no list). That block never
+changes the exit code: adding a survivor is allowed, and the reviewer sees
+it. A base copy that cannot be read for any reason but its absence is exit 3.
+
+`--print-survivor-lines` prints, at the end, the line to add for each NEW
+survivor, with the placeholder reason to replace. The run never writes the
+list.
+
+### Sabotage: replaying landed records
+
+```bash
+mix anchor.sabotage replay [--max N|all] [--records DIR_GLOB]...
+```
+
+A record proves a test failed once; a test can lose that power later (an
+assertion loosened, a setup changed). `replay` (DND-5485) reads every
+`killed` or `timeout` row of the `anchor-kills` blocks under
+`sabotage.records.dir` (or each `--records` directory glob, inside the
+project), and for each row:
+
+1. regenerates the mutants of its `Module.fun/arity` on the current tree,
+   with every operator, and finds the one with the recorded id (ids do not
+   depend on lines, so a moved function still replays);
+2. checks its killers' test files exist;
+3. applies the mutant under `run`'s journal and lock, runs the killers by
+   file and test name (`<file> --only test:<full name>`, so a moved test
+   still runs), and restores the file.
+
+Before any row, every killer runs once with no mutant; if any fails, main is
+red and nothing can be judged (exit 3). The cap is `--max` (else
+`max_mutants`); rows past it are listed `not replayed (cap)`. A `timeout`
+row that names no test (`(timeout)`) runs the killer files of its
+function's other killed rows in the same record, whole, and says so.
+
+| Row | Printed | Exit |
+|---|---|---|
+| a killer failed (or the run timed out) | `still killed <id> ...` | 0 |
+| every killer passed | `LOST POWER <id> M.f/a operator (<record>)`, each killer on `no longer failed by:`, and a `Fix:` | 1 |
+| the run crashed | `CRASHED <id> ...` with a `Fix:` | 1 |
+| it cannot be replayed as recorded: its file is gone or outside the project, a symlink is on its file's or a killer's path, its function is gone, no mutant has its id (the function changed), a killer's file or test is gone, a killer does not read as a test, a row killed by the time bound has no killed row to take its killer files from, it no longer compiles | `drifted (<reason>) <id> ...` | never on its own |
+| zero rows, every row drifted, or a record that could not be read | `COULD NOT MEASURE` with `Fix:` | 3 |
+
+A record whose kill map does not parse is named (`could not read ...`), and
+the replay ends exit 3 however its other rows fare, unless a row lost power or
+crashed (exit 1): its kills went unchecked. Like `run`, a replay refuses (exit 2) on a dirty row file, the run
+lock held, or the journal not git-ignored, and never writes a record or the
+survivors list. Anchor runs it weekly and on demand in CI
+(`.github/workflows/sabotage-replay.yml`, `--max all`).
 
 ### Sabotage: the per-test coverage map
 
