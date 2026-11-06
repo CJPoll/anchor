@@ -5297,3 +5297,223 @@ the model's analysis ignores declare: none (`lib/anchor/domain/model.ex`). Resul
 
 ......
 ```
+
+# Twelfth run: a listed wrapper's callers, and an unread transaction's reach
+
+5 mutations for critic round 14's findings. WSN-TXLOCAL survived its first run (63 tests, 0 failures) and WSN-TXOUTSIDE its first (20 tests, 0 failures); each got a test, and its row holds the red run. WSN-TXNEST's first form was a compile error under `warnings_as_errors` and was re-anchored.
+
+| # | Mutation | Tests run | Result |
+|---|---|---|---|
+| WSN-WRAPEDGE | a write function's parameter has no project caller (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `63 tests, 2 failures` (red) |
+| WSN-TXGAP | an unread transaction is no gap of what reaches it (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `63 tests, 2 failures` (red) |
+| WSN-TXNEST | an unread nested transaction is no gap of the outer body (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `64 tests, 1 failure` (red) |
+| WSN-TXOUTSIDE | an unread transaction is a gap outside one (`lib/anchor/domain/aggregates/write_sites.ex`) | `non_transactional_test.exs` | `21 tests, 1 failure` (red) |
+| WSN-TXLOCAL | an unread local transaction function is no gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `64 tests, 1 failure` (red) |
+
+## WSN-WRAPEDGE
+
+a write function's parameter has no project caller (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `63 tests, 2 failures`.
+
+```
+
+  1) test counts: writes found, resolved, unresolved; scopes, complete, incomplete (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:751
+     Assertion with == failed
+     code:  assert a.counts.unresolved == 3
+     left:  4
+     right: 3
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:756: (test)
+
+.
+
+
+  2) test build/3 a write function's own write traces through its callers (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:635
+     match (=) failed
+     code:  assert [%{sources: [schema: @s], unresolved: nil}] = Enum.filter(a.sites, &(&1.mfa == {@x, :wrap, 1}))
+     left:  [%{sources: [schema: AnchorFixtures.ScopesTest.S], unresolved: nil}]
+     right: [
+              %Anchor.Domain.Aggregates.WriteSite{
+                mfa: {AnchorFixtures.ScopesTest.X, :wrap, 1},
+                line: 271,
+                op: :update,
+                via: :repo,
+                sources: [],
+                unresolved: "parameter 1",
+                scopes: [],
+                run_callback?: false
+              }
+            ]
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:636: (test)
+
+.........
+```
+
+## WSN-TXGAP
+
+an unread transaction is no gap of what reaches it (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `63 tests, 2 failures`.
+
+```
+
+  1) test build/3 a transaction nested in a body: its gap is a gap of the outer one (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:645
+     match (=) failed
+     code:  assert [%Scope{complete?: false}, %Scope{complete?: false}] =
+              Enum.filter(a.scopes, &(&1.mfa == {@x, :s72, 1}))
+     left:  [
+              %Anchor.Domain.Aggregates.Scope{complete?: false},
+              %Anchor.Domain.Aggregates.Scope{complete?: false}
+            ]
+     right: [
+              %Anchor.Domain.Aggregates.Scope{
+                mfa: {AnchorFixtures.ScopesTest.X, :s72, 1},
+                ordinal: 1,
+                line: 275,
+                kind: :fun,
+                writes: [],
+                keys: MapSet.new([]),
+                complete?: false,
+                gaps: [
+                  {:dynamic_call,
+                   {AnchorFixtures.ScopesTest.X, :s72, 1}, 275}
+                ]
+              },
+              %Anchor.Domain.Aggregates.Scope{
+                mfa: {AnchorFixtures.ScopesTest.X, :s72, 1},
+                ordinal: 2,
+                line: 275,
+                kind: :fun,
+                writes: [],
+                keys: MapSet.new([]),
+                complete?: true,
+                gaps: []
+              }
+            ]
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:646: (test)
+
+.......................................
+
+
+  2) test build/3 a callee transaction's gap is a gap of the transaction that reaches it (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:640
+     match (=) failed
+     code:  assert %Scope{complete?: false, gaps: [{:dynamic_call, {@helper, :tx_any, 1}, _}]} = one(a, :s71)
+     left:  %Anchor.Domain.Aggregates.Scope{
+              complete?: false,
+              gaps: [{:dynamic_call, {AnchorFixtures.ScopesTest.Helper, :tx_any, 1}, _}]
+            }
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s71, 1},
+              ordinal: 1,
+              line: 274,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              complete?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:641: (test)
+
+..
+```
+
+## WSN-TXNEST
+
+an unread nested transaction is no gap of the outer body (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `64 tests, 1 failure`.
+
+```
+
+  1) test build/3 a transaction nested in a body: its gap is a gap of the outer one (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:653
+     match (=) failed
+     code:  assert [%Scope{complete?: false}, %Scope{complete?: false}] =
+              Enum.filter(a.scopes, &(&1.mfa == {@x, :s72, 1}))
+     left:  [
+              %Anchor.Domain.Aggregates.Scope{complete?: false},
+              %Anchor.Domain.Aggregates.Scope{complete?: false}
+            ]
+     right: [
+              %Anchor.Domain.Aggregates.Scope{
+                mfa: {AnchorFixtures.ScopesTest.X, :s72, 1},
+                ordinal: 1,
+                line: 275,
+                kind: :fun,
+                writes: [],
+                keys: MapSet.new([]),
+                complete?: false,
+                gaps: [
+                  {:dynamic_call,
+                   {AnchorFixtures.ScopesTest.X, :s72, 1}, 275}
+                ]
+              },
+              %Anchor.Domain.Aggregates.Scope{
+                mfa: {AnchorFixtures.ScopesTest.X, :s72, 1},
+                ordinal: 2,
+                line: 275,
+                kind: :fun,
+                writes: [],
+                keys: MapSet.new([]),
+                complete?: true,
+                gaps: []
+              }
+            ]
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:654: (test)
+
+..................................
+```
+
+## WSN-TXOUTSIDE
+
+an unread transaction is a gap outside one (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `21 tests, 1 failure`.
+
+```
+
+  1) test an unread transaction is no gap outside a transaction (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:127
+     match (=) failed
+     code:  assert %{complete?: true} = nontx(a, :n30, 1)
+     left:  %{complete?: true}
+     right: %{
+              keys: MapSet.new([]),
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.NonTransactionalTest.N, :n30, 1},
+                 69}
+              ],
+              sites: [],
+              complete?: false
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:128: (test)
+
+.......
+```
+
+## WSN-TXLOCAL
+
+an unread local transaction function is no gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `64 tests, 1 failure`.
+
+```
+
+  1) test build/3 a local transaction function's gap reaches the transaction around it (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:648
+     Expected truthy, got false
+     code: assert Enum.any?(gaps, &match?({:dynamic_call, {@x, :local_unread, 1}, _}, &1))
+     arguments:
+
+         # 1
+         [{:dynamic_call, {AnchorFixtures.ScopesTest.X, :atomically, 1}, 200}]
+
+         # 2
+         #Function<11.91681894/1 in Anchor.Domain.Aggregates.ScopesTest."test build/3 a local transaction function's gap reaches the transaction around it"/1>
+
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:650: (test)
+
+.
+```
