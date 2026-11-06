@@ -13,6 +13,7 @@ defmodule Anchor.Domain.Sabotage.Config do
   | `test_mirror` | the two rules below | lib file to test file, first matching `from` wins |
   | `coverage_map` | none | a per-test coverage map file (DND-5474), relative to the project root; `--coverage PATH` overrides |
   | `records` | below | where the run's sabotage record goes and how it is named (DND-5484) |
+  | `survivors` | `.anchor/sabotage/survivors.txt` | the survivors list (DND-5483), relative to the project root; named here, it must exist; at the default path an absent file is an empty list, said loudly |
 
   `records` (every key optional): `dir` (default `test/sabotage_records`;
   may hold `{app}`; relative, with no `..` segment, read with a leading `./`
@@ -40,7 +41,7 @@ defmodule Anchor.Domain.Sabotage.Config do
     %{from: "lib/**/*.ex", to: "test/{rest}_test.exs"}
   ]
   @keys ~w(test_command max_mutants timeout_seconds operators effect_calls test_mirror
-           coverage_map records)
+           coverage_map records survivors)
 
   defstruct test_command: ["mix", "test", "--max-cases", "2"],
             max_mutants: 30,
@@ -49,6 +50,7 @@ defmodule Anchor.Domain.Sabotage.Config do
             effect_calls: [],
             test_mirror: @default_mirror,
             coverage_map: nil,
+            survivors: nil,
             records: %{
               dir: "test/sabotage_records",
               naming: :domain_date_slot,
@@ -65,6 +67,7 @@ defmodule Anchor.Domain.Sabotage.Config do
           effect_calls: [String.t()],
           test_mirror: [TestMirror.rule()],
           coverage_map: String.t() | nil,
+          survivors: String.t() | nil,
           records: %{
             dir: String.t(),
             naming: :domain_date_slot | :ticket_nn_what,
@@ -87,7 +90,8 @@ defmodule Anchor.Domain.Sabotage.Config do
          {:ok, effects} <- effect_calls(section),
          {:ok, mirror} <- test_mirror(section),
          {:ok, coverage_map} <- coverage_map(section),
-         {:ok, records} <- records(section) do
+         {:ok, records} <- records(section),
+         {:ok, survivors} <- survivors(section) do
       {:ok,
        %__MODULE__{
          test_command: command,
@@ -97,6 +101,7 @@ defmodule Anchor.Domain.Sabotage.Config do
          effect_calls: effects,
          test_mirror: mirror,
          coverage_map: coverage_map,
+         survivors: survivors,
          records: records
        }}
     end
@@ -260,6 +265,27 @@ defmodule Anchor.Domain.Sabotage.Config do
   end
 
   defp coverage_map(_section), do: {:ok, nil}
+
+  # DND-5483: a path inside the project; `nil` is the default path, where an
+  # absent file is an empty list.
+  defp survivors(%{"survivors" => path}) when is_binary(path) and path != "" do
+    segments = String.split(path, "/")
+
+    if String.starts_with?(path, "/") or ".." in segments,
+      do: bad_survivors(path),
+      else: {:ok, path}
+  end
+
+  defp survivors(%{"survivors" => path}), do: bad_survivors(path)
+  defp survivors(_section), do: {:ok, nil}
+
+  defp bad_survivors(path) do
+    refuse(
+      "sabotage.survivors must be a path inside the project, got: #{inspect(path)}",
+      "set it relative to the project root, with no .. segment, or remove it for " <>
+        ".anchor/sabotage/survivors.txt"
+    )
+  end
 
   @record_keys ~w(dir naming domain_from domain_strip_prefixes adr)
   @namings %{"domain_date_slot" => :domain_date_slot, "ticket_nn_what" => :ticket_nn_what}

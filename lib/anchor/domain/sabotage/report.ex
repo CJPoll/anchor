@@ -42,12 +42,27 @@ defmodule Anchor.Domain.Sabotage.Report do
 
   A mutant is measured when it was killed, survived or timed out.
 
+  ## The survivors list (DND-5483)
+
+  With the list judged (`Run.survivors`, `Anchor.Domain.Sabotage.Survivors`):
+  a listed survivor's line names its reason instead of a `Fix:`; each NEW
+  survivor gets a block with the line to add; each STALE entry a line with
+  `Fix: delete its line`; each malformed entry a line naming it; each entry
+  not judged a `not judged (...)` line; the entries the branch adds a
+  `Survivors added by this branch: review each reason` block; and a count
+  line. A NEW, STALE or malformed entry fails the run (1); a listed survivor
+  or `no_tests` mutant does not; a `crashed` one still does. The GREW block
+  never changes the exit code. A run that measured nothing stays exit 3.
+  `--print-survivor-lines` adds one block of the NEW survivors' lines at the
+  end, to paste; the run writes no file.
+
   A sabotage record that could not be written (DND-5484) is said loudly,
   `sabotage: record not written: <why>`, and changes only a passing verdict:
   0 becomes 2. A survivor stays 1 and an unmeasured run stays 3 (DND-5641).
   """
 
   alias Anchor.Domain.Sabotage.Run
+  alias Anchor.Domain.Sabotage.Survivors
 
   @statuses [:killed, :survived, :timeout, :invalid, :crashed, :no_tests]
   @measured [:killed, :survived, :timeout]
@@ -67,12 +82,25 @@ defmodule Anchor.Domain.Sabotage.Report do
   defp verdict_code(:violation), do: 1
   defp verdict_code(:unmeasured), do: 3
 
-  defp verdict(%Run{outcomes: []}), do: :pass
+  defp verdict(%Run{outcomes: []} = run),
+    do: if(survivors_violation?(run), do: :violation, else: :pass)
 
-  defp verdict(%Run{outcomes: outcomes}) do
+  defp verdict(%Run{outcomes: outcomes} = run) do
     statuses = Enum.map(outcomes, & &1.status)
-    verdict(Enum.any?(statuses, &(&1 in @measured)), Enum.any?(statuses, &(&1 in @failing)))
+
+    verdict(
+      Enum.any?(statuses, &(&1 in @measured)),
+      Enum.any?(statuses, &(&1 in failing(run))) or survivors_violation?(run)
+    )
   end
+
+  # DND-5483: with the list judged, a survivor or no_tests mutant fails only
+  # as a NEW survivor; a crash always fails.
+  defp failing(%Run{survivors: nil}), do: @failing
+  defp failing(%Run{}), do: [:crashed]
+
+  defp survivors_violation?(%Run{survivors: nil}), do: false
+  defp survivors_violation?(%Run{survivors: %{judgement: j}}), do: Survivors.violation?(j)
 
   defp verdict(false, _failing), do: :unmeasured
   defp verdict(true, true), do: :violation
@@ -106,12 +134,15 @@ defmodule Anchor.Domain.Sabotage.Report do
       run.notes ++
         zero_scope(run) ++
         no_mutants(run) ++
-        Enum.map(run.outcomes, &outcome/1) ++
+        Enum.map(run.outcomes, &outcome(&1, held(run))) ++
         skipped(run) ++
         errors(run) ++
         not_run(run) ++
         sources(run) ++
-        records(run) ++ timeout_kills(run) ++ [summary(run)] ++ conclusion(verdict(run), run)
+        records(run) ++
+        timeout_kills(run) ++
+        survivors(run) ++
+        [summary(run)] ++ conclusion(verdict(run), run) ++ survivor_lines(run)
     )
   end
 
@@ -147,10 +178,81 @@ defmodule Anchor.Domain.Sabotage.Report do
 
   defp conclusion(_verdict, _run), do: []
 
-  defp outcome(%{mutant: mutant, status: status} = outcome) do
+  defp outcome(%{mutant: mutant, status: status} = outcome, held) do
     base = [mutant.id, mfa(mutant), mutant.operator, status, killers(outcome.killers)]
-    tsv(base ++ [selected(outcome.selection)] ++ tail(status, outcome))
+
+    tail =
+      case Map.fetch(held, mutant.id) do
+        {:ok, {path, reason}} -> ["listed in #{path}: #{reason}"]
+        :error -> tail(status, outcome)
+      end
+
+    tsv(base ++ [selected(outcome.selection)] ++ tail)
   end
+
+  defp held(%Run{survivors: nil}), do: %{}
+
+  defp held(%Run{survivors: %{path: path, judgement: j}}),
+    do: Map.new(j.held, &{&1.id, {path, &1.reason}})
+
+  # -- DND-5483: the survivors list -------------------------------------------
+
+  defp survivors(%Run{survivors: nil}), do: []
+
+  defp survivors(%Run{survivors: %{path: path, base: base, judgement: j, grew: grew}}) do
+    Enum.flat_map(j.new, &new_survivor(&1, path)) ++
+      Enum.map(j.stale, fn {e, why} ->
+        "STALE survivor #{e.id} #{e.mfa} #{e.operator} (#{why}). Fix: delete its line from #{path}"
+      end) ++
+      Enum.map(j.malformed, fn {e, why} ->
+        "survivors file #{path}, entry #{e.line_no} (#{Survivors.text(e)}): #{why}. " <>
+          "Fix: correct the entry, or delete it"
+      end) ++
+      Enum.map(j.unjudged, fn {e, why} ->
+        "survivor #{e.id} #{e.mfa} #{e.operator} not judged (#{not_judged(why)})"
+      end) ++
+      grew(grew, path, base) ++
+      [
+        "survivors: #{length(j.held)} held, #{length(j.new)} new, #{length(j.stale)} stale, " <>
+          "#{length(j.unjudged)} not judged"
+      ]
+  end
+
+  defp new_survivor(%{mutant: m} = outcome, path) do
+    [
+      "NEW survivor #{m.id} #{m.file} #{mfa(m)} #{m.operator}",
+      "  Fix: add a test that fails under this mutant, or add to #{path}:",
+      "  " <> Survivors.line_for(outcome)
+    ]
+  end
+
+  defp not_judged(:not_run), do: "not run, cap"
+  defp not_judged(:crashed), do: "its test run crashed"
+  defp not_judged(:no_mutant_made), do: "no mutant could be made of its function this run"
+
+  defp grew({_kind, []}, _path, _base), do: []
+
+  defp grew({:added, entries}, _path, _base),
+    do: ["Survivors added by this branch: review each reason" | grown(entries)]
+
+  defp grew({:first_landing, entries}, path, base),
+    do: [
+      "Survivors added by this branch: review each reason (#{path} is not on #{base}: " <>
+        "every entry is new)"
+      | grown(entries)
+    ]
+
+  defp grown(entries), do: Enum.map(entries, &("  " <> Survivors.text(&1)))
+
+  defp survivor_lines(%Run{print_survivor_lines: true, survivors: %{path: path, judgement: j}}) do
+    [
+      "Survivor lines to add to #{path} (nothing was written; replace each placeholder " <>
+        "with the real reason):"
+      | Enum.map(j.new, &Survivors.line_for/1)
+    ]
+  end
+
+  defp survivor_lines(_run), do: []
 
   defp tail(:survived, _outcome), do: ["Fix: add a test that fails under this mutant"]
 

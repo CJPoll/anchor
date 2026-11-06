@@ -232,6 +232,25 @@ defmodule Anchor.Adapters.SourcePatcher do
   @impl Anchor.Adapters.SourceMutation
   def existing(paths), do: Enum.filter(paths, &File.regular?/1)
 
+  # DND-5485: each component under `root` is `lstat`ed, shallowest first,
+  # as `Anchor.Adapters.BaselineFile` does; a component that does not exist
+  # ends the walk (nothing below it can be a symlink).
+  @impl Anchor.Adapters.SourceMutation
+  def symlinked(root, paths), do: Enum.filter(paths, &symlink_on_path?(root, &1))
+
+  defp symlink_on_path?(root, path) do
+    path
+    |> Path.split()
+    |> Enum.scan(&Path.join(&2, &1))
+    |> Enum.reduce_while(false, fn prefix, false ->
+      case File.lstat(Path.join(root, prefix)) do
+        {:ok, %File.Stat{type: :symlink}} -> {:halt, true}
+        {:ok, %File.Stat{}} -> {:cont, false}
+        {:error, _posix} -> {:halt, false}
+      end
+    end)
+  end
+
   @impl Anchor.Adapters.SourceMutation
   def save_run(path, bytes) do
     with :ok <- File.mkdir_p(Path.dirname(path)), do: write_file(path, bytes)
