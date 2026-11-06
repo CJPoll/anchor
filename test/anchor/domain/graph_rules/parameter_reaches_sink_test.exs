@@ -52,7 +52,7 @@ defmodule Anchor.Domain.GraphRules.ParameterReachesSinkTest do
     {module, name, arity} = mfa
     node = model.graph.modules[module]
 
-    function = %FunctionNode{node.functions[{name, arity}] | clauses: clauses}
+    function = Map.put(node.functions[{name, arity}], :clauses, clauses)
     node = %{node | functions: Map.put(node.functions, {name, arity}, function)}
     %{model | graph: %{model.graph | modules: Map.put(model.graph.modules, module, node)}}
   end
@@ -175,7 +175,7 @@ defmodule Anchor.Domain.GraphRules.ParameterReachesSinkTest do
 
     test "the rule refuses a model with no demand analysis: never a clean read" do
       assert_raise FunctionClauseError, fn ->
-        ParameterReachesSink.check(%{built(domain([]), [], %{}) | demand: nil}, @rule)
+        domain([]) |> built([], %{}) |> Map.put(:demand, nil) |> ParameterReachesSink.check(@rule)
       end
     end
   end
@@ -264,11 +264,11 @@ defmodule Anchor.Domain.GraphRules.ParameterReachesSinkTest do
     end
 
     test "a dynamic call cannot reach a private function" do
-      calls = [{{D, :caller, 0}, {:dynamic, :f, 1, :variable}, :remote}]
-      summaries = Map.put(@absent, {D, :caller, 0}, [])
-      model = built(domain([{:f, 1, :defp}, {:caller, 0}]), calls, summaries)
+      calls = [{{D, :caller, 0}, {:dynamic, :f, nil, :call}, :apply}]
+      summaries = Map.merge(@absent, %{{D, :caller, 0} => [], {D, :f, 2} => [:absent, :all]})
+      model = built(domain([{:f, 1}, {:f, 2, :defp}, {:caller, 0}]), calls, summaries)
 
-      assert keys(ParameterReachesSink.check(model, @rule)) == ["sinks|D.f/1|param 1"]
+      assert keys(ParameterReachesSink.check(model, @rule)) == ["sinks|D.f/2|param 1"]
     end
 
     test "a dynamic call with a computed name exempts nothing" do

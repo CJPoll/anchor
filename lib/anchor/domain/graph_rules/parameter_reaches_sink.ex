@@ -206,8 +206,7 @@ defmodule Anchor.Domain.GraphRules.ParameterReachesSink do
 
   # An `apply/3` whose argument list is not literal has no arity: every arity
   # of the name is in reach.
-  defp add_reached(%Call{to: {:dynamic, name, arity, _receiver}} = call, reached, graph)
-       when name != nil do
+  defp add_reached(%Call{to: {:dynamic, name, arity, _receiver}} = call, reached, graph) do
     for module <- DynamicCalls.targets(graph, call),
         {{^name, candidate}, %FunctionNode{kind: :def}} <- graph.modules[module].functions,
         arity in [nil, candidate],

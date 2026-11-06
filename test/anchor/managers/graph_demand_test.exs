@@ -106,8 +106,9 @@ defmodule Anchor.Managers.GraphDemandTest do
       %{}
     end)
 
+    # The rule needs the flow analysis, so all the demand analysis would lack is a rule.
     report =
-      run([probe(1)], beams,
+      run([rule(:stub_needs_cfa, "needs_cfa", 1)], beams,
         demand: fn _graph, _cfa, _effects ->
           send(test, :analysed)
           raise "not run"
@@ -254,13 +255,14 @@ defmodule Anchor.Managers.GraphDemandTest do
     stub(BehaviourSourceMock, :callbacks, fn [] -> %{} end)
 
     report =
-      run([sinks()], beams,
+      run([rule(:effects_match_bucket, "effects", 1), sinks()], beams,
         effects: fn _model, _opts -> raise "effects blew up" end,
         demand: fn _g, _c, _e -> raise "demand blew up" end
       )
 
-    assert [issue] = report.findings
-    assert issue.message =~ "the demand analysis it needs"
+    assert [effects, demand] = report.findings
+    assert effects.message =~ "the effect inference it needs"
+    assert demand.message =~ "the demand analysis it needs"
   end
 
   test "a crashed demand analysis does not stop a rule that needs only effects", %{beams: beams} do
