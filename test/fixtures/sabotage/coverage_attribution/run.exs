@@ -16,7 +16,8 @@ defmodule AnchorFixtures.Attribution.F do
   for name <- ~w(l1_spinner l1_after l2_released l3_unlabelled l4_grandchild l5_port l6_task
                  l7_setup_all l8_task_reply l9_task_nolink n1_task n2_supervised n4_compile
                  n5_compiled n6_timer n7_call n9_late_cast n10_stale_timer n11_handler n11_own
-                 n12_apply_after n13_setup_all n14_task on_exit_test on_exit_module setup_body
+                 n12_apply_after n13_setup_all n14_task on_exit_test on_exit_module on_exit_test_server
+                 on_exit_module_server setup_body
                  start_supervised_init) do
     def unquote(String.to_atom(name))(), do: :ok
   end
@@ -46,6 +47,16 @@ defmodule AnchorFixtures.Attribution.Server do
 
   def handle_call(:n11_handler, _from, state) do
     F.n11_handler()
+    {:reply, :ok, state}
+  end
+
+  def handle_call(:on_exit_test_server, _from, state) do
+    F.on_exit_test_server()
+    {:reply, :ok, state}
+  end
+
+  def handle_call(:on_exit_module_server, _from, state) do
+    F.on_exit_module_server()
     {:reply, :ok, state}
   end
 

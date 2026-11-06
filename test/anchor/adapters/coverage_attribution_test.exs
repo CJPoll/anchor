@@ -11,11 +11,13 @@ defmodule Anchor.Adapters.CoverageAttributionTest do
   @run Path.expand("../../fixtures/sabotage/coverage_attribution/run.exs", __DIR__)
   defp f(name), do: "AnchorFixtures.Attribution.F.#{name}/0"
 
+  # The bound is `timeout`'s: a fixture row that never ended would hang this forever.
   defp build(dir, name) do
     ebin = :code.which(CoverageMap) |> Path.dirname()
     out = Path.join(dir, name)
 
-    {output, code} = System.cmd("elixir", ["-pa", ebin, @run, out], stderr_to_stdout: true)
+    {output, code} =
+      System.cmd("timeout", ["120", "elixir", "-pa", ebin, @run, out], stderr_to_stdout: true)
 
     assert code == 0, output
     out |> File.read!() |> :erlang.binary_to_term()
@@ -187,6 +189,16 @@ defmodule Anchor.Adapters.CoverageAttributionTest do
     test "on_exit: a test's is that test's; a module's reaches the module", %{map: map} do
       assert f(:on_exit_test) in set(map, "on_exit")
       assert f(:on_exit_module) in set(map, "s1 setup_all's work reaches this test")
+    end
+
+    test "on_exit calling a server is credited by the label the runner set", %{map: map} do
+      assert f(:on_exit_test_server) in set(map, "on_exit")
+      assert f(:on_exit_module_server) in set(map, "s1 setup_all's work reaches this test")
+
+      assert f(:on_exit_module_server) in set(
+               map,
+               "n14 a test's task under a setup_all supervisor"
+             )
     end
 
     test "a skipped or excluded test has no row", %{map: map} do

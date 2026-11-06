@@ -246,7 +246,10 @@ defmodule AnchorFixtures.Attribution.CleanCases do
   end
 
   test "on_exit" do
-    on_exit(&F.on_exit_test/0)
+    on_exit(fn ->
+      F.on_exit_test()
+      :ok = GenServer.call(server(), :on_exit_test_server)
+    end)
   end
 
   @tag skip: "a skipped test still opens a window, and has no process"
@@ -269,7 +272,11 @@ defmodule AnchorFixtures.Attribution.SetupAllCases do
 
   setup_all do
     F.setup_body()
-    on_exit(&F.on_exit_module/0)
+    on_exit(fn ->
+      F.on_exit_module()
+      :ok = GenServer.call(server(), :on_exit_module_server)
+    end)
+
     :ok = GenServer.call(server(), :n13_setup_all)
     sup = start_supervised!(Task.Supervisor)
 
