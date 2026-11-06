@@ -60,8 +60,9 @@ defmodule Anchor.Domain.GraphReportAggregatesTest do
                "baselined); writes: 7 read, 5 resolved, 2 unresolved; transactions: 3 read, 2 " <>
                "no gap noticed, 1 incomplete; 4 gaps with no transaction read around them; " <>
                "9 dependency calls cleared by the no-write list; not read: the modules under " <>
-               "aggregates.no_write_modules, the built-in no-write list and dependencies' own " <>
-               "internals"
+               "aggregates.no_write_modules, the built-in no-write list, an unknown value given to " <>
+               "one of them and dependencies' own internals; see the README's What it does not " <>
+               "read"
 
     assert JSON.decode!(GraphReport.render(report, :json))["writes"] == %{
              "writes" => 7,

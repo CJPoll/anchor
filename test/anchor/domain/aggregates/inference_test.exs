@@ -174,8 +174,9 @@ defmodule Anchor.Domain.Aggregates.InferenceTest do
 
   test "every proposal says on its first line what it does not read" do
     read_note =
-      "# not read: the modules under aggregates.no_write_modules, the built-in no-write list " <>
-        "and dependencies' own internals; a write there is not in this proposal\n"
+      "# not read: the modules under aggregates.no_write_modules, the built-in no-write list, " <>
+        "an unknown value given to one of them and dependencies' own internals; a write " <>
+        "there is not in this proposal; see the README's What it does not read\n"
 
     healthy = %{analysis([scope(1, [{:schema, App.S}])], []) | repos: [App.Repo]}
     assert {:ok, yaml} = Inference.render_yaml(healthy)

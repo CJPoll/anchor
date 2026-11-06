@@ -495,11 +495,14 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   end
 
   # A listed wrapper runs what it is given: the transaction is its caller's call,
-  # read there, and an unread body here is the wrapper's own parameter.
+  # read there, so an unread body here is the wrapper's own parameter and opens
+  # nothing. A body it does read stays read, with its gaps.
   defp transaction_call(callee, args, node, env, mfa, ctx) do
     txs = opened(callee, args, node, env, mfa, ctx)
-    if listed_transaction?(mfa, ctx), do: Enum.filter(txs, &(&1.gaps == [])), else: txs
+    if listed_transaction?(mfa, ctx), do: Enum.filter(txs, &read_something?/1), else: txs
   end
+
+  defp read_something?(tx), do: tx.gaps == [] or tx.ids != [] or tx.captures != []
 
   defp listed_transaction?({module, name, arity}, ctx),
     do: Enum.any?(ctx.transaction_functions, &FunctionRef.matches?(&1, module, name, arity))

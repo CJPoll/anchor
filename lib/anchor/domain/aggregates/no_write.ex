@@ -266,7 +266,8 @@ defmodule Anchor.Domain.Aggregates.NoWrite do
     Application => @application_functions,
     Kernel => @kernel_functions,
     Process => @process_functions,
-    System => @system_functions
+    # By name, as `EffectPrimitives` names it: Domain never reaches `System`.
+    "Elixir.System": @system_functions
   }
 
   # A function here comes to no gap. A default comes back as a value: nothing here

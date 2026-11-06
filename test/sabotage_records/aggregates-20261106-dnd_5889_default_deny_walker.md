@@ -2442,3 +2442,127 @@ Finished in 0.09 seconds (0.09s async, 0.00s sync)
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/inference.ex" was set to the future, resetting to now
 warning: mtime (modified time) for "lib/anchor/domain/graph_rules/aggregate_write_sources.ex" was set to the future, resetting to now
 ```
+
+## Second run: the wrapper's read body, the closed list's fourth item
+
+ADR 003: this run appends. The run above regenerated this file in place on 9a46cff and e8377de; the earlier forms are in this file's commit history. Same driver and rules; only the mutations for what changed since e8377de. `WRAP-VANISH` is the regression: `transaction_call/6` on the unfixed code, so a listed wrapper's read body with a gap beside it opened no scope.
+
+| # | Mutation | Tests run | Result |
+|---|---|---|---|
+| WRAP-VANISH | restore the unfixed filter: a listed wrapper's read body with a gap beside it opens no scope (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `43 tests, 1 failure` (red) |
+| WRAP-KEEP | a listed wrapper's own parameter opens a scope (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `43 tests, 1 failure` (red) |
+| GR-FOURTH | the summary drops the fourth item again (`lib/anchor/domain/graph_report.ex`) | `graph_report_aggregates_test.exs` | `4 tests, 1 failure` (red) |
+| IN-FOURTH | the proposal drops the fourth item again (`lib/anchor/domain/aggregates/inference.ex`) | `inference_test.exs` | `17 tests, 1 failure` (red) |
+
+### WRAP-VANISH
+
+restore the unfixed filter: a listed wrapper's read body with a gap beside it opens no scope (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `43 tests, 1 failure`.
+
+```
+  1) test a transaction_functions call inside a listed wrapper, a body it reads stays read, with the gap beside it (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:418
+     ** (MatchError) no match of right hand side value:
+
+         []
+
+     code: one(a, :outer)
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:159: Anchor.Domain.Aggregates.WriteSitesDefaultTest.one/2
+       test/anchor/domain/aggregates/write_sites_default_test.exs:422: (test)
+
+.
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+43 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+### WRAP-KEEP
+
+a listed wrapper's own parameter opens a scope (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `43 tests, 1 failure`.
+
+```
+  1) test a transaction_functions call inside a listed wrapper, its own parameter opens nothing (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:427
+     Assertion with == failed
+     code:  assert Enum.filter(a.scopes, &(elem(&1.mfa, 1) == :pass_on)) == []
+     left:  [
+              %Anchor.Domain.Aggregates.Scope{
+                mfa: {AnchorFixtures.WriteSitesDefaultTest.UoW,
+                 :pass_on, 2},
+                ordinal: 1,
+                line: 26,
+                kind: :transaction_function,
+                writes: [],
+                keys: MapSet.new([]),
+                no_gap_noticed?: false,
+                gaps: [
+                  {:dynamic_call,
+                   {AnchorFixtures.WriteSitesDefaultTest.UoW,
+                    :pass_on, 2}, 26}
+                ]
+              }
+            ]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:428: (test)
+
+.......
+Finished in 0.5 seconds (0.5s async, 0.00s sync)
+43 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+### GR-FOURTH
+
+the summary drops the fourth item again (`lib/anchor/domain/graph_report.ex`). Result: `4 tests, 1 failure`.
+
+```
+  1) test the write analysis's counts are in the summary and the JSON (Anchor.Domain.GraphReportAggregatesTest)
+     test/anchor/domain/graph_report_aggregates_test.exs:43
+     Assertion with == failed
+     code:  assert GraphReport.summary(report) ==
+              "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 " <>
+                "baselined); writes: 7 read, 5 resolved, 2 unresolved; transactions: 3 read, 2 " <>
+                "no gap noticed, 1 incomplete; 4 gaps with no transaction read around them; " <>
+                "9 dependency calls cleared by the no-write list; not read: the modules under " <>
+                "aggregates.no_write_modules, the built-in no-write list, an unknown value given to " <>
+                "one of them and dependencies' own internals; see the README's What it does not " <> "read"
+     left:  "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 baselined); writes: 7 read, 5 resolved, 2 unresolved; transactions: 3 read, 2 no gap noticed, 1 incomplete; 4 gaps with no transaction read around them; 9 dependency calls cleared by the no-write list; not read: the modules under aggregates.no_write_modules, the built-in no-write list and dependencies' own internals"
+     right: "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 baselined); writes: 7 read, 5 resolved, 2 unresolved; transactions: 3 read, 2 no gap noticed, 1 incomplete; 4 gaps with no transaction read around them; 9 dependency calls cleared by the no-write list; not read: the modules under aggregates.no_write_modules, the built-in no-write list, an unknown value given to one of them and dependencies' own internals; see the README's What it does not read"
+     stacktrace:
+       test/anchor/domain/graph_report_aggregates_test.exs:58: (test)
+
+...
+Finished in 0.02 seconds (0.02s async, 0.00s sync)
+4 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/graph_report.ex" was set to the future, resetting to now
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+### IN-FOURTH
+
+the proposal drops the fourth item again (`lib/anchor/domain/aggregates/inference.ex`). Result: `17 tests, 1 failure`.
+
+```
+  1) test every proposal says on its first line what it does not read (Anchor.Domain.Aggregates.InferenceTest)
+     test/anchor/domain/aggregates/inference_test.exs:175
+     Expected truthy, got false
+     code: assert String.starts_with?(yaml, read_note)
+     arguments:
+
+         # 1
+         "# not read: the modules under aggregates.no_write_modules, the built-in no-write list and dependencies' own internals; a write there is not in this proposal\naggregates:\n  declare:\n    - name: App.S\n      schemas: [App.S]\n      tables: []\n      # owners: proposed by aggregate_owner_writes\n"
+
+         # 2
+         "# not read: the modules under aggregates.no_write_modules, the built-in no-write list, an unknown value given to one of them and dependencies' own internals; a write there is not in this proposal; see the README's What it does not read\n"
+
+     stacktrace:
+       test/anchor/domain/aggregates/inference_test.exs:183: (test)
+
+.............
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+17 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/inference.ex" was set to the future, resetting to now
+warning: mtime (modified time) for "lib/anchor/domain/graph_report.ex" was set to the future, resetting to now
+```
+

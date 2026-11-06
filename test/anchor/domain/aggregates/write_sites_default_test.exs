@@ -27,6 +27,8 @@ defmodule Anchor.Domain.Aggregates.WriteSitesDefaultTest do
   @source """
   defmodule #{inspect(@uow)} do
     def transaction(_first, _second), do: :ok
+    def outer(g), do: transaction(fn -> #{inspect(@repo)}.insert(%#{inspect(@s)}{}) end, g)
+    def pass_on(f, g), do: transaction(f, g)
   end
 
   defmodule #{inspect(@macros)} do
@@ -137,6 +139,8 @@ defmodule Anchor.Domain.Aggregates.WriteSitesDefaultTest do
       write_functions: [ok!(FunctionRef.parse("#{inspect(@lib)}.soft_delete/1"))],
       transaction_functions: [
         ok!(FunctionRef.parse("#{inspect(@uow)}.transaction/2")),
+        ok!(FunctionRef.parse("#{inspect(@uow)}.outer/1")),
+        ok!(FunctionRef.parse("#{inspect(@uow)}.pass_on/2")),
         ok!(FunctionRef.parse("#{inspect(@lib)}.tx/1"))
       ]
     }
@@ -409,6 +413,19 @@ defmodule Anchor.Domain.Aggregates.WriteSitesDefaultTest do
     test "row 14: positive control: the other argument a literal is no gap", %{analysis: a} do
       assert %Scope{no_gap_noticed?: true, keys: keys} = one(a, :d14b)
       assert keys == MapSet.new([{:schema, @s}])
+    end
+
+    test "inside a listed wrapper, a body it reads stays read, with the gap beside it", %{
+      analysis: a
+    } do
+      assert %Scope{no_gap_noticed?: false, keys: keys, gaps: [{:dynamic_call, _, _}]} =
+               one(a, :outer)
+
+      assert keys == MapSet.new([{:schema, @s}])
+    end
+
+    test "inside a listed wrapper, its own parameter opens nothing", %{analysis: a} do
+      assert Enum.filter(a.scopes, &(elem(&1.mfa, 1) == :pass_on)) == []
     end
   end
 end

@@ -1422,7 +1422,8 @@ The summary line ends `; writes: <W> read, <R> resolved, <U> unresolved;
 transactions: <S> read, <N> no gap noticed, <I> incomplete; <G> gaps with no
 transaction read around them; <D> dependency calls cleared by the no-write list;
 not read: the modules under aggregates.no_write_modules, the built-in no-write
-list and dependencies' own internals` (the JSON's `writes`, whose keys include
+list, an unknown value given to one of them and dependencies' own internals; see
+the README's What it does not read` (the JSON's `writes`, whose keys include
 `no_gap_noticed`, `cleared`, and `unread_by_callee`: each `unread:` gap's text with
 its count, so a run shows what a list would have to hold). `no gap noticed` is a
 count of what Anchor noticed, not a statement that a write set is whole. An
@@ -1465,8 +1466,9 @@ no line number. The rule's selector chooses whose findings are reported.
 aggregates: the connected components of the co-write graph (each
 transaction's written schemas are written together), printed as the exact
 `aggregates:` YAML above. Its first line is always `# not read: the modules under
-aggregates.no_write_modules, the built-in no-write list and dependencies' own
-internals; a write there is not in this proposal`. `mix anchor.propose
+aggregates.no_write_modules, the built-in no-write list, an unknown value given
+to one of them and dependencies' own internals; a write there is not in this
+proposal; see the README's What it does not read`. `mix anchor.propose
 --level aggregate` prints it once DND-5449's `mix anchor.propose` lands.
 
 ### Graph rows of the fail-closed table

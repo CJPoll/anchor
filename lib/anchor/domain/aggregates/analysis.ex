@@ -31,8 +31,10 @@ defmodule Anchor.Domain.Aggregates.Analysis do
 
   A call `Anchor.Domain.Aggregates.WriteSites` does not read is a gap of what
   reaches it. What is not read by construction: a module on the no-write list
-  (`Anchor.Domain.Aggregates.NoWrite`, `aggregates.no_write_modules`), and a
-  dependency's own internals. An absent write there is not evidence of no write.
+  (`Anchor.Domain.Aggregates.NoWrite`, `aggregates.no_write_modules`), an unknown
+  value given to one of them, and a dependency's own internals; the README's
+  *What it does not read* is the whole list. An absent write there is not evidence
+  of no write.
   """
 
   alias Anchor.Domain.Aggregates.Config

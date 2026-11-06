@@ -296,8 +296,9 @@ defmodule Anchor.Domain.GraphReport do
   (DND-5459: `; writes: <W> read, <R> resolved, <U> unresolved; transactions:
   <S> read, <N> no gap noticed, <I> incomplete; <G> gaps with no transaction
   read around them; <D> dependency calls cleared by the no-write list; not read:
-  the modules under aggregates.no_write_modules, the built-in no-write list and
-  dependencies' own internals`).
+  the modules under aggregates.no_write_modules, the built-in no-write list, an
+  unknown value given to one of them and dependencies' own internals; see the
+  README's What it does not read`).
   """
   @spec summary(t()) :: String.t()
   def summary(%__MODULE__{counts: counts} = report) do
@@ -328,7 +329,8 @@ defmodule Anchor.Domain.GraphReport do
       "#{writes.outside_gaps} gaps with no transaction read around them; " <>
       "#{writes.cleared} dependency calls cleared by the no-write list; " <>
       "not read: the modules under aggregates.no_write_modules, the built-in no-write " <>
-      "list and dependencies' own internals"
+      "list, an unknown value given to one of them and dependencies' own internals; " <>
+      "see the README's What it does not read"
   end
 
   defp writes_json(nil), do: nil

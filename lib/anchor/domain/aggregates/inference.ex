@@ -30,7 +30,7 @@ defmodule Anchor.Domain.Aggregates.Inference do
   alias Anchor.Domain.Digraph
   alias Anchor.Domain.GraphAlgorithms
 
-  @read_note "# not read: the modules under aggregates.no_write_modules, the built-in no-write list and dependencies' own internals; a write there is not in this proposal\n"
+  @read_note "# not read: the modules under aggregates.no_write_modules, the built-in no-write list, an unknown value given to one of them and dependencies' own internals; a write there is not in this proposal; see the README's What it does not read\n"
 
   @type key :: Scope.key()
   @type proposal :: %{
