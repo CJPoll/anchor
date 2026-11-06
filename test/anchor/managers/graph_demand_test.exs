@@ -101,6 +101,11 @@ defmodule Anchor.Managers.GraphDemandTest do
   test "no rule that runs needs it: not run, no counts, null in the JSON", %{beams: beams} do
     test = self()
 
+    stub(BehaviourSourceMock, :callbacks, fn [] ->
+      send(test, :read_behaviours)
+      %{}
+    end)
+
     report =
       run([probe(1)], beams,
         demand: fn _graph, _cfa, _effects ->
@@ -109,6 +114,7 @@ defmodule Anchor.Managers.GraphDemandTest do
         end
       )
 
+    refute_received :read_behaviours
     refute_received :analysed
     assert Map.get(report.counts, :parameter_sinks) == nil
     refute GraphReport.summary(report) =~ "parameter_reaches_sink"
@@ -242,6 +248,19 @@ defmodule Anchor.Managers.GraphDemandTest do
     assert [effects, sink] = report.findings
     assert effects.message =~ "the effect inference it needs"
     assert sink.key == "sinks|#{@dropper}|param 1"
+  end
+
+  test "both crashed: the rule that needs demand reports demand", %{beams: beams} do
+    stub(BehaviourSourceMock, :callbacks, fn [] -> %{} end)
+
+    report =
+      run([sinks()], beams,
+        effects: fn _model, _opts -> raise "effects blew up" end,
+        demand: fn _g, _c, _e -> raise "demand blew up" end
+      )
+
+    assert [issue] = report.findings
+    assert issue.message =~ "the demand analysis it needs"
   end
 
   test "a crashed demand analysis does not stop a rule that needs only effects", %{beams: beams} do

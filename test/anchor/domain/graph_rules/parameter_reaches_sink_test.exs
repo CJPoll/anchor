@@ -255,6 +255,22 @@ defmodule Anchor.Domain.GraphRules.ParameterReachesSinkTest do
       assert keys(ParameterReachesSink.check(model, @rule)) == ["sinks|D.f/2|param 1"]
     end
 
+    test "a dynamic call with no known arity reaches every arity of the name" do
+      calls = [{{D, :caller, 0}, {:dynamic, :f, nil, :call}, :apply}]
+      summaries = Map.merge(@absent, %{{D, :caller, 0} => [], {D, :f, 2} => [:absent, :all]})
+      model = built(domain([{:f, 1}, {:f, 2}, {:caller, 0}]), calls, summaries)
+
+      assert ParameterReachesSink.check(model, @rule) == []
+    end
+
+    test "a dynamic call cannot reach a private function" do
+      calls = [{{D, :caller, 0}, {:dynamic, :f, 1, :variable}, :remote}]
+      summaries = Map.put(@absent, {D, :caller, 0}, [])
+      model = built(domain([{:f, 1, :defp}, {:caller, 0}]), calls, summaries)
+
+      assert keys(ParameterReachesSink.check(model, @rule)) == ["sinks|D.f/1|param 1"]
+    end
+
     test "a dynamic call with a computed name exempts nothing" do
       calls = [{{D, :caller, 0}, {:dynamic, nil, nil, :call}, :apply}]
       summaries = Map.put(@absent, {D, :caller, 0}, [])

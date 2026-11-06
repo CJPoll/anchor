@@ -204,11 +204,16 @@ defmodule Anchor.Domain.GraphRules.ParameterReachesSink do
   defp add_reached(%Call{kind: :capture, to: {_m, _f, _a} = mfa}, reached, _graph),
     do: MapSet.put(reached, mfa)
 
+  # An `apply/3` whose argument list is not literal has no arity: every arity
+  # of the name is in reach.
   defp add_reached(%Call{to: {:dynamic, name, arity, _receiver}} = call, reached, graph)
-       when is_atom(name) and name != nil and is_integer(arity) do
-    graph
-    |> DynamicCalls.targets(call)
-    |> Enum.reduce(reached, &MapSet.put(&2, {&1, name, arity}))
+       when name != nil do
+    for module <- DynamicCalls.targets(graph, call),
+        {{^name, candidate}, %FunctionNode{kind: :def}} <- graph.modules[module].functions,
+        arity in [nil, candidate],
+        reduce: reached do
+      reached -> MapSet.put(reached, {module, name, candidate})
+    end
   end
 
   defp add_reached(_call, reached, _graph), do: reached
