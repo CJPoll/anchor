@@ -308,9 +308,33 @@ defmodule Spike.CaseA do
     Fix.mark(:test_after_exit_message)
   end
 
+  test "server call after the label was lost" do
+    send(clean(), {:send, self(), :unlabelled_ping})
+
+    receive do
+      :unlabelled_ping -> :ok
+    end
+
+    :ok = GenServer.call(server(), {:mark, :server_call_from_unlabelled_test})
+    Fix.mark(:test_after_call_from_unlabelled)
+  end
+
+  test "logger and io in the test process" do
+    require Logger
+    Logger.debug("spike")
+    IO.write(:stderr, "")
+    Fix.mark(:test_after_logger_and_io)
+  end
+
+  test "file and code server in the test process" do
+    _ = File.read!(__ENV__.file)
+    _ = :code.which(Spike.Fix)
+    Fix.mark(:test_after_file_and_code)
+  end
+
   # Leak 1: spinning with no receive; it keeps its label in the next test's window.
   test "leak spinner a" do
-    counter = :counters.new(1, [:atomics])
+    counter = :counters.new(2, [:atomics])
     :persistent_term.put(:spike_spin_counter, counter)
     me = self()
 
@@ -329,7 +353,7 @@ defmodule Spike.CaseA do
     counter = :persistent_term.get(:spike_spin_counter)
     seen = :counters.get(counter, 1)
     wait_past(counter, seen)
-    :counters.put(counter, 1, -1)
+    :counters.put(counter, 2, 1)
   end
 
   # Leak 2: a process of test a released in test b by test b's own message.
@@ -409,12 +433,12 @@ defmodule Spike.CaseA do
   test "leak after a port b" do
     counter = :persistent_term.get(:spike_port_counter)
     wait_past(counter, :counters.get(counter, 1))
-    :counters.put(counter, 1, -1)
+    :counters.put(counter, 2, 1)
   end
 
   defp spin(counter) do
-    case :counters.get(counter, 1) do
-      -1 ->
+    case :counters.get(counter, 2) do
+      1 ->
         :ok
 
       _running ->
@@ -425,8 +449,8 @@ defmodule Spike.CaseA do
   end
 
   defp spin_marked(counter) do
-    case :counters.get(counter, 1) do
-      -1 ->
+    case :counters.get(counter, 2) do
+      1 ->
         :ok
 
       _running ->
@@ -463,41 +487,41 @@ defmodule Spike.Probe do
       {"guard get_seq_token (ticket's form)",
        [{:_, [{:"=/=", @label, 7}], [{:message, true}]}]},
       {"guard is_seq_trace with a no-token clause",
-       [{:_, [{:is_seq_trace}], [{:message, {:has_token}}]}, {:_, [], [{:message, {:no_token}}]}]},
+       [{:_, [{:is_seq_trace}], [{:message, :has_token}]}, {:_, [], [{:message, :no_token}]}]},
       {"body message of a computed boolean",
-       [{:_, [{:is_seq_trace}], [{:message, {:"=/=", @label, 7}}]}, {:_, [], [{:message, {:no_token}}]}]},
+       [{:_, [{:is_seq_trace}], [{:message, {:"=/=", @label, 7}}]}, {:_, [], [{:message, :no_token}]}]},
       {"body andalso with a payload last",
        [
          {:_, [{:is_seq_trace}], [{:message, {:andalso, {:"=/=", @label, 7}, {{@label, {:get_tcw}}}}}]},
-         {:_, [], [{:message, {:no_token}}]}
+         {:_, [], [{:message, :no_token}]}
        ]},
       {"body andalso with an atom last",
        [
          {:_, [{:is_seq_trace}], [{:message, {:andalso, {:"=/=", @label, 7}, :seen}}]},
-         {:_, [], [{:message, {:no_token}}]}
+         {:_, [], [{:message, :no_token}]}
        ]},
       {"body orelse: false, or payload (inverted)",
        [
          {:_, [{:is_seq_trace}], [{:message, {:orelse, {:"==", @label, 7}, {{@label}}}}]},
-         {:_, [], [{:message, {:no_token}}]}
+         {:_, [], [{:message, :no_token}]}
        ]},
       {"body element of a selected index",
        [
          {:_, [{:is_seq_trace}],
           [{:message, {:element, {:+, 1, {:band, 1, {:bxor, @label, 7}}}, {{false, {{@label}}}}}}]},
-         {:_, [], [{:message, {:no_token}}]}
+         {:_, [], [{:message, :no_token}]}
        ]},
       {"tcw guard plus label-read andalso (the suppression clause)",
        [
          {:_, [{:is_seq_trace}, {:"==", {:get_tcw}, 0}],
           [{:message, {:andalso, {:"=/=", @label, 7}, {{@label, {:get_tcw}}}}}]},
          {:_, [{:is_seq_trace}], [{:message, {{@label, {:get_tcw}}}}]},
-         {:_, [], [{:message, {:no_token}}]}
+         {:_, [], [{:message, :no_token}]}
        ]},
       {"no-token silenced by guard",
        [{:_, [{:not, {:is_seq_trace}}], [{:message, false}]}, {:_, [], [{:message, {{@label}}}]}]},
       {"self plus tcw guard (no label read)",
-       [{:_, [{:"==", {:self}, {:const, self()}}, {:"==", {:get_tcw}, 0}], [{:message, false}]}, {:_, [], [{:message, {:traced}}]}]}
+       [{:_, [{:"==", {:self}, {:const, self()}}, {:"==", {:get_tcw}, 0}], [{:message, false}]}, {:_, [], [{:message, :traced}]}]}
     ]
 
     for {name, spec} <- forms, do: q3_form(name, spec)
@@ -568,7 +592,7 @@ defmodule Spike.Probe do
     :persistent_term.put(:spike_server, server)
     :persistent_term.put(:spike_clean, clean)
     :persistent_term.put(:spike_task_sup, task_sup)
-    :persistent_term.put(:spike_port_counter, :counters.new(1, [:atomics]))
+    :persistent_term.put(:spike_port_counter, :counters.new(2, [:atomics]))
 
     tracer = Spike.Tracer.start()
     :erlang.system_flag(:trace_control_word, 0)
@@ -660,7 +684,7 @@ defmodule Spike.Probe do
 
   defp report(messages) do
     windows =
-      for {:trace, _pid, :call, {ExUnit.EventManager, :test_started, 2}, {test, word}} <- messages, into: %{} do
+      for {:trace, _pid, :call, {ExUnit.EventManager, :test_started, _args}, {test, word}} <- messages, into: %{} do
         {word, test.name}
       end
 
@@ -670,19 +694,18 @@ defmodule Spike.Probe do
       end
 
     roots =
-      for {:trace, pid, :call, {ExUnit.OnExitHandler, :register, 1}, {kind, word}} <- messages, into: %{} do
+      for {:trace, pid, :call, {ExUnit.OnExitHandler, :register, _args}, {kind, word}} <- messages, into: %{} do
         {pid, {kind, word}}
       end
 
     say("Q1 windows=#{map_size(windows)} roots=#{map_size(roots)} procs_spawned=#{map_size(parents)}")
 
-    for {:trace, pid, :call, {ExUnit.OnExitHandler, :register, 1}, {kind, word}} <- messages do
+    for {:trace, pid, :call, {ExUnit.OnExitHandler, :register, _args}, {kind, word}} <- messages do
       say("Q1 ENTRY #{kind} word=#{word} test=#{inspect(windows[word])} pid=#{inspect(pid)}")
     end
 
-    for {:trace, pid, :call, {ExUnit.Runner, name, _}, extra} <- messages do
-      say("Q1 RUNNER #{name} #{inspect(extra)} pid=#{inspect(pid)}")
-    end
+    runner = for {:trace, pid, :call, {ExUnit.Runner, name, _}, extra} <- messages, do: {name, extra, pid}
+    say("Q1 RUNNER calls=#{length(runner)} first=#{inspect(Enum.take(runner, 2))} last=#{inspect(List.last(runner))}")
 
     say("Q2 columns: tag | label read at the call | tcw at the call | test whose window was open | owner by spawn ancestry (Q6)")
 
