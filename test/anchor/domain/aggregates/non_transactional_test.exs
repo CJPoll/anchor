@@ -62,6 +62,8 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
               defp n29a, do: n29b()
               defp n29b, do: Repo.insert(%S{})
 
+              def n30(fun), do: Repo.transaction(fun)
+
               def n27(0), do: :ok
               def n27(n), do: (Repo.query!("DELETE FROM s"); n27(n - 1))
 
@@ -120,6 +122,10 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
     refute MapSet.member?(a.always_in_transaction, {@n, :n3g, 0})
     assert nontx(a, :n3h).keys == keys([@t])
     assert nontx(a, :n3f).keys == MapSet.new()
+  end
+
+  test "an unread transaction is no gap outside a transaction", %{analysis: a} do
+    assert %{complete?: true} = nontx(a, :n30, 1)
   end
 
   test "a recursive function nothing calls in a transaction is not always in one", %{

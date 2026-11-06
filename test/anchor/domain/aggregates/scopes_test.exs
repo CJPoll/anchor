@@ -228,6 +228,8 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
 
     def s71(fun), do: Repo.transaction(fn -> Helper.tx_any(fun) end)
     def s72(fun), do: Repo.transaction(fn -> Repo.transaction(fun) end)
+    def s73(fun), do: Repo.transaction(fn -> local_unread(fun) end)
+    defp local_unread(fun), do: atomically(fun)
 
     def s35 do
       Multi.new()
@@ -345,7 +347,8 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
               :s66,
               :s68,
               :s71,
-              :s72
+              :s72,
+              :s73
             ],
        do: 1
 
@@ -640,6 +643,11 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
     test "a callee transaction's gap is a gap of the transaction that reaches it", %{analysis: a} do
       assert %Scope{complete?: false, gaps: [{:dynamic_call, {@helper, :tx_any, 1}, _}]} =
                one(a, :s71)
+    end
+
+    test "a local transaction function's gap reaches the transaction around it", %{analysis: a} do
+      assert %Scope{complete?: false, gaps: gaps} = one(a, :s73)
+      assert Enum.any?(gaps, &match?({:dynamic_call, {@x, :local_unread, 1}, _}, &1))
     end
 
     test "a transaction nested in a body: its gap is a gap of the outer one", %{analysis: a} do
