@@ -8191,3 +8191,153 @@ every capture reads as outside (`lib/anchor/domain/aggregates/write_sites.ex`). 
      stacktrace:
        test/anchor/domain/aggregates/non_transactional_test.exs:242: (test)
 ```
+
+# Nineteenth run: a write captured as a body is a gap of its transaction
+
+4 mutations for critic round 21's finding, each red on its first run.
+
+| # | Mutation | Tests run | Result |
+|---|---|---|---|
+| WST-BODYGAP | a write captured as a body is no gap of its scope (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `72 tests, 1 failure` (red) |
+| WST-BODYOUTSIDE | a write captured as a body reads as outside (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `72 tests, 1 failure` (red) |
+| WST-MIXEDDYN | a captured write beside its body capture is not reported outside (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `72 tests, 1 failure` (red) |
+| WST-UNTAGDYN | the dynamic row keeps its tag when mixed (`lib/anchor/domain/aggregates/write_sites.ex`) | `scopes_test.exs` | `72 tests, 1 failure` (red) |
+
+## WST-BODYGAP
+
+a write captured as a body is no gap of its scope (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `72 tests, 1 failure`.
+
+```
+
+  1) test build/3 a write captured as a body and elsewhere is a gap and a write outside (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:754
+     match (=) failed
+     code:  assert %Scope{complete?: false} = one(a, :s91)
+     left:  %Anchor.Domain.Aggregates.Scope{complete?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.ScopesTest.X, :s91, 0},
+              ordinal: 1,
+              line: 279,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              complete?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:755: (test)
+
+.......................................
+```
+
+## WST-BODYOUTSIDE
+
+a write captured as a body reads as outside (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `72 tests, 1 failure`.
+
+```
+
+  1) test build/3 a write captured as a body is a gap of its transaction, and no write outside one (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:747
+     Expected false or nil, got true
+     code: refute Enum.any?(a.unattributed, &(&1.mfa == {@x, :s90, 0}))
+     arguments:
+
+         # 1
+         [
+           %{
+             line: 189,
+             mfa: {AnchorFixtures.ScopesTest.X, :s39, 1},
+             what: "a capture of the write AnchorFixtures.ScopesTest.Repo.insert/1"
+           },
+           %{
+             line: 276,
+             mfa: {AnchorFixtures.ScopesTest.X, :s90, 0},
+             what: "a capture of the write AnchorFixtures.ScopesTest.Lib.flush/0"
+           },
+           %{
+             line: 279,
+             mfa: {AnchorFixtures.ScopesTest.X, :s91, 0},
+             what: "a capture of the write AnchorFixtures.ScopesTest.Lib.flush/0"
+           }
+         ]
+
+         # 2
+         #Function<16.34911499/1 in Anchor.Domain.Aggregates.ScopesTest."test build/3 a write captured as a body is a gap of its transaction, and no write outside one"/1>
+
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:751: (test)
+
+..........
+```
+
+## WST-MIXEDDYN
+
+a captured write beside its body capture is not reported outside (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `72 tests, 1 failure`.
+
+```
+
+
+
+  1) test build/3 a write captured as a body is a gap of its transaction, and no write outside one (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:747
+     Expected false or nil, got true
+     code: refute Enum.any?(a.unattributed, &(&1.mfa == {@x, :s90, 0}))
+     arguments:
+
+         # 1
+         [
+           %{
+             line: 189,
+             mfa: {AnchorFixtures.ScopesTest.X, :s39, 1},
+             what: "a capture of the write AnchorFixtures.ScopesTest.Repo.insert/1"
+           },
+           %{
+             line: 276,
+             mfa: {AnchorFixtures.ScopesTest.X, :s90, 0},
+             what: "a capture of the write AnchorFixtures.ScopesTest.Lib.flush/0"
+           },
+           %{
+             line: 279,
+             mfa: {AnchorFixtures.ScopesTest.X, :s91, 0},
+             what: "a capture of the write AnchorFixtures.ScopesTest.Lib.flush/0"
+           }
+         ]
+
+         # 2
+         #Function<16.34911499/1 in Anchor.Domain.Aggregates.ScopesTest."test build/3 a write captured as a body is a gap of its transaction, and no write outside one"/1>
+
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:751: (test)
+
+.......................................................................
+```
+
+## WST-UNTAGDYN
+
+the dynamic row keeps its tag when mixed (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `72 tests, 1 failure`.
+
+```
+
+  1) test build/3 a write captured as a body and elsewhere is a gap and a write outside (Anchor.Domain.Aggregates.ScopesTest)
+     test/anchor/domain/aggregates/scopes_test.exs:754
+     Expected truthy, got false
+     code: assert Enum.any?(a.unattributed, &(&1.mfa == {@x, :s91, 0}))
+     arguments:
+
+         # 1
+         [
+           %{
+             line: 189,
+             mfa: {AnchorFixtures.ScopesTest.X, :s39, 1},
+             what: "a capture of the write AnchorFixtures.ScopesTest.Repo.insert/1"
+           }
+         ]
+
+         # 2
+         #Function<15.34911499/1 in Anchor.Domain.Aggregates.ScopesTest."test build/3 a write captured as a body and elsewhere is a gap and a write outside"/1>
+
+     stacktrace:
+       test/anchor/domain/aggregates/scopes_test.exs:756: (test)
+
+................
+```
