@@ -14,6 +14,9 @@ defmodule Anchor.SabotageScanWorkflowTest do
     %{workflow: workflow, job: job, steps: job["steps"]}
   end
 
+  defp listing_falls_back?(run),
+    do: run =~ ~r/run_id=\$\(gh run list .*?\) \|\| run_id=""\n/s
+
   defp step(steps, name),
     do: Enum.find(steps, &(&1["name"] == name)) || flunk("no step #{name}")
 
@@ -50,6 +53,15 @@ defmodule Anchor.SabotageScanWorkflowTest do
     assert run =~ "--name anchor-coverage"
     assert run =~ ~s(echo "SCAN_COVERAGE=--coverage=$RUNNER_TEMP/coverage/anchor-coverage.etf")
     assert run =~ "No anchor-coverage artifact"
+  end
+
+  # GitHub runs a `run:` step under `bash -e`: a `gh run list` that errors
+  # inside `run_id=$(...)` would end the job unless the assignment falls back.
+  test "a failing listing of coverage runs falls back to no map", %{steps: steps} do
+    run = step(steps, "Download the latest coverage map")["run"]
+
+    assert listing_falls_back?(run)
+    refute listing_falls_back?(String.replace(run, ~s( || run_id=""), ""))
   end
 
   test "the summary and the artifact come from the report", %{steps: steps} do

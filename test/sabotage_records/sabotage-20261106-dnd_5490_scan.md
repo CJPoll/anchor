@@ -563,3 +563,27 @@ The critic found `--shard auto` keyed on the day of the year, which restarts eac
 ```
 
 After the fix: `8 tests, 0 failures`.
+
+## Critic round: the coverage listing falls back
+
+The critic found that 14be9b9 added `|| run_id=""` after the `gh run list` substitution in the coverage download step with no test holding it. GitHub runs `run:` under `bash -e`, so a listing error would end the job. The new test, "a failing listing of coverage runs falls back to no map", asserts the clause and, as its positive control, refutes the same step with the clause removed. The red, with ` || run_id=""` deleted from `.github/workflows/sabotage-scan.yml` (`mix test test/anchor/sabotage_scan_workflow_test.exs`):
+
+```
+  1) test a failing listing of coverage runs falls back to no map (Anchor.SabotageScanWorkflowTest)
+     test/anchor/sabotage_scan_workflow_test.exs:60
+     Expected truthy, got false
+     code: assert listing_falls_back?(run)
+     arguments:
+
+         # 1
+         "run_id=$(gh run list --repo \"$GITHUB_REPOSITORY\" --workflow coverage-map.yml \\\n  --branch main --event push --status success --limit 1 \\\n  --json databaseId --jq '.[0].databaseId // empty')\nif [ -n \"$run_id\" ] &&\n  gh run download \"$run_id\" --repo \"$GITHUB_REPOSITORY\" \\\n    --name anchor-coverage --dir \"$RUNNER_TEMP/coverage\"; then\n  echo \"SCAN_COVERAGE=--coverage=$RUNNER_TEMP/coverage/anchor-coverage.etf\" >> \"$GITHUB_ENV\"\nelse\n  echo \"No anchor-coverage artifact: selecting from the kill maps and the test mirror.\"\nfi\n"
+
+     stacktrace:
+       test/anchor/sabotage_scan_workflow_test.exs:63: (test)
+
+.....
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+8 tests, 1 failure
+```
+
+On the real workflow: `8 tests, 0 failures`.
