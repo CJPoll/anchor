@@ -6,7 +6,7 @@
 - **Code under test:** `Anchor.Domain.Sabotage.BehaviourMap`, `Anchor.Domain.Sabotage.Report`'s behaviours view, `Anchor.Managers.Sabotage.Behaviours`, the `behaviour_locality_*` keys of `Anchor.Domain.Sabotage.Config`, `Anchor.Adapters.SourceReader.list/1`, `CoverageMap.check/1`'s name, and `Mix.Tasks.Anchor.Sabotage.behaviours_facts/1`
 - **Suite run:** each mutation ran `mix test --timeout 2000 --max-cases 2 <its test files>` inside one `test-slot`, by a driver that applied it, ran the files and restored the source. The checkout's absolute path in the output reads `<worktree>`.
 
-Every mutation below reddens a test; each section shows the first failure, cut at 70 lines. BH-A, BH-B and BH-C are the three breaks the QA plan requires: executed causes instead of confirmed ones, the line in the test key, a generated module counted as a directory.
+Every mutation in the first table reddens a test, and so does every row of `## Third run`; each section shows the first failure, cut at 70 lines. BH-A, BH-B and BH-C are the three breaks the QA plan requires: executed causes instead of confirmed ones, the line in the test key, a generated module counted as a directory.
 
 BR-F, BR-G and BM-E first reported no summary, because their first wording left a function or a variable unused and warnings are errors here. They were reworded to keep it used, and re-run.
 
@@ -1019,4 +1019,50 @@ warning: mtime (modified time) for "lib/anchor/domain/sabotage/coverage_map.ex" 
      └─ lib/mix/tasks/anchor.sabotage.ex:136:3
 
 Compilation failed due to warnings while using the --warnings-as-errors option
+```
+
+## Third run
+
+BH-R and BT-B in `## Second run` never reached a test: `NO SUMMARY` is the compile failing on an unused function and an unused alias, under `--warnings-as-errors`. That is no red. They were reworded to keep each one used, and re-run against `cd8038f`.
+
+| # | Mutation | Tests run | Result | Failing tests |
+|---|---|---|---|---|
+| BH-R | a lowercase segment reads as part of the module (`lib/anchor/domain/sabotage/behaviour_map.ex`) | `behaviour_map_test.exs` | `25 tests, 1 failure` (red) | build/3 a function name with a dot does not read as part of the module |
+| BT-B | a bad ref reaches the adapter (`lib/mix/tasks/anchor.sabotage.ex`) | `anchor_sabotage_behaviours_test.exs` | `7 tests, 1 failure` (red) | a ref that reads as an option is usage, exit 2, nothing read |
+
+### BH-R — a lowercase segment reads as part of the module
+
+Run summary: `25 tests, 1 failure`
+
+```text
+1) test build/3 a function name with a dot does not read as part of the module (Anchor.Domain.Sabotage.BehaviourMapTest)
+     test/anchor/domain/sabotage/behaviour_map_test.exs:128
+     Assertion with == failed
+     code:  assert one(BehaviourMap.build(map([test_ref(["A.b.c/0"])]), [row], index)).directories == ["lib/a"]
+     left:  ["lib/wrong"]
+     right: ["lib/a"]
+     stacktrace:
+       test/anchor/domain/sabotage/behaviour_map_test.exs:132: (test)
+
+.......................
+```
+
+### BT-B — a bad ref reaches the adapter
+
+Run summary: `7 tests, 1 failure`
+
+```text
+1) test a ref that reads as an option is usage, exit 2, nothing read (Mix.Tasks.Anchor.SabotageBehavioursTest)
+     test/mix/tasks/anchor_sabotage_behaviours_test.exs:72
+     ** (Mox.UnexpectedCallError) no expectation defined for Anchor.ConfigLoaderMock.load_in/1 in process #PID<0.1272.0> with args ["<worktree>"]
+     code: capture_io(:stderr, fn ->
+     stacktrace:
+       (mox 1.2.0) lib/mox.ex:903: Mox.__dispatch__/4
+       (anchor 0.1.0) lib/anchor/managers/sabotage/runner.ex:395: Anchor.Managers.Sabotage.Runner.config/2
+       (anchor 0.1.0) lib/anchor/managers/sabotage/behaviours.ex:64: Anchor.Managers.Sabotage.Behaviours.run/2
+       (anchor 0.1.0) lib/mix/tasks/anchor.sabotage.ex:204: Mix.Tasks.Anchor.Sabotage.run/2
+       test/mix/tasks/anchor_sabotage_behaviours_test.exs:75: anonymous fn/0 in Mix.Tasks.Anchor.SabotageBehavioursTest."test a ref that reads as an option is usage, exit 2, nothing read"/1
+       (ex_unit 1.19.4) lib/ex_unit/capture_io.ex:296: ExUnit.CaptureIO.do_with_io/3
+       (ex_unit 1.19.4) lib/ex_unit/capture_io.ex:166: ExUnit.CaptureIO.capture_io/2
+       test/mix/tasks/anchor_sabotage_behaviours_test.exs:74: (test)
 ```
