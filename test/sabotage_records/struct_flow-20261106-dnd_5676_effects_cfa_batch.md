@@ -713,3 +713,62 @@ f37fd94ec33e	lib/anchor/domain/struct_flow.ex	Anchor.Domain.StructFlow.tag/2	nar
 9fcae81ec3bd	lib/anchor/domain/struct_flow.ex	Anchor.Domain.StructFlow.writes/3	return_input	killed	test/anchor/domain/struct_flow_test.exs:272 test the pass bound (DND-5676) nested funs that settle within the bound are {:ok, _}, every level written ; test/anchor/domain/struct_flow_test.exs:207 test writes/3: one per op put_new: Map.put_new on a matched Turn ; test/anchor/domain/struct_flow_test.exs:215 test writes/3: one per op put_in(g.turn.status, :x) judges g and g.turn, not the status leaf ; test/anchor/domain/struct_flow_test.exs:288 test the pass bound (DND-5676) past the bound: the writes the last settled pass found, the deepest one missing ; test/anchor/domain/struct_flow_test.exs:207 test writes/3: one per op put: Map.put on a matched Turn ; test/anchor/domain/struct_flow_test.exs:207 test writes/3: one per op struct2: struct on a matched Turn ; test/anchor/domain/struct_flow_test.exs:257 test writes/3: not writes dropping :__struct__ makes a plain map, not a write ; test/anchor/domain/struct_flow_test.exs:207 test writes/3: one per op update: Map.update on a matched Turn ; test/anchor/domain/struct_flow_test.exs:207 test writes/3: one per op merge: Map.put on a matched Turn ; test/anchor/domain/struct_flow_test.exs:280 test the pass bound (DND-5676) one level more does not settle at the last pass: :bound_hit ; test/anchor/domain/struct_flow_test.exs:235 test writes/3: scopes a clause's rebinding of a name ends with the clause ; test/anchor/domain/struct_flow_test.exs:207 test writes/3: one per op upd: map update on a matched Turn ; test/anchor/domain/struct_flow_test.exs:223 test writes/3: one per op a spec return and a field read, written to ; test/anchor/domain/struct_flow_test.exs:251 test writes/3: not writes reading s.field, Map.get and Map.from_struct is none\; the same plus a Map.put is one ; test/anchor/domain/struct_flow_test.exs:207 test writes/3: one per op drop: Map.drop on a matched Turn ; test/anchor/domain/struct_flow_test.exs:207 test writes/3: one per op replace!: Map.replace! on a matched Turn ; test/anchor/domain/struct_flow_test.exs:207 test writes/3: one per op update!: Map.update! on a matched Turn ; test/anchor/domain/struct_flow_test.exs:261 test writes/3: not writes a write on an unknown value or a map()-typed field is none ; test/anchor/domain/struct_flow_test.exs:207 test writes/3: one per op struct2!: struct! on a matched Turn ; test/anchor/domain/struct_flow_test.exs:207 test writes/3: one per op replace: Map.replace on a matched Turn ; test/anchor/domain/struct_flow_test.exs:207 test writes/3: one per op delete: Map.delete on a matched Turn ; test/anchor/domain/struct_flow_test.exs:207 test writes/3: one per op put_in_keys: put_in on a matched Turn
 ff5d8ce0af77	lib/anchor/domain/struct_flow.ex	Anchor.Domain.StructFlow.writes/3	return_input	killed	test/anchor/domain/struct_flow_test.exs:272 test the pass bound (DND-5676) nested funs that settle within the bound are {:ok, _}, every level written ; test/anchor/domain/struct_flow_test.exs:257 test writes/3: not writes dropping :__struct__ makes a plain map, not a write ; test/anchor/domain/struct_flow_test.exs:207 test writes/3: one per op struct2!: struct! on a matched Turn ; test/anchor/domain/struct_flow_test.exs:207 test writes/3: one per op replace: Map.replace on a matched Turn ; test/anchor/domain/struct_flow_test.exs:215 test writes/3: one per op put_in(g.turn.status, :x) judges g and g.turn, not the status leaf ; test/anchor/domain/struct_flow_test.exs:280 test the pass bound (DND-5676) one level more does not settle at the last pass: :bound_hit ; test/anchor/domain/struct_flow_test.exs:207 test writes/3: one per op struct2: struct on a matched Turn ; test/anchor/domain/struct_flow_test.exs:251 test writes/3: not writes reading s.field, Map.get and Map.from_struct is none\; the same plus a Map.put is one ; test/anchor/domain/struct_flow_test.exs:207 test writes/3: one per op upd: map update on a matched Turn ; test/anchor/domain/struct_flow_test.exs:207 test writes/3: one per op put_in_keys: put_in on a matched Turn ; test/anchor/domain/struct_flow_test.exs:235 test writes/3: scopes a clause's rebinding of a name ends with the clause ; test/anchor/domain/struct_flow_test.exs:223 test writes/3: one per op a spec return and a field read, written to ; test/anchor/domain/struct_flow_test.exs:207 test writes/3: one per op update!: Map.update! on a matched Turn ; test/anchor/domain/struct_flow_test.exs:261 test writes/3: not writes a write on an unknown value or a map()-typed field is none ; test/anchor/domain/struct_flow_test.exs:207 test writes/3: one per op replace!: Map.replace! on a matched Turn ; test/anchor/domain/struct_flow_test.exs:207 test writes/3: one per op drop: Map.drop on a matched Turn ; test/anchor/domain/struct_flow_test.exs:288 test the pass bound (DND-5676) past the bound: the writes the last settled pass found, the deepest one missing ; test/anchor/domain/struct_flow_test.exs:207 test writes/3: one per op put: Map.put on a matched Turn ; test/anchor/domain/struct_flow_test.exs:207 test writes/3: one per op merge: Map.put on a matched Turn ; test/anchor/domain/struct_flow_test.exs:207 test writes/3: one per op put_new: Map.put_new on a matched Turn ; test/anchor/domain/struct_flow_test.exs:207 test writes/3: one per op update: Map.update on a matched Turn ; test/anchor/domain/struct_flow_test.exs:207 test writes/3: one per op delete: Map.delete on a matched Turn
 ```
+
+## Run 23:31 UTC
+
+- **Code under test:** `Anchor.Domain.StructFlow.fixpoint/4`, `Anchor.Domain.StructFlow.tag/2`, `Anchor.Domain.StructFlow.writes/3`
+- **Generated by:** `mix anchor.sabotage run --base 85dd5c9c77fe57d69e939a5a89b1a00696d18599 --print-survivor-lines` (Anchor 0.1.0), base 85dd5c9c77fe57d69e939a5a89b1a00696d18599, head 70499772be5c6e20197ec27180f7957fd9a16778
+
+### Summary
+
+None.
+
+### Mutants
+
+None.
+
+### Survivors
+
+None.
+
+### Kills by timeout
+
+None.
+
+### Skipped, invalid, not run
+
+- skipped Anchor.Domain.StructFlow.known/3 delete_statement `ctx = %{index: index, module: module}`: orphans variable `ctx` bound at line 120 and used at line 121
+- skipped Anchor.Domain.StructFlow.known/3 delete_statement `{status, seeds} = fixpoint(core, ctx, %{}, 1)`: orphans variable `seeds` bound at line 121 and used at line 122
+- skipped Anchor.Domain.StructFlow.known/3 delete_statement `st = walk(core, ctx, new_state(seeds, nil))`: orphans variable `st` bound at line 122 and used at line 123
+- skipped Anchor.Domain.StructFlow.known/3 return_input [0] `known(core, index, module)`: removes the last use of function `settled/1`
+- skipped Anchor.Domain.StructFlow.known/3 return_input [1] `known(core, index, module)`: removes the last use of function `settled/1`
+- skipped Anchor.Domain.StructFlow.known/3 return_input [2] `known(core, index, module)`: removes the last use of function `settled/1`
+- skipped Anchor.Domain.StructFlow.writes/3 delete_statement `ctx = %{index: index, module: module}`: orphans variable `ctx` bound at line 134 and used at line 135
+- skipped Anchor.Domain.StructFlow.writes/3 delete_statement `{status, seeds} = fixpoint(core, ctx, %{}, 1)`: orphans variable `seeds` bound at line 135 and used at line 136
+- skipped Anchor.Domain.StructFlow.writes/3 delete_statement `st = walk(core, ctx, new_state(seeds, []))`: orphans variable `st` bound at line 136 and used at line 137
+- skipped Anchor.Domain.StructFlow.fixpoint/4 delete_statement `st = walk(core, ctx, new_state(seeds, nil))`: orphans variable `st` bound at line 155 and used at line 157
+- 07ec7248d0e6 Anchor.Domain.StructFlow.fixpoint/4 force_condition [false]: not run (cap)
+- 272e0d3ce8dd Anchor.Domain.StructFlow.fixpoint/4 force_condition [true]: not run (cap)
+- 7a3aee51997d Anchor.Domain.StructFlow.fixpoint/4 force_condition [false]: not run (cap)
+- 8b9ee0ad0079 Anchor.Domain.StructFlow.fixpoint/4 force_condition [true]: not run (cap)
+- 4401a97bc2a0 Anchor.Domain.StructFlow.fixpoint/4 return_input [1]: not run (cap)
+- 6c685fe7bdc3 Anchor.Domain.StructFlow.fixpoint/4 return_input [3]: not run (cap)
+- c077e4226953 Anchor.Domain.StructFlow.fixpoint/4 return_input [0]: not run (cap)
+- f96e4ad76503 Anchor.Domain.StructFlow.fixpoint/4 return_input [2]: not run (cap)
+- be389d115e2b Anchor.Domain.StructFlow.tag/2 narrow_clause: not run (cap)
+- f37fd94ec33e Anchor.Domain.StructFlow.tag/2 narrow_clause: not run (cap)
+- 301780ee39a5 Anchor.Domain.StructFlow.tag/2 return_input [1]: not run (cap)
+- 7bdba1d0f6bb Anchor.Domain.StructFlow.tag/2 return_input [1]: not run (cap)
+- 221f54baf8b4 Anchor.Domain.StructFlow.writes/3 return_input [2]: not run (cap)
+- 9fcae81ec3bd Anchor.Domain.StructFlow.writes/3 return_input [1]: not run (cap)
+- ff5d8ce0af77 Anchor.Domain.StructFlow.writes/3 return_input [0]: not run (cap)
+
+### Tests still lacking a red
+
+None.
+
+### Kill map
+
+```anchor-kills
+# id	file	mfa	operator	status	killers
+```
