@@ -68,7 +68,7 @@ jobs:
             {:ok, map} = "anchor-coverage.etf" |> File.read!() |> :erlang.binary_to_term([:safe]) |> CoverageMap.check()
             :ok = CoverageMap.validate(map)
             files = map |> CoverageMap.tests_for("Anchor.Domain.GlobPattern.matches_pattern?/2") |> Enum.map(& &1.file)
-            IO.puts("tests: #{length(map.tests)}, modules_traced: #{map.modules_traced}, outside_windows: #{map.outside_windows}, late_events: #{map.late_events}")
+            IO.puts("tests: #{length(map.tests)}, modules_traced: #{map.modules_traced}, leaks: #{length(map.leaks)}, ambient: #{length(map.ambient)}, call_rows: #{map.counters.call_rows}, credited_by_label: #{map.counters.credited_by_label}")
             unless "test/anchor/domain/glob_pattern_test.exs" in files do
               IO.puts(:stderr, "GlobPattern.matches_pattern?/2 lists no test from test/anchor/domain/glob_pattern_test.exs")
               System.halt(1)

@@ -43,6 +43,9 @@ defmodule Anchor.Domain.GraphRules.AggregateWriteSources do
   @impl Anchor.Domain.GraphRule
   def needs, do: [:aggregate_analysis]
 
+  @impl Anchor.Domain.GraphRule
+  def narrows?(_base_key, _key), do: false
+
   @impl Anchor.Domain.RuleShape
   def shape(_rule),
     do:

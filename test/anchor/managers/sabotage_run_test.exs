@@ -37,6 +37,16 @@ defmodule Anchor.Managers.SabotageRunTest do
     stub(SourceMutationMock, :release_lock, fn "/repo" -> :ok end)
     # DND-5484: no record is there yet; the record tests expect their own.
     stub(Anchor.RecordStoreMock, :list, fn "/repo", "test/sabotage_records" -> [] end)
+    # DND-5483: an empty survivors list, here and on the base; the survivors
+    # tests expect their own.
+    stub(Anchor.BaselineStoreMock, :read, fn "/repo", ".anchor/sabotage/survivors.txt" ->
+      {:ok, []}
+    end)
+
+    stub(Anchor.GitBaseMock, :show, fn "/repo", _base, ".anchor/sabotage/survivors.txt" ->
+      {:ok, []}
+    end)
+
     :ok
   end
 
@@ -64,7 +74,9 @@ defmodule Anchor.Managers.SabotageRunTest do
     source_mutation: SourceMutationMock,
     git_worktree: GitWorktreeMock,
     test_execution: TestExecutionMock,
-    record_store: Anchor.RecordStoreMock
+    record_store: Anchor.RecordStoreMock,
+    baseline_store: Anchor.BaselineStoreMock,
+    git_base: Anchor.GitBaseMock
   ]
   @source "defmodule Calc do\n  def add(a, b) do\n    a + b\n  end\nend\n"
   @diff "diff --git a/lib/calc.ex b/lib/calc.ex\nindex 1..2 100644\n--- a/lib/calc.ex\n+++ b/lib/calc.ex\n@@ -3 +3 @@\n-old\n+new\n"
@@ -822,7 +834,7 @@ defmodule Anchor.Managers.SabotageRunTest do
 
     defp coverage_map(commit \\ "c0ffee0000000000000000000000000000000000") do
       %{
-        version: 1,
+        version: 2,
         commit: commit,
         elixir: "1.19.4",
         otp: "28",
@@ -835,9 +847,9 @@ defmodule Anchor.Managers.SabotageRunTest do
             functions: ["Calc.add/2"]
           }
         ],
+        leaks: [],
+        ambient: [],
         modules_traced: 3,
-        outside_windows: 0,
-        late_events: 0,
         suite_exit: 0
       }
     end
@@ -1022,18 +1034,18 @@ defmodule Anchor.Managers.SabotageRunTest do
 
       assert {2, message} = run.refusal
       assert message =~ ~s|({:commit, "--output=/tmp/x"})|
-      assert message =~ "Fix: download the anchor-coverage artifact again"
+      assert message =~ "Fix: download a current anchor-coverage artifact"
     end
 
     test "a map of another version is exit 2 with a Fix:" do
       expect_until_plan()
-      expect_map({:ok, %{coverage_map() | version: 2}})
+      expect_map({:ok, %{coverage_map() | version: 1}})
 
       run = Sabotage.run(%{@facts | dry_run: true} |> Map.put(:coverage, "cov.etf"), @cov_opts)
 
       assert {2, message} = run.refusal
-      assert message =~ "is not a usable version-1 coverage map ({:version, 2})"
-      assert message =~ "Fix: download the anchor-coverage artifact again"
+      assert message =~ "is not a usable version-2 coverage map ({:version, 1})"
+      assert message =~ "Fix: download a current anchor-coverage artifact"
     end
   end
 
@@ -1606,7 +1618,7 @@ defmodule Anchor.Managers.SabotageRunTest do
 
     test "T2: positive control: two targets with different test sets run twice" do
       map = %{
-        version: 1,
+        version: 2,
         commit: "c0ffee0000000000000000000000000000000000",
         elixir: "1.19.4",
         otp: "28",
@@ -1619,9 +1631,9 @@ defmodule Anchor.Managers.SabotageRunTest do
             functions: ["String.Chars.Calc.to_string/1"]
           }
         ],
+        leaks: [],
+        ambient: [],
         modules_traced: 3,
-        outside_windows: 0,
-        late_events: 0,
         suite_exit: 0
       }
 
@@ -1668,6 +1680,192 @@ defmodule Anchor.Managers.SabotageRunTest do
              ]
 
       assert Enum.all?(run.outcomes, &(&1.status == :killed))
+    end
+  end
+
+  describe "run/2: the survivors list (DND-5483)" do
+    # Sabotage record (DND-5483): ../../sabotage_records/sabotage-20261103-dnd_5483_survivors_replay.md
+    @list ".anchor/sabotage/survivors.txt"
+
+    # The two mutants of add/2: the first killed, the second survives.
+    defp killed_then_survived do
+      [_first, second] = mutants()
+      expect_until_selection()
+      expect_baseline(test_run(:passed))
+      expect_patcher(2)
+      expect_delete_journal(2)
+      expect_save()
+
+      expect(TestExecutionMock, :run, 2, fn _argv, ["test/calc_test.exs"], _opts ->
+        if calls_seen({:write_journal, second.id}),
+          do: call(:tests, test_run(:passed)),
+          else: call(:tests, test_run(:failed, [@killer]))
+      end)
+    end
+
+    defp line(mutant, reason),
+      do: "#{mutant.id} lib/calc.ex Calc.add/2 #{mutant.operator}  # #{reason}"
+
+    test "SV1: the list and its base copy are read; a listed survivor is held, exit 0; GREW shown" do
+      [_first, second] = mutants()
+      killed_then_survived()
+
+      expect(Anchor.BaselineStoreMock, :read, fn @root, @list ->
+        {:ok, [line(second, "logging only")]}
+      end)
+
+      expect(Anchor.GitBaseMock, :show, fn @root, "origin/main", @list -> {:ok, []} end)
+
+      run = Sabotage.run(@facts, @opts)
+
+      assert run.refusal == nil
+      assert [%{id: id}] = run.survivors.judgement.held
+      assert id == second.id
+      assert run.survivors.grew == {:added, run.survivors.judgement.held}
+      assert Report.exit_code(run) == 0
+      text = Report.render(run)
+
+      assert text =~
+               "Survivors added by this branch: review each reason\n  #{line(second, "logging only")}"
+    end
+
+    test "SV1b: the same run with the survivor unlisted: NEW, exit 1 (the acceptance pair)" do
+      [_first, second] = mutants()
+      killed_then_survived()
+
+      run = Sabotage.run(@facts, @opts)
+
+      assert [%{mutant: %{id: id}}] = run.survivors.judgement.new
+      assert id == second.id
+      assert Report.exit_code(run) == 1
+      assert Report.render(run) =~ "NEW survivor #{second.id}"
+    end
+
+    test "SV2: a survivors path named in the config that is absent: exit 1 with the create-it Fix; nothing applied" do
+      expect_journal(:none)
+      expect_config(%SabotageConfig{survivors: "sabotage/survivors.txt"})
+      expect_ignored()
+      expect_scope()
+      expect_clean()
+
+      expect(Anchor.BaselineStoreMock, :read, fn @root, "sabotage/survivors.txt" ->
+        {:error, :enoent}
+      end)
+
+      assert %{refusal: {1, message}} = Sabotage.run(@facts, @opts)
+
+      assert message ==
+               "survivors file sabotage/survivors.txt not found. Fix: create it (it may be " <>
+                 "empty) or remove sabotage.survivors"
+    end
+
+    test "SV3: the default path absent is an empty list, said loudly" do
+      killed_then_survived()
+      expect(Anchor.BaselineStoreMock, :read, fn @root, @list -> {:error, :enoent} end)
+      expect(Anchor.GitBaseMock, :show, fn @root, "origin/main", @list -> {:error, :absent} end)
+
+      run = Sabotage.run(@facts, @opts)
+
+      assert "no survivors file at #{@list}: every survivor is NEW" in run.notes
+      assert run.survivors.grew == {:first_landing, []}
+      assert Report.exit_code(run) == 1
+    end
+
+    test "SV4: a base copy that cannot be read is exit 3; nothing applied" do
+      expect_journal(:none)
+      expect_config()
+      expect_ignored()
+      expect_scope()
+      expect_clean()
+      expect(Anchor.BaselineStoreMock, :read, fn @root, @list -> {:ok, []} end)
+
+      expect(Anchor.GitBaseMock, :show, fn @root, "origin/main", @list ->
+        {:error, {:git, 128, "fatal: bad revision"}}
+      end)
+
+      assert %{refusal: {3, message}} = Sabotage.run(@facts, @opts)
+
+      assert message =~
+               "COULD NOT MEASURE: the survivors file #{@list} cannot be read at origin/main"
+    end
+
+    test "SV4b: a malformed list refuses before any mutant, exit 1, naming each entry" do
+      expect_journal(:none)
+      expect_config()
+      expect_ignored()
+      expect_scope()
+      expect_clean()
+
+      expect(Anchor.BaselineStoreMock, :read, fn @root, @list ->
+        {:ok, ["aaaaaaaaaaaa lib/calc.ex Calc.add/2 return_input  # TODO", "bad"]}
+      end)
+
+      assert %{refusal: {1, message}} = Sabotage.run(@facts, @opts)
+
+      assert message =~
+               "survivors file #{@list} is malformed; nothing was run:\n  entry 1: the reason is a placeholder"
+
+      assert message =~ "\n  entry 2: "
+    end
+
+    test "SV5: --print-survivor-lines prints the lines; the list is never written" do
+      [_first, second] = mutants()
+      killed_then_survived()
+      expect(Anchor.BaselineStoreMock, :create, 0, fn _root, _path, _contents -> :ok end)
+
+      run = Sabotage.run(Map.put(@facts, :print_survivor_lines, true), @opts)
+
+      assert Report.render(run) =~
+               "Survivor lines to add to #{@list} (nothing was written; replace each placeholder " <>
+                 "with the real reason):\n#{second.id} lib/calc.ex Calc.add/2 #{second.operator}  # <why no test can kill it>"
+    end
+
+    test "SV6: a test that kills a listed mutant makes it STALE, exit 1, until the line is deleted" do
+      [first, _second] = mutants()
+      killed_then_survived()
+
+      expect(Anchor.BaselineStoreMock, :read, fn @root, @list ->
+        {:ok, [line(first, "was unkillable")]}
+      end)
+
+      run = Sabotage.run(@facts, @opts)
+
+      assert [{%{id: id}, "now killed by test/calc_test.exs:4 test adds"}] =
+               run.survivors.judgement.stale
+
+      assert id == first.id
+      assert Report.render(run) =~ "STALE survivor #{first.id}"
+      assert Report.exit_code(run) == 1
+    end
+
+    test "SV7: a capped run does not judge a listed mutant it did not run" do
+      [_first, second] = mutants()
+      expect_until_selection()
+      expect_baseline(test_run(:passed))
+      expect_patcher(1)
+      expect_delete_journal()
+      expect_save()
+      expect(TestExecutionMock, :run, fn _argv, _tests, _opts -> test_run(:failed, [@killer]) end)
+
+      expect(Anchor.BaselineStoreMock, :read, fn @root, @list ->
+        {:ok, [line(second, "logging only")]}
+      end)
+
+      run = Sabotage.run(%{@facts | max: 1}, @opts)
+
+      assert [{%{id: id}, :not_run}] = run.survivors.judgement.unjudged
+      assert id == second.id
+      assert run.survivors.judgement.stale == []
+      assert Report.exit_code(run) == 0
+    end
+
+    test "SV8: a dry run reads no list and judges nothing" do
+      expect_until_selection()
+      expect(Anchor.BaselineStoreMock, :read, 0, fn _root, _path -> {:ok, []} end)
+      expect(Anchor.GitBaseMock, :show, 0, fn _root, _ref, _path -> {:ok, []} end)
+
+      run = Sabotage.run(%{@facts | dry_run: true}, @opts)
+      assert run.survivors == nil
     end
   end
 end

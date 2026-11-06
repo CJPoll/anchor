@@ -1,21 +1,27 @@
 defmodule Anchor.Adapters.CallTracer do
   @moduledoc """
-  Call tracing for the per-test coverage map (DND-5474), the **Side Effect**
-  adapter (ADR 001) behind `Anchor.Adapters.Tracing`.
+  Call tracing for the per-test coverage map (DND-5474; causal attribution,
+  DND-5691), the **Side Effect** adapter (ADR 001) behind
+  `Anchor.Adapters.Tracing`.
 
   `start/2`, after refusing when a tracer is already on
   (`:erlang.trace_info(:new_processes, :tracer)`):
 
-    1. loads each project module and sets `trace_pattern({m, :_, :_}, true,
-       [:local])` on it (a pattern on a module not yet loaded would never
-       apply);
-    2. sets a `[:global]` pattern on `ExUnit.EventManager.test_started/2` and
-       `test_finished/2` whose match spec puts the `%ExUnit.Test{}` argument
-       into the trace message;
-    3. `trace(:all, true, [:call, :arity, :strict_monotonic_timestamp,
-       {:tracer, collector}])`, then turns tracing off for the collector
-       itself. `:arity` makes every call message carry its arity, not its
-       arguments, so no traced value is ever copied to the collector.
+    1. loads each project module, refusing with `{:error, {:not_loadable,
+       modules}}` before any pattern or flag is set when one cannot load
+       (DND-5690: tracing around it would read as a module never called), and
+       sets `Anchor.Domain.Sabotage.LabelSpec.call_spec/0` as a `[:local]`
+       pattern on each;
+    2. sets the window word to 0 and installs `LabelSpec.patterns/0`. Each must
+       match exactly one function: three of them are private to ExUnit, so one
+       that has moved refuses with `{:error, {:pattern_missing, mfa}}`, nothing
+       left traced;
+    3. `trace(:all, true, [:call, :arity, :procs, {:tracer, collector}])`, then
+       turns tracing off for the collector itself. `:arity` makes every call
+       message carry its arity, not its arguments, so no traced argument is ever
+       copied to the collector; `:procs` adds spawn events, whose arguments the
+       collector reduces to one pid. There is no timestamp flag: nothing reads
+       time.
 
   `stop/0` turns every flag off for all processes, clears every local and
   global pattern, and then waits for `:erlang.trace_delivered(:all)`: trace
@@ -27,15 +33,24 @@ defmodule Anchor.Adapters.CallTracer do
 
   @behaviour Anchor.Adapters.Tracing
 
-  @event_manager ExUnit.EventManager
-  @window_functions [:test_started, :test_finished]
-  @test_arg_spec [{[:_, :"$1"], [], [{:message, :"$1"}]}]
-  @flags [:call, :arity, :strict_monotonic_timestamp]
+  alias Anchor.Domain.Sabotage.LabelSpec
+
+  @flags [:call, :arity, :procs]
 
   @impl Anchor.Adapters.Tracing
-  def start(collector, modules) do
+  def start(collector, modules), do: start(collector, modules, LabelSpec.patterns())
+
+  @doc false
+  # `patterns` is `LabelSpec.patterns/0`; a test passes a list holding a function
+  # that does not exist, to see the refusal an Elixir upgrade would cause.
+  @spec start(pid(), [module()], [LabelSpec.pattern()]) ::
+          :ok
+          | {:error, :already_tracing}
+          | {:error, {:not_loadable, [module()]}}
+          | {:error, {:pattern_missing, mfa()}}
+  def start(collector, modules, patterns) do
     case :erlang.trace_info(:new_processes, :tracer) do
-      {:tracer, []} -> traced(collector, modules)
+      {:tracer, []} -> loaded_then_traced(collector, modules, patterns)
       {:tracer, _other} -> {:error, :already_tracing}
     end
   end
@@ -50,8 +65,7 @@ defmodule Anchor.Adapters.CallTracer do
   @spec stop((-> reference())) :: :ok
   def stop(delivered) do
     _flags = :erlang.trace(:all, false, [:all])
-    _local = :erlang.trace_pattern({:_, :_, :_}, false, [:local])
-    _global = :erlang.trace_pattern({:_, :_, :_}, false, [:global])
+    :ok = clear_patterns()
     ref = delivered.()
 
     receive do
@@ -66,19 +80,44 @@ defmodule Anchor.Adapters.CallTracer do
     :exit, reason -> {:error, {:collector_down, reason}}
   end
 
-  defp traced(collector, modules) do
-    for module <- modules, Code.ensure_loaded?(module) do
-      :erlang.trace_pattern({module, :_, :_}, true, [:local])
+  defp loaded_then_traced(collector, modules, patterns) do
+    case Enum.reject(modules, &Code.ensure_loaded?/1) do
+      [] -> patterned_then_traced(collector, modules, patterns)
+      not_loadable -> {:error, {:not_loadable, Enum.sort(not_loadable)}}
+    end
+  end
+
+  defp patterned_then_traced(collector, modules, patterns) do
+    for module <- modules do
+      :erlang.trace_pattern({module, :_, :_}, LabelSpec.call_spec(), [:local])
     end
 
-    {:module, @event_manager} = Code.ensure_loaded(@event_manager)
+    :erlang.system_flag(:trace_control_word, 0)
 
-    for name <- @window_functions do
-      1 = :erlang.trace_pattern({@event_manager, name, 2}, @test_arg_spec, [:global])
+    case Enum.find(patterns, &(install(&1) != 1)) do
+      nil ->
+        traced(collector)
+
+      {mfa, _spec, _flags} ->
+        clear_patterns()
+        {:error, {:pattern_missing, mfa}}
     end
+  end
 
+  defp install({{module, _name, _arity} = mfa, spec, flags}) do
+    _loaded = Code.ensure_loaded(module)
+    :erlang.trace_pattern(mfa, spec, flags)
+  end
+
+  defp traced(collector) do
     _count = :erlang.trace(:all, true, [{:tracer, collector} | @flags])
     1 = :erlang.trace(collector, false, [:all])
+    :ok
+  end
+
+  defp clear_patterns do
+    _local = :erlang.trace_pattern({:_, :_, :_}, false, [:local])
+    _global = :erlang.trace_pattern({:_, :_, :_}, false, [:global])
     :ok
   end
 end

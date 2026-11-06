@@ -54,6 +54,38 @@ defmodule Anchor.Domain.Failures do
           | term()
 
   @doc """
+  The load refusal of a `struct_owned_by_module` rule with `owned_namespaces:
+  []` (DND-5453; moved here from `Anchor.Domain.RuleSchema` by DND-5446).
+  """
+  @spec owned_namespaces_empty() :: String.t()
+  def owned_namespaces_empty do
+    "`owned_namespaces: []` checks no struct. Fix: list module names, " <>
+      ~s|e.g. ["MyApp"], or leave owned_namespaces out to check every struct|
+  end
+
+  @doc """
+  The load refusal of an `owned_namespaces` entry that is not one exact Elixir
+  module name (DND-5453; moved here by DND-5446).
+  """
+  @spec owned_namespaces_not_a_module(String.t()) :: String.t()
+  def owned_namespaces_not_a_module(entry) do
+    "`owned_namespaces` entry #{inspect(entry)} is not an exact Elixir module name " <>
+      "(a glob, an Erlang module or a malformed name). Fix: list module names, " <>
+      ~s|e.g. ["MyApp"]|
+  end
+
+  @doc """
+  The load refusal of a `pure_patterns` entry made of wildcards only, which
+  declares every module pure (DND-5451; moved here by DND-5446).
+  """
+  @spec pure_patterns_match_all(String.t()) :: String.t()
+  def pure_patterns_match_all(entry) do
+    "`pure_patterns` entry #{inspect(entry)} declares every module pure, so every call " <>
+      "would read as having no effect. Fix: name the pure namespaces, " <>
+      ~s|e.g. ["MyApp.*.Domain.*"]|
+  end
+
+  @doc """
   Builds the violation for a config that could not be found or loaded.
   """
   @spec config_violation(config_reason()) :: Violation.t()
@@ -232,6 +264,28 @@ defmodule Anchor.Domain.Failures do
   end
 
   @doc """
+  The issue for an umbrella whose `apps_path` puts apps outside the project
+  root (DND-5655): `outside` is `[{app, dir}]`. Their paths could not be
+  keyed against the root, so the run is COULD NOT MEASURE, exit 3.
+  """
+  @spec graph_apps_path_outside([{atom(), String.t()}, ...], String.t(), String.t() | nil) ::
+          Violation.t()
+  def graph_apps_path_outside(outside, root, config_path) do
+    apps =
+      Enum.map_join(outside, "; ", fn {app, dir} ->
+        "the apps_path of #{inspect(app)} is #{dir}, outside the project root #{root}"
+      end)
+
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "COULD NOT MEASURE: #{apps}, so its source paths cannot be keyed against the root. " <>
+        "Fix: set apps_path in the umbrella's mix.exs to a directory under the project root " <>
+        "(Mix's default, \"apps\"), and run mix anchor.graph from that root."
+    )
+  end
+
+  @doc """
   The issue for a run that read zero modules from `ebins` (the ebin
   directories it was given): COULD NOT MEASURE, exit 3.
   """
@@ -346,11 +400,15 @@ defmodule Anchor.Domain.Failures do
     graph_issue(
       file,
       Map.get(facts, :line),
-      "#{inspect(module)} is in no architecture bucket. Fix: add a selector that matches " <>
-        "#{file} to the bucket this module belongs in (mix anchor.explain #{file} shows the " <>
-        "candidates)."
+      "#{unclassified_name(module, file)} is in no architecture bucket. Fix: add a selector " <>
+        "that matches #{file} to the bucket this module belongs in (mix anchor.explain #{file} " <>
+        "shows the candidates)."
     )
   end
+
+  # A planned path outside lib/ implies no module: the file is what is unclassified.
+  defp unclassified_name(nil, file), do: file
+  defp unclassified_name(module, _file), do: inspect(module)
 
   @doc """
   The issue for a module that two or more buckets select (DND-5440), naming
@@ -513,6 +571,88 @@ defmodule Anchor.Domain.Failures do
   end
 
   @doc """
+  The issue for a graph rule whose needed demand analysis
+  (`Anchor.Domain.Demand`, DND-5715) crashed: it is not run, since without the
+  summaries it would check nothing.
+  """
+  @spec rule_demand_crashed(map(), atom(), term(), Exception.stacktrace(), String.t() | nil) ::
+          Violation.t()
+  def rule_demand_crashed(rule, kind, reason, stacktrace, config_path) do
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "#{rule_label(rule)} could not run: the demand analysis it needs " <>
+        "(Anchor.Domain.Demand) crashed: #{crash_summary(kind, reason, stacktrace)}, so it " <>
+        "checked nothing. Fix: this is an Anchor bug; file it with this line."
+    )
+  end
+
+  @doc """
+  The `analyses_complete` issue when the higher-order flow analysis hit its
+  step bound (DND-5715): every apply site reads `any`.
+  """
+  @spec analyses_cfa_bound_hit(map(), non_neg_integer(), String.t() | nil) :: Violation.t()
+  def analyses_cfa_bound_hit(rule, steps, config_path) do
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "#{rule_label(rule)}: the higher-order flow analysis (Anchor.Domain.Cfa) hit its step " <>
+        "bound after #{steps} steps, so every apply site reads any and no closure was " <>
+        "resolved. Fix: this is a scale limit of Anchor; file it with this line. Raising the " <>
+        "bound is the owner's call."
+    )
+  end
+
+  @doc """
+  The `analyses_complete` issue when the demand analysis hit its round bound
+  (DND-5715): each member's parameters read as used. `members` is the sorted
+  `Demand.bound_hit`.
+  """
+  @spec analyses_demand_bound_hit(map(), [mfa()], String.t() | nil) :: Violation.t()
+  def analyses_demand_bound_hit(rule, members, config_path) do
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "#{rule_label(rule)}: the demand analysis (Anchor.Domain.Demand) hit its round bound on " <>
+        "#{length(members)} function(s) (#{some_functions(members)}), so their parameters read " <>
+        "as used without being judged. Fix: this is a scale limit of Anchor; file it with this " <>
+        "line. Raising the bound is the owner's call."
+    )
+  end
+
+  @doc """
+  The `analyses_complete` issue when functions with a Core body have no demand
+  summary (DND-5715). `missing` is sorted.
+  """
+  @spec analyses_unsummarised(map(), [mfa()], String.t() | nil) :: Violation.t()
+  def analyses_unsummarised(rule, missing, config_path) do
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "#{rule_label(rule)}: #{length(missing)} function(s) have a Core body and no demand " <>
+        "summary (#{some_functions(missing)}), so the analysis judged none of their " <>
+        "parameters. Fix: this is an Anchor bug; file it with this line."
+    )
+  end
+
+  @doc """
+  The `analyses_complete` issue when the analyses judged fewer than a floor the
+  rule declares (DND-5715): `key` is the floor, `judged` the count, `min` its
+  value.
+  """
+  @spec analyses_below_floor(map(), atom(), non_neg_integer(), pos_integer(), String.t() | nil) ::
+          Violation.t()
+  def analyses_below_floor(rule, key, judged, min, config_path) do
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "#{rule_label(rule)}: the whole-program analyses judged #{judged}, below #{key} #{min}, " <>
+        "so they may be judging nothing. Fix: find what stopped them reading this code; " <>
+        "lowering the floor is the owner's call."
+    )
+  end
+
+  @doc """
   The issue for a graph rule whose needed effect inference
   (`Anchor.Domain.Effects`, DND-5447) crashed: it is not run, since without
   the roles it would check nothing.
@@ -662,6 +802,22 @@ defmodule Anchor.Domain.Failures do
   end
 
   @doc """
+  The note for a baseline entry the branch replaced with a narrower one
+  since `ref` (DND-5633): `key` covers less than `base_key` (a cycle with
+  fewer contexts), so it is not growth. Report-only.
+  """
+  @spec baseline_narrowed(String.t(), String.t(), String.t(), String.t()) :: Violation.t()
+  def baseline_narrowed(path, base_key, key, ref) do
+    %Violation{
+      filename: path,
+      key: key,
+      message:
+        "NOTE: #{key} in #{path} narrows #{base_key}, the entry it replaced since #{ref}; " <>
+          "a narrower entry is not growth. Fix: review the narrowing in this change."
+    }
+  end
+
+  @doc """
   The issue for a baseline that could not be read at the `--base` ref
   (DND-5441): git failed, or the bytes there are not UTF-8. GREW could not be
   judged, and a failed read never reads as "no growth".
@@ -729,15 +885,18 @@ defmodule Anchor.Domain.Failures do
   @doc """
   The issue for a base config that could not be read at the `--base` ref
   (DND-5629): each baseline's base copy is found by its rule's id there, so
-  GREW could not be judged for any rule. On the config.
+  GREW could not be judged for any rule. On the config, once per run, naming
+  every rule `ids` it left unjudged (DND-5648).
   """
-  @spec baseline_base_config_unreadable(String.t(), String.t(), term()) :: Violation.t()
-  def baseline_base_config_unreadable(config, ref, reason) do
+  @spec baseline_base_config_unreadable(String.t(), String.t(), term(), [String.t(), ...]) ::
+          Violation.t()
+  def baseline_base_config_unreadable(config, ref, reason, [_ | _] = ids) do
     graph_issue(
       config,
       nil,
       "Anchor could not read #{config} at #{ref} (#{capped(inspect(reason))}), so no " <>
-        "baseline's copy there could be found by its rule's id and GREW could not be judged. " <>
+        "baseline's copy there could be found by its rule's id and GREW could not be judged " <>
+        "for rules #{Enum.map_join(ids, ", ", &inspect/1)}. " <>
         "Fix: pass a --base ref whose #{config} loads, or drop --base."
     )
   end
@@ -767,6 +926,27 @@ defmodule Anchor.Domain.Failures do
     )
   end
 
+  @doc """
+  `message`, naming the two modes a finding came from (DND-5631): a violation
+  both the enforced and the report detection pass found is printed once, and
+  says so before its `Fix:` (or at its end when it has none).
+  """
+  @spec both_enforcement_modes(String.t()) :: String.t()
+  def both_enforcement_modes(message) do
+    case String.split(message, " Fix: ", parts: 2) do
+      [text, fix] -> "#{text} #{both_modes_note()} Fix: #{fix}"
+      [text] -> "#{text} #{both_modes_note()}"
+    end
+  end
+
+  @doc "`message` without the note `both_enforcement_modes/1` adds: the finding it names."
+  @spec without_both_enforcement_modes(String.t()) :: String.t()
+  def without_both_enforcement_modes(message),
+    do: String.replace(message, " #{both_modes_note()}", "")
+
+  defp both_modes_note,
+    do: "(Found under rules in enforcement: enforce and report; reported once, enforced.)"
+
   @doc "The issue for a baseline `--write-baseline` could not create (DND-5441)."
   @spec baseline_not_written(String.t(), term()) :: Violation.t()
   def baseline_not_written(path, {:symlink, link}) do
@@ -777,12 +957,129 @@ defmodule Anchor.Domain.Failures do
     )
   end
 
+  # DND-5647: a directory on the path became a symlink after the check, so
+  # the write landed outside the root; it was removed there.
+  def baseline_not_written(path, {:escaped_root, real}) do
+    graph_issue(
+      path,
+      nil,
+      "Anchor did not create #{path}: a directory on its path became a symlink while it was " <>
+        "written, so the file landed at #{real}, outside the project root, and was removed " <>
+        "there. Fix: find what is replacing directories in this checkout during the run, " <>
+        "stop it, and run --write-baseline again."
+    )
+  end
+
   def baseline_not_written(path, reason) do
     graph_issue(
       path,
       nil,
       "Anchor could not create #{path} (#{capped(inspect(reason))}). Fix: make its directory " <>
         "writable."
+    )
+  end
+
+  @doc """
+  The issue for an ast rule's `baseline:` file that could not be read
+  (DND-5632): as `baseline_unreadable/3`, its `Fix:` naming `mix
+  anchor.baseline --write`, the ast engine's writer.
+  """
+  @spec ast_baseline_unreadable(map(), String.t(), term()) :: Violation.t()
+  def ast_baseline_unreadable(rule, path, {:line, _line, :invalid_utf8} = reason),
+    do: baseline_unreadable(rule, path, reason)
+
+  def ast_baseline_unreadable(rule, path, {:symlink, _link} = reason),
+    do: baseline_unreadable(rule, path, reason)
+
+  def ast_baseline_unreadable(rule, path, reason) do
+    graph_issue(
+      path,
+      nil,
+      "#{rule_label(rule)}'s baseline #{path} could not be read (#{capped(inspect(reason))}), " <>
+        "so none of its findings is held. Fix: create it with mix anchor.baseline --write " <>
+        "#{rule.id} and review it, or remove baseline: from the rule."
+    )
+  end
+
+  @doc """
+  The note for an ast rule's baseline entries a run did not judge (DND-5632):
+  each names a file the run did not read (Credo was given only some files)
+  or could not parse, so whether its finding was fixed is unknown, and it is
+  not STALE. Report-only.
+  """
+  @spec ast_baseline_unjudged(String.t(), [String.t(), ...]) :: Violation.t()
+  def ast_baseline_unjudged(path, [_ | _] = entries) do
+    %Violation{
+      filename: path,
+      enforcement: :report,
+      message:
+        "NOTE: #{length(entries)} #{entry_noun(entries)} of #{path} #{name_verb(entries)} a " <>
+          "file this run did not read or could not parse, so #{was_were(entries)} not judged " <>
+          "STALE. Fix: run mix credo over the whole project (no paths) to judge every entry."
+    }
+  end
+
+  @doc """
+  The refusal of `mix anchor.baseline --write` over an existing file
+  (DND-5632, exit 2): it only creates, so a baseline can never be loosened by
+  rewriting it.
+  """
+  @spec ast_baseline_exists(String.t()) :: Violation.t()
+  def ast_baseline_exists(path) do
+    graph_issue(
+      path,
+      nil,
+      "#{path} exists; mix anchor.baseline --write only creates, and never rewrites a " <>
+        "baseline. Fix: delete the lines of fixed findings instead (a baseline only shrinks)."
+    )
+  end
+
+  @doc """
+  The refusal of `mix anchor.baseline --write ID` naming no ast rule with a
+  `baseline:` key (DND-5632, exit 2), on the config.
+  """
+  @spec ast_write_unknown(String.t(), String.t() | nil) :: Violation.t()
+  def ast_write_unknown(id, config_path) do
+    config = config_path || @config_filename
+
+    graph_issue(
+      config,
+      nil,
+      "mix anchor.baseline --write #{inspect(id)} names no ast rule of #{config} that has a " <>
+        "baseline: key, so there is nothing to write. Fix: give that rule an id: and a " <>
+        "baseline: path (convention .anchor/baselines/<id>.txt), or pass another rule's id; " <>
+        "a graph rule's baseline is written by mix anchor.graph --write-baseline."
+    )
+  end
+
+  @doc """
+  `mix anchor.baseline --write`'s COULD NOT MEASURE for a rule whose check
+  Credo does not run (DND-5632): it has no findings, so writing would make an
+  empty baseline that holds nothing it should.
+  """
+  @spec ast_check_not_enabled(map(), String.t()) :: Violation.t()
+  def ast_check_not_enabled(rule, config) do
+    graph_issue(
+      config,
+      nil,
+      "COULD NOT MEASURE: no enabled Credo check reads #{rule.type}, so #{rule_label(rule)} " <>
+        "has no findings and its baseline was not written. Fix: enable the Anchor check for " <>
+        "#{rule.type} in .credo.exs, then run mix anchor.baseline --write #{rule.id} again."
+    )
+  end
+
+  @doc """
+  `mix anchor.baseline --write`'s COULD NOT MEASURE when Credo halted
+  (DND-5632): its findings are unknown, so no baseline was written.
+  """
+  @spec ast_credo_halted(term(), String.t()) :: Violation.t()
+  def ast_credo_halted(reason, config) do
+    graph_issue(
+      config,
+      nil,
+      "COULD NOT MEASURE: Credo did not finish (#{capped(inspect(reason))}), so no finding " <>
+        "was collected and no baseline was written. Fix: run mix credo --strict, fix what " <>
+        "stops it, and run mix anchor.baseline --write again."
     )
   end
 
@@ -802,6 +1099,15 @@ defmodule Anchor.Domain.Failures do
         "(convention .anchor/baselines/<id>.txt), or pass another rule's id."
     )
   end
+
+  defp entry_noun([_one]), do: "entry"
+  defp entry_noun(_many), do: "entries"
+
+  defp name_verb([_one]), do: "names"
+  defp name_verb(_many), do: "name"
+
+  defp was_were([_one]), do: "it was"
+  defp was_were(_many), do: "they were"
 
   defp below_floor_text(selected, min) do
     "selects #{selected} modules, below min_modules #{min}. Fix: correct the selector; " <>
@@ -875,6 +1181,20 @@ defmodule Anchor.Domain.Failures do
   defp unreadable_text(reason, _path) do
     "could not be read (#{capped(inspect(reason))}). Fix: this is an Anchor bug; file it " <>
       "with this line."
+  end
+
+  # The first five of `mfas`, and how many more: a list of hundreds is no use
+  # in one line, and the count before it says how many there are.
+  defp some_functions(mfas) do
+    {shown, rest} = Enum.split(mfas, 5)
+
+    names =
+      Enum.map_join(shown, ", ", &Exception.format_mfa(elem(&1, 0), elem(&1, 1), elem(&1, 2)))
+
+    case rest do
+      [] -> names
+      _more -> "#{names} and #{length(rest)} more"
+    end
   end
 
   defp graph_issue(file, line, message) do
@@ -1050,14 +1370,23 @@ defmodule Anchor.Domain.Failures do
       "Fix: correct the YAML syntax in #{path}."
   end
 
+  # DND-5446: every issue carries exactly one `Fix:`. A refusal that already
+  # names its own (the `architecture:` section's, a top-level key's) keeps it,
+  # and the generic one is used only when nothing more specific exists.
   defp load_failed_message(path, {kind, message}) when kind in [:invalid_rule, :invalid_config] do
-    "Anchor rejected #{path}, so no Anchor rule was checked: #{message}. " <>
-      "Fix: correct #{path} to match #{@schema_pointer}."
+    "Anchor rejected #{path}, so no Anchor rule was checked: " <>
+      with_generic_fix(message, "correct #{path} to match #{@schema_pointer}.")
   end
 
   defp load_failed_message(path, detail) do
     "Anchor could not load #{path} (#{inspect(detail)}), so no Anchor rule was checked. " <>
       "Fix: correct #{path} to match #{@schema_pointer}."
+  end
+
+  defp with_generic_fix(message, fix) do
+    if String.contains?(message, "Fix:"),
+      do: message,
+      else: "#{message}. Fix: #{fix}"
   end
 
   # DND-5628: a symlink on a baseline's path, which Anchor refuses to follow.

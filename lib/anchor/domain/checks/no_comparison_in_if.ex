@@ -20,7 +20,16 @@ defmodule Anchor.Domain.Checks.NoComparisonInIf do
   `"unless"`).
   """
 
+  alias Anchor.Domain.RuleShapes
   alias Anchor.Domain.Violation
+
+  @behaviour Anchor.Domain.RuleShape
+
+  @impl Anchor.Domain.RuleShape
+  def shape(_rule) do
+    "extract the comparison into a predicate function with a descriptive name, in the " <>
+      "module that owns the data, and branch on its result"
+  end
 
   @comparison_operators [:==, :!=, :===, :!==, :<, :>, :<=, :>=]
 
@@ -31,8 +40,10 @@ defmodule Anchor.Domain.Checks.NoComparisonInIf do
   """
   @spec detect_violations(Macro.t(), [map()]) :: [Violation.t()]
   def detect_violations(ast, rules) do
-    Enum.flat_map(rules, fn _rule ->
-      find_if_with_comparisons(ast)
+    Enum.flat_map(rules, fn rule ->
+      ast
+      |> find_if_with_comparisons()
+      |> Enum.map(&RuleShapes.with_shape(&1, shape(rule)))
     end)
   end
 

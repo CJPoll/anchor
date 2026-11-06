@@ -1,5 +1,5 @@
 defmodule Mix.Tasks.Anchor.Sabotage do
-  @shortdoc "Generated sabotage: scope, run and restore"
+  @shortdoc "Generated sabotage: scope, run, restore, replay and coverage"
 
   @moduledoc """
   Generated sabotage for the functions a change touched, the **Framework**
@@ -28,7 +28,7 @@ defmodule Mix.Tasks.Anchor.Sabotage do
 
       mix anchor.sabotage run [--base REF] [--max N|all] [--only ID]... [--dry-run]
                               [--coverage PATH] [--no-record] [--domain D]
-                              [--ticket KEY] [--slot S]
+                              [--ticket KEY] [--slot S] [--print-survivor-lines]
       mix anchor.sabotage restore
 
   `run` applies the mutants of the changed functions one at a time, runs only
@@ -49,38 +49,72 @@ defmodule Mix.Tasks.Anchor.Sabotage do
   the ticket key and the slot read from the branch. The date is read here,
   in UTC, and passed on as a fact.
 
+  The run judges the survivors list (DND-5483,
+  `Anchor.Domain.Sabotage.Survivors`): a survivor (or a mutant with no test)
+  that is not listed is NEW, a listed mutant now killed or no longer generated
+  is STALE, and both fail the run (1); the entries this branch adds against
+  `--base` are printed for review. `--print-survivor-lines` prints, at the
+  end, the line to add for each NEW survivor, with a placeholder reason to
+  replace; it never writes the file.
+
   Exit codes (DND-5570): 0 every measured mutant was killed or timed out (an
   invalid one, which did not compile, is listed and counted and changes
   nothing), or there was no changed function (a good diff read that found none
-  prints `sabotage: 0 changed functions in REF..HEAD`); 1 a mutant survived,
-  crashed or had no test, beside a measured one; 2 a refusal or a usage error
+  prints `sabotage: 0 changed functions in REF..HEAD`); 1 a mutant survived or
+  had no test and is not on the survivors list, a mutant crashed beside a
+  measured one, a STALE or malformed survivors entry, or a survivors file
+  named in the config that is absent; 2 a refusal or a usage error
   (a dirty target file, the journal not git-ignored, a journal that cannot be
   restored safely, a host with no `/proc`, bad flags, a sabotage record that cannot be
   written when every measured mutant passed: a survivor stays 1 and an
   unmeasured run 3, DND-5641); 3 `COULD NOT MEASURE` (no loadable `sabotage:`
   config, the baseline tests fail, the changed functions' files cannot be
   read, or mutants were run and none was measured: all invalid, crashed or
-  without a test).
+  without a test; the survivors file, or its copy at `--base`, cannot be
+  read).
+
+  ## replay (DND-5485)
+
+      mix anchor.sabotage replay [--max N|all] [--records DIR_GLOB]...
+
+  Re-applies each `killed` or `timeout` row of the landed sabotage records
+  (the `anchor-kills` blocks under `sabotage.records.dir`, or each
+  `--records` directory glob) on the current tree and runs the tests that
+  killed it, by file and test name (`Anchor.Managers.Sabotage.Replay`). A
+  row whose killers all pass is LOST POWER; a row that can no longer be
+  replayed as recorded is drifted (its file, function or killer is gone, no
+  mutant has its id, it no longer compiles), reported by reason. `--max`
+  overrides the `max_mutants` cap (`--max all` for CI).
+
+  Exit codes: 0 every replayed row still killed; 1 a row lost power or its
+  run crashed; 2 a refusal or usage error (as `run`, and a `--records` glob
+  that is absolute or has a `..` segment); 3 `COULD NOT MEASURE` (zero rows,
+  every row drifted, a record that could not be read, the killers fail with
+  no mutant: main is red).
 
   ## coverage (DND-5474)
 
       MIX_ENV=test mix anchor.sabotage coverage [--out PATH] [--local] [-- TEST_ARGS]
 
-  Runs the whole suite in this VM, one test at a time (`--max-cases 1`), with
-  every call of the project's own modules traced, and writes the map test ->
-  functions it executed (default `_build/test/anchor/coverage.etf`;
-  `Anchor.Domain.Sabotage.CoverageMap`). `TEST_ARGS` go to `mix test`.
+  Compiles every test file, then runs the whole suite in this VM, one test at a
+  time (`--max-cases 1`), with every call of the project's own modules traced, and
+  writes the map test -> functions it executed (default
+  `_build/test/anchor/coverage.etf`; `Anchor.Domain.Sabotage.CoverageMap`).
+  `TEST_ARGS` go to `mix test`; one that chooses files is refused.
 
   It is CI-only by default: without `CI=true` it refuses (exit 2) unless
-  `--local` is given. Exit codes: 0 written; 1 written, but the suite failed;
-  2 a refusal (not CI, MIX_ENV not test, `TEST_ARGS` that set
-  `--max-cases`, another tracer on, the map not writable); 3 `COULD NOT MEASURE` (zero modules or zero tests: no map
-  written).
+  `--local` is given. Exit codes: 0 written; 1 written, but a test leaked (a
+  process it owned called project code after it ended, DND-5691) or the suite
+  failed; 2 a refusal (not CI, MIX_ENV not test, `TEST_ARGS` that set
+  `--max-cases` or choose files, another tracer on, the map not writable); 3 `COULD
+  NOT MEASURE` (zero modules or zero tests, a project module that cannot load, or a
+  run that cannot be believed, such as fewer windows than tests: no map written).
   """
 
   use Mix.Task
 
   alias Anchor.Domain.Failures
+  alias Anchor.Domain.Sabotage.Replay
   alias Anchor.Domain.Sabotage.Report
   alias Anchor.Domain.Sabotage.Scope
   alias Anchor.Managers.Sabotage
@@ -91,8 +125,9 @@ defmodule Mix.Tasks.Anchor.Sabotage do
   Usage: mix anchor.sabotage scope [--base REF] [--format text|json]
          mix anchor.sabotage run [--base REF] [--max N|all] [--only ID]... [--dry-run]
                                  [--coverage PATH] [--no-record] [--domain D]
-                                 [--ticket KEY] [--slot S]
+                                 [--ticket KEY] [--slot S] [--print-survivor-lines]
          mix anchor.sabotage restore
+         mix anchor.sabotage replay [--max N|all] [--records DIR_GLOB]...
          MIX_ENV=test mix anchor.sabotage coverage [--out PATH] [--local] [-- TEST_ARGS]
   Fix: use one of these forms; --max takes a positive integer or `all`\
   """
@@ -124,6 +159,13 @@ defmodule Mix.Tasks.Anchor.Sabotage do
 
   def run(["restore"], opts), do: report(Sabotage.restore(%{root: File.cwd!()}, opts))
 
+  def run(["replay" | argv], opts) do
+    case replay_facts(argv) do
+      {:ok, facts} -> replay_report(Sabotage.replay(facts, opts))
+      :usage -> usage()
+    end
+  end
+
   def run(["coverage" | argv], opts) do
     {own, test_args} = split_test_args(argv)
 
@@ -148,7 +190,8 @@ defmodule Mix.Tasks.Anchor.Sabotage do
       record: :boolean,
       domain: :string,
       ticket: :string,
-      slot: :string
+      slot: :string,
+      print_survivor_lines: :boolean
     ]
 
     with {parsed, [], []} <- OptionParser.parse(argv, strict: switches),
@@ -167,6 +210,7 @@ defmodule Mix.Tasks.Anchor.Sabotage do
         domain: parsed[:domain],
         ticket: parsed[:ticket],
         slot: parsed[:slot],
+        print_survivor_lines: Keyword.get(parsed, :print_survivor_lines, false),
         now: DateTime.utc_now(),
         command: Enum.join(["mix", "anchor.sabotage", "run" | argv], " "),
         version: anchor_version()
@@ -175,6 +219,29 @@ defmodule Mix.Tasks.Anchor.Sabotage do
       {:ok, facts}
     else
       _invalid -> :usage
+    end
+  end
+
+  @doc false
+  # The facts `replay` passes the Manager, from its argv; exposed for its test.
+  @spec replay_facts([String.t()]) :: {:ok, map()} | :usage
+  def replay_facts(argv) do
+    with {parsed, [], []} <- OptionParser.parse(argv, strict: [max: :string, records: :keep]),
+         {:ok, max} <- max(parsed[:max]),
+         globs = Keyword.get_values(parsed, :records),
+         true <- Enum.all?(globs, &Replay.inside?/1) do
+      {:ok, %{root: File.cwd!(), build_path: Mix.Project.build_path(), max: max, records: globs}}
+    else
+      _invalid -> :usage
+    end
+  end
+
+  defp replay_report(result) do
+    Mix.shell().info(Replay.render(result))
+
+    case Replay.exit_code(result) do
+      0 -> :ok
+      code -> exit({:shutdown, code})
     end
   end
 

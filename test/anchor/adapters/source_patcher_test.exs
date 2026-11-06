@@ -178,4 +178,23 @@ defmodule Anchor.Adapters.SourcePatcherTest do
   end
 
   defp mtime(path), do: File.stat!(path, time: :posix).mtime
+
+  test "DND-5485: symlinked/2 names each path with a symlink at the file or a directory above it",
+       %{tmp_dir: root} do
+    # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5483_survivors_replay.md
+    outside = Path.join(root, "outside")
+    File.mkdir_p!(Path.join(outside, "dir"))
+    File.write!(Path.join(outside, "x.ex"), "outside\n")
+    File.mkdir_p!(Path.join(root, "proj/lib"))
+    File.write!(Path.join(root, "proj/lib/real.ex"), "real\n")
+    File.ln_s!(Path.join(outside, "x.ex"), Path.join(root, "proj/lib/link.ex"))
+    File.ln_s!(Path.join(outside, "dir"), Path.join(root, "proj/linked_dir"))
+    File.ln_s!(Path.join(root, "nowhere"), Path.join(root, "proj/lib/dangling.ex"))
+    proj = Path.join(root, "proj")
+
+    paths = ["lib/real.ex", "lib/link.ex", "linked_dir/y.ex", "lib/dangling.ex", "lib/absent.ex"]
+
+    assert SourcePatcher.symlinked(proj, paths) ==
+             ["lib/link.ex", "linked_dir/y.ex", "lib/dangling.ex"]
+  end
 end

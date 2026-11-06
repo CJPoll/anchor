@@ -7,6 +7,7 @@ defmodule Anchor.Integration.AggregateDeclarationsIntegrationTest do
   # doubled so nothing is written into the repo.
   #
   # Sabotage record: ../../sabotage_records/aggregates-20261103-dnd_5476_aggregate_decls.md
+  # DND-5446 (one Fix: per finding): ../../sabotage_records/rule_shapes-20261103-dnd_5443_graph_rules_b.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -18,6 +19,7 @@ defmodule Anchor.Integration.AggregateDeclarationsIntegrationTest do
   alias Anchor.BeamSourceMock
   alias Anchor.ConfigLoaderMock
   alias Anchor.Domain.GraphReport
+  alias Anchor.Domain.RuleShapes
   alias Anchor.GraphStoreMock
   alias Anchor.Managers.Graph
   alias Anchor.Managers.Graph.Request
@@ -88,6 +90,9 @@ defmodule Anchor.Integration.AggregateDeclarationsIntegrationTest do
 
     for finding <- [config_site, rogue_site] do
       assert finding.rule_id == "aggregate_declarations"
+      # DND-5446: every finding carries exactly one Fix: (the graph canary
+      # names this test as this rule type's half of that invariant).
+      assert RuleShapes.fix_count(finding.message) == 1, finding.message
 
       assert finding.message =~
                ~s(table "audit_rows" is claimed by Agg.Audit and AnchorFixtures.Agg.Threads.Space.)

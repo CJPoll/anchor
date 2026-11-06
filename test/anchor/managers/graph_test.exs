@@ -8,6 +8,8 @@ defmodule Anchor.Managers.GraphTest do
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5551_graph_hardening.md
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5581_hardening_batch.md
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5630_graph_hardening.md
+  # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (DND-5655, AP-F): ../../sabotage_records/failures-20261103-dnd_5648_graph_followups.md
   # DND-5584 (per-app, and AE-O with DND-5588): ../../sabotage_records/graph_runner-20261103-dnd_5441_graph_rules_a.md
   use ExUnit.Case, async: true
 
@@ -193,7 +195,9 @@ defmodule Anchor.Managers.GraphTest do
                opaque: 0,
                no_core: 0,
                outside_root: 0,
-               apply_sites: nil
+               apply_sites: nil,
+               interface_width: nil,
+               dynamic_calls: %{narrowed: [], fanned_out: []}
              }
     end
 
@@ -346,7 +350,9 @@ defmodule Anchor.Managers.GraphTest do
                opaque: 0,
                no_core: 0,
                outside_root: 0,
-               apply_sites: nil
+               apply_sites: nil,
+               interface_width: nil,
+               dynamic_calls: %{narrowed: [], fanned_out: []}
              }
     end
 
@@ -689,6 +695,38 @@ defmodule Anchor.Managers.GraphTest do
       assert message =~ "could not read the source of #{@outside_file} (:eacces)"
     end
 
+    # DND-5656: the count was taken over the beams read, before the builder
+    # dropped a stale duplicate, so it could exceed the modules it describes.
+    test "a stale duplicate of an outside-root module counts once", %{beams: beams} do
+      stale = %{
+        beams[@outside]
+        | app: :other,
+          path: "/proj/_build/test/lib/other/ebin/stale.beam"
+      }
+
+      expect(ConfigLoaderMock, :load, fn ->
+        {:ok, config([rule(:stub_ok, "ok")], architecture([shared_bucket()]))}
+      end)
+
+      Mox.expect(BeamSourceMock, :read_ebins, fn @two_apps ->
+        classified(beams) ++ [beams[@outside], stale]
+      end)
+
+      expect(SourceSourceMock, :read, fn @root, files ->
+        sources = with_outside_source(@sources)
+        Map.new(files, &{&1, source_facts(&1, Map.fetch!(sources, &1))})
+      end)
+
+      expect(GraphStoreMock, :write, fn _dir, _key, _graph -> :ok end)
+
+      report = Graph.run(%{request() | apps: @two_apps}, deps())
+
+      # The duplicate is its own issue; the count names distinct modules.
+      assert Enum.any?(report.findings, &(&1.message =~ "stale.beam"))
+      assert %{modules: 3, outside_root: 1} = report.counts
+      assert GraphReport.summary(report) =~ "3 modules (1 outside the root)"
+    end
+
     test "a run whose every module is outside the root is measured, never COULD NOT MEASURE",
          %{beams: beams} do
       rules = [rule(:stub_ok, "ok", %{bucket: "shared"})]
@@ -799,6 +837,55 @@ defmodule Anchor.Managers.GraphTest do
              ]
 
       assert %{modules: 2, apps: 2, outside_root: 0} = report.counts
+    end
+
+    # DND-5655: an absolute apps_path raised ArgumentError with no Fix: line.
+    test "an absolute apps_path under the root keys as its relative one", %{umbrella: umbrella} do
+      expect(ConfigLoaderMock, :load, fn ->
+        {:ok, config([rule(:stub_finds, "alpha", %{bucket: "alpha"})], umbrella_architecture())}
+      end)
+
+      Mox.expect(BeamSourceMock, :read_ebins, fn _apps -> umbrella end)
+
+      expect(SourceSourceMock, :read, fn @root,
+                                         ["apps/alpha/lib/alpha.ex", "apps/beta/lib/beta/b.ex"] =
+                                           files ->
+        Map.new(files, &{&1, SourceFacts.from_source(&1, @alpha_source <> @beta_source)})
+      end)
+
+      expect(GraphStoreMock, :write, fn @artifact_dir, _key, _graph -> :ok end)
+
+      request = %{
+        umbrella_request()
+        | source_dirs: %{alpha: "#{@root}/apps/alpha", beta: "apps/beta"}
+      }
+
+      report = Graph.run(request, deps())
+
+      assert [%{rule_id: "alpha", file: "apps/alpha/lib/alpha.ex"}] = report.findings
+    end
+
+    test "an absolute apps_path outside the root is COULD NOT MEASURE with a Fix:, never a raise" do
+      expect(ConfigLoaderMock, :load, fn ->
+        {:ok, config([rule(:stub_finds, "alpha", %{bucket: "alpha"})], umbrella_architecture())}
+      end)
+
+      Mox.expect(BeamSourceMock, :read_ebins, 0, fn _apps -> [] end)
+
+      request = %{
+        umbrella_request()
+        | source_dirs: %{alpha: "/elsewhere/alpha", beta: "apps/beta"}
+      }
+
+      report = Graph.run(request, deps())
+
+      assert report.exit_code == 3
+      assert [%{message: message}] = report.could_not_check
+
+      assert message =~
+               ~s|apps_path of :alpha is /elsewhere/alpha, outside the project root #{@root}|
+
+      assert message =~ "Fix: "
     end
   end
 

@@ -31,7 +31,8 @@ defmodule Anchor.Check.StructGetterConventionTest do
     assert [issue] = issues(source)
 
     assert issue.message ==
-             "Getter function `get_name` should be named `name` to match the field it extracts"
+             "Getter function `get_name` should be named `name` to match the field it extracts" <>
+               ". Fix: name a getter after the field it returns, and define it in the struct's own module"
 
     assert issue.trigger == "get_name"
     assert issue.line_no == 3
@@ -116,7 +117,8 @@ defmodule Anchor.Check.StructGetterConventionTest do
     assert [issue] = issues(source)
 
     assert issue.message ==
-             "Getter function `get_name` should be named `name` to match the field it extracts"
+             "Getter function `get_name` should be named `name` to match the field it extracts" <>
+               ". Fix: name a getter after the field it returns, and define it in the struct's own module"
 
     assert issue.trigger == "get_name"
   end
@@ -146,7 +148,8 @@ defmodule Anchor.Check.StructGetterConventionTest do
     assert [issue] = issues(source)
 
     assert issue.message ==
-             "Getter function `get_name` should be named `name` to match the field it extracts"
+             "Getter function `get_name` should be named `name` to match the field it extracts" <>
+               ". Fix: name a getter after the field it returns, and define it in the struct's own module"
 
     assert issue.trigger == "get_name"
   end
@@ -177,7 +180,8 @@ defmodule Anchor.Check.StructGetterConventionTest do
     assert [issue] = issues(source)
 
     assert issue.message ==
-             "Getter function `get_name` should be named `name` to match the field it extracts"
+             "Getter function `get_name` should be named `name` to match the field it extracts" <>
+               ". Fix: name a getter after the field it returns, and define it in the struct's own module"
 
     assert issue.trigger == "get_name"
   end
@@ -206,7 +210,8 @@ defmodule Anchor.Check.StructGetterConventionTest do
     assert [issue] = issues(source)
 
     assert issue.message ==
-             "Getter for `Other.name` should be defined in `Other` (not in `A`)"
+             "Getter for `Other.name` should be defined in `Other` (not in `A`)" <>
+               ". Fix: name a getter after the field it returns, and define it in the struct's own module"
 
     assert issue.trigger == "name"
     assert issue.line_no == 2
@@ -224,7 +229,8 @@ defmodule Anchor.Check.StructGetterConventionTest do
     assert [issue] = issues(source)
 
     assert issue.message ==
-             "Getter for `Other.Thing.name` should be defined in `Other.Thing` (not in `A`)"
+             "Getter for `Other.Thing.name` should be defined in `Other.Thing` (not in `A`)" <>
+               ". Fix: name a getter after the field it returns, and define it in the struct's own module"
 
     assert issue.trigger == "name"
   end
@@ -322,7 +328,8 @@ defmodule Anchor.Check.StructGetterConventionTest do
     assert issue.trigger == "get_email"
 
     assert issue.message ==
-             "Getter function `get_email` should be named `email` to match the field it extracts"
+             "Getter function `get_email` should be named `email` to match the field it extracts" <>
+               ". Fix: name a getter after the field it returns, and define it in the struct's own module"
 
     assert issue.line_no == 5
   end

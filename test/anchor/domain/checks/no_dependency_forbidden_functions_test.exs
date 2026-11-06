@@ -261,7 +261,11 @@ defmodule Anchor.Domain.Checks.NoDependencyForbiddenFunctionsTest do
       source = file("  alias Bad.Mod\n  def a(x), do: Mod.f(x)")
 
       assert [%Violation{} = violation] = detect(source, [rule(:call)])
-      assert violation.message == "Module calls forbidden function Bad.Mod.f/1"
+
+      assert violation.message ==
+               "Module calls forbidden function Bad.Mod.f/1" <>
+                 ". Fix: do not reference Bad.Mod.f, Bad.Mod.g/2, :bad_erl.f from a module this rule selects; reach it through a module the rule allows"
+
       assert violation.trigger == "Bad.Mod.f/1"
       assert violation.line == 3
     end
@@ -270,7 +274,10 @@ defmodule Anchor.Domain.Checks.NoDependencyForbiddenFunctionsTest do
       source = file("  def a(args), do: apply(Bad.Mod, :f, args)")
 
       assert [violation] = detect(source, [rule(:call)])
-      assert violation.message == "Module calls forbidden function Bad.Mod.f (arity unknown)"
+
+      assert violation.message ==
+               "Module calls forbidden function Bad.Mod.f (arity unknown)" <>
+                 ". Fix: do not reference Bad.Mod.f, Bad.Mod.g/2, :bad_erl.f from a module this rule selects; reach it through a module the rule allows"
     end
 
     test "a dynamic call names what it could reach, and says how to fix it" do

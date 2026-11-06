@@ -31,7 +31,11 @@ defmodule Anchor.Check.MustUseModuleTest do
       """
 
       assert [issue] = issues(source, [MyApp.Schema])
-      assert issue.message == "Module must use MyApp.Schema"
+
+      assert issue.message ==
+               "Module must use MyApp.Schema" <>
+                 ". Fix: use MyApp.Schema in the module's own defmodule body"
+
       assert issue.trigger == "MyApp.Schema"
       assert issue.line_no == 1
     end
@@ -74,7 +78,11 @@ defmodule Anchor.Check.MustUseModuleTest do
 
       assert [issue] = issues(source, [MyApp.Schema, MyApp.Base])
       assert issue.trigger == "MyApp.Base"
-      assert issue.message == "Module must use MyApp.Base"
+
+      assert issue.message ==
+               "Module must use MyApp.Base" <>
+                 ". Fix: use MyApp.Schema, MyApp.Base in the module's own defmodule body"
+
       assert issue.line_no == 1
     end
 

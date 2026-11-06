@@ -46,7 +46,11 @@ defmodule Anchor.Check.ModulePatternRestrictionsTest do
       rule = uses_rule(["changeset", "__changeset__", "__schema__", "__struct__"])
 
       assert [issue] = issues(source, rule)
-      assert issue.message == "Module defines non-allowed function: custom_function"
+
+      assert issue.message ==
+               "Module defines non-allowed function: custom_function" <>
+                 ". Fix: define only the allowed functions: changeset, __changeset__, __schema__, __struct__"
+
       assert issue.trigger == "custom_function"
       assert issue.line_no == 7
     end

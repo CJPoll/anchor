@@ -1,7 +1,8 @@
 defmodule Anchor.Domain.ViolationKey do
   @moduledoc """
   The stable key of a graph rule's finding (DND-5441, shared contract section
-  6) — a **Domain** module (ADR 001). Pure.
+  6), and of an ast rule's (`ast_key/3`, DND-5632) — a **Domain** module (ADR
+  001). Pure.
 
   A key is what a baseline file lists (`Anchor.Domain.Baseline`), so it must
   not move when unrelated code moves: it carries **no line number and no
@@ -31,6 +32,24 @@ defmodule Anchor.Domain.ViolationKey do
   @spec graph_key(map(), String.t()) :: String.t()
   def graph_key(rule, subject) do
     Enum.map_join([rule_name(rule), subject], "|", &segment!/1)
+  end
+
+  @doc """
+  The key of an ast (Credo-engine) rule's finding (DND-5632):
+  `<rule>|<file>|<trigger>`, the file relative to the project root and the
+  trigger the check highlights (empty when it has none). Like a graph key it
+  carries no line and no message, so moving code within a file does not churn
+  the baseline. The file segment is read back by
+  `Anchor.Domain.AstBaseline.entry_file/2`, so a file holding `|` raises
+  `ArgumentError`, as a newline in any segment does.
+  """
+  @spec ast_key(map(), String.t(), String.t() | nil) :: String.t()
+  def ast_key(rule, file, trigger) do
+    if String.contains?(file, "|") do
+      raise ArgumentError, "an ast baseline key's file cannot hold |: #{inspect(file)}"
+    end
+
+    Enum.map_join([rule_name(rule), file, trigger || ""], "|", &segment!/1)
   end
 
   @doc "The key segment naming `rule`: its `id`, or its type when it has none."

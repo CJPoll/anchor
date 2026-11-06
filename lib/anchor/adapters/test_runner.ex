@@ -30,7 +30,10 @@ defmodule Anchor.Adapters.TestRunner do
   result (default `System.cmd/3`), given the `timeout` path, the full argv
   and the command options.
   The frames are read with `:erlang.binary_to_term(bin, [:safe])`; a frame cut
-  short by a kill ends the read.
+  short by a kill ends the read. `[:safe]` refuses an atom the VM does not
+  have, and the task's VM never loads ExUnit or the formatter, so the frame
+  tags are named in this module (`@frame_tags`, read before each decode):
+  loading it creates them (DND-5485).
   """
 
   @behaviour Anchor.Adapters.TestExecution
@@ -45,6 +48,9 @@ defmodule Anchor.Adapters.TestRunner do
     "ExUnit.CLIFormatter"
   ]
 
+  # The atoms of every frame `Anchor.Sabotage.ExUnitFormatter` writes; see
+  # the moduledoc.
+  @frame_tags [:suite_started, :test_failed, :suite_finished]
   @kill_after_seconds 10
   @output_limit 32_768
 
@@ -115,6 +121,9 @@ defmodule Anchor.Adapters.TestRunner do
   end
 
   defp frames(path) do
+    # A call the compiler keeps, so the tags' literal stays in the module.
+    Enum.each(@frame_tags, &Atom.to_string/1)
+
     case File.read(path) do
       {:ok, bytes} -> decode(bytes, [])
       {:error, _posix} -> []

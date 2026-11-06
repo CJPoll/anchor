@@ -153,6 +153,7 @@ defmodule Anchor.Domain.Graph.Builder do
       attributes: attributes,
       specs: specs(beam.specs, macros(Map.get(elixir, :definitions, []))),
       types: types(beam.types),
+      callbacks: beam.callbacks,
       struct_fields: struct_fields(Map.get(elixir, :struct)),
       functions:
         elixir

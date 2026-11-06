@@ -31,7 +31,11 @@ defmodule Anchor.Check.NoDependencyTest do
       """
 
       assert [issue] = issues(source, [MyApp.Repo])
-      assert issue.message == "Module has forbidden direct dependency on MyApp.Repo"
+
+      assert issue.message ==
+               "Module has forbidden direct dependency on MyApp.Repo" <>
+                 ". Fix: do not reference MyApp.Repo from a module this rule selects; reach it through a module the rule allows"
+
       assert issue.trigger == "MyApp.Repo"
       assert issue.line_no == 2
     end
@@ -145,7 +149,11 @@ defmodule Anchor.Check.NoDependencyTest do
       """
 
       assert [issue] = issues(source, [:telemetry])
-      assert issue.message == "Module has forbidden direct dependency on :telemetry"
+
+      assert issue.message ==
+               "Module has forbidden direct dependency on :telemetry" <>
+                 ". Fix: do not reference :telemetry from a module this rule selects; reach it through a module the rule allows"
+
       assert issue.trigger == ":telemetry"
       assert issue.line_no == 2
     end

@@ -38,7 +38,16 @@ defmodule Anchor.Domain.Checks.NoTupleMatchInHead do
   line, with the function name as the trigger.
   """
 
+  alias Anchor.Domain.RuleShapes
   alias Anchor.Domain.Violation
+
+  @behaviour Anchor.Domain.RuleShape
+
+  @impl Anchor.Domain.RuleShape
+  def shape(_rule) do
+    "take the result as one plain argument, and let the caller branch on {:ok, _} and " <>
+      "{:error, _} with a case"
+  end
 
   @tuple_tags [:ok, :error]
 
@@ -51,7 +60,7 @@ defmodule Anchor.Domain.Checks.NoTupleMatchInHead do
   """
   @spec detect_violations(Macro.t(), [map()]) :: [Violation.t()]
   def detect_violations(ast, rules) do
-    Enum.flat_map(rules, fn _rule ->
+    Enum.flat_map(rules, fn rule ->
       ast
       |> find_function_clauses()
       |> Enum.flat_map(fn {name, visibility, line_no, args} ->
@@ -59,6 +68,7 @@ defmodule Anchor.Domain.Checks.NoTupleMatchInHead do
         |> Enum.filter(&flaggable_arg?/1)
         |> Enum.map(fn _arg -> build_violation(name, visibility, line_no) end)
       end)
+      |> Enum.map(&RuleShapes.with_shape(&1, shape(rule)))
     end)
   end
 

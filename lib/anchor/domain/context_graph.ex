@@ -71,7 +71,7 @@ defmodule Anchor.Domain.ContextGraph do
 
   defp edges(%Call{from: from, to: {:dynamic, name, arity, _receiver}} = call, model) do
     model.graph
-    |> DynamicCalls.candidates({name, arity})
+    |> DynamicCalls.targets(call)
     |> Enum.flat_map(&edge(from, {&1, name, arity}, call, model))
   end
 
