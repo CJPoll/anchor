@@ -53,6 +53,9 @@ defmodule AnchorFixtures.ParameterSinks.Started do
   # A literal term holds an MFA too.
   def literal_spec, do: {__MODULE__, :literal_target, [:fixed]}
   def literal_target(_x), do: :ok
+
+  # A module outside the project names nothing the rule judges.
+  def outside_spec, do: {GenServer, :start, [:fixed]}
 end
 
 defmodule AnchorFixtures.ParameterSinks.Computed do

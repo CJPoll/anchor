@@ -47,6 +47,8 @@ defmodule Anchor.Domain.CoreMfaReferencesTest do
         {:literal, 0, [{M, :f, 2}]},
         {:nested_literal, 0, [{M, :f, 1}]},
         {:literal_map, 0, [{M, :f, 1}]},
+        {:tuple_in_map, 0, [{M, :f, 1}]},
+        {:list_in_map, 0, [{M, :f, 1}]},
         {:literal_list, 0, [{M, :f, 1}, {M, :g, 0}]},
         {:spawned, 1, [{M, :f, 1}]},
         {:args_var, 1, [{M, :f, nil}]},
