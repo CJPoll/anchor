@@ -330,13 +330,17 @@ first-landing baseline.
 `Anchor.Domain.GraphRules.AnalysesComplete` needs `[:cfa, :demand]` (the runner
 computes the demand analysis once when a rule that runs needs it, onto
 `Model.demand`, with `architecture.effects`) and fails the run closed on a hit
-step bound, a hit round bound, or a selected function with Core and no demand
-summary. Anchor's own `.anchor.yml` declares it over lib/, with a floor, so CI's
-`mix anchor.graph` is the whole-Anchor run of those analyses. **No test reads
+step bound, a hit round bound, a selected function with Core and no demand
+summary, or a count below a floor it declares (`min_functions`, `min_apply_sites`,
+`min_absent_parameters`). Anchor's own `.anchor.yml` declares it over lib/, with
+those floors, so CI's `mix anchor.graph` is the whole-Anchor run of those
+analyses. Its canary has its own root, `test/fixtures/graph_canary/analyses_complete/`,
+compliant only: no small module can hit a default bound, so the violating cases
+inject a bounded analysis or raise a floor in the test. **No test reads
 Anchor's own beams or the whole stdlib as a Domain or Manager test:** a behaviour
 of an analysis gets a row in `demand_test.exs`, `transfer_test.exs` or
 `cfa_test.exs` on a small fixture, and `test/anchor/integration/analyses_complete_integration_test.exs`
-is the one happy path over beams on disk. The table logic of `Inlines` is tested
+is the one happy path over beams on disk, read from that canary. The table logic of `Inlines` is tested
 on hand-built exports; the check against the real stdlib is
 `test/anchor/adapters/inlines_stdlib_test.exs` (`@moduletag bucket: :adapter`),
 which reads the stdlib once, in `setup_all`.

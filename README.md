@@ -449,7 +449,7 @@ Credo never reports a
 |---|---|---|---|
 | `aggregate_declarations` | none | none | `graph` |
 | `alphabetized_functions` | `mode` | none | `ast` |
-| `analyses_complete` | none | none | `graph` |
+| `analyses_complete` | `min_absent_parameters`, `min_apply_sites`, `min_functions` | none | `graph` |
 | `case_on_bare_arg` | none | none | `ast` |
 | `context_acyclic` | none | none | `graph` |
 | `effects_match_bucket` | none | none | `graph` |
@@ -858,6 +858,49 @@ The summary adds `; effects: <n> functions (domain <a>, managers <b>, adapters
 <c>, framework <d>), <u> unresolved dynamic calls`. Anchor's own `.anchor.yml`
 runs it over `lib/` with a baseline holding what it found when it landed.
 
+### The `analyses_complete` rule (DND-5715)
+
+Declares that the whole-program analyses finish over your project. It reads the
+higher-order flow analysis and the demand analysis (`Anchor.Domain.Demand`), so
+the run computes both once. Each of these is a fail-closed issue on the config,
+never held by a baseline and never report-only:
+
+- the flow analysis hit its step bound (every apply site reads `any`);
+- the demand analysis hit its round bound on some component (its parameters
+  read as used without being judged);
+- a selected module has a `def` or `defp` with a Core body and no demand summary;
+- the analyses judged fewer than a floor it declares.
+
+```yaml
+rules:
+  - type: analyses_complete
+    id: analyses_complete
+    paths: ["lib/**/*.ex"]
+    min_modules: 100
+    min_functions: 500          # functions the demand analysis summarised
+    min_apply_sites: 100        # apply sites the flow analysis counted
+    min_absent_parameters: 1    # parameters it judged unused
+
+architecture:
+  contexts:
+    depth: 2
+  buckets:
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/**/*.ex"]
+  calls:
+    domain: [domain]
+```
+
+The bounds and floors are over the whole program, since an analysis runs over
+all of it; the selector narrows only whose functions must be summarised. Each
+floor is optional, a positive integer, and has no default: without it, that
+count is not judged. A rule that reads the demand analysis declares `needs:
+[:cfa, :demand]` in its module (`Anchor.Domain.GraphRule`). Anchor's own
+`.anchor.yml` declares this rule, so CI's `mix anchor.graph` is the whole-Anchor
+run of both analyses.
+
 ### The `struct_owned_by_module_flow` rule (DND-5454)
 
 ```yaml
@@ -1131,7 +1174,7 @@ line.
 | An `analyses_complete` rule when the flow analysis hit its step bound (DND-5715) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "analyses_complete", analyses_complete): the higher-order flow analysis (Anchor.Domain.Cfa) hit its step bound after 40 steps, so every apply site reads any and no closure was resolved. Fix: this is a scale limit of Anchor; ...` |
 | An `analyses_complete` rule when the demand analysis hit its round bound (DND-5715) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "analyses_complete", analyses_complete): the demand analysis (Anchor.Domain.Demand) hit its round bound on 2 function(s) (MyApp.X.f/1, MyApp.X.g/2), so their parameters read as used without being judged. Fix: this is a scale limit of Anchor; ...` |
 | An `analyses_complete` rule when a selected function with a Core body has no demand summary (DND-5715) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "analyses_complete", analyses_complete): 1 function(s) have a Core body and no demand summary (MyApp.X.f/1), so the analysis judged none of their parameters. Fix: this is an Anchor bug; ...` |
-| A graph rule whose needed demand analysis crashed (DND-5715) | 1 | the config | `rule 1 (id: "analyses_complete", analyses_complete) could not run: the demand analysis it needs (Anchor.Domain.Demand) crashed: ... Fix: this is an Anchor bug; file it with this line.` |
+| An `analyses_complete` rule when the analyses judged fewer than a floor it declares (DND-5715) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "analyses_complete", analyses_complete): the whole-program analyses judged 3, below min_functions 501, so they may be judging nothing. Fix: find what stopped them reading this code; ...` |
 | An `aggregate_declarations` rule with no aggregate declared anywhere (DND-5476) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "aggregate_declarations", aggregate_declarations) checks nothing: no aggregate is declared in .anchor.yml or by an @anchor_aggregate attribute. Fix: declare one or remove the rule: ...` |
 | A schema whose `__schema__(:source)` is not a literal (DND-5476) | 0 | the summary | counted as `; aggregates: <N> declared, <U> tables unknown`, never dropped |
 | A graph rule below its `min_modules` | 1 | the config | `rule 2 (id: "web", layering) selects 0 modules, below min_modules 1. Fix: correct the selector; ...` |
@@ -1151,6 +1194,7 @@ line.
 | A graph rule whose `needs/0` names an analysis the runner does not compute, or is not a list (DND-5574) | 1 | the config | `rule 2 (id: "web", layering) could not run: ArgumentError: MyApp.Rule.needs/0 names [:nope], which the graph runner does not compute (it computes [:cfa, :effects]), so it checked nothing. Fix: this is an Anchor bug; file it with this line.` The rule is not run; the other rules still run. |
 | The higher-order flow analysis a rule needs raises, throws or exits (DND-5574) | 1 | the config | `rule 2 (id: "web", layering) could not run: the higher-order flow analysis it needs (Anchor.Domain.Cfa) crashed: RuntimeError: ..., so it checked nothing. Fix: this is an Anchor bug; file it with this line.` One per rule that needs it; the rules that do not still run. |
 | The effect inference a rule needs raises, throws or exits, or returns no `%Effects{}` (DND-5447) | 1 | the config | `rule 2 (id: "effects", effects_match_bucket) could not run: the effect inference it needs (Anchor.Domain.Effects) crashed: RuntimeError: ..., so it checked nothing. Fix: this is an Anchor bug; file it with this line.` One per rule that needs it; the rules that do not still run. |
+| The demand analysis a rule needs raises, throws or exits, or returns no `%Demand{}` (DND-5715) | 1 | the config | `rule 1 (id: "analyses_complete", analyses_complete) could not run: the demand analysis it needs (Anchor.Domain.Demand) crashed: ... Fix: this is an Anchor bug; file it with this line.` The other rules still run. |
 | An `effects_match_bucket` rule selects modules of a judged bucket of which no public function was analysed (DND-5447) | 1 | the config | `rule 4 (id: "effects", effects_match_bucket) judged no public function of bucket domain: the modules it selects there have none that was analysed (every one is a root, generated, or has no Core body), so the bucket is below the rule's floor. Fix: select modules of domain with public functions, or set infer: false on domain in a reviewed change.` |
 | Findings of a `report` rule | 0 | the finding | printed `[report]` |
 

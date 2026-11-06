@@ -210,6 +210,27 @@ defmodule Anchor.Managers.GraphDemandTest do
       report = run([complete(%{enforcement: :report})], beams, cfa: bounded)
 
       assert report.exit_code == 1
+      assert [finding] = report.findings
+      assert finding.message =~ "hit its step bound after 1 steps"
+    end
+
+    test "on a floor the analyses fell below, each reported", %{beams: beams} do
+      floors = %{min_functions: 99, min_apply_sites: 99, min_absent_parameters: 99}
+
+      report = run([complete(floors)], beams)
+
+      assert report.exit_code == 1
+      assert [functions, sites, absent] = report.findings
+      assert functions.message =~ "below min_functions 99"
+      assert sites.message =~ "judged 1, below min_apply_sites 99"
+      assert absent.message =~ "below min_absent_parameters 99"
+    end
+
+    test "with the counts at its floors, clean (the positive control of the row above)",
+         %{beams: beams} do
+      floors = %{min_functions: 4, min_apply_sites: 1, min_absent_parameters: 1}
+
+      assert run([complete(floors)], beams).exit_code == 0
     end
   end
 

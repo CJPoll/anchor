@@ -120,11 +120,16 @@ rules:
   # CI's `mix anchor.graph` runs the 0-CFA and the demand analysis over every
   # module of lib/: a hit bound or a function left unsummarised fails the run.
   # This is the one whole-Anchor run of them (no test reads Anchor's own beams,
-  # ADR 002), and its floor holds that it keeps judging the whole of lib/.
+  # see CLAUDE.md), and its floors are the positive controls of the self tests
+  # it replaced: hundreds of functions, hundreds of apply sites, and some
+  # parameter judged unused.
   - type: analyses_complete
     id: analyses_complete
     paths: ["lib/**/*.ex"]
     min_modules: 185
+    min_functions: 501
+    min_apply_sites: 101
+    min_absent_parameters: 1
 
   # --- Rule: the calls matrix over compiled code (DND-5442) ---
   #

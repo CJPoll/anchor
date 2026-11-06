@@ -64,7 +64,12 @@ defmodule Anchor.Domain.GraphRules.AnalysesCompleteTest do
 
   defp summaries(mfas), do: Map.new(mfas, &{&1, []})
 
-  defp complete, do: %Demand{summaries: summaries([{A, :pub, 1}, {A, :priv, 1}])}
+  defp complete do
+    %Demand{
+      summaries: summaries([{A, :pub, 1}, {A, :priv, 1}]),
+      counts: %{functions: 2, parameters: 2, absent: 1}
+    }
+  end
 
   test "every selected function summarised, no bound hit: no violation" do
     assert AnalysesComplete.check(model(complete()), @rule) == []
@@ -106,11 +111,42 @@ defmodule Anchor.Domain.GraphRules.AnalysesCompleteTest do
     assert violation.message =~ "(A.priv/1)"
   end
 
+  describe "the floors (the positive controls)" do
+    @sites %Cfa{counts: %{total: 7, resolved: 7, any: 0, by_function: %{}}}
+
+    for {key, judged, above, at} <- [
+          {:min_functions, 2, 3, 2},
+          {:min_apply_sites, 7, 8, 7},
+          {:min_absent_parameters, 1, 2, 1}
+        ] do
+      test "#{key}: below it is one fail-closed violation naming it and the count; at it, none" do
+        rule = Map.put(@rule, unquote(key), unquote(above))
+
+        assert [violation] = AnalysesComplete.check(model(complete(), @sites), rule)
+        assert violation.kind == :fail_closed
+
+        assert violation.message =~
+                 "judged #{unquote(judged)}, below #{unquote(key)} #{unquote(above)}"
+
+        at = Map.put(@rule, unquote(key), unquote(at))
+        assert AnalysesComplete.check(model(complete(), @sites), at) == []
+      end
+    end
+
+    test "no floor declared: the counts are not judged" do
+      assert AnalysesComplete.check(model(complete()), @rule) == []
+      assert %Cfa{}.counts.total == 0
+    end
+  end
+
   test "every kind of failure is reported together, in order" do
     demand = %Demand{summaries: %{}, bound_hit: [{A, :pub, 1}]}
+    rule = Map.put(@rule, :min_functions, 1)
 
-    assert [cfa, rounds, missing] =
-             AnalysesComplete.check(model(demand, %Cfa{bound_hit?: true, steps: 1}), @rule)
+    assert [cfa, rounds, missing, floor] =
+             AnalysesComplete.check(model(demand, %Cfa{bound_hit?: true, steps: 1}), rule)
+
+    assert floor.message =~ "below min_functions 1"
 
     assert cfa.message =~ "step bound"
     assert rounds.message =~ "round bound"

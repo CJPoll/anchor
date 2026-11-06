@@ -16,13 +16,22 @@ defmodule Anchor.Domain.GraphRules.AnalysesComplete do
     * the demand analysis hit its round bound on some component;
     * a selected module has a `def` or `defp` with a Core body and no demand
       summary (a function with no Core body is the graph's to report:
-      `Graph.functions_without_core/1`, and an `unreadable` entry when public).
+      `Graph.functions_without_core/1`, and an `unreadable` entry when public);
+    * the analyses judged fewer than a declared floor: `min_functions`
+      (`Demand` counts), `min_apply_sites` (`Cfa` counts) or
+      `min_absent_parameters` (`Demand` counts). These are the positive
+      controls: an analysis that hits no bound and judges nothing would pass
+      the checks above.
 
-  The bounds are judged over the whole program, since an analysis runs over
-  all of it; the selector narrows only which modules' functions must be
-  summarised, and its floor (`min_modules`) holds the size of what is judged.
-  Anchor's own `.anchor.yml` declares it, so CI's `mix anchor.graph` holds the
-  property over Anchor's own code.
+  The bounds and the floors are judged over the whole program, since an
+  analysis runs over all of it; the selector narrows only which modules'
+  functions must be summarised, and its `min_modules` holds the size of what
+  is selected. Anchor's own `.anchor.yml` declares it, so CI's `mix anchor.graph`
+  holds the property over Anchor's own code.
+
+  It carries no `@impl`, unlike its siblings: it was written on a base without
+  the required `narrows?/2` callback, to compile warning-free with or without
+  it (DND-5715).
   """
 
   @behaviour Anchor.Domain.GraphRule
@@ -39,7 +48,8 @@ defmodule Anchor.Domain.GraphRules.AnalysesComplete do
     path = config_path(model)
 
     cfa_bound(cfa, rule, path) ++
-      demand_bound(demand, rule, path) ++ unsummarised(model, demand, rule, path)
+      demand_bound(demand, rule, path) ++
+      unsummarised(model, demand, rule, path) ++ floors(cfa, demand, rule, path)
   end
 
   def narrows?(_base_key, _key), do: false
@@ -63,6 +73,17 @@ defmodule Anchor.Domain.GraphRules.AnalysesComplete do
 
   defp demand_bound(%Demand{bound_hit: members}, rule, path),
     do: [Failures.analyses_demand_bound_hit(rule, members, path)]
+
+  defp floors(cfa, demand, rule, path) do
+    for {key, judged} <- [
+          min_functions: demand.counts.functions,
+          min_apply_sites: cfa.counts.total,
+          min_absent_parameters: demand.counts.absent
+        ],
+        min = Map.get(rule, key),
+        min != nil and judged < min,
+        do: Failures.analyses_below_floor(rule, key, judged, min, path)
+  end
 
   # Every `def`/`defp` of a selected module with a Core body: what
   # `Anchor.Domain.Demand` says it summarises.

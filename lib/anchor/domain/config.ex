@@ -357,6 +357,10 @@ defmodule Anchor.Config do
       # rule's shrink-only baseline, or nil.
       bucket: rule["bucket"],
       min_modules: rule["min_modules"],
+      # DND-5715: `analyses_complete`'s floors, nil when absent (no floor).
+      min_absent_parameters: rule["min_absent_parameters"],
+      min_apply_sites: rule["min_apply_sites"],
+      min_functions: rule["min_functions"],
       enforcement: RuleSchema.parse_enforcement(rule["enforcement"]),
       baseline: rule["baseline"],
       # Gap D (DND-140): surface an ABSENT `paths` as `nil`, not `[]`. An empty

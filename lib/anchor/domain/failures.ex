@@ -548,6 +548,23 @@ defmodule Anchor.Domain.Failures do
   end
 
   @doc """
+  The `analyses_complete` issue when the analyses judged fewer than a floor the
+  rule declares (DND-5715): `key` is the floor, `judged` the count, `min` its
+  value.
+  """
+  @spec analyses_below_floor(map(), atom(), non_neg_integer(), pos_integer(), String.t() | nil) ::
+          Violation.t()
+  def analyses_below_floor(rule, key, judged, min, config_path) do
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "#{rule_label(rule)}: the whole-program analyses judged #{judged}, below #{key} #{min}, " <>
+        "so they may be judging nothing. Fix: find what stopped them reading this code; " <>
+        "lowering the floor is the owner's call."
+    )
+  end
+
+  @doc """
   The issue for a graph rule whose needed effect inference
   (`Anchor.Domain.Effects`, DND-5447) crashed: it is not run, since without
   the roles it would check nothing.

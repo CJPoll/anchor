@@ -286,6 +286,15 @@ defmodule Anchor.Domain.FailuresGraphTest do
          "MyApp.X.f/0, MyApp.X.f/1, MyApp.X.f/2, MyApp.X.f/3, MyApp.X.f/4 and 2 more",
          "Fix: this is an Anchor bug"
        ]},
+      {"analyses_below_floor",
+       Failures.analyses_below_floor(rule, :min_functions, 3, 501, "proj/.anchor.yml"),
+       "proj/.anchor.yml",
+       [
+         "the whole-program analyses judged 3, below min_functions 501",
+         "may be judging nothing",
+         "Fix: find what stopped them reading this code",
+         "lowering the floor is the owner's call"
+       ]},
       {"rule_effects_crashed", effects_crashed, ".anchor.yml",
        [
          ~s|rule 2 (id: "web", layering) could not run: the effect inference it needs | <>

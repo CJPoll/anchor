@@ -433,12 +433,27 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
   defp table(type)
        when type in [
               :aggregate_declarations,
-              :analyses_complete,
               :layering,
               :context_acyclic,
               :effects_match_bucket
             ],
        do: graph_rows(type)
+
+  # DND-5715: analyses_complete's three floors, each a positive integer like
+  # `min_modules`; each is a positive control, so 0 would judge nothing.
+  defp table(:analyses_complete) do
+    base = %{"type" => "analyses_complete", "bucket" => "domain"}
+
+    graph_rows(:analyses_complete) ++
+      for key <- ~w(min_absent_parameters min_apply_sites min_functions),
+          {label, value, expected} <- [
+            {"positive: #{key}", 5, :accepted},
+            {"#{key}: 0 (no floor)", 0, {:refused, "`#{key}` must be a positive integer"}},
+            {"#{key} that is not an integer", "5",
+             {:refused, "`#{key}` must be a positive integer"}}
+          ],
+          do: {label, Map.put(base, key, value), expected}
+  end
 
   # DND-5454: the graph half of struct ownership reads the AST half's one
   # optional key, `owned_namespaces`, under the same rules.

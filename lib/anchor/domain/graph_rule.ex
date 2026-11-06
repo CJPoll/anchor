@@ -27,7 +27,8 @@ defmodule Anchor.Domain.GraphRule do
   (`Anchor.Domain.Effects`), stored on `Model.effects`; it reads the flow
   analysis, so a rule that needs it names `:cfa` too. `[:demand]` (DND-5715)
   asks for the demand analysis (`Anchor.Domain.Demand`), stored on
-  `Model.demand`; it reads the flow analysis too.
+  `Model.demand`; it reads the flow analysis, so a rule that needs it names
+  `:cfa` too.
   `Anchor.Domain.GraphRules.needs/1` reads and checks it.
   """
 
