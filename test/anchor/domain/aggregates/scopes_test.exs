@@ -130,6 +130,10 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
 
     def s34(mod), do: Repo.transaction(fn -> Helper.take(&mod.write/1) end)
 
+    def s36(xs), do: Repo.transaction(fn -> Enum.sort_by(xs, fn x -> x end, :desc) end)
+
+    def s37, do: Repo.transaction(fn -> #{inspect(@custom_repo)}.one(%S{}) end)
+
     def s35 do
       Multi.new()
       |> Multi.run(:a, fn repo, _ -> repo.get(S, 1); repo.insert(%S{}) end)
@@ -192,7 +196,7 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
   defp arity(name) when name in [:s20, :s21, :s29, :s31], do: 2
 
   defp arity(name)
-       when name in [:s6, :s7, :s10, :s12, :s13, :s22, :s23, :s24, :s30, :s32, :s33, :s34],
+       when name in [:s6, :s7, :s10, :s12, :s13, :s22, :s23, :s24, :s30, :s32, :s33, :s34, :s36],
        do: 1
 
   defp arity(_name), do: 0
@@ -331,6 +335,14 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
     test "the function is found before a trailing literal", %{analysis: a} do
       assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s31, 2}, _line}]} =
                one(a, :s31)
+    end
+
+    test "an inline fn before a trailing literal is walked, with no gap", %{analysis: a} do
+      assert %Scope{complete?: true} = one(a, :s36)
+    end
+
+    test "a function Ecto generates needs no body in the beam: no gap", %{analysis: a} do
+      assert %Scope{complete?: true} = one(a, :s37)
     end
 
     test "a function-taking call's first argument is data (positive control)", %{analysis: a} do
