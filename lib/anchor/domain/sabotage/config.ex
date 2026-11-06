@@ -16,7 +16,7 @@ defmodule Anchor.Domain.Sabotage.Config do
   | `survivors` | `.anchor/sabotage/survivors.txt` | the survivors list (DND-5483), relative to the project root; named here, it must exist; at the default path an absent file is an empty list, said loudly |
   | `behaviour_locality_baseline` | `.anchor/baselines/behaviour-locality.txt` | the behaviour locality baseline (DND-5489), relative to the project root; named here, it must exist |
   | `behaviour_locality_enforcement` | `report` | `report` prints the verdict and exits 0; `enforce` fails on NEW, STALE or GREW |
-  | `scan_shards` | 7 | the nightly scan's shard count (DND-5490): `--shard auto` runs shard day-of-year mod `scan_shards`, so all of main is scanned every `scan_shards` nights |
+  | `scan_shards` | 7 | the nightly scan's shard count (DND-5490): `--shard auto` runs shard (days since 1970-01-01) mod `scan_shards`, so any `scan_shards` nights in a row scan all of main |
 
   `records` (every key optional): `dir` (default `test/sabotage_records`;
   may hold `{app}`; relative, with no `..` segment, read with a leading `./`

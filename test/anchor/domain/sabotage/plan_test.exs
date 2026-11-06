@@ -101,10 +101,16 @@ defmodule Anchor.Domain.Sabotage.PlanTest do
       assert Plan.shard(seventy(), 0, 0) == {:error, :bad_shard}
     end
 
-    test "shard_of_day/2 is the day of the year modulo n" do
-      assert Plan.shard_of_day(~D[2026-01-01], 7) == {1, 7}
-      assert Plan.shard_of_day(~D[2026-01-07], 7) == {0, 7}
-      assert Plan.shard_of_day(~D[2026-11-06], 7) == {rem(310, 7), 7}
+    test "shard_of_day/2: any n days in a row run every shard once, across a new year too" do
+      for n <- [7, 30], start <- [~D[2026-12-20], ~D[2028-12-15], ~D[2026-06-01]] do
+        shards = for d <- 0..(n - 1), do: elem(Plan.shard_of_day(Date.add(start, d), n), 0)
+        assert Enum.sort(shards) == Enum.to_list(0..(n - 1)), "n=#{n} from #{start}"
+      end
+
+      assert Plan.shard_of_day(~D[1970-01-08], 7) == {0, 7}
+
+      assert Plan.shard_of_day(~D[2027-01-01], 7) ==
+               {rem(elem(Plan.shard_of_day(~D[2026-12-31], 7), 0) + 1, 7), 7}
     end
   end
 end

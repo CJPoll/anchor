@@ -544,3 +544,22 @@ Green first: every test file below, unmutated: `115 tests, 0 failures`.
 
 ..
 ```
+
+## Critic round: the shard of the day crosses a new year
+
+The critic found `--shard auto` keyed on the day of the year, which restarts each 1 January: one shard ran twice and others waited past the artifact retention. `shard_of_day/2` now counts days since 1970-01-01. The red, against the day-of-year code (`mix test --max-cases 2 test/anchor/domain/sabotage/plan_test.exs`), before the fix:
+
+```
+  1) test shard/3 (DND-5490) shard_of_day/2: any n days in a row run every shard once, across a new year too (Anchor.Domain.Sabotage.PlanTest)
+     test/anchor/domain/sabotage/plan_test.exs:104
+     n=30 from 2026-12-20
+     code: for n <- [7, 30], start <- [~D[2026-12-20], ~D[2028-12-15], ~D[2026-06-01]] do
+     stacktrace:
+       test/anchor/domain/sabotage/plan_test.exs:107: anonymous fn/3 in Anchor.Domain.Sabotage.PlanTest."test shard/3 (DND-5490) shard_of_day/2: any n days in a row run every shard once, across a new year too"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/sabotage/plan_test.exs:105: (test)
+
+8 tests, 1 failure
+```
+
+After the fix: `8 tests, 0 failures`.

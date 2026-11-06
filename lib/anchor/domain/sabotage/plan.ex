@@ -41,12 +41,14 @@ defmodule Anchor.Domain.Sabotage.Plan do
   def shard(_mutants, _i, _n), do: {:error, :bad_shard}
 
   @doc """
-  The shard a nightly scan runs on `date` (DND-5490): `{day_of_year mod n, n}`,
-  so every mutant is scanned once every `n` nights and no night runs them all.
+  The shard a nightly scan runs on `date` (DND-5490): the days since
+  1970-01-01, modulo `n`. The count never restarts, so any `n` nights in a row
+  run every shard once, across a new year too (a day-of-year count would run
+  one shard twice at the turn of the year and leave others waiting).
   """
   @spec shard_of_day(Date.t(), pos_integer()) :: {non_neg_integer(), pos_integer()}
   def shard_of_day(%Date{} = date, n) when is_integer(n) and n >= 1,
-    do: {rem(Date.day_of_year(date), n), n}
+    do: {rem(Date.diff(date, ~D[1970-01-01]), n), n}
 
   defp only(ordered, []), do: {:ok, ordered}
 

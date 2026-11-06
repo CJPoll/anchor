@@ -102,8 +102,8 @@ defmodule Mix.Tasks.Anchor.Sabotage do
   `--scope all` scopes every function with a literal clause in the project's
   `lib` files instead of the diff (`Anchor.Domain.Sabotage.Scope.all/1`);
   `--shard I/N` keeps the mutants whose id, read as a hexadecimal number, is
-  `I` modulo `N`, and `--shard auto` is the shard of the day, day-of-year
-  modulo `sabotage.scan_shards` (default 7). `--report PATH` writes the scan's
+  `I` modulo `N`, and `--shard auto` is the shard of the day, the days since
+  1970-01-01 modulo `sabotage.scan_shards` (default 7). `--report PATH` writes the scan's
   report (`Anchor.Domain.Sabotage.ScanReport`) to `PATH` and its term beside
   it as `.etf`: the survivors the survivors list does not hold are its
   findings. `--report` and `--scope all` write no record. With `--report` the

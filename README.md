@@ -1977,7 +1977,7 @@ sabotage:
   survivors: .anchor/sabotage/survivors.txt  # the survivors list (DND-5483); named here, it must exist
   behaviour_locality_baseline: .anchor/baselines/behaviour-locality.txt  # DND-5489; named here, it must exist
   behaviour_locality_enforcement: report  # or enforce: fail on NEW, STALE or GREW
-  scan_shards: 7                     # the nightly scan's shards (DND-5490): --shard auto is day-of-year mod 7
+  scan_shards: 7                     # the nightly scan's shards (DND-5490): --shard auto is days since 1970-01-01 mod 7
 ```
 
 ```gitignore
@@ -2234,9 +2234,9 @@ project's `lib` files (`--scope all`, DND-5490), one shard at a time:
 `--shard I/N` keeps the mutants whose id, read as a hexadecimal number, is
 `I` modulo `N`. An id hashes the mutant's function, operator and target,
 never its line, so shards `0..N-1` together hold every mutant exactly once.
-`--shard auto` runs the day's shard, day-of-year modulo `sabotage.scan_shards`
-(default 7), so all of main is scanned every 7 nights and no night runs
-everything.
+`--shard auto` runs the day's shard, the days since 1970-01-01 modulo
+`sabotage.scan_shards` (default 7), so any 7 nights in a row scan all of main,
+across a new year too, and no night runs everything.
 
 `--report PATH` writes the report, markdown at `PATH` and its term beside it
 as `.etf` (`Anchor.Domain.Sabotage.ScanReport`), and never a record

@@ -195,9 +195,10 @@ defmodule Anchor.Managers.SabotageScanTest do
       expect_clean()
       expect_tests_exist()
 
-      # The day whose shard holds the first mutant: day-of-year mod 7 is its class.
+      # The day whose shard holds the first mutant: days since 1970-01-01 mod 7
+      # is its class.
       i = rem(String.to_integer(hd(mutants()).id, 16), 7)
-      day = Date.new!(2026, 1, if(i == 0, do: 7, else: i))
+      day = Date.add(~D[1970-01-01], 7 * 2900 + i)
 
       facts = %{@facts | dry_run: true} |> Map.put(:shard, {:auto, day})
       run = Sabotage.run(facts, @opts)
