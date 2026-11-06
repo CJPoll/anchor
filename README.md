@@ -1167,7 +1167,8 @@ guard that reads the parameter.
 **Exempt**, because something else fixes the signature: a callback of a
 behaviour the module declares; a function captured anywhere in the project
 (`&M.f/2`); a public function a dynamic call can reach (`mod.f(x)`, by
-`Anchor.Domain.DynamicCalls`); and a generated function (a module with no literal
+`Anchor.Domain.DynamicCalls`); a public function a literal `{M, :f, args}` names (a
+child spec's `start:`, `spawn(M, :f, [a])`); and a generated function (a module with no literal
 `defmodule`, a `__name__`, a macro's output, the head a default argument
 generates).
 
@@ -1176,16 +1177,23 @@ a function of a module that may be generated (`generated?: :unknown`); a public
 function of a module with an external behaviour whose callbacks could not be
 read. If nothing the rule selects could be judged, that is one fail-closed issue.
 
-Imprecision can only hide a finding: demand over-approximates, so a parameter
-passed to an unresolved call is used. Each run prints what that cost:
+Demand over-approximates what a function does with a parameter, so its imprecision
+only hides a finding: a parameter passed to an unresolved call is used. Who calls a
+function is another question. A call whose function name is computed
+(`apply(__MODULE__, action, [conn, params])`) can reach any public function of its
+arity; exempting them all would let one such call silence the rule for that arity,
+so they stay judged and the run counts those calls. When that count is not zero,
+check a public function's finding against them before you drop the parameter: a
+signature one of them relies on is a false finding this rule cannot rule out. Each
+run prints all of it:
 
 ```text
-; parameter_reaches_sink: 1900 apply sites precise, 74 fell to any, 724 imprecise parameters, 2142 functions judged, 906 exempt, 15 not analysed
+; parameter_reaches_sink: 1900 apply sites precise, 74 fell to any, 724 imprecise parameters, 7 calls of a computed name, 2142 functions judged, 906 exempt, 15 not analysed
 ```
 
 An `apply/3` whose target Core does not name is no apply site; a parameter passed
 to one is counted in the imprecise parameters. The JSON's `parameter_sinks` holds
-`precise`, `any`, `imprecise`, `judged`, `exempt` and `not_analysed`. A zero there
+`precise`, `any`, `imprecise`, `computed_names`, `judged`, `exempt` and `not_analysed`. A zero there
 was measured; `null` means no such rule ran.
 
 ### Aggregates: the `aggregates:` section and the `aggregate_declarations` rule (DND-5476)

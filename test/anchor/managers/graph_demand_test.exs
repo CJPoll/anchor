@@ -135,6 +135,7 @@ defmodule Anchor.Managers.GraphDemandTest do
              precise: 0,
              any: 0,
              imprecise: 0,
+             computed_names: 0,
              judged: 2,
              exempt: 0,
              not_analysed: 0
@@ -145,7 +146,8 @@ defmodule Anchor.Managers.GraphDemandTest do
 
     assert summary =~
              "; parameter_reaches_sink: 0 apply sites precise, 0 fell to any, " <>
-               "0 imprecise parameters, 2 functions judged, 0 exempt, 0 not analysed"
+               "0 imprecise parameters, 0 calls of a computed name, 2 functions judged, 0 exempt, " <>
+               "0 not analysed"
 
     assert %{
              "apply_sites" => %{"total" => 0, "resolved" => 0, "any" => 0},

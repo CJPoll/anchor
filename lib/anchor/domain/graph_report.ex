@@ -25,7 +25,7 @@ defmodule Anchor.Domain.GraphReport do
       `apply_sites/1` of it; `effects` (optional) is `nil` or absent when no
       rule that ran needed the effect inference (DND-5447), else `effects/1`
       of it; `parameter_sinks` (optional) is `nil` or absent when no
-      `parameter_reaches_sink` rule ran (DND-5470), else `parameter_sinks/3` of
+      `parameter_reaches_sink` rule ran (DND-5470), else `parameter_sinks/4` of
       it; `interface_width` is `nil` when no `interface` rule ran (DND-5443),
       else `%{context => public functions on its interface}`
       (`Anchor.Domain.Interfaces.width/1`); `aggregates` (optional, DND-5476) is
@@ -64,7 +64,8 @@ defmodule Anchor.Domain.GraphReport do
   `interface` rule ran, it then has `; interface width: <context>=<n>, ...`,
   by context (DND-5443, R4). When a `parameter_reaches_sink` rule ran, it then
   has `; parameter_reaches_sink: <p> apply sites precise, <a> fell to any, <i>
-  imprecise parameters, <j> functions judged, <e> exempt, <k> not analysed`
+  imprecise parameters, <c> calls of a computed name, <j> functions judged, <e>
+  exempt, <k> not analysed`
   (DND-5470), zeros included: a zero there was measured.
   """
 
@@ -134,6 +135,7 @@ defmodule Anchor.Domain.GraphReport do
           precise: non_neg_integer(),
           any: non_neg_integer(),
           imprecise: non_neg_integer(),
+          computed_names: non_neg_integer(),
           judged: non_neg_integer(),
           exempt: non_neg_integer(),
           not_analysed: non_neg_integer()
@@ -203,20 +205,23 @@ defmodule Anchor.Domain.GraphReport do
 
   @doc """
   The precision counts of the `parameter_reaches_sink` rules that ran (DND-5470):
-  apply sites resolved and fallen to `any`, imprecise parameters, and the
-  functions `rule_counts` (one map per rule) judged, exempted and could not
-  analyse. `nil` for no such rule.
+  apply sites resolved and fallen to `any`, imprecise parameters, the
+  `computed_names` calls no function can be ruled out of, and the functions
+  `rule_counts` (one map per rule) judged, exempted and could not analyse. `nil`
+  for no such rule.
   """
-  @spec parameter_sinks([map()], Cfa.t(), Demand.t()) :: parameter_sinks() | nil
-  def parameter_sinks([], _cfa, _demand), do: nil
+  @spec parameter_sinks([map()], Cfa.t(), Demand.t(), non_neg_integer()) ::
+          parameter_sinks() | nil
+  def parameter_sinks([], _cfa, _demand, _computed_names), do: nil
 
-  def parameter_sinks(rule_counts, %Cfa{counts: sites}, %Demand{counts: counts}) do
+  def parameter_sinks(rule_counts, %Cfa{counts: sites}, %Demand{counts: counts}, computed_names) do
     rule_counts
     |> Enum.reduce(&Map.merge(&1, &2, fn _key, left, right -> left + right end))
     |> Map.merge(%{
       precise: sites.resolved,
       any: sites.any,
-      imprecise: counts.imprecise_parameters
+      imprecise: counts.imprecise_parameters,
+      computed_names: computed_names
     })
   end
 
@@ -371,8 +376,9 @@ defmodule Anchor.Domain.GraphReport do
 
   defp parameter_sinks_note(counts) do
     "; parameter_reaches_sink: #{counts.precise} apply sites precise, #{counts.any} fell to " <>
-      "any, #{counts.imprecise} imprecise parameters, #{counts.judged} functions judged, " <>
-      "#{counts.exempt} exempt, #{counts.not_analysed} not analysed"
+      "any, #{counts.imprecise} imprecise parameters, #{counts.computed_names} calls of a " <>
+      "computed name, #{counts.judged} functions judged, #{counts.exempt} exempt, " <>
+      "#{counts.not_analysed} not analysed"
   end
 
   defp effects_json(nil), do: nil

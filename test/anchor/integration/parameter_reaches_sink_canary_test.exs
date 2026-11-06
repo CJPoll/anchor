@@ -77,7 +77,7 @@ defmodule Anchor.Integration.ParameterReachesSinkCanaryTest do
 
     assert report.findings |> Enum.map(& &1.key) |> Enum.sort() == [
              "sinks|#{@drops}.count/2|param 1",
-             "sinks|#{@drops}.count_from/2|param 2",
+             "sinks|#{@drops}.drop_first/2|param 1",
              "sinks|#{@drops}.f/2|param 2",
              "sinks|#{@drops}.g/1|param 1",
              "sinks|#{@drops}.price/2|param 2",
@@ -91,6 +91,9 @@ defmodule Anchor.Integration.ParameterReachesSinkCanaryTest do
 
   test "the message names the parameter, its chain and its call sites", %{beams: beams} do
     report = run(beams)
+
+    # The default's generated head, drop_first/1, is not a second issue.
+    refute finding(report, "drop_first/1|param 1")
 
     price = finding(report, "price/2|param 2")
     assert price.file == "lib/sinks/domain/drops.ex"
@@ -131,12 +134,18 @@ defmodule Anchor.Integration.ParameterReachesSinkCanaryTest do
 
     assert any > 0, "Uses.invoked/2 applies a closure from outside"
     assert imprecise > 0, "Uses.applied/3 passes p to an apply/3 Core does not name"
+
+    assert report.counts.parameter_sinks.computed_names == 2,
+           "Uses.applied/3, Computed.dispatch/2"
+
     assert judged > 0
     assert exempt > 0
     assert not_analysed == 0
 
     assert GraphReport.summary(report) =~
              "; parameter_reaches_sink: #{precise} apply sites precise, #{any} fell to any, "
+
+    assert GraphReport.summary(report) =~ ", 2 calls of a computed name"
 
     assert %{"parameter_sinks" => %{"any" => ^any, "judged" => ^judged}} =
              JSON.decode!(GraphReport.render(report, :json))

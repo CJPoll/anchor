@@ -59,7 +59,7 @@ defmodule Anchor.Managers.Graph do
    10. return the `%Anchor.Domain.GraphReport{}`, with the apply-site
        counts (`GraphReport.apply_sites/1`) when the analysis ran, the
        effect counts (`GraphReport.effects/1`) when the effect inference ran,
-       the parameter counts (`GraphReport.parameter_sinks/3`) when a
+       the parameter counts (`GraphReport.parameter_sinks/4`) when a
        `parameter_reaches_sink` rule ran,
        and declared aggregates' counts (`Anchor.Domain.Aggregates.Index`,
        DND-5476) when any is declared.
@@ -381,7 +381,12 @@ defmodule Anchor.Managers.Graph do
       for {%{type: :parameter_reaches_sink} = rule, _module, _needs} <- rules,
           do: ParameterReachesSink.counts(model, rule)
 
-    GraphReport.parameter_sinks(counts, model.cfa, model.demand)
+    GraphReport.parameter_sinks(
+      counts,
+      model.cfa,
+      model.demand,
+      DynamicCalls.computed_name_count(model.graph)
+    )
   end
 
   # DND-5476: the declared aggregates and their unknown tables are counted

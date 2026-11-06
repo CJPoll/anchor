@@ -20,11 +20,22 @@ defmodule Anchor.Domain.GraphRules.ParameterReachesSink do
   it, make it used in the summary (`Anchor.Domain.Demand.Transfer`). Underscore
   names are no exemption: an unused input is still a dead input.
 
-  ## Never a false flag from imprecision
+  ## What imprecision can do
 
-  Demand over-approximates, so imprecision only hides a finding: a parameter
-  passed to an unresolved apply or an unknown library call is used. The run
-  prints the precision counts (`Anchor.Domain.GraphReport`).
+  Demand over-approximates what a function does with a parameter, so its
+  imprecision only hides a finding: a parameter passed to an unresolved apply or
+  an unknown library call is used. The run prints the precision counts
+  (`Anchor.Domain.GraphReport`).
+
+  Who calls a function is another question, and there one kind of call stays
+  unseen: a computed name (`apply(__MODULE__, action, [conn, params])`) can reach
+  any public function of its arity. Exempting them all would let one such call
+  silence the rule for that arity across the project, so they stay judged and the
+  run prints how many such calls there are
+  (`Anchor.Domain.DynamicCalls.computed_name_count/1`). When that count is not
+  zero, check a public function's finding against those calls before dropping the
+  parameter: a signature one of them relies on is a false finding this rule
+  cannot rule out.
 
   ## What is not judged
 
@@ -40,6 +51,10 @@ defmodule Anchor.Domain.GraphRules.ParameterReachesSink do
       `Anchor.Domain.DynamicCalls.targets/2`): the unseen receiver fixes the
       arity. A call whose function name is computed as well names no target,
       so it exempts nothing;
+    * a public function a literal `{M, :f, args}` names, in a term or as three
+      arguments of a call (a child spec's `start:`, `spawn(M, :f, [a])`,
+      `Anchor.Domain.Core.mfa_references/1`): the args fix the arity. Args that
+      are not a list of known length reach every arity of the name;
     * a generated function: its module has no literal `defmodule`
       (`ModuleNode.generated?`), its name is `__name__`, or a macro wrote it (a
       clause meta with `generated` or `context`, the argument Elixir generates
@@ -64,6 +79,7 @@ defmodule Anchor.Domain.GraphRules.ParameterReachesSink do
   @behaviour Anchor.Domain.GraphRule
   @behaviour Anchor.Domain.RuleShape
 
+  alias Anchor.Domain.Core
   alias Anchor.Domain.Demand
   alias Anchor.Domain.DynamicCalls
   alias Anchor.Domain.Failures
@@ -195,10 +211,33 @@ defmodule Anchor.Domain.GraphRules.ParameterReachesSink do
     end)
   end
 
-  # Every function a capture names, and every public function a dynamic call
-  # with a known name can reach.
+  # Every function a capture names, every public function a dynamic call with a
+  # known name can reach, and every one a literal MFA names.
   defp reached_from_outside(%Graph{calls: calls} = graph) do
-    Enum.reduce(calls, MapSet.new(), &add_reached(&1, &2, graph))
+    reached = Enum.reduce(calls, MapSet.new(), &add_reached(&1, &2, graph))
+
+    for {_module, %ModuleNode{functions: functions}} <- graph.modules,
+        {_name_arity, %FunctionNode{core: core}} <- functions,
+        core != nil,
+        reference <- Core.mfa_references(core),
+        reduce: reached do
+      reached -> add_named(reference, reached, graph)
+    end
+  end
+
+  defp add_named({module, name, arity}, reached, %Graph{modules: modules}) do
+    case Map.get(modules, module) do
+      nil -> reached
+      %ModuleNode{functions: functions} -> add_exports(functions, {module, name, arity}, reached)
+    end
+  end
+
+  defp add_exports(functions, {module, name, arity}, reached) do
+    for {{^name, candidate}, %FunctionNode{kind: :def}} <- functions,
+        arity in [nil, candidate],
+        reduce: reached do
+      reached -> MapSet.put(reached, {module, name, candidate})
+    end
   end
 
   defp add_reached(%Call{kind: :capture, to: {_m, _f, _a} = mfa}, reached, _graph),
@@ -207,12 +246,9 @@ defmodule Anchor.Domain.GraphRules.ParameterReachesSink do
   # An `apply/3` whose argument list is not literal has no arity: every arity
   # of the name is in reach.
   defp add_reached(%Call{to: {:dynamic, name, arity, _receiver}} = call, reached, graph) do
-    for module <- DynamicCalls.targets(graph, call),
-        {{^name, candidate}, %FunctionNode{kind: :def}} <- graph.modules[module].functions,
-        arity in [nil, candidate],
-        reduce: reached do
-      reached -> MapSet.put(reached, {module, name, candidate})
-    end
+    graph
+    |> DynamicCalls.targets(call)
+    |> Enum.reduce(reached, &add_named({&1, name, arity}, &2, graph))
   end
 
   defp add_reached(_call, reached, _graph), do: reached

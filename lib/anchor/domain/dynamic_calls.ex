@@ -84,6 +84,20 @@ defmodule Anchor.Domain.DynamicCalls do
   end
 
   @doc """
+  How many calls compute their function's name (`apply(mod, name, args)`,
+  `apply(fun, args)`), one per caller and call shape (DND-5470): any public function
+  could be the target, so a rule that asks who calls a function says how many
+  there were. A `fun.(x)` is an apply site, not one of these.
+  """
+  @spec computed_name_count(Graph.t()) :: non_neg_integer()
+  def computed_name_count(%Graph{calls: calls}) do
+    calls
+    |> Enum.filter(&match?(%Call{to: {:dynamic, nil, _arity, :call}}, &1))
+    |> Enum.uniq_by(fn %Call{from: from, to: to} -> {from, to} end)
+    |> length()
+  end
+
+  @doc """
   The message of a call from `from` (an mfa) whose function name is computed,
   with `arity` (`nil` when not literal): its target cannot be checked.
   """

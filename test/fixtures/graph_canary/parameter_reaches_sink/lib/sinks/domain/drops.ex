@@ -14,9 +14,10 @@ defmodule AnchorFixtures.ParameterSinks.Drops do
   def count(_x, 0), do: 0
   def count(x, n), do: count(x, n - 1)
 
-  # Violating: only count/2's first parameter is dropped here; the default's
-  # generated head count_from/1 is not a second issue.
-  def count_from(n, _unused \\ :none), do: n
+  # Violating once: the first parameter of drop_first/2. The head the default
+  # generates, drop_first/1, passes its one parameter there, so it is absent
+  # too, but no author wrote it to drop it.
+  def drop_first(_unused, n \\ :none), do: n
 
   # Violating: a lambda that ignores what it is applied to.
   def via_lambda(unused) do

@@ -359,4 +359,10 @@ defmodule Anchor.Domain.GraphReportTest do
       assert Finding.enforcement(%{enforcement: :report}) == :report
     end
   end
+
+  # DND-5470.
+  test "parameter_sinks/4: no such rule is nil, never a row of zeros" do
+    assert GraphReport.parameter_sinks([], %Anchor.Domain.Cfa{}, %Anchor.Domain.Demand{}, 3) ==
+             nil
+  end
 end

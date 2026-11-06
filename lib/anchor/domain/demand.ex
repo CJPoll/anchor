@@ -52,7 +52,8 @@ defmodule Anchor.Domain.Demand do
 
   ## Not here
 
-  The runner wiring (`needs: [:demand]`, the printed counts) is DND-5574.
+  The runner wiring (`needs: [:demand]`, the printed counts) is
+  `Anchor.Managers.Graph` and `Anchor.Domain.GraphReport` (DND-5470).
   Macros are not analysed. Per-parameter `passes` are not split per field.
   """
 

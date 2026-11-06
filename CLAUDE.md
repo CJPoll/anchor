@@ -440,11 +440,15 @@ chain rebuilt from `Demand.Param.passes`. It needs `[:cfa, :demand]`: the runner
 stores `Model.demand` and, under the same guard, `Model.callbacks` (the external
 behaviours' callbacks, the same port the effect inference reads). Patterns and
 guards need no code here: they are uses in the summary. Exempt: callbacks,
-captures, a public function a dynamic call can reach, generated functions (a
+captures, a public function a dynamic call or a literal `{M, :f, args}`
+(`Core.mfa_references/1`) can reach, generated functions (a
 clause meta with `context` or `generated` is a macro's output, and a default's
 head has only generated arguments). Not analysed: no Core, `generated?: :unknown`,
-an external behaviour with no callbacks read. `GraphReport.parameter_sinks/3` is
-the summary's precision count. Its `Fix:` is the rule's own text until
+an external behaviour with no callbacks read. A computed-name call
+(`apply(M, name, args)`) stays unseen: one would exempt a whole arity, so it is
+counted (`DynamicCalls.computed_name_count/1`), and a public finding is checked
+against those calls by hand. `GraphReport.parameter_sinks/4` is the summary's
+precision count. Its `Fix:` is the rule's own text until
 `Anchor.Domain.Placement` lands (DND-5448).
 
 ## Important Notes
