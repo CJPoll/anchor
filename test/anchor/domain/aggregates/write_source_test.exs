@@ -4,6 +4,7 @@ defmodule Anchor.Domain.Aggregates.WriteSourceTest do
   # Graph.Builder (`Anchor.Test.WriteFixtures`); nothing is loaded.
   #
   # Sabotage record: ../../../sabotage_records/aggregates-20261103-dnd_5459_write_sets.md
+  # and ../../../sabotage_records/aggregates-20261106-dnd_5459_write_sets.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.WriteFixtures

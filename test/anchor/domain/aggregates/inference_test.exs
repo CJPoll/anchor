@@ -3,6 +3,7 @@ defmodule Anchor.Domain.Aggregates.InferenceTest do
   # hypergraph; the proposal parses under Aggregates.Config.parse/1.
   #
   # Sabotage record: ../../../sabotage_records/aggregates-20261103-dnd_5459_write_sets.md
+  # and ../../../sabotage_records/aggregates-20261106-dnd_5459_write_sets.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.WriteFixtures
