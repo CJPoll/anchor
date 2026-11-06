@@ -69,6 +69,9 @@ before coining a synonym.
   (DND-5691): `Anchor.Domain.Sabotage.Attribution`, `ProcessOwnership`, `LabelSpec`,
   `CoverageArgs`, the map's classification, and the tracer, collector and suite
   runner around them.
+- `coverage_compare` — `mix anchor.sabotage coverage-compare` (DND-5692):
+  `Anchor.Domain.Sabotage.CoverageCompare`, its Manager and task, and what makes the
+  Coverage map workflow the guard (`test/anchor/coverage_map_workflow_test.exs`).
 - `sabotage_scope` — `mix anchor.sabotage scope` (DND-5472): the diff parser
   (`Anchor.Domain.Sabotage.DiffHunks`), the function spans
   (`Anchor.Domain.Sabotage.FunctionSpans`), the mapping and its counts

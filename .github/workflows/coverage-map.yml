@@ -3,10 +3,15 @@ name: Coverage map
 # DND-5474: builds the per-test coverage map (test -> project functions it
 # executed) that `mix anchor.sabotage run --coverage PATH` selects tests from.
 # The whole suite runs one test at a time with call tracing, so it runs here,
-# never on a desktop: on push to main, weekly, and by hand. A new job; no
-# step of ci.yml changes.
+# never on a desktop: on a pull request, on push to main, weekly, and by hand. A
+# new job; no step of ci.yml changes.
+#
+# DND-5692: it builds the map twice and compares them. Two builds of one commit at
+# one seed must agree: a difference is a defect in a test or in the tool, fixed there
+# and never excluded. The second build reuses the first's compiled beams.
 
 on:
+  pull_request:
   push:
     branches:
       - main
@@ -29,6 +34,9 @@ jobs:
     env:
       MIX_ENV: test
       CI: "true"
+      # One seed for both builds, shuffling as the map's build always has. A re-run of
+      # this run keeps its id, so it keeps its seed.
+      COVERAGE_SEED: ${{ github.run_id }}
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -54,18 +62,38 @@ jobs:
         run: mix deps.get
 
       - name: Compile (warnings as errors)
+        id: compile
         run: mix compile --warnings-as-errors
+
+      # Outside the checkout, so the first map is not in the tree the second build's
+      # tests see, and outside _build, whose cache could hand back a stale map when a
+      # build wrote none. RUNNER_TEMP is emptied for every job.
+      - name: Choose where each build writes
+        run: |
+          echo "COVERAGE_FIRST=$RUNNER_TEMP/coverage-first/anchor-coverage.etf" >> "$GITHUB_ENV"
+          echo "COVERAGE_SECOND=$RUNNER_TEMP/coverage-second/anchor-coverage.etf" >> "$GITHUB_ENV"
 
       # The call-tracer adapter test turns VM-wide tracing on itself, so it is
       # excluded from the run that is already traced (it runs in ci.yml).
       - name: Build the coverage map
-        run: mix anchor.sabotage coverage --out anchor-coverage.etf -- --exclude global_tracing
+        run: mix anchor.sabotage coverage --out "$COVERAGE_FIRST" -- --seed "$COVERAGE_SEED" --exclude global_tracing
+
+      # A build that leaked or failed is red and stays red: `!cancelled()` only lets
+      # the next steps run too, so the comparison prints each build's pairs. A build
+      # that wrote no map leaves its file absent, which the comparison reports as exit 3.
+      - name: Build the coverage map again
+        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+        run: mix anchor.sabotage coverage --out "$COVERAGE_SECOND" -- --seed "$COVERAGE_SEED" --exclude global_tracing
+
+      - name: Compare the two builds
+        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+        run: mix anchor.sabotage coverage-compare "$COVERAGE_FIRST" "$COVERAGE_SECOND"
 
       - name: Check the map
         run: |
           mix run --no-start -e '
             alias Anchor.Domain.Sabotage.CoverageMap
-            {:ok, map} = "anchor-coverage.etf" |> File.read!() |> :erlang.binary_to_term([:safe]) |> CoverageMap.check()
+            {:ok, map} = "COVERAGE_FIRST" |> System.fetch_env!() |> File.read!() |> :erlang.binary_to_term([:safe]) |> CoverageMap.check()
             :ok = CoverageMap.validate(map)
             files = map |> CoverageMap.tests_for("Anchor.Domain.GlobPattern.matches_pattern?/2") |> Enum.map(& &1.file)
             IO.puts("tests: #{length(map.tests)}, modules_traced: #{map.modules_traced}, leaks: #{length(map.leaks)}, ambient: #{length(map.ambient)}, call_rows: #{map.counters.call_rows}, credited_by_label: #{map.counters.credited_by_label}")
@@ -75,10 +103,12 @@ jobs:
             end
           '
 
+      # A pull request's map is built to be compared, and nothing reads it afterwards.
       - name: Upload the map
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: anchor-coverage
-          path: anchor-coverage.etf
+          path: ${{ env.COVERAGE_FIRST }}
           retention-days: 30
           if-no-files-found: error

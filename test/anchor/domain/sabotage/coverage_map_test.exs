@@ -508,4 +508,25 @@ defmodule Anchor.Domain.Sabotage.CoverageMapTest do
       assert CoverageMap.check(%{map | ambient: :x}) == {:error, :not_a_map}
     end
   end
+
+  describe "a leak in words (DND-5692)" do
+    @ref %{file: "test/a_test.exs", line: 3, name: "test one", module: "ATest"}
+
+    test "owner_name/1 names a test by place and name, a module by its setup_all" do
+      assert CoverageMap.owner_name(@ref) == "test/a_test.exs:3 test one"
+      assert CoverageMap.owner_name(%{module: "ATest"}) == "setup_all of ATest"
+    end
+
+    test "leak_pair/1 names both halves of the pair" do
+      assert CoverageMap.leak_pair(%{from: @ref, function: "A.late/0"}) ==
+               "leak: test/a_test.exs:3 test one left a process that called A.late/0 after it finished"
+    end
+
+    test "leak_fix/0 is a Fix: line saying where the process must end" do
+      assert String.starts_with?(
+               CoverageMap.leak_fix(),
+               "Fix: make the process end inside its test"
+             )
+    end
+  end
 end
