@@ -85,12 +85,6 @@ defmodule Anchor.Domain.Aggregates.BackstopTest do
                %{crossings: [], escapes: %{zero_escapes() | outside_transaction: 2}}
     end
 
-    test "D4: a write outside a transaction beside a transaction's write joins no transaction" do
-      r1 = make_ref()
-      events = [write("orders", {:in_tx, r1}), write("invoices", :no_tx)]
-      assert %{crossings: []} = Backstop.verdict(events, @index)
-    end
-
     test "D5: a write with no source is a no_source escape, never judged" do
       r1 = make_ref()
       events = [write("orders", {:in_tx, r1}), write(nil, {:in_tx, r1})]

@@ -23,7 +23,7 @@ defmodule Anchor.Managers.Backstop do
   | Case | Message starts |
   |---|---|
   | the config does not load | `anchor backstop: could not load .anchor.yml` |
-  | no `aggregates:` section | `anchor backstop: .anchor.yml has no aggregates: section` |
+  | no `aggregates:` section | `anchor backstop: <config path> has no aggregates: section` |
   | `aggregates: declare: none`, or zero aggregates declared | `anchor backstop: the backstop checks nothing: no aggregate is declared` |
   | no beam read from the ebins | `anchor backstop: no beam was read from` |
   | the handler could not attach | `anchor backstop: could not attach to` |
