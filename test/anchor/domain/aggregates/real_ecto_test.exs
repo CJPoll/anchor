@@ -11,6 +11,7 @@ defmodule Anchor.Domain.Aggregates.RealEctoTest do
   alias Anchor.Domain.Aggregates.Analysis
   alias Anchor.Domain.Aggregates.Config
   alias Anchor.Domain.Aggregates.Index
+  alias Anchor.Domain.Aggregates.WriteSites
   alias Anchor.Domain.Aggregates.WriteSource
 
   @ns AnchorFixtures.RealEctoTest
@@ -52,6 +53,9 @@ defmodule Anchor.Domain.Aggregates.RealEctoTest do
     def e5(v), do: Repo.delete_all(where(Thread, [t], t.x == ^v))
     def e6(q), do: Repo.delete_all(put_query_prefix(q, "tenant_a"))
     def e6_known, do: Repo.delete_all(put_query_prefix(Thread, "tenant_a"))
+    def e6_scoped(q), do: e6_prefix(q, "tenant_a")
+    defp e6_prefix(q, prefix), do: Repo.delete_all(put_query_prefix(q, prefix))
+    def e6_table(v), do: Repo.delete_all(where(from(t in "threads"), [t], t.x == ^v))
 
     def e4 do
       Multi.new()
@@ -104,6 +108,26 @@ defmodule Anchor.Domain.Aggregates.RealEctoTest do
     assert %{sources: [], unresolved: seen} = site(a, :e6)
     refute seen =~ "tenant_a"
     assert %{sources: [{:schema, @thread}], unresolved: nil} = site(a, :e6_known)
+  end
+
+  test "E6: a string reaching a query call through a variable is never the table either", %{
+    analysis: a
+  } do
+    assert %{sources: [], unresolved: seen} = site(a, :e6_prefix)
+    refute seen =~ "tenant_a"
+  end
+
+  test "E6: a table named by from/2 still reaches through a query call", %{analysis: a} do
+    assert %{sources: [{:table, "threads"}], unresolved: nil} = site(a, :e6_table)
+  end
+
+  test "every callback of Ecto.Repo is a write, raw SQL, or known to write nothing" do
+    known =
+      MapSet.union(MapSet.new(Map.keys(WriteSites.repo_writes())), WriteSites.repo_functions())
+
+    assert Ecto.Repo.behaviour_info(:callbacks)
+           |> Keyword.keys()
+           |> Enum.reject(&MapSet.member?(known, &1)) == []
   end
 
   test "E4: a real Multi pipeline's scope keys are exactly the written schemas", %{analysis: a} do

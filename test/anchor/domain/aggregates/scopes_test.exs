@@ -23,6 +23,7 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
   @builder Module.concat(@ns, Builder)
   @uow Module.concat(@ns, UoW)
   @x Module.concat(@ns, X)
+  @custom_repo Module.concat(@ns, CustomRepo)
 
   @x_source """
   defmodule #{inspect(@x)} do
@@ -84,6 +85,56 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
     def s16, do: Repo.transaction(fn -> Ecto.Adapters.SQL.query!(Repo, "DELETE FROM t", []) end)
 
     def s17, do: Repo.transaction(fn -> Helper.inner_calls() end)
+
+    def s18 do
+      f = fn -> Repo.insert(%S{}) end
+      Repo.transaction(fn -> f.() end)
+    end
+
+    def s19, do: Repo.transaction(fn -> f = fn -> Repo.insert(%S{}) end; f.() end)
+
+    def s20(xs, fun), do: Repo.transaction(fn -> Repo.insert(%S{}); Enum.each(xs, fun) end)
+
+    def s21(xs, mod), do: Repo.transaction(fn -> Enum.each(xs, &mod.write/1) end)
+
+    def s22(xs) do
+      f = fn _x -> Repo.insert(%S{}) end
+      Repo.transaction(fn -> Enum.each(xs, f) end)
+    end
+
+    def s23(xs), do: Repo.transaction(fn -> Enum.each(xs, fn x -> Repo.insert(x) end) end)
+
+    def s24(xs), do: Repo.transaction(fn -> Enum.each(xs, &Repo.insert/1) end)
+
+    def s25, do: Repo.transaction(fn -> #{inspect(@custom_repo)}.soft(%S{}) end)
+
+    def s26, do: Repo.transaction(fn -> #{inspect(@custom_repo)}.missing(%S{}) end)
+
+    def s27 do
+      Multi.new()
+      |> Multi.run(:a, fn repo, _ -> repo.soft(%S{}) end)
+      |> Repo.transaction()
+    end
+
+    def s28, do: Repo.transaction(fn -> Repo.get(S, 1); Repo.all(T); Repo.insert(%S{}) end)
+
+    def s29(xs, acc), do: Repo.transaction(fn -> Enum.reduce(xs, acc, fn x, a -> [x | a] end) end)
+
+    def s30(xs), do: Repo.transaction(fn -> Enum.each(xs, Helper.fun()) end)
+
+    def s31(xs, fun), do: Repo.transaction(fn -> Enum.sort_by(xs, fun, :desc) end)
+
+    def s32(xs), do: Repo.transaction(fn -> Repo.insert(%S{}); Enum.count(xs) end)
+
+    def s33(xs), do: Repo.transaction(fn -> Enum.each(xs, &Helper.audit/1) end)
+
+    def s34(mod), do: Repo.transaction(fn -> Helper.take(&mod.write/1) end)
+
+    def s35 do
+      Multi.new()
+      |> Multi.run(:a, fn repo, _ -> repo.get(S, 1); repo.insert(%S{}) end)
+      |> Repo.transaction()
+    end
   end
   """
 
@@ -101,6 +152,17 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
               def b(n), do: (Repo.insert(%#{inspect(@t)}{}); a(n))
               def inner, do: Repo.transaction(fn -> Repo.insert(%#{inspect(@t)}{}) end)
               def inner_calls, do: Repo.transaction(fn -> write_t() end)
+              def fun, do: &write_s/1
+              def audit(x), do: x
+              def take(x), do: x
+            end
+
+            defmodule #{inspect(@custom_repo)} do
+              def insert(x, _opts \\\\ []), do: x
+              def update(x, _opts \\\\ []), do: x
+              def soft(x), do: update(x)
+              def reload(x), do: update(x)
+              def query(x), do: update(x)
             end
 
             defmodule #{inspect(@builder)} do
@@ -116,7 +178,8 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
     graph = graph!(@source)
 
     config = %Config{
-      repos: [@repo],
+      repos: [@repo, @custom_repo],
+      write_functions: [elem(FunctionRef.parse("#{inspect(@helper)}.audit/1"), 1)],
       transaction_functions: [elem(FunctionRef.parse("#{inspect(@uow)}.transaction/2"), 1)]
     }
 
@@ -126,7 +189,12 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
   defp scopes(analysis, name),
     do: Enum.filter(analysis.scopes, &(&1.mfa == {@x, name, arity(name)}))
 
-  defp arity(name) when name in [:s6, :s7, :s10, :s12, :s13], do: 1
+  defp arity(name) when name in [:s20, :s21, :s29, :s31], do: 2
+
+  defp arity(name)
+       when name in [:s6, :s7, :s10, :s12, :s13, :s22, :s23, :s24, :s30, :s32, :s33, :s34],
+       do: 1
+
   defp arity(_name), do: 0
 
   defp one(analysis, name) do
@@ -192,6 +260,113 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
 
     test "an outer scope follows the calls inside a callee's inner transaction", %{analysis: a} do
       assert one(a, :s17).keys == keys([@t])
+    end
+
+    test "a fn defined outside the body and called in it makes the scope incomplete", %{
+      analysis: a
+    } do
+      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s18, 0}, line}]} = one(a, :s18)
+      assert line == BeamFixtures.line_of(@source, "Repo.transaction(fn -> f.() end)")
+    end
+
+    test "a fn defined and called in the body is in the scope (positive control)", %{analysis: a} do
+      assert %Scope{complete?: true} = scope = one(a, :s19)
+      assert scope.keys == keys([@s])
+    end
+
+    test "a fun parameter handed to Enum in the body makes the scope incomplete", %{analysis: a} do
+      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s20, 2}, _line}]} =
+               one(a, :s20)
+
+      assert one(a, :s20).keys == keys([@s])
+    end
+
+    test "a capture on a module held in a variable makes the scope incomplete", %{analysis: a} do
+      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s21, 2}, _line}]} =
+               one(a, :s21)
+    end
+
+    test "a fn from outside the body handed to Enum in it makes the scope incomplete", %{
+      analysis: a
+    } do
+      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s22, 1}, _line}]} =
+               one(a, :s22)
+    end
+
+    test "an inline fn handed to Enum in the body is walked, with no gap of its own", %{
+      analysis: a
+    } do
+      assert [{:unresolved_write, %{mfa: {@x, :s23, 1}}}] = one(a, :s23).gaps
+      assert %Scope{complete?: true} = one(a, :s29)
+    end
+
+    test "a capture of a Repo write makes the scope incomplete: its source is unseen", %{
+      analysis: a
+    } do
+      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s24, 1}, _line}]} =
+               one(a, :s24)
+    end
+
+    test "a function written on a repo is followed: its own writes are in the scope", %{
+      analysis: a
+    } do
+      assert %Scope{complete?: true} = scope = one(a, :s25)
+      assert scope.keys == keys([@s])
+    end
+
+    test "only a function written on a repo is read for its calls, not what Ecto generates", %{
+      analysis: a
+    } do
+      assert a.sites |> Enum.filter(&(elem(&1.mfa, 0) == @custom_repo)) |> Enum.map(& &1.mfa) ==
+               [{@custom_repo, :soft, 1}]
+    end
+
+    test "a function value made by a call, handed to Enum, makes the scope incomplete", %{
+      analysis: a
+    } do
+      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s30, 1}, _line}]} =
+               one(a, :s30)
+    end
+
+    test "the function is found before a trailing literal", %{analysis: a} do
+      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s31, 2}, _line}]} =
+               one(a, :s31)
+    end
+
+    test "a function-taking call's first argument is data (positive control)", %{analysis: a} do
+      assert %Scope{complete?: true} = one(a, :s32)
+    end
+
+    test "a capture of a write_functions write makes the scope incomplete", %{analysis: a} do
+      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s33, 1}, _line}]} =
+               one(a, :s33)
+    end
+
+    test "a capture on a computed module, handed to a project function, is a gap", %{analysis: a} do
+      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s34, 1}, _line}]} =
+               one(a, :s34)
+    end
+
+    test "a Multi.run callback's repo reads leave the scope complete", %{analysis: a} do
+      assert %Scope{complete?: true} = scope = one(a, :s35)
+      assert scope.keys == keys([@s])
+    end
+
+    test "a repo function Anchor cannot see makes the scope incomplete", %{analysis: a} do
+      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s26, 0}, _line}]} =
+               one(a, :s26)
+    end
+
+    test "an unknown function on a Multi.run callback's repo makes the scope incomplete", %{
+      analysis: a
+    } do
+      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s27, 0}, _line}]} =
+               one(a, :s27)
+    end
+
+    test "Ecto.Repo's reads leave a scope complete (positive control)", %{analysis: a} do
+      assert %Scope{complete?: true} = scope = one(a, :s28)
+      assert scope.keys == keys([@s])
     end
 
     test "S10: a Multi parameter with nothing to trace is incomplete at the call", %{analysis: a} do
@@ -263,7 +438,8 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
     assert a.counts.scopes == length(a.scopes)
     assert a.counts.incomplete == Enum.count(a.scopes, &(not &1.complete?))
     assert a.counts.writes == length(a.sites)
-    assert a.counts.unresolved == 1
-    assert a.counts.resolved == a.counts.writes - 1
+    assert a.counts.unresolved == length(Enum.filter(a.sites, & &1.unresolved))
+    assert a.counts.unresolved == 2
+    assert a.counts.resolved == a.counts.writes - 2
   end
 end

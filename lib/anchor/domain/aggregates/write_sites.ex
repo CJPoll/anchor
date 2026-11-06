@@ -32,6 +32,20 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   on `Ecto.Adapters.SQL`): it writes what no schema or table names, so the
   scope is incomplete, never complete and missing a write.
 
+  A function value that may write and that Anchor cannot follow is a dynamic
+  call too: a `fn` defined outside a transaction body and run in it (its writes
+  are found where it is defined, so they do not count as the body's); a capture
+  on a computed module or name; a capture of a write itself (`&Repo.insert/1`:
+  its source argument is never seen); and an unknown function handed to a
+  function-taking call of `Enum`, `Stream`, `List`, `Map` or `Keyword`. A
+  function handed to any other library is not read: Anchor cannot tell it from
+  data there.
+
+  A call on a repo that is no write and no function `use Ecto.Repo` generates
+  (`repo_functions/0`) is a project function, followed like any other: a call
+  in a function written on the repo is read as if on the repo. One Anchor
+  cannot see is a dynamic call.
+
   ## Transactions
 
   `Repo.transaction/1,2` on a repo (and `Repo.transact/1,2` when the repo's
@@ -63,6 +77,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   alias Anchor.Domain.Graph
   alias Anchor.Domain.Graph.FunctionNode
   alias Anchor.Domain.Graph.ModuleNode
+  alias Anchor.Domain.ViolationKey
 
   @repo_writes %{
     insert: 1..2,
@@ -92,6 +107,63 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
 
   # Raw SQL writes what no schema or table names: a gap, never a missed write.
   @raw_sql [:query, :query!, :query_many, :query_many!]
+
+  # What `use Ecto.Repo` generates beside the writes and the raw SQL: the
+  # analysis does not walk these. A test holds this to Ecto.Repo's callbacks.
+  @repo_functions [
+    :__adapter__,
+    :aggregate,
+    :all,
+    :all_by,
+    :checked_out?,
+    :checkout,
+    :child_spec,
+    :config,
+    :default_options,
+    :disconnect_all,
+    :exists?,
+    :explain,
+    :get,
+    :get!,
+    :get_by,
+    :get_by!,
+    :get_dynamic_repo,
+    :in_transaction?,
+    :init,
+    :load,
+    :one,
+    :one!,
+    :preload,
+    :prepare_query,
+    :prepare_transaction,
+    :put_dynamic_repo,
+    :reload,
+    :reload!,
+    :rollback,
+    :start_link,
+    :stop,
+    :stream,
+    :to_sql,
+    :transact,
+    :transaction
+  ]
+
+  # The library calls that take a function, as their last non-literal argument.
+  @function_taking %{
+    Enum =>
+      ~w(all? any? chunk_by chunk_while count dedup_by drop_while each filter find find_index
+         find_value flat_map flat_map_reduce frequencies_by group_by map map_every map_intersperse
+         map_join map_reduce max_by min_by min_max_by product_by reduce reduce_while reject scan
+         sort sort_by split_while split_with sum_by take_while uniq_by zip_with)a,
+    Stream =>
+      ~w(chunk_by chunk_while dedup_by drop_while each filter flat_map map map_every reject scan
+         take_while transform uniq_by zip_with)a,
+    List => ~w(foldl foldr)a,
+    Map =>
+      ~w(filter get_and_update get_and_update! get_lazy new put_new_lazy reject update update!)a,
+    Keyword =>
+      ~w(filter get_and_update get_and_update! get_lazy new put_new_lazy reject update update!)a
+  }
   @raw_sql_module Ecto.Adapters.SQL
 
   @type raw_site :: %{
@@ -140,6 +212,10 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   @doc "The `Repo` write names and the arities each takes."
   @spec repo_writes() :: %{atom() => Range.t()}
   def repo_writes, do: @repo_writes
+
+  @doc "The functions `use Ecto.Repo` generates that are no writes and no raw SQL."
+  @spec repo_functions() :: MapSet.t(atom())
+  def repo_functions, do: MapSet.new(@repo_functions)
 
   @doc """
   The repo modules: every graph module whose beam declares
@@ -548,6 +624,9 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
 
     acc = %{sites: [], calls: [], dynamic: []}
 
+    defined_in = for {:fun, id, tags} <- events, into: %{}, do: {id, tags}
+    ctx = ctx |> Map.put(:defined_in, defined_in) |> Map.put(:module, elem(mfa, 0))
+
     acc =
       Enum.reduce(events, acc, fn event, acc -> classify(event, mfa, def_line, ctx, acc) end)
 
@@ -560,6 +639,8 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
     }
   end
 
+  defp classify({:fun, _id, _tags}, _mfa, _def_line, _ctx, acc), do: acc
+
   defp classify({:call, node, env, tags}, _mfa, def_line, ctx, acc) do
     line = Core.line(node) || def_line
     args = :cerl.call_args(node)
@@ -571,7 +652,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
       {{:ok, :erlang}, :make_fun} ->
         case make_fun(node, env) do
           {:capture, callee} -> project_call(acc, ctx, callee, :capture, [], env, tags, line)
-          :error -> acc
+          :error -> dynamic(acc, line, "a capture on a computed module or name", tags)
         end
 
       {{:ok, :erlang}, :apply} ->
@@ -588,8 +669,11 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
           name in @raw_sql ->
             dynamic(acc, line, raw_sql({:repo, name}, length(args)), tags)
 
-          true ->
+          name in @repo_functions ->
             acc
+
+          true ->
+            dynamic(acc, line, "repo.#{name}/#{length(args)} in a Multi.run callback", tags)
         end
 
       {:error, name} ->
@@ -602,7 +686,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
     end
   end
 
-  defp classify({:apply, node, env, tags}, {module, _name, _arity}, def_line, ctx, acc) do
+  defp classify({:apply, node, env, tags}, {module, _name, _arity} = mfa, def_line, ctx, acc) do
     op = :cerl.apply_op(node)
     line = Core.line(node) || def_line
 
@@ -612,7 +696,11 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
 
       fname?(op) ->
         {f, a} = :cerl.var_name(op)
-        project_call(acc, ctx, {module, f, a}, :local, :cerl.apply_args(node), env, tags, line)
+        args = :cerl.apply_args(node)
+
+        if written_on_repo?(mfa, ctx),
+          do: literal_call(acc, {module, f, a}, args, env, tags, line, ctx),
+          else: project_call(acc, ctx, {module, f, a}, :local, args, env, tags, line)
 
       true ->
         applied(acc, op, env, tags, line, {ctx, module})
@@ -630,17 +718,18 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
         project_call(acc, ctx, callee, :capture, [], %{}, tags, Core.line(node) || def_line)
 
       :error ->
-        acc
+        dynamic(acc, Core.line(node) || def_line, "a local fun literal", tags)
     end
   end
 
-  # `fun.(x)`: a fun this function defines is walked where it is defined; a
-  # capture is a call; anything else is a call Anchor cannot resolve.
+  # `fun.(x)`: a fun this function defines is walked where it is defined, so
+  # run in a body it was not defined in it is a gap; a capture is a call;
+  # anything else is a call Anchor cannot resolve.
   defp applied(acc, op, env, tags, line, {ctx, module}) do
     case FunctionWalk.deref(op, env) do
       {:node, value, value_env} ->
         case fun_value(value, value_env, module) do
-          {:lambda, _id} -> acc
+          {:lambda, id} -> lambda_run(acc, id, tags, line, ctx)
           {:capture, callee} -> project_call(acc, ctx, callee, :capture, [], %{}, tags, line)
           :error -> dynamic(acc, line, "a call of a fun value Anchor cannot resolve", tags)
         end
@@ -648,6 +737,41 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
       {:binding, _binding} ->
         dynamic(acc, line, "a call of a fun value Anchor cannot resolve", tags)
     end
+  end
+
+  defp lambda_run(acc, id, tags, line, ctx) do
+    if tags -- Map.get(ctx.defined_in, id, []) == [],
+      do: acc,
+      else: dynamic(acc, line, "a fn run in a transaction body it is not defined in", tags)
+  end
+
+  # The function handed to a function-taking library call: an inline fn or a
+  # capture is walked; anything else is a call Anchor cannot resolve.
+  defp handed_function(acc, {module, name, arity}, args, env, tags, line, ctx) do
+    what = "the function handed to #{ViolationKey.mfa({module, name, arity})}"
+
+    case args |> Enum.drop(1) |> Enum.reverse() |> Enum.find(&(not plain_literal?(&1))) do
+      nil -> acc
+      arg -> handed(acc, FunctionWalk.deref(arg, env), what, tags, line, ctx)
+    end
+  end
+
+  defp handed(acc, {:node, value, value_env}, what, tags, line, ctx) do
+    case fun_value(value, value_env, ctx.module) do
+      {:lambda, id} -> lambda_run(acc, id, tags, line, ctx)
+      {:capture, _callee} -> acc
+      :error -> dynamic(acc, line, what, tags)
+    end
+  end
+
+  defp handed(acc, {:binding, _binding}, what, tags, line, _ctx),
+    do: dynamic(acc, line, what, tags)
+
+  defp plain_literal?(node), do: :cerl.is_literal(node) and not is_function(:cerl.concrete(node))
+
+  defp written_on_repo?({module, name, arity}, ctx) do
+    MapSet.member?(ctx.repos, module) and not repo_write?(name, arity) and
+      name not in @raw_sql and name not in @repo_functions
   end
 
   defp erlang_apply(acc, [m, f, args], env, tags, line, ctx) do
@@ -678,10 +802,26 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
         dynamic(acc, line, raw_sql(module, name, arity), tags)
 
       MapSet.member?(ctx.repos, module) ->
-        acc
+        repo_function(acc, callee, args, env, tags, line, ctx)
+
+      name in Map.get(@function_taking, module, []) ->
+        handed_function(acc, callee, args, env, tags, line, ctx)
 
       true ->
         project_call(acc, ctx, callee, :remote, args, env, tags, line)
+    end
+  end
+
+  defp repo_function(acc, {_module, name, _arity} = callee, args, env, tags, line, ctx) do
+    cond do
+      name in @repo_functions ->
+        acc
+
+      project_function?(ctx.graph, callee) ->
+        project_call(acc, ctx, callee, :remote, args, env, tags, line)
+
+      true ->
+        dynamic(acc, line, "#{ViolationKey.mfa(callee)}, which Anchor cannot see", tags)
     end
   end
 
@@ -691,12 +831,22 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   end
 
   defp project_call(acc, ctx, callee, kind, args, env, tags, line) do
-    if project_function?(ctx.graph, callee) do
-      call = %{to: callee, kind: kind, args: args, env: env, tags: tags, line: line}
-      %{acc | calls: [call | acc.calls]}
-    else
-      acc
+    cond do
+      kind == :capture and write?(callee, ctx) ->
+        dynamic(acc, line, "a capture of the write #{ViolationKey.mfa(callee)}", tags)
+
+      project_function?(ctx.graph, callee) ->
+        call = %{to: callee, kind: kind, args: args, env: env, tags: tags, line: line}
+        %{acc | calls: [call | acc.calls]}
+
+      true ->
+        acc
     end
+  end
+
+  defp write?({module, name, arity}, ctx) do
+    (MapSet.member?(ctx.repos, module) and repo_write?(name, arity)) or
+      Enum.any?(ctx.write_functions, &FunctionRef.matches?(&1, module, name, arity))
   end
 
   defp raw_sql({:repo, name}, arity),

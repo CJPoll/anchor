@@ -15,7 +15,8 @@ defmodule Anchor.Domain.Aggregates.FunctionWalk do
     * `{:apply, node, env, tags}` — every `apply` (a local call, or a call of
       a fun value);
     * `{:fname, node, tags}` — a local function name used as a value (`&f/a`);
-    * `{:literal_fun, node, tags}` — an external fun literal (`&M.f/a`).
+    * `{:literal_fun, node, tags}` — an external fun literal (`&M.f/a`);
+    * `{:fun, id, tags}` — an anonymous function, by its id, where it is defined.
 
   The bindings (`t:env/0`) are what lets the analysis trace a value through
   Core's single-assignment `let`s, the function head's `case` and a
@@ -53,6 +54,7 @@ defmodule Anchor.Domain.Aggregates.FunctionWalk do
           | {:apply, :cerl.cerl(), env(), [tag()]}
           | {:fname, :cerl.cerl(), [tag()]}
           | {:literal_fun, :cerl.cerl(), [tag()]}
+          | {:fun, non_neg_integer() | nil, [tag()]}
 
   @doc "Labels every node of `core_fun` with a unique id (`id/1`)."
   @spec label(:cerl.cerl()) :: :cerl.cerl()
@@ -233,7 +235,7 @@ defmodule Anchor.Domain.Aggregates.FunctionWalk do
         {var, i}, env -> Map.put(env, :cerl.var_name(var), {:lambda_param, i})
       end)
 
-    visit(:cerl.fun_body(node), env, tags, ctx, acc)
+    visit(:cerl.fun_body(node), env, tags, ctx, [{:fun, id(node), tags} | acc])
   end
 
   defp visit_let(node, env, tags, ctx, acc) do

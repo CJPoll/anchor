@@ -1170,7 +1170,9 @@ alias, a pipe and an `@repo` attribute are already resolved):
   repo exports it) and every `aggregates.transaction_functions` call, given a
   function, a capture or an `Ecto.Multi`. A transaction's write set is the
   writes in its body and those of every project function it calls,
-  transitively. A call Anchor cannot resolve, or an unresolved write, makes it
+  transitively. A call Anchor cannot resolve, a function value it cannot follow
+  (a `fn` defined outside the body, a capture of a write, an unknown function
+  handed to `Enum`, `Stream`, `List`, `Map` or `Keyword`), or an unresolved write, makes it
   **incomplete**. Calls into dependencies are not followed.
 
 The summary line ends `; writes: <W> found, <R> resolved, <U> unresolved;

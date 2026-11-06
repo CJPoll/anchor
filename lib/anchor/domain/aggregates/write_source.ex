@@ -52,6 +52,8 @@ defmodule Anchor.Domain.Aggregates.WriteSource do
 
   @raising [{:erlang, :error}, {:erlang, :raise}, {:erlang, :throw}, {:erlang, :exit}]
 
+  @query_string "a string argument of a query call"
+
   @type source :: {:schema, module()} | {:table, String.t()}
   @type result :: {:ok, [source()]} | {:unresolved, String.t()}
 
@@ -61,6 +63,7 @@ defmodule Anchor.Domain.Aggregates.WriteSource do
           callers: %{mfa() => [{mfa(), [:cerl.cerl()], FunctionWalk.env()}]},
           captured: MapSet.t(mfa()),
           mfa: mfa() | nil,
+          query_arg?: boolean(),
           stack: [term()],
           hops: non_neg_integer()
         }
@@ -77,6 +80,7 @@ defmodule Anchor.Domain.Aggregates.WriteSource do
       callers: Map.get(facts, :callers, %{}),
       captured: Map.get(facts, :captured, MapSet.new()),
       mfa: nil,
+      query_arg?: false,
       stack: [],
       hops: 0
     }
@@ -143,7 +147,7 @@ defmodule Anchor.Domain.Aggregates.WriteSource do
     case :cerl.type(node) do
       :var -> var(node, env, ctx)
       :literal -> concrete(:cerl.concrete(node), ctx)
-      :binary -> binary(node)
+      :binary -> binary(node, ctx)
       :tuple -> tuple(:cerl.tuple_es(node), env, ctx)
       :map -> map(node, env, ctx)
       :call -> call(node, env, ctx)
@@ -173,6 +177,7 @@ defmodule Anchor.Domain.Aggregates.WriteSource do
   defp concrete(term, ctx) do
     cond do
       is_atom(term) and MapSet.member?(ctx.schemas, term) -> ok({:schema, term})
+      is_binary(term) and ctx.query_arg? -> {:unresolved, @query_string}
       is_binary(term) and term != "" -> ok({:table, term})
       is_map(term) -> concrete_struct(term, ctx)
       is_tuple(term) and tuple_size(term) == 2 -> concrete_pair(term, ctx)
@@ -181,7 +186,8 @@ defmodule Anchor.Domain.Aggregates.WriteSource do
     end
   end
 
-  defp concrete_struct(%{__struct__: Ecto.Query, from: from}, ctx), do: concrete(from, ctx)
+  defp concrete_struct(%{__struct__: Ecto.Query, from: from}, ctx),
+    do: concrete(from, %{ctx | query_arg?: false})
 
   defp concrete_struct(%{__struct__: Ecto.Query.FromExpr, source: source}, ctx),
     do: concrete(source, ctx)
@@ -198,7 +204,9 @@ defmodule Anchor.Domain.Aggregates.WriteSource do
 
   defp concrete_pair({table, _schema}, ctx), do: concrete(table, ctx)
 
-  defp binary(node) do
+  defp binary(_node, %{query_arg?: true}), do: {:unresolved, @query_string}
+
+  defp binary(node, _ctx) do
     case Index.string_literal(node) do
       {:ok, table} -> ok({:table, table})
       :unknown -> {:unresolved, "a binary built at run time"}
@@ -231,7 +239,7 @@ defmodule Anchor.Domain.Aggregates.WriteSource do
 
   defp struct_node(struct, pairs, env, ctx) do
     case FunctionWalk.atom(struct, env) do
-      {:ok, Ecto.Query} -> field(pairs, :from, env, ctx)
+      {:ok, Ecto.Query} -> field(pairs, :from, env, %{ctx | query_arg?: false})
       {:ok, Ecto.Query.FromExpr} -> field(pairs, :source, env, ctx)
       {:ok, Ecto.Changeset} -> field(pairs, :data, env, ctx)
       {:ok, module} -> concrete_struct(%{__struct__: module}, ctx)
@@ -293,24 +301,19 @@ defmodule Anchor.Domain.Aggregates.WriteSource do
       String.starts_with?(name, "Elixir.Ecto.Query.Builder")
   end
 
-  # Rule 6: a string argument of a query call (a prefix, a name) is never the
-  # table, so an unresolved query stays unresolved. A schema module (a
-  # literal atom) and a literal `%Ecto.Query{}` map are still traced; a table
-  # reaches a query through `from/2`, whose `%Ecto.Query{}` rule 2 reads.
+  # Rule 6: a string argument of a query call (a prefix, a name), written there
+  # or reaching it through a variable, is never the table, so an unresolved
+  # query stays unresolved. A schema module (a literal atom) and a literal
+  # `%Ecto.Query{}` map are still traced; a table reaches a query through
+  # `from/2`, whose `%Ecto.Query{}` rule 2 reads.
   defp first_resolved(args, env, ctx, seen) do
-    args
-    |> Enum.reject(&string?/1)
-    |> Enum.find_value({:unresolved, seen}, fn arg ->
-      case trace(arg, env, ctx) do
+    Enum.find_value(args, {:unresolved, seen}, fn arg ->
+      case trace(arg, env, %{ctx | query_arg?: true}) do
         {:ok, _sources} = ok -> ok
         _other -> nil
       end
     end)
   end
-
-  defp string?(node),
-    do:
-      (:cerl.is_literal(node) and is_binary(:cerl.concrete(node))) or :cerl.type(node) == :binary
 
   defp apply_node(node, env, ctx) do
     op = :cerl.apply_op(node)
