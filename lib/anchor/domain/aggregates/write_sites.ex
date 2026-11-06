@@ -837,22 +837,14 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
     end
   end
 
-  # The function a repo call runs, in this process: read like a body, or a gap.
+  # The function a repo call runs, in this process: an inline function or a capture
+  # is walked where it is written, and anything else that is no Multi is a gap.
   defp given_function(acc, what, [arg | _rest], env, tags, line, ctx) do
     mfa = {ctx.module, nil, nil}
 
-    case callback(arg, env, mfa) do
-      {:lambda, _id} ->
-        acc
-
-      {:capture, callee} ->
-        project_call(acc, ctx, callee, :capture, [], env, tags, line)
-
-      :error ->
-        if multi(arg, env, mfa, ctx) == :error,
-          do: dynamic(acc, line, "#{what} is given a value Anchor cannot read", tags),
-          else: acc
-    end
+    if callback(arg, env, mfa) == :error and multi(arg, env, mfa, ctx) == :error,
+      do: dynamic(acc, line, "#{what} is given a value Anchor cannot read", tags),
+      else: acc
   end
 
   defp given_function(acc, what, [], _env, tags, line, _ctx),
