@@ -6,6 +6,7 @@ defmodule Anchor.Adapters.GitShowTest do
   # Sabotage record: ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
   # DND-5628 (symlinks): ../../sabotage_records/baseline_symlink-20261103-dnd_5441_graph_rules_a.md
   # Sabotage record (DND-5634): ../../sabotage_records/baseline-20261103-dnd_5648_graph_followups.md
+  # DND-5658 (config/3): ../../sabotage_records/landed_judge-20261106-dnd_5658_ci_base_ratchet.md
   use ExUnit.Case, async: true
 
   alias Anchor.Adapters.GitShow

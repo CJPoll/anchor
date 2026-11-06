@@ -46,6 +46,7 @@
 # every case. Exit 0 when every case it ran holds, 1 otherwise.
 #
 # Sabotage record: test/sabotage_records/base_judge-20261103-dnd_5658_ci_base_ratchet.md
+# And: test/sabotage_records/base_judge-20261106-dnd_5658_ci_base_ratchet.md (T14)
 set -uo pipefail
 
 here=$(cd "$(dirname "$0")/../.." && pwd -P)

@@ -5,6 +5,7 @@ defmodule Anchor.Domain.ConfigDeferredTest do
   # stands. Pure Domain over decoded YAML maps.
   #
   # Sabotage record: ../../sabotage_records/landed_judge-20261103-dnd_5658_ci_base_ratchet.md
+  # And: ../../sabotage_records/landed_judge-20261106-dnd_5658_ci_base_ratchet.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config
