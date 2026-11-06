@@ -1209,7 +1209,7 @@ architecture:
 | Raw SQL, or a write on a computed module, outside every transaction (at the call) | `MyApp.X.purge/0 writes, or may write, outside any transaction in a way no schema or table names: raw SQL (MyApp.Repo.query!/1) Anchor cannot attribute. Fix: write through a schema with Repo, or name the module the call is on.` |
 | An incomplete transaction (at the transaction) | `transaction 1 in MyApp.X.run/1 reaches 1 call(s) Anchor cannot resolve (first: MyApp.X.run/1 line 12), so its write set is incomplete. Fix: call a named function instead of a variable, ...` |
 
-The key is `<id>|<M.f/a>|unresolved <op> <seen>` or `<id>|<M.f/a>|incomplete
+The key is `<id>|<M.f/a>|unresolved <op> <seen>`, `<id>|<M.f/a>|unattributed <what>` or `<id>|<M.f/a>|incomplete
 <ordinal>`, where the ordinal is the transaction's position in its function:
 no line number. The rule's selector chooses whose findings are reported.
 

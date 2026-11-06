@@ -218,6 +218,11 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
 
     def s66(other), do: Repo.transaction(Builder.append_to_new(other))
 
+    defp spawns_write, do: Task.async(fn -> Repo.insert(%S{}) end)
+    def s67, do: Repo.transaction(fn -> spawns_write() end)
+    def s68(pid), do: Repo.transaction(fn -> Agent.update(pid, fn _ -> Repo.insert(%S{}) end) end)
+    def s69, do: Repo.transaction(fn -> Process.spawn(fn -> Repo.insert(%S{}) end, []) end)
+
     def s35 do
       Multi.new()
       |> Multi.run(:a, fn repo, _ -> repo.get(S, 1); repo.insert(%S{}) end)
@@ -318,7 +323,7 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
        do: 1
 
   defp arity(name)
-       when name in [:s48, :s49, :s50, :s51, :s54, :s56, :s57, :s58, :s59, :s62, :s66],
+       when name in [:s48, :s49, :s50, :s51, :s54, :s56, :s57, :s58, :s59, :s62, :s66, :s68],
        do: 1
 
   defp arity(_name), do: 0
@@ -594,6 +599,14 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
     test "a function run in another process is outside the transaction: a gap", %{analysis: a} do
       assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s63, 0}, _}]} = one(a, :s63)
       assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s64, 0}, _}]} = one(a, :s64)
+    end
+
+    test "another process through a helper, Agent or Process.spawn is a gap too", %{analysis: a} do
+      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :spawns_write, 0}, _}]} =
+               one(a, :s67)
+
+      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s68, 1}, _}]} = one(a, :s68)
+      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s69, 0}, _}]} = one(a, :s69)
     end
 
     test "a function-taking call's first argument is data (positive control)", %{analysis: a} do

@@ -35,8 +35,9 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   A function value that may write and that Anchor cannot follow is a dynamic
   call too: a `fn` defined outside a transaction body and run in it (its writes
   are found where it is defined, so they do not count as the body's); a capture
-  on a computed module or name; a function run in another process inside a
-  body, whose connection is not the transaction's; a capture of a write itself (`&Repo.insert/1`:
+  on a computed module or name; a function run in another process (`Task`,
+  `Agent`, `spawn`), reached from a body, whose connection is not the
+  transaction's; a capture of a write itself (`&Repo.insert/1`:
   its source argument is never seen); and an unknown function handed to a
   library function that `Anchor.Domain.HigherOrder` says invokes it. A function
   handed to any other library is not read: Anchor cannot tell it from data
@@ -823,8 +824,12 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
 
   defp unread_multi?(_name, _args, _env, _ctx), do: false
 
-  defp other_process?({module, _name, _arity}) when module in [Task, Task.Supervisor], do: true
+  # Tagged so it is a gap of every transaction that reaches it, wherever it is
+  # written, and never one outside a transaction: there it changes nothing.
+  defp other_process?({module, _name, _arity}) when module in [Agent, Task, Task.Supervisor],
+    do: true
 
+  # Process.spawn/2 compiles to :erlang.spawn_opt.
   defp other_process?({:erlang, name, _arity}),
     do: name in [:spawn, :spawn_link, :spawn_monitor, :spawn_opt]
 
@@ -911,8 +916,10 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
       MapSet.member?(ctx.repos, module) ->
         repo_function(acc, callee, args, env, tags, line, ctx)
 
-      tags != [] and other_process?(callee) ->
-        dynamic(acc, line, "a function run in another process, outside this transaction", tags)
+      other_process?(callee) ->
+        dynamic(acc, line, "a function run in another process, outside any transaction", [
+          :other_process | tags
+        ])
 
       HigherOrder.invocations(callee) != [] ->
         handed_functions(acc, callee, args, env, tags, line, ctx)

@@ -57,6 +57,16 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
               def n14, do: Repo.transaction(fn -> Repo.query!("DELETE FROM s") end)
               def n15(mod), do: Repo.transaction(fn -> mod.insert(%S{}) end)
               def n16, do: n11()
+
+              def n29, do: Repo.transaction(fn -> n29a() end)
+              defp n29a, do: n29b()
+              defp n29b, do: Repo.insert(%S{})
+
+              def n27(0), do: :ok
+              def n27(n), do: (Repo.query!("DELETE FROM s"); n27(n - 1))
+
+              def n28, do: Ecto.Multi.run(Ecto.Multi.new(), :a, __MODULE__, :n28_step, [])
+              def n28_step(repo, _changes), do: repo.query!("DELETE FROM s")
               def n26, do: Task.async(fn -> Repo.get(S, 1) end)
               def n25(m, f), do: Ecto.Multi.merge(m, f)
 
@@ -112,6 +122,25 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
     assert nontx(a, :n3f).keys == MapSet.new()
   end
 
+  test "a recursive function nothing calls in a transaction is not always in one", %{
+    analysis: a
+  } do
+    refute MapSet.member?(a.always_in_transaction, {@n, :n4a, 1})
+    refute MapSet.member?(a.always_in_transaction, {@n, :n4b, 1})
+    refute MapSet.member?(a.always_in_transaction, {@n, :n27, 1})
+  end
+
+  test "a function reached only through one always in a transaction is too", %{analysis: a} do
+    assert MapSet.member?(a.always_in_transaction, {@n, :n29a, 0})
+    assert MapSet.member?(a.always_in_transaction, {@n, :n29b, 0})
+  end
+
+  test "a Multi.run callback given by module and name is always in a transaction", %{
+    analysis: a
+  } do
+    assert MapSet.member?(a.always_in_transaction, {@n, :n28_step, 2})
+  end
+
   test "N4: recursion terminates at the fixpoint", %{analysis: a} do
     assert nontx(a, :n4a, 1).keys == keys([@s, @t])
     assert nontx(a, :n4b, 1).keys == keys([@s, @t])
@@ -149,7 +178,8 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
              %{mfa: {@n, :n11, 0}, what: raw, line: line},
              %{mfa: {@n, :n12, 1}, what: computed},
              %{mfa: {@n, :n22, 1}, what: captured},
-             %{mfa: {@n, :n23, 1}, what: computed_capture}
+             %{mfa: {@n, :n23, 1}, what: computed_capture},
+             %{mfa: {@n, :n27, 1}}
            ] = a.unattributed
 
     assert captured == "a capture of the write #{inspect(@repo)}.insert/1"

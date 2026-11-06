@@ -21,7 +21,8 @@ defmodule Anchor.Domain.Aggregates.NonTransactional do
   project call site is inside a transaction body or is a `Multi.run` callback
   (inline, or a capture in `run_callbacks`), or inside a function that is
   itself always in a transaction (the greatest fixpoint, so mutual recursion
-  reached only inside a transaction stays in). A root is a function given in
+  reached only inside a transaction stays in, and a cycle no transaction reaches
+  does not). A root is a function given in
   `roots` (the public functions of the framework bucket, when the run has an
   `architecture:` section); with `roots` `nil`, every public function with no
   project caller is one. A function used as a value outside a transaction
@@ -80,7 +81,10 @@ defmodule Anchor.Domain.Aggregates.NonTransactional do
              run_capture?(call, run_callbacks) or
                Enum.any?(tags, &(is_integer(&1) or &1 == :run_callback))}
 
-    by_callee = Enum.group_by(sites, &elem(&1, 0), &Tuple.delete_at(&1, 0))
+    by_callee =
+      sites
+      |> Enum.group_by(&elem(&1, 0), &Tuple.delete_at(&1, 0))
+      |> with_run_callbacks(run_callbacks, functions)
 
     candidates =
       for {mfa, function} <- functions,
@@ -89,7 +93,40 @@ defmodule Anchor.Domain.Aggregates.NonTransactional do
           into: MapSet.new(),
           do: mfa
 
-    fixpoint(candidates, by_callee)
+    candidates |> fixpoint(by_callee) |> reached_inside(by_callee)
+  end
+
+  # A `Multi.run/5` callback has no call edge: Ecto calls it, in the transaction.
+  defp with_run_callbacks(by_callee, run_callbacks, functions) do
+    for mfa <- run_callbacks, Map.has_key?(functions, mfa), reduce: by_callee do
+      acc -> Map.update(acc, mfa, [{nil, true}], &[{nil, true} | &1])
+    end
+  end
+
+  # The fixpoint is the greatest one, so a cycle no transaction reaches stays in
+  # it: keep what an inside call site reaches, through the set's own calls.
+  defp reached_inside(set, by_callee) do
+    set
+    |> Enum.filter(fn mfa ->
+      by_callee |> Map.fetch!(mfa) |> Enum.any?(fn {_caller, inside?} -> inside? end)
+    end)
+    |> grow(set, by_callee, MapSet.new())
+  end
+
+  defp grow([], _set, _by_callee, reached), do: reached
+
+  defp grow(frontier, set, by_callee, reached) do
+    reached = Enum.into(frontier, reached)
+
+    next =
+      for mfa <- set,
+          not MapSet.member?(reached, mfa),
+          Enum.any?(Map.fetch!(by_callee, mfa), fn {caller, _inside?} ->
+            MapSet.member?(reached, caller)
+          end),
+          do: mfa
+
+    grow(next, set, by_callee, reached)
   end
 
   defp fixpoint(set, by_callee) do
