@@ -676,7 +676,9 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
       |> Map.put(:capture_tags, prescan.capture_tags)
 
     acc =
-      Enum.reduce(events, acc, fn event, acc -> classify(event, mfa, def_line, ctx, acc) end)
+      Enum.reduce(events, acc, fn event, acc ->
+        unread_transaction(event, mfa, def_line, ctx, classify(event, mfa, def_line, ctx, acc))
+      end)
 
     %{
       sites: Enum.reverse(acc.sites),
@@ -685,6 +687,26 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
       txs: prescan.txs,
       def_line: def_line
     }
+  end
+
+  # A transaction whose body Anchor cannot read is a gap of whatever reaches it:
+  # the body around it, and every caller's scope. Its own scope adds the gap
+  # itself, and outside a transaction it is no gap (the tag).
+  defp unread_transaction({:call, node, env, tags}, mfa, def_line, ctx, acc),
+    do: unread_gap(transaction(node, env, mfa, ctx), node, tags, def_line, acc)
+
+  defp unread_transaction({:apply, node, env, tags}, mfa, def_line, ctx, acc),
+    do: unread_gap(local_transaction(node, env, mfa, ctx), node, tags, def_line, acc)
+
+  defp unread_transaction(_event, _mfa, _def_line, _ctx, acc), do: acc
+
+  defp unread_gap(txs, node, tags, def_line, acc) do
+    if Enum.any?(txs, &(&1.gaps != [])) do
+      what = "a transaction whose body Anchor cannot read"
+      dynamic(acc, Core.line(node) || def_line, what, [:unread_transaction | tags])
+    else
+      acc
+    end
   end
 
   defp classify({:fun, _id, _tags}, _mfa, _def_line, _ctx, acc), do: acc
@@ -908,7 +930,11 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
         ])
 
       write_function?(callee, ctx) and (arity > 0 or not project_function?(ctx.graph, callee)) ->
-        add_site(acc, name, :write_function, Enum.at(args, 0), env, tags, line)
+        # The call edge too: a wrapper's own body is walked, and its parameter
+        # traces through the arguments passed here.
+        acc
+        |> add_site(name, :write_function, Enum.at(args, 0), env, tags, line)
+        |> project_call(ctx, callee, :remote, args, env, tags, line)
 
       name in @raw_sql and (module == @raw_sql_module or MapSet.member?(ctx.repos, module)) ->
         dynamic(acc, line, raw_sql(module, name, arity), tags, true)

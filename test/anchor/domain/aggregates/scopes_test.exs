@@ -223,6 +223,12 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
     def s68(pid), do: Repo.transaction(fn -> Agent.update(pid, fn _ -> Repo.insert(%S{}) end) end)
     def s69, do: Repo.transaction(fn -> Process.spawn(fn -> Repo.insert(%S{}) end, []) end)
 
+    def wrap(rec), do: Repo.update(rec)
+    def s70, do: wrap(%S{})
+
+    def s71(fun), do: Repo.transaction(fn -> Helper.tx_any(fun) end)
+    def s72(fun), do: Repo.transaction(fn -> Repo.transaction(fun) end)
+
     def s35 do
       Multi.new()
       |> Multi.run(:a, fn repo, _ -> repo.get(S, 1); repo.insert(%S{}) end)
@@ -245,6 +251,7 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
               def b(n), do: (Repo.insert(%#{inspect(@t)}{}); a(n))
               def inner, do: Repo.transaction(fn -> Repo.insert(%#{inspect(@t)}{}) end)
               def inner_calls, do: Repo.transaction(fn -> write_t() end)
+              def tx_any(fun), do: Repo.transaction(fun)
               def fun, do: &write_s/1
               def audit(x), do: x
               def take(x), do: x
@@ -285,6 +292,7 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
       write_functions: [
         elem(FunctionRef.parse("#{inspect(@helper)}.audit/1"), 1),
         elem(FunctionRef.parse("#{inspect(@x)}.local_write/1"), 1),
+        elem(FunctionRef.parse("#{inspect(@x)}.wrap/1"), 1),
         elem(FunctionRef.parse("#{inspect(@lib)}.flush/0"), 1),
         elem(FunctionRef.parse("#{inspect(@x)}.flush_here/0"), 1)
       ],
@@ -323,7 +331,22 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
        do: 1
 
   defp arity(name)
-       when name in [:s48, :s49, :s50, :s51, :s54, :s56, :s57, :s58, :s59, :s62, :s66, :s68],
+       when name in [
+              :s48,
+              :s49,
+              :s50,
+              :s51,
+              :s54,
+              :s56,
+              :s57,
+              :s58,
+              :s59,
+              :s62,
+              :s66,
+              :s68,
+              :s71,
+              :s72
+            ],
        do: 1
 
   defp arity(_name), do: 0
@@ -607,6 +630,21 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
 
       assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s68, 1}, _}]} = one(a, :s68)
       assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s69, 0}, _}]} = one(a, :s69)
+    end
+
+    test "a write function's own write traces through its callers", %{analysis: a} do
+      assert [%{sources: [{:schema, @s}], unresolved: nil}] =
+               Enum.filter(a.sites, &(&1.mfa == {@x, :wrap, 1}))
+    end
+
+    test "a callee transaction's gap is a gap of the transaction that reaches it", %{analysis: a} do
+      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@helper, :tx_any, 1}, _}]} =
+               one(a, :s71)
+    end
+
+    test "a transaction nested in a body: its gap is a gap of the outer one", %{analysis: a} do
+      assert [%Scope{complete?: false}, %Scope{complete?: false}] =
+               Enum.filter(a.scopes, &(&1.mfa == {@x, :s72, 1}))
     end
 
     test "a function-taking call's first argument is data (positive control)", %{analysis: a} do

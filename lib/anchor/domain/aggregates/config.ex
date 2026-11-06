@@ -15,10 +15,9 @@ defmodule Anchor.Domain.Aggregates.Config do
     transaction_functions: ["GenSaas.UnitOfWork.transaction/3"]
   ```
 
-  The whole section is parsed here, so later tickets add no keys; only
-  `declare` has a meaning yet. `repos` (exact module names),
+  The whole section is parsed here. `repos` (exact module names),
   `write_functions` and `transaction_functions` (`Anchor.Domain.FunctionRef`
-  tokens) are checked for shape and stored.
+  tokens) are checked for shape and stored for the write analysis.
 
   Every refusal is `{:error, {:invalid_config, message}}`, the message
   starting with the key path (`aggregates.declare[2].schemas ...`) and ending
