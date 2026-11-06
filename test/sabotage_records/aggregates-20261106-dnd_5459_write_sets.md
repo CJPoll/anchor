@@ -5103,3 +5103,197 @@ an Agent reads as this process (`lib/anchor/domain/aggregates/write_sites.ex`). 
 
 ..
 ```
+
+# Eleventh run: the write analysis runs lazily and guarded
+
+7 mutations for critic round 13's finding. MG-NEEDS survived its first run (3 tests, 0 failures), because a guarded crash reads the same as not running; the test now sees whether it ran, and the row holds the red run. MG-SHAPE's anchor missed the formatted source, and MG-OTHERS's first form was a compile error under `warnings_as_errors`; both were re-anchored. MD-ANALYSIS replaces the row of that name in the 2026-11-03 record: the function it mutated moved to `Model.aggregate_analysis/1`.
+
+| # | Mutation | Tests run | Result |
+|---|---|---|---|
+| MG-NEEDS | the write analysis runs when no rule needs it (`lib/anchor/managers/graph.ex`) | `graph_writes_test.exs` | `3 tests, 1 failure` (red) |
+| MG-SHAPE | a write analysis that returns anything else reads as none (`lib/anchor/managers/graph.ex`) | `graph_writes_test.exs` | `3 tests, 1 failure` (red) |
+| MG-OTHERS | a crashed write analysis stops the other rules (`lib/anchor/managers/graph.ex`) | `graph_writes_test.exs` | `3 tests, 2 failures` (red) |
+| MG-GUARD | a crash in the write analysis stops the run (`lib/anchor/managers/graph.ex`) | `graph_writes_test.exs` | `3 tests, 2 failures` (red) |
+| RL-NEEDS | the rule does not ask for the analysis (`lib/anchor/domain/graph_rules/aggregate_write_sources.ex`) | `graph_writes_test.exs` | `3 tests, 2 failures` (red) |
+| FL-WRITES | the crash issue does not say what to do (`lib/anchor/domain/failures.ex`) | `failures_graph_test.exs` | `16 tests, 1 failure` (red) |
+| MD-ANALYSIS | the model's analysis ignores declare: none (`lib/anchor/domain/model.ex`) | `non_transactional_test.exs` | `20 tests, 1 failure` (red) |
+
+## MG-NEEDS
+
+the write analysis runs when no rule needs it (`lib/anchor/managers/graph.ex`). Result: `3 tests, 1 failure`.
+
+```
+
+  1) test no rule that runs needs it: it is not run, and a crash in it cannot stop the run (Anchor.Managers.GraphWritesTest)
+     test/anchor/managers/graph_writes_test.exs:113
+     Unexpectedly received message :write_analysis_ran (which matched :write_analysis_ran)
+     code: refute_received :write_analysis_ran
+     stacktrace:
+       test/anchor/managers/graph_writes_test.exs:124: (test)
+
+.
+```
+
+## MG-SHAPE
+
+a write analysis that returns anything else reads as none (`lib/anchor/managers/graph.ex`). Result: `3 tests, 1 failure`.
+
+```
+
+  1) test a write analysis that returns no %Analysis{}: the rule that needs it is one issue, the others run (Anchor.Managers.GraphWritesTest)
+     test/anchor/managers/graph_writes_test.exs:94
+     Assertion with =~ failed
+     code:  assert issue.message =~ "the write analysis it needs (Anchor.Domain.Aggregates.Analysis) crashed"
+     left:  "rule 1 (id: \"writes\", aggregate_write_sources): no Ecto repo found: no module declares @behaviour Ecto.Repo and aggregates.repos is empty. Fix: list the repo under aggregates.repos."
+     right: "the write analysis it needs (Anchor.Domain.Aggregates.Analysis) crashed"
+     stacktrace:
+       test/anchor/managers/graph_writes_test.exs:103: (test)
+```
+
+## MG-OTHERS
+
+a crashed write analysis stops the other rules (`lib/anchor/managers/graph.ex`). Result: `3 tests, 2 failures`.
+
+```
+
+
+
+  1) test a write analysis that raises: the rule that needs it is one issue, the others run (Anchor.Managers.GraphWritesTest)
+     test/anchor/managers/graph_writes_test.exs:94
+     Assertion with =~ failed
+     code:  assert probe.message =~ "probe saw cfa:"
+     left:  "rule 2 (id: \"probe\", stub_cfa_probe) could not run: the write analysis it needs (Anchor.Domain.Aggregates.Analysis) crashed: RuntimeError: writes blew up (raised at anonymous fn/1 in Anchor.Managers.GraphWritesTest.\"test a write analysis that raises: the rule that needs it is one issue, the others run\"/1), so it checked nothing. Fix: this is an Anchor bug; file it with this line."
+     right: "probe saw cfa:"
+     stacktrace:
+       test/anchor/managers/graph_writes_test.exs:108: (test)
+
+
+
+
+  2) test a write analysis that returns no %Analysis{}: the rule that needs it is one issue, the others run (Anchor.Managers.GraphWritesTest)
+     test/anchor/managers/graph_writes_test.exs:94
+     Assertion with =~ failed
+     code:  assert probe.message =~ "probe saw cfa:"
+     left:  "rule 2 (id: \"probe\", stub_cfa_probe) could not run: the write analysis it needs (Anchor.Domain.Aggregates.Analysis) crashed: ArgumentError: the analysis returned :oops, not an %Analysis{} (raised at lib/anchor/managers/graph.ex:348: Anchor.Managers.Graph.writes!/1), so it checked nothing. Fix: this is an Anchor bug; file it with this line."
+     right: "probe saw cfa:"
+     stacktrace:
+       test/anchor/managers/graph_writes_test.exs:108: (test)
+
+.
+```
+
+## MG-GUARD
+
+a crash in the write analysis stops the run (`lib/anchor/managers/graph.ex`). Result: `3 tests, 2 failures`.
+
+```
+
+  1) test a write analysis that raises: the rule that needs it is one issue, the others run (Anchor.Managers.GraphWritesTest)
+     test/anchor/managers/graph_writes_test.exs:94
+     ** (RuntimeError) writes blew up
+     code: report = run(rules, beams, aggregate_analysis: fn _model -> unquote(crash) end)
+     stacktrace:
+       anonymous fn/1 in Anchor.Managers.GraphWritesTest."test a write analysis that raises: the rule that needs it is one issue, the others run"/1
+       (anchor 0.1.0) lib/anchor/managers/graph.ex:339: Anchor.Managers.Graph.writes/3
+       (anchor 0.1.0) lib/anchor/managers/graph.ex:248: Anchor.Managers.Graph.measured/5
+       test/anchor/managers/graph_writes_test.exs:99: (test)
+
+
+
+
+  2) test a write analysis that returns no %Analysis{}: the rule that needs it is one issue, the others run (Anchor.Managers.GraphWritesTest)
+     test/anchor/managers/graph_writes_test.exs:94
+     ** (ArgumentError) the analysis returned :oops, not an %Analysis{}
+     code: report = run(rules, beams, aggregate_analysis: fn _model -> unquote(crash) end)
+     stacktrace:
+       (anchor 0.1.0) lib/anchor/managers/graph.ex:348: Anchor.Managers.Graph.writes!/1
+       (anchor 0.1.0) lib/anchor/managers/graph.ex:339: Anchor.Managers.Graph.writes/3
+       (anchor 0.1.0) lib/anchor/managers/graph.ex:248: Anchor.Managers.Graph.measured/5
+       test/anchor/managers/graph_writes_test.exs:99: (test)
+```
+
+## RL-NEEDS
+
+the rule does not ask for the analysis (`lib/anchor/domain/graph_rules/aggregate_write_sources.ex`). Result: `3 tests, 2 failures`.
+
+```
+
+
+
+  1) test a write analysis that returns no %Analysis{}: the rule that needs it is one issue, the others run (Anchor.Managers.GraphWritesTest)
+     test/anchor/managers/graph_writes_test.exs:94
+     Assertion with =~ failed
+     code:  assert issue.message =~ "the write analysis it needs (Anchor.Domain.Aggregates.Analysis) crashed"
+     left:  "rule 1 (id: \"writes\", aggregate_write_sources): no Ecto repo found: no module declares @behaviour Ecto.Repo and aggregates.repos is empty. Fix: list the repo under aggregates.repos."
+     right: "the write analysis it needs (Anchor.Domain.Aggregates.Analysis) crashed"
+     stacktrace:
+       test/anchor/managers/graph_writes_test.exs:103: (test)
+
+
+
+
+  2) test a write analysis that raises: the rule that needs it is one issue, the others run (Anchor.Managers.GraphWritesTest)
+     test/anchor/managers/graph_writes_test.exs:94
+     Assertion with =~ failed
+     code:  assert issue.message =~ "the write analysis it needs (Anchor.Domain.Aggregates.Analysis) crashed"
+     left:  "rule 1 (id: \"writes\", aggregate_write_sources): no Ecto repo found: no module declares @behaviour Ecto.Repo and aggregates.repos is empty. Fix: list the repo under aggregates.repos."
+     right: "the write analysis it needs (Anchor.Domain.Aggregates.Analysis) crashed"
+     stacktrace:
+       test/anchor/managers/graph_writes_test.exs:103: (test)
+
+.
+```
+
+## FL-WRITES
+
+the crash issue does not say what to do (`lib/anchor/domain/failures.ex`). Result: `16 tests, 1 failure`.
+
+```
+
+  1) test every graph message is fail-closed, on its file, with its subject and a Fix: line (Anchor.Domain.FailuresGraphTest)
+     test/anchor/domain/failures_graph_test.exs:305
+     rule_writes_crashed
+     code: for {name, violation, file, texts} <- rows() do
+     stacktrace:
+       test/anchor/domain/failures_graph_test.exs:308: anonymous fn/2 in Anchor.Domain.FailuresGraphTest."test every graph message is fail-closed, on its file, with its subject and a Fix: line"/1
+       (elixir 1.19.4) lib/enum.ex:2520: Enum."-reduce/3-lists^foldl/2-0-"/3
+       test/anchor/domain/failures_graph_test.exs:306: (test)
+
+.....
+```
+
+## MD-ANALYSIS
+
+the model's analysis ignores declare: none (`lib/anchor/domain/model.ex`). Result: `20 tests, 1 failure`.
+
+```
+
+  1) test Z5: under declare: none the Model builds no write analysis, and the index keeps none (Anchor.Domain.Aggregates.NonTransactionalTest)
+     test/anchor/domain/aggregates/non_transactional_test.exs:303
+     Assertion with == failed
+     code:  assert Anchor.Domain.Model.aggregate_analysis(model) == nil
+     left:  %Anchor.Domain.Aggregates.Analysis{
+              sites: [],
+              scopes: [],
+              nontx: %{},
+              always_in_transaction: MapSet.new([]),
+              tables: %{},
+              repos: [],
+              no_repo?: true,
+              counts: %{
+                complete: 0,
+                incomplete: 0,
+                resolved: 0,
+                unresolved: 0,
+                writes: 0,
+                scopes: 0,
+                outside_gaps: 0
+              },
+              unattributed: []
+            }
+     right: nil
+     stacktrace:
+       test/anchor/domain/aggregates/non_transactional_test.exs:322: (test)
+
+......
+```
