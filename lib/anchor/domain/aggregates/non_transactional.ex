@@ -7,7 +7,7 @@ defmodule Anchor.Domain.Aggregates.NonTransactional do
   `write_functions` writes outside every transaction body in `f`, plus
   `nontx[g]` for every project function `g` that `f` calls outside a body;
   per strongly connected component, so recursion terminates
-  (`Anchor.Domain.Aggregates.Scopes.summarise/3`). An `Ecto.Multi` step and a
+  (`Anchor.Domain.Aggregates.Scopes.summarise/2`). An `Ecto.Multi` step and a
   `Multi.run` callback's write are never non-transactional: a Multi only runs
   inside a transaction. That holds when the Multi is built in a helper too:
   a write inside an inline `Multi.run` callback (`WriteSite.run_callback?`)
@@ -47,7 +47,7 @@ defmodule Anchor.Domain.Aggregates.NonTransactional do
   def build(functions, tables, run_callbacks \\ MapSet.new()) do
     functions
     |> without_run_captures(run_callbacks)
-    |> Scopes.summarise(&outside?/1, &outside_site?/1)
+    |> Scopes.summarise(:outside)
     |> Map.new(fn {mfa, summary} ->
       gaps = Scopes.sort_gaps(summary.gaps)
 
@@ -101,13 +101,6 @@ defmodule Anchor.Domain.Aggregates.NonTransactional do
 
   defp root?(mfa, function, nil, by_callee),
     do: function.public? and not Map.has_key?(by_callee, mfa)
-
-  defp outside?(tags), do: tags == []
-
-  defp outside_site?(%WriteSite{scopes: [], run_callback?: false, via: via}),
-    do: via in [:repo, :write_function]
-
-  defp outside_site?(%WriteSite{}), do: false
 
   # A capture passed as a `Multi.run` callback is inside the Multi's
   # transaction, never a call outside one.

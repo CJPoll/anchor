@@ -720,10 +720,13 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   end
 
   defp captured(facts, run_callbacks) do
-    for {_from, %{calls: calls}} <- facts,
-        %{kind: :capture, to: to} <- calls,
-        into: run_callbacks,
-        do: to
+    captures =
+      for {_from, %{calls: calls}} <- facts,
+          %{kind: :capture, to: to} <- calls,
+          into: MapSet.new(),
+          do: to
+
+    MapSet.union(run_callbacks, captures)
   end
 
   defp transact_repos(graph, repos) do

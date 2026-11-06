@@ -28,26 +28,32 @@ defmodule Anchor.Domain.Aggregates.Scopes do
 
   @type summary :: %{sites: MapSet.t(WriteSite.t()), gaps: MapSet.t(Scope.gap())}
 
+  @typedoc """
+  Which calls, writes and dynamic calls a summary keeps: every one, those
+  outside every transaction body, or those inside body `ordinal` of a function.
+  """
+  @type selection :: :all | :outside | {:body, non_neg_integer()}
+
   @doc """
   The closure summary of every function of `functions` (the resolved facts:
   `%{mfa => %{sites, calls, dynamic, ...}}`), over every call; see the
   moduledoc.
   """
   @spec closures(map()) :: %{mfa() => summary()}
-  def closures(functions), do: summarise(functions, fn _tags -> true end)
+  def closures(functions), do: summarise(functions, :all)
 
   @doc """
-  The same summary over the calls `keep?` keeps (by their tags), with only the
-  writes and dynamic calls it keeps: `Anchor.Domain.Aggregates.NonTransactional`
-  keeps those outside every transaction.
+  The same summary over the calls `selection` keeps (by their tags), with only
+  the writes and dynamic calls it keeps: `Anchor.Domain.Aggregates.NonTransactional`
+  asks for `:outside`. A `Repo` or `write_functions` write is outside when no
+  transaction body holds it and it is no `Multi.run` callback's.
   """
-  @spec summarise(map(), ([term()] -> boolean()), (WriteSite.t() -> boolean())) ::
-          %{mfa() => summary()}
-  def summarise(functions, keep?, keep_site? \\ fn _site -> true end) do
+  @spec summarise(map(), :all | :outside) :: %{mfa() => summary()}
+  def summarise(functions, selection) do
     edges =
       for {from, function} <- functions,
           %{to: to, tags: tags} <- function.calls,
-          keep?.(tags),
+          keep_tags?(selection, tags),
           Map.has_key?(functions, to),
           uniq: true,
           do: {from, to}
@@ -62,7 +68,7 @@ defmodule Anchor.Domain.Aggregates.Scopes do
 
       local =
         Enum.reduce(scc, empty(), fn mfa, acc ->
-          merge(acc, local(mfa, functions[mfa], keep?, keep_site?))
+          merge(acc, local(mfa, functions[mfa], selection))
         end)
 
       summary =
@@ -104,18 +110,12 @@ defmodule Anchor.Domain.Aggregates.Scopes do
   def sort_gaps(gaps), do: Enum.sort_by(gaps, &gap_order/1)
 
   defp scope(mfa, function, tx, closures, tables) do
-    in_body? = &(tx.ordinal in &1)
-
-    body =
-      local(
-        mfa,
-        function,
-        in_body?,
-        &(tx.ordinal in &1.scopes)
-      )
+    selection = {:body, tx.ordinal}
+    body = local(mfa, function, selection)
 
     callees =
-      (for(%{to: to, tags: tags} <- function.calls, in_body?.(tags), do: to) ++ tx.captures)
+      (for(%{to: to, tags: tags} <- function.calls, keep_tags?(selection, tags), do: to) ++
+         tx.captures)
       |> Enum.uniq()
 
     tx_gaps = for _gap <- tx.gaps, into: MapSet.new(), do: {:dynamic_call, mfa, tx.line}
@@ -139,14 +139,14 @@ defmodule Anchor.Domain.Aggregates.Scopes do
     }
   end
 
-  # A function's own writes and dynamic calls, kept by `keep?` (their tags)
-  # and `keep_site?`; an unresolved write is also a gap.
-  defp local(mfa, function, keep?, keep_site?) do
-    sites = function.sites |> Enum.filter(keep_site?) |> MapSet.new()
+  # A function's own writes and dynamic calls that `selection` keeps; an
+  # unresolved write is also a gap.
+  defp local(mfa, function, selection) do
+    sites = for site <- function.sites, keep_site?(selection, site), into: MapSet.new(), do: site
 
     dynamic =
       for %{tags: tags, line: line} <- function.dynamic,
-          keep?.(tags),
+          keep_tags?(selection, tags),
           into: MapSet.new(),
           do: {:dynamic_call, mfa, line}
 
@@ -158,6 +158,18 @@ defmodule Anchor.Domain.Aggregates.Scopes do
 
     %{sites: sites, gaps: MapSet.union(dynamic, unresolved)}
   end
+
+  defp keep_tags?(:all, _tags), do: true
+  defp keep_tags?(:outside, tags), do: tags == []
+  defp keep_tags?({:body, ordinal}, tags), do: ordinal in tags
+
+  defp keep_site?(:all, %WriteSite{}), do: true
+
+  defp keep_site?(:outside, %WriteSite{scopes: [], run_callback?: false, via: via}),
+    do: via in [:repo, :write_function]
+
+  defp keep_site?(:outside, %WriteSite{}), do: false
+  defp keep_site?({:body, ordinal}, %WriteSite{scopes: scopes}), do: ordinal in scopes
 
   defp empty, do: %{sites: MapSet.new(), gaps: MapSet.new()}
 
