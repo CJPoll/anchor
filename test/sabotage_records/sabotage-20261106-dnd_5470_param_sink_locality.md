@@ -1408,3 +1408,27 @@ Run summary: `33 tests, 1 failure`
 .................
 ```
 
+## Sixth run
+
+The merge took the coverage map to version 2, and the refusal still named version 1. This ran against `f9da957`.
+
+| # | Mutation | Tests run | Result | Failing tests |
+|---|---|---|---|---|
+| BY-A | the refusal names a version again (`lib/anchor/managers/sabotage/behaviours.ex`) | `sabotage_behaviours_test.exs` | `34 tests, 2 failures` (red) | what cannot be measured is exit 3, never a clean report a map of an old version says so, and names no version of its own; what cannot be measured is exit 3, never a clean report a term that is no map |
+
+### BY-A — the refusal names a version again
+
+Run summary: `34 tests, 2 failures`
+
+```text
+1) test what cannot be measured is exit 3, never a clean report a map of an old version says so, and names no version of its own (Anchor.Managers.SabotageBehavioursTest)
+     test/anchor/managers/sabotage_behaviours_test.exs:161
+     Assertion with =~ failed
+     code:  assert line =~ "is not a usable coverage map ({:version, 1})"
+     left:  "COULD NOT MEASURE: the coverage map cov.etf is not a usable version-1 map ({:version, 1}). Fix: download a current anchor-coverage artifact (CI) and pass --coverage"
+     right: "is not a usable coverage map ({:version, 1})"
+     stacktrace:
+       test/anchor/managers/sabotage_behaviours_test.exs:165: (test)
+
+....................
+```

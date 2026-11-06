@@ -6,7 +6,7 @@
 - **Code under test:** `Anchor.Domain.GraphRules.ParameterReachesSink`, `Anchor.Domain.Core.mfa_references/1`, `Anchor.Domain.DynamicCalls.computed_name_count/1`, the `:demand` wiring in `Anchor.Managers.Graph`, `Anchor.Domain.GraphReport.parameter_sinks/4` and its note, and the two rows of `Anchor.Domain.Demand.Transfer` the QA plan names.
 - **Suite run:** each mutation ran `mix test --timeout 2000 --max-cases 2 <its test files>` inside one `test-slot`, by a driver that applied it, ran the files and restored the source. The checkout's absolute path in the output reads `<worktree>`.
 
-The first table holds the last full run, and each of its sections shows the first failure, cut at 70 lines. It was rewritten in place through the critic's rounds, so `## Measured zeros` and `## Retired mutants` keep what those rewrites dropped, and `## Second run` to `## Sixth run` are appended after it.
+The first table holds the last full run, and each of its sections shows the first failure, cut at 70 lines. It was rewritten in place through the critic's rounds, so `## Measured zeros` and `## Retired mutants` keep what those rewrites dropped, and `## Second run` to `## Seventh run` are appended after it.
 
 **Not run on purpose, and then run by mistake (`## Fourth run`, PW-A; the trap is in `## Fifth run`):** the chain's recursion guard (`MapSet.member?(seen, step)` read as `false`). Without it `steps/3` does not terminate, so its mutant spins and allocates for the whole 2000 ms bound on the desktop (the sabotage load rule). `count/2` in the canary and `D.rec/1` in the Domain test are the rows it would fail.
 
@@ -2040,3 +2040,29 @@ Run summary: `13 tests, 1 failure`
 
 ..
 ```
+
+## Seventh run
+
+**A trap: the PX-A re-run in `## Sixth run` proves nothing.** Its test was failing with no mutation applied, because the injected rule list was ignored (a keyword list keeps its first key), so its `1 failure` is not this mutation's. Check a test green before you sabotage it. This run is against `f9da957`, where the test passes unmutated and fails here on `refute_received :read_behaviours`.
+
+The merge also moved this branch's runner tests from `graph_demand_test.exs`, which is now main's, to `graph_parameter_sinks_test.exs`. The rows above that name the old file ran before the move.
+
+| # | Mutation | Tests run | Result | Failing tests |
+|---|---|---|---|---|
+| PX-A | the callbacks are read for any rule needing demand (`lib/anchor/managers/graph.ex`) | `graph_parameter_sinks_test.exs` | `13 tests, 1 failure` (red) | a rule that needs the analysis but is no parameter_reaches_sink reads no behaviour |
+
+### PX-A — the callbacks are read for any rule needing demand
+
+Run summary: `13 tests, 1 failure`
+
+```text
+1) test a rule that needs the analysis but is no parameter_reaches_sink reads no behaviour (Anchor.Managers.GraphParameterSinksTest)
+     test/anchor/managers/graph_parameter_sinks_test.exs:110
+     Unexpectedly received message :read_behaviours (which matched :read_behaviours)
+     code: refute_received :read_behaviours
+     stacktrace:
+       test/anchor/managers/graph_parameter_sinks_test.exs:122: (test)
+
+..
+```
+
