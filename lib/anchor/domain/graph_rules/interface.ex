@@ -27,12 +27,13 @@ defmodule Anchor.Domain.GraphRules.Interface do
   judged (the runner reports an unclassified module already). Calls are
   resolved as `layering` resolves them: a capture and `apply/3` with a
   literal module are static; a dynamic call (`mod.fetch(x)`) is judged
-  against every project module exporting the function
-  (`Anchor.Domain.DynamicCalls`), so one non-interface candidate in another
-  context is a violation; a call whose function name is computed cannot be
-  checked and is one violation per (caller, arity); applying a closure
-  (`fun.(x)`) is left to the higher-order analysis. Apps are not a boundary:
-  a call from another app of an umbrella is judged the same (R5).
+  against `Anchor.Domain.DynamicCalls.targets/2`: a declared behaviour's
+  implementers, else every project module exporting the function, so one
+  non-interface target in another context is a violation; a call whose
+  function name is computed cannot be checked and is one violation per
+  (caller, arity); applying a closure (`fun.(x)`) is left to the higher-order
+  analysis. Apps are not a boundary: a call from another app of an umbrella
+  is judged the same (R5).
 
   ## Width
 
@@ -97,7 +98,7 @@ defmodule Anchor.Domain.GraphRules.Interface do
 
   defp judge(%Call{from: from, to: {:dynamic, name, arity, _receiver}} = call, model) do
     model.graph
-    |> DynamicCalls.candidates({name, arity})
+    |> DynamicCalls.targets(call)
     |> Enum.flat_map(&static(from, {&1, name, arity}, call, model))
   end
 

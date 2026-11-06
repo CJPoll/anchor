@@ -345,5 +345,78 @@ defmodule Anchor.Domain.GraphRules.InterfaceTest do
       assert v.message =~ "Fix: call AnchorFixtures.InterfaceTest.Accounts.Users instead."
       assert v.filename == billing
     end
+
+    # DND-5633's narrowing: a receiver the caller's @spec types as a behaviour's
+    # t() reaches its implementers only, as in layering. Judged against every
+    # exporter, it reported a domain module of another context that merely
+    # exports the same function.
+    @narrow_ns "AnchorFixtures.InterfaceTest.Narrow"
+
+    @narrow_billing {"""
+                     defmodule #{@narrow_ns}.Billing.Port do
+                       @moduledoc false
+                       @type t :: module()
+                       @callback go(term()) :: term()
+                     end
+
+                     defmodule #{@narrow_ns}.Billing.Impl do
+                       @moduledoc false
+                       @behaviour #{@narrow_ns}.Billing.Port
+                       def go(id), do: id
+                     end
+
+                     defmodule #{@narrow_ns}.Billing.Runner do
+                       @moduledoc false
+                       @spec typed(#{@narrow_ns}.Billing.Port.t(), term()) :: term()
+                       def typed(port, id), do: port.go(id)
+
+                       def untyped(port, id), do: port.go(id)
+                     end
+                     """, "lib/narrow/billing.ex"}
+
+    @narrow_accounts {"""
+                      defmodule #{@narrow_ns}.Accounts.Domain.Worker do
+                        @moduledoc false
+                        def go(id), do: id
+                      end
+                      """, "lib/narrow/accounts.ex"}
+
+    test "a behaviour-typed receiver reaches its implementers; an untyped one every exporter" do
+      sources = [@narrow_billing, @narrow_accounts]
+
+      beams =
+        sources
+        |> compile_all_unloaded()
+        |> Enum.map(fn {module, binary} ->
+          BeamReader.decode(binary, app: :app, path: "ebin/#{module}.beam")
+        end)
+
+      {:ok, arch} =
+        Architecture.parse(%{
+          "contexts" => %{"depth" => 4},
+          "buckets" => [
+            %{
+              "name" => "managers",
+              "role" => "managers",
+              "select" => [%{"pattern" => "*.Billing.*"}]
+            },
+            %{"name" => "domain", "role" => "domain", "select" => [%{"pattern" => "*.Domain.*"}]}
+          ],
+          "calls" => %{"managers" => ["managers", "domain"], "domain" => ["domain"]},
+          "interfaces" => %{"buckets" => ["managers"]}
+        })
+
+      facts = Map.new(sources, fn {text, file} -> {file, SourceFacts.from_source(file, text)} end)
+      graph = Builder.build(beams, facts)
+      {model, []} = Model.build(graph, %Config{architecture: arch, path: ".anchor.yml"}, facts)
+
+      keys =
+        model |> Interface.check(%{type: :interface, pattern: "*.Runner"}) |> Enum.map(& &1.key)
+
+      assert keys == [
+               "interface|#{@narrow_ns}.Billing.Runner.untyped/2|-> " <>
+                 "#{@narrow_ns}.Accounts.Domain.Worker.go/1"
+             ]
+    end
   end
 end

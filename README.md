@@ -924,10 +924,8 @@ framework there, and the baseline holds what it found when it landed: the
 calls of `Anchor.Managers.Lint` into the check modules (DND-1288),
 `GraphRules.by_type/1`'s calls of each check's `rule_type/0`, the top-level
 `Anchor` module (no context at depth 2), `Mutator.generate/4`'s dynamic call,
-`Sabotage.Coverage.traced_suite/3`'s `suite.run/1` reaching the Mix tasks
-(the dynamic-call over-approximation, DND-5633), and the sabotage task
-starting `CoverageCollector`. The `.anchor.yml` comment on the rule names the
-same groups.
+and the sabotage task starting `CoverageCollector`. The `.anchor.yml` comment
+on the rule names the same groups.
 
 ### The `effects_match_bucket` rule (DND-5447)
 
