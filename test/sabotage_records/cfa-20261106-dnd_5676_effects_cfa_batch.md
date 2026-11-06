@@ -323,3 +323,34 @@ None.
 1af65c1670ed	lib/anchor/domain/cfa/eval.ex	Anchor.Domain.Cfa.Eval.invoked/2	force_condition	killed	test/anchor/domain/cfa/eval_test.exs:62 test a higher-order argument written as a literal (DND-5674) control: a module or a {dir, module} tuple may name compare/2: :any
 e96263781b40	lib/anchor/domain/cfa/eval.ex	Anchor.Domain.Cfa.Eval.invoked/2	force_condition	killed	test/anchor/domain/cfa/eval_test.exs:54 test a higher-order argument written as a literal (DND-5674) a literal that is no function applies nothing: the empty set, never :any ; test/anchor/domain/cfa/eval_test.exs:47 test a higher-order argument written as a literal (DND-5674) a literal capture or fn resolves to its target, under the open-world seed
 ```
+
+
+## Hand run — the variable control (DND-5674, critic round 2)
+
+The generated runs list `eval_test.exs:67` ("a variable argument stays as the
+analysis finds it") under *Tests still lacking a red*: no generated mutant
+makes a non-literal argument apply nothing, and mutations A to E above only
+change which literals count. This mutation makes `applies_nothing?/1` also
+match a Core variable, the unsound widening that control guards.
+
+Command: `mix test --force test/anchor/domain/cfa/eval_test.exs --timeout 2000 --max-cases 2`, at
+the DND-5674 head.
+
+| # | File | Mutation | Result |
+|---|---|---|---|
+| H | `lib/anchor/domain/cfa/eval.ex` | `:cerl.is_literal(node) and data_literal?(:cerl.concrete(node))` -> `(:cerl.is_literal(node) and data_literal?(:cerl.concrete(node))) or :cerl.is_c_var(node)` | 5 tests, 3 failures |
+
+```
+  1) test a higher-order argument written as a literal (DND-5674) control: a variable argument stays as the analysis finds it (a root's parameter: :any) (Anchor.Domain.Cfa.EvalTest)
+     test/anchor/domain/cfa/eval_test.exs:67
+     Assertion with == failed
+     code:  assert Cfa.closures_at(cfa, site({@literal, :variable, 2})) == :any
+     left:  {:ok, MapSet.new([])}
+     right: :any
+     stacktrace:
+       test/anchor/domain/cfa/eval_test.exs:69: (test)
+```
+
+The other two failures are the capture assertions at `eval_test.exs:47` and
+`:54`: Elixir binds a capture to a variable before the call in Core, so the
+widened check swallows it too. Restored: 5 tests, 0 failures.
