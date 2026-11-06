@@ -487,7 +487,10 @@ a missing row costs precision (its arguments escape), never soundness. A
 `letrec` name is keyed per scope, the letrec node (DND-5575): an apply of it
 reaches the innermost enclosing letrec that binds it (`Cfa` keeps each
 lambda's lexical scope; `Eval` adds a letrec's names at the node), never a
-same-named letrec elsewhere in the function.
+same-named letrec elsewhere in the function. A higher-order argument written as a literal that is no
+function (a number, binary, list, map, `:asc`/`:desc`) applies nothing: its site
+is the empty set, never `any` (DND-5674); a module atom or a tuple stays with the
+analysis (a sort may call its `compare/2`).
 
 The runner wires it lazily (DND-5574): a graph rule that reads it declares
 `needs: [:cfa]` (`GraphRule`'s optional `needs/0`, read and checked by

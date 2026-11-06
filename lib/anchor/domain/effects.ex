@@ -37,8 +37,8 @@ defmodule Anchor.Domain.Effects do
       a lambda is the function it is written in, whose calls the walker
       already gives to that function), and a site reading `:any` is
       unresolved. A higher-order call given a literal where it could take a
-      function (`Enum.with_index(list, 1)`) applies nothing there, and neither
-      does the collector a comprehension with `into:` applies when its target
+      function (`Enum.with_index(list, 1)`) applies nothing there (the
+      analysis answers the empty set, DND-5674), and neither does the collector a comprehension with `into:` applies when its target
       is a literal (`into: %{}`; no struct but a `MapSet`) or a `Map.new`/`MapSet.new` the function
       calls itself. A target from anywhere else (a parameter, which may be an
       `IO.stream/0`) leaves the collector to the analysis, and unresolved.
@@ -69,7 +69,6 @@ defmodule Anchor.Domain.Effects do
   alias Anchor.Domain.Graph.Call
   alias Anchor.Domain.Graph.FunctionNode
   alias Anchor.Domain.Graph.ModuleNode
-  alias Anchor.Domain.HigherOrder
   alias Anchor.Domain.Model
   alias Anchor.Domain.Roots
 
@@ -285,7 +284,6 @@ defmodule Anchor.Domain.Effects do
     collectors = collectors(core)
 
     for {site, node} <- Core.apply_sites(mfa, core),
-        not data_argument?(site, node),
         not collector_apply?(node, collectors),
         target <- closure_targets(Cfa.closures_at(ctx.cfa, site), node, ctx),
         do: target
@@ -365,22 +363,6 @@ defmodule Anchor.Domain.Effects do
   defp collector_apply?(node, collectors) do
     :cerl.type(node) == :apply and :cerl.is_c_var(:cerl.apply_op(node)) and
       MapSet.member?(collectors, :cerl.var_name(:cerl.apply_op(node)))
-  end
-
-  # The invocation a higher-order call records for an argument that is a
-  # literal, not a function (`Enum.with_index(list, 1)`: the offset form):
-  # nothing is applied there.
-  defp data_argument?({_mfa, ordinal}, node) do
-    with :call <- :cerl.type(node),
-         invocations when invocations != [] <- HigherOrder.invocations(Core.call_mfa(node)),
-         index when is_integer(index) <-
-           Enum.find_index(Core.site_ordinals(node), &(&1 == ordinal)),
-         {arg_index, _arity} <- Enum.at(invocations, index),
-         arg when arg != nil <- Enum.at(:cerl.call_args(node), arg_index) do
-      :cerl.is_literal(arg) and not is_function(:cerl.concrete(arg))
-    else
-      _not_a_literal_argument -> false
-    end
   end
 
   defp closure_targets({:ok, closures}, node, ctx) do

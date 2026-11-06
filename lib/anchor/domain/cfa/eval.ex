@@ -755,23 +755,54 @@ defmodule Anchor.Domain.Cfa.Eval do
   end
 
   # The invoked arguments are apply sites; every argument escapes (the
-  # library calls them with values it chooses), and the result is `any`.
+  # library calls them with values it chooses), and the result is `any`. An
+  # argument written as a literal that is no function applies nothing there
+  # (DND-5674): `Enum.with_index(list, 1)` (an offset) and `Enum.sort(list,
+  # :desc)` (a direction) call no closure, so their site is the empty set,
+  # never `any`. A literal fun names its target (`literal/3`).
   defp higher_order(mfa, node, args, ctx, acc) do
-    functions =
-      Enum.map(HigherOrder.invocations(mfa), fn {index, _arity} -> Enum.at(args, index) end)
+    arg_nodes = :cerl.call_args(node)
 
-    acc = record_sites(node, Enum.map(functions, &invoked/1), ctx, acc)
+    functions =
+      Enum.map(HigherOrder.invocations(mfa), fn {index, _arity} ->
+        invoked(Enum.at(arg_nodes, index), Enum.at(args, index))
+      end)
+
+    acc = record_sites(node, functions, ctx, acc)
     {Value.any(), escape(args, acc)}
   end
 
-  # What an invoked argument calls: its closures, and `any` when it may be a
-  # constant or a container: a library takes a module (`Enum.sort(list,
+  # What an invoked argument calls: nothing for a literal that applies
+  # nothing (`applies_nothing?/1`); else its closures, and `any` when it may
+  # be a constant or a container: a library takes a module (`Enum.sort(list,
   # Mod)` calls `Mod.compare/2`) or a `{:asc, Mod}` tuple there.
-  defp invoked(function) do
-    if Value.constant?(function) or MapSet.size(Value.allocs(function)) > 0,
-      do: Value.join(function, Value.any()),
-      else: function
+  defp invoked(node, function) do
+    cond do
+      applies_nothing?(node) ->
+        Value.bottom()
+
+      Value.constant?(function) or MapSet.size(Value.allocs(function)) > 0 ->
+        Value.join(function, Value.any())
+
+      true ->
+        function
+    end
   end
+
+  # A literal argument no library can call: a number, a binary, a list, a map
+  # or the sort directions `:asc` and `:desc`. Any other atom may be a module
+  # whose `compare/2` a sort calls, and a tuple may be `{:asc, Mod}`: those
+  # stay with the analysis.
+  defp applies_nothing?(node) do
+    :cerl.is_literal(node) and data_literal?(:cerl.concrete(node))
+  end
+
+  defp data_literal?(term) when term in [:asc, :desc], do: true
+
+  defp data_literal?(term),
+    do:
+      is_number(term) or is_bitstring(term) or is_list(term) or
+        (is_map(term) and not is_struct(term))
 
   defp pure_erlang?({:erlang, name, _arity}), do: name in @pure_erlang
   defp pure_erlang?(_mfa), do: false
