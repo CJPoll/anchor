@@ -81,7 +81,7 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         run: mix anchor.baseline --base "origin/${BASE_REF}"
 
-      # DND-5658: the step above runs the pull request's OWN anchor, so a pull
+      # DND-5658: the `mix anchor.graph --base` step runs the pull request's OWN anchor, so a pull
       # request that changes Enforcement, Baseline, BaselineBase or a rule's
       # check/2 would be judged by its changed code. This step judges the
       # same beams, .anchor.yml and baselines with the anchor landed on the

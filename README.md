@@ -698,7 +698,9 @@ workflow), and build-time code a deliberately hostile pull request runs
 earlier in the same CI job; review is the gate for those. This guards
 `mix anchor.graph` against a change to `lib/`, not against an attacker who
 controls the job; `mix anchor.baseline --base` and `mix credo` still run the
-pull request's own code.
+pull request's own code, and a behaviour from a dependency the pull request
+adds reads as having no callbacks here (the judge has the base's deps), so its
+own `--base` step alone sees those implementations as roots.
 
 A baseline file holds one key per line; `#` comments and blank lines are
 ignored and the entries are a multiset (a key listed twice holds two
