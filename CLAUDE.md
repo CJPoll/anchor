@@ -41,9 +41,9 @@ never an adapter.
 
 | Bucket | Modules |
 |---|---|
-| Framework | `Anchor.Check.*` (Credo checks, `Anchor.Check.Base`, `Anchor.Check.Source`), `Anchor.Aggregate` (the compile-time macro, DND-5476), `Mix.Tasks.Anchor.*` (`lib/mix/tasks/`; `Mix.Tasks.Anchor.Sabotage`, `.Graph`, `.Explain`), the `Anchor` module (by name), `Anchor.Sabotage.CoverageCollector` (an OTP process, in `lib/mix/tasks/anchor/sabotage/` so `mix anchor.graph` buckets it as Framework) |
-| Managers | `Anchor.Managers.Lint`, `Anchor.Managers.AstBaseline`, `Anchor.Managers.Sabotage` (`.Runner`, `.Coverage`, `.CoverageCompare`, `.Replay`, `.Behaviours`, `.Verify`), `Anchor.Managers.Graph` (`.Request`), `Anchor.Managers.Explain` |
-| Side Effects | ports: `Anchor.Adapters.ConfigLoader`, `ChangeSource`, `BeamSource`, `Tracing`, `InProcessTests`, `ProjectModuleSource`, `CoverageStore`, `BaselineStore`, `GitBase`, `LintKeys`, `SourceSource`, `GraphStore`, `TestExecution`, `SourceMutation`, `BehaviourSource`; adapters: `ConfigFile`, `CredoKeys`, `GitChangeSource`, `BeamReader`, `BehaviourReader`, `CallTracer`, `SuiteRunner`, `ProjectModules`, `CoverageFile`, `RecordFile` (port `RecordStore`), `BaselineFile`, `GitShow`, `SourceReader`, `GraphArtifact`, `TestRunner`, `SourcePatcher`, `GitStatus`, `GitWorktree` (`lib/anchor/adapters/`); `GitEnv`, the environment the git adapters run git with (DND-5581); `Anchor.Sabotage.ExUnitFormatter` (`lib/anchor/sabotage/`) |
+| Framework | `Anchor.Check.*` (Credo checks, `Anchor.Check.Base`, `Anchor.Check.Source`), `Anchor.Aggregate` (the compile-time macro, DND-5476), `Anchor.Backstop` (the test-time backstop, DND-5480, in `lib/mix/tasks/anchor/backstop/`), `Mix.Tasks.Anchor.*` (`lib/mix/tasks/`; `Mix.Tasks.Anchor.Sabotage`, `.Graph`, `.Explain`), the `Anchor` module (by name), `Anchor.Sabotage.CoverageCollector` (an OTP process, in `lib/mix/tasks/anchor/sabotage/` so `mix anchor.graph` buckets it as Framework) |
+| Managers | `Anchor.Managers.Lint`, `Anchor.Managers.AstBaseline`, `Anchor.Managers.Sabotage` (`.Runner`, `.Coverage`, `.CoverageCompare`, `.Replay`, `.Behaviours`, `.Verify`), `Anchor.Managers.Graph` (`.Request`), `Anchor.Managers.Explain`, `Anchor.Managers.Backstop` |
+| Side Effects | ports: `Anchor.Adapters.ConfigLoader`, `ChangeSource`, `BeamSource`, `Tracing`, `InProcessTests`, `ProjectModuleSource`, `CoverageStore`, `BaselineStore`, `GitBase`, `LintKeys`, `SourceSource`, `GraphStore`, `TestExecution`, `SourceMutation`, `BehaviourSource`, `WriteRecorder`, `TransactionProbe`; adapters: `ConfigFile`, `CredoKeys`, `GitChangeSource`, `BeamReader`, `BehaviourReader`, `CallTracer`, `SuiteRunner`, `ProjectModules`, `CoverageFile`, `RecordFile` (port `RecordStore`), `BaselineFile`, `GitShow`, `SourceReader`, `GraphArtifact`, `TestRunner`, `SourcePatcher`, `GitStatus`, `GitWorktree`, `TelemetryRecorder`, `EctoTransactionProbe` (`lib/anchor/adapters/`); `GitEnv`, the environment the git adapters run git with (DND-5581); `Anchor.Sabotage.ExUnitFormatter` (`lib/anchor/sabotage/`) |
 | Domain | everything under `lib/anchor/domain/`, including `Anchor.Domain.Sabotage.*` (`Mutator`, `Operators`, `DiffHunks`, `FunctionSpans`, `Scope`, `CoverageMap`, `Record`, `RecordNaming`, `KillMap`, `ChangedTests`, `TestPath`: the one rule for a path handed to `mix test`, DND-5640; `Verify`, the verdict of `mix anchor.sabotage verify`, DND-5516; `ScanReport`, the nightly scan's report, DND-5490) and `Anchor.Domain.Graph.*`, the graph rules (`GraphRules.*`), `Model`, `Classification`, `Interfaces`, `Explain`, `Subject`, `RuleShapes`, `Placement` (`.CallGraph`, `.FunctionFacts`, `.Ownership`, `.Rules`), `Proposal` |
 
 ADR 001's module map (*How this maps to Anchor*) lists every `lib/` module
@@ -218,6 +218,26 @@ fail-closed issue of the `aggregate_write_sources` rule, and a rule type in
 load. Ecto is a test-only dependency: fixtures that pin real macro output
 (`use Ecto.Schema`, `from/2`, `Ecto.Multi`) compile against it. The canary has
 its own root, `test/fixtures/graph_canary/aggregate_write_sources/`.
+
+## The test-time backstop (DND-5480)
+
+`Anchor.Backstop` (Framework, in `lib/mix/tasks/anchor/backstop/` so the
+`architecture:` path selectors bucket it) is two calls a consumer makes:
+`attach!/1` in `test_helper.exs`, `watch/1` in its data case's setup.
+`Anchor.Managers.Backstop` loads the config and beams through their ports,
+builds the same `Aggregates.Index` the static rules read, and attaches
+`Anchor.Adapters.TelemetryRecorder` (port `WriteRecorder`) to the repo's query
+event with `EctoTransactionProbe` (port `TransactionProbe`: DND-5479's
+begin/commit/rollback events, per emitting process; never `telemetry_options`
+or `Repo.in_transaction?/0`). The handler reads only `query` and `source`
+(`Aggregates.QueryStatement`), attributes an event to a watched test by pid or
+`$callers`, and records `Aggregates.BackstopEvent`s in ETS; the verdict
+(`Aggregates.Backstop`) runs in the test's `on_exit`. What cannot be tied to a
+transaction is an escape, counted and summed at suite end, never clean. The
+VM's one session is in `:persistent_term`: a test that installs it is
+`async: false` (`telemetry_recorder_test.exs`), because
+`Anchor.BackstopTest` asserts none is installed. `:telemetry` is an optional
+dependency. README, *The test-time backstop*, is the user's reference.
 
 ## The causal graph (DND-5438)
 

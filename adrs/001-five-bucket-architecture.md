@@ -47,6 +47,12 @@ keeps the map complete: a `lib/` module with no row, or a row whose bucket is
 not the one `.anchor.yml` gives it, fails the suite. Standard unchanged — see
 "Amendment (2026-11-03, DND-5620)" under "How this maps to Anchor".
 
+Amended 2026-11-06 (DND-5480): the mapping table lists the test-time
+aggregate backstop: `Anchor.Backstop` (Framework, under `lib/mix/tasks/`),
+`Anchor.Managers.Backstop`, its two ports and their adapters, and its Domain
+modules. Standard unchanged — see "Amendment (2026-11-06, DND-5480)" under
+"How this maps to Anchor".
+
 ## Context
 
 Anchor is a small library, but the class of problems the five-bucket
@@ -415,6 +421,29 @@ Only the classification of subjects the table had not yet listed is added.
 | `Anchor.Domain.Checks.*` | Domain | Each Credo check's pure detection, called through `Anchor.Managers.Lint`. |
 | `Anchor.Domain.LandedJudge` | Domain | What the landed judge decides beyond the ratchet (DND-5658): the base rules a change removes or retypes, the FIRST LANDING notes, and the rules it runs. Pure, over rule lists the Manager read. |
 | `Anchor.Domain.RuleSchema`, `Anchor.Domain.RuleMatching`, `Anchor.Domain.RuleCoverage`, `Anchor.Domain.Failures`, `Anchor.Domain.Violation`, `Anchor.Domain.GlobPattern`, `Anchor.Domain.AllowedCallers`, `Anchor.Domain.PureCalls`, `Anchor.Domain.EffectPrimitives` | Domain | The rule schema, rule selection, the fail-closed messages, the violation struct and the pattern grammars every rule shares. |
+
+#### Amendment (2026-11-06, DND-5480): the test-time backstop's modules are listed
+
+The backstop runs in a consumer's test VM: it attaches to the repo's query
+telemetry, records each watched test's writes in ETS, and judges them in the
+test's `on_exit`. Its entry point is Framework: ExUnit invokes it, through
+the consumer's `test_helper.exs`, its data case's `setup` and the test's
+`on_exit`, as Credo invokes the checks and `mix` the tasks. It lives under
+`lib/mix/tasks/` (as `CoverageCollector` does), so `mix anchor.graph` buckets
+it by path, with no change to the `architecture:` selectors. It needs
+`:telemetry`, which enters `mix.exs` as an optional dependency (every Ecto
+project has it); `lib/` still has no Ecto.
+
+| Module | Bucket | Why |
+|---|---|---|
+| `Anchor.Backstop` | Framework | The two calls a project makes (`attach!/1` in `test_helper.exs`, `watch/1` in a setup block): Mix and ExUnit facts in, Manager calls out (`start`, `install` and the suite-end `summary`; `installed!`, `watch` and the on_exit `verdict!`). |
+| `Anchor.Managers.Backstop` | Manager | Loads the config and beams through their ports, builds the aggregate index (Domain), attaches the recorder, and turns each test's verdict into a pass or an `ExUnit.AssertionError`. |
+| `Anchor.Adapters.WriteRecorder`, `Anchor.Adapters.TransactionProbe` | Side Effect (port) | The recorder and the transaction-boundary signal the Manager and the recorder depend on; tests double the recorder with Hammox. |
+| `Anchor.Adapters.TelemetryRecorder`, `Anchor.Adapters.EctoTransactionProbe` | Side Effect | Their real implementations: the `:telemetry` handler and its ETS table, and Ecto's `begin`/`commit`/`rollback` events read per process. |
+| `Anchor.Domain.Aggregates.QueryStatement`, `Anchor.Domain.Aggregates.BackstopEvent`, `Anchor.Domain.Aggregates.Backstop` | Domain | What one query event did, one recorded write, and the verdict over a test's writes with its messages. Pure. |
+
+This is an amendment, not a supersession: the five-bucket rule and the
+allowed-calls matrix are unchanged and bind every subject exactly as before.
 
 ## Examples
 

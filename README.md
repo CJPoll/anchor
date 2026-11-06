@@ -1701,6 +1701,88 @@ to one of them and dependencies' own internals; a write there is not in this
 proposal; see the README's What it does not read`. `mix anchor.propose
 --level aggregate` prints it once DND-5449's `mix anchor.propose` lands.
 
+### The test-time backstop: `Anchor.Backstop` (DND-5480)
+
+The static rules cannot read a transaction's write set whole when a write
+goes through a callback passed as a variable, a variable repo or a
+`Multi.merge` function. The tests already run those paths, so the backstop
+watches the repo's query telemetry while they do, and fails a test whose
+transaction wrote tables of two declared aggregates. Two calls are the whole
+integration:
+
+```elixir
+# test/test_helper.exs
+Anchor.Backstop.attach!(repo: MyApp.Repo)
+ExUnit.start()
+
+# test/support/data_case.ex
+setup tags do
+  Anchor.Backstop.watch(tags)
+  :ok
+end
+```
+
+`attach!/1` takes `repo:` (required), `ebins:` (default
+`[Mix.Project.compile_path()]`), `root:` (where `.anchor.yml` is looked up,
+default the working directory) and `escapes: :report | :fail` (default
+`:report`). Call it in `test_helper.exs`: its ETS table belongs to the
+process that calls it. It reads the declarations the static rules read
+(`aggregates:` and every persisted `@anchor_aggregate`) from the compiled
+beams, never by loading a project module. It needs `:telemetry` (an optional
+dependency of Anchor, and one every Ecto project has).
+
+How it reads the events (DND-5479's spike, pinned in gen_saas's
+`Todos.RepoTelemetryFactsTest`): `"begin"` opens a transaction in the
+emitting process and `"commit"` or `"rollback"` closes it (only the outermost
+`Repo.transaction` emits them; a `BEGIN ...` or `START TRANSACTION` spelling
+opens one too); a write's table is the event's `source`. An
+event belongs to a test when the emitting process is the test or has it in
+`$callers`, so async tests never see each other's writes. It records table
+names, statement kinds and pids, never `params`, `cast_params` or a result.
+The verdict runs in the test's `on_exit`, never in the handler: no sleep, no
+polling, no clock.
+
+A failure:
+
+```
+MyApp.OrdersTest test pays: transaction wrote aggregates MyApp.Orders (table orders) and MyApp.Billing (table invoices). Fix: write MyApp.Billing's change as an outbox row in MyApp.Orders, consumed by MyApp.Billing's owner; or declare one aggregate holding both.
+```
+
+Two transactions in one test that each write one aggregate do not fail it:
+a non-atomic crossing is the static rules' T2. What it cannot tie to a
+transaction is never read as clean. Each is counted per test and summed in
+one line when the suite ends; the first four fail the test under
+`escapes: :fail`:
+
+| Kind | What |
+|---|---|
+| `other-process` | a write from a process the test started or called (a Task, a GenServer): DND-5479 saw a Task's write land after its parent's commit, outside the transaction |
+| `unclassified` | a statement read as neither a read nor a write (`WITH`, `MERGE`, `TRUNCATE`, ...): never dropped as a read |
+| `no-source` | a write with no table (`Repo.query/2` raw SQL) |
+| `undeclared` | a table no aggregate declares |
+| `outside a transaction` | a write with no transaction open in its process: one statement, one table, so it cannot cross; counted only |
+| `unattributed` | a write from a process with no watched test in itself or its `$callers` (a sandbox allowance, a GenServer the test called, an unwatched test), or one that landed after its test's verdict: counted for the whole suite, never failing a test. A transaction a GenServer runs for the test is therefore not judged here |
+
+```
+anchor backstop: 120 tests watched, 0 crossings; escapes: 2 other-process, 0 no-source, 1 undeclared, 0 unclassified; not judged: 40 outside a transaction, 3 unattributed
+```
+
+It fails closed: the suite does not start with a backstop that checks
+nothing.
+
+| Case | Result |
+|---|---|
+| no `.anchor.yml`, or one that does not load | `attach!/1` raises `ArgumentError`: `anchor backstop: could not load .anchor.yml under <root>: <reason>. Fix: ...` |
+| no `aggregates:` section | raises: `anchor backstop: <path> has no aggregates: section. Fix: declare aggregates ...` |
+| `declare: none`, or zero aggregates declared | raises: `anchor backstop: the backstop checks nothing: no aggregate is declared. Fix: declare aggregates (mix anchor.propose --level aggregate).` |
+| zero beams read from `ebins` | raises, naming the paths |
+| `repo:` with no `telemetry_prefix` | raises, naming the repo |
+| `escapes:` other than `:report` or `:fail` | raises, naming the value |
+| no `repo:`, or an option `attach!/1` does not know (`escape: :fail`) | raises with `Fix:`, never read as the default |
+| `attach!/1` called a second time in one test VM | raises: `the backstop watches one repo. Fix: call Anchor.Backstop.attach!/1 once, in test_helper.exs.` |
+| `watch/1` before `attach!/1` | raises: `Fix: call Anchor.Backstop.attach!/1 in test_helper.exs.` |
+| the handler raised (`:telemetry` detached it) | every later verdict fails its test: `the backstop handler was detached` |
+
 ### Graph rows of the fail-closed table
 
 Like the Credo checks, the graph engine fails closed: a run that could not
