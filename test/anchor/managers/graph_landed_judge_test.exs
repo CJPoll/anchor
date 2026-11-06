@@ -3,7 +3,7 @@ defmodule Anchor.Managers.GraphLandedJudgeTest do
   # `mix anchor.graph --project`), with every adapter doubled by Hammox (ADR
   # 002). The judge loads the change's config with unknown rule types set
   # aside (`ConfigLoader.load_judged/1`) and compares its rules with the base
-  # config's (`GitBase.rules/3`): a removed or retyped base rule fails, a rule
+  # config's (`GitBase.config/3`): a removed or retyped base rule fails, a rule
   # type new in the change is a report-only FIRST LANDING, and an honest
   # baseline shrink passes. The stub rule `stub_finds` gives one finding per
   # selected module, keyed `<id>|<Module>|found`.
@@ -206,6 +206,35 @@ defmodule Anchor.Managers.GraphLandedJudgeTest do
 
     assert report.exit_code == 1
     assert Enum.any?(messages(report), &(&1 =~ "99"))
+  end
+
+  test "no config at the base: the change's own rules run, each baseline a first landing",
+       %{beam: beam} do
+    expect_run([baselined()], [], beam, {:error, :absent})
+
+    expect(BaselineStoreMock, :read, fn @root, @path -> Baseline.parse("#{@key}\n") end)
+
+    report = Graph.run(request(%{}), deps())
+
+    assert %GraphReport{exit_code: 0, held: [_held]} = report
+    assert [note] = report.findings
+    assert note.enforcement == :report
+    assert note.message =~ "origin/main"
+  end
+
+  test "without --base nothing is compared and no base is read", %{beam: beam} do
+    expect(ConfigLoaderMock, :load_judged, fn @root -> {:ok, config([baselined()], [])} end)
+    Mox.expect(BeamSourceMock, :read_ebins, fn _apps -> [beam] end)
+
+    expect(SourceSourceMock, :read, fn @root, files ->
+      Map.new(files, &{&1, SourceFacts.from_source(&1, @user_source)})
+    end)
+
+    expect(GraphStoreMock, :write, fn _dir, _key, _graph -> :ok end)
+    expect(BaselineStoreMock, :read, fn @root, @path -> Baseline.parse("#{@key}\n") end)
+
+    assert %GraphReport{exit_code: 0, findings: [], held: [_held]} =
+             Graph.run(request(%{base: nil}), deps())
   end
 
   test "positive control: an honest shrink of a base rule's baseline passes", %{beam: beam} do

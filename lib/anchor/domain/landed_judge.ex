@@ -2,7 +2,7 @@ defmodule Anchor.Domain.LandedJudge do
   @moduledoc """
   What the landed judge decides about a change's rules beyond the ratchet
   (DND-5658), a **Domain** module (ADR 001). Pure: the runner reads the base
-  config's rules (`Anchor.Adapters.GitBase.rules/3`) and the change's config
+  config (`Anchor.Adapters.GitBase.config/3`) and the change's config
   (loaded with unknown rule types deferred), this decides.
 
   `mix anchor.graph --project DIR` runs the anchor landed on the base branch

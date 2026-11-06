@@ -686,7 +686,7 @@ when its code relies on that; the owner lands such a change. Per rule id:
 | on the base, narrowed (a smaller selector, `enforcement: report`) with its baseline shrunk or grown to match | the base's definition still finds it: NEW or GREW | 1 |
 | on the base, its new entry excused by a `narrows?/2` the pull request changed | the base's `narrows?/2` decides: GREW | 1 |
 | any, with a `.anchor.yml` at the base that cannot be read | COULD NOT MEASURE | 3 |
-| any, with `architecture:` or `aggregates:` changed | the base's sections are the ones judged: NEW, STALE or a bucket floor | 1 / 3 |
+| any, with `architecture:` or `aggregates:` changed | the base's sections are the ones judged: NEW, STALE or a bucket floor where the code relies on the change | 0 / 1 |
 
 The refused rows are landed by the owner. The pull request's own `mix anchor.graph --base` step still runs:
 it is the product under test. A base with no `bin/ci/base-judge.sh` prints
@@ -695,9 +695,10 @@ any other pull request into such a base is exit 3. Self-test: `bin/tests/base-ju
 self-test`). Not caught: a pull request that edits `.github/workflows/ci.yml`
 or `bin/ci/judge-with-base.sh` itself (GitHub runs the pull request's
 workflow), and build-time code a deliberately hostile pull request runs
-earlier in the same CI job; review is the gate for those. This guards the
-judge against a change to `lib/`, not against an attacker who controls the
-job.
+earlier in the same CI job; review is the gate for those. This guards
+`mix anchor.graph` against a change to `lib/`, not against an attacker who
+controls the job; `mix anchor.baseline --base` and `mix credo` still run the
+pull request's own code.
 
 A baseline file holds one key per line; `#` comments and blank lines are
 ignored and the entries are a multiset (a key listed twice holds two

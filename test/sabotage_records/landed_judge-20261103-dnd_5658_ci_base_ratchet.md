@@ -8,7 +8,7 @@
   - `Anchor.Adapters.ConfigFile.load_judged/1`
   - `Anchor.Domain.LandedJudge.judge/5` and `rules/2` (critic round: every base rule runs as the base defines it)
   - `Anchor.Domain.GraphReport.Finding.note/2`
-  - `Anchor.Managers.Graph` (`load_config/2`, `landed/3`, `judged_rules/2`, `base_config/3` under `opts.judge`)
+  - `Anchor.Managers.Graph` (`load_config/2`, `landed/3`, `read_base_config/4`; `Anchor.Config.judged/3`)
 - **Suite run:** `mix test --timeout 2000 --max-cases 2 <files>` through `test-slot`, on the files each row names. The unmutated self-test passed T1-T12 in 355 s, and T1-T13 in 465 s after the critic round added `rules/2`. S11-S12 ran `bin/tests/base-judge-test.sh` with `BASE_JUDGE_TEST_ONLY`.
 
 Each Elixir mutation was one exact text replacement, made in Python. Each run compiled and printed an ExUnit summary, and the file was then restored with `git checkout --` after the work was committed. `git status` was clean after the batch. The S rows mutated the working-tree copy, which the self-test copies into its throwaway repo as the base. That means the landed judge itself ran mutated.
@@ -33,7 +33,7 @@ Positive controls that stayed green under every mutation, and why:
 | L10 | `ConfigFile.load_judged/1` does not defer | 16, 1 failed | `ConfigFileTest`: `load_judged/1 (DND-5658) sets an unknown rule type aside ...` |
 | L11 | the landed judge runs the change's rule definitions, not the base's (`rules/2` returns the change's rules); the first try left a variable unused and failed to compile, so that run does not count, and this re-run compiles | 18, 3 failed | `LandedJudgeTest`: `rules/2: what the landed judge runs a base rule the change narrows or downgrades runs as the base defines it`, `... an id-less rule runs once when the base has it as written, and is added when new`; `GraphLandedJudgeTest`: `a base rule the change downgrades and shrinks is judged as the base defines it: exit 1` |
 | L12 | an id-less base rule is compared with its position, so the change's copy also runs | 11, 1 failed | `LandedJudgeTest`: `rules/2: what the landed judge runs an id-less rule runs once when the base has it as written, and is added when new` |
-| L13 | the Manager does not swap in the base's definitions (`judged_rules/2` keeps the change's rules) | 7, 1 failed | `GraphLandedJudgeTest`: `a base rule the change downgrades and shrinks is judged as the base defines it: exit 1` |
+| L13 | the Manager does not swap in the base's definitions (`judged_rules/2`, since folded into `landed/3`, keeps the change's rules) | 7, 1 failed | `GraphLandedJudgeTest`: `a base rule the change downgrades and shrinks is judged as the base defines it: exit 1` |
 | L14 | a base config the judge cannot read reads as nothing removed (`{:ok, config, Map.put(deps, :landed, [])}` in place of `{:could_not_check, ...}`, 2026-11-06) | 7, 1 failed | `a base config that cannot be read is COULD NOT MEASURE, never nothing removed` |
 | L15 | the Manager judges under the change's sections (`%{config \| rules: LandedJudge.rules(...)}`, the critic's finding on 9e308e1) | 9, 1 failed | `a bucket floor the change lowers is judged by the base's architecture: exit 1` |
 | L16 | `Config.judged/3` keeps the change's `architecture` | 7, 1 failed | `judged/3 every section is the base's; only the path and the set-aside rules are the change's` |

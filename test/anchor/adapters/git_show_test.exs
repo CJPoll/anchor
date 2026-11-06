@@ -173,8 +173,6 @@ defmodule Anchor.Adapters.GitShowTest do
     end
   end
 
-  # DND-5629: the base config's graph rules, so a baseline's copy at the ref
-  # is found by its rule's id.
   describe "config/3 (DND-5658)" do
     @canary_config Path.expand("../../fixtures/graph_canary/.anchor.yml", __DIR__)
 
@@ -195,6 +193,8 @@ defmodule Anchor.Adapters.GitShowTest do
     end
   end
 
+  # DND-5629: the base config's graph rules, so a baseline's copy at the ref
+  # is found by its rule's id.
   describe "rules/3 (DND-5629)" do
     @canary Path.expand("../../fixtures/graph_canary/.anchor.yml", __DIR__)
 
