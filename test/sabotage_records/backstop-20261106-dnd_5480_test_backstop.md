@@ -295,3 +295,40 @@ None.
 ```anchor-kills
 # id	file	mfa	operator	status	killers
 ```
+
+## Hand sabotage, round 2: the review-floor fixes (ee3424c)
+
+- **Run at:** ee3424c. The session test of `telemetry_recorder_session_test.exs` (named in the
+  first run's suite list above) moved into `telemetry_recorder_test.exs` at 0bf615c, and
+  `test/anchor/backstop_test.exs` gained `describe` blocks, so S11, S12 and S50 are run again
+  here under the tests' new names.
+- **Suite run:** as above, over the seven files now holding the backstop's tests (81 tests),
+  through `test-slot`; green before and after every row. T4 first failed to compile (its
+  deletion left `recorder` unused); the row is the rewritten run.
+- Not sabotaged, and why: `take_events/2` unwatching the pid before its read. Which of two
+  processes reaches the table first is a race no deterministic test orders; the effect it
+  guards (a late row) is counted, and T3 is that count's red.
+
+| # | Mutation | Tests failed | First failure, verbatim |
+|---|---|---|---|
+| T1 | `Aggregates.QueryStatement`: a BEGIN ... spelling not read as a begin | 1 of 81: another adapter's begin spelling opens a transaction too | `Assertion with == failed code:  assert QueryStatement.classify(%{query: "BEGIN TRANSACTION", source: nil}) == :begin` |
+| T2 | `TelemetryRecorder`: a second session replaces the first | 1 of 81: a second session is refused, and the first kept | `Assertion with == failed code:  assert Recorder.install_session(%{marker: make_ref()}) == {:error, :already_installed}` |
+| T3 | `TelemetryRecorder`: an event row no take read is not counted | 1 of 81: an event row no take read is counted unattributed | `Assertion with == failed code:  assert Recorder.read_totals(recorder).unattributed == 1` |
+| T4 | `Managers.Backstop`: a refused second session's recorder left attached | 1 of 81: install/1, installed!/1, watch/2 a second session is refused with Fix:, its recorder detached | `** (Mox.VerificationError) error while verifying mocks for #PID<0.2648.0>:` |
+| T5 | `Anchor.Backstop`: attach! listens on the repo's prefix, not its query event | 1 of 81: attach!/1 attaches to the repo's query event, installs the session and prints the summary at suite end | `** (FunctionClauseError) no function clause matching in anonymous fn/2 in Anchor.BackstopTest."test attach!/1 attaches to the repo's query event, installs the session and prints the summary at suite end"/1` |
+| T6 | `Anchor.Backstop`: attach! installs no session | 1 of 81: attach!/1 attaches to the repo's query event, installs the session and prints the summary at suite end | `** (Mox.VerificationError) error while verifying mocks for #PID<0.2661.0>:` |
+| T7 | `Anchor.Backstop`: attach! registers no suite-end summary | 1 of 81: attach!/1 attaches to the repo's query event, installs the session and prints the summary at suite end | `Assertion failed, no matching message after 0ms The process mailbox is empty.` |
+| T8 | `Anchor.Backstop`: the suite-end summary is computed, never printed | 1 of 81: attach!/1 attaches to the repo's query event, installs the session and prints the summary at suite end | `Assertion with =~ failed code:  assert capture_io(fn -> callback.(%{}) end) =~ "anchor backstop: 4 tests watched, 0 crossings; escapes:"` |
+| T9 | `Anchor.Backstop`: watch marks no pid | 1 of 81: watch/2 watches the test's pid and registers an on_exit that judges it under its name | `** (Mox.VerificationError) error while verifying mocks for #PID<0.2729.0>:` |
+| T10 | `Anchor.Backstop`: watch registers no on_exit verdict | 1 of 81: watch/2 watches the test's pid and registers an on_exit that judges it under its name | `Assertion failed, no matching message after 0ms The process mailbox is empty.` |
+| T11 | `Anchor.Backstop`: the verdict names the test without its module | 1 of 81: watch/2 watches the test's pid and registers an on_exit that judges it under its name | `Assertion with =~ failed code:  assert error.message =~ "MyApp.OrdersTest test pays: transaction wrote aggregates A (table orders)"` |
+| T12 | `Anchor.Backstop`: a missing repo: not refused with Fix: | 1 of 81: attach!/1 a missing repo: raises with Fix: | `Expected exception ArgumentError but got KeyError (key :repo not found in:` |
+| T13 | `Anchor.Backstop`: an unknown option accepted | 1 of 81: attach!/1 an unknown option raises with Fix:, never read as the default | `Assertion with == failed code:  assert error.message ==` |
+| T14 | `Anchor.Backstop`: watch ignores its deps | 1 of 81: watch/2 watches the test's pid and registers an on_exit that judges it under its name | `** (ArgumentError) anchor backstop: watch/1 was called before the backstop was attached. Fix: call Anchor.Backstop.attach!/1 in test_helper.exs. code: assert Anchor.Backstop.watch(%{module: MyApp.OrdersTest, test: :"test` |
+| T15 | `TelemetryRecorder`: detach_recorder leaves the table | 1 of 81: detach_recorder detaches the handler and drops the table | `Assertion with == failed code:  assert :ets.info(recorder.table, :id) == :undefined` |
+| S11 | `Managers.Backstop`: installed! with no session does not refuse | 2 of 81: install/1, installed!/1, watch/2 F1: installed! before any attach raises: call attach!/1 in test_helper.exs; watch/2 F1: watch/1 before attach!/1 raises: call attach!/1 in test_helper.exs | `Expected exception ArgumentError but got CaseClauseError (no case clause matching:` |
+| S12 | `Anchor.Backstop`: a repo with no telemetry prefix accepted | 2 of 81: attach!/1 F2: a module that is not a repo at all raises, naming it; attach!/1 F2: a repo with no telemetry prefix raises, naming the repo | `Assertion with =~ failed code:  assert error.message =~ "anchor backstop: String has no telemetry prefix. Fix:"` |
+| S50 | `Anchor.Backstop`: any atom accepted as escapes: | 1 of 81: attach!/1 an escapes: mode other than :report or :fail raises with Fix: | `Expected exception ArgumentError but got FunctionClauseError (no function clause matching in Anchor.Managers.Backstop.start/2) code: assert_raise ArgumentError, fn ->` |
+
+After every row, the restored tree: the seven files, `81 tests, 0 failures`. With the first
+run's rows and the generated records beside this one, every test of the backstop has a red.
