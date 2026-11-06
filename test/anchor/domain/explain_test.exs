@@ -58,6 +58,19 @@ defmodule Anchor.Domain.ExplainTest do
 
   defp config, do: Config.parse_config(@yaml)
 
+  # No beam selector, so a path's answer is settled by the path and name alone.
+  defp paths_only_config do
+    @yaml
+    |> update_in(["architecture"], fn arch ->
+      arch
+      |> Map.update!("buckets", fn buckets ->
+        Enum.reject(buckets, &(&1["name"] == "framework"))
+      end)
+      |> update_in(["calls"], &Map.delete(&1, "framework"))
+    end)
+    |> Config.parse_config()
+  end
+
   # module => {bucket, context, interface?, file}
   @modules %{
     App.Orders.Manager => {"managers", "App.Orders", true, "lib/app/managers/orders.ex"},
@@ -322,7 +335,7 @@ defmodule Anchor.Domain.ExplainTest do
       assert Enum.map(explain.rules, & &1["type"]) == ["layering", "case_on_bare_arg"]
     end
 
-    test "a path no selector reaches is unclassified, with the Fix" do
+    test "a path only a beam selector could reach is possible, with no Fix" do
       explain =
         Explain.build(
           config(),
@@ -332,6 +345,78 @@ defmodule Anchor.Domain.ExplainTest do
 
       # framework is possible (a uses_module selector), so it is not unclassified.
       assert explain.classification["status"] == "possible"
+      assert explain.classification["possible"] == ["framework"]
+      refute Map.has_key?(explain.classification, "fix")
+    end
+
+    test "a path no selector reaches is unclassified, with the Fix" do
+      explain =
+        Explain.build(
+          paths_only_config(),
+          nil,
+          subject(%{module: App.Odd, path: "lib/app/odd.ex", findings: nil})
+        )
+
+      assert explain.classification["status"] == "unclassified"
+
+      assert explain.classification["fix"] ==
+               "App.Odd is in no architecture bucket. Fix: add a selector that matches " <>
+                 "lib/app/odd.ex to the bucket this module belongs in (mix anchor.explain " <>
+                 "lib/app/odd.ex shows the candidates)."
+
+      assert length(explain.classification["selectors"]) == 2
+    end
+
+    test "a path outside lib/ implies no module: the Fix names the file, not nil" do
+      config = paths_only_config()
+
+      explain =
+        Explain.build(
+          config,
+          nil,
+          subject(%{
+            module: nil,
+            path: "scripts/run.ex",
+            argument: "scripts/run.ex",
+            findings: nil
+          })
+        )
+
+      assert explain.classification["status"] == "unclassified"
+      assert explain.classification["fix"] =~ "scripts/run.ex is in no architecture bucket. Fix:"
+      refute Explain.render(explain, :text) =~ "nil is in"
+    end
+
+    test "a path two path selectors reach is ambiguous, with the Fix" do
+      second = %{
+        "name" => "core",
+        "role" => "domain",
+        "select" => [%{"paths" => ["lib/**/domain/**/*.ex"]}]
+      }
+
+      config =
+        @yaml
+        |> update_in(["architecture"], fn arch ->
+          arch
+          |> Map.update!("buckets", &(&1 ++ [second]))
+          |> put_in(["calls", "core"], ["core"])
+        end)
+        |> Config.parse_config()
+
+      explain =
+        Explain.build(
+          config,
+          nil,
+          subject(%{module: App.Domain.Odd, path: "lib/app/domain/odd.ex", findings: nil})
+        )
+
+      assert explain.classification["status"] == "ambiguous"
+      assert explain.classification["bucket"] == nil
+      assert explain.classification["ambiguous"] == ["core", "domain"]
+
+      assert explain.classification["fix"] ==
+               "the path or name is in buckets core and domain. Fix: narrow one selector; " <>
+                 "buckets never take precedence."
     end
 
     test "a compile that failed is noted" do

@@ -400,11 +400,15 @@ defmodule Anchor.Domain.Failures do
     graph_issue(
       file,
       Map.get(facts, :line),
-      "#{inspect(module)} is in no architecture bucket. Fix: add a selector that matches " <>
-        "#{file} to the bucket this module belongs in (mix anchor.explain #{file} shows the " <>
-        "candidates)."
+      "#{unclassified_name(module, file)} is in no architecture bucket. Fix: add a selector " <>
+        "that matches #{file} to the bucket this module belongs in (mix anchor.explain #{file} " <>
+        "shows the candidates)."
     )
   end
+
+  # A planned path outside lib/ implies no module: the file is what is unclassified.
+  defp unclassified_name(nil, file), do: file
+  defp unclassified_name(module, _file), do: inspect(module)
 
   @doc """
   The issue for a module that two or more buckets select (DND-5440), naming

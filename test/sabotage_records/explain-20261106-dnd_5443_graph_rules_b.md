@@ -3,10 +3,10 @@
 - **Domain:** explain
 - **Branch:** dnd-5443-graph-rules-b
 - **Date:** 2026-11-06
-- **Code under test:** `Anchor.Managers.Graph` (`rule_findings/3`, `artifact_inputs/2`), `Anchor.Managers.Explain`, `Anchor.Domain.Explain`, `Mix.Tasks.Anchor.Explain`
+- **Code under test:** `Anchor.Managers.Graph` (`rule_findings/3`, `artifact_inputs/2`), `Anchor.Managers.Explain`, `Anchor.Domain.Explain`, `Anchor.Domain.Failures.unclassified/1`, `Mix.Tasks.Anchor.Explain`
 - **Suite run:** each mutation ran `mix test --force --timeout 2000 --max-cases 2 <its test files>` inside one `test-slot`, by a driver that applied it, ran the files and restored the source. The checkout's absolute path in the output reads `<worktree>`.
 
-RF-A and RF-B are regression tests of explain's missing analyses and floors. AI-A restores the absolute-apps_path crash, EX-M the re-classification with no source facts, EX-N the beam facts of a compiled module called unknown, EX-O the app left out of the same answer. TX-A and TX-B cover the task's umbrella wiring, TX-C its exit 3. Each red is the regression red in its fix commit. A first AI-A dropped the `with` altogether: Elixir type-checked the result, warned that Explain's refusal clause could never match, and the run did not compile, so the row is the `with` over the raw request.
+RF-A and RF-B are regression tests of explain's missing analyses and floors. AI-A restores the absolute-apps_path crash, EX-M the re-classification with no source facts, EX-N the beam facts of a compiled module called unknown, EX-O the app left out of the same answer, FL-U the nil named for a path outside lib/. EX-P to EX-S cover the planned answers no test had named. TX-A and TX-B cover the task's umbrella wiring, TX-C its exit 3. Each red is the regression red in its fix commit. A first AI-A dropped the `with` altogether: Elixir type-checked the result, warned that Explain's refusal clause could never match, and the run did not compile, so the row is the `with` over the raw request.
 
 | # | Mutation | Tests run | Result | Failing tests |
 |---|---|---|---|---|
@@ -22,6 +22,11 @@ RF-A and RF-B are regression tests of explain's missing analyses and floors. AI-
 | EX-M | an unplaced module is re-classified with no source facts (`lib/anchor/domain/explain.ex`) | `explain_test.exs` | `12 tests, 2 failures` (red) | build/3 with the model a module in two buckets, both through its source's `use`, is ambiguous; build/3 with the model a module in two buckets, one through its source's `use`, is ambiguous |
 | EX-N | a compiled but unplaced module's beam facts are called unknown (`lib/anchor/domain/explain.ex`) | `explain_test.exs` | `12 tests, 2 failures` (red) | build/3 with the model a module in two buckets, one through its source's `use`, is ambiguous; build/3 with the model a module in the graph but in no bucket is unclassified, with every bucket's selectors and the Fix |
 | EX-O | an unplaced module's app is left out (`lib/anchor/domain/explain.ex`) | `explain_test.exs` | `12 tests, 2 failures` (red) | build/3 with the model a module in the graph but in no bucket is unclassified, with every bucket's selectors and the Fix; build/3 with the model a module in two buckets, one through its source's `use`, is ambiguous |
+| FL-U | a path with no module is named nil (`lib/anchor/domain/failures.ex`) | `explain_test.exs` | `15 tests, 1 failure` (red) | build/3 with no model a path outside lib/ implies no module: the Fix names the file, not nil |
+| EX-P | an unclassified path gets no Fix (`lib/anchor/domain/explain.ex`) | `explain_test.exs` | `15 tests, 2 failures` (red) | build/3 with no model a path outside lib/ implies no module: the Fix names the file, not nil; build/3 with no model a path no selector reaches is unclassified, with the Fix |
+| EX-Q | an ambiguous path's Fix names no bucket (`lib/anchor/domain/explain.ex`) | `explain_test.exs` | `15 tests, 1 failure` (red) | build/3 with no model a path two path selectors reach is ambiguous, with the Fix |
+| EX-R | an ambiguous path reads as unclassified (`lib/anchor/domain/explain.ex`) | `explain_test.exs` | `15 tests, 1 failure` (red) | build/3 with no model a path two path selectors reach is ambiguous, with the Fix |
+| EX-S | a possible path reads as unclassified (`lib/anchor/domain/explain.ex`) | `explain_test.exs` | `15 tests, 1 failure` (red) | build/3 with no model a path only a beam selector could reach is possible, with no Fix |
 | TX-A | the task gathers no umbrella ebins (`lib/mix/tasks/anchor.explain.ex`) | `anchor_explain_test.exs` | `10 tests, 1 failure` (red) | an umbrella (apps_paths injected: this test runs inside Anchor) explain reads the artifact the graph run of the same apps wrote |
 | TX-B | the task drops the apps' directories (`lib/mix/tasks/anchor.explain.ex`) | `anchor_explain_test.exs` | `10 tests, 2 failures` (red) | an umbrella (apps_paths injected: this test runs inside Anchor) an app directory outside the root exits 3 with the refusal; an umbrella (apps_paths injected: this test runs inside Anchor) explain reads the artifact the graph run of the same apps wrote |
 | TX-C | a refusal exits 0 (`lib/mix/tasks/anchor.explain.ex`) | `anchor_explain_test.exs` | `10 tests, 2 failures` (red) | an umbrella (apps_paths injected: this test runs inside Anchor) an app directory outside the root exits 3 with the refusal; no config is could-not-check: exit 3 |
@@ -499,6 +504,107 @@ Run summary: `12 tests, 2 failures`
        test/anchor/domain/explain_test.exs:264: (test)
 
 .......
+```
+
+## FL-U — a path with no module is named nil
+
+Run summary: `15 tests, 1 failure`
+
+```text
+  1) test build/3 with no model a path outside lib/ implies no module: the Fix names the file, not nil (Anchor.Domain.ExplainTest)
+     test/anchor/domain/explain_test.exs:370
+     Assertion with =~ failed
+     code:  assert explain.classification["fix"] =~ "scripts/run.ex is in no architecture bucket. Fix:"
+     left:  "nil is in no architecture bucket. Fix: add a selector that matches scripts/run.ex to the bucket this module belongs in (mix anchor.explain scripts/run.ex shows the candidates)."
+     right: "scripts/run.ex is in no architecture bucket. Fix:"
+     stacktrace:
+       test/anchor/domain/explain_test.exs:386: (test)
+
+.
+```
+
+## EX-P — an unclassified path gets no Fix
+
+Run summary: `15 tests, 2 failures`
+
+```text
+  1) test build/3 with no model a path outside lib/ implies no module: the Fix names the file, not nil (Anchor.Domain.ExplainTest)
+     test/anchor/domain/explain_test.exs:370
+     Assertion with =~ failed
+     code:  assert explain.classification["fix"] =~ "scripts/run.ex is in no architecture bucket. Fix:"
+     left:  ""
+     right: "scripts/run.ex is in no architecture bucket. Fix:"
+     stacktrace:
+       test/anchor/domain/explain_test.exs:386: (test)
+
+.
+
+  2) test build/3 with no model a path no selector reaches is unclassified, with the Fix (Anchor.Domain.ExplainTest)
+     test/anchor/domain/explain_test.exs:352
+     Assertion with == failed
+     code:  assert explain.classification["fix"] ==
+              "App.Odd is in no architecture bucket. Fix: add a selector that matches " <>
+                "lib/app/odd.ex to the bucket this module belongs in (mix anchor.explain " <>
+                "lib/app/odd.ex shows the candidates)."
+     left:  ""
+     right: "App.Odd is in no architecture bucket. Fix: add a selector that matches lib/app/odd.ex to the bucket this module belongs in (mix anchor.explain lib/app/odd.ex shows the candidates)."
+     stacktrace:
+       test/anchor/domain/explain_test.exs:362: (test)
+
+.
+```
+
+## EX-Q — an ambiguous path's Fix names no bucket
+
+Run summary: `15 tests, 1 failure`
+
+```text
+  1) test build/3 with no model a path two path selectors reach is ambiguous, with the Fix (Anchor.Domain.ExplainTest)
+     test/anchor/domain/explain_test.exs:390
+     Assertion with == failed
+     code:  assert explain.classification["fix"] ==
+              "the path or name is in buckets core and domain. Fix: narrow one selector; " <>
+                "buckets never take precedence."
+     left:  "the path or name is in buckets 2. Fix: narrow one selector; buckets never take precedence."
+     right: "the path or name is in buckets core and domain. Fix: narrow one selector; buckets never take precedence."
+     stacktrace:
+       test/anchor/domain/explain_test.exs:417: (test)
+
+....
+```
+
+## EX-R — an ambiguous path reads as unclassified
+
+Run summary: `15 tests, 1 failure`
+
+```text
+  1) test build/3 with no model a path two path selectors reach is ambiguous, with the Fix (Anchor.Domain.ExplainTest)
+     test/anchor/domain/explain_test.exs:390
+     Assertion with == failed
+     code:  assert explain.classification["status"] == "ambiguous"
+     left:  "unclassified"
+     right: "ambiguous"
+     stacktrace:
+       test/anchor/domain/explain_test.exs:413: (test)
+
+.....
+```
+
+## EX-S — a possible path reads as unclassified
+
+Run summary: `15 tests, 1 failure`
+
+```text
+  1) test build/3 with no model a path only a beam selector could reach is possible, with no Fix (Anchor.Domain.ExplainTest)
+     test/anchor/domain/explain_test.exs:338
+     Assertion with == failed
+     code:  assert explain.classification["status"] == "possible"
+     left:  "unclassified"
+     right: "possible"
+     stacktrace:
+       test/anchor/domain/explain_test.exs:347: (test)
+
+...
 ```
 
 ## TX-A — the task gathers no umbrella ebins
