@@ -129,7 +129,7 @@ rules:
   - type: analyses_complete
     id: analyses_complete
     paths: ["lib/**/*.ex"]
-    min_modules: 185
+    min_modules: 201
     min_functions: 501
     min_apply_sites: 101
     min_absent_parameters: 1

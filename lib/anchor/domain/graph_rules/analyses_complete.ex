@@ -28,10 +28,6 @@ defmodule Anchor.Domain.GraphRules.AnalysesComplete do
   functions must be summarised, and its `min_modules` holds the size of what
   is selected. Anchor's own `.anchor.yml` declares it, so CI's `mix anchor.graph`
   holds the property over Anchor's own code.
-
-  It carries no `@impl`, unlike its siblings: it was written on a base without
-  the required `narrows?/2` callback, to compile warning-free with or without
-  it (DND-5715).
   """
 
   @behaviour Anchor.Domain.GraphRule
@@ -44,6 +40,7 @@ defmodule Anchor.Domain.GraphRules.AnalysesComplete do
   alias Anchor.Domain.GraphRules
   alias Anchor.Domain.Model
 
+  @impl Anchor.Domain.GraphRule
   def check(%Model{cfa: %Cfa{} = cfa, demand: %Demand{} = demand} = model, rule) do
     path = config_path(model)
 
@@ -52,12 +49,16 @@ defmodule Anchor.Domain.GraphRules.AnalysesComplete do
       unsummarised(model, demand, rule, path) ++ floors(cfa, demand, rule, path)
   end
 
+  @impl Anchor.Domain.GraphRule
   def narrows?(_base_key, _key), do: false
 
+  @impl Anchor.Domain.GraphRule
   def needs, do: [:cfa, :demand]
 
+  @impl Anchor.Domain.GraphRule
   def rule_type, do: :analyses_complete
 
+  @impl Anchor.Domain.RuleShape
   def shape(_rule),
     do: "every analysis finishes within its bound, and every function has a demand summary"
 

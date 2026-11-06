@@ -13,7 +13,7 @@
 | Removed assertion | Proven now by | Seen failing |
 |---|---|---|
 | demand and cfa: `graph.unreadable == []` over Anchor | `mix anchor.graph` (`unreadable_issues`, exit 1); `analyses_complete_integration_test.exs` "a beam on disk that cannot be read fails the run, naming it"; `graph_test.exs` "a beam with no debug_info is an issue on it" | DF-D, GR-J |
-| cfa: `Map.has_key?(graph.modules, Cfa)` | the rule's `min_modules: 185` in `.anchor.yml` | DF-E |
+| cfa: `Map.has_key?(graph.modules, Cfa)` | the rule's `min_modules` in `.anchor.yml` (185 on this branch's base, 201 once main came in) | DF-E |
 | cfa: `refute cfa.bound_hit?` over Anchor | `analyses_complete` in `mix anchor.graph` | DF-A, AC-A |
 | demand: `demand.bound_hit == []` over Anchor | `analyses_complete` in `mix anchor.graph` | DF-B, AC-B |
 | "every function summarised" over Anchor | `analyses_complete` in `mix anchor.graph` | DF-C, AC-C |
