@@ -4017,3 +4017,1658 @@ Finished in 0.1 seconds (0.1s async, 0.00s sync)
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
 ```
 
+
+## Fourth run: only a root's gaps, each function once (DND-5884)
+
+Fourth run, after critic round 6 on 7f5e529: `helper_gaps/5` and the memo in `MultiRoots`. Every `MR-` mutation again, on the fixed code; the third run's rows above are of the earlier code. `MR-ROOTONLY` is the regression for the finding: a project call computing data at a non-root position gave a false gap. `MR-MEMO` is the memo. A first shape's `root?(:unknown, _)` clause survived its mutation because an unknown return is already a gap, so that clause was deleted instead of being tested.
+
+| # | Mutation | Tests run | Result |
+|---|---|---|---|
+| MR-ROOTONLY | the finding: a traced argument's gaps count at any position (`lib/anchor/domain/aggregates/write_sites.ex`) | `multi_roots_test.exs` | `26 tests, 1 failure` (red) |
+| MR-ROOTNEVER | a traced root's own gap is dropped (`lib/anchor/domain/aggregates/write_sites.ex`) | `multi_roots_test.exs` | `26 tests, 2 failures` (red) |
+| MR-UNKNOWNGAP | a helper whose return is unknown comes to no gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `multi_roots_test.exs` | `26 tests, 3 failures` (red) |
+| MR-ROOTGAP | an untraced root comes to no gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `multi_roots_test.exs` | `26 tests, 5 failures` (red) |
+| MR-ANYARG | any untraced argument is a gap, root or not (`lib/anchor/domain/aggregates/write_sites.ex`) | `multi_roots_test.exs` | `26 tests, 6 failures` (red) |
+| MR-LITERAL | a literal at a root is a gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `multi_roots_test.exs` | `26 tests, 1 failure` (red) |
+| MR-MEMO | no memo: a function is read once per call (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 1 failure` (red) |
+| MR-PARAM | a parameter is no root (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 14 failures` (red) |
+| MR-VARDEFAULT | a variable it cannot read has no root (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 1 failure` (red) |
+| MR-PRIMOP | a failed match is unknown (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 17 failures` (red) |
+| MR-LITERALVAL | a literal is unknown (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 1 failure` (red) |
+| MR-SEQ | a seq reads its first expression (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 1 failure` (red) |
+| MR-CASEONE | a case reads only its first clause (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 2 failures` (red) |
+| MR-LETBIND | a let binds nothing (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 4 failures` (red) |
+| MR-TRYHANDLER | a try does not read its handler (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 1 failure` (red) |
+| MR-TRYBODY | a try does not read its body (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 1 failure` (red) |
+| MR-NOCALL | a call on a computed module has no root (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 1 failure` (red) |
+| MR-APPLY | a local call is unknown (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 3 failures` (red) |
+| MR-APPLYFUN | a fn value called comes to no root (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 1 failure` (red) |
+| MR-TYPEDEFAULT | a form it does not name has no root (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 2 failures` (red) |
+| MR-NEW | Multi.new/0 is unknown (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 5 failures` (red) |
+| MR-APPEND | prepend roots on its first side only (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 1 failure` (red) |
+| MR-STEP | a step has no root (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 7 failures` (red) |
+| MR-NORETURN | a raise or throw is unknown (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 2 failures` (red) |
+| MR-THROUGH | a call's roots are not mapped through its arguments (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 1 failure` (red) |
+| MR-UNKNOWNCALLEE | a callee it cannot read has no root (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 4 failures` (red) |
+| MR-CYCLE | recursion has no root: a claim of none (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 17 failures` (red) |
+| MR-NOCORE | a function with no code has no root (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 5 failures` (red) |
+| MR-UNIONLEFT | unknown from a later branch is overwritten (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 5 failures` (red) |
+| MR-UNIONRIGHT | unknown in a branch is dropped (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 5 failures` (red) |
+| MR-PATTERN | a pattern binds its whole value (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 1 failure` (red) |
+| MR-ALIAS | an alias binds nothing (`lib/anchor/domain/aggregates/multi_roots.ex`) | `multi_roots_test.exs` | `26 tests, 1 failure` (red) |
+
+### MR-ROOTONLY
+
+the finding: a traced argument's gaps count at any position (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `26 tests, 1 failure`.
+
+```
+  1) test a transaction given a helper's Multi a project call computing data beside a root is no gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:269
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :data_call_beside)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D,
+               :data_call_beside, 0},
+              ordinal: 1,
+              line: 362,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :step_on,
+                   2},
+                  line: 34,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.MultiRootsTest.S
+              ]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D,
+                  :data_call_beside, 0}, 362}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:270: (test)
+
+............
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### MR-ROOTNEVER
+
+a traced root's own gap is dropped (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `26 tests, 2 failures`.
+
+```
+  1) test a transaction given a helper's Multi the same call at a root is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:274
+     match (=) failed
+     code:  assert [_gap] = a |> one(:data_call_at_root) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:275: (test)
+
+.......
+
+  2) test a transaction given a helper's Multi a gap on the Multi at a root stays, through a helper (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:278
+     match (=) failed
+     code:  assert [_gap] = a |> one(:gap_at_root) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:279: (test)
+
+.................
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### MR-UNKNOWNGAP
+
+a helper whose return is unknown comes to no gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `26 tests, 3 failures`.
+
+```
+  1) test a transaction given a helper's Multi a gap on the Multi at a root stays, through a helper (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:278
+     match (=) failed
+     code:  assert [_gap] = a |> one(:gap_at_root) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:279: (test)
+
+
+
+  2) test a transaction given a helper's Multi the same call at a root is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:274
+     match (=) failed
+     code:  assert [_gap] = a |> one(:data_call_at_root) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:275: (test)
+
+...
+
+  3) test a transaction given a helper's Multi a helper whose return Anchor cannot follow is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:258
+     match (=) failed
+     code:  assert [_gap] = a |> one(:loops) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:259: (test)
+
+....................
+Finished in 0.2 seconds (0.2s async, 0.00s sync)
+26 tests, 3 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### MR-ROOTGAP
+
+an untraced root comes to no gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `26 tests, 5 failures`.
+
+```
+  1) test a transaction given a helper's Multi a branch's untraced root is a gap; a raise beside a traced one is not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:263
+     match (=) failed
+     code:  assert [_what] = a |> one(:branch) |> own_gaps()
+     left:  [_what]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:264: (test)
+
+.
+
+  2) test a transaction given a helper's Multi a traced argument beside an untraced root does not hide it (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:241
+     match (=) failed
+     code:  assert [_gap] = a |> one(:second_unknown) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:242: (test)
+
+.........
+
+  3) test a transaction given a helper's Multi through another helper the root is still a gap; traced, it is not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:253
+     match (=) failed
+     code:  assert [_what] = a |> one(:through) |> own_gaps()
+     left:  [_what]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:254: (test)
+
+.
+
+  4) test a transaction given a helper's Multi a private helper behind a public one is followed (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:282
+     match (=) failed
+     code:  assert [_what] = a |> one(:local) |> own_gaps()
+     left:  [_what]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:283: (test)
+
+..
+
+  5) test a transaction given a helper's Multi row 12: an untraced Multi handed to a helper that also makes one is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:222
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = scope = one(a, :row12)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false} = scope
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :row12, 2},
+              ordinal: 1,
+              line: 347,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :hides, 2},
+                  line: 30,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.MultiRootsTest.S
+              ]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:225: (test)
+
+...
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 5 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### MR-ANYARG
+
+any untraced argument is a gap, root or not (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `26 tests, 6 failures`.
+
+```
+  1) test a transaction given a helper's Multi a helper making its own Multi from data is no gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:237
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :own)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :own, 1},
+              ordinal: 1,
+              line: 350,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :own, 1},
+                  line: 33,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.MultiRootsTest.S
+              ]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :own, 1}, 350}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:238: (test)
+
+..
+
+  2) test a transaction given a helper's Multi a branch's untraced root is a gap; a raise beside a traced one is not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:263
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :raises)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :raises, 1},
+              ordinal: 1,
+              line: 359,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :raises, 1}, 359}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:266: (test)
+
+......
+
+  3) test a transaction given a helper's Multi a traced Multi piped in, beside untraced data, is no gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:233
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :piped)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :piped, 1},
+              ordinal: 1,
+              line: 349,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :step_on,
+                   2},
+                  line: 34,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.MultiRootsTest.S
+              ]),
+              no_gap_noticed?: fal
+```
+
+
+### MR-LITERAL
+
+a literal at a root is a gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `26 tests, 1 failure`.
+
+```
+  1) test a transaction given a helper's Multi a literal at a root is no gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:249
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :literal_root)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :literal_root,
+               0},
+              ordinal: 1,
+              line: 353,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :literal_root, 0},
+                 353}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:250: (test)
+
+........................
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+### MR-MEMO
+
+no memo: a function is read once per call (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns a function called twice on every level is read once (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:211
+     ** (ExUnit.TimeoutError) test timed out after 2000ms. You can change the timeout:
+
+       1. per test by setting "@tag timeout: x" (accepts :infinity)
+       2. per test module by setting "@moduletag timeout: x" (accepts :infinity)
+       3. globally via "ExUnit.start(timeout: x)" configuration
+       4. by running "mix test --timeout x" which sets timeout
+       5. or by running "mix test --trace" which sets timeout to infinity
+          (useful when using IEx.pry/0)
+
+     where "x" is the timeout given as integer in milliseconds (defaults to 60_000).
+
+     stacktrace:
+       (elixir 1.19.4) lib/enum.ex:1687: Enum.map/2
+       (anchor 0.1.0) lib/anchor/domain/aggregates/multi_roots.ex:80: Anchor.Domain.Aggregates.MultiRoots.value/5
+       (anchor 0.1.0) lib/anchor/domain/aggregates/multi_roots.ex:53: Anchor.Domain.Aggregates.MultiRoots.read_function/3
+       (anchor 0.1.0) lib/anchor/domain/aggregates/multi_roots.ex:134: Anchor.Domain.Aggregates.MultiRoots.through/5
+       (elixir 1.19.4) lib/enum.ex:1814: Enum."-map_reduce/3-lists^mapfoldl/2-0-"/3
+       (anchor 0.1.0) lib/anchor/domain/aggregates/multi_roots.ex:172: Anchor.Domain.Aggregates.MultiRoots.all/3
+       (anchor 0.1.0) lib/anchor/domain/aggregates/multi_roots.ex:53: Anchor.Domain.Aggregates.MultiRoots.read_function/3
+       (anchor 0.1.0) lib/anchor/domain/aggregates/multi_roots.ex:134: Anchor.Domain.Aggregates.MultiRoots.through/5
+       (elixir 1.19.4) lib/enum.ex:1814: Enum."-map_reduce/3-lists^mapfoldl/2-0-"/3
+       (anchor 0.1.0) lib/anchor/domain/aggregates/multi_roots.ex:172: Anchor.Domain.Aggregates.MultiRoots.all/3
+       (anchor 0.1.0) lib/anchor/domain/aggregates/multi_roots.ex:53: Anchor.Domain.Aggregates.MultiRoots.read_function/3
+       (anchor 0.1.0) lib/anchor/domain/aggregates/multi_roots.ex:134: Anchor.Domain.Aggregates.MultiRoots.through/5
+       (elixir 1.19.4) lib/enum.ex:1814: Enum."-map_reduce/3-lists^mapfoldl/2-0-"/3
+       (anchor 0.1.0) lib/anchor/domain/aggregates/multi_roots.ex:172: Anchor.Domain.Aggregates.MultiRoots.all/3
+       (anchor 0.1.0) lib/anchor/domain/aggregates/multi_roots.ex:53: Anchor.Domain.Aggregates.MultiRoots.read_function/3
+       (anchor 0.1.0) lib/anchor/domain/aggregates/multi_roots.ex:134: Anchor.Domain.Aggregates.MultiRoots.through/5
+       (elixir 1.19.4) lib/enum.ex:1814: Enum."-map_reduce/3-lists^mapfoldl/2-0-"/3
+       (anchor 0.1.0) lib/anchor/domain/aggregates/multi_roots.ex:172: Anchor.Domain.Aggregates.MultiRoots.all/3
+       (anchor 0.1.0) lib/anchor/domain/aggregates/multi_roots.ex:53: Anchor.Domain.Aggregates.MultiRoots.read_function/3
+       (anchor 0.1.0) lib/anchor/domain/aggregates/multi_roots.ex:134: Anchor.Domain.Aggregates.MultiRoots.through/5
+
+...........
+Finished in 2.1 seconds (2.1s async, 0.00s sync)
+26 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+
+### MR-PARAM
+
+a parameter is no root (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 14 failures`.
+
+```
+  1) test a transaction given a helper's Multi through another helper the root is still a gap; traced, it is not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:253
+     match (=) failed
+     code:  assert [_what] = a |> one(:through) |> own_gaps()
+     left:  [_what]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:254: (test)
+
+.
+
+  2) test a transaction given a helper's Multi the same call at a root is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:274
+     match (=) failed
+     code:  assert [_gap] = a |> one(:data_call_at_root) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:275: (test)
+
+
+
+  3) test of/2: what the helper returns a helper that also makes its own Multi has the root it returns (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:155
+     Assertion with == failed
+     code:  assert roots(g, :hides, 2) == set([1])
+     left:  MapSet.new([0])
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:156: (test)
+
+
+
+  4) test of/2: what the helper returns a project call maps the callee's roots through its arguments (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:179
+     Assertion with == failed
+     code:  assert roots(g, :through, 1) == set([1])
+     left:  MapSet.new([])
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:180: (test)
+
+
+
+  5) test of/2: what the helper returns every branch counts; what does not return does not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:185
+     Assertion with == failed
+     code:  assert roots(g, :branch, 2) == set([1])
+     left:  MapSet.new([0])
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:186: (test)
+
+.
+
+  6) test a transaction given a helper's Multi a branch's untraced root is a gap; a raise beside a traced one is not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:263
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :raises)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :raises, 1},
+              ordinal: 1,
+              line: 359,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :raises, 1}, 359}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:266: (test)
+
+
+
+  7) test a transaction given a helper's Multi row 12, positive: the same helper given a traced Multi is no gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:229
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :row12_positive)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {
+```
+
+
+### MR-VARDEFAULT
+
+a variable it cannot read has no root (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns a value it cannot follow is unknown (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:197
+     Assertion with == failed
+     code:  assert roots(g, :destructured, 1) == :unknown
+     left:  MapSet.new([])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:198: (test)
+
+........
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-PRIMOP
+
+a failed match is unknown (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 17 failures`.
+
+```
+  1) test a transaction given a helper's Multi a traced Multi piped in, beside untraced data, is no gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:233
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :piped)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :piped, 1},
+              ordinal: 1,
+              line: 349,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :step_on,
+                   2},
+                  line: 34,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.MultiRootsTest.S
+              ]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :piped, 1}, 349}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:234: (test)
+
+.
+
+  2) test a transaction given a helper's Multi through another helper the root is still a gap; traced, it is not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:253
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :through_traced)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D,
+               :through_traced, 0},
+              ordinal: 1,
+              line: 355,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :step_on,
+                   2},
+                  line: 34,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.MultiRootsTest.S
+              ]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :through_traced,
+                  0}, 355}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:255: (test)
+
+
+
+  3) test of/2: what the helper returns prepend and append root on both sides (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:175
+     Assertion with == failed
+     code:  assert roots(g, :both, 2) == set([1, 2])
+     left:  :unknown
+     right: MapSet.new([1, 2])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:176: (test)
+
+
+
+  4) test of/2: what the helper returns a step keeps its Multi's root; a data argument is no root (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/mult
+```
+
+
+### MR-LITERALVAL
+
+a literal is unknown (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns a helper that returns only its own Multi has none (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:159
+     Assertion with == failed
+     code:  assert roots(g, :literal_multi, 0) == set([])
+     left:  :unknown
+     right: MapSet.new([])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:161: (test)
+
+............
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-SEQ
+
+a seq reads its first expression (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns only the returned parameter is a root (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:170
+     Assertion with == failed
+     code:  assert roots(g, :seq, 2) == set([1])
+     left:  MapSet.new([])
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:172: (test)
+
+.............
+Finished in 0.2 seconds (0.2s async, 0.00s sync)
+26 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-CASEONE
+
+a case reads only its first clause (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 2 failures`.
+
+```
+  1) test a transaction given a helper's Multi a branch's untraced root is a gap; a raise beside a traced one is not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:263
+     match (=) failed
+     code:  assert [_what] = a |> one(:branch) |> own_gaps()
+     left:  [_what]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:264: (test)
+
+..........
+
+  2) test of/2: what the helper returns every branch counts; what does not return does not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:185
+     Assertion with == failed
+     code:  assert roots(g, :branch, 2) == set([1])
+     left:  MapSet.new([])
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:186: (test)
+
+..........
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-LETBIND
+
+a let binds nothing (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 4 failures`.
+
+```
+  1) test a transaction given a helper's Multi a helper making its own Multi from data is no gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:237
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :own)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :own, 1},
+              ordinal: 1,
+              line: 350,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :own, 1},
+                  line: 33,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.MultiRootsTest.S
+              ]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :own, 1}, 350}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:238: (test)
+
+....
+
+  2) test a transaction given a helper's Multi a project call computing data beside a root is no gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:269
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :data_call_own)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :data_call_own,
+               0},
+              ordinal: 1,
+              line: 363,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :own, 1},
+                  line: 33,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.MultiRootsTest.S
+              ]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :data_call_own,
+                  0}, 363}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:271: (test)
+
+.
+
+  3) test of/2: what the helper returns a helper that returns only its own Multi has none (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:159
+     Assertion with == failed
+     code:  assert roots(g, :own, 1) == set([])
+     left:  :unknown
+     right: MapSet.new([])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:160: (test)
+
+............
+
+  4) test of/2: what the helper returns a step keeps its Multi's root; a data argument is no root (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:164
+     Assertion with == failed
+```
+
+
+### MR-TRYHANDLER
+
+a try does not read its handler (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns a try counts its body and its handler (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:191
+     Assertion with == failed
+     code:  assert roots(g, :tried_handler, 1) == set([1])
+     left:  MapSet.new([])
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:193: (test)
+
+..........
+Finished in 0.2 seconds (0.2s async, 0.00s sync)
+26 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-TRYBODY
+
+a try does not read its body (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns a try counts its body and its handler (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:191
+     Assertion with == failed
+     code:  assert roots(g, :tried, 1) == set([1])
+     left:  MapSet.new([])
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:192: (test)
+
+..................
+Finished in 0.2 seconds (0.2s async, 0.00s sync)
+26 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-NOCALL
+
+a call on a computed module has no root (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns a value it cannot follow is unknown (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:197
+     Assertion with == failed
+     code:  assert roots(g, :computed, 2) == :unknown
+     left:  MapSet.new([])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:200: (test)
+
+.
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-APPLY
+
+a local call is unknown (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 3 failures`.
+
+```
+  1) test of/2: what the helper returns a project call maps the callee's roots through its arguments (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:179
+     Assertion with == failed
+     code:  assert roots(g, :through, 1) == set([1])
+     left:  :unknown
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:180: (test)
+
+................
+
+  2) test a transaction given a helper's Multi through another helper the root is still a gap; traced, it is not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:253
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :through_traced)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D,
+               :through_traced, 0},
+              ordinal: 1,
+              line: 355,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :step_on,
+                   2},
+                  line: 34,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.MultiRootsTest.S
+              ]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :through_traced,
+                  0}, 355}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:255: (test)
+
+......
+
+  3) test of/2: what the helper returns a function called twice on every level is read once (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:211
+     Assertion with == failed
+     code:  assert roots(g, :chain0, 1) == set([1])
+     left:  :unknown
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:212: (test)
+
+
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 3 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-APPLYFUN
+
+a fn value called comes to no root (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns a value it cannot follow is unknown (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:197
+     Assertion with == failed
+     code:  assert roots(g, :called_fn, 1) == :unknown
+     left:  MapSet.new([])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:203: (test)
+
+....
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-TYPEDEFAULT
+
+a form it does not name has no root (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 2 failures`.
+
+```
+  1) test of/2: what the helper returns a value it cannot follow is unknown (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:197
+     Assertion with == failed
+     code:  assert roots(g, :tagged, 1) == :unknown
+     left:  MapSet.new([])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:201: (test)
+
+.......
+
+  2) test a transaction given a helper's Multi the same call at a root is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:274
+     match (=) failed
+     code:  assert [_gap] = a |> one(:data_call_at_root) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:275: (test)
+
+......
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-NEW
+
+Multi.new/0 is unknown (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 5 failures`.
+
+```
+  1) test of/2: what the helper returns a try counts its body and its handler (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:191
+     Assertion with == failed
+     code:  assert roots(g, :tried, 1) == set([1])
+     left:  :unknown
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:192: (test)
+
+....
+
+  2) test a transaction given a helper's Multi a helper making its own Multi from data is no gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:237
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :own)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :own, 1},
+              ordinal: 1,
+              line: 350,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :own, 1},
+                  line: 33,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.MultiRootsTest.S
+              ]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :own, 1}, 350}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:238: (test)
+
+....
+
+  3) test of/2: what the helper returns every branch counts; what does not return does not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:185
+     Assertion with == failed
+     code:  assert roots(g, :branch, 2) == set([1])
+     left:  :unknown
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:186: (test)
+
+.
+
+  4) test of/2: what the helper returns a helper that returns only its own Multi has none (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:159
+     Assertion with == failed
+     code:  assert roots(g, :own, 1) == set([])
+     left:  :unknown
+     right: MapSet.new([])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:160: (test)
+
+..
+
+  5) test a transaction given a helper's Multi a project call computing data beside a root is no gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:269
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :data_call_own)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :data_call_own,
+               0},
+              ordinal: 1,
+              line: 363,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :own, 1},
+                  line: 33,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtur
+```
+
+
+### MR-APPEND
+
+prepend roots on its first side only (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns prepend and append root on both sides (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:175
+     Assertion with == failed
+     code:  assert roots(g, :both, 2) == set([1, 2])
+     left:  MapSet.new([1])
+     right: MapSet.new([1, 2])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:176: (test)
+
+.......
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-STEP
+
+a step has no root (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 7 failures`.
+
+```
+  1) test a transaction given a helper's Multi a gap on the Multi at a root stays, through a helper (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:278
+     match (=) failed
+     code:  assert [_gap] = a |> one(:gap_at_root) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:279: (test)
+
+
+
+  2) test of/2: what the helper returns a project call maps the callee's roots through its arguments (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:179
+     Assertion with == failed
+     code:  assert roots(g, :through, 1) == set([1])
+     left:  MapSet.new([])
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:180: (test)
+
+
+
+  3) test a transaction given a helper's Multi through another helper the root is still a gap; traced, it is not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:253
+     match (=) failed
+     code:  assert [_what] = a |> one(:through) |> own_gaps()
+     left:  [_what]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:254: (test)
+
+
+
+  4) test of/2: what the helper returns a helper that also makes its own Multi has the root it returns (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:155
+     Assertion with == failed
+     code:  assert roots(g, :hides, 2) == set([1])
+     left:  MapSet.new([])
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:156: (test)
+
+.......
+
+  5) test of/2: what the helper returns a step keeps its Multi's root; a data argument is no root (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:164
+     Assertion with == failed
+     code:  assert roots(g, :step_on, 2) == set([1])
+     left:  MapSet.new([])
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:165: (test)
+
+
+
+  6) test a transaction given a helper's Multi a private helper behind a public one is followed (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:282
+     match (=) failed
+     code:  assert [_what] = a |> one(:local) |> own_gaps()
+     left:  [_what]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:283: (test)
+
+...
+
+  7) test a transaction given a helper's Multi row 12: an untraced Multi handed to a helper that also makes one is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:222
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = scope = one(a, :row12)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false} = scope
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :row12, 2},
+              ordinal: 1,
+              line: 347,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :hides, 2},
+                  line: 30,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+```
+
+
+### MR-NORETURN
+
+a raise or throw is unknown (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 2 failures`.
+
+```
+  1) test a transaction given a helper's Multi a branch's untraced root is a gap; a raise beside a traced one is not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:263
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :raises)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :raises, 1},
+              ordinal: 1,
+              line: 359,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D, :raises, 1}, 359}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:266: (test)
+
+..
+
+  2) test of/2: what the helper returns every branch counts; what does not return does not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:185
+     Assertion with == failed
+     code:  assert roots(g, :raises, 2) == set([1])
+     left:  :unknown
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:187: (test)
+
+.
+Finished in 0.2 seconds (0.2s async, 0.00s sync)
+26 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-THROUGH
+
+a call's roots are not mapped through its arguments (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns a project call maps the callee's roots through its arguments (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:179
+     Assertion with == failed
+     code:  assert roots(g, :swapped, 2) == set([1])
+     left:  MapSet.new([2])
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:182: (test)
+
+..
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-UNKNOWNCALLEE
+
+a callee it cannot read has no root (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 4 failures`.
+
+```
+  1) test a transaction given a helper's Multi a gap on the Multi at a root stays, through a helper (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:278
+     match (=) failed
+     code:  assert [_gap] = a |> one(:gap_at_root) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:279: (test)
+
+
+
+  2) test of/2: what the helper returns a value it cannot follow is unknown (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:197
+     Assertion with == failed
+     code:  assert roots(g, :from_lib, 0) == :unknown
+     left:  MapSet.new([])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:202: (test)
+
+
+
+  3) test a transaction given a helper's Multi a helper whose return Anchor cannot follow is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:258
+     match (=) failed
+     code:  assert [_gap] = a |> one(:lib) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:260: (test)
+
+..
+
+  4) test of/2: what the helper returns a recursive helper is unknown, direct or through another (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:206
+     Assertion with == failed
+     code:  assert roots(g, :loops, 2) == :unknown
+     left:  MapSet.new([1])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:207: (test)
+
+...................
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 4 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-CYCLE
+
+recursion has no root: a claim of none (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 17 failures`.
+
+```
+  1) test of/2: what the helper returns a try counts its body and its handler (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:191
+     Assertion with == failed
+     code:  assert roots(g, :tried, 1) == set([1])
+     left:  :unknown
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:192: (test)
+
+
+
+  2) test of/2: what the helper returns only the returned parameter is a root (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:170
+     Assertion with == failed
+     code:  assert roots(g, :pick_second, 2) == set([2])
+     left:  :unknown
+     right: MapSet.new([2])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:171: (test)
+
+
+
+  3) test of/2: what the helper returns a project call maps the callee's roots through its arguments (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:179
+     Assertion with == failed
+     code:  assert roots(g, :through, 1) == set([1])
+     left:  :unknown
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:180: (test)
+
+
+
+  4) test a transaction given a helper's Multi a project call computing data beside a root is no gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:269
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :data_call_beside)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D,
+               :data_call_beside, 0},
+              ordinal: 1,
+              line: 362,
+              kind: :multi,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.MultiRootsTest.H, :step_on,
+                   2},
+                  line: 34,
+                  op: :insert,
+                  via: :multi,
+                  sources: [schema: AnchorFixtures.MultiRootsTest.S],
+                  unresolved: nil,
+                  scopes: [],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.MultiRootsTest.S
+              ]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRootsTest.D,
+                  :data_call_beside, 0}, 362}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:270: (test)
+
+.
+
+  5) test a transaction given a helper's Multi a branch's untraced root is a gap; a raise beside a traced one is not (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:263
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :raises)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.MultiRootsTest.D, :raises, 1},
+              ordinal: 1,
+              line: 359,
+              kind: :multi,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.MultiRoots
+```
+
+
+### MR-NOCORE
+
+a function with no code has no root (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 5 failures`.
+
+```
+  1) test of/2: what the helper returns a value it cannot follow is unknown (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:197
+     Assertion with == failed
+     code:  assert roots(g, :from_lib, 0) == :unknown
+     left:  MapSet.new([])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:202: (test)
+
+.......
+
+  2) test of/2: what the helper returns a function Anchor has no code for is unknown (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:215
+     Assertion with == failed
+     code:  assert MultiRoots.of(g, {@lib, :make, 0}) == :unknown
+     left:  MapSet.new([])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:216: (test)
+
+..
+
+  3) test a transaction given a helper's Multi a gap on the Multi at a root stays, through a helper (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:278
+     match (=) failed
+     code:  assert [_gap] = a |> one(:gap_at_root) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:279: (test)
+
+
+
+  4) test a transaction given a helper's Multi a helper whose return Anchor cannot follow is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:258
+     match (=) failed
+     code:  assert [_gap] = a |> one(:lib) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:260: (test)
+
+...
+
+  5) test of/2: what the helper returns a recursive helper is unknown, direct or through another (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:206
+     Assertion with == failed
+     code:  assert roots(g, :loops, 2) == :unknown
+     left:  MapSet.new([1])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:207: (test)
+
+......
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 5 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-UNIONLEFT
+
+unknown from a later branch is overwritten (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 5 failures`.
+
+```
+  1) test a transaction given a helper's Multi a helper whose return Anchor cannot follow is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:258
+     match (=) failed
+     code:  assert [_gap] = a |> one(:lib) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:260: (test)
+
+.........
+
+  2) test of/2: what the helper returns a recursive helper is unknown, direct or through another (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:206
+     Assertion with == failed
+     code:  assert roots(g, :loops, 2) == :unknown
+     left:  MapSet.new([1])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:207: (test)
+
+.
+
+  3) test a transaction given a helper's Multi the same call at a root is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:274
+     match (=) failed
+     code:  assert [_gap] = a |> one(:data_call_at_root) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:275: (test)
+
+..
+
+  4) test a transaction given a helper's Multi a gap on the Multi at a root stays, through a helper (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:278
+     match (=) failed
+     code:  assert [_gap] = a |> one(:gap_at_root) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:279: (test)
+
+
+
+  5) test of/2: what the helper returns a value it cannot follow is unknown (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:197
+     Assertion with == failed
+     code:  assert roots(g, :destructured, 1) == :unknown
+     left:  MapSet.new([])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:198: (test)
+
+.........
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 5 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-UNIONRIGHT
+
+unknown in a branch is dropped (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 5 failures`.
+
+```
+  1) test of/2: what the helper returns a value it cannot follow is unknown (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:197
+     Assertion with == failed
+     code:  assert roots(g, :destructured, 1) == :unknown
+     left:  MapSet.new([])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:198: (test)
+
+
+
+  2) test a transaction given a helper's Multi the same call at a root is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:274
+     match (=) failed
+     code:  assert [_gap] = a |> one(:data_call_at_root) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:275: (test)
+
+...
+
+  3) test a transaction given a helper's Multi a gap on the Multi at a root stays, through a helper (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:278
+     match (=) failed
+     code:  assert [_gap] = a |> one(:gap_at_root) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:279: (test)
+
+
+
+  4) test of/2: what the helper returns a recursive helper is unknown, direct or through another (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:206
+     Assertion with == failed
+     code:  assert roots(g, :loops, 2) == :unknown
+     left:  MapSet.new([1])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:207: (test)
+
+.....
+
+  5) test a transaction given a helper's Multi a helper whose return Anchor cannot follow is a gap (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:258
+     match (=) failed
+     code:  assert [_gap] = a |> one(:lib) |> own_gaps()
+     left:  [_gap]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:260: (test)
+
+............
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 5 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-PATTERN
+
+a pattern binds its whole value (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns a value it cannot follow is unknown (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:197
+     Assertion with == failed
+     code:  assert roots(g, :matched, 1) == :unknown
+     left:  MapSet.new([1])
+     right: :unknown
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:199: (test)
+
+..............
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+
+
+### MR-ALIAS
+
+an alias binds nothing (`lib/anchor/domain/aggregates/multi_roots.ex`). Result: `26 tests, 1 failure`.
+
+```
+  1) test of/2: what the helper returns a step keeps its Multi's root; a data argument is no root (Anchor.Domain.Aggregates.MultiRootsTest)
+     test/anchor/domain/aggregates/multi_roots_test.exs:164
+     Assertion with == failed
+     code:  assert roots(g, :aliased, 1) == set([1])
+     left:  :unknown
+     right: MapSet.new([1])
+     stacktrace:
+       test/anchor/domain/aggregates/multi_roots_test.exs:167: (test)
+
+....
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+26 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
+```
+

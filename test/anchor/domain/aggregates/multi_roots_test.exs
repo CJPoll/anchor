@@ -95,6 +95,9 @@ defmodule Anchor.Domain.Aggregates.MultiRootsTest do
     def ping(m, n), do: if(n == 0, do: m, else: pong(m, n - 1))
     def pong(m, n), do: ping(m, n)
     def literal_multi, do: %Multi{}
+    def defaults, do: %{at: DateTime.utc_now()}
+    #{for i <- 0..59, do: "def chain#{i}(m) do\n  _a = chain#{i + 1}(m)\n  chain#{i + 1}(m)\nend\n"}
+    def chain60(m), do: m
   end
 
   defmodule #{inspect(@d)} do
@@ -117,6 +120,13 @@ defmodule Anchor.Domain.Aggregates.MultiRootsTest do
     def raises(f), do: Repo.transaction(H.raises(Multi.new(), f))
     def raises_unknown(unknown, f), do: Repo.transaction(H.raises(unknown, f))
     def local(unknown), do: Repo.transaction(H.local(unknown))
+    def data_call_beside, do: Repo.transaction(H.step_on(Multi.new(), H.defaults()))
+    def data_call_own, do: Repo.transaction(H.own(H.defaults()))
+    def data_call_at_root, do: Repo.transaction(H.pick_second(Multi.new(), H.defaults()))
+
+    def gap_at_root do
+      Repo.transaction(H.step_on(H.step_on(H.from_lib(), :x), :y))
+    end
   end
   """
 
@@ -198,6 +208,10 @@ defmodule Anchor.Domain.Aggregates.MultiRootsTest do
       assert roots(g, :ping, 2) == :unknown
     end
 
+    test "a function called twice on every level is read once", %{graph: g} do
+      assert roots(g, :chain0, 1) == set([1])
+    end
+
     test "a function Anchor has no code for is unknown", %{graph: g} do
       assert MultiRoots.of(g, {@lib, :make, 0}) == :unknown
       assert MultiRoots.of(g, {@h, :no_such_function, 0}) == :unknown
@@ -250,6 +264,19 @@ defmodule Anchor.Domain.Aggregates.MultiRootsTest do
       assert [_what] = a |> one(:branch) |> own_gaps()
       assert [_what] = a |> one(:raises_unknown) |> own_gaps()
       assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :raises)
+    end
+
+    test "a project call computing data beside a root is no gap", %{analysis: a} do
+      assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :data_call_beside)
+      assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :data_call_own)
+    end
+
+    test "the same call at a root is a gap", %{analysis: a} do
+      assert [_gap] = a |> one(:data_call_at_root) |> own_gaps()
+    end
+
+    test "a gap on the Multi at a root stays, through a helper", %{analysis: a} do
+      assert [_gap] = a |> one(:gap_at_root) |> own_gaps()
     end
 
     test "a private helper behind a public one is followed", %{analysis: a} do
