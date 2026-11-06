@@ -797,12 +797,10 @@ defmodule Anchor.Domain.Cfa.Eval do
     :cerl.is_literal(node) and data_literal?(:cerl.concrete(node))
   end
 
-  defp data_literal?(term) when term in [:asc, :desc], do: true
-
-  defp data_literal?(term),
-    do:
-      is_number(term) or is_bitstring(term) or is_list(term) or
-        (is_map(term) and not is_struct(term))
+  defp data_literal?(term) do
+    term in [:asc, :desc] or is_number(term) or is_bitstring(term) or is_list(term) or
+      (is_map(term) and not is_struct(term))
+  end
 
   defp pure_erlang?({:erlang, name, _arity}), do: name in @pure_erlang
   defp pure_erlang?(_mfa), do: false
