@@ -1166,7 +1166,8 @@ guard that reads the parameter.
 **Exempt**, because something else fixes the signature: a callback of a
 behaviour the module declares; a function captured anywhere in the project
 (`&M.f/2`); a public function a dynamic call can reach (`mod.f(x)`, by
-`Anchor.Domain.DynamicCalls`); a public function the code names in full, a literal
+`Anchor.Domain.DynamicCalls`, and `apply(M, :f, args)` with args of unknown length,
+which reaches every module's public `f`); a public function the code names in full, a literal
 `{M, :f, args}` with a list of known length, in a term or a call (a child spec's
 `start:`, `spawn(M, :f, [a])`); and a generated function (a module with no literal
 `defmodule`, a `__name__`, a macro's output, the head a default argument

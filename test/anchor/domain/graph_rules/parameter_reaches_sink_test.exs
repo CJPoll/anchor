@@ -327,6 +327,25 @@ defmodule Anchor.Domain.GraphRules.ParameterReachesSinkTest do
     end
   end
 
+  describe "a function with no arguments" do
+    setup do
+      model =
+        domain([{:f, 0}])
+        |> built([], %{{D, :f, 0} => []})
+        |> with_clauses({D, :f, 0}, [{[line: 1], [], [], :ok}])
+
+      {:ok, model: model}
+    end
+
+    test "is judged: no arguments are not all generated ones", %{model: model} do
+      assert %{judged: 1, exempt: 0, not_analysed: 0} = ParameterReachesSink.counts(model, @rule)
+    end
+
+    test "a module holding only such functions trips no floor", %{model: model} do
+      assert ParameterReachesSink.check(model, @rule) == []
+    end
+  end
+
   describe "what is not analysed: counted, never judged" do
     defp not_analysed(model) do
       assert %{not_analysed: 1} = ParameterReachesSink.counts(model, @rule)

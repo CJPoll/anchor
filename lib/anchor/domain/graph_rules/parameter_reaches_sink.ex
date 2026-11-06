@@ -48,8 +48,10 @@ defmodule Anchor.Domain.GraphRules.ParameterReachesSink do
       consumer fixes the arity;
     * a public function a dynamic call can reach (`mod.f(x)`,
       `Anchor.Domain.DynamicCalls.targets/2`): the unseen receiver fixes the
-      arity. A call whose function name is computed as well names no target,
-      so it exempts nothing;
+      arity. `apply(M, :f, args)` with args of unknown length reads as one with a
+      computed module: the call has lost `M`, so it reaches every module's public
+      `f`. A call whose function name is computed as well names no target, so it
+      exempts nothing;
     * a public function the code names in full: a literal `{M, :f, args}` with a
       list of known length, in a term or as three arguments of a call (a child
       spec's `start:`, `spawn(M, :f, [a])`, `Anchor.Domain.Core.mfa_references/1`);

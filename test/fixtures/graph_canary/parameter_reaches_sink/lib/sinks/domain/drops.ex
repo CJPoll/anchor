@@ -31,8 +31,9 @@ defmodule AnchorFixtures.ParameterSinks.Drops do
   def spawned_mod(mod, x), do: spawn(mod, :via_var, [x])
   def via_var(_x), do: :ok
 
-  # Violating, and false the same way: Exempt.dispatch/2 computes the name it calls.
-  # A controller action reached by `apply(__MODULE__, action, [conn, params])` reads so.
+  # Violating: nothing here calls it, but this is how a controller action reads. A
+  # caller's `apply(__MODULE__, action, [conn, params])` names no target, so an action
+  # stays judged, and the README says to check those by hand.
   def index(_params), do: :ok
 
   # Violating: a lambda that ignores what it is applied to.
