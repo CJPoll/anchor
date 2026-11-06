@@ -14,13 +14,13 @@ defmodule Anchor.Domain.Aggregates.InferenceTest do
   alias Anchor.Domain.Aggregates.Scope
   alias Anchor.Domain.Aggregates.WriteSite
 
-  defp scope(ordinal, keys, complete? \\ true) do
+  defp scope(ordinal, keys, no_gap_noticed? \\ true) do
     %Scope{
       mfa: {App.Tx, :run, 0},
       ordinal: ordinal,
       kind: :fun,
       keys: MapSet.new(keys),
-      complete?: complete?
+      no_gap_noticed?: no_gap_noticed?
     }
   end
 
@@ -31,7 +31,7 @@ defmodule Anchor.Domain.Aggregates.InferenceTest do
         {App.Plain, :write, 0} => %{
           keys: MapSet.new(nontx_keys),
           sites: [],
-          complete?: true,
+          no_gap_noticed?: true,
           gaps: []
         }
       }
@@ -98,7 +98,7 @@ defmodule Anchor.Domain.Aggregates.InferenceTest do
 
   # Critic round 3: an analysis exists only with a repo, and a repo persists,
   # so the analysis never proposes declare: none. Built through
-  # Analysis.build/3, never a hand-built state it cannot produce.
+  # Analysis.build/2, never a hand-built state it cannot produce.
   test "F5: a repo and a schema with no write is an error naming them, never declare: none" do
     ns = AnchorFixtures.InferenceTest
     s = Module.concat(ns, S)
@@ -146,7 +146,9 @@ defmodule Anchor.Domain.Aggregates.InferenceTest do
     outside = %{analysis([], []) | counts: %{counts() | outside_gaps: 1}}
 
     assert {:error, why} = Inference.render_yaml(outside)
-    assert why =~ "1 call(s) or write(s) Anchor cannot attribute"
+
+    assert why =~
+             "1 call(s) or write(s) Anchor cannot attribute with no transaction read around them"
   end
 
   test "F8: no repo is an error, never declare: none" do
@@ -167,6 +169,19 @@ defmodule Anchor.Domain.Aggregates.InferenceTest do
     analysis = %{analysis([], []) | sites: [site]}
 
     assert Inference.components(analysis) == [MapSet.new(schema: App.Z)]
+  end
+
+  test "every proposal says on its first line what it was read from" do
+    read_note =
+      "# read from the forms Anchor recognises; a write in any other form is not in this proposal\n"
+
+    healthy = %{analysis([scope(1, [{:schema, App.S}])], []) | repos: [App.Repo]}
+    assert {:ok, yaml} = Inference.render_yaml(healthy)
+    assert String.starts_with?(yaml, read_note)
+
+    unresolved = %{healthy | counts: %{counts() | writes: 3, unresolved: 1}}
+    assert {:ok, yaml} = Inference.render_yaml(unresolved)
+    assert String.starts_with?(yaml, read_note)
   end
 
   test "F8: a proposal beside an incomplete transaction says so in the YAML" do

@@ -40,7 +40,7 @@ defmodule Anchor.Domain.GraphRules.AggregateWriteSourcesTest do
     ordinal: 1,
     line: 30,
     kind: :fun,
-    complete?: false,
+    no_gap_noticed?: false,
     gaps: [{:dynamic_call, {App.Store, :run, 1}, 31}]
   }
 
@@ -123,7 +123,9 @@ defmodule Anchor.Domain.GraphRules.AggregateWriteSourcesTest do
                "writes|App.Store.purge/0|unattributed raw SQL (App.Repo.query!/1) Anchor cannot " <>
                  "attribute"
 
-      assert finding.message =~ "App.Store.purge/0"
+      assert finding.message =~
+               "App.Store.purge/0 writes, or may write, with no transaction read around it"
+
       assert finding.message =~ "Fix:"
     end
 

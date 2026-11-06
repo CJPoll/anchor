@@ -45,7 +45,7 @@ defmodule Anchor.Domain.GraphReportAggregatesTest do
       resolved: 5,
       unresolved: 2,
       scopes: 3,
-      complete: 2,
+      no_gap_noticed: 2,
       incomplete: 1,
       outside_gaps: 4
     }
@@ -54,8 +54,9 @@ defmodule Anchor.Domain.GraphReportAggregatesTest do
 
     assert GraphReport.summary(report) ==
              "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations (0 report-only, 0 " <>
-               "baselined); writes: 7 found, 5 resolved, 2 unresolved; transactions: 3, 2 " <>
-               "complete, 1 incomplete; 4 gaps outside a transaction"
+               "baselined); writes: 7 read, 5 resolved, 2 unresolved; transactions: 3 read, 2 " <>
+               "no gap noticed, 1 incomplete; 4 gaps with no transaction read around them; " <>
+               "forms not listed in the README are not read"
 
     assert JSON.decode!(GraphReport.render(report, :json))["writes"] == %{
              "writes" => 7,
@@ -63,7 +64,7 @@ defmodule Anchor.Domain.GraphReportAggregatesTest do
              "unresolved" => 2,
              "outside_gaps" => 4,
              "scopes" => 3,
-             "complete" => 2,
+             "no_gap_noticed" => 2,
              "incomplete" => 1
            }
   end

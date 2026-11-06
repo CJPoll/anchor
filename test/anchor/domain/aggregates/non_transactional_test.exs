@@ -58,9 +58,6 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
               def n15(mod), do: Repo.transaction(fn -> mod.insert(%S{}) end)
               def n16, do: n11()
 
-              def n29, do: Repo.transaction(fn -> n29a() end)
-              defp n29a, do: n29b()
-              defp n29b, do: Repo.insert(%S{})
 
               def n30(fun), do: Repo.transaction(fun)
               def n56(args), do: apply(#{inspect(Module.concat(@ns, Store2))}, :soft_it, args)
@@ -71,12 +68,6 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
               def n54(mod, args), do: apply(mod, :soft_delete, args)
               def n55(name, args), do: apply(Repo, name, args)
 
-              def n46, do: Repo.query!("DELETE FROM s")
-
-              def n46_run do
-                Repo.transaction(&n46/0)
-                Task.start(&n46/0)
-              end
 
               def n47, do: Repo.insert(%#{inspect(@s)}{})
 
@@ -91,12 +82,6 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
                 Repo.transaction(&n48/0)
                 Repo.transaction(&n48/0)
               end
-              def n44, do: Repo.query!("DELETE FROM s")
-              def n44_in, do: Repo.transaction(fn -> n44() end)
-              def n44_computed(mod), do: mod.n44()
-              def n45, do: Repo.query!("DELETE FROM s")
-              def n45_in, do: Repo.transaction(fn -> n45() end)
-              def n45_computed(mod), do: apply(mod, :n45, [])
               def n35(mod, fun), do: mod.transaction(fun)
               def n36(args), do: apply(Repo, :insert, args)
               def n37(mod, name, args), do: apply(mod, name, args)
@@ -114,8 +99,6 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
               def n27(0), do: :ok
               def n27(n), do: (Repo.query!("DELETE FROM s"); n27(n - 1))
 
-              def n28, do: Ecto.Multi.run(Ecto.Multi.new(), :a, __MODULE__, :n28_step, [])
-              def n28_step(repo, _changes), do: repo.query!("DELETE FROM s")
               def n26, do: Task.async(fn -> Repo.get(S, 1) end)
               def n25(m, f), do: Ecto.Multi.merge(m, f)
 
@@ -154,63 +137,35 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
   test "N1: a function's own writes and its callees' outside a transaction", %{analysis: a} do
     assert nontx(a, :n1f).keys == keys([@s, @t])
     assert nontx(a, :n1g).keys == keys([@t])
-    assert nontx(a, :n1f).complete?
+    assert nontx(a, :n1f).no_gap_noticed?
   end
 
-  test "N2: a callee called only inside a transaction adds nothing and is always in one", %{
+  test "N2: a callee called only inside a transaction adds nothing to its caller's entry", %{
     analysis: a
   } do
     assert nontx(a, :n2f).keys == MapSet.new()
-    assert MapSet.member?(a.always_in_transaction, {@n, :n2g, 0})
   end
 
-  test "N3: a callee also called outside is not always in one; the outside caller has its keys",
+  test "N3: a callee also called outside: the outside caller has its keys",
        %{analysis: a} do
-    refute MapSet.member?(a.always_in_transaction, {@n, :n3g, 0})
     assert nontx(a, :n3h).keys == keys([@t])
     assert nontx(a, :n3f).keys == MapSet.new()
-  end
-
-  test "a function a computed call may reach is never always in a transaction", %{analysis: a} do
-    refute MapSet.member?(a.always_in_transaction, {@n, :n44, 0})
-    refute MapSet.member?(a.always_in_transaction, {@n, :n45, 0})
   end
 
   test "a capture beside a body capture of one function is outside the transaction", %{
     analysis: a
   } do
-    refute MapSet.member?(a.always_in_transaction, {@n, :n46, 0})
     assert nontx(a, :n47_run).keys == keys([@s])
     assert [%{keys: body_keys}] = Enum.filter(a.scopes, &(&1.mfa == {@n, :n47_run, 0}))
     assert body_keys == keys([@s])
   end
 
-  test "every capture of a function a body: it is always in a transaction", %{analysis: a} do
-    assert MapSet.member?(a.always_in_transaction, {@n, :n48, 0})
+  test "every capture of a function a body: its caller's entry holds none of it", %{analysis: a} do
     assert nontx(a, :n48_run).keys == MapSet.new()
   end
 
   test "an unread transaction is no gap outside a transaction", %{analysis: a} do
-    assert %{complete?: true} = nontx(a, :n30, 1)
-  end
-
-  test "a recursive function nothing calls in a transaction is not always in one", %{
-    analysis: a
-  } do
-    refute MapSet.member?(a.always_in_transaction, {@n, :n4a, 1})
-    refute MapSet.member?(a.always_in_transaction, {@n, :n4b, 1})
-    refute MapSet.member?(a.always_in_transaction, {@n, :n27, 1})
-  end
-
-  test "a function reached only through one always in a transaction is too", %{analysis: a} do
-    assert MapSet.member?(a.always_in_transaction, {@n, :n29a, 0})
-    assert MapSet.member?(a.always_in_transaction, {@n, :n29b, 0})
-  end
-
-  test "a Multi.run callback given by module and name is always in a transaction", %{
-    analysis: a
-  } do
-    assert MapSet.member?(a.always_in_transaction, {@n, :n28_step, 2})
+    assert %{no_gap_noticed?: true} = nontx(a, :n30, 1)
   end
 
   test "N4: recursion terminates at the fixpoint", %{analysis: a} do
@@ -227,7 +182,6 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
   test "N5: a captured Multi.run callback's writes are never non-transactional to the builder",
        %{analysis: a} do
     assert nontx(a, :n7).keys == MapSet.new()
-    assert MapSet.member?(a.always_in_transaction, {@n, :n7_step, 2})
   end
 
   test "a write directly in a transaction body is never non-transactional", %{analysis: a} do
@@ -265,7 +219,6 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
         """
 
     analysis = Analysis.build(graph!(source), %Config{repos: [@repo]})
-    refute MapSet.member?(analysis.always_in_transaction, {store, :save, 1})
 
     assert [%{unresolved: seen}] = Enum.filter(analysis.sites, &(&1.mfa == {store, :save, 1}))
     assert seen =~ "callers are not known"
@@ -277,6 +230,8 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
     assert [
              %{mfa: {@n, :n11, 0}, what: raw, line: line},
              %{mfa: {@n, :n12, 1}, what: computed},
+             %{mfa: {@n, :n17h, 0}},
+             %{mfa: {@n, :n21g, 0}},
              %{mfa: {@n, :n22, 1}, what: captured},
              %{mfa: {@n, :n23, 1}, what: computed_capture},
              %{mfa: {@n, :n27, 1}},
@@ -289,9 +244,7 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
              %{mfa: {@n, :n37, 3}},
              %{mfa: {@n, :n38, 2}},
              %{mfa: {@n, :n39, 2}},
-             %{mfa: {@n, :n44, 0}},
-             %{mfa: {@n, :n45, 0}},
-             %{mfa: {@n, :n46, 0}},
+             %{mfa: {@n, :n48, 0}},
              %{mfa: {@n, :n50, 1}},
              %{mfa: {@n, :n53, 2}},
              %{mfa: {@n, :n55, 2}}
@@ -346,18 +299,16 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
 
   test "a function captured as a transaction's body is inside it", %{analysis: a} do
     assert nontx(a, :n20).keys == MapSet.new()
-    assert MapSet.member?(a.always_in_transaction, {@n, :n20g, 0})
-    assert MapSet.member?(a.always_in_transaction, {@n, :n21g, 0})
   end
 
-  test "the gaps outside every transaction are counted", %{analysis: a} do
+  test "the gaps with no transaction read around them are counted", %{analysis: a} do
     gaps =
       a.nontx
-      |> Enum.reject(fn {mfa, _entry} -> MapSet.member?(a.always_in_transaction, mfa) end)
       |> Enum.flat_map(fn {_mfa, entry} -> entry.gaps end)
       |> Enum.uniq()
 
-    refute Enum.any?(gaps, &match?({:dynamic_call, {@n, :n17h, 0}, _line}, &1))
+    # n17h is only called in a transaction, but its own function reads none around it.
+    assert Enum.any?(gaps, &match?({:dynamic_call, {@n, :n17h, 0}, _line}, &1))
     refute Enum.any?(gaps, &match?({:dynamic_call, {@n, :n26, 0}, _line}, &1))
     refute Enum.any?(gaps, &match?({:dynamic_call, {@n, :n25, 2}, _line}, &1))
 
@@ -369,56 +320,6 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
 
   test "a Multi step is never a non-transactional write", %{analysis: a} do
     assert nontx(a, :n5).keys == MapSet.new()
-  end
-
-  test "roots: a given root is never always in a transaction" do
-    root = MapSet.new([{@n, :n2g, 0}])
-    analysis = Analysis.build(graph!(@source), %Config{repos: [@repo]}, roots: root)
-    refute MapSet.member?(analysis.always_in_transaction, {@n, :n2g, 0})
-  end
-
-  test "roots: through Model.build, a framework bucket's public function is a root" do
-    fw = Module.concat(@ns, Web)
-
-    source =
-      @source <>
-        """
-        defmodule #{inspect(fw)} do
-          def entry, do: #{inspect(@repo)}.insert(%#{inspect(@s)}{})
-        end
-
-        defmodule #{inspect(Module.concat(@ns, Caller))} do
-          def run, do: #{inspect(@repo)}.transaction(fn -> #{inspect(fw)}.entry() end)
-        end
-        """
-
-    graph = graph!(source, "lib/fixture.ex")
-
-    config =
-      Anchor.Config.parse_config(%{
-        "rules" => [],
-        "aggregates" => %{"repos" => [inspect(@repo)]},
-        "architecture" => %{
-          "contexts" => %{"depth" => 2},
-          "buckets" => [
-            %{"name" => "web", "role" => "framework", "select" => [%{"pattern" => inspect(fw)}]},
-            %{
-              "name" => "rest",
-              "role" => "domain",
-              "select" => [%{"pattern" => "#{inspect(@ns)}.N"}]
-            }
-          ],
-          "calls" => %{"web" => ["web", "rest"], "rest" => ["rest", "web"]}
-        }
-      })
-
-    assert {%Anchor.Domain.Model{} = model, _issues} =
-             Anchor.Domain.Model.build(graph, config, %{})
-
-    analysis = Anchor.Domain.Model.aggregate_analysis(model)
-
-    refute MapSet.member?(analysis.always_in_transaction, {fw, :entry, 0})
-    assert MapSet.member?(analysis.always_in_transaction, {@n, :n2g, 0})
   end
 
   test "Z5: under declare: none the Model builds no write analysis, and the index keeps none" do

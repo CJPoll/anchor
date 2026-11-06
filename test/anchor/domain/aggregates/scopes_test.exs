@@ -408,18 +408,18 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
 
   describe "build/3" do
     test "S1: a fun scope holds its own writes and a callee's in another module", %{analysis: a} do
-      assert %Scope{kind: :fun, complete?: true, gaps: []} = scope = one(a, :s1)
+      assert %Scope{kind: :fun, no_gap_noticed?: true, gaps: []} = scope = one(a, :s1)
       assert scope.keys == keys([@s, @t])
       assert scope.line == BeamFixtures.line_of(@source, "def s1,")
     end
 
     test "S2: a captured function is the scope's body", %{analysis: a} do
-      assert %Scope{kind: :fun, complete?: true} = scope = one(a, :s2)
+      assert %Scope{kind: :fun, no_gap_noticed?: true} = scope = one(a, :s2)
       assert scope.keys == keys([@u])
     end
 
     test "S3: a Multi traced through a helper that adds a step", %{analysis: a} do
-      assert %Scope{kind: :multi, complete?: true} = scope = one(a, :s3)
+      assert %Scope{kind: :multi, no_gap_noticed?: true} = scope = one(a, :s3)
       assert scope.keys == keys([@s, @t])
     end
 
@@ -429,23 +429,25 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
     end
 
     test "S5: a transaction_functions call is a scope", %{analysis: a} do
-      assert %Scope{kind: :transaction_function, complete?: true} = scope = one(a, :s5)
+      assert %Scope{kind: :transaction_function, no_gap_noticed?: true} = scope = one(a, :s5)
       assert scope.keys == keys([@s])
     end
 
     test "S6: a call of a fun parameter makes the scope incomplete, at its line", %{analysis: a} do
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s6, 1}, line}]} = one(a, :s6)
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@x, :s6, 1}, line}]} =
+               one(a, :s6)
+
       assert line == BeamFixtures.line_of(@source, "def s6(")
       assert one(a, :s6).keys == keys([@s])
     end
 
     test "S7: an unresolved write in the closure makes the scope incomplete", %{analysis: a} do
-      assert %Scope{complete?: false, gaps: [{:unresolved_write, site}]} = one(a, :s7)
+      assert %Scope{no_gap_noticed?: false, gaps: [{:unresolved_write, site}]} = one(a, :s7)
       assert site.mfa == {@x, :s7, 1}
     end
 
     test "S8: recursion terminates, and the keys are the union", %{analysis: a} do
-      assert %Scope{complete?: true} = scope = one(a, :s8)
+      assert %Scope{no_gap_noticed?: true} = scope = one(a, :s8)
       assert scope.keys == keys([@s, @t])
     end
 
@@ -465,31 +467,33 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
     test "a fn defined outside the body and called in it makes the scope incomplete", %{
       analysis: a
     } do
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s18, 0}, line}]} = one(a, :s18)
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@x, :s18, 0}, line}]} =
+               one(a, :s18)
+
       assert line == BeamFixtures.line_of(@source, "Repo.transaction(fn -> f.() end)")
     end
 
     test "a fn defined and called in the body is in the scope (positive control)", %{analysis: a} do
-      assert %Scope{complete?: true} = scope = one(a, :s19)
+      assert %Scope{no_gap_noticed?: true} = scope = one(a, :s19)
       assert scope.keys == keys([@s])
     end
 
     test "a fun parameter handed to Enum in the body makes the scope incomplete", %{analysis: a} do
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s20, 2}, _line}]} =
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@x, :s20, 2}, _line}]} =
                one(a, :s20)
 
       assert one(a, :s20).keys == keys([@s])
     end
 
     test "a capture on a module held in a variable makes the scope incomplete", %{analysis: a} do
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s21, 2}, _line}]} =
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@x, :s21, 2}, _line}]} =
                one(a, :s21)
     end
 
     test "a fn from outside the body handed to Enum in it makes the scope incomplete", %{
       analysis: a
     } do
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s22, 1}, _line}]} =
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@x, :s22, 1}, _line}]} =
                one(a, :s22)
     end
 
@@ -497,20 +501,20 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
       analysis: a
     } do
       assert [{:unresolved_write, %{mfa: {@x, :s23, 1}}}] = one(a, :s23).gaps
-      assert %Scope{complete?: true} = one(a, :s29)
+      assert %Scope{no_gap_noticed?: true} = one(a, :s29)
     end
 
     test "a capture of a Repo write makes the scope incomplete: its source is unseen", %{
       analysis: a
     } do
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s24, 1}, _line}]} =
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@x, :s24, 1}, _line}]} =
                one(a, :s24)
     end
 
     test "a function written on a repo is followed: its own writes are in the scope", %{
       analysis: a
     } do
-      assert %Scope{complete?: true} = scope = one(a, :s25)
+      assert %Scope{no_gap_noticed?: true} = scope = one(a, :s25)
       assert scope.keys == keys([@s])
     end
 
@@ -524,45 +528,45 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
     test "a function value made by a call, handed to Enum, makes the scope incomplete", %{
       analysis: a
     } do
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s30, 1}, _line}]} =
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@x, :s30, 1}, _line}]} =
                one(a, :s30)
     end
 
     test "the function is found before a trailing literal", %{analysis: a} do
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s31, 2}, _line}]} =
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@x, :s31, 2}, _line}]} =
                one(a, :s31)
     end
 
     test "an inline fn before a trailing literal is walked, with no gap", %{analysis: a} do
-      assert %Scope{complete?: true} = one(a, :s36)
+      assert %Scope{no_gap_noticed?: true} = one(a, :s36)
     end
 
     test "a function Ecto generates needs no body in the beam: no gap", %{analysis: a} do
-      assert %Scope{complete?: true} = one(a, :s37)
+      assert %Scope{no_gap_noticed?: true} = one(a, :s37)
     end
 
     test "a capture from outside the body, handed to Enum in it, is followed", %{analysis: a} do
-      assert %Scope{complete?: true} = scope = one(a, :s38)
+      assert %Scope{no_gap_noticed?: true} = scope = one(a, :s38)
       assert scope.keys == keys([@s])
     end
 
     test "a capture of a write from outside the body, handed in it, is a gap", %{analysis: a} do
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s39, 1}, _line}]} =
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@x, :s39, 1}, _line}]} =
                one(a, :s39)
     end
 
     test "every function HigherOrder knows takes a function: Enum.into/3", %{analysis: a} do
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s40, 2}, _line}]} =
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@x, :s40, 2}, _line}]} =
                one(a, :s40)
     end
 
     test "an apply of a function-taking call hides its arguments, so it is a gap", %{analysis: a} do
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s41, 2}, _line}]} =
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@x, :s41, 2}, _line}]} =
                one(a, :s41)
     end
 
     test "a local call of a transaction function is a scope", %{analysis: a} do
-      assert %Scope{kind: :transaction_function, complete?: true} = scope = one(a, :s42)
+      assert %Scope{kind: :transaction_function, no_gap_noticed?: true} = scope = one(a, :s42)
       assert scope.keys == keys([@s])
     end
 
@@ -576,106 +580,121 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
     end
 
     test "a local call of a write function is a write", %{analysis: a} do
-      assert %Scope{complete?: true} = scope = one(a, :s44)
+      assert %Scope{no_gap_noticed?: true} = scope = one(a, :s44)
       assert scope.keys == keys([@t])
     end
 
     test "a zero-arity write function in a library is an unresolved write, never dropped", %{
       analysis: a
     } do
-      assert %Scope{complete?: false, gaps: [{:unresolved_write, site}]} = one(a, :s45)
+      assert %Scope{no_gap_noticed?: false, gaps: [{:unresolved_write, site}]} = one(a, :s45)
       assert site.unresolved == "a write with no source argument"
     end
 
     test "a zero-arity write function in the project is followed", %{analysis: a} do
-      assert %Scope{complete?: true} = scope = one(a, :s46)
+      assert %Scope{no_gap_noticed?: true} = scope = one(a, :s46)
       assert scope.keys == keys([@u])
     end
 
     test "Multi.merge builds steps at run time: incomplete, in the function", %{analysis: a} do
-      assert %Scope{kind: :multi, complete?: false} = one(a, :s47)
+      assert %Scope{kind: :multi, no_gap_noticed?: false} = one(a, :s47)
     end
 
     test "Multi.merge or a Multi.run of an unknown function, in a helper, is a gap too", %{
       analysis: a
     } do
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@builder, :add_merge, 2}, _}]} =
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@builder, :add_merge, 2}, _}]} =
                one(a, :s48)
 
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@builder, :add_run, 2}, _}]} =
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@builder, :add_run, 2}, _}]} =
                one(a, :s49)
 
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@builder, :add_run5, 3}, _}]} =
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@builder, :add_run5, 3}, _}]} =
                one(a, :s53)
     end
 
     test "a helper given only a Multi Anchor cannot trace is a gap at the transaction", %{
       analysis: a
     } do
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s50, 1}, _}]} = one(a, :s50)
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@x, :s50, 1}, _}]} =
+               one(a, :s50)
     end
 
     test "a helper given a traced Multi and data, or only literals, stays complete", %{
       analysis: a
     } do
-      assert %Scope{complete?: true} = one(a, :s51)
-      assert %Scope{complete?: true} = scope = one(a, :s52)
+      assert %Scope{no_gap_noticed?: true} = one(a, :s51)
+      assert %Scope{no_gap_noticed?: true} = scope = one(a, :s52)
       assert scope.keys == keys([@t])
     end
 
     test "a Multi built by a local helper is traced, its helper's writes in the scope", %{
       analysis: a
     } do
-      assert %Scope{kind: :multi, complete?: true} = scope = one(a, :s54)
+      assert %Scope{kind: :multi, no_gap_noticed?: true} = scope = one(a, :s54)
       assert scope.keys == keys([@t])
-      assert %Scope{kind: :multi, complete?: true} = scope = one(a, :s55)
+      assert %Scope{kind: :multi, no_gap_noticed?: true} = scope = one(a, :s55)
       assert scope.keys == keys([@s, @t])
     end
 
     test "a helper that makes its own Multi from data is complete; one given a Multi is not", %{
       analysis: a
     } do
-      assert %Scope{complete?: true} = scope = one(a, :s56)
+      assert %Scope{no_gap_noticed?: true} = scope = one(a, :s56)
       assert scope.keys == keys([@t])
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s57, 1}, _}]} = one(a, :s57)
+
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@x, :s57, 1}, _}]} =
+               one(a, :s57)
     end
 
     test "a literal reaching a function-taking call through a variable is no gap", %{analysis: a} do
-      assert %Scope{complete?: true} = one(a, :s58)
+      assert %Scope{no_gap_noticed?: true} = one(a, :s58)
     end
 
     test "Multi.append and prepend hold both sides' writes", %{analysis: a} do
-      assert %Scope{kind: :multi, complete?: true} = scope = one(a, :s60)
+      assert %Scope{kind: :multi, no_gap_noticed?: true} = scope = one(a, :s60)
       assert scope.keys == keys([@s])
-      assert %Scope{kind: :multi, complete?: true} = scope = one(a, :s61)
+      assert %Scope{kind: :multi, no_gap_noticed?: true} = scope = one(a, :s61)
       assert scope.keys == keys([@s, @t])
     end
 
     test "Multi.append of a Multi Anchor cannot trace is a gap, written here or in a helper", %{
       analysis: a
     } do
-      assert %Scope{complete?: false} = one(a, :s62)
+      assert %Scope{no_gap_noticed?: false} = one(a, :s62)
 
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@builder, :add_append, 2}, _}]} =
+      assert %Scope{
+               no_gap_noticed?: false,
+               gaps: [{:dynamic_call, {@builder, :add_append, 2}, _}]
+             } =
                one(a, :s59)
     end
 
     test "a helper appending an untraced Multi to its own new one is a gap", %{analysis: a} do
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@builder, :append_to_new, 1}, _}]} =
+      assert %Scope{
+               no_gap_noticed?: false,
+               gaps: [{:dynamic_call, {@builder, :append_to_new, 1}, _}]
+             } =
                one(a, :s66)
     end
 
     test "a function run in another process is outside the transaction: a gap", %{analysis: a} do
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s63, 0}, _}]} = one(a, :s63)
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s64, 0}, _}]} = one(a, :s64)
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@x, :s63, 0}, _}]} =
+               one(a, :s63)
+
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@x, :s64, 0}, _}]} =
+               one(a, :s64)
     end
 
     test "another process through a helper, Agent or Process.spawn is a gap too", %{analysis: a} do
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :spawns_write, 0}, _}]} =
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@x, :spawns_write, 0}, _}]} =
                one(a, :s67)
 
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s68, 1}, _}]} = one(a, :s68)
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s69, 0}, _}]} = one(a, :s69)
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@x, :s68, 1}, _}]} =
+               one(a, :s68)
+
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@x, :s69, 0}, _}]} =
+               one(a, :s69)
     end
 
     test "a write function's own write traces through its callers", %{analysis: a} do
@@ -684,43 +703,47 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
     end
 
     test "a callee transaction's gap is a gap of the transaction that reaches it", %{analysis: a} do
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@helper, :tx_any, 1}, _}]} =
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@helper, :tx_any, 1}, _}]} =
                one(a, :s71)
     end
 
     test "a local transaction function's gap reaches the transaction around it", %{analysis: a} do
-      assert %Scope{complete?: false, gaps: gaps} = one(a, :s73)
+      assert %Scope{no_gap_noticed?: false, gaps: gaps} = one(a, :s73)
       assert Enum.any?(gaps, &match?({:dynamic_call, {@x, :local_unread, 1}, _}, &1))
     end
 
     test "a capture of raw SQL in a body is a gap", %{analysis: a} do
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s74, 1}, _}]} = one(a, :s74)
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s76, 1}, _}]} = one(a, :s76)
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@x, :s74, 1}, _}]} =
+               one(a, :s74)
+
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@x, :s76, 1}, _}]} =
+               one(a, :s76)
     end
 
     test "a lambda calling raw SQL in a body is a gap (positive control)", %{analysis: a} do
-      assert %Scope{complete?: false} = one(a, :s75)
+      assert %Scope{no_gap_noticed?: false} = one(a, :s75)
     end
 
     test "an apply of a transaction or a Multi step opens nothing Anchor reads: a gap", %{
       analysis: a
     } do
-      assert %Scope{complete?: false} = one(a, :s77)
-      assert %Scope{complete?: false} = one(a, :s78)
-      assert %Scope{complete?: false} = one(a, :s79)
+      assert %Scope{no_gap_noticed?: false} = one(a, :s77)
+      assert %Scope{no_gap_noticed?: false} = one(a, :s78)
+      assert %Scope{no_gap_noticed?: false} = one(a, :s79)
     end
 
     test "Repo.transact on a repo that does not export it is a gap, not a silent no-op", %{
       analysis: a
     } do
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s80, 0}, _}]} = one(a, :s80)
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@x, :s80, 0}, _}]} =
+               one(a, :s80)
     end
 
     test "a listed wrapper runs what it is given: no gap of its own", %{analysis: a} do
       assert scopes(a, :wrapper_tx) == []
 
       for name <- [:s82, :s83] do
-        assert [%Scope{complete?: true} = inner, %Scope{complete?: true} = outer] =
+        assert [%Scope{no_gap_noticed?: true} = inner, %Scope{no_gap_noticed?: true} = outer] =
                  scopes(a, name)
 
         assert inner.keys == keys([@s])
@@ -733,72 +756,80 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
     test "Repo.checkout and a callback repo's transaction read the function they are given", %{
       analysis: a
     } do
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s84, 1}, _}]} = one(a, :s84)
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s85, 1}, _}]} = one(a, :s85)
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s88, 1}, _}]} = one(a, :s88)
-      assert %Scope{complete?: true} = scope = one(a, :s86)
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@x, :s84, 1}, _}]} =
+               one(a, :s84)
+
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@x, :s85, 1}, _}]} =
+               one(a, :s85)
+
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@x, :s88, 1}, _}]} =
+               one(a, :s88)
+
+      assert %Scope{no_gap_noticed?: true} = scope = one(a, :s86)
       assert scope.keys == keys([@s])
-      assert %Scope{complete?: true} = scope = one(a, :s87)
+      assert %Scope{no_gap_noticed?: true} = scope = one(a, :s87)
       assert scope.keys == keys([@s])
-      assert %Scope{complete?: true} = scope = one(a, :s89)
+      assert %Scope{no_gap_noticed?: true} = scope = one(a, :s89)
       assert scope.keys == keys([@s])
     end
 
     test "a write captured as a body is a gap of its transaction, and no write outside one", %{
       analysis: a
     } do
-      assert %Scope{complete?: false} = one(a, :s90)
+      assert %Scope{no_gap_noticed?: false} = one(a, :s90)
       refute Enum.any?(a.unattributed, &(&1.mfa == {@x, :s90, 0}))
     end
 
     test "a write captured as a body and elsewhere is a gap and a write outside", %{analysis: a} do
-      assert %Scope{complete?: false} = one(a, :s91)
+      assert %Scope{no_gap_noticed?: false} = one(a, :s91)
       assert Enum.any?(a.unattributed, &(&1.mfa == {@x, :s91, 0}))
     end
 
     test "a transaction nested in a body: its gap is a gap of the outer one", %{analysis: a} do
-      assert [%Scope{complete?: false}, %Scope{complete?: false}] =
+      assert [%Scope{no_gap_noticed?: false}, %Scope{no_gap_noticed?: false}] =
                Enum.filter(a.scopes, &(&1.mfa == {@x, :s72, 1}))
     end
 
     test "a function-taking call's first argument is data (positive control)", %{analysis: a} do
-      assert %Scope{complete?: true} = one(a, :s32)
+      assert %Scope{no_gap_noticed?: true} = one(a, :s32)
     end
 
     test "a capture of a write_functions write makes the scope incomplete", %{analysis: a} do
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s33, 1}, _line}]} =
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@x, :s33, 1}, _line}]} =
                one(a, :s33)
     end
 
     test "a capture on a computed module, handed to a project function, is a gap", %{analysis: a} do
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s34, 1}, _line}]} =
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@x, :s34, 1}, _line}]} =
                one(a, :s34)
     end
 
     test "a Multi.run callback's repo reads leave the scope complete", %{analysis: a} do
-      assert %Scope{complete?: true} = scope = one(a, :s35)
+      assert %Scope{no_gap_noticed?: true} = scope = one(a, :s35)
       assert scope.keys == keys([@s])
     end
 
     test "a repo function Anchor cannot see makes the scope incomplete", %{analysis: a} do
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s26, 0}, _line}]} =
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@x, :s26, 0}, _line}]} =
                one(a, :s26)
     end
 
     test "an unknown function on a Multi.run callback's repo makes the scope incomplete", %{
       analysis: a
     } do
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s27, 0}, _line}]} =
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@x, :s27, 0}, _line}]} =
                one(a, :s27)
     end
 
     test "Ecto.Repo's reads leave a scope complete (positive control)", %{analysis: a} do
-      assert %Scope{complete?: true} = scope = one(a, :s28)
+      assert %Scope{no_gap_noticed?: true} = scope = one(a, :s28)
       assert scope.keys == keys([@s])
     end
 
     test "S10: a Multi parameter with nothing to trace is incomplete at the call", %{analysis: a} do
-      assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, :s10, 1}, line}]} = one(a, :s10)
+      assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@x, :s10, 1}, line}]} =
+               one(a, :s10)
+
       assert line == BeamFixtures.line_of(@source, "def s10(")
     end
 
@@ -829,13 +860,13 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
 
     test "S12: a capture passed to Enum is followed", %{analysis: a} do
       assert one(a, :s12).keys == keys([@s])
-      assert one(a, :s12).complete?
+      assert one(a, :s12).no_gap_noticed?
     end
 
     test "S13: a call into a dependency is not followed, and the scope stays complete", %{
       analysis: a
     } do
-      assert %Scope{complete?: true, gaps: []} = scope = one(a, :s13)
+      assert %Scope{no_gap_noticed?: true, gaps: []} = scope = one(a, :s13)
       assert scope.keys == keys([@s])
     end
   end
@@ -854,7 +885,7 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
         name: name,
         def_text: def_text
       } do
-        assert %Scope{complete?: false, gaps: [{:dynamic_call, {@x, ^name, 0}, line}]} =
+        assert %Scope{no_gap_noticed?: false, gaps: [{:dynamic_call, {@x, ^name, 0}, line}]} =
                  one(a, name)
 
         assert line == BeamFixtures.line_of(@source, def_text)
@@ -864,7 +895,7 @@ defmodule Anchor.Domain.Aggregates.ScopesTest do
 
   test "counts: writes found, resolved, unresolved; scopes, complete, incomplete", %{analysis: a} do
     assert a.counts.scopes == length(a.scopes)
-    assert a.counts.incomplete == Enum.count(a.scopes, &(not &1.complete?))
+    assert a.counts.incomplete == Enum.count(a.scopes, &(not &1.no_gap_noticed?))
     assert a.counts.writes == length(a.sites)
     assert a.counts.unresolved == length(Enum.filter(a.sites, & &1.unresolved))
     assert a.counts.unresolved == 3

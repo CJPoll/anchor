@@ -10,12 +10,14 @@ defmodule Anchor.Domain.Aggregates.Scope do
     * `kind` — `:fun` (a function or capture handed to the transaction),
       `:multi` (an `Ecto.Multi`) or `:transaction_function` (an
       `aggregates.transaction_functions` call).
-    * `writes` — every write the scope reaches: those in its body and those of
-      every project function it calls, transitively. Sorted, unique.
+    * `writes` — the writes read in the scope: those in its body and those of
+      the project functions it calls, transitively. Sorted, unique. A form
+      Anchor does not read is not here.
     * `keys` — the write keys of the resolved writes (`{:schema, module}` or
       `{:table, name}`, `Anchor.Domain.Aggregates.WriteSource.key/2`).
-    * `complete?` — `false` when `gaps` is not empty.
-    * `gaps` — why the write set may be incomplete:
+    * `no_gap_noticed?` — `false` when `gaps` is not empty. `true` says only
+      that Anchor noticed no gap, not that the write set is whole.
+    * `gaps` — why the write set is incomplete:
       `{:dynamic_call, mfa, line}` (a call Anchor cannot resolve, in the
       function `mfa`) and `{:unresolved_write, site}`.
   """
@@ -30,7 +32,7 @@ defmodule Anchor.Domain.Aggregates.Scope do
     :kind,
     writes: [],
     keys: MapSet.new(),
-    complete?: true,
+    no_gap_noticed?: true,
     gaps: []
   ]
 
@@ -45,7 +47,7 @@ defmodule Anchor.Domain.Aggregates.Scope do
           kind: :fun | :multi | :transaction_function,
           writes: [WriteSite.t()],
           keys: MapSet.t(key()),
-          complete?: boolean(),
+          no_gap_noticed?: boolean(),
           gaps: [gap()]
         }
 

@@ -181,9 +181,11 @@ into exactly one bucket, with no precedence between buckets; the graph runner
 ## Writes and transactions (DND-5459)
 
 When a rule needs it (`needs: [:aggregate_analysis]`), the runner computes
-`Model.aggregate_analysis` (`Anchor.Domain.Aggregates.Analysis`): every database
-write, what it writes, every transaction's write set over its call closure,
-and the writes outside transactions, all read from Core.
+`Model.aggregate_analysis` (`Anchor.Domain.Aggregates.Analysis`): the database
+writes it recognises, what each writes, the write set of each transaction it
+recognises over its call closure, and the writes with no transaction read around
+them, all read from Core. A form it does not recognise is not in the result, so
+an absent write is not evidence of no write (README, *What it does not read*).
 `Aggregates.FunctionWalk` is the one walk over a function's Core (node ids,
 `let`/`case` bindings, transaction-body tags); `WriteSites` finds the repos,
 writes, transactions and calls; `WriteSource` traces a write's source (rules

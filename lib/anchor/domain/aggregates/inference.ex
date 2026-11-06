@@ -3,20 +3,21 @@ defmodule Anchor.Domain.Aggregates.Inference do
   Aggregates inferred from co-writes (DND-5459) — a **Domain** module
   (ADR 001). Pure.
 
-  Every key written anywhere (in a scope, outside every transaction, or a Multi
-  no transaction Anchor sees runs) is a vertex. Each scope's resolved keys are one hyperedge, joined as a star from
+  Each key of a write read (in a scope, with no transaction read around it, or
+  in a Multi no transaction read runs) is a vertex. Each scope's resolved keys are one hyperedge, joined as a star from
   its smallest key; an incomplete scope's resolved keys count too, since they
   are certainly written together (its unresolved writes add nothing). The
   connected components (`Anchor.Domain.GraphAlgorithms.components/1`) are the
   inferred aggregates.
 
   `proposed_declarations/1` names each: its root is the key in the most
-  complete scopes (ties: alphabetical), and its name the root schema's module
+  scopes with no gap noticed (ties: alphabetical), and its name the root schema's module
   name, or a table root camelized (`"audit_log"` is `AuditLog`). Two
   components whose names collide get the second's name suffixed `2`, `3`, ....
   `render_yaml/1` prints an analysis's proposals in the exact `aggregates:`
   shape of `.anchor.yml`, sorted by name, which
-  `Anchor.Domain.Aggregates.Config.parse/1` reads back, with a leading comment
+  `Anchor.Domain.Aggregates.Config.parse/1` reads back. Its first line is always
+  a comment that it was read from the forms Anchor recognises, and one more says
   when some writes are unresolved. With nothing to propose it is an error,
   never `declare: none`: the analysis exists only with a repo, and a repo
   means the project persists, so `none` is a person's call, made by hand.
@@ -28,6 +29,8 @@ defmodule Anchor.Domain.Aggregates.Inference do
   alias Anchor.Domain.Aggregates.WriteSource
   alias Anchor.Domain.Digraph
   alias Anchor.Domain.GraphAlgorithms
+
+  @read_note "# read from the forms Anchor recognises; a write in any other form is not in this proposal\n"
 
   @type key :: Scope.key()
   @type proposal :: %{
@@ -91,7 +94,7 @@ defmodule Anchor.Domain.Aggregates.Inference do
            "propose again"}
 
       proposals ->
-        {:ok, unresolved_note(counts) <> declarations_yaml(proposals)}
+        {:ok, @read_note <> unresolved_note(counts) <> declarations_yaml(proposals)}
     end
   end
 
@@ -106,7 +109,7 @@ defmodule Anchor.Domain.Aggregates.Inference do
       counts.writes > 0 && "#{counts.writes} write(s) found, #{counts.unresolved} unresolved",
       scopes != [] && "#{length(scopes)} transaction(s)",
       counts.outside_gaps > 0 &&
-        "#{counts.outside_gaps} call(s) or write(s) Anchor cannot attribute outside a transaction"
+        "#{counts.outside_gaps} call(s) or write(s) Anchor cannot attribute with no transaction read around them"
     ]
     |> Enum.filter(&is_binary/1)
   end
@@ -142,8 +145,8 @@ defmodule Anchor.Domain.Aggregates.Inference do
   defp vertices(analysis) do
     scoped = Enum.flat_map(analysis.scopes, &MapSet.to_list(&1.keys))
     outside = analysis.nontx |> Map.values() |> Enum.flat_map(&MapSet.to_list(&1.keys))
-    anywhere = analysis.sites |> Scopes.keys(analysis.tables) |> MapSet.to_list()
-    Enum.uniq(scoped ++ outside ++ anywhere)
+    read = analysis.sites |> Scopes.keys(analysis.tables) |> MapSet.to_list()
+    Enum.uniq(scoped ++ outside ++ read)
   end
 
   defp proposal(component, analysis) do
@@ -163,10 +166,10 @@ defmodule Anchor.Domain.Aggregates.Inference do
   end
 
   defp root(component, scopes) do
-    complete = Enum.filter(scopes, & &1.complete?)
+    no_gap = Enum.filter(scopes, & &1.no_gap_noticed?)
 
     Enum.min_by(component, fn key ->
-      {-Enum.count(complete, &MapSet.member?(&1.keys, key)), key_name(key)}
+      {-Enum.count(no_gap, &MapSet.member?(&1.keys, key)), key_name(key)}
     end)
   end
 

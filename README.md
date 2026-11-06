@@ -1146,42 +1146,61 @@ no baseline.
 
 ### Writes and transactions: the `aggregate_write_sources` rule (DND-5459)
 
-When a rule needs it, `mix anchor.graph` reads every database write and
-transaction from the compiled code (each function's Core Erlang, so an
-alias, a pipe and an `@repo` attribute are already resolved):
+When a rule needs it, `mix anchor.graph` reads the database writes and
+transactions it recognises from the compiled code (each function's Core Erlang,
+so an alias, a pipe and an `@repo` attribute are already resolved). It reports
+what it read; it does not claim to have seen all of them.
+
+#### What it reads
 
 - **Repos** are the modules whose beam declares `@behaviour Ecto.Repo`, plus
   `aggregates.repos`.
 - **Writes** are the `Repo` writes on a repo (`insert`, `insert!`, `update`,
   `update!`, `delete`, `delete!`, `insert_or_update`, `insert_or_update!`,
   `insert_all`, `update_all`, `delete_all`), the `Ecto.Multi` writes (the same
-  without bangs), every `aggregates.write_functions` entry, and a `Repo` write
+  without bangs), the `aggregates.write_functions` entries, and a `Repo` write
   on the repo argument of a `Multi.run` callback. Raw SQL (`query`, `query!`,
   `query_many`, `query_many!` on a repo or a callback's repo, and
   `Ecto.Adapters.SQL.query*`) writes what no schema or table names: it is a
-  gap, so a transaction that runs it is incomplete, never complete and missing
-  a write.
+  gap, so a transaction that runs it is incomplete.
 - **Each write's source** (its schema or table) is traced through Core: a
   struct, a changeset built from one, a schema module, a call on a schema, a
   `from` query, a literal table, `{table, schema}`, a parameter whose `@spec`
-  is `Schema.t()`, or else the arguments every project caller passes. Anything
+  is `Schema.t()`, or else the arguments its project callers pass. Anything
   else is **unresolved**, reported with what was seen, never dropped.
 - **Transactions** are `Repo.transaction/1,2` (and `Repo.transact/1,2` when the
-  repo exports it) and every `aggregates.transaction_functions` call, given a
+  repo exports it) and `aggregates.transaction_functions` calls, given a
   function, a capture or an `Ecto.Multi`. A transaction's write set is the
-  writes in its body and those of every project function it calls,
+  writes read in its body and those of the project functions it calls,
   transitively. A call Anchor cannot resolve, a function value it cannot follow
   (a `fn` defined outside the body, a capture of a write, an unknown function
   handed to a library function that invokes it), or an unresolved write, makes
   it **incomplete**. Calls into dependencies are not followed.
-- **Outside a transaction,** raw SQL, a write or transaction on a computed
-  module, and an `apply/3` that may be one are reported: no schema or table
-  names what it writes.
+- **With no transaction read around it,** raw SQL, a write or transaction on a
+  computed module, and an `apply/3` that may be one are reported, in the function
+  they are written in: no schema or table names what it writes. A caller's
+  transaction may still hold it; the report says what was read.
 
-The summary line ends `; writes: <W> found, <R> resolved, <U> unresolved;
-transactions: <S>, <C> complete, <I> incomplete; <G> gaps outside a transaction`
-(the JSON's `writes`), so an unresolved write, an incomplete transaction and a
-call Anchor could not follow outside one are always counted.
+#### What it does not read
+
+- a function handed to a library `Anchor.Domain.HigherOrder` does not know;
+- a Multi handed to a helper that also calls `Multi.new/0` (DND-5884);
+- a `fn` bound once and both called and passed to a transaction (DND-5885);
+- a `transaction_functions` call with one traced and one untraced function
+  argument;
+- dependencies' own writes;
+- any other form.
+
+An absent write is not evidence of no write; DND-5889 makes each such form a gap
+at its line.
+
+The summary line ends `; writes: <W> read, <R> resolved, <U> unresolved;
+transactions: <S> read, <N> no gap noticed, <I> incomplete; <G> gaps with no
+transaction read around them; forms not listed in the README are not read` (the
+JSON's `writes`, whose keys include `no_gap_noticed`). `no gap noticed` is a count
+of what Anchor noticed, not a statement that a write set is whole. An unresolved
+write, an incomplete transaction and a call Anchor could not follow with no
+transaction read around it are counted.
 
 ```yaml
 rules:
@@ -1207,7 +1226,7 @@ architecture:
 | Finding | Example message |
 |---|---|
 | A write whose source is unresolved (at the write) | `Repo.insert in MyApp.X.save/1 writes a value Anchor cannot trace to a schema or table (parameter 1 of MyApp.X.save/1 has no @spec and no project caller). Fix: pass a struct, changeset or schema the call can see; add @spec with Schema.t() for the parameter; or list a wrapper under aggregates.write_functions.` |
-| Raw SQL, or a write or transaction on a computed module, outside every transaction (at the call) | `MyApp.X.purge/0 writes, or may write, outside any transaction in a way no schema or table names: raw SQL (MyApp.Repo.query!/1) Anchor cannot attribute. Fix: write through a schema with Repo, or name the module the call is on.` |
+| Raw SQL, or a write or transaction on a computed module, with no transaction read around it (at the call) | `MyApp.X.purge/0 writes, or may write, with no transaction read around it in a way no schema or table names: raw SQL (MyApp.Repo.query!/1) Anchor cannot attribute. Fix: write through a schema with Repo, or name the module the call is on.` |
 | An incomplete transaction (at the transaction) | `transaction 1 in MyApp.X.run/1 reaches 1 call(s) Anchor cannot resolve (first: MyApp.X.run/1 line 12), so its write set is incomplete. Fix: call a named function instead of a variable, ...` |
 
 The key is `<id>|<M.f/a>|unresolved <op> <seen>`, `<id>|<M.f/a>|unattributed <what>` or `<id>|<M.f/a>|incomplete
@@ -1217,8 +1236,9 @@ no line number. The rule's selector chooses whose findings are reported.
 `Anchor.Domain.Aggregates.Inference` turns the analysis into proposed
 aggregates: the connected components of the co-write graph (each
 transaction's written schemas are written together), printed as the exact
-`aggregates:` YAML above. `mix anchor.propose --level aggregate` prints it
-once DND-5449's `mix anchor.propose` lands.
+`aggregates:` YAML above. Its first line is always `# read from the forms Anchor
+recognises; a write in any other form is not in this proposal`. `mix anchor.propose
+--level aggregate` prints it once DND-5449's `mix anchor.propose` lands.
 
 ### Graph rows of the fail-closed table
 

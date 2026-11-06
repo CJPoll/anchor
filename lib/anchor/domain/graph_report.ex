@@ -27,7 +27,8 @@ defmodule Anchor.Domain.GraphReport do
       of it; `aggregates` (optional, DND-5476) is
       `%{declared, tables_unknown}` when any aggregate is declared, and the
       JSON's `aggregates` is `null` otherwise; `writes` (optional, DND-5459)
-      is the write analysis's counts, its gaps outside a transaction among them
+      is the write analysis's counts, its gaps with no transaction read around
+      them among them
       (`Anchor.Domain.Aggregates.Analysis`),
       when the run made one with a repo, and the JSON's `writes` is `null`
       otherwise.
@@ -105,7 +106,7 @@ defmodule Anchor.Domain.GraphReport do
             resolved: non_neg_integer(),
             unresolved: non_neg_integer(),
             scopes: non_neg_integer(),
-            complete: non_neg_integer(),
+            no_gap_noticed: non_neg_integer(),
             incomplete: non_neg_integer(),
             outside_gaps: non_neg_integer()
           }
@@ -239,9 +240,9 @@ defmodule Anchor.Domain.GraphReport do
   functions with no Core body and modules compiled from outside the root are
   counted when there are any, and so are declared aggregates (DND-5476:
   `; aggregates: <N> declared, <U> tables unknown`) and the write analysis
-  (DND-5459: `; writes: <W> found, <R> resolved, <U> unresolved;
-  transactions: <S>, <C> complete, <I> incomplete; <G> gaps outside a
-  transaction`).
+  (DND-5459: `; writes: <W> read, <R> resolved, <U> unresolved; transactions:
+  <S> read, <N> no gap noticed, <I> incomplete; <G> gaps with no transaction
+  read around them; forms not listed in the README are not read`).
   """
   @spec summary(t()) :: String.t()
   def summary(%__MODULE__{counts: counts} = report) do
@@ -256,16 +257,17 @@ defmodule Anchor.Domain.GraphReport do
       aggregates_note(Map.get(counts, :aggregates)) <> writes_note(Map.get(counts, :writes))
   end
 
-  # DND-5459: every write and transaction the analysis found, and how many it
+  # DND-5459: the writes and transactions the analysis read, and how many it
   # could not judge: an unresolved write or an incomplete transaction is
   # counted, never read as clean.
   defp writes_note(nil), do: ""
 
   defp writes_note(writes) do
-    "; writes: #{writes.writes} found, #{writes.resolved} resolved, " <>
-      "#{writes.unresolved} unresolved; transactions: #{writes.scopes}, " <>
-      "#{writes.complete} complete, #{writes.incomplete} incomplete; " <>
-      "#{writes.outside_gaps} gaps outside a transaction"
+    "; writes: #{writes.writes} read, #{writes.resolved} resolved, " <>
+      "#{writes.unresolved} unresolved; transactions: #{writes.scopes} read, " <>
+      "#{writes.no_gap_noticed} no gap noticed, #{writes.incomplete} incomplete; " <>
+      "#{writes.outside_gaps} gaps with no transaction read around them; " <>
+      "forms not listed in the README are not read"
   end
 
   defp writes_json(nil), do: nil

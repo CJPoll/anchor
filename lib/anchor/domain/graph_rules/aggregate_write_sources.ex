@@ -1,7 +1,7 @@
 defmodule Anchor.Domain.GraphRules.AggregateWriteSources do
   @moduledoc """
-  The `aggregate_write_sources` graph rule (DND-5459): every database write
-  traces to a schema or table, and every transaction's write set is complete
+  The `aggregate_write_sources` graph rule (DND-5459): a write Anchor reads
+  traces to a schema or table, and a transaction it reads has no gap it noticed
   — a **Domain** module (ADR 001). Pure, over the run's
   `Anchor.Domain.Model`, whose `aggregate_analysis`
   (`Anchor.Domain.Aggregates.Analysis`) holds what it reports. The rule's
@@ -12,7 +12,7 @@ defmodule Anchor.Domain.GraphRules.AggregateWriteSources do
   |---|---|---|
   | a write whose source is unresolved | the write's line | `<id>\\|<M.f/a>\\|unresolved <op> <seen>` |
   | a transaction whose write set is incomplete | the transaction's line | `<id>\\|<M.f/a>\\|incomplete <ordinal>` |
-  | raw SQL, or a write on a computed module, outside every transaction | its line | `<id>\\|<M.f/a>\\|unattributed <what>` |
+  | raw SQL, or a write on a computed module, with no transaction read around it | its line | `<id>\\|<M.f/a>\\|unattributed <what>` |
 
   No key holds a line. Two cases are fail-closed (`Anchor.Domain.Failures`),
   on the config, never baselined and never report-only: the project has no
@@ -64,7 +64,7 @@ defmodule Anchor.Domain.GraphRules.AggregateWriteSources do
     unattributed = Enum.filter(analysis.unattributed, &selected?.(&1.mfa))
 
     incomplete =
-      for %Scope{complete?: false} = scope <- analysis.scopes,
+      for %Scope{no_gap_noticed?: false} = scope <- analysis.scopes,
           selected?.(scope.mfa),
           do: incomplete(scope, model, rule)
 
@@ -107,7 +107,7 @@ defmodule Anchor.Domain.GraphRules.AggregateWriteSources do
       rule_id: Map.get(rule, :id),
       key: ViolationKey.graph_key(rule, subject, "unattributed #{what}"),
       message:
-        "#{subject} writes, or may write, outside any transaction in a way no schema or table " <>
+        "#{subject} writes, or may write, with no transaction read around it in a way no schema or table " <>
           "names: #{what}. Fix: write through a schema with Repo, or name the module the call is on."
     }
   end

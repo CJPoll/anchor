@@ -158,7 +158,7 @@ defmodule Anchor.Domain.Aggregates.RealEctoTest do
   test "E4: a real Multi pipeline's scope keys are exactly the written schemas", %{analysis: a} do
     assert [scope] = Enum.filter(a.scopes, &(&1.mfa == {@e, :e4, 0}))
     assert scope.kind == :multi
-    assert scope.complete?
+    assert scope.no_gap_noticed?
     assert scope.keys == MapSet.new([{:schema, @thread}, {:schema, @post}])
   end
 end

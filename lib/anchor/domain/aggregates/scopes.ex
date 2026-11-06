@@ -3,8 +3,8 @@ defmodule Anchor.Domain.Aggregates.Scopes do
   Transaction scopes and their write sets (DND-5459) — a **Domain** module
   (ADR 001). Pure.
 
-  `closures/1` summarises every function of the project once: the writes it
-  makes and the writes of every project function it calls (remote, local or
+  `closures/1` summarises each function of the project once: the writes read in
+  it and those of each project function it calls (remote, local or
   captured), transitively, with the gaps on the way (a dynamic call, an
   unresolved write). It is computed per strongly connected component of the
   call graph (`Anchor.Domain.GraphAlgorithms.sccs/1`, callees first), so
@@ -15,9 +15,9 @@ defmodule Anchor.Domain.Aggregates.Scopes do
 
   `build/3` makes one `Anchor.Domain.Aggregates.Scope` per transaction found
   by `Anchor.Domain.Aggregates.WriteSites`: the writes tagged with its
-  ordinal in its own function, plus the closure of every call and capture in
+  ordinal in its own function, plus the closure of each call and capture in
   its body. A nested scope keeps its own set, and the outer one holds it too.
-  A scope is complete when it has no gap.
+  A scope with no gap has `no_gap_noticed?`; one with a gap is incomplete.
   """
 
   alias Anchor.Domain.Aggregates.Scope
@@ -29,8 +29,8 @@ defmodule Anchor.Domain.Aggregates.Scopes do
   @type summary :: %{sites: MapSet.t(WriteSite.t()), gaps: MapSet.t(Scope.gap())}
 
   @typedoc """
-  Which calls, writes and dynamic calls a summary keeps: every one, those
-  outside every transaction body, or those inside body `ordinal` of a function.
+  Which calls, writes and dynamic calls a summary keeps: all it read, those
+  outside the transaction bodies read, or those inside body `ordinal` of a function.
   """
   @type selection :: :all | :outside | {:body, non_neg_integer()}
 
@@ -134,7 +134,7 @@ defmodule Anchor.Domain.Aggregates.Scopes do
       kind: tx.kind,
       writes: sort_sites(summary.sites),
       keys: keys(summary.sites, tables),
-      complete?: gaps == [],
+      no_gap_noticed?: gaps == [],
       gaps: gaps
     }
   end

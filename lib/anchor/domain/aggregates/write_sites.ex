@@ -1,9 +1,10 @@
 defmodule Anchor.Domain.Aggregates.WriteSites do
   @moduledoc """
-  Finds every database write, every transaction and every call of the
-  project in compiled code (DND-5459) — a **Domain** module (ADR 001). Pure:
+  Reads the database writes, transactions and calls it recognises from the
+  project's compiled code (DND-5459) — a **Domain** module (ADR 001). Pure:
   it reads each function's Core from the graph, and never loads or calls a
-  project module.
+  project module. A form not named here is not read, and the README lists the
+  known ones: an absent write is not evidence of no write.
 
   ## Repos
 
@@ -27,10 +28,10 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
       is `via: :run_callback_repo`.
 
   Any other call on a module held in a variable is a dynamic call, not a
-  write: a gap of every scope that reaches it. So is raw SQL (`query`,
+  write: a gap of a scope that reaches it. So is raw SQL (`query`,
   `query!`, `query_many`, `query_many!` on a repo, on a callback's repo, or
-  on `Ecto.Adapters.SQL`): it writes what no schema or table names, so the
-  scope is incomplete, never complete and missing a write.
+  on `Ecto.Adapters.SQL`): it writes what no schema or table names, so a scope
+  that reaches it is incomplete.
 
   A function value that may write and that Anchor cannot follow is a dynamic
   call too: a `fn` defined outside a transaction body and run in it (its writes
@@ -51,21 +52,21 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   ## Transactions
 
   `Repo.transaction/1,2` on a repo (and `Repo.transact/1,2` when the repo's
-  beam exports it), and every `aggregates.transaction_functions` call. The
+  beam exports it), and `aggregates.transaction_functions` calls. The
   body of each is found here, by following the argument through Core's
   bindings: an inline or let-bound `fn` (kind `:fun`), a capture (`:fun`), or
-  an `Ecto.Multi` value (`:multi`): every Multi step, `Multi.run` callback and
+  an `Ecto.Multi` value (`:multi`): the Multi steps, `Multi.run` callbacks and
   project function on the value's trace (a helper that builds the Multi). An
-  argument that is none of these is a gap at the transaction's line. Every
+  argument that is none of these is a gap at the transaction's line. Each
   node of a body is tagged with its scope's ordinal (Core order, from 1), and
-  every write, call and dynamic call found under it carries the tag.
+  each write, call and dynamic call read under it carries the tag.
 
   ## Facts
 
   `facts/3` returns, per function with a Core body, the raw writes (the
   source argument's Core node with its bindings, for
   `Anchor.Domain.Aggregates.WriteSource`), the transactions, the calls into
-  project functions, and the dynamic calls; plus every call site of each
+  project functions, and the dynamic calls; plus the call sites read of each
   project function (`callers`, for trace rule 7b) and the functions used as
   values or reached by name from a computed module (`captured`).
   """
@@ -217,8 +218,8 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   def repo_functions, do: MapSet.new(@repo_functions)
 
   @doc """
-  The repo modules: every graph module whose beam declares
-  `@behaviour Ecto.Repo`, and every `aggregates.repos` entry.
+  The repo modules: the graph modules whose beam declares
+  `@behaviour Ecto.Repo`, and the `aggregates.repos` entries.
   """
   @spec repos(Graph.t(), Config.t()) :: MapSet.t(module())
   def repos(%Graph{modules: modules}, %Config{repos: listed}) do
@@ -961,7 +962,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
 
   defp unread_multi?(_name, _args, _env, _ctx), do: false
 
-  # Tagged so it is a gap of every transaction that reaches it, wherever it is
+  # Tagged so it is a gap of a transaction that reaches it, wherever it is
   # written, and never one outside a transaction: there it changes nothing.
   defp other_process?({module, _name, _arity}) when module in [Agent, Task, Task.Supervisor],
     do: true
@@ -1103,9 +1104,14 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
         repo_function(acc, callee, args, env, tags, line, ctx)
 
       other_process?(callee) ->
-        dynamic(acc, line, "a function run in another process, outside any transaction", [
-          :other_process | tags
-        ])
+        dynamic(
+          acc,
+          line,
+          "a function run in another process, with no transaction read around it",
+          [
+            :other_process | tags
+          ]
+        )
 
       HigherOrder.invocations(callee) != [] ->
         handed_functions(acc, callee, args, env, tags, line, ctx)
@@ -1196,12 +1202,11 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
           into: MapSet.new(),
           do: to
 
-    run_callbacks |> MapSet.union(captures) |> MapSet.union(reached_by_name(facts))
+    run_callbacks |> MapSet.union(captures) |> MapSet.union(computed_reach(facts))
   end
 
-  @doc "The functions a call on a computed module may reach, by name and arity."
-  @spec reached_by_name(%{mfa() => function_facts()}) :: MapSet.t(mfa())
-  def reached_by_name(facts) do
+  # The functions a call on a computed module may reach, by name and arity.
+  defp computed_reach(facts) do
     computed =
       for {_from, %{computed: computed}} <- facts, pair <- computed, into: MapSet.new(), do: pair
 

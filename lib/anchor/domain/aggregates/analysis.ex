@@ -4,27 +4,30 @@ defmodule Anchor.Domain.Aggregates.Analysis do
   (ADR 001). Pure: it reads beams' Core from the graph only, and never loads
   or calls a project module (no `__schema__/1` call, no repo call).
 
-  `build/3` runs, in order: `Anchor.Domain.Aggregates.WriteSites` (the repos,
-  then every write, transaction and call), `Anchor.Domain.Aggregates.WriteSource`
-  (what each write writes), `Anchor.Domain.Aggregates.Scopes` (each
+  `build/2` runs, in order: `Anchor.Domain.Aggregates.WriteSites` (the repos,
+  then the writes, transactions and calls it reads), `Anchor.Domain.Aggregates.WriteSource`
+  (what each write read writes), `Anchor.Domain.Aggregates.Scopes` (each
   transaction's write set over its call closure) and
   `Anchor.Domain.Aggregates.NonTransactional`. `Anchor.Domain.Aggregates.Inference`
   reads the result.
 
-    * `sites` — every write, in function then Core order;
-    * `scopes` — every transaction scope;
-    * `nontx` — per function, the writes made outside every transaction;
-    * `always_in_transaction` — the functions only ever called inside one;
-    * `tables` — every schema's derived table (`%{table => [schema]}`), for
+    * `sites` — the writes read, in function then Core order;
+    * `scopes` — the transaction scopes read;
+    * `nontx` — per function, the writes read with no transaction read around
+      them;
+    * `tables` — each schema's derived table (`%{table => [schema]}`), for
       write keys;
     * `repos` — the repo modules; `no_repo?` is `true` when there is none:
       then nothing else is computed, and the `aggregate_write_sources` rule
       reports it;
     * `counts` — `%{writes: W, resolved: R, unresolved: U, scopes: S,
-      complete: C, incomplete: I, outside_gaps: G}`, the run summary's numbers
-      (`G`: the gaps outside every transaction);
-    * `unattributed` — raw SQL, or a write on a computed module, in a function
-      not always in a transaction: no scope holds it, so the rule reports it.
+      no_gap_noticed: N, incomplete: I, outside_gaps: G}`, the run summary's
+      numbers (`G`: the gaps with no transaction read around them);
+    * `unattributed` — raw SQL, or a write on a computed module, with no
+      transaction read around it in its function: the rule reports it.
+
+  A form `Anchor.Domain.Aggregates.WriteSites` does not read is in none of
+  these: an absent write is not evidence of no write.
   """
 
   alias Anchor.Domain.Aggregates.Config
@@ -39,7 +42,6 @@ defmodule Anchor.Domain.Aggregates.Analysis do
   defstruct sites: [],
             scopes: [],
             nontx: %{},
-            always_in_transaction: MapSet.new(),
             tables: %{},
             repos: [],
             no_repo?: false,
@@ -48,7 +50,7 @@ defmodule Anchor.Domain.Aggregates.Analysis do
               resolved: 0,
               unresolved: 0,
               scopes: 0,
-              complete: 0,
+              no_gap_noticed: 0,
               incomplete: 0,
               outside_gaps: 0
             },
@@ -59,7 +61,7 @@ defmodule Anchor.Domain.Aggregates.Analysis do
           resolved: non_neg_integer(),
           unresolved: non_neg_integer(),
           scopes: non_neg_integer(),
-          complete: non_neg_integer(),
+          no_gap_noticed: non_neg_integer(),
           incomplete: non_neg_integer(),
           outside_gaps: non_neg_integer()
         }
@@ -68,7 +70,6 @@ defmodule Anchor.Domain.Aggregates.Analysis do
           sites: [WriteSite.t()],
           scopes: [Scope.t()],
           nontx: %{mfa() => NonTransactional.entry()},
-          always_in_transaction: MapSet.t(mfa()),
           tables: %{String.t() => [module()]},
           repos: [module()],
           no_repo?: boolean(),
@@ -77,23 +78,20 @@ defmodule Anchor.Domain.Aggregates.Analysis do
         }
 
   @doc """
-  The analysis of `graph` under the `aggregates:` section `config`. Option
-  `:roots`: the functions that are entry points (a set of mfas), or `nil`
-  (every public function with no project caller), for
-  `NonTransactional.always_in_transaction/2`.
+  The analysis of `graph` under the `aggregates:` section `config`.
   """
-  @spec build(Graph.t(), Config.t(), keyword()) :: t()
-  def build(%Graph{} = graph, %Config{} = config, opts \\ []) do
+  @spec build(Graph.t(), Config.t()) :: t()
+  def build(%Graph{} = graph, %Config{} = config) do
     repos = WriteSites.repos(graph, config)
 
     if MapSet.size(repos) == 0 do
       %__MODULE__{no_repo?: true}
     else
-      analyse(graph, config, repos, Keyword.get(opts, :roots))
+      analyse(graph, config, repos)
     end
   end
 
-  defp analyse(graph, config, repos, roots) do
+  defp analyse(graph, config, repos) do
     facts = WriteSites.facts(graph, config, repos)
     ctx = WriteSource.context(graph, facts)
 
@@ -111,46 +109,45 @@ defmodule Anchor.Domain.Aggregates.Analysis do
       |> Enum.flat_map(fn {_mfa, function} -> function.sites end)
 
     nontx = NonTransactional.build(functions, tables, facts.run_callbacks)
-    always = NonTransactional.always_in_transaction(functions, roots, facts.run_callbacks)
 
     %__MODULE__{
       sites: sites,
       scopes: scopes,
-      unattributed: unattributed(functions, always),
+      unattributed: unattributed(functions, facts.run_callbacks),
       nontx: nontx,
-      always_in_transaction: always,
       tables: tables,
       repos: repos |> MapSet.to_list() |> Enum.sort(),
-      counts: counts(sites, scopes, nontx, always)
+      counts: counts(sites, scopes, nontx)
     }
   end
 
-  # Raw SQL, or a write on a computed module, outside a body in a function that
-  # is not always called inside one: no scope holds it for certain.
-  defp unattributed(functions, always) do
+  # Raw SQL, or a write on a computed module, with no transaction read around it
+  # in its own function. A caller's transaction may hold it: this says what was read.
+  # A captured Multi.run callback runs in the Multi's transaction, as its own nontx
+  # entry says.
+  defp unattributed(functions, run_callbacks) do
     rows =
       for {mfa, function} <- functions,
-          not MapSet.member?(always, mfa),
+          not MapSet.member?(run_callbacks, mfa),
           %{write?: true, tags: [], line: line, what: what} <- function.dynamic,
           do: %{mfa: mfa, line: line, what: what}
 
     rows |> Enum.uniq_by(&{&1.mfa, &1.what}) |> Enum.sort_by(&{&1.mfa, &1.line})
   end
 
-  defp counts(sites, scopes, nontx, always) do
+  defp counts(sites, scopes, nontx) do
     unresolved = Enum.count(sites, &(not WriteSite.resolved?(&1)))
-    incomplete = Enum.count(scopes, &(not &1.complete?))
+    incomplete = Enum.count(scopes, &(not &1.no_gap_noticed?))
 
     %{
       writes: length(sites),
       resolved: length(sites) - unresolved,
       unresolved: unresolved,
       scopes: length(scopes),
-      complete: length(scopes) - incomplete,
+      no_gap_noticed: length(scopes) - incomplete,
       incomplete: incomplete,
       outside_gaps:
         nontx
-        |> Enum.reject(fn {mfa, _entry} -> MapSet.member?(always, mfa) end)
         |> Enum.flat_map(fn {_mfa, entry} -> entry.gaps end)
         |> Enum.uniq()
         |> length()

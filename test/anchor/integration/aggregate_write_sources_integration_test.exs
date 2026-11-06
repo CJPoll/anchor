@@ -72,7 +72,7 @@ defmodule Anchor.Integration.AggregateWriteSourcesIntegrationTest do
     assert %GraphReport{exit_code: 0, findings: [], could_not_check: []} = report
 
     assert GraphReport.summary(report) =~
-             "; writes: 1 found, 1 resolved, 0 unresolved; transactions: 1, 1 complete, 0 incomplete"
+             "; writes: 1 read, 1 resolved, 0 unresolved; transactions: 1 read, 1 no gap noticed, 0 incomplete"
   end
 
   test "I1: the violating module gives exactly the unresolved write and the incomplete transaction",
@@ -93,6 +93,6 @@ defmodule Anchor.Integration.AggregateWriteSourcesIntegrationTest do
     assert run.key == "aggregate_write_sources|Aws.Violating.run/1|incomplete 1"
 
     assert GraphReport.summary(report) =~
-             "; writes: 2 found, 1 resolved, 1 unresolved; transactions: 2, 1 complete, 1 incomplete"
+             "; writes: 2 read, 1 resolved, 1 unresolved; transactions: 2 read, 1 no gap noticed, 1 incomplete"
   end
 end
