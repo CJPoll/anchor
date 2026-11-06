@@ -31,6 +31,8 @@ defmodule Anchor.Domain.CoreMfaReferencesTest do
     def spawn_improper(x, y), do: spawn(M, :f, [x | y])
     def local(x), do: run(M, :f, [x])
     def both_computed(mod, name, x), do: {mod, name, [x]}
+    def applied_literal_name(args), do: apply(M, :f, args)
+    def timeout_arg, do: GenServer.call(M, :f, 5000)
     def applied_name(name, x), do: apply(M, name, [x])
     def applied_any(name, args), do: apply(M, name, args)
     def applied_computed(mod, name, x), do: apply(mod, name, [x])
@@ -72,6 +74,8 @@ defmodule Anchor.Domain.CoreMfaReferencesTest do
         {:number_beside, 1, []},
         {:computed, 2, []},
         {:computed_name, 2, []},
+        {:applied_literal_name, 1, [{M, :f, nil}]},
+        {:timeout_arg, 0, []},
         {:applied_name, 2, [{M, nil, 1}]},
         {:applied_any, 2, [{M, nil, nil}]},
         {:applied_computed, 3, []},
