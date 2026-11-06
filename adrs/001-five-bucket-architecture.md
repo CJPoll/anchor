@@ -411,6 +411,7 @@ Only the classification of subjects the table had not yet listed is added.
 | `Anchor.Domain.Explain`, `Anchor.Domain.Subject` | Domain | What `mix anchor.explain` answers, and the subject it is asked about (DND-5446). |
 | `Collectable.Anchor.Domain.Sabotage.BoundedOutput` | Domain | The `Collectable` implementation of `Anchor.Domain.Sabotage.BoundedOutput`, defined in its file: a protocol implementation is a module of its own, in the bucket of the file that defines it. |
 | `Anchor.Domain.Checks.*` | Domain | Each Credo check's pure detection, called through `Anchor.Managers.Lint`. |
+| `Anchor.Domain.LandedJudge` | Domain | What the landed judge decides beyond the ratchet (DND-5658): the base rules a change removes or retypes, the FIRST LANDING notes, and the rules it runs. Pure, over rule lists the Manager read. |
 | `Anchor.Domain.RuleSchema`, `Anchor.Domain.RuleMatching`, `Anchor.Domain.RuleCoverage`, `Anchor.Domain.Failures`, `Anchor.Domain.Violation`, `Anchor.Domain.GlobPattern`, `Anchor.Domain.AllowedCallers`, `Anchor.Domain.PureCalls`, `Anchor.Domain.EffectPrimitives` | Domain | The rule schema, rule selection, the fail-closed messages, the violation struct and the pattern grammars every rule shares. |
 
 ## Examples

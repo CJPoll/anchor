@@ -317,6 +317,23 @@ anchor.baseline` (`Anchor.Managers.AstBaseline`) writes a baseline (`--write
 ID`, through the `Anchor.Adapters.LintKeys` port, `CredoKeys`: a muted
 `Credo.run/1`) and judges GREW (`--base REF`).
 
+CI judges a pull request twice (DND-5658): with its own `mix anchor.graph
+--base`, and with the anchor landed on its base. `bin/ci/judge-with-base.sh`
+runs the base's copy of `bin/ci/base-judge.sh`, which builds the base in a
+scratch worktree and runs its `mix anchor.graph --project <pull request>`. So a
+change to `Enforcement`, `Baseline`, `BaselineBase` or a rule's `check/2` lands
+only after the landed judge passes it. The landed judge judges by the base's
+whole config (`Anchor.Config.judged/3`): every base rule as the base defines it
+(`Anchor.Domain.LandedJudge.rules/2`), under the base's `architecture:` and
+`aggregates:`, so narrowing, downgrading or widening in `.anchor.yml` does not
+loosen a rule; such a change is the owner's to land. A rule type the base does
+not know is a report-only FIRST LANDING (`Anchor.Config.parse_config/2`
+`defer_unknown_types`, `LandedJudge.judge/5`); a base rule removed, renamed or
+retyped fails; an unknown key on a base rule and an unknown top-level section are
+refused (exit 3) and landed by the owner. A pull request that edits `.github/workflows/ci.yml` or
+`bin/ci/judge-with-base.sh` is not caught (GitHub runs its workflow): review is
+the gate there. Self-test: `bin/tests/base-judge-test.sh`.
+
 ## The layering rule (DND-5442)
 
 `Anchor.Domain.GraphRules.Layering` judges every call in the graph whose

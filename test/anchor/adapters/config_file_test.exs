@@ -183,6 +183,26 @@ defmodule Anchor.Adapters.ConfigFileTest do
     end
   end
 
+  # DND-5658: the landed judge's load. Sabotage record:
+  # ../../sabotage_records/landed_judge-20261103-dnd_5658_ci_base_ratchet.md
+  describe "load_judged/1 (DND-5658)" do
+    @tag :tmp_dir
+    test "sets an unknown rule type aside under the root; load_in/1 still refuses it", %{
+      tmp_dir: root
+    } do
+      File.write!(
+        Path.join(root, ".anchor.yml"),
+        "rules:\n  - type: brand_new_rule\n    id: fresh\n"
+      )
+
+      assert {:ok, %Config{rules: [], deferred: [%{id: "fresh", type: "brand_new_rule"}]}} =
+               ConfigFile.load_judged(root)
+
+      assert {:error, {:config_load_failed, _path, {:invalid_rule, _reason}}} =
+               ConfigFile.load_in(root)
+    end
+  end
+
   describe "load/0 (test-matrix: config.ex -> load/0 and load_from_path/1)" do
     # Row 5 (DND-1265, A6): no candidate is a failure naming every path
     # searched, never an empty config that reads green.

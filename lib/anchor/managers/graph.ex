@@ -6,7 +6,8 @@ defmodule Anchor.Managers.Graph do
 
   `run/2` does, in order:
 
-    1. load `.anchor.yml` (`Anchor.Adapters.ConfigLoader`); a missing or
+    1. load `.anchor.yml` (`Anchor.Adapters.ConfigLoader`; under `--project`
+       the judged project's, `load_judged/1`, DND-5658); a missing or
        invalid config is COULD NOT MEASURE (exit 3), and so is a config with no
        `architecture:` section: nothing could be classified;
     2. read every beam of the project's ebins (`Anchor.Adapters.BeamSource`):
@@ -118,6 +119,7 @@ defmodule Anchor.Managers.Graph do
   alias Anchor.Domain.GraphReport.Finding
   alias Anchor.Domain.GraphRules
   alias Anchor.Domain.Interfaces
+  alias Anchor.Domain.LandedJudge
   alias Anchor.Domain.Model
   alias Anchor.Domain.Roots
   alias Anchor.Domain.Violation
@@ -130,7 +132,8 @@ defmodule Anchor.Managers.Graph do
   def run(%Request{} = request, deps \\ []) do
     deps = deps(deps)
 
-    with {:ok, config} <- load_config(deps.config_loader),
+    with {:ok, config} <- load_config(deps.config_loader, request),
+         {:ok, config, deps} <- landed(request, config, deps),
          {:ok, request} <- source_dirs(request, config),
          {:ok, rules} <- graph_rules(config, request, deps.graph_rules),
          :ok <- write_target(rules, request, config),
@@ -195,8 +198,12 @@ defmodule Anchor.Managers.Graph do
     }
   end
 
-  defp load_config(loader) do
-    case loader.load() do
+  # Under `mix anchor.graph --project DIR` (DND-5658) the config is the judged
+  # project's, and the judge sets aside rule types it does not know.
+  defp load_config(loader, %Request{root: root, opts: opts}) do
+    loaded = if Map.get(opts, :judge), do: loader.load_judged(root), else: loader.load()
+
+    case loaded do
       {:ok, %Config{architecture: nil} = config} ->
         {:could_not_check, Failures.graph_no_architecture(config.path)}
 
@@ -265,8 +272,9 @@ defmodule Anchor.Managers.Graph do
     rules = with_needs(rules)
     {model, analyses} = analysed(rules, model, deps)
 
-    deps =
-      Map.merge(deps, %{base: base_config(deps.git_base, request, config), now: config.rules})
+    base = Map.get_lazy(deps, :base, fn -> base_config(deps.git_base, request, config) end)
+    deps = Map.merge(deps, %{base: base, now: config.rules})
+    landed = Map.get(deps, :landed, [])
 
     ran = Enum.map(rules, &run_rule(&1, model, analyses, config.path, request, deps))
 
@@ -279,6 +287,7 @@ defmodule Anchor.Managers.Graph do
 
     GraphReport.new(
       fail_closed ++
+        landed ++
         Enum.flat_map(ran, & &1.findings) ++ base_config_issues(deps, ran) ++ artifact_notes,
       [],
       request
@@ -629,6 +638,61 @@ defmodule Anchor.Managers.Graph do
       {:error, :absent} -> {:ok, :absent}
       {:error, reason} -> {:unreadable, config, ref, reason}
     end
+  end
+
+  # DND-5658: under `--project` (the landed judge), the base config is read
+  # once, up front: the base rules this change removes or retypes fail, each
+  # rule type the judge set aside is a report-only FIRST LANDING note, and the
+  # run is judged by the BASE's config, every section of it
+  # (`Anchor.Config.judged/3`), plus the change's rules the base does not have
+  # (`Anchor.Domain.LandedJudge.rules/2`). So a change cannot loosen a base rule
+  # through `.anchor.yml`: not its selector or enforcement, not the calls matrix
+  # or bucket selectors, not `aggregates:`. A base config that could not be read
+  # is COULD NOT MEASURE (exit 3), never "nothing removed".
+  defp landed(%Request{opts: %{judge: true}} = request, config, deps) do
+    path = config_path(config.path, request.root)
+    ref = Map.get(request.opts, :base)
+
+    case read_base_config(deps.git_base, request.root, ref, path) do
+      {:ok, %Config{architecture: nil}} ->
+        {:could_not_check, Failures.landed_judge_base_unreadable(path, ref, :no_architecture)}
+
+      {:ok, %Config{} = base} ->
+        findings = landed_findings(request, config, base.rules)
+        judged = Config.judged(config, base, LandedJudge.rules(base.rules, config.rules))
+        {:ok, judged, Map.merge(deps, %{base: {:ok, base.rules}, landed: findings})}
+
+      {:unreadable, reason} ->
+        {:could_not_check, Failures.landed_judge_base_unreadable(path, ref, reason)}
+
+      no_base ->
+        findings = landed_findings(request, config, no_base)
+        base = if no_base == :absent, do: {:ok, :absent}
+        {:ok, config, Map.merge(deps, %{base: base, landed: findings})}
+    end
+  end
+
+  defp landed(_request, config, deps), do: {:ok, config, deps}
+
+  # The whole config at `ref`, `:absent` when the ref has none, `nil` without
+  # `--base`.
+  defp read_base_config(_git, _root, nil, _path), do: nil
+
+  defp read_base_config(git, root, ref, path) do
+    case git.config(root, ref, path) do
+      {:ok, %Config{} = base} -> {:ok, base}
+      {:error, :absent} -> :absent
+      {:error, reason} -> {:unreadable, reason}
+    end
+  end
+
+  defp landed_findings(request, config, base_rules) do
+    path = config_path(config.path, request.root)
+    ref = Map.get(request.opts, :base)
+    {failures, notes} = LandedJudge.judge(base_rules, config.rules, config.deferred, path, ref)
+
+    Enum.map(failures, &Finding.fail_closed(&1, @config_file)) ++
+      Enum.map(notes, &Finding.note(&1, @config_file))
   end
 
   # DND-5648: a base config that does not load is one cause, so it is one
