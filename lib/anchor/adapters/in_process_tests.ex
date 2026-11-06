@@ -5,10 +5,21 @@ defmodule Anchor.Adapters.InProcessTests do
   `Anchor.Adapters.SuiteRunner`, doubled in tests as
   `Anchor.InProcessTestsMock`.
 
-  `run(args)` runs the suite with `--max-cases 1` last, so it wins (one test at a time)
-  and returns `:passed`, or `{:failed, message}` (a failed test, a test file
-  that does not compile, a suite that ran nothing).
+  `run(args)` compiles every test file, then runs the suite one test at a time,
+  and returns `{:passed, total}` or `{:failed, message, total}`, `total` being the
+  tests ExUnit counted (excluded and skipped ones too), or nil when it never ran
+  (a test file that does not compile, a test helper that raised).
   """
 
-  @callback run(args :: [String.t()]) :: :passed | {:failed, String.t()}
+  @typedoc """
+  A module implementing this behaviour. A parameter whose `@spec` says
+  `InProcessTests.t()` is what lets `mix anchor.graph` judge a call on it
+  against this behaviour's implementers only (DND-5633,
+  `Anchor.Domain.BehaviourReceiver`).
+  """
+  @type t :: module()
+
+  @type result :: {:passed, non_neg_integer()} | {:failed, String.t(), non_neg_integer() | nil}
+
+  @callback run(args :: [String.t()]) :: result()
 end

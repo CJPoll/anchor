@@ -1,6 +1,6 @@
 defmodule Anchor.Adapters.GitShow do
   @moduledoc """
-  Reads a baseline (`show/3`), and the config's graph rules (`rules/3`,
+  Reads a baseline (`show/3`), and the config's rules (`rules/3`,
   DND-5629), as they are on a git ref, the **Side Effect** adapter (ADR 001)
   behind `Anchor.Adapters.GitBase` (DND-5441).
 
@@ -39,7 +39,7 @@ defmodule Anchor.Adapters.GitShow do
   end
 
   @doc """
-  The graph rules of the config at `path` on `ref` (DND-5629), read as
+  The rules of the config at `path` on `ref` (DND-5629), read as
   `show/3` reads a baseline (the same refusals) and parsed by
   `Anchor.Config.parse_config/1`.
   """

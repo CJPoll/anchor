@@ -52,13 +52,26 @@ before coining a synonym.
 - `lint` — `Anchor.Managers.Lint`, the pipeline-composition Manager (the public
   lint entry that composes config loading, AST acquisition, fact derivation, rule
   selection, and detection). Used for end-to-end/integration runs that mutate the
-  Manager wiring rather than a single check's Domain detection.
+  Manager wiring rather than a single check's Domain detection. Also
+  `Anchor.Domain.EnforcementPasses` (DND-5631): joining the enforce and report
+  passes' findings, one copy each.
 - `base` — `Anchor.Check.Base`, the shared Framework layer every check `use`s:
   mapping violations to Credo issues and choosing the run's shared-failure
   reporter (DND-1265).
 - `failures` — `Anchor.Domain.Failures`, the text of every fail-closed report
   (missing or invalid config, unparseable file, a check that crashed on a file).
 - `source` — `Anchor.Check.Source`, the AST/source acquisition edge.
+- `test_preload` — `Anchor.TestPreload` and the `test/test_helper.exs` call
+  `Anchor.TestBootTest` holds (DND-5690): the application closure loaded before
+  any test runs. The coverage tool's own refusal of a module that cannot load
+  is `sabotage`'s.
+- `coverage_attribution` — `mix anchor.sabotage coverage`'s causal attribution
+  (DND-5691): `Anchor.Domain.Sabotage.Attribution`, `ProcessOwnership`, `LabelSpec`,
+  `CoverageArgs`, the map's classification, and the tracer, collector and suite
+  runner around them.
+- `coverage_compare` — `mix anchor.sabotage coverage-compare` (DND-5692):
+  `Anchor.Domain.Sabotage.CoverageCompare`, its Manager and task, and what makes the
+  Coverage map workflow the guard (`test/anchor/coverage_map_workflow_test.exs`).
 - `sabotage_scope` — `mix anchor.sabotage scope` (DND-5472): the diff parser
   (`Anchor.Domain.Sabotage.DiffHunks`), the function spans
   (`Anchor.Domain.Sabotage.FunctionSpans`), the mapping and its counts
@@ -83,7 +96,9 @@ before coining a synonym.
   `TestSelection`, `Plan`, `TestRun`, `Outcome`, `Journal`, `Run`, `Report`,
   `BoundedOutput`, `NoMutant`, `SharedRun`),
   `Anchor.Managers.Sabotage.Runner`, the adapters `SourcePatcher`,
-  `GitStatus` and `TestRunner`, and `Anchor.Sabotage.ExUnitFormatter`.
+  `GitStatus` and `TestRunner`, and `Anchor.Sabotage.ExUnitFormatter`; the
+  survivors list (DND-5483: `Survivors`) and the replay (DND-5485: `Replay`,
+  `KillerRef`, `TestRunRefusal`, `Anchor.Managers.Sabotage.Replay`).
   `sabotage_scope` stays the word for the diff scope.
 - `dependency_analyzer` — `Anchor.Domain.DependencyAnalyzer`, the pure AST
   walk behind every dependency fact (module names, references, calls, uses,
@@ -231,18 +246,46 @@ before coining a synonym.
 - `baseline` — report, baseline, enforce (DND-5441): `Anchor.Domain.Baseline`,
   `Enforcement` and `ViolationKey`, the engine common keys in `RuleSchema`,
   report-mode detection in `Managers.Lint` and `Check.Base`, the ratchet in
-  `Managers.Graph`, `BaselineFile`, `GitShow` and the task's baseline flags.
+  `Managers.Graph`, `BaselineFile`, `GitShow` and the task's baseline flags;
+  and the ast rules' baselines (DND-5632): `Anchor.Domain.AstBaseline`,
+  `Anchor.Managers.AstBaseline`, the `LintKeys` port and its `CredoKeys`
+  adapter, and `mix anchor.baseline`.
+- `analyses_complete` — the `analyses_complete` graph rule (DND-5715):
+  `Anchor.Domain.GraphRules.AnalysesComplete`, its floors and failures, and
+  `mix anchor.graph` over Anchor's own lib/ under sabotage. The record also says
+  what each assertion of the removed whole-Anchor self tests became.
 - `layering` — the `layering` graph rule (DND-5442):
   `Anchor.Domain.GraphRules.Layering`, `CallMatrix`, `DynamicCalls`,
   `ViolationKey.mfa/1`, its registration and Config's architecture check of
-  graph rules and known types.
+  graph rules and known types; and the dynamic-call narrowing by declared
+  behaviour, `Anchor.Domain.BehaviourReceiver` (DND-5633).
+- `parity` — `Anchor.Domain.Parity` (DND-5491): the AST/graph engine-split
+  comparison, and the parity fixture tree and test it drives.
 - `aggregates` — aggregate declarations (DND-5476): the `aggregates:`
   section (`Anchor.Domain.Aggregates.Config`), the declaration index
   (`Anchor.Domain.Aggregates.Index`), the `aggregate_declarations` graph rule
-  and the `use Anchor.Aggregate` macro.
+  and the `use Anchor.Aggregate` macro; the write analysis (DND-5459:
+  `FunctionWalk`, `WriteSites`, `WriteSource`, `Scopes`, `NonTransactional`,
+  `Inference`, `Analysis` and the `aggregate_write_sources` graph rule); and
+  `declare: none` (DND-5659: `Config`'s `none`, `Persistence`, the
+  `:persists_under_none` issue).
 - `context_acyclic` — the `context_acyclic` graph rule (DND-5445):
   `Anchor.Domain.ContextGraph`, `GraphRules.ContextAcyclic`,
   `ViolationKey.graph_key/2` and its registration.
+- `interface` — the `interface` graph rule (DND-5443):
+  `Anchor.Domain.Interfaces`, `GraphRules.Interface`, its registration, its
+  RuleSchema row and `max_width`, and the interface width in `GraphReport`
+  and `Managers.Graph`.
+- `enforcement_passes` — one finding two rules make: `Anchor.Domain.EnforcementPasses`
+  (DND-5631, DND-5632; its `Fix:` text left out of a finding's identity, DND-5446).
+- `rule_shapes` — one `Fix:` per issue (DND-5446): `Anchor.Domain.RuleShapes`,
+  every check's `shape/1` and Fix suffix, and the generic Fix of a rejected
+  config in `Failures` (with the load refusals moved there from RuleSchema).
+- `explain` — `mix anchor.explain` (DND-5446): `Anchor.Domain.Subject`,
+  `Classification.classify_planned/3`, `Anchor.Domain.Explain`,
+  `Anchor.Managers.Explain` and the Mix task.
+- `module_map` — ADR 001's module map and its canary (DND-5620): every `lib/`
+  module has a row, under the bucket `.anchor.yml` gives it.
 - `dialyzer_boundary` — the DND-5499 spike runner
   `test/fixtures/dialyzer_boundary/run.exs` (not a check: it measures what
   Dialyzer reports for clause reachability on the fixtures beside it, so F8

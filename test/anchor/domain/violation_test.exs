@@ -1,6 +1,8 @@
 defmodule Anchor.Domain.ViolationTest do
   # Domain data type: a violation is `{line, trigger, message}`, free of any
   # Credo type. `Anchor.Check.Base` is what maps it to a `Credo.Issue`.
+  #
+  # Sabotage record (FX-C): ../../sabotage_records/baseline-20261103-dnd_5648_graph_followups.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Violation
@@ -28,6 +30,18 @@ defmodule Anchor.Domain.ViolationTest do
         # asserted rather than a compile-time error.
         struct!(Violation, line: 1)
       end
+    end
+  end
+
+  # The anchor.graph review (struct_owned_by_module_flow): a violation's
+  # enforcement is changed by its own module, never by a map update elsewhere.
+  describe "with_enforcement/2" do
+    test "sets the enforcement and keeps every other field" do
+      violation = %Violation{line: 3, trigger: "t", message: "m", key: "k", rule_id: "r"}
+      reported = Violation.with_enforcement(violation, :report)
+
+      assert reported.enforcement == :report
+      assert %{reported | enforcement: violation.enforcement} == violation
     end
   end
 end

@@ -28,6 +28,7 @@ defmodule Anchor.Managers.GraphRuleFailClosedTest do
     @moduledoc false
     @behaviour Anchor.Domain.GraphRule
     def rule_type, do: :stub_checks_nothing
+    def narrows?(_base_key, _key), do: false
 
     # One rule finding (keyed) and one fail-closed issue carrying a key the
     # baseline lists: the key must not hold it.
@@ -79,7 +80,7 @@ defmodule Anchor.Managers.GraphRuleFailClosedTest do
   end
 
   defp run(rule, beam, opts \\ %{}) do
-    expect(ConfigLoaderMock, :load_in, fn _root -> {:ok, config(rule)} end)
+    expect(ConfigLoaderMock, :load, fn -> {:ok, config(rule)} end)
     Mox.expect(BeamSourceMock, :read_ebins, fn _apps -> [beam] end)
 
     expect(SourceSourceMock, :read, fn @root, files ->

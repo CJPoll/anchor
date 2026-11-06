@@ -37,7 +37,8 @@ defmodule Anchor.Check.CaseOnBareArgTest do
       assert [issue] = issues(source)
 
       assert issue.message ==
-               "Case statement operates on bare argument `status` in function `process`. Consider using function head pattern matching instead."
+               "Case statement operates on bare argument `status` in function `process`. Consider using function head pattern matching instead." <>
+                 " Fix: match the argument in the function heads, one clause per case branch, instead of a case on the bare argument"
 
       assert issue.trigger == "case"
       assert issue.line_no == 3

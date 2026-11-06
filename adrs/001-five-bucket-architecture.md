@@ -35,6 +35,18 @@ persists one attribute in the module that uses it, is Framework, beside the
 Credo checks and the Mix tasks; the aggregate declaration modules are Domain.
 The mapping table lists them. Standard unchanged.
 
+Amended 2026-11-03 (DND-5459, DND-5659): the write-analysis modules and
+`Persistence` are Domain, and Ecto is a test-only dependency with none in
+`lib/`. Standard unchanged — see "Amendment (2026-11-03, DND-5459,
+DND-5659)" under "How this maps to Anchor".
+
+Amended 2026-11-03 (DND-5620): the mapping table lists the graph engine's
+modules (`mix anchor.graph`, `mix anchor.explain`, and the Managers, ports,
+adapters and Domain modules behind them), and `test/anchor/adr_module_map_test.exs`
+keeps the map complete: a `lib/` module with no row, or a row whose bucket is
+not the one `.anchor.yml` gives it, fails the suite. Standard unchanged — see
+"Amendment (2026-11-03, DND-5620)" under "How this maps to Anchor".
+
 ## Context
 
 Anchor is a small library, but the class of problems the five-bucket
@@ -216,11 +228,13 @@ and are dropped rather than adapted:
 - **LiveView/HEEx view/template separation** — Anchor has no Phoenix, no
   LiveView, no HEEx.
 - **Ecto schema modules are Domain; repositories are Side Effects** — Anchor has
-  no Ecto and no schemas. (The underlying idea — that a struct definition is
-  Domain while the thing that loads it is a Side Effect — is already covered by
-  the generic Domain/Side-Effect definitions above; Anchor's `%Anchor.Config{}`
-  struct and its parser are Domain, and `Anchor.Adapters.ConfigFile`'s file reads
-  are the Side Effect.)
+  no Ecto and no schemas in `lib/` (Ecto is a test-only dependency since
+  DND-5459; see "Amendment (2026-11-03, DND-5459, DND-5659)"). (The
+  underlying idea — that a struct definition is Domain while the thing that
+  loads it is a Side Effect — is already covered by the generic
+  Domain/Side-Effect definitions above; Anchor's `%Anchor.Config{}` struct and
+  its parser are Domain, and `Anchor.Adapters.ConfigFile`'s file reads are the
+  Side Effect.)
 - **Oban workers are Framework** — Anchor has no Oban and no background jobs.
 - **The CQRS-machinery exemption** (aggregates, commands, events, projectors,
   process managers follow Commanded's architecture, not the five buckets) —
@@ -241,13 +255,14 @@ and are dropped rather than adapted:
 | Orchestration that loads config then runs analysis | Manager | Coordinates the Side Effect (config load) and Domain (analysis); `Anchor.Managers.Lint` below is that Manager. |
 | `Anchor.Aggregate` (DND-5476) | Framework | A compile-time macro: `use Anchor.Aggregate` persists one `@anchor_aggregate` attribute in the consumer's module and defines nothing else. It calls no Manager, adapter or Domain module at run time. |
 | `Anchor.Domain.Aggregates.*` (`Config`, `Declaration`, `DeclarationIssue`, `Index`) and `Anchor.Domain.GraphRules.AggregateDeclarations` (DND-5476) | Domain | Parse the `aggregates:` section, merge it with the persisted attributes read from the graph, and report what names nothing. Pure; a schema's table is read from Core, never by calling it. |
+| `Anchor.Domain.Aggregates.*` (`Analysis`, `FunctionWalk`, `WriteSites`, `WriteSite`, `WriteSource`, `Scope`, `Scopes`, `NonTransactional`, `Inference`) and `Anchor.Domain.GraphRules.AggregateWriteSources` (DND-5459); `Anchor.Domain.Aggregates.Persistence` (DND-5659) | Domain | Read the database writes and transactions they recognise from the graph's Core, trace each write to a schema or table, build each transaction's write set, infer aggregates; find the modules that persist under `declare: none`. Pure: Core and the graph in, structs out; nothing is loaded or called. |
 | `Mix.Tasks.Anchor.Sabotage` (and the Mix tasks that follow it) | Framework | The `mix` runner invokes it: it parses argv, makes one Manager call, renders the result and sets the exit code. It calls no adapter itself. |
 | `Anchor.Managers.Lint` | Manager | The lint use case: loads config through the `Anchor.Adapters.ConfigLoader` port, derives the pure facts, selects the rules that apply and calls the check's Domain detection, returning Domain violations. Checks (Framework) go through it. |
 | `Anchor.Managers.Sabotage` | Manager | The sabotage use case (`scope/2`): reads the diff through the `ChangeSource` port, then calls the Domain (`DiffHunks`, `FunctionSpans`, `Scope`). Reaches git and the file system only through the port. |
 | `Anchor.Adapters.ChangeSource` | Side Effect (port) | The behaviour `Anchor.Managers.Sabotage` depends on: merge-base, diff, untracked files, show, read. Tests double it. |
 | `Anchor.Adapters.GitChangeSource` | Side Effect | The real `ChangeSource`: runs read-only `git` with `System.cmd/3` (argv, never a shell) and returns diff text and paths. |
 | `Anchor.Adapters.ConfigLoader` | Side Effect (port) | The behaviour `Anchor.Managers.Lint` depends on to load configuration; `Anchor.Adapters.ConfigFile` is its real implementation. |
-| `Anchor.Adapters.BeamSource` | Side Effect (port) | The behaviour the planned graph runner (DND-5440) depends on to read a project's compiled beams. |
+| `Anchor.Adapters.BeamSource` | Side Effect (port) | The behaviour the graph runner (`Anchor.Managers.Graph`, DND-5440) depends on to read a project's compiled beams. |
 | `Anchor.Adapters.BeamReader` | Side Effect | The real `BeamSource`: reads each `.beam` with `:beam_lib` and returns `Anchor.Domain.Graph.Beam` records or decode errors. It never loads or calls a project module. |
 | `Anchor.Adapters.BaselineStore`, `Anchor.Adapters.GitBase` | Side Effect (port) | The behaviours `Anchor.Managers.Graph` depends on to read and create a rule's baseline file and to read it at a `--base` ref (DND-5441). Tests double them. |
 | `Anchor.Adapters.BaselineFile`, `Anchor.Adapters.GitShow` | Side Effect | The real ports: the file read and the `:exclusive` create under the project root; read-only `git` with `System.cmd/3` (argv, never a shell, the ref checked by Domain first). Both return the baseline's entries, parsed by `Anchor.Domain.Baseline.parse/1`, never its bytes. |
@@ -324,6 +339,79 @@ the Manager.
 This is an amendment, not a supersession: the five-bucket rule and the
 allowed-calls matrix are unchanged and bind every subject exactly as before.
 Only the classification of subjects the table had not yet listed is added.
+
+#### Amendment (2026-11-03, DND-5459, DND-5659): the write analysis is Domain, and Ecto is test-only
+
+The write analysis reads compiled Core (`:cerl`), the graph and the config,
+and returns structs: it loads no project module and calls nothing outside
+the process, so each of its modules is Domain by the Decision's own test,
+like the declaration index before it. `Persistence` reads the same graph to
+find the modules that persist under `declare: none`.
+
+Ecto entered `mix.exs` as `only: :test`: the tests compile fixtures against
+real Ecto macros so the Core shapes they read are the real ones. `lib/`
+still has no Ecto and no schema, so the dropped refinement above stays
+dropped; Anchor's own `.anchor.yml` now checks that claim with
+`aggregates: declare: none`, enforced.
+
+This is an amendment, not a supersession: the five-bucket rule and the
+allowed-calls matrix are unchanged and bind every subject exactly as before.
+
+#### Amendment (2026-11-03, DND-5620): the graph engine's modules are listed, and a test keeps the map complete
+
+The table above predates the graph engine (DND-5438 onward), so `mix
+anchor.graph`, `mix anchor.explain` and the Manager, ports, adapters and Domain
+modules behind them had no listed bucket. The rows below list them, read from
+`lib/` on main, together with the sabotage modules the table had not reached.
+The bucket of each row is the one `.anchor.yml`'s `architecture:` section
+classifies the module into: `lib/mix/tasks/` and `lib/anchor/check/` are
+Framework (and so is the `Anchor` module, by name), `lib/anchor/adapters/` and
+`lib/anchor/sabotage/` are Side Effects, `lib/anchor/domain/` is Domain, and
+`lib/anchor/managers/` is Managers.
+
+`test/anchor/adr_module_map_test.exs` holds this table to `lib/`. It reads
+every module of the compiled `:anchor` application, with the source file it
+was compiled from, and requires that each module has a row in this section (an
+exact name, or a `Namespace.*` row that covers it, the most specific row
+winning), and that the row's bucket is the bucket `.anchor.yml` classifies the
+module into (`Anchor.Domain.Classification.classify_planned/3`). A module added
+without a row, or a row whose bucket disagrees with the config, fails the
+suite and names the module and the row to add.
+
+This is an amendment, not a supersession: the five-bucket rule and the
+allowed-calls matrix are unchanged and bind every subject exactly as before.
+Only the classification of subjects the table had not yet listed is added.
+
+| Module | Bucket | Why |
+|---|---|---|
+| `Anchor` | Framework | The library's top-level module: documentation only, classified by its name (`pattern: "Anchor"`). |
+| `Mix.Tasks.Anchor.Graph`, `Mix.Tasks.Anchor.Explain` | Framework | Mix tasks (DND-5440, DND-5446): each parses argv, makes one Manager call (`Managers.Graph`, `Managers.Explain`), renders and sets the exit code. |
+| `Mix.Tasks.Anchor.Baseline` | Framework | The AST rules' baseline task (DND-5632). |
+| `Mix.Tasks.Anchor.Sabotage.*` | Framework | The sabotage subcommand tasks under `lib/mix/tasks/`. |
+| `Anchor.Sabotage.CoverageCollector` | Framework | The OTP process a coverage run starts; it lives under `lib/mix/tasks/anchor/sabotage/`, so it is bucketed with the task that starts it. |
+| `Anchor.Managers.Graph`, `Anchor.Managers.Graph.Request` | Manager | The graph use case (DND-5440): reads the config, beams, sources and baselines through their ports, builds the graph and model (Domain), runs the graph rules and judges baselines; `Request` is its input struct. |
+| `Anchor.Managers.Explain` | Manager | The explain use case (DND-5446): the same inputs as `Managers.Graph`, read only; the stored graph is used only under this build's key. It writes nothing. |
+| `Anchor.Managers.AstBaseline` | Manager | The AST rules' baseline use case behind `mix anchor.baseline` (DND-5632). |
+| `Anchor.Managers.Sabotage.Runner`, `Anchor.Managers.Sabotage.Coverage` | Manager | The sabotage run and per-test coverage use cases (DND-5473, DND-5474). |
+| `Anchor.Managers.Sabotage.CoverageCompare` | Manager | `mix anchor.sabotage coverage-compare`: reads two builds of the coverage map through the `CoverageStore` port for the Domain's verdict (DND-5692) |
+| `Anchor.Managers.Sabotage.Replay` | Manager | `mix anchor.sabotage replay`'s orchestration: re-applies each landed record's rows through Runner's lock and journal (DND-5485) |
+| `Anchor.Adapters.SourceSource`, `Anchor.Adapters.GraphStore`, `Anchor.Adapters.Tracing`, `Anchor.Adapters.InProcessTests`, `Anchor.Adapters.ProjectModuleSource`, `Anchor.Adapters.CoverageStore`, `Anchor.Adapters.RecordStore`, `Anchor.Adapters.TestExecution`, `Anchor.Adapters.SourceMutation` | Side Effect (port) | The behaviours the graph and sabotage Managers depend on; tests double them with Hammox. |
+| `Anchor.Adapters.BehaviourSource`, `Anchor.Adapters.LintKeys` | Side Effect (port) | What the graph runner reads of an external behaviour's callbacks (DND-5447), and the Credo run's keys `mix anchor.baseline` reads (DND-5632). |
+| `Anchor.Adapters.BehaviourReader`, `Anchor.Adapters.CredoKeys` | Side Effect | Their real implementations. |
+| `Anchor.Adapters.SourceReader`, `Anchor.Adapters.GraphArtifact` | Side Effect | The graph runner's real ports: reading source files into `SourceFacts`, and the keyed graph artifact under `_build/<env>/anchor/`. |
+| `Anchor.Adapters.CallTracer`, `Anchor.Adapters.SuiteRunner`, `Anchor.Adapters.ProjectModules`, `Anchor.Adapters.CoverageFile`, `Anchor.Adapters.RecordFile`, `Anchor.Adapters.TestRunner`, `Anchor.Adapters.SourcePatcher`, `Anchor.Adapters.GitStatus`, `Anchor.Adapters.GitWorktree`, `Anchor.Adapters.GitEnv` | Side Effect | The sabotage runner's real ports and their helpers: tracing, running the suite, writing records and coverage, patching sources, and the git environment (DND-5581). |
+| `Anchor.Sabotage.ExUnitFormatter` | Side Effect | The ExUnit formatter a sabotage run adds to the project's test command; it writes a file and calls no Anchor module. |
+| `Anchor.Domain.Graph`, `Anchor.Domain.Graph.*` | Domain | The causal graph (DND-5438): its records (`Beam`, `ModuleNode`, `FunctionNode`, `Call`, `StructUse`, `SourceFacts`, `ProjectFile`), the `Builder`, the `CoreWalker` and inlining. Pure: beam records in, graph out. |
+| `Anchor.Domain.Model`, `Anchor.Domain.Architecture`, `Anchor.Domain.Architecture.*`, `Anchor.Domain.Classification`, `Anchor.Domain.CallMatrix`, `Anchor.Domain.Interfaces` | Domain | The `architecture:` section and the classification of every module into a bucket, a context and an interface. |
+| `Anchor.Domain.GraphRule`, `Anchor.Domain.GraphRules`, `Anchor.Domain.GraphRules.*`, `Anchor.Domain.RuleShape`, `Anchor.Domain.RuleShapes` | Domain | The graph rule behaviour, its registry and the rules (`Layering`, `ContextAcyclic`, `Interface`), and every rule type's conforming shape (DND-5446). |
+| `Anchor.Domain.GraphKey`, `Anchor.Domain.GraphReport`, `Anchor.Domain.GraphReport.*`, `Anchor.Domain.BaselineBase` | Domain | The graph artifact's key, the run's report, and the base-ref comparison of baselines. |
+| `Anchor.Domain.Cfa`, `Anchor.Domain.Cfa.*`, `Anchor.Domain.HigherOrder`, `Anchor.Domain.DynamicCalls`, `Anchor.Domain.Demand`, `Anchor.Domain.Demand.*`, `Anchor.Domain.DataFlow`, `Anchor.Domain.DataFlow.*`, `Anchor.Domain.Core`, `Anchor.Domain.Digraph`, `Anchor.Domain.GraphAlgorithms`, `Anchor.Domain.ContextGraph`, `Anchor.Domain.FunctionRef` | Domain | The analyses the graph rules need: higher-order flow (DND-5497), demand (DND-5498), data flow, dynamic-call candidates, and the graph algorithms. |
+| `Anchor.Domain.Effects`, `Anchor.Domain.Roots`, `Anchor.Domain.BehaviourReceiver`, `Anchor.Domain.StructFlow`, `Anchor.Domain.StructOwnership`, `Anchor.Domain.StructTypes` | Domain | The analyses behind `effects_match_bucket` and `struct_owned_by_module_flow` (DND-5447, DND-5454), and the behaviour-typed receivers that narrow a dynamic call (DND-5633). |
+| `Anchor.Domain.AstBaseline`, `Anchor.Domain.EnforcementPasses`, `Anchor.Domain.Parity` | Domain | Report, baseline and enforce for the AST rules (DND-5632, DND-5631) and the parity of the two engines. |
+| `Anchor.Domain.Explain`, `Anchor.Domain.Subject` | Domain | What `mix anchor.explain` answers, and the subject it is asked about (DND-5446). |
+| `Collectable.Anchor.Domain.Sabotage.BoundedOutput` | Domain | The `Collectable` implementation of `Anchor.Domain.Sabotage.BoundedOutput`, defined in its file: a protocol implementation is a module of its own, in the bucket of the file that defines it. |
+| `Anchor.Domain.Checks.*` | Domain | Each Credo check's pure detection, called through `Anchor.Managers.Lint`. |
+| `Anchor.Domain.RuleSchema`, `Anchor.Domain.RuleMatching`, `Anchor.Domain.RuleCoverage`, `Anchor.Domain.Failures`, `Anchor.Domain.Violation`, `Anchor.Domain.GlobPattern`, `Anchor.Domain.AllowedCallers`, `Anchor.Domain.PureCalls`, `Anchor.Domain.EffectPrimitives` | Domain | The rule schema, rule selection, the fail-closed messages, the violation struct and the pattern grammars every rule shares. |
 
 ## Examples
 

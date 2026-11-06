@@ -152,17 +152,21 @@ defmodule Anchor.Managers.GraphLandedJudgeTest do
            )
   end
 
-  test "a base config that cannot be read fails, never reads as nothing removed", %{beam: beam} do
-    expect_run([rule()], [], beam, {:error, {:git, 128, "fatal"}})
+  test "a base config that cannot be read is COULD NOT MEASURE, never nothing removed" do
+    expect(ConfigLoaderMock, :load_judged, fn @root -> {:ok, config([rule()], [])} end)
+
+    expect(GitBaseMock, :rules, fn @root, @ref, ".anchor.yml" ->
+      {:error, {:git, 128, "fatal"}}
+    end)
 
     report = Graph.run(request(%{}), deps())
 
-    assert report.exit_code == 1
+    assert report.exit_code == 3
 
-    assert Enum.any?(
-             messages(report),
-             &(&1 =~ "Anchor could not read .anchor.yml at origin/main")
-           )
+    assert [issue] = report.could_not_check
+
+    assert issue.message =~
+             "COULD NOT MEASURE: the landed judge could not read .anchor.yml at origin/main"
   end
 
   test "positive control: an honest shrink of a base rule's baseline passes", %{beam: beam} do
@@ -192,8 +196,8 @@ defmodule Anchor.Managers.GraphLandedJudgeTest do
     assert [%{key: @key, enforcement: :enforce}] = Enum.filter(report.findings, &(&1.key == @key))
   end
 
-  test "outside the judge, the config loads with load_in and nothing is compared", %{beam: beam} do
-    expect(ConfigLoaderMock, :load_in, fn @root -> {:ok, config([rule()], [])} end)
+  test "outside the judge, the config loads with load and nothing is compared", %{beam: beam} do
+    expect(ConfigLoaderMock, :load, fn -> {:ok, config([rule()], [])} end)
     Mox.expect(BeamSourceMock, :read_ebins, fn _apps -> [beam] end)
 
     expect(SourceSourceMock, :read, fn @root, files ->

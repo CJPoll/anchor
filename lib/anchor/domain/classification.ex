@@ -135,6 +135,68 @@ defmodule Anchor.Domain.Classification do
         do: {name, Selector.describe(selector)}
   end
 
+  @typedoc """
+  A module classified before it is compiled (DND-5446): `definite` is the one
+  bucket a path or pattern selector puts it in (`nil` for none or several),
+  `ambiguous` every bucket such a selector matched when there are two or
+  more, `possible` the buckets that only a beam fact could put it in, and
+  `unknown` the selector kinds that need the beam (`:uses_module`,
+  `:behaviour`, `:exports_function`).
+  """
+  @type planned :: %{
+          definite: String.t() | nil,
+          ambiguous: [String.t()],
+          possible: [String.t()],
+          unknown: [:uses_module | :behaviour | :exports_function]
+        }
+
+  @doc """
+  Classifies a module that may not be compiled yet (DND-5446): by its
+  repo-relative source `path` (`nil` when unknown) and its `module` name
+  only. A `paths` or `pattern` selector is decided; a `uses_module`,
+  `behaviour` or `exports_function` selector needs the beam, so a bucket
+  with one that has not already matched is `possible`, and the kind is
+  `unknown`. Two buckets matched is ambiguous, never a precedence.
+  """
+  @spec classify_planned(String.t() | nil, module() | nil, Architecture.t()) :: planned()
+  def classify_planned(path, module, %Architecture{buckets: buckets}) do
+    facts = %{source_file: path, module: module}
+
+    decided =
+      Enum.filter(buckets, fn bucket ->
+        Enum.any?(bucket.selectors, &decided_match?(&1, facts))
+      end)
+
+    undecided =
+      for bucket <- buckets,
+          bucket not in decided,
+          selector <- bucket.selectors,
+          beam_selector?(selector),
+          do: {bucket.name, elem(selector, 0)}
+
+    %{
+      definite: definite(decided),
+      ambiguous: ambiguous(decided),
+      possible: undecided |> Enum.map(&elem(&1, 0)) |> Enum.uniq(),
+      unknown: undecided |> Enum.map(&elem(&1, 1)) |> Enum.uniq() |> Enum.sort()
+    }
+  end
+
+  defp decided_match?({:pattern, _glob}, %{module: nil}), do: false
+
+  defp decided_match?({kind, _value} = selector, facts) when kind in [:paths, :pattern],
+    do: Selector.matches?(selector, facts)
+
+  defp decided_match?(_beam_selector, _facts), do: false
+
+  defp beam_selector?({kind, _value}), do: kind in [:uses_module, :behaviour, :exports_function]
+
+  defp definite([%Bucket{name: name}]), do: name
+  defp definite(_none_or_several), do: nil
+
+  defp ambiguous([_one]), do: []
+  defp ambiguous(several), do: several |> Enum.map(& &1.name) |> Enum.sort()
+
   defp add_classified({classified, issues}, facts, architecture) do
     case classify(facts, architecture) do
       {:ok, %__MODULE__{} = one} ->

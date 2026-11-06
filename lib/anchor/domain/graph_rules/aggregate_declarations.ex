@@ -13,6 +13,12 @@ defmodule Anchor.Domain.GraphRules.AggregateDeclarations do
   `<id>|<site>|<kind> <aggregates, sorted, joined by ","> <subject>`, where the
   site is `.anchor.yml` or the declaring module: no line numbers.
 
+  Under `aggregates: declare: none` (DND-5659) the rule enforces that
+  declaration: each module that persists (`:persists_under_none`, at the
+  module) is a violation whose `Fix:` is to declare the aggregate and remove
+  `declare: none`, and no checks-nothing violation is made: `none` is the
+  declaration.
+
   When no aggregate is declared at all, the rule checks nothing, and says so
   in one fail-closed violation on the config
   (`Anchor.Domain.Failures.aggregates_none_declared/3`): the runner never
@@ -43,6 +49,9 @@ defmodule Anchor.Domain.GraphRules.AggregateDeclarations do
   @impl Anchor.Domain.GraphRule
   def rule_type, do: :aggregate_declarations
 
+  @impl Anchor.Domain.GraphRule
+  def narrows?(_base_key, _key), do: false
+
   @impl Anchor.Domain.RuleShape
   def shape(_rule),
     do: Config.shape() <> ", or use Anchor.Aggregate, name: <Aggregate>, schemas: [<Schema>...]"
@@ -56,14 +65,14 @@ defmodule Anchor.Domain.GraphRules.AggregateDeclarations do
       |> Enum.filter(&in_scope?(&1.site, selected))
       |> Enum.map(&violation(&1, model, rule))
 
-    if Index.declared(index) == 0,
+    if Index.declared(index) == 0 and index.none == nil,
       do: issues ++ [checks_nothing(model, rule)],
       else: issues
   end
 
   defp in_scope?(:config, _selected), do: true
 
-  defp in_scope?({:attribute, module, _file, _line}, selected),
+  defp in_scope?({kind, module, _file, _line}, selected) when kind in [:attribute, :module],
     do: MapSet.member?(selected, module)
 
   # Fail-closed (`Failures`): the runner reports it as an issue of the run,
@@ -81,17 +90,25 @@ defmodule Anchor.Domain.GraphRules.AggregateDeclarations do
       rule_id: Map.get(rule, :id),
       key:
         ViolationKey.graph_key(rule, site, "#{issue.kind} #{aggregates(issue)} #{subject(issue)}"),
-      message: message(issue) <> ": " <> shape(rule)
+      message: message(issue, model) <> ": " <> shape(rule)
     }
   end
 
   defp site(:config, model), do: {config_file(model), nil, @config_file}
 
-  defp site({:attribute, module, file, line}, model),
+  defp site({kind, module, file, line}, model) when kind in [:attribute, :module],
     do: {file || config_file(model), line, inspect(module)}
 
   defp config_file(%Model{config: %{path: path}}) when is_binary(path), do: path
   defp config_file(_model), do: @config_file
+
+  defp message(%DeclarationIssue{kind: :persists_under_none} = issue, model) do
+    "#{subject(issue)} persists (#{issue.detail}), but #{Path.basename(config_file(model))} " <>
+      "says aggregates: declare: none (#{model.aggregates.none}). Fix: declare the aggregate " <>
+      "and remove declare: none"
+  end
+
+  defp message(issue, _model), do: message(issue)
 
   defp message(%DeclarationIssue{kind: :claimed_twice} = issue) do
     "#{noun(issue.subject)} #{subject(issue)} is claimed by " <>

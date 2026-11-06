@@ -74,7 +74,7 @@ defmodule Mix.Tasks.Anchor.GraphTest do
   end
 
   defp expect_run(rules, beam) do
-    expect(ConfigLoaderMock, :load_in, fn _root -> {:ok, config(rules)} end)
+    expect(ConfigLoaderMock, :load, fn -> {:ok, config(rules)} end)
 
     Mox.expect(BeamSourceMock, :read_ebins, fn [{:anchor, ebin}] ->
       # The task gathers the project's own ebin from Mix.
@@ -134,7 +134,7 @@ defmodule Mix.Tasks.Anchor.GraphTest do
 
     System.put_env("MIX_BUILD_PATH", build)
 
-    expect(ConfigLoaderMock, :load_in, fn _root -> {:ok, config([rule(:stub_ok, "ok", 1)])} end)
+    expect(ConfigLoaderMock, :load, fn -> {:ok, config([rule(:stub_ok, "ok", 1)])} end)
 
     Mox.expect(BeamSourceMock, :read_ebins, fn [{:anchor, ebin}] ->
       assert ebin == Path.join(build, "lib/anchor/ebin")
@@ -188,7 +188,7 @@ defmodule Mix.Tasks.Anchor.GraphTest do
 
     rules = [%{type: :stub_finds, id: "a", bucket: "shared", index: 1}]
 
-    expect(ConfigLoaderMock, :load_in, fn _root ->
+    expect(ConfigLoaderMock, :load, fn ->
       {:ok, %Config{rules: rules, architecture: arch, path: ".anchor.yml"}}
     end)
 
@@ -233,7 +233,7 @@ defmodule Mix.Tasks.Anchor.GraphTest do
 
     rules = [%{type: :stub_finds, id: "a", bucket: "alpha", index: 1}]
 
-    expect(ConfigLoaderMock, :load_in, fn _root ->
+    expect(ConfigLoaderMock, :load, fn ->
       {:ok, %Config{rules: rules, architecture: arch, path: ".anchor.yml"}}
     end)
 
@@ -264,7 +264,7 @@ defmodule Mix.Tasks.Anchor.GraphTest do
   end
 
   test "could not measure exits {:shutdown, 3}" do
-    expect(ConfigLoaderMock, :load_in, fn _root ->
+    expect(ConfigLoaderMock, :load, fn ->
       {:error, {:config_not_found, ["/p/.anchor.yml"]}}
     end)
 

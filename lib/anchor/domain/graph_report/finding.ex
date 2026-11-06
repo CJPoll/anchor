@@ -89,6 +89,15 @@ defmodule Anchor.Domain.GraphReport.Finding do
   end
 
   @doc """
+  `finding` with `enforcement` (a report-only NOTE is a finding set to
+  `:report`); every other field kept.
+  """
+  @spec with_enforcement(t(), enforcement()) :: t()
+  def with_enforcement(%__MODULE__{} = finding, enforcement)
+      when enforcement in [:enforce, :report],
+      do: %{finding | enforcement: enforcement}
+
+  @doc """
   The finding as the JSON document's entry: `rule_id, type, enforcement, key,
   file, line, message, fix`, where `message` is the text before `Fix:` and
   `fix` the text after it.

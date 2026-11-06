@@ -6,6 +6,7 @@ defmodule Anchor.Adapters.BeamReaderTest do
   # Sabotage record: ../../sabotage_records/beam_reader-20261103-dnd_5438.md
   # Sabotage record (compile option allowlist): ../../sabotage_records/beam_reader-20261103-dnd_5551_graph_hardening.md
   # Sabotage record (Failures.crash_summary/3): ../../sabotage_records/failures-20261103-dnd_5438.md
+  # Sabotage record (DND-5633): ../../sabotage_records/beam_reader-20261103-dnd_5648_graph_followups.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -45,6 +46,23 @@ defmodule Anchor.Adapters.BeamReaderTest do
       assert Keyword.get_values(beam.elixir.attributes, :tag) == [:hello]
       assert :cerl.is_c_module(beam.core)
       assert [{{:run, 1}, [_spec]}] = beam.specs
+    end
+
+    # DND-5633: a behaviour's callbacks, by name and arity, so a dynamic call
+    # can be narrowed to a behaviour only when f/arity is one of them.
+    test "reads the callbacks a behaviour declares, sorted; none is []", %{binary: binary} do
+      [{_module, contract}] =
+        compile_unloaded("""
+        defmodule AnchorFixtures.BeamReaderTest.Callbacks do
+          @callback run([String.t()]) :: :ok
+          @callback check(term(), term()) :: boolean()
+          @macrocallback expand(term()) :: Macro.t()
+        end
+        """)
+
+      assert %Beam{callbacks: callbacks} = BeamReader.decode(contract, app: :demo, path: "c.beam")
+      assert callbacks == [{:"MACRO-expand", 2}, {:check, 2}, {:run, 1}]
+      assert %Beam{callbacks: []} = BeamReader.decode(binary, app: :demo, path: "x.beam")
     end
 
     # Core is read with :no_copt: the optimiser would turn apply(m, :f, [x])

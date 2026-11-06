@@ -1,0 +1,6 @@
+# Anchor's sabotage survivors list (DND-5483): the mutants no test can kill,
+# each with its reason. One entry per line:
+#   <id> <file> <Module.fun/arity> <operator>  # <reason>
+# `mix anchor.sabotage run` fails on a survivor not listed here (NEW) and on
+# an entry whose mutant is now killed or no longer generated (STALE). A line
+# a branch adds is shown for review; this list only shrinks without one.

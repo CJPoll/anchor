@@ -164,6 +164,7 @@ defmodule Anchor.Config do
          {:ok, architecture} <- parse_architecture(data),
          :ok <- validate_graph_rules(parsed, architecture),
          {:ok, aggregates} <- parse_aggregates(data),
+         :ok <- validate_aggregate_rules(parsed, aggregates),
          {:ok, sabotage} <- parse_sabotage(data) do
       %__MODULE__{
         rules: parsed,
@@ -256,6 +257,36 @@ defmodule Anchor.Config do
   # (no declarations).
   defp parse_aggregates(%{"aggregates" => section}), do: AggregatesConfig.parse(section)
   defp parse_aggregates(_data), do: {:ok, nil}
+
+  # DND-5459: a rule that reads the write analysis needs the `aggregates:`
+  # section (its repos, write and transaction functions); without it the rule
+  # would run on nothing configured, so the load is refused (exit 3).
+  defp validate_aggregate_rules(parsed, nil) do
+    Enum.find_value(parsed, :ok, fn rule ->
+      if RuleSchema.needs_aggregates?(rule.type) do
+        {:error,
+         {:invalid_rule,
+          "#{parsed_rule_label(rule)}: #{rule.type} needs an aggregates: section in " <>
+            ".anchor.yml. Fix: add aggregates: (repos:, declare:) or remove the rule."}}
+      end
+    end)
+  end
+
+  # DND-5659: under `declare: none` there is no repo to read writes from, so
+  # a rule that needs one would say "no repo" with a Fix the section refuses.
+  defp validate_aggregate_rules(parsed, %{none: reason}) when reason != nil do
+    Enum.find_value(parsed, :ok, fn rule ->
+      if RuleSchema.needs_aggregates?(rule.type) do
+        {:error,
+         {:invalid_rule,
+          "#{parsed_rule_label(rule)}: #{rule.type} reads the writes of a project with a " <>
+            "repo, but .anchor.yml says aggregates: declare: none. Fix: remove the rule, " <>
+            "or declare the aggregates and the repo instead of none."}}
+      end
+    end)
+  end
+
+  defp validate_aggregate_rules(_parsed, _aggregates), do: :ok
 
   # DND-5473: the `sabotage:` section is optional too; `mix anchor.sabotage run`
   # refuses to run without it.
@@ -413,8 +444,15 @@ defmodule Anchor.Config do
       # rule's shrink-only baseline, or nil.
       bucket: rule["bucket"],
       min_modules: rule["min_modules"],
+      # DND-5715: `analyses_complete`'s floors, nil when absent (no floor).
+      min_absent_parameters: rule["min_absent_parameters"],
+      min_apply_sites: rule["min_apply_sites"],
+      min_functions: rule["min_functions"],
       enforcement: RuleSchema.parse_enforcement(rule["enforcement"]),
       baseline: rule["baseline"],
+      # DND-5443: an interface rule's widest allowed interface, or nil (the
+      # width is only printed).
+      max_width: rule["max_width"],
       # Gap D (DND-140): surface an ABSENT `paths` as `nil`, not `[]`. An empty
       # list is a valid list, which `RuleMatching`'s path clause would match and
       # then shadow the `pattern`/`uses_module` selectors with `Enum.any?([], …)`.

@@ -1,107 +1,201 @@
 defmodule Anchor.Sabotage.CoverageCollectorTest do
-  # DND-5474: the collector turns trace messages into CoverageMap events; the
-  # messages are sent to it directly (no tracing), with explicit stamps.
+  # DND-5474, DND-5691: the collector turns trace messages into CoverageMap events;
+  # the messages are sent to it directly (no tracing).
   # Sabotage record: ../../../../sabotage_records/sabotage-20261103-dnd_5474_coverage_map.md
-  # Sabotage record (DND-5642): ../../../../sabotage_records/sabotage-20261103-dnd_5639_sabotage_followups.md
+  # Sabotage record: ../../../../sabotage_records/coverage_attribution-20261106-dnd_5691_causal_attribution.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Sabotage.CoverageMap
   alias Anchor.Sabotage.CoverageCollector
 
-  @meta %{commit: "c", elixir: "1.19.4", otp: "28", modules_traced: 2, suite_exit: 0, root: "/p"}
+  @meta %{
+    commit: "c",
+    elixir: "1.19.4",
+    otp: "28",
+    modules_traced: 2,
+    suite_exit: 0,
+    total: 2,
+    root: "/p"
+  }
+  @em ExUnit.EventManager
 
-  defp test_struct(line, name),
+  defp test_struct(line, name, state \\ nil),
     do: %ExUnit.Test{
       name: name,
       module: ATest,
+      state: state,
       tags: %{file: "/p/test/a_test.exs", line: line, test: name, module: ATest}
     }
 
-  defp ref(line, name),
-    do: %{file: "/p/test/a_test.exs", line: line, name: to_string(name), module: "ATest"}
+  defp finalized(pid, meta \\ @meta) do
+    assert {:ok, state} = CoverageCollector.finish(pid)
+    CoverageMap.finalize(state, meta)
+  end
 
-  test "1: trace messages give the same map CoverageMap gives on the same events" do
-    {:ok, pid} = CoverageCollector.start_link(slack: 2)
-    # Each test's call from its own process, as ExUnit runs them: no leak.
-    other = spawn(fn -> :ok end)
-    t1 = test_struct(3, :"test one")
-    t2 = test_struct(9, :"test two")
-    em = ExUnit.EventManager
+  defp started do
+    {:ok, pid} = CoverageCollector.start_link()
+    pid
+  end
+
+  defp window(runner, word, line, name, state) do
+    [
+      {:trace, runner, :call, {@em, :test_started, 2}, {test_struct(line, name), word}},
+      {:trace, runner, :call, {@em, :test_finished, 2},
+       {test_struct(line, name, state), word + 1}}
+    ]
+  end
+
+  test "1: trace messages give the map: a test's process calling, and its window" do
+    pid = started()
+    runner = spawn(fn -> :ok end)
+    t = spawn(fn -> :ok end)
+    [open, close] = window(runner, 1, 3, :"test one", nil)
+    [open2, close2] = window(runner, 3, 9, :"test two", {:excluded, "x"})
 
     for message <- [
-          {:trace_ts, self(), :call, {em, :test_started, [:mgr, t1]}, 1},
-          {:trace_ts, self(), :call, {A, :f, [1, 2]}, 2},
-          {:trace_ts, self(), :call, {em, :test_finished, 2}, t1, 3},
-          {:trace_ts, other, :call, {B, :g, 0}, 5},
-          {:trace_ts, self(), :call, {em, :test_started, 2}, t2, 4},
-          {:trace_ts, self(), :call, {em, :test_finished, [:mgr, t2]}, 6},
+          open,
+          {:trace, runner, :spawn, t, {:erlang, :apply, [fn -> :ok end, []]}},
+          {:trace, t, :spawned, runner, {:erlang, :apply, [fn -> :ok end, []]}},
+          {:trace, t, :call, {ExUnit.OnExitHandler, :register, 1}, {:entry, 1}},
+          {:trace, t, :call, {A, :f, 2}, {1, 1}},
+          {:trace, t, :exit, :shutdown},
+          close,
+          open2,
+          close2,
           {:something, :else}
         ],
         do: send(pid, message)
 
-    assert {:ok, state} = CoverageCollector.finish(pid)
-
-    expected =
-      [slack: 2]
-      |> CoverageMap.new()
-      |> CoverageMap.attribute([
-        {:window_open, 1, ref(3, :"test one")},
-        {:call, 2, {A, :f, 2}, self()},
-        {:window_close, 3, ref(3, :"test one")},
-        {:call, 5, {B, :g, 0}, other},
-        {:window_open, 4, ref(9, :"test two")},
-        {:window_close, 6, ref(9, :"test two")}
-      ])
-
-    assert CoverageMap.finalize(state, @meta) == CoverageMap.finalize(expected, @meta)
-    assert CoverageMap.finalize(state, @meta).window_leaks == []
-
-    assert Map.new(CoverageMap.finalize(state, @meta).tests, &{&1.line, &1.functions}) ==
-             %{3 => ["A.f/2"], 9 => ["B.g/0"]}
+    assert {:ok, map} = finalized(pid)
+    assert Map.new(map.tests, &{&1.line, &1.functions}) == %{3 => ["A.f/2"]}
+    assert map.leaks == []
+    assert map.ambient == []
   end
 
-  test "2: a call's arguments are never kept" do
-    {:ok, pid} = CoverageCollector.start_link()
-    big = String.duplicate("secret-value-", 1000)
-    t1 = test_struct(3, :"test one")
+  test "2: a failed test ran; a skipped or invalid one did not" do
+    pid = started()
+    runner = spawn(fn -> :ok end)
+    t = spawn(fn -> :ok end)
+    [open, close] = window(runner, 1, 3, :"test one", {:failed, []})
+    [open2, close2] = window(runner, 3, 9, :"test two", {:skipped, "x"})
+    [open3, close3] = window(runner, 5, 12, :"test three", {:invalid, ATest})
 
-    send(pid, {:trace_ts, self(), :call, {ExUnit.EventManager, :test_started, 2}, t1, 1})
-    send(pid, {:trace_ts, self(), :call, {A, :f, [big, %{key: big}]}, 2})
+    for message <- [
+          open,
+          {:trace, runner, :spawn, t, {M, :f, []}},
+          {:trace, t, :call, {ExUnit.OnExitHandler, :register, 1}, {:entry, 1}},
+          close,
+          open2,
+          close2,
+          open3,
+          close3
+        ],
+        do: send(pid, message)
+
+    assert {:ok, map} = finalized(pid, %{@meta | total: 3})
+    assert Enum.map(map.tests, & &1.line) == [3]
+  end
+
+  test "3: a call's arguments are never kept, and a spawn's are reduced to one pid" do
+    pid = started()
+    big = String.duplicate("secret-value-", 1000)
+    child = spawn(fn -> :ok end)
+
+    send(pid, {:trace, self(), :call, {A, :f, 2}, {:none, 0}})
+    send(pid, {:trace, self(), :spawn, child, {M, :f, [big, %{key: big}]}})
 
     assert {:ok, state} = CoverageCollector.finish(pid)
     refute inspect(state, limit: :infinity, printable_limit: :infinity) =~ "secret-value"
     refute inspect(:sys.get_state(pid), limit: :infinity, printable_limit: :infinity) =~ "secret"
-    assert [set] = Map.values(state.open)
-    assert MapSet.to_list(set) == [{A, :f, 2}]
   end
 
-  test "3: each call keeps the pid that made it, so a process from an earlier window is a leak (DND-5642)" do
-    {:ok, pid} = CoverageCollector.start_link()
-    t1 = test_struct(3, :"test one")
-    t2 = test_struct(9, :"test two")
-    em = ExUnit.EventManager
-    leaker = spawn(fn -> :ok end)
-    fresh = spawn(fn -> :ok end)
+  test "4: a module's start and end, and setup_all's process, come through" do
+    pid = started()
+    runner = spawn(fn -> :ok end)
+    s = spawn(fn -> :ok end)
+    t = spawn(fn -> :ok end)
+    [open, close] = window(runner, 1, 3, :"test one", nil)
 
     for message <- [
-          {:trace_ts, self(), :call, {em, :test_started, 2}, t1, 1},
-          {:trace_ts, leaker, :call, {A, :f, 0}, 2},
-          {:trace_ts, self(), :call, {em, :test_finished, 2}, t1, 3},
-          {:trace_ts, self(), :call, {em, :test_started, 2}, t2, 4},
-          {:trace_ts, fresh, :call, {B, :g, 0}, 5},
-          {:trace_ts, leaker, :call, {B, :g, [1]}, 6},
-          {:trace_ts, self(), :call, {em, :test_finished, 2}, t2, 7}
+          {:trace, runner, :call, {ExUnit.Runner, :run_setup_all, 4}, {:module, ATest}},
+          {:trace, runner, :spawn, s, {M, :f, []}},
+          {:trace, s, :call, {A, :setup, 0}, {ATest, 0}},
+          open,
+          {:trace, runner, :spawn, t, {M, :f, []}},
+          {:trace, t, :call, {ExUnit.OnExitHandler, :register, 1}, {:entry, 1}},
+          close,
+          {:trace, runner, :call, {@em, :module_finished, 2}, {ATest, 4}},
+          {:trace, s, :call, {A, :late, 0}, {ATest, 4}}
         ],
         do: send(pid, message)
 
-    assert {:ok, state} = CoverageCollector.finish(pid)
+    assert {:ok, map} = finalized(pid, %{@meta | total: 1})
+    assert [%{functions: ["A.late/0", "A.setup/0"]}] = map.tests
+    assert map.leaks == [%{from: %{module: "ATest"}, function: "A.late/0"}]
+  end
 
-    assert CoverageMap.finalize(state, @meta).window_leaks == [
-             %{
-               from: [ref(3, :"test one") |> Map.put(:file, "test/a_test.exs")],
-               to: ref(9, :"test two") |> Map.put(:file, "test/a_test.exs"),
-               calls: 1
-             }
-           ]
+  test "5: a task spawned for a test by a supervisor is the test's, through the owner pid" do
+    pid = started()
+    runner = spawn(fn -> :ok end)
+    t = spawn(fn -> :ok end)
+    sup = spawn(fn -> :ok end)
+    k = spawn(fn -> :ok end)
+    [open, close] = window(runner, 1, 3, :"test one", nil)
+    task = {Task.Supervised, :noreply, [{node(), t, t}, [], [t], {M, :f, []}]}
+
+    for message <- [
+          open,
+          {:trace, runner, :spawn, t, {M, :f, []}},
+          {:trace, t, :call, {ExUnit.OnExitHandler, :register, 1}, {:entry, 1}},
+          {:trace, sup, :spawn, k, task},
+          {:trace, k, :call, {A, :f, 0}, {:none, 1}},
+          close
+        ],
+        do: send(pid, message)
+
+    assert {:ok, map} = finalized(pid, %{@meta | total: 1})
+    assert [%{functions: ["A.f/0"]}] = map.tests
+  end
+
+  test "7: a private ExUnit call whose argument moved is refused, naming it" do
+    pid = started()
+    send(pid, {:trace, self(), :call, {ExUnit.Runner, :run_setup_all, 4}, :shape_changed})
+
+    assert {:error, {:unreadable, {{ExUnit.Runner, :run_setup_all, 4}, :shape_changed}}} =
+             finalized(pid)
+  end
+
+  test "8: a call with no message is refused, never dropped" do
+    pid = started()
+    send(pid, {:trace, self(), :call, {A, :f, 0}})
+
+    assert {:error, {:unreadable, {{A, :f, 0}, :no_message}}} = finalized(pid)
+  end
+
+  test "9: finish reads what is queued behind it, so a call past it is not lost" do
+    t = spawn(fn -> :ok end)
+    send(self(), {:trace, t, :call, {A, :f, 0}, {:none, 2}})
+    send(self(), {:trace, t, :spawn, spawn(fn -> :ok end), {Kernel, :self, []}})
+
+    assert {:reply, {:ok, state}, state} =
+             CoverageCollector.handle_call({:finish}, self(), CoverageMap.new())
+
+    assert %{calls: calls, edges: [_edge]} = state
+    assert MapSet.size(calls) == 1
+    refute_received {:trace, _pid, _kind, _subject, _detail}
+  end
+
+  test "6: a Task spawn in an unknown shape, or an unreadable call, is refused by name" do
+    pid = started()
+    send(pid, {:trace, self(), :spawn, self(), {Task.Supervised, :noreply, [:x]}})
+    assert finalized(pid) == {:error, {:task_shape, {Task.Supervised, :noreply, 1}}}
+
+    pid = started()
+    send(pid, {:trace, self(), :call, {A, :f, 0}, :not_a_pair})
+    assert finalized(pid) == {:error, {:unreadable, {{A, :f, 0}, :not_a_pair}}}
+
+    pid = started()
+    send(pid, {:trace, self(), :call, {@em, :test_started, 2}, :not_a_pair})
+    assert finalized(pid) == {:error, {:unreadable, {{@em, :test_started, 2}, :not_a_pair}}}
   end
 end

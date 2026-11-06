@@ -18,13 +18,18 @@ defmodule Anchor.Domain.Aggregates.Declaration do
     * `sites` — where it was declared: `:config` (the `.anchor.yml`) or
       `{:attribute, module, source_file, line}` (the module whose
       `@anchor_aggregate` declared it, its source file and `defmodule` line,
-      either `nil` when the beam has none).
+      either `nil` when the beam has none). An issue may also sit at
+      `{:module, module, source_file, line}`: a module that persists under
+      `declare: none` (DND-5659), which declares nothing.
   """
 
   @enforce_keys [:name]
   defstruct [:name, schemas: [], tables: [], owners: [], sites: []]
 
-  @type site :: :config | {:attribute, module(), String.t() | nil, pos_integer() | nil}
+  @type site ::
+          :config
+          | {:attribute, module(), String.t() | nil, pos_integer() | nil}
+          | {:module, module(), String.t() | nil, pos_integer() | nil}
 
   @type t :: %__MODULE__{
           name: String.t(),

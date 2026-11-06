@@ -29,7 +29,16 @@ defmodule Anchor.Domain.Checks.SingleControlFlow do
   name (`case = ...`) is not a structure (DND-1310).
   """
 
+  alias Anchor.Domain.RuleShapes
   alias Anchor.Domain.Violation
+
+  @behaviour Anchor.Domain.RuleShape
+
+  @impl Anchor.Domain.RuleShape
+  def shape(_rule) do
+    "one control structure per function clause: extract each extra pipe chain, case, cond, " <>
+      "with, if, unless, for or receive into its own named function"
+  end
 
   @control_flow_structures [:cond, :with, :case, :if, :unless, :for, :receive]
 
@@ -42,14 +51,19 @@ defmodule Anchor.Domain.Checks.SingleControlFlow do
   """
   @spec detect_violations(Macro.t(), [map()]) :: [Violation.t()]
   def detect_violations(ast, rules) do
-    Enum.flat_map(rules, fn _rule ->
+    Enum.flat_map(rules, fn rule ->
       ast
       |> find_function_clauses()
       |> Enum.flat_map(fn {function_name, line_no, body} ->
         control_flow_count = count_control_flow_structures(body)
 
         if control_flow_count > 1 do
-          [build_violation(function_name, line_no, control_flow_count)]
+          [
+            RuleShapes.with_shape(
+              build_violation(function_name, line_no, control_flow_count),
+              shape(rule)
+            )
+          ]
         else
           []
         end

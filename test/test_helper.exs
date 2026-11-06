@@ -1,3 +1,10 @@
+# DND-5690: load every module of Anchor's application closure now, the way a
+# release boots, so no test loads one on demand through code_server. Before
+# ExUnit.start/0, so every run has it, the coverage run included; the coverage
+# run's trace patterns are already set by then, on project modules only, and no
+# test window is open yet. Anchor.TestBootTest fails when this stops.
+Anchor.TestPreload.load!(:anchor)
+
 ExUnit.start()
 
 # Hammox mock for the config-loading port. `Anchor.Managers.Lint` depends on the
@@ -49,3 +56,7 @@ Hammox.defmock(Anchor.CoverageStoreMock, for: Anchor.Adapters.CoverageStore)
 
 # DND-5484: the sabotage record files (`:record_store`).
 Hammox.defmock(Anchor.RecordStoreMock, for: Anchor.Adapters.RecordStore)
+
+# DND-5632: `mix anchor.baseline --write` runs Credo through this port
+# (`Anchor.Managers.AstBaseline.write/2` takes it as `:lint_keys`).
+Hammox.defmock(Anchor.LintKeysMock, for: Anchor.Adapters.LintKeys)

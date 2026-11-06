@@ -7,6 +7,7 @@ defmodule Anchor.Domain.CfaTest do
   #
   # Sabotage record: ../../sabotage_records/cfa-20261103-dnd_5497_zero_cfa.md
   # Sabotage record (DND-5575): ../../sabotage_records/cfa-20261103-dnd_5617_sabotage_cfa_batch.md
+  # Sabotage record (DND-5715): ../../sabotage_records/cfa-20261106-dnd_5715_bucket_split.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -358,6 +359,35 @@ defmodule Anchor.Domain.CfaTest do
                    end
     end
 
+    # The shape of `Cfa.default_seed/1` itself, the site the whole-Anchor self
+    # test knew (DND-5715): under the open-world seed a parameter's site is
+    # :any, and a literal fn handed to Enum still resolves, each to its own.
+    test "a pipeline of two literal fns under the default seed: each site resolves to its own" do
+      seedlike = AnchorFixtures.CfaTest.SeedLike
+
+      graph =
+        graph!("""
+        defmodule AnchorFixtures.CfaTest.SeedLike do
+          def seed(pairs) do
+            pairs
+            |> Enum.filter(fn {_key, value} -> value == :def end)
+            |> Map.new(fn {key, _value} -> {key, :any} end)
+          end
+        end
+        """)
+
+      cfa = Cfa.analyze(graph, Cfa.default_seed(graph))
+
+      assert [one, other] =
+               for({{{^seedlike, :seed, 1}, _n}, {:ok, closures}} <- cfa.sites, do: closures)
+               |> Enum.map(&MapSet.to_list/1)
+
+      assert [{{^seedlike, :seed, 1}, first}] = one
+      assert [{{^seedlike, :seed, 1}, second}] = other
+      assert first != second
+      assert cfa.counts.by_function[{seedlike, :seed, 1}] == %{total: 2, resolved: 2, any: 0}
+    end
+
     test "default_seed/1 makes every exported function a root, never a private one",
          %{graph: graph} do
       seed = Cfa.default_seed(graph)
@@ -412,6 +442,14 @@ defmodule Anchor.Domain.CfaTest do
                {B, :run_spawn, 1} => %{total: 1, resolved: 1, any: 0},
                {S, :__struct__, 1} => %{total: 1, resolved: 1, any: 0}
              }
+    end
+
+    test "the total is the number of sites, every one resolved or any", %{closed: cfa} do
+      assert cfa.counts.total == map_size(cfa.sites)
+      assert cfa.counts.total == cfa.counts.resolved + cfa.counts.any
+      # Positive control: the fixture has sites of both kinds.
+      assert cfa.counts.resolved > 0
+      assert cfa.counts.any > 0
     end
 
     test "an empty graph and a graph with no apply sites count zero sites" do

@@ -52,7 +52,8 @@ defmodule Anchor.Domain.Demand do
 
   ## Not here
 
-  The runner wiring (`needs: [:demand]`, the printed counts) is DND-5574.
+  The runner runs it for a rule that declares `needs: [:demand]`, and the
+  run's summary prints its counts (DND-5715).
   Macros are not analysed. Per-parameter `passes` are not split per field.
   """
 

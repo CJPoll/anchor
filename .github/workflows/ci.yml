@@ -72,6 +72,15 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         run: mix anchor.graph --base "origin/${BASE_REF}"
 
+      # DND-5632: an ast rule's baseline only shrinks too. mix credo judges its
+      # held, NEW and STALE entries; this fails an entry the branch added.
+      - name: AST baselines (mix anchor.baseline --base, pull request)
+        if: github.event_name == 'pull_request'
+        env:
+          MIX_ENV: dev
+          BASE_REF: ${{ github.base_ref }}
+        run: mix anchor.baseline --base "origin/${BASE_REF}"
+
       # DND-5658: the step above runs the pull request's OWN anchor, so a pull
       # request that changes Enforcement, Baseline, BaselineBase or a rule's
       # check/2 would be judged by its changed code. This step judges the

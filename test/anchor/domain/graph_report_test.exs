@@ -9,7 +9,12 @@ defmodule Anchor.Domain.GraphReportTest do
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5630_graph_hardening.md
   # DND-5441 (held, refused, verbose):
   #   ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
+  # DND-5443 (interface width):
+  #   ../../sabotage_records/interface-20261103-dnd_5443_graph_rules_b.md
+  # Sabotage record (DND-5633): ../../sabotage_records/graph_runner-20261103-dnd_5648_graph_followups.md
   use ExUnit.Case, async: true
+
+  # Sabotage record (DND-5715): ../../sabotage_records/graph_runner-20261106-dnd_5715_bucket_split.md
 
   alias Anchor.Domain.GraphReport
   alias Anchor.Domain.GraphReport.Finding
@@ -196,6 +201,121 @@ defmodule Anchor.Domain.GraphReportTest do
     end
   end
 
+  describe "interface width (DND-5443, R4)" do
+    test "the summary ends with each context's width, sorted; the JSON has interface_width" do
+      report =
+        GraphReport.new([], [], Map.put(@counts, :interface_width, %{"B" => 2, "A" => 5}))
+
+      assert GraphReport.summary(report) ==
+               "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations " <>
+                 "(0 report-only, 0 baselined); interface width: A=5, B=2"
+
+      assert JSON.decode!(GraphReport.render(report, :json))["interface_width"] ==
+               %{"A" => 5, "B" => 2}
+    end
+
+    test "no interface rule ran: nothing is printed, and the JSON is null" do
+      report = GraphReport.new([], [], @counts)
+
+      refute GraphReport.summary(report) =~ "interface width"
+      assert %{"interface_width" => nil} = JSON.decode!(GraphReport.render(report, :json))
+    end
+
+    test "a run with an interface rule and no context says so" do
+      report = GraphReport.new([], [], Map.put(@counts, :interface_width, %{}))
+
+      assert GraphReport.summary(report) =~ "; interface width: no context"
+    end
+  end
+
+  # DND-5633: an over-approximated dynamic call is counted, never silent.
+  describe "demand counts (DND-5715)" do
+    alias Anchor.Domain.Demand
+
+    @demand %{functions: 4, parameters: 7, absent: 1, imprecise_functions: 2, bound_hit: 0}
+
+    test "demand/1 takes the counts from the analysis, and the bound as a count; nil for none" do
+      analysis = %Demand{
+        counts: %{functions: 4, parameters: 7, absent: 1, imprecise_functions: 2},
+        bound_hit: [{MyApp.X, :run, 1}, {MyApp.X, :run, 2}, {MyApp.X, :run, 3}]
+      }
+
+      assert GraphReport.demand(analysis) == %{@demand | bound_hit: 3}
+      assert GraphReport.demand(nil) == nil
+    end
+
+    test "the summary ends with the counts when the analysis ran, with no finding" do
+      report = GraphReport.new([], [], Map.put(@counts, :demand, @demand))
+
+      assert GraphReport.summary(report) ==
+               "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations " <>
+                 "(0 report-only, 0 baselined); " <>
+                 "demand: 4 functions, 7 parameters, 1 absent, 2 imprecise functions"
+    end
+
+    test "a hit round bound is said, with how many functions hit it" do
+      report = GraphReport.new([], [], Map.put(@counts, :demand, %{@demand | bound_hit: 3}))
+
+      assert GraphReport.summary(report) =~
+               "2 imprecise functions (round bound hit on 3 functions)"
+    end
+
+    test "no analysis says nothing in the summary, and null in the JSON" do
+      report = GraphReport.new([], [], @counts)
+
+      refute GraphReport.summary(report) =~ "demand"
+      assert %{"demand" => nil} = JSON.decode!(GraphReport.render(report, :json))
+    end
+
+    test "the JSON carries the same counts under string keys" do
+      report = GraphReport.new([], [], Map.put(@counts, :demand, @demand))
+
+      assert JSON.decode!(GraphReport.render(report, :json))["demand"] == %{
+               "functions" => 4,
+               "parameters" => 7,
+               "absent" => 1,
+               "imprecise_functions" => 2,
+               "bound_hit" => 0
+             }
+    end
+  end
+
+  describe "dynamic calls (DND-5633)" do
+    @dynamic %{
+      narrowed: [{{MyApp.M, :typed, 2}, :run, 1}],
+      fanned_out: [{{MyApp.L, :go, 1}, :check, 2}, {{MyApp.L, :any, 1}, :f, nil}]
+    }
+
+    test "the summary ends with the fanned-out and narrowed counts" do
+      report = GraphReport.new([], [], Map.put(@counts, :dynamic_calls, @dynamic))
+
+      assert GraphReport.summary(report) ==
+               "anchor.graph: 12 modules in 2 apps, 3 rules, 0 violations " <>
+                 "(0 report-only, 0 baselined); dynamic calls: 2 fanned out to every " <>
+                 "exporter, 1 narrowed by behaviour"
+    end
+
+    test "the JSON names each call" do
+      report = GraphReport.new([], [], Map.put(@counts, :dynamic_calls, @dynamic))
+
+      assert JSON.decode!(GraphReport.render(report, :json))["dynamic_calls"] == %{
+               "narrowed" => ["MyApp.M.typed/2 -> ?.run/1"],
+               "fanned_out" => ["MyApp.L.go/1 -> ?.check/2", "MyApp.L.any/1 -> ?.f/?"]
+             }
+    end
+
+    test "none, or no tally, says nothing" do
+      none =
+        GraphReport.new([], [], Map.put(@counts, :dynamic_calls, %{narrowed: [], fanned_out: []}))
+
+      refute GraphReport.summary(none) =~ "dynamic calls"
+      refute GraphReport.summary(GraphReport.new([], [], @counts)) =~ "dynamic calls"
+
+      assert %{"dynamic_calls" => nil} =
+               JSON.decode!(GraphReport.render(GraphReport.new([], [], @counts), :json))
+    end
+  end
+
   describe "render/2 functions with no Core body (DND-5549)" do
     test "are counted in the summary and the JSON when there are any" do
       report = GraphReport.new([], [], %{@counts | opaque: 2, no_core: 5})
@@ -263,6 +383,25 @@ defmodule Anchor.Domain.GraphReportTest do
                "message" => "MyApp.Web calls MyApp.Repo.",
                "fix" => "call a manager instead."
              }
+    end
+  end
+
+  # The anchor.graph review (struct_owned_by_module_flow): a finding's
+  # enforcement is changed by its own module.
+  describe "Finding.with_enforcement/2" do
+    test "sets the enforcement and keeps every other field" do
+      finding = %Finding{
+        file: "lib/a.ex",
+        line: 2,
+        label: "rule 1",
+        message: "m",
+        key: "k",
+        enforcement: :enforce
+      }
+
+      reported = Finding.with_enforcement(finding, :report)
+      assert reported.enforcement == :report
+      assert %{reported | enforcement: :enforce} == finding
     end
   end
 

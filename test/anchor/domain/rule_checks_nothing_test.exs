@@ -18,6 +18,8 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
   # `Anchor.Managers.LintTest` and the e2e suite.
   #
   # Sabotage record: ../../sabotage_records/rule_schema-20260929-dnd_1290_empty_relation_list.md
+  # Sabotage record (DND-5715): ../../sabotage_records/analyses_complete-20261106-dnd_5715_bucket_split.md
+  # Sabotage record (DND-5632): ../../sabotage_records/baseline-20261103-dnd_5648_graph_followups.md
   # Sabotage record (DND-5447, DND-5454 rows): ../../sabotage_records/rule_schema-20261103-dnd_5447_graph_rules_c.md
   # The DND-1292 rows (glob metacharacters, the `***` match-all, `*?`):
   #   ../../sabotage_records/rule_schema-20260929-dnd_1292_glob_escape.md
@@ -31,10 +33,13 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
   # The DND-5441 rows (enforcement, ast baseline, the graph common keys):
   #   ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
   # DND-5476 (aggregate_declarations rows): ../../sabotage_records/aggregates-20261103-dnd_5476_aggregate_decls.md
+  # DND-5459 (aggregate_write_sources rows): ../../sabotage_records/aggregates-20261103-dnd_5459_write_sets.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config
+  alias Anchor.Domain.Failures
   alias Anchor.Domain.RuleSchema
+  alias Anchor.Domain.RuleShapes
 
   # The relation each relation-bearing type checks, and a valid value for it.
   @relations %{
@@ -167,11 +172,15 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
       {"positive: enforcement: :enforce", Map.put(base, "enforcement", ":enforce"), :accepted},
       {"enforcement: warn (neither)", Map.put(base, "enforcement", "warn"),
        {:refused, "`enforcement` must be report or enforce"}},
-      # An ast rule's findings are not compared with a baseline (Credo has no
-      # ratchet yet), so `baseline` there would ratchet nothing.
-      {"baseline on an ast rule (nothing reads it)",
+      # DND-5632: an ast rule's Credo check compares its findings with its
+      # baseline, under the same path rules as a graph rule's.
+      {"positive: baseline with an id",
+       Map.merge(base, %{"id" => "r", "baseline" => ".anchor/baselines/r.txt"}), :accepted},
+      {"baseline without id (entries start with it)",
        Map.put(base, "baseline", ".anchor/baselines/r.txt"),
-       {:refused, "`baseline` is read by graph rules only"}},
+       {:refused, "`baseline` needs the rule's `id`"}},
+      {"an absolute baseline path", Map.merge(base, %{"id" => "r", "baseline" => "/tmp/r.txt"}),
+       {:refused, "must be a path relative to the project root with no `..`"}},
       {"bucket on an ast rule (a graph selector)", Map.put(base, "bucket", "domain"),
        {:refused, "`bucket` applies to graph rules only"}}
     ]
@@ -433,11 +442,28 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
   defp table(type)
        when type in [
               :aggregate_declarations,
+              :aggregate_write_sources,
               :layering,
               :context_acyclic,
               :effects_match_bucket
             ],
        do: graph_rows(type)
+
+  # DND-5715: analyses_complete's three floors, each a positive integer like
+  # `min_modules`; each is a positive control, so 0 would judge nothing.
+  defp table(:analyses_complete) do
+    base = %{"type" => "analyses_complete", "bucket" => "domain"}
+
+    graph_rows(:analyses_complete) ++
+      for key <- ~w(min_absent_parameters min_apply_sites min_functions),
+          {label, value, expected} <- [
+            {"positive: #{key}", 5, :accepted},
+            {"#{key}: 0 (no floor)", 0, {:refused, "`#{key}` must be a positive integer"}},
+            {"#{key} that is not an integer", "5",
+             {:refused, "`#{key}` must be a positive integer"}}
+          ],
+          do: {label, Map.put(base, key, value), expected}
+  end
 
   # DND-5454: the graph half of struct ownership reads the AST half's one
   # optional key, `owned_namespaces`, under the same rules.
@@ -455,6 +481,20 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
         {"owned_namespaces that is a string", Map.put(base, "owned_namespaces", "App"),
          {:refused, "`owned_namespaces` must be a list of non-empty strings"}}
       ]
+  end
+
+  # DND-5443: interface's own key, `max_width`, a positive integer.
+  defp table(:interface) do
+    base = %{"type" => "interface", "bucket" => "domain"}
+
+    graph_rows(:interface)
+    |> Enum.concat([
+      {"positive: max_width", Map.put(base, "max_width", 12), :accepted},
+      {"max_width: 0 (fails every context with an interface)", Map.put(base, "max_width", 0),
+       {:refused, "`max_width` must be a positive integer"}},
+      {"max_width that is not an integer", Map.put(base, "max_width", "12"),
+       {:refused, "`max_width` must be a positive integer"}}
+    ])
   end
 
   defp table(type), do: common_rows(type)
@@ -631,10 +671,17 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
   end
 
   # A graph rule needs the `architecture:` section (DND-5441), so its rows
-  # load beside one that has a `domain` bucket.
+  # load beside one that has a `domain` bucket; a rule that reads the write
+  # analysis needs an `aggregates:` section too (DND-5459).
   defp document(rule, :ast), do: %{"rules" => [rule]}
 
-  defp document(rule, :graph) do
+  defp document(%{"type" => type} = rule, :graph) do
+    if RuleSchema.needs_aggregates?(String.to_existing_atom(type)),
+      do: Map.put(graph_document(rule), "aggregates", %{"repos" => ["MyApp.Repo"]}),
+      else: graph_document(rule)
+  end
+
+  defp graph_document(rule) do
     %{
       "rules" => [rule],
       "architecture" => %{
@@ -652,10 +699,21 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
   defp row_result(%Config{rules: [_rule]}, :accepted), do: nil
   defp row_result(result, :accepted), do: "refused: #{inspect(result)}"
 
+  # DND-5446: the issue a refusal becomes carries exactly one `Fix:`.
   defp row_result({:error, {:invalid_rule, reason}}, {:refused, fragment}) do
-    if reason =~ ~r/\Arule 1( \(id: "[^"]*"\))?: / and reason =~ fragment,
-      do: nil,
-      else: "wrong reason (want #{inspect(fragment)}): #{reason}"
+    issue =
+      Failures.config_violation({:config_load_failed, ".anchor.yml", {:invalid_rule, reason}})
+
+    cond do
+      not (reason =~ ~r/\Arule 1( \(id: "[^"]*"\))?: / and reason =~ fragment) ->
+        "wrong reason (want #{inspect(fragment)}): #{reason}"
+
+      RuleShapes.fix_count(issue.message) != 1 ->
+        "the issue carries #{RuleShapes.fix_count(issue.message)} Fix: lines: #{issue.message}"
+
+      true ->
+        nil
+    end
   end
 
   defp row_result(result, {:refused, _fragment}), do: "LOADED: #{inspect(result, limit: 4)}"

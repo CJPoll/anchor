@@ -13,6 +13,16 @@ defmodule Anchor.Managers.Sabotage do
   Delegated to `Anchor.Managers.Sabotage.Coverage`: the per-test coverage
   map, built by running the suite in this VM with call tracing.
 
+  ## coverage_compare/2 (DND-5692)
+
+  Delegated to `Anchor.Managers.Sabotage.CoverageCompare`: the verdict on two
+  builds of the map at one commit and one seed.
+
+  ## replay/2 (DND-5485)
+
+  Delegated to `Anchor.Managers.Sabotage.Replay`: re-applies each landed
+  record's mutants and runs their killers.
+
   ## scope/2 (DND-5472)
 
   The functions the working tree changed relative to the merge-base of `base`
@@ -41,7 +51,10 @@ defmodule Anchor.Managers.Sabotage do
   alias Anchor.Domain.Sabotage.FunctionSpans
   alias Anchor.Domain.Sabotage.Run
   alias Anchor.Domain.Sabotage.Scope
+  alias Anchor.Domain.Sabotage.Replay.Result
   alias Anchor.Managers.Sabotage.Coverage
+  alias Anchor.Managers.Sabotage.CoverageCompare
+  alias Anchor.Managers.Sabotage.Replay
   alias Anchor.Managers.Sabotage.Runner
 
   @doc """
@@ -58,6 +71,20 @@ defmodule Anchor.Managers.Sabotage do
   """
   @spec coverage(Coverage.facts(), keyword()) :: {non_neg_integer(), [String.t()]}
   def coverage(facts, opts \\ []), do: Coverage.run(facts, opts)
+
+  @doc """
+  Judges two builds of the coverage map (DND-5692) and returns `{exit_code, lines}`.
+  See `Anchor.Managers.Sabotage.CoverageCompare`.
+  """
+  @spec coverage_compare(CoverageCompare.facts(), keyword()) :: {non_neg_integer(), [String.t()]}
+  def coverage_compare(facts, opts \\ []), do: CoverageCompare.run(facts, opts)
+
+  @doc """
+  Replays the landed sabotage records (DND-5485). See
+  `Anchor.Managers.Sabotage.Replay`.
+  """
+  @spec replay(map(), keyword()) :: Result.t()
+  def replay(facts, opts \\ []), do: Replay.run(facts, opts)
 
   @doc "Restores a leftover journal's file, if any (`mix anchor.sabotage restore`)."
   @spec restore(%{root: String.t()}, keyword()) :: Run.t()

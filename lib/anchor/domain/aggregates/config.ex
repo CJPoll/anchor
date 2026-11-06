@@ -15,37 +15,58 @@ defmodule Anchor.Domain.Aggregates.Config do
     transaction_functions: ["GenSaas.UnitOfWork.transaction/3"]
   ```
 
-  The whole section is parsed here, so later tickets add no keys; only
-  `declare` has a meaning yet. `repos` (exact module names),
+  The whole section is parsed here. `repos` (exact module names),
   `write_functions` and `transaction_functions` (`Anchor.Domain.FunctionRef`
-  tokens) are checked for shape and stored.
+  tokens) are checked for shape and stored for the write analysis.
 
   Every refusal is `{:error, {:invalid_config, message}}`, the message
   starting with the key path (`aggregates.declare[2].schemas ...`) and ending
   with a `Fix:` that gives the conforming shape. Refused: a section that is not
-  a mapping; an unknown key at any level; a `declare` that is not a list; an
+  a mapping; an unknown key at any level; a `declare` that is neither `none` nor a list; an
   entry that is not a mapping, has no `name`, or an unknown key; a `name` that
   is not a module-name token; `schemas`, `owners` or `repos` that are not lists
   of exact module names; `tables` that is not a list of non-empty strings; two
   entries with one `name`; a malformed function token.
 
   A bare `aggregates:` (YAML `nil`) is a section with no declarations.
+
+  ## `declare: none` (DND-5659)
+
+  A repo that persists nothing says so on purpose:
+
+  ```yaml
+  aggregates:
+    declare: none
+    reason: "Anchor reads beams and YAML; it has no database"
+  ```
+
+  It parses to `none: <reason>` and `declare: []`. `reason` is required, a
+  non-blank string, and read only with `none`; no other key (`repos`,
+  `write_functions`, `transaction_functions`) may stand beside it, since
+  each says something persists. An explicit `declare: []` is refused: an
+  empty list says nothing on purpose, so the Fix names both forms. Under
+  `none`, `aggregate_declarations` fails every module that persists
+  (`Anchor.Domain.Aggregates.Index`).
   """
 
   alias Anchor.Domain.AllowedCallers
   alias Anchor.Domain.Aggregates.Declaration
   alias Anchor.Domain.FunctionRef
 
-  @keys ~w(declare repos transaction_functions write_functions)
+  @keys ~w(declare reason repos transaction_functions write_functions)
   @entry_keys ~w(name owners schemas tables)
 
   @shape "aggregates: declare: - name: <Aggregate>, schemas: [<Schema>...], " <>
            "tables: [\"<table>\"...], owners: [<Module>...]"
 
-  defstruct declare: [], repos: [], write_functions: [], transaction_functions: []
+  @none_fix "write declare: none with reason: \"<why this repo persists nothing>\" and no " <>
+              "other key, or list the aggregates: #{@shape}"
+
+  defstruct declare: [], none: nil, repos: [], write_functions: [], transaction_functions: []
 
   @type t :: %__MODULE__{
           declare: [Declaration.t()],
+          none: String.t() | nil,
           repos: [module()],
           write_functions: [FunctionRef.t()],
           transaction_functions: [FunctionRef.t()]
@@ -59,9 +80,18 @@ defmodule Anchor.Domain.Aggregates.Config do
   @spec parse(term()) :: {:ok, t()} | {:error, {:invalid_config, String.t()}}
   def parse(nil), do: parse(%{})
 
+  def parse(%{"declare" => "none"} = section) do
+    with :ok <- known_keys(section, @keys, "aggregates"),
+         {:ok, reason} <- none_reason(section),
+         :ok <- none_alone(section) do
+      {:ok, %__MODULE__{none: reason}}
+    end
+  end
+
   def parse(section) when is_map(section) do
     with :ok <- known_keys(section, @keys, "aggregates"),
-         {:ok, declare} <- declare(Map.get(section, "declare", [])),
+         {:ok, declare} <- declare_key(section),
+         :ok <- no_reason(section),
          {:ok, repos} <- modules(Map.get(section, "repos", []), "aggregates.repos"),
          {:ok, writes} <- functions(section, "write_functions"),
          {:ok, transactions} <- functions(section, "transaction_functions") do
@@ -91,6 +121,52 @@ defmodule Anchor.Domain.Aggregates.Config do
     end
   end
 
+  defp none_reason(section) do
+    case Map.get(section, "reason") do
+      reason when is_binary(reason) ->
+        if String.trim(reason) == "",
+          do: no_reason_given(),
+          else: {:ok, reason}
+
+      _missing ->
+        no_reason_given()
+    end
+  end
+
+  defp no_reason_given,
+    do: refuse("aggregates: declare: none needs a reason: (a non-blank string)", @none_fix)
+
+  defp none_alone(section) do
+    case section |> Map.keys() |> Enum.reject(&(&1 in ["declare", "reason"])) |> Enum.sort() do
+      [] ->
+        :ok
+
+      [key | _rest] ->
+        refuse(
+          "aggregates: declare: none says nothing persists, but it also sets #{inspect(key)}",
+          @none_fix
+        )
+    end
+  end
+
+  defp no_reason(section) do
+    if Map.has_key?(section, "reason"),
+      do: refuse("aggregates.reason is only read with declare: none", @none_fix),
+      else: :ok
+  end
+
+  # No `declare` key is a section that declares nothing yet (a repos-only
+  # section DND-5459 reads); an explicit `[]` is refused.
+  defp declare_key(%{"declare" => entries}), do: declare(entries)
+  defp declare_key(_section), do: {:ok, []}
+
+  defp declare([]) do
+    refuse(
+      "aggregates.declare is an empty list, which says nothing on purpose",
+      @none_fix
+    )
+  end
+
   defp declare(entries) when is_list(entries) do
     entries
     |> Enum.with_index(1)
@@ -106,8 +182,8 @@ defmodule Anchor.Domain.Aggregates.Config do
   defp declare(entries),
     do:
       refuse(
-        "aggregates.declare must be a list of declarations, got: #{inspect(entries)}",
-        "write #{@shape}"
+        "aggregates.declare must be a list of declarations or none, got: #{inspect(entries)}",
+        @none_fix
       )
 
   defp entry(entry, path) when is_map(entry) do

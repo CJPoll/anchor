@@ -125,7 +125,8 @@ defmodule Anchor.Adapters.BeamReader do
         elixir: elixir,
         core: core,
         specs: typespecs(Code.Typespec.fetch_specs(binary)),
-        types: typespecs(Code.Typespec.fetch_types(binary))
+        types: typespecs(Code.Typespec.fetch_types(binary)),
+        callbacks: binary |> Code.Typespec.fetch_callbacks() |> typespecs() |> callback_keys()
       }
     end
   end
@@ -183,6 +184,10 @@ defmodule Anchor.Adapters.BeamReader do
   # rule, DND-5438) rather than failing a beam whose facts were all read.
   defp typespecs({:ok, specs}), do: specs
   defp typespecs(:error), do: []
+
+  # DND-5633: only which callbacks a behaviour declares, never their types.
+  defp callback_keys(callbacks),
+    do: callbacks |> Enum.map(fn {name_arity, _forms} -> name_arity end) |> Enum.sort()
 
   defp error(path, module, reason), do: {:error, %{path: path, module: module, reason: reason}}
 end

@@ -9,18 +9,25 @@ defmodule Anchor.Managers.Sabotage.Coverage do
        (exit 2), before anything is traced: tracing every call of a whole
        suite run one test at a time is a load that belongs in CI. Test
        arguments that set `--max-cases` are refused too (exit 2): two tests
-       at once would share their calls.
+       at once would share their calls. So are ones that choose files (exit 2,
+       `Anchor.Domain.Sabotage.CoverageArgs`): the map is of the whole suite.
     3. The project's modules (`Anchor.Adapters.ProjectModuleSource`); none is
        exit 3.
     4. Tracing starts (`Anchor.Adapters.Tracing.start/2`; another tracer
-       already on is exit 2), the suite runs in this VM
+       already on is exit 2, a project module that cannot load is exit 3 naming
+       it, DND-5690, and so is an ExUnit function the run reads that is gone,
+       DND-5691), the suite runs in this VM
        (`Anchor.Adapters.InProcessTests`), and tracing stops in an `after`
        block, so a raise never leaves the VM traced.
     5. The collector's state becomes the map
-       (`Anchor.Domain.Sabotage.CoverageMap.finalize/2`); a map with zero
-       tests or zero modules is exit 3 and is not written.
-    6. The map is written (`Anchor.Adapters.CoverageStore`); a failed suite
-       still writes it, and exits 1: the map describes a broken suite.
+       (`Anchor.Domain.Sabotage.CoverageMap.finalize/2`). A run it refuses (fewer
+       windows than tests, a test that ran with no entry, a label or a Task shape
+       it cannot read) is exit 3, no map; so is a map with zero tests or zero
+       modules, carrying the suite's own message when it failed before any test.
+    6. The map is written (`Anchor.Adapters.CoverageStore`). A leak (a test's
+       process calling project code after the test ended) names each pair and
+       exits 1, and so does a failed suite: the map is still written, and
+       describes a broken suite.
 
   The collector process is the caller's (`facts.collector`): an OTP process is
   Framework, which this Manager never calls; it reaches it only through the
@@ -38,8 +45,10 @@ defmodule Anchor.Managers.Sabotage.Coverage do
   alias Anchor.Adapters.CallTracer
   alias Anchor.Adapters.CoverageFile
   alias Anchor.Adapters.GitStatus
+  alias Anchor.Adapters.InProcessTests
   alias Anchor.Adapters.ProjectModules
   alias Anchor.Adapters.SuiteRunner
+  alias Anchor.Domain.Sabotage.CoverageArgs
   alias Anchor.Domain.Sabotage.CoverageMap
 
   @type facts :: %{
@@ -62,6 +71,7 @@ defmodule Anchor.Managers.Sabotage.Coverage do
     with :ok <- test_env(facts),
          :ok <- in_ci(facts),
          :ok <- serial(Map.get(facts, :test_args, [])),
+         :ok <- whole_suite(Map.get(facts, :test_args, [])),
          {:ok, modules} <- modules(facts, ports),
          {:ok, state, suite} <- traced_suite(facts, modules, ports),
          {:ok, map} <- build(state, facts, modules, suite, ports),
@@ -114,6 +124,20 @@ defmodule Anchor.Managers.Sabotage.Coverage do
       else: :ok
   end
 
+  defp whole_suite(args) do
+    case CoverageArgs.chooses_files(args) do
+      nil ->
+        :ok
+
+      arg ->
+        {2,
+         [
+           "per-test coverage maps the whole suite, but the test arguments choose files " <>
+             "(#{arg}). Fix: drop it, and narrow by tag if you must (--only, --exclude)"
+         ]}
+    end
+  end
+
   defp modules(facts, %{modules: source}) do
     case source.list(facts.ebin_dirs) do
       [] ->
@@ -133,7 +157,7 @@ defmodule Anchor.Managers.Sabotage.Coverage do
       :ok ->
         result =
           try do
-            suite.run(Map.get(facts, :test_args, []))
+            run_suite(suite, Map.get(facts, :test_args, []))
           after
             :ok = tracer.stop()
           end
@@ -146,8 +170,31 @@ defmodule Anchor.Managers.Sabotage.Coverage do
            "another tracer is already on in this VM, so per-test coverage cannot be traced. " <>
              "Fix: run without other tracers"
          ]}
+
+      {:error, {:not_loadable, not_loadable}} ->
+        {3,
+         [
+           "COULD NOT MEASURE: #{length(not_loadable)} project module(s) could not be loaded, " <>
+             "so their calls cannot be traced: #{Enum.map_join(not_loadable, ", ", &inspect/1)}; " <>
+             "no map was written. Fix: recompile the project (MIX_ENV=test mix compile --force); " <>
+             "a beam that still does not load is broken in this build"
+         ]}
+
+      {:error, {:pattern_missing, mfa}} ->
+        {3,
+         [
+           "COULD NOT MEASURE: #{inspect(mfa)} could not be traced, so tests cannot be " <>
+             "bounded; no map was written. Fix: ExUnit's private functions moved in this " <>
+             "Elixir; update Anchor.Domain.Sabotage.LabelSpec for it"
+         ]}
     end
   end
+
+  # The suite port is typed by its behaviour, so `mix anchor.graph` judges
+  # this call against InProcessTests' implementers only, never every module
+  # exporting run/1 (the Mix tasks among them; DND-5633).
+  @spec run_suite(InProcessTests.t(), [String.t()]) :: InProcessTests.result()
+  defp run_suite(suite, args), do: suite.run(args)
 
   defp collected(tracer, collector, result) do
     case tracer.collected(collector) do
@@ -176,27 +223,81 @@ defmodule Anchor.Managers.Sabotage.Coverage do
       otp: facts.otp,
       modules_traced: length(modules),
       suite_exit: suite_exit(suite),
+      total: suite_total(suite),
       root: facts.root
     }
 
-    map = CoverageMap.finalize(state, meta)
+    with {:ok, map} <- finalized(state, meta) do
+      case CoverageMap.validate(map) do
+        :ok ->
+          {:ok, map}
 
-    case CoverageMap.validate(map) do
-      :ok ->
-        {:ok, map}
-
-      {:error, _empty} ->
-        {3,
-         [
-           "COULD NOT MEASURE: tests: #{length(map.tests)}, modules_traced: " <>
-             "#{map.modules_traced}; no map was written. Fix: check the suite runs tests " <>
-             "and the ebin directories hold the project's modules"
-         ]}
+        {:error, _empty} ->
+          {3,
+           [
+             "COULD NOT MEASURE: tests: #{length(map.tests)}, modules_traced: " <>
+               "#{map.modules_traced}; no map was written. #{no_tests_cause(suite)}"
+           ]}
+      end
     end
   end
 
-  defp suite_exit(:passed), do: 0
-  defp suite_exit({:failed, _message}), do: 1
+  defp finalized(state, meta) do
+    case CoverageMap.finalize(state, meta) do
+      {:ok, map} -> {:ok, map}
+      {:error, refusal} -> {3, ["COULD NOT MEASURE: " <> refused(refusal)]}
+    end
+  end
+
+  defp refused({:windows, opened, total}) do
+    "#{opened} test windows opened, but ExUnit counted #{inspect(total)} tests; no map was " <>
+      "written. Fix: rerun without --max-failures; otherwise ExUnit's calls moved in this " <>
+      "Elixir, so update Anchor.Domain.Sabotage.LabelSpec for it"
+  end
+
+  defp refused({:no_entry, ref}) do
+    "#{ref.file}:#{ref.line} #{ref.name} ran with no entry message, so its label was never " <>
+      "set; no map was written. Fix: ExUnit's start of a test moved in this Elixir, so " <>
+      "update Anchor.Domain.Sabotage.LabelSpec for it"
+  end
+
+  defp refused({:module_unfinished, module}) do
+    "#{inspect(module)} started but never reported finishing, so its setup_all cannot be " <>
+      "bounded; no map was written. Fix: rerun without --max-failures"
+  end
+
+  defp refused({:bad_label, label}) do
+    "a call carries the seq_trace label #{inspect(label, limit: 8)}, from outside this run; " <>
+      "no map was written. Fix: something in the suite uses seq_trace itself; stop it, " <>
+      "since a coverage run owns the token"
+  end
+
+  defp refused({:task_shape, mfa}) do
+    "a Task was spawned in a shape this does not know (#{inspect(mfa, limit: 8)}); no map " <>
+      "was written. Fix: Task.Supervised's private shape changed in this Elixir; update " <>
+      "Anchor.Domain.Sabotage.ProcessOwnership.edge/3 for it"
+  end
+
+  defp refused({:unreadable, message}) do
+    "a trace message could not be read (#{inspect(message, limit: 8)}); no map was written. " <>
+      "Fix: Anchor.Domain.Sabotage.LabelSpec and the collector disagree; report it"
+  end
+
+  # A suite that raised before any test (test_helper.exs refusing a module of
+  # the closure, DND-5690) said why; that message is the only place its name is.
+  defp no_tests_cause({:passed, _total}),
+    do: "Fix: check the suite runs tests and the ebin directories hold the project's modules"
+
+  defp no_tests_cause({:failed, message, _total}),
+    do:
+      "The suite failed before any test ran: #{message}\n" <>
+        "Fix: repair what the suite named, then rerun"
+
+  defp suite_exit({:passed, _total}), do: 0
+  defp suite_exit({:failed, _message, _total}), do: 1
+
+  defp suite_total({:passed, total}), do: total
+  defp suite_total({:failed, _message, total}), do: total
 
   defp write(map, facts, %{store: store}) do
     case store.write(facts.out, map) do
@@ -212,18 +313,24 @@ defmodule Anchor.Managers.Sabotage.Coverage do
     end
   end
 
-  # DND-5642: each window-leak warning follows the summary; it never changes
-  # the exit code.
-  defp finished(map, :passed, facts),
-    do: {0, [CoverageMap.summary(map, facts.out) | CoverageMap.leak_warnings(map)]}
+  # A leak fails the run on its own (DND-5691): the map is written, and the exit
+  # says it describes a suite whose tests outlive themselves.
+  defp finished(map, suite, facts) do
+    lines =
+      [CoverageMap.summary(map, facts.out) | CoverageMap.leak_lines(map)] ++ suite_lines(suite)
 
-  defp finished(map, {:failed, message}, facts) do
-    {1,
-     [CoverageMap.summary(map, facts.out)] ++
-       CoverageMap.leak_warnings(map) ++
-       [
-         "the suite failed (#{message}), so the map (written, suite_exit: 1) describes a " <>
-           "broken suite. Fix: make the suite green first"
-       ]}
+    {finished_code(map, suite), lines}
+  end
+
+  defp finished_code(%{leaks: []}, {:passed, _total}), do: 0
+  defp finished_code(_map, _suite), do: 1
+
+  defp suite_lines({:passed, _total}), do: []
+
+  defp suite_lines({:failed, message, _total}) do
+    [
+      "the suite failed (#{message}), so the map (written, suite_exit: 1) describes a " <>
+        "broken suite. Fix: make the suite green first"
+    ]
   end
 end

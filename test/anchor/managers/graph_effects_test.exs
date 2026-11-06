@@ -64,7 +64,7 @@ defmodule Anchor.Managers.GraphEffectsTest do
   defp rule(type, id, index), do: %{type: type, id: id, bucket: "domain", index: index}
 
   defp run(rules, beams, opts \\ []) do
-    expect(ConfigLoaderMock, :load_in, fn _root -> {:ok, config(rules)} end)
+    expect(ConfigLoaderMock, :load, fn -> {:ok, config(rules)} end)
     Mox.expect(BeamSourceMock, :read_ebins, fn [{:my_app, @ebin}] -> beams end)
 
     expect(SourceSourceMock, :read, fn @root, files ->

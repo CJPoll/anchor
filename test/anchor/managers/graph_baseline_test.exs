@@ -7,6 +7,8 @@ defmodule Anchor.Managers.GraphBaselineTest do
   #
   # Sabotage record: ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
   # DND-5629 (base found by rule id): ../../sabotage_records/baseline_rename-20261103-dnd_5441_graph_rules_a.md
+  # Sabotage record (DND-5633, DND-5648): ../../sabotage_records/baseline-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (DND-5648, BC-B): ../../sabotage_records/failures-20261103-dnd_5648_graph_followups.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -91,7 +93,7 @@ defmodule Anchor.Managers.GraphBaselineTest do
     ]
 
   defp expect_run(rules, beam) do
-    expect(ConfigLoaderMock, :load_in, fn _root -> {:ok, config(rules)} end)
+    expect(ConfigLoaderMock, :load, fn -> {:ok, config(rules)} end)
     Mox.expect(BeamSourceMock, :read_ebins, fn _apps -> [beam] end)
 
     expect(SourceSourceMock, :read, fn @root, files ->
@@ -275,6 +277,41 @@ defmodule Anchor.Managers.GraphBaselineTest do
       assert Enum.any?(messages(report), &(&1 =~ "could not read #{@path} at nosuch"))
     end
 
+    # DND-5633: the Manager hands the rule's narrows?/2 to the judgement.
+    test "an entry narrowing one removed since REF is a NOTE, by the rule's narrows?/2", %{
+      beam: beam
+    } do
+      wider = "f|AnchorFixtures.GraphBaselineTest.User|wider"
+      expect_run([rule(%{type: :stub_finds_narrowing})], beam)
+      expect_baseline("#{@key}\n")
+      expect_base_rules("main", [rule(%{type: :stub_finds_narrowing})])
+      expect(GitBaseMock, :show, fn @root, "main", @path -> Baseline.parse("#{wider}\n") end)
+
+      report = Graph.run(request(%{base: "main"}), deps())
+
+      assert report.exit_code == 0
+      assert [%{enforcement: :report, message: message}] = report.findings
+      assert message =~ "NOTE: #{@key} in #{@path} narrows #{wider}"
+    end
+
+    test "positive control: a rule that never narrows reads the same files as GREW", %{
+      beam: beam
+    } do
+      expect_run([rule()], beam)
+      expect_baseline("#{@key}\n")
+      expect_base_rules("main", [rule()])
+
+      expect(GitBaseMock, :show, fn @root, "main", @path ->
+        Baseline.parse("f|AnchorFixtures.GraphBaselineTest.User|wider\n")
+      end)
+
+      report = Graph.run(request(%{base: "main"}), deps())
+
+      assert report.exit_code == 1
+      assert [%{enforcement: :enforce, message: message}] = report.findings
+      assert message =~ "#{@key} was added to"
+    end
+
     test "without --base, git is never asked", %{beam: beam} do
       expect_run([rule()], beam)
       expect_baseline("#{@key}\n")
@@ -371,6 +408,57 @@ defmodule Anchor.Managers.GraphBaselineTest do
                &(&1.file == ".anchor.yml" and &1.message =~ "could not read .anchor.yml at main")
              )
     end
+
+    # DND-5648: one cause, one issue. Three baselined rules and a base config
+    # that does not load gave three copies of the same issue.
+    test "a base config that cannot be read is one issue naming every baselined rule", %{
+      beam: beam
+    } do
+      ids = ["f", "g", "h"]
+      expect_run(Enum.map(ids, &rule(%{id: &1, baseline: ".anchor/baselines/#{&1}.txt"})), beam)
+
+      expect(BaselineStoreMock, :read, 3, fn @root, ".anchor/baselines/" <> file ->
+        id = Path.rootname(file)
+        Baseline.parse("#{id}|AnchorFixtures.GraphBaselineTest.User|found\n")
+      end)
+
+      expect(GitBaseMock, :rules, fn @root, "main", ".anchor.yml" ->
+        {:error, {:invalid_config, "the document is empty"}}
+      end)
+
+      expect(GitBaseMock, :show, 0, fn _root, _ref, _path -> {:error, :absent} end)
+
+      report = Graph.run(request(%{base: "main"}), deps())
+
+      assert report.exit_code == 1
+
+      assert [issue] =
+               Enum.filter(report.findings, &(&1.message =~ "could not read .anchor.yml at main"))
+
+      assert issue.file == ".anchor.yml"
+      assert issue.message =~ ~s|rules "f", "g", "h"|
+      assert issue.message =~ "the document is empty"
+      assert issue.message =~ "Fix: "
+
+      # The verdict is unchanged: GREW was not judged, so every finding stands
+      # and none is held.
+      assert report.held == []
+
+      assert Enum.sort(Enum.map(Enum.filter(report.findings, & &1.key), & &1.key)) ==
+               Enum.map(ids, &"#{&1}|AnchorFixtures.GraphBaselineTest.User|found")
+    end
+
+    test "positive control: a base config that loads gives no config issue", %{beam: beam} do
+      expect_run([rule()], beam)
+      expect_baseline("#{@key}\n")
+      expect_base_rules("main", [rule()])
+      expect(GitBaseMock, :show, fn @root, "main", @path -> Baseline.parse("#{@key}\n") end)
+
+      report = Graph.run(request(%{base: "main"}), deps())
+
+      assert report.exit_code == 0
+      refute Enum.any?(messages(report), &(&1 =~ "could not read .anchor.yml"))
+    end
   end
 
   describe "run/2 --write-baseline RULE_ID" do
@@ -405,7 +493,7 @@ defmodule Anchor.Managers.GraphBaselineTest do
     end
 
     test "an id naming no rule with a baseline is refused (exit 2) before any beam is read" do
-      expect(ConfigLoaderMock, :load_in, fn _root -> {:ok, config([rule(%{baseline: nil})])} end)
+      expect(ConfigLoaderMock, :load, fn -> {:ok, config([rule(%{baseline: nil})])} end)
       Mox.expect(BeamSourceMock, :read_ebins, 0, fn _apps -> [] end)
       expect(BaselineStoreMock, :create, 0, fn _root, _path, _contents -> :ok end)
 

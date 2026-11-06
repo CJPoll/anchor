@@ -1,0 +1,24 @@
+# The aggregate_write_sources canary (DND-5459): its own root, so the shared
+# canary tree's counts do not move. The integration test compiles lib/ in the
+# test (against Ecto, a test-only dependency) and runs the Manager over it.
+# Compliant: repo.ex, thread.ex and compliant.ex (one complete transaction).
+# Violating: violating.ex, an unresolved write and a transaction that calls a
+# fun parameter.
+rules:
+  - type: aggregate_write_sources
+    id: aggregate_write_sources
+    paths: ["lib/aws/**/*.ex"]
+
+aggregates:
+  repos: []
+
+architecture:
+  contexts:
+    depth: 2
+  buckets:
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/aws/**/*.ex"]
+  calls:
+    domain: [domain]

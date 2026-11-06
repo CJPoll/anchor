@@ -40,7 +40,8 @@ defmodule Anchor.Domain.Checks.MaxFileLengthTest do
 
       assert violation.message ==
                "File contains 12 lines of code (maximum allowed: 10). " <>
-                 "Consider breaking this file into smaller, more focused modules."
+                 "Consider breaking this file into smaller, more focused modules." <>
+                 " Fix: at most 10 lines of code per file; split the module into smaller modules, each with one responsibility"
 
       assert violation.line == 1
       assert violation.trigger == "lib/big.ex"

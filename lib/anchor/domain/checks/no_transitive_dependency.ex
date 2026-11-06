@@ -33,7 +33,20 @@ defmodule Anchor.Domain.Checks.NoTransitiveDependency do
 
   alias Anchor.Domain.DependencyAnalyzer
   alias Anchor.Domain.GlobPattern
+  alias Anchor.Domain.RuleShapes
   alias Anchor.Domain.Violation
+
+  @behaviour Anchor.Domain.RuleShape
+
+  @impl Anchor.Domain.RuleShape
+  def shape(rule) do
+    forbidden =
+      Enum.map(Map.get(rule, :forbidden_modules) || [], &inspect/1) ++
+        (Map.get(rule, :forbidden_patterns) || [])
+
+    "no chain of dependencies from the module reaches #{Enum.join(forbidden, ", ")}; cut " <>
+      "the chain where it first enters a module that depends on it"
+  end
 
   @doc """
   Returns the `%Violation{}` list for `ast` against the already-selected `rules`
@@ -65,7 +78,9 @@ defmodule Anchor.Domain.Checks.NoTransitiveDependency do
 
       transitive_deps
       |> Enum.filter(&forbidden?(&1, forbidden, forbidden_patterns))
-      |> Enum.map(&build_violation(&1, module_name, modules_map, ast))
+      |> Enum.map(
+        &RuleShapes.with_shape(build_violation(&1, module_name, modules_map, ast), shape(rule))
+      )
     end)
   end
 

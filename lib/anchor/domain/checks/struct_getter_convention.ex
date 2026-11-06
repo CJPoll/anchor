@@ -53,7 +53,15 @@ defmodule Anchor.Domain.Checks.StructGetterConvention do
   names, structs, or fields (macro/`unquote` forms) are skipped without crashing.
   """
 
+  alias Anchor.Domain.RuleShapes
   alias Anchor.Domain.Violation
+
+  @behaviour Anchor.Domain.RuleShape
+
+  @impl Anchor.Domain.RuleShape
+  def shape(_rule) do
+    "name a getter after the field it returns, and define it in the struct's own module"
+  end
 
   @doc """
   Returns the `%Violation{}` list for `ast`.
@@ -72,6 +80,7 @@ defmodule Anchor.Domain.Checks.StructGetterConvention do
         |> functions()
         |> Enum.filter(&getter_candidate?/1)
         |> Enum.flat_map(&validate_getter(&1, enclosing_module, aliases, has_literal_struct?))
+        |> Enum.map(&RuleShapes.with_shape(&1, shape(%{})))
 
       :no_module ->
         []
