@@ -8,6 +8,7 @@ defmodule Anchor.Integration.EffectsCanaryTest do
   #
   # Sabotage record: ../../sabotage_records/effects-20261103-dnd_5447_graph_rules_c.md
   # Sabotage record (the one-Fix assertion): ../../sabotage_records/effects-20261106-dnd_5443_graph_rules_b.md
+  # DND-5448: ../../sabotage_records/placement-20261106-dnd_5448_placement_core.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -90,7 +91,9 @@ defmodule Anchor.Integration.EffectsCanaryTest do
     reader = Enum.find(report.findings, &(&1.file == "lib/effects/domain/reader.ex"))
     assert reader.line == 4
     assert reader.message =~ "File.read/1"
-    assert reader.message =~ "Fix: move the effect into an adapter"
+
+    assert reader.message =~
+             "Fix: move AnchorFixtures.EffectsCanary.Reader.read/1 to the adapters"
 
     # DND-5446: the graph half of the Fix-shape invariant, for this rule type's
     # own canary (graph_canary_test.exs names this test in @own_canary).

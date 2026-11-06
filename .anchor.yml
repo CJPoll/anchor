@@ -198,6 +198,13 @@ rules:
     paths: ["lib/**/*.ex"]
     baseline: .anchor/baselines/parameter_reaches_sink.txt
 
+  # The placement rules (DND-5448) are not enabled here yet, though
+  # effects_match_bucket above builds their model on every run and prints its
+  # precision. `function_placement` would judge nothing (`interfaces:` below makes
+  # every module an interface, and rules 2 to 4 exempt those), and
+  # `reachable_from_root` would fail closed (Mutator.generate/4's apply/3 computes
+  # a name). A fail-closed issue is enforced under `enforcement: report` too.
+
   # --- Rule: only a struct's own module changes it, by value flow (DND-5454) ---
   #
   # The graph half of struct ownership: a Map writer, struct/2, put_in or a

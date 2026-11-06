@@ -73,13 +73,17 @@ defmodule Anchor.Domain.GraphReport do
   `parameter_reaches_sink` rule ran, it then has `; parameter_reaches_sink: <p>
   apply sites precise, <a> fell to any, <i> imprecise parameters, <c> calls of a
   computed name, <j> functions judged, <e> exempt, <k> not analysed` (DND-5470),
-  zeros included: a zero there was measured.
+  zeros included: a zero there was measured. When the placement model was built
+  (DND-5448), it then has `; placement: <f> functions placed, <n> with no @spec
+  (ownership unknown), <a> ambiguous owner, <j> with no clause to slice, <c> calls
+  of a computed name, reachability <precise|lost at <s> call sites|no roots>`.
   """
 
   alias Anchor.Domain.Cfa
   alias Anchor.Domain.Demand
   alias Anchor.Domain.Effects
   alias Anchor.Domain.GraphReport.Finding
+  alias Anchor.Domain.Placement
 
   defstruct findings: [],
             could_not_check: [],
@@ -124,6 +128,7 @@ defmodule Anchor.Domain.GraphReport do
           optional(:effects) => effects() | nil,
           optional(:parameter_sinks) => parameter_sinks() | nil,
           optional(:demand) => demand() | nil,
+          optional(:placement) => placement() | nil,
           optional(:aggregates) => %{declared: pos_integer(), tables_unknown: non_neg_integer()},
           optional(:writes) => %{
             writes: non_neg_integer(),
@@ -147,6 +152,16 @@ defmodule Anchor.Domain.GraphReport do
           absent: non_neg_integer(),
           imprecise_functions: non_neg_integer(),
           bound_hit: non_neg_integer()
+        }
+
+  @type placement :: %{
+          functions: non_neg_integer(),
+          no_spec: non_neg_integer(),
+          ambiguous_owner: non_neg_integer(),
+          unjoined: non_neg_integer(),
+          computed_calls: non_neg_integer(),
+          reachability: :precise | :lost | :no_roots,
+          lost_sites: non_neg_integer()
         }
 
   @type effects :: %{
@@ -209,6 +224,16 @@ defmodule Anchor.Domain.GraphReport do
       by_function: counts.by_function
     }
   end
+
+  @doc """
+  The placement model's precision counts (DND-5448) for the summary, printed on every
+  run that built it. `nil` for no model.
+  """
+  @spec placement(Placement.t() | nil) :: placement() | nil
+  def placement(nil), do: nil
+
+  def placement(%Placement{precision: precision}),
+    do: %{precision | lost_sites: length(precision.lost_sites)}
 
   @doc """
   The demand-analysis counts (DND-5715) for the summary: functions, parameters,
@@ -313,6 +338,7 @@ defmodule Anchor.Domain.GraphReport do
       "effects" => effects_json(Map.get(report.counts, :effects)),
       "parameter_sinks" => parameter_sinks_json(Map.get(report.counts, :parameter_sinks)),
       "demand" => demand_json(Map.get(report.counts, :demand)),
+      "placement" => placement_json(Map.get(report.counts, :placement)),
       "aggregates" => aggregates_json(Map.get(report.counts, :aggregates)),
       "writes" => writes_json(Map.get(report.counts, :writes)),
       "exit_code" => report.exit_code,
@@ -347,6 +373,7 @@ defmodule Anchor.Domain.GraphReport do
       dynamic_calls_note(Map.get(counts, :dynamic_calls)) <>
       effects_note(Map.get(counts, :effects)) <>
       demand_note(Map.get(counts, :demand)) <>
+      placement_note(Map.get(counts, :placement)) <>
       width_note(Map.get(counts, :interface_width)) <>
       parameter_sinks_note(Map.get(counts, :parameter_sinks)) <>
       aggregates_note(Map.get(counts, :aggregates)) <>
@@ -426,6 +453,22 @@ defmodule Anchor.Domain.GraphReport do
 
   defp apply_sites_note(%{resolved: resolved, any: any, bound_hit?: bound_hit?}),
     do: "; apply sites: #{resolved} resolved, #{any} any#{bound_note(bound_hit?)}"
+
+  defp placement_json(nil), do: nil
+  defp placement_json(placement), do: Map.new(placement, &stringify_key/1)
+
+  defp placement_note(nil), do: ""
+
+  defp placement_note(placement) do
+    "; placement: #{placement.functions} functions placed, #{placement.no_spec} with no " <>
+      "@spec (ownership unknown), #{placement.ambiguous_owner} ambiguous owner, " <>
+      "#{placement.unjoined} with no clause to slice, #{placement.computed_calls} calls of a " <>
+      "computed name, reachability " <> reachability_note(placement)
+  end
+
+  defp reachability_note(%{reachability: :precise}), do: "precise"
+  defp reachability_note(%{reachability: :no_roots}), do: "no roots"
+  defp reachability_note(%{lost_sites: sites}), do: "lost at #{sites} call sites"
 
   defp demand_json(nil), do: nil
   defp demand_json(demand), do: Map.new(demand, &stringify_key/1)

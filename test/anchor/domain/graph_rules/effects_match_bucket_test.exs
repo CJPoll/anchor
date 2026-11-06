@@ -3,12 +3,14 @@ defmodule Anchor.Domain.GraphRules.EffectsMatchBucketTest do
   # hand-built models (Anchor.Test.EffectsModels).
   #
   # Sabotage record: ../../../sabotage_records/effects-20261103-dnd_5447_graph_rules_c.md
+  # The Fix as a rendered proposal (DND-5448): ../../../sabotage_records/placement-20261106-dnd_5448_placement_core.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.EffectsModels
 
   alias Anchor.Domain.Effects
   alias Anchor.Domain.GraphRules.EffectsMatchBucket
+  alias Anchor.Domain.Placement
 
   @rule %{type: :effects_match_bucket, id: "effects", paths: ["lib/**"]}
 
@@ -46,7 +48,7 @@ defmodule Anchor.Domain.GraphRules.EffectsMatchBucketTest do
     assert one.trigger == "D.f/1"
     assert one.message =~ "D.f/1 is in bucket domain (domain) but reaches an effect"
     assert one.message =~ "D.f/1 -> D2.g/1 -> App.Repo.insert/1"
-    assert one.message =~ "Fix: move the effect into an adapter"
+    assert one.message =~ "Fix: move D.f/1 to the managers bucket: D.f/1 -> D2.g/1"
     assert one.key == "effects|D.f/1|managers"
     assert one.filename == "lib/domain/D.ex"
     assert one.line == 11
@@ -62,15 +64,18 @@ defmodule Anchor.Domain.GraphRules.EffectsMatchBucketTest do
         [{{M, :run, 1}, {App.Repo, :insert, 1}}]
       )
 
-    assert violation.message =~ "calls an effect itself: M.run/1 -> App.Repo.insert/1"
-    assert violation.message =~ "Fix: move the call into an adapter of this context"
+    assert violation.message =~ "calls an effect itself."
+    assert violation.message =~ "Fix: move M.run/1 to the adapters bucket: M.run/1 -> App.Repo"
   end
 
   test "an adapter function with no effect is an issue" do
     [violation] = check([{A, "adapters", [{:to_map, 1}], []}], [])
 
     assert violation.message =~ "A.to_map/1 is in bucket adapters but reaches no effect"
-    assert violation.message =~ "Fix: move it to a Domain module"
+
+    assert violation.message =~
+             "Fix: move A.to_map/1 to the domain bucket: no effect is reachable"
+
     assert violation.key == "effects|A.to_map/1|domain"
   end
 
@@ -82,7 +87,7 @@ defmodule Anchor.Domain.GraphRules.EffectsMatchBucketTest do
       )
 
     assert violation.message =~ "reaches effects only through A2.save/1"
-    assert violation.message =~ "Fix: it orchestrates; move it to a Manager"
+    assert violation.message =~ "Fix: move A.run/1 to the managers bucket: A.run/1 -> A2.save/1"
   end
 
   test "an unresolved call in the chain is named, and its Fix offers a behaviour" do
@@ -153,6 +158,29 @@ defmodule Anchor.Domain.GraphRules.EffectsMatchBucketTest do
     # Positive control: a module with a pure public function is judged, not a floor issue.
     assert [%{kind: kind}] = check([{A, "adapters", [{:to_map, 1}], []}], [])
     refute kind == :fail_closed
+  end
+
+  # DND-5448: the Fix is the rendered proposal, character for character, and the
+  # key stays the one the landed baselines hold.
+  test "the Fix is Placement.render/1 of its proposal, and the key is the landed one" do
+    model = model([{D, "domain", [{:f, 1}], []}], [{{D, :f, 1}, {File, :read, 1}}])
+
+    assert [violation] = EffectsMatchBucket.check(model, @rule)
+
+    assert [proposal] =
+             model |> Placement.build() |> Placement.proposals(model, :effects_match_bucket)
+
+    assert proposal.reason == :bucket_from_effects
+    assert String.ends_with?(violation.message, "Fix: " <> Placement.render(proposal))
+    assert violation.key == "effects|D.f/1|adapters"
+  end
+
+  test "a selected function's proposal only: the selector limits it" do
+    modules = [{D, "domain", [{:f, 1}], []}, {D2, "domain", [{:g, 1}], []}]
+    calls = [{{D, :f, 1}, {File, :read, 1}}, {{D2, :g, 1}, {File, :read, 1}}]
+    rule = %{type: :effects_match_bucket, id: "effects", paths: ["lib/domain/D.ex"]}
+
+    assert [%{trigger: "D.f/1"}] = check(modules, calls, [], rule)
   end
 
   test "shape/1 states the role table" do

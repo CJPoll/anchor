@@ -135,6 +135,14 @@ defmodule Anchor.Domain.DataFlow do
   end
 
   @doc """
+  The nodes that give the clause its return value: its final expression, and the
+  final expression of each value block of a branch whose value is the clause's
+  (recursively). What `backward_slice/2` of the return value starts from (DND-5448).
+  """
+  @spec result_nodes(t()) :: [Node.id()]
+  def result_nodes(%__MODULE__{} = flow), do: flow |> result_chain(flow.result) |> Enum.sort()
+
+  @doc """
   The sinks of the clause: its final expression; the final expression of each
   value block of a branch whose value is the clause's (recursively); every
   node `effect?` holds for (given the node's whole AST, nested expressions

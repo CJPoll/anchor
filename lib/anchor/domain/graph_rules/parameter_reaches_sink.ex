@@ -72,8 +72,8 @@ defmodule Anchor.Domain.GraphRules.ParameterReachesSink do
 
   ## The Fix
 
-  Until `Anchor.Domain.Placement` lands (DND-5448), the `Fix:` is this rule's
-  own text, the proposal `drop parameter`.
+  The `Fix:` is this rule's own text, the proposal `drop parameter`, not yet a
+  rendered `Anchor.Domain.Proposal` (DND-5448 left this rule's reason out).
   """
 
   @behaviour Anchor.Domain.GraphRule

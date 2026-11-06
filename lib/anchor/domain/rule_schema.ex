@@ -212,6 +212,8 @@ defmodule Anchor.Domain.RuleSchema do
     # DND-5447: effects_match_bucket reads only the graph common keys (the
     # buckets, effects and roots are the `architecture:` section's).
     effects_match_bucket: [],
+    # DND-5448: function_placement reads only the graph common keys.
+    function_placement: [],
     # DND-5443: interface reads `max_width` (optional, a positive integer: a
     # context whose interface exports more public functions is a violation).
     interface: ~w(max_width),
@@ -232,6 +234,8 @@ defmodule Anchor.Domain.RuleSchema do
     no_tuple_match_in_head: [],
     # DND-5470: parameter_reaches_sink reads only the graph common keys.
     parameter_reaches_sink: [],
+    # DND-5448: reachable_from_root reads only the graph common keys.
+    reachable_from_root: [],
     single_control_flow: [],
     struct_getter_convention: [],
     struct_owned_by_module: ~w(owned_namespaces),
@@ -249,6 +253,7 @@ defmodule Anchor.Domain.RuleSchema do
     case_on_bare_arg: [],
     context_acyclic: [],
     effects_match_bucket: [],
+    function_placement: [],
     interface: [],
     layering: [],
     max_file_length: [],
@@ -262,6 +267,7 @@ defmodule Anchor.Domain.RuleSchema do
     no_transitive_dependency: ~w(forbidden_modules forbidden_patterns),
     no_tuple_match_in_head: [],
     parameter_reaches_sink: [],
+    reachable_from_root: [],
     single_control_flow: [],
     struct_getter_convention: [],
     struct_owned_by_module: [],
@@ -279,6 +285,7 @@ defmodule Anchor.Domain.RuleSchema do
     case_on_bare_arg: :ast,
     context_acyclic: :graph,
     effects_match_bucket: :graph,
+    function_placement: :graph,
     interface: :graph,
     layering: :graph,
     max_file_length: :ast,
@@ -292,6 +299,7 @@ defmodule Anchor.Domain.RuleSchema do
     no_transitive_dependency: :ast,
     no_tuple_match_in_head: :ast,
     parameter_reaches_sink: :graph,
+    reachable_from_root: :graph,
     single_control_flow: :ast,
     struct_getter_convention: :ast,
     struct_owned_by_module: :ast,

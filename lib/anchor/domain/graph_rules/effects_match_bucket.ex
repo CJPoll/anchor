@@ -21,12 +21,13 @@ defmodule Anchor.Domain.GraphRules.EffectsMatchBucket do
   A bucket the rule selects modules of, but of which no public function was
   analysed, is below the rule's floor: an issue on the config, never a pass.
 
-  Each message names the inferred role and the evidence: the call chain to the
-  first effect (`Effects.evidence/2`), an unresolved call at its line, or
-  that no effect is reachable. An effect whose compiled call several Elixir
-  functions share is named with every candidate (`Inlines.describe/1`,
-  DND-5613). Until DND-5448 lands, the `Fix:` is this rule's own shape per
-  case.
+  Each violation is one proposal of `Anchor.Domain.Placement` (DND-5448): rule 1
+  of `Anchor.Domain.Placement.Rules`, and the `Fix:` is `Placement.render/1` of it,
+  which names the inferred role and the evidence: the call chain to the first
+  effect (`Effects.evidence/2`), an unresolved call at its line, or that no effect
+  is reachable. An effect whose compiled call several Elixir functions share is
+  named with every candidate (`Inlines.describe/1`, DND-5613). A pure function whose
+  type owner is known is told to go to that owner.
   """
 
   @behaviour Anchor.Domain.GraphRule
@@ -35,13 +36,11 @@ defmodule Anchor.Domain.GraphRules.EffectsMatchBucket do
   alias Anchor.Domain.Effects
   alias Anchor.Domain.Failures
   alias Anchor.Domain.Graph.FunctionNode
-  alias Anchor.Domain.Graph.Inlines
   alias Anchor.Domain.Graph.ModuleNode
   alias Anchor.Domain.GraphRules
   alias Anchor.Domain.Model
+  alias Anchor.Domain.Placement
   alias Anchor.Domain.Roots
-  alias Anchor.Domain.Violation
-  alias Anchor.Domain.ViolationKey
 
   @judged_roles [:domain, :adapters, :managers]
 
@@ -52,7 +51,7 @@ defmodule Anchor.Domain.GraphRules.EffectsMatchBucket do
   def narrows?(_base_key, _key), do: false
 
   @impl Anchor.Domain.GraphRule
-  def needs, do: [:cfa, :effects]
+  def needs, do: [:cfa, :effects, :placement]
 
   @impl Anchor.Domain.RuleShape
   def shape(_rule) do
@@ -82,10 +81,13 @@ defmodule Anchor.Domain.GraphRules.EffectsMatchBucket do
           role != nil,
           do: {mfa, node, class, bucket, role}
 
+    placement = model.placement || Placement.build(%{model | effects: effects})
+    selected = MapSet.new(judged, fn {module, _class, _bucket} -> module end)
+
     floor_issues(judged, functions, rule, model) ++
-      for {mfa, node, class, bucket, role} <- functions,
-          role != bucket.role,
-          do: violation(mfa, node, class, bucket, role, effects, rule, model)
+      for proposal <- Placement.proposals(placement, model, :effects_match_bucket),
+          MapSet.member?(selected, elem(proposal.subject, 0)),
+          do: Placement.to_violation(proposal, model, rule)
   end
 
   defp public_functions(model, module) do
@@ -115,62 +117,4 @@ defmodule Anchor.Domain.GraphRules.EffectsMatchBucket do
     |> Enum.reject(&MapSet.member?(analysed, &1))
     |> Enum.map(&Failures.effects_bucket_unanalysed(rule, &1, model.config.path))
   end
-
-  defp violation(mfa, node, class, bucket, role, effects, rule, _model) do
-    evidence = Effects.evidence(effects, mfa)
-
-    %Violation{
-      filename: class.source_file,
-      line: node.line,
-      trigger: ViolationKey.mfa(mfa),
-      rule_id: Map.get(rule, :id),
-      key: ViolationKey.graph_key(rule, ViolationKey.mfa(mfa), Atom.to_string(role)),
-      message: message(bucket.role, role, mfa, bucket.name, evidence) <> unresolved_fix(evidence)
-    }
-  end
-
-  defp message(:domain, _role, mfa, name, evidence) do
-    "#{ViolationKey.mfa(mfa)} is in bucket #{name} (domain) but reaches an effect: " <>
-      "#{chain_text(evidence)}. Fix: move the effect into an adapter and have a Manager call " <>
-      "it; #{ViolationKey.mfa(mfa)} then returns the data the Manager needs."
-  end
-
-  defp message(:managers, :adapters, mfa, name, evidence) do
-    "#{ViolationKey.mfa(mfa)} is in bucket #{name} (managers) but calls an effect itself: " <>
-      "#{chain_text(evidence)}. Fix: move the call into an adapter of this context and call " <>
-      "the adapter."
-  end
-
-  defp message(_role, :domain, mfa, name, _evidence) do
-    "#{ViolationKey.mfa(mfa)} is in bucket #{name} but reaches no effect. Fix: move it to a " <>
-      "Domain module of this context (it is pure)."
-  end
-
-  defp message(:adapters, :managers, mfa, name, [_self, next | _rest] = evidence) do
-    "#{ViolationKey.mfa(mfa)} is in bucket #{name} (adapters) but reaches effects only " <>
-      "through #{step_text(next)}: #{chain_text(evidence)}. Fix: it orchestrates; move it to " <>
-      "a Manager, or move the effect into this adapter."
-  end
-
-  defp message(bucket_role, role, mfa, name, evidence) do
-    "#{ViolationKey.mfa(mfa)} is in bucket #{name} (#{bucket_role}) but infers #{role}: " <>
-      "#{chain_text(evidence)}. Fix: " <> shape(%{})
-  end
-
-  defp unresolved_fix(evidence) do
-    case List.last(evidence) do
-      {:unresolved, _info} -> " Or declare a behaviour for this call so Anchor can resolve it."
-      _other -> ""
-    end
-  end
-
-  defp chain_text([]), do: "no effect is reachable"
-  defp chain_text(evidence), do: Enum.map_join(evidence, " -> ", &step_text/1)
-
-  defp step_text({:primitive, mfa}), do: Inlines.describe(mfa)
-
-  defp step_text({:unresolved, %{text: text, line: line} = info}),
-    do: "unresolved dynamic call (#{text}) at #{Map.get(info, :file) || "?"}:#{line || "?"}"
-
-  defp step_text({_m, _f, _a} = mfa), do: ViolationKey.mfa(mfa)
 end

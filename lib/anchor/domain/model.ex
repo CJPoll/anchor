@@ -38,6 +38,9 @@ defmodule Anchor.Domain.Model do
     * `demand` — the demand analysis (`%Anchor.Domain.Demand{}`, DND-5715), set
       by the runner only when a rule that runs declares `needs: [:demand]`;
       `nil` otherwise;
+    * `placement` — the placement model (`%Anchor.Domain.Placement{}`, DND-5448),
+      set by the runner only when a rule that runs declares `needs: [:placement]`;
+      `nil` otherwise;
     * `callbacks` — the external behaviours' callbacks
       (`%{behaviour => [{name, arity}]}`), read with `demand` when a
       `parameter_reaches_sink` rule runs (DND-5470): `%{}` otherwise;
@@ -66,6 +69,7 @@ defmodule Anchor.Domain.Model do
   alias Anchor.Domain.Failures
   alias Anchor.Domain.Graph
   alias Anchor.Domain.Graph.ModuleNode
+  alias Anchor.Domain.Placement
   alias Anchor.Domain.Violation
 
   @enforce_keys [:graph, :architecture, :classification, :config]
@@ -80,7 +84,8 @@ defmodule Anchor.Domain.Model do
     cfa: nil,
     demand: nil,
     effects: nil,
-    facts: %{}
+    facts: %{},
+    placement: nil
   ]
 
   @type t :: %__MODULE__{
@@ -94,7 +99,8 @@ defmodule Anchor.Domain.Model do
           cfa: Cfa.t() | nil,
           demand: Demand.t() | nil,
           effects: Effects.t() | nil,
-          facts: %{module() => Classification.facts()}
+          facts: %{module() => Classification.facts()},
+          placement: Placement.t() | nil
         }
 
   @doc """

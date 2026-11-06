@@ -35,6 +35,7 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
   # DND-5476 (aggregate_declarations rows): ../../sabotage_records/aggregates-20261103-dnd_5476_aggregate_decls.md
   # Sabotage record (DND-5470): ../../sabotage_records/parameter_reaches_sink-20261106-dnd_5470_param_sink_locality.md
   # DND-5459 (aggregate_write_sources rows): ../../sabotage_records/aggregates-20261103-dnd_5459_write_sets.md
+  # Sabotage record (DND-5448): ../../sabotage_records/placement-20261106-dnd_5448_placement_core.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config
@@ -447,7 +448,9 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
               :layering,
               :context_acyclic,
               :effects_match_bucket,
-              :parameter_reaches_sink
+              :function_placement,
+              :parameter_reaches_sink,
+              :reachable_from_root
             ],
        do: graph_rows(type)
 

@@ -443,7 +443,8 @@ The Engine column is the one engine that runs the type: `ast` rules run as
 Credo checks over source, `graph` rules run under `mix anchor.graph` over the
 compiled code (DND-5440; `layering`, DND-5442, `context_acyclic`, DND-5445,
 `aggregate_declarations`, DND-5476, `aggregate_write_sources`, DND-5459,
-`effects_match_bucket`, DND-5447, `parameter_reaches_sink`, DND-5470,
+`effects_match_bucket`, DND-5447, `function_placement`, DND-5448,
+`parameter_reaches_sink`, DND-5470, `reachable_from_root`, DND-5448,
 `struct_owned_by_module_flow`, DND-5454,
 `analyses_complete`, DND-5715, and `interface`, DND-5443). Credo never reports a
 `graph` rule as unchecked.
@@ -457,6 +458,7 @@ compiled code (DND-5440; `layering`, DND-5442, `context_acyclic`, DND-5445,
 | `case_on_bare_arg` | none | none | `ast` |
 | `context_acyclic` | none | none | `graph` |
 | `effects_match_bucket` | none | none | `graph` |
+| `function_placement` | none | none | `graph` |
 | `interface` | `max_width` | none | `graph` |
 | `layering` | none | none | `graph` |
 | `max_file_length` | `max_lines` | none | `ast` |
@@ -470,6 +472,7 @@ compiled code (DND-5440; `layering`, DND-5442, `context_acyclic`, DND-5445,
 | `no_transitive_dependency` | `forbidden_modules`, `forbidden_patterns` | `forbidden_modules`, `forbidden_patterns` | `ast` |
 | `no_tuple_match_in_head` | none | none | `ast` |
 | `parameter_reaches_sink` | none | none | `graph` |
+| `reachable_from_root` | none | none | `graph` |
 | `single_control_flow` | none | none | `ast` |
 | `struct_getter_convention` | none | none | `ast` |
 | `struct_owned_by_module` | `owned_namespaces` | none | `ast` |
@@ -1060,7 +1063,7 @@ function at its def line, keyed `<id>|<Mod.fun/arity>|<inferred role>`, naming
 the evidence: the call chain to the first effect, or that none is reachable.
 
 ```
-lib/my_app/orders/pricing.ex:12: [enforce] rule 4 (id: "effects_match_bucket", effects_match_bucket) MyApp.Orders.Pricing.total/1 is in bucket domain (domain) but reaches an effect: MyApp.Orders.Pricing.total/1 -> MyApp.Orders.Rates.load/0 -> File.read!/1. Fix: move the effect into an adapter and have a Manager call it; MyApp.Orders.Pricing.total/1 then returns the data the Manager needs.
+lib/my_app/orders/pricing.ex:12: [enforce] rule 4 (id: "effects_match_bucket", effects_match_bucket) MyApp.Orders.Pricing.total/1 is in bucket domain (domain) but reaches an effect. Fix: move MyApp.Orders.Pricing.total/1 to the managers bucket of MyApp.Orders: MyApp.Orders.Pricing.total/1 -> MyApp.Orders.Rates.load/0 -> File.read!/1
 ```
 
 The summary adds `; effects: <n> functions (domain <a>, managers <b>, adapters
@@ -1203,7 +1206,8 @@ if the analysis hit its bound. The JSON's `apply_sites` holds `total`,
 summary says nothing of apply sites and `apply_sites` is `null`.
 
 Likewise a rule that reads the effect inference (`Anchor.Domain.Effects`,
-DND-5447) declares `needs: [:cfa, :effects]`: the run then infers it once,
+DND-5447) declares `needs: [:cfa, :effects]` (`effects_match_bucket` adds
+`:placement`, DND-5448): the run then infers it once,
 after the flow analysis, and the summary and the JSON's `effects`
 (`functions`, `by_role`, `unresolved`, `not_analysed`) carry its counts;
 `effects` is `null` when no rule that runs needs it. A rule that reads the
@@ -1227,6 +1231,86 @@ key on. The summary counts such modules as `(<n> outside the root)`, and the
 JSON as `outside_root`, so the layout is visible. An absolute path inside the
 root is made relative to it, so `paths:` selectors match it as they match
 every other file.
+
+### The placement rules: `function_placement` and `reachable_from_root` (DND-5448)
+
+```yaml
+rules:
+  - type: function_placement
+    id: function_placement
+    paths: ["lib/**/*.ex"]
+  - type: reachable_from_root
+    id: reachable_from_root
+    paths: ["lib/**/*.ex"]
+
+architecture:
+  contexts:
+    depth: 2
+  buckets:
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/**/domain/**/*.ex"]
+    - name: web
+      role: framework
+      select:
+        - paths: ["lib/**/web/**/*.ex"]
+  calls:
+    domain: [domain]
+    web: [domain]
+```
+
+Both read one model, `Anchor.Domain.Placement`: per function its inferred role, the
+struct that owns it by its output and its input, its immediate dominator from the roots,
+and whether a root reaches it. A check is the diff between where a function is and where
+the model proposes it; its `Fix:` is the rendered proposal, the line `mix anchor.propose`
+will list. The function rules run in this order, and the first that applies wins:
+
+1. **Bucket from effects** (`effects_match_bucket`): a public function whose inferred role
+   differs from its bucket's goes to a module of that role. A pure one whose type owner is
+   known goes to that owner.
+2. **Output-type owner** (`function_placement`): a pure public function of a Domain bucket
+   whose `@spec` returns a project struct (`%S{}`, `S.t()`, or inside `{:ok, _}`) goes to
+   `S`, when `S` is in a Domain bucket.
+3. **Input-type owner** (`function_placement`): one returning a primitive goes to the owner
+   of the one struct parameter on its return value's slice, in every clause.
+4. **Dominated** (`function_placement`): a public, non-root function whose immediate
+   dominator and every caller are in one other module of its bucket and context becomes
+   that module's private function.
+
+`reachable_from_root` (F5) reports a public function no root reaches, with the proposal
+`delete`. A public macro counts as a root: the compiler calls it, and its expansion leaves
+no edge to it.
+
+```text
+lib/billing/format.ex:4: [enforce] rule 1 (id: "function_placement", function_placement) Billing.Domain.Format.invoice_line/1 is in Billing.Domain.Format (bucket domain), but it returns %Billing.Domain.Invoice.Line{}. Fix: move Billing.Domain.Format.invoice_line/1 to Billing.Domain.Invoice.Line (it returns %Billing.Domain.Invoice.Line{}; the owner of a type holds its transitions)
+lib/billing/dead.ex:2: [enforce] rule 2 (id: "reachable_from_root", reachable_from_root) Billing.Domain.Dead.unused/0 is public and no root reaches it. Fix: delete Billing.Domain.Dead.unused/0 (no root reaches it), or add the root that should call it
+```
+
+**Not judged by rules 2 to 4:** roots, generated functions, a project behaviour's callbacks,
+`__name__`, `module_info/0,1`, `behaviour_info/1`, `child_spec/1`, and every function of an
+interface module. Rule 4 also leaves a function a dynamic call or a literal `{M, :f, args}`
+can reach, and a move into an interface module. Rules 2 and 3 need a `@spec`; a function
+with none has no ownership proposal, and is counted. A function already in its owner stays,
+whoever calls it. **Shared functions** (immediate dominator the virtual root: reached from
+unrelated places) get no move from rules 2 to 4; rule 1 still names their bucket.
+
+**Every run prints the model's precision**, whenever a rule needed it:
+
+```text
+; placement: 42 functions placed, 3 with no @spec (ownership unknown), 0 ambiguous owner, 0 with no clause to slice, 1 calls of a computed name, reachability lost at 1 call sites
+```
+
+A call whose function name is computed (`apply(mod, name, args)`, `spawn(mod, name, args)`,
+and the `Task` and `:timer` forms in `Core.partial_mfa_calls/1`), in a reachable function,
+could reach anything, so `reachable_from_root` then reports no function and fails closed,
+naming each call site. A variable application (`fun.(x)`) does not: what it can reach was
+captured somewhere, and a capture is an edge.
+
+Over a project whose every non-framework bucket is an interface, `function_placement`
+judges nothing, and says so. Anchor's own `.anchor.yml` is such a project, and it has one
+computed name (`Mutator.generate/4`), so it enables neither rule yet; its
+`effects_match_bucket` builds the model on every run.
 
 ### The `parameter_reaches_sink` rule (DND-5470)
 
@@ -1638,6 +1722,11 @@ line.
 | The write analysis a rule needs raises, throws or exits, or returns no `%Analysis{}` (DND-5459) | 1 | the config | `rule 2 (id: "writes", aggregate_write_sources) could not run: the write analysis it needs (Anchor.Domain.Aggregates.Analysis) crashed: RuntimeError: ..., so it checked nothing. Fix: this is an Anchor bug; file it with this line.` |
 | An `effects_match_bucket` rule selects modules of a judged bucket of which no public function was analysed (DND-5447) | 1 | the config | `rule 4 (id: "effects", effects_match_bucket) judged no public function of bucket domain: the modules it selects there have none that was analysed (every one is a root, generated, or has no Core body), so the bucket is below the rule's floor. Fix: select modules of domain with public functions, or set infer: false on domain in a reviewed change.` |
 | The demand analysis a rule needs, or the behaviour read beside it, raises, throws or exits, or the analysis returns no `%Demand{}` (DND-5470) | 1 | the config | `rule 2 (id: "sinks", parameter_reaches_sink) could not run: the demand analysis it needs (Anchor.Domain.Demand) crashed: RuntimeError: ..., so it checked nothing. Fix: this is an Anchor bug; file it with this line.` One per rule that needs it; the rules that do not still run. |
+| The placement model a rule needs raises, throws or exits, or is no `%Placement{}` (DND-5448) | 1 | the config | `rule 2 (id: "placed", function_placement) could not run: the placement model it needs (Anchor.Domain.Placement) crashed: RuntimeError: ..., so it checked nothing. Fix: this is an Anchor bug; file it with this line.` One per rule that needs it; the rules that do not still run. |
+| A reachable function calls a function whose name is computed, under a `reachable_from_root` rule (DND-5448) | 1 | the config | `rule 3 (id: "reach", reachable_from_root) reachability is imprecise: lib/a.ex:3 calls an unknown function dynamically. Fix: resolve it through a behaviour, or accept that reachable_from_root cannot judge this repo.` Names each call site; the rule reports no function that run. |
+| A `reachable_from_root` rule over a model with no root (DND-5448) | 1 | the config | `rule 3 (id: "reach", reachable_from_root) no roots: no framework-role bucket matched a module and architecture.roots is empty. Fix: classify the entry points.` |
+| A `reachable_from_root` rule selects no public function an author wrote (DND-5448) | 1 | the config | `rule 3 (id: "reach", reachable_from_root) judged no function: the modules it selects have no public function an author wrote, so it checked nothing. Fix: select modules with public functions of their own, or remove the rule.` |
+| A `function_placement` rule can judge no function of what it selects (DND-5448) | 1 | the config | `rule 2 (id: "placed", function_placement) judged no function: every public function of the modules it selects is a root, generated, a callback or in an interface module, so it checked nothing. Fix: select modules outside architecture.interfaces, or remove the rule.` |
 | A `parameter_reaches_sink` rule selects modules of which no function could be judged (DND-5470) | 1 | the config | `rule 2 (id: "sinks", parameter_reaches_sink) judged no function: every function of the modules it selects is exempt, has no Core body, or could not be analysed, so it checked nothing. Fix: select modules with functions of their own, or remove the rule.` |
 | Findings of a `report` rule | 0 | the finding | printed `[report]` |
 

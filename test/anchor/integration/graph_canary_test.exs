@@ -14,6 +14,7 @@ defmodule Anchor.Integration.GraphCanaryTest do
   # interface rows: ../../sabotage_records/interface-20261103-dnd_5443_graph_rules_b.md)
   # struct_owned_by_module_flow rows: ../../sabotage_records/struct_flow-20261103-dnd_5447_graph_rules_c.md)
   # Sabotage record (DND-5470): ../../sabotage_records/parameter_reaches_sink-20261106-dnd_5470_param_sink_locality.md
+  # Sabotage record (DND-5448): ../../sabotage_records/placement-20261106-dnd_5448_placement_core.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -266,7 +267,9 @@ defmodule Anchor.Integration.GraphCanaryTest do
       "test/anchor/integration/aggregate_write_sources_integration_test.exs",
     analyses_complete: "test/anchor/integration/analyses_complete_integration_test.exs",
     effects_match_bucket: "test/anchor/integration/effects_canary_test.exs",
-    parameter_reaches_sink: "test/anchor/integration/parameter_reaches_sink_canary_test.exs"
+    function_placement: "test/anchor/integration/placement_invariant_test.exs",
+    parameter_reaches_sink: "test/anchor/integration/parameter_reaches_sink_canary_test.exs",
+    reachable_from_root: "test/anchor/integration/placement_invariant_test.exs"
   }
 
   # DND-5446 (R4): the graph half of the Fix-shape invariant

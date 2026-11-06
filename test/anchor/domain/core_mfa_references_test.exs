@@ -3,6 +3,7 @@ defmodule Anchor.Domain.CoreMfaReferencesTest do
   # compiled in the test (read the way BeamReader reads it).
   #
   # Sabotage record: ../../sabotage_records/parameter_reaches_sink-20261106-dnd_5470_param_sink_locality.md
+  # partial_mfa_calls/1 (DND-5448): ../../sabotage_records/placement-20261106-dnd_5448_placement_core.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -103,6 +104,48 @@ defmodule Anchor.Domain.CoreMfaReferencesTest do
         |> Enum.reject(&(elem(&1, 0) == :function_clause))
 
       assert Enum.sort(references) == unquote(Macro.escape(expected))
+    end
+  end
+
+  # DND-5448.
+  @partial """
+  defmodule AnchorFixtures.CoreTest.Partial do
+    def computed(mod, name, args), do: spawn(mod, name, args)
+    def known_name(mod, args), do: Task.start(mod, :f, args)
+    def literal_args_var(args), do: spawn_link(M, :f, args)
+    def supervised(sup, name, args), do: Task.Supervisor.start_child(sup, M, name, args)
+    def later(name, args), do: :timer.apply_after(10, M, name, args)
+    def whole(x), do: spawn(M, :f, [x])
+    def other(a, b, c), do: {a, b, c}
+  end
+  """
+
+  setup_all do
+    [{_module, binary}] = compile_all_unloaded([{@partial, "lib/partial.ex"}])
+    %{partial: binary}
+  end
+
+  describe "partial_mfa_calls/1" do
+    for {name, arity, expected} <- [
+          {:computed, 3, {nil, nil}},
+          {:known_name, 2, {nil, :f}},
+          {:literal_args_var, 1, {M, :f}},
+          {:supervised, 3, {M, nil}},
+          {:later, 2, {M, nil}}
+        ] do
+      test "#{name}/#{arity} reads as #{inspect(expected)}", %{partial: binary} do
+        {module, name} = unquote(Macro.escape(expected))
+
+        assert [%{module: ^module, name: ^name, line: line}] =
+                 binary |> core({unquote(name), unquote(arity)}) |> Core.partial_mfa_calls()
+
+        assert is_integer(line)
+      end
+    end
+
+    test "a whole triple is mfa_references/1's, and nothing else is read", %{partial: binary} do
+      assert binary |> core({:whole, 1}) |> Core.partial_mfa_calls() == []
+      assert binary |> core({:other, 3}) |> Core.partial_mfa_calls() == []
     end
   end
 end
