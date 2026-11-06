@@ -3,6 +3,7 @@ defmodule Anchor.Domain.ConfigTest do
   # file-boundary tests.
   #
   # Sabotage record: ../../sabotage_records/config-20260913-dnd_123_t3_config_split.md
+  # Sabotage record (DND-5715): ../../sabotage_records/analyses_complete-20261106-dnd_5715_bucket_split.md
   # Sabotage record (rows DND-1265 rewrote: unknown mode/match, empty or
   # rules-less document): ../../sabotage_records/config-20260929-dnd_1265_anchor_fail_closed.md
   # Sabotage record (DND-1286 selector fixtures and schema wiring):

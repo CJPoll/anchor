@@ -234,6 +234,10 @@ before coining a synonym.
   and the ast rules' baselines (DND-5632): `Anchor.Domain.AstBaseline`,
   `Anchor.Managers.AstBaseline`, the `LintKeys` port and its `CredoKeys`
   adapter, and `mix anchor.baseline`.
+- `analyses_complete` — the `analyses_complete` graph rule (DND-5715):
+  `Anchor.Domain.GraphRules.AnalysesComplete`, its floors and failures, and
+  `mix anchor.graph` over Anchor's own lib/ under sabotage. The record also says
+  what each assertion of the removed whole-Anchor self tests became.
 - `layering` — the `layering` graph rule (DND-5442):
   `Anchor.Domain.GraphRules.Layering`, `CallMatrix`, `DynamicCalls`,
   `ViolationKey.mfa/1`, its registration and Config's architecture check of

@@ -3,6 +3,7 @@ defmodule Anchor.Domain.GraphRulesTest do
   # Pure Domain over a hand-built model.
   #
   # Sabotage record: ../../sabotage_records/graph_runner-20261103-dnd_5440_graph_runner.md
+  # Sabotage record (DND-5715): ../../sabotage_records/graph_runner-20261106-dnd_5715_bucket_split.md
   # Sabotage record (DND-5633): ../../sabotage_records/context_acyclic-20261103-dnd_5648_graph_followups.md
   # Sabotage record (FX-B): ../../sabotage_records/graph_runner-20261103-dnd_5648_graph_followups.md
   # Sabotage record (DND-5447, DND-5454 rows): ../../sabotage_records/rule_schema-20261103-dnd_5447_graph_rules_c.md
