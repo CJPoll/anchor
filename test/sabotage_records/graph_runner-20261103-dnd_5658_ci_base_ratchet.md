@@ -3,7 +3,7 @@
 - **Domain:** graph_runner
 - **Branch:** dnd-5658-ci-base-ratchet
 - **Date:** 2026-11-03
-- **Code under test:** `Mix.Tasks.Anchor.Graph` (`target/3`, `refuse_project/1`), `Anchor.Managers.Graph` (`load_config/2`)
+- **Code under test:** `Mix.Tasks.Anchor.Graph` (`target/3`, `refuse_project/2`), `Anchor.Managers.Graph` (`load_config/2`)
 - **Suite run:** `mix test --timeout 2000 --max-cases 2 test/mix/tasks/anchor_graph_test.exs` (G1-G6, G8), and the same on `test/anchor/managers/graph_test.exs` (G7), through `test-slot`
 
 Each mutation was one `perl -0pi` substitution in the named file. The suite ran, then `git checkout -- <file>` restored the file. That was safe because the branch's work was committed first. A mutation that did not change the file would have printed `MUTATION DID NOT APPLY`, and none did. The first try at G3-G7 used a literal `false ->` cond clause or dropped a variable's use. Under `warnings_as_errors` that failed to compile and ran no test, so those runs do not count. They were re-run with mutations that compile: `Process.get(:dnd_5658_sabotage) ->`, `x == :dnd_5658_never ->`, and `File.cwd!() || root`.

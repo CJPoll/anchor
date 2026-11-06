@@ -35,6 +35,11 @@ Positive controls that stayed green under every mutation, and why:
 | L12 | an id-less base rule is compared with its position, so the change's copy also runs | 11, 1 failed | `LandedJudgeTest`: `rules/2: what the landed judge runs an id-less rule runs once when the base has it as written, and is added when new` |
 | L13 | the Manager does not swap in the base's definitions (`judged_rules/2` keeps the change's rules) | 7, 1 failed | `GraphLandedJudgeTest`: `a base rule the change downgrades and shrinks is judged as the base defines it: exit 1` |
 | L14 | a base config the judge cannot read reads as nothing removed (`{:ok, config, Map.put(deps, :landed, [])}` in place of `{:could_not_check, ...}`, 2026-11-06) | 7, 1 failed | `a base config that cannot be read is COULD NOT MEASURE, never nothing removed` |
+| L15 | the Manager judges under the change's sections (`%{config \| rules: LandedJudge.rules(...)}`, the critic's finding on 9e308e1) | 9, 1 failed | `a bucket floor the change lowers is judged by the base's architecture: exit 1` |
+| L16 | `Config.judged/3` keeps the change's `architecture` | 7, 1 failed | `judged/3 every section is the base's; only the path and the set-aside rules are the change's` |
+| L17 | `Config.judged/3` keeps the change's `aggregates` | 7, 1 failed | same test |
+| L18 | `GitShow.config/3` drops every section but `rules` and `path` | 16, 1 failed | `config/3 (DND-5658) every section as committed at the ref, not the working copy` |
+| L19 | a base config with no `architecture` is not refused (`architecture: :dnd_5658_never` in the clause's pattern) | 9, 1 failed | `a base config with no architecture is COULD NOT MEASURE, never a crash` |
 | S11 | the landed judge never sets a rule aside (L1, in the base copy) | self-test T7 | `FAIL T7 a rule type new in the pull request is a FIRST LANDING, not a refusal: exit 3, wanted 0` |
 | S12 | the landed judge passes a removed base rule (L3, in the base copy) | self-test T11 | `FAIL T11 a removed base rule fails the landed judge: exit 0, wanted 1` |
 | S13 | the landed judge runs the change's rule definitions (L13, in the base copy) | self-test T13 | `FAIL T13 a downgraded base rule is judged as the base defines it: exit 0, wanted 1` |

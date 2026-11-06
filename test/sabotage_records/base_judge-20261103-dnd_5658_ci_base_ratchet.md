@@ -22,6 +22,7 @@ The T5 premise is itself a recorded sabotage. The pull request in T5 edits `Anch
 | S8 | the old anchor beams are not deleted before the pull request compiles (`true \|\|` in place of the `rm -rf`) | T9 | `FAIL T9 the judge passed on stale beams; output:`: the judge read the beams a build at main left and passed a pull request whose compile wrote elsewhere (the review finding was real) |
 | S9 | the judge is built before the pull request is compiled | T8 | `FAIL T8 built the judge first` |
 | S10 | BOOTSTRAP for any base with no landed judge (`if false; then` in place of the check that this pull request adds the script) | T10 | `FAIL T10 no landed judge and none added is COULD NOT MEASURE: exit 0, wanted 3` (critic finding, round 2) |
+| S14 | no mutation: the unfixed code at 9e308e1, which ran base rules under the pull request's `architecture:` (T14 was first too loose, exit 1 on another rule's line, so its text was pinned to the layering line) | T14 | `FAIL T14 a widened calls matrix is judged by the base's architecture: output lacks: (id: "layering", layering) Anchor.Managers.SelfTestLeak` |
 | Z | `BASE_JUDGE_TEST_ONLY="T99"`, a filter that names no case | - | exit 3, `base-judge-test: COULD NOT MEASURE: BASE_JUDGE_TEST_ONLY="T99" names no case` (never a zero-case green) |
 
 T6 (an honest pull request passes) is the positive control for T5. It passed in the unmutated run.
