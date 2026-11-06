@@ -131,6 +131,79 @@ defmodule Anchor.Managers.SabotageReplayTest do
     expect(SourceMutationMock, :delete_journal, n, fn @root -> call(:delete_journal, :ok) end)
   end
 
+  defp record_with_timeout(killed, timed) do
+    Enum.join(
+      [
+        "# r",
+        "```anchor-kills",
+        "# id\tfile\tmfa\toperator\tstatus\tkillers",
+        row_line(killed, "killed", @killer),
+        row_line(timed, "timeout", "(timeout)"),
+        "```",
+        ""
+      ],
+      "\n"
+    )
+  end
+
+  defp row_line(mutant, status, killer) do
+    Enum.join(
+      [mutant.id, "lib/calc.ex", "Calc.add/2", to_string(mutant.operator), status, killer],
+      "\t"
+    )
+  end
+
+  test "a row killed by the time bound alone runs its killer file whole, baseline included" do
+    [killed, timed | _rest] = mutants()
+    expect_until_plan(%{"test/sabotage_records/a.md" => record_with_timeout(killed, timed)})
+    expect_clean()
+    expect_patcher(2)
+
+    # In order: the named baseline, the by-file baseline, then each mutant.
+    # An argument list other than these fails the test.
+    TestExecutionMock
+    |> expect(:run, fn _argv, @args, _opts -> call(:named_baseline, test_run(:passed)) end)
+    |> expect(:run, fn _argv, ["test/calc_test.exs"], _opts ->
+      call(:file_baseline, test_run(:passed))
+    end)
+    |> expect(:run, fn _argv, @args, _opts -> call(:named, test_run(:failed, [@failure])) end)
+    |> expect(:run, fn _argv, ["test/calc_test.exs"], _opts ->
+      call(:file, test_run(:failed, [@failure]))
+    end)
+
+    result = Sabotage.replay(@facts, @opts)
+
+    assert result.refusal == nil
+    assert Replay.exit_code(result) == 0
+
+    assert [{%{by_file: false}, :still_killed}, {%{by_file: true}, :still_killed}] =
+             result.results
+
+    assert Enum.filter(calls(), &(&1 in [:named_baseline, :file_baseline, :named, :file])) ==
+             [:named_baseline, :file_baseline, :named, :file]
+
+    assert Replay.render(result) =~
+             "still killed #{timed.id} Calc.add/2 #{timed.operator} " <>
+               "(killer run by file: the record names no test)"
+  end
+
+  test "a killer file run whole that fails with no mutant: exit 3, main is red; nothing is written" do
+    [killed, timed | _rest] = mutants()
+    expect_until_plan(%{"test/sabotage_records/a.md" => record_with_timeout(killed, timed)})
+    expect_clean()
+
+    TestExecutionMock
+    |> expect(:run, fn _argv, @args, _opts -> call(:named_baseline, test_run(:passed)) end)
+    |> expect(:run, fn _argv, ["test/calc_test.exs"], _opts ->
+      call(:file_baseline, test_run(:failed, [@failure]))
+    end)
+
+    assert %{refusal: {3, message}} = Sabotage.replay(@facts, @opts)
+    assert message =~ "main is red"
+    # No write_journal or write_file is expected: Hammox fails any such call.
+    assert :file_baseline in calls()
+  end
+
   test "1: the killers fail with no mutant: exit 3, main is red; nothing is written" do
     [first | _rest] = mutants()
     expect_until_plan(%{"test/sabotage_records/a.md" => record([first])})

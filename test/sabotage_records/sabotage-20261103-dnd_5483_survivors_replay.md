@@ -724,6 +724,20 @@ its own. T7's first form (`RecordFile` alone) did not compile: it left the
 | T5 | the results-file message loses its posix | 1 of 3: "a results file not removed ..." | `left:  "COULD NOT MEASURE: the previous results file _build/r.bin could not be removed (:x) false, so a test run's failures could be an earlier run's. Fix: remove _build/r.bin by hand"` |
 | T6 | the results-directory message's `Fix:` loses the directory | 1 of 3: "a results directory not made ..." | `left:  "COULD NOT MEASURE: the results directory _build/d could not be made (:eacces), so no test run's failures can be read. Fix: make it (or its parent) a writable directory"` |
 | T7 | the replay's default test port is the wrong adapter | 1 of 1: integration "1-2: a recorded killer still kills (by name alone), then loses its power" | `** (UndefinedFunctionError) function Anchor.Adapters.RecordFile.run/3 is undefined or private` |
-| T8 | the replay's ports have no `records:` (seen while writing them) | 11 of 18: every `SabotageReplayTest` row past the lock | `** (FunctionClauseError) no function clause matching in Anchor.Managers.Sabotage.Replay.records/4` |
+| T8 | the replay's ports have no `records:` (seen while writing them) | 11 of 100 run, all in `SabotageReplayTest` | `** (FunctionClauseError) no function clause matching in Anchor.Managers.Sabotage.Replay.records/4` |
+
+After every row was restored, each file named above was green.
+
+## A row run by file (critic, whole MR)
+
+A row killed by the time bound alone reached the Manager with no test. B3's
+first form (the refusal dropped outright) did not compile: it left `red_main/1`
+unused.
+
+| # | Mutation | Tests failed | First failure, verbatim |
+|---|---|---|---|
+| B1 | the baseline leaves out the killer files run whole | 2 of 13: "a killer file run whole that fails with no mutant ...", "a row killed by the time bound alone ..." | `** (Mox.UnexpectedCallError) no expectation defined for Anchor.SourceMutationMock.write_journal/2` |
+| B2 | the by-file note never printed | 2 of 39: "a row run by file says so; a row run by name does not", "a row killed by the time bound alone ..." | `left:  "still killed aaaaaaaaaaaa Calc.add/2 return_input\nstill killed 3f9a01c2b7de Calc.add/2 return_input\nanchor.sabotage replay: 2 rows in 1 records; ...` |
+| B3 | a failed baseline read as a pass | 2 of 13: "a killer file run whole that fails ...", "1: the killers fail with no mutant ..." | `** (Mox.UnexpectedCallError) no expectation defined for Anchor.SourceMutationMock.write_journal/2` |
 
 After every row was restored, each file named above was green.

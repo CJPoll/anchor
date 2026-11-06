@@ -1466,10 +1466,11 @@ function's other killed rows in the same record, whole, and says so.
 | every killer passed | `LOST POWER <id> M.f/a operator (<record>)`, each killer on `no longer failed by:`, and a `Fix:` | 1 |
 | the run crashed | `CRASHED <id> ...` with a `Fix:` | 1 |
 | it cannot be replayed as recorded: its file is gone or outside the project, its function is gone, no mutant has its id (the function changed), a killer's file or test is gone, it no longer compiles | `drifted (<reason>) <id> ...` | never on its own |
-| zero rows, or every row drifted | `COULD NOT MEASURE` with `Fix:` | 3 |
+| zero rows, every row drifted, or a record that could not be read | `COULD NOT MEASURE` with `Fix:` | 3 |
 
-A record whose kill map does not parse is named (`could not read ...`) and
-skipped. Like `run`, a replay refuses (exit 2) on a dirty row file, the run
+A record whose kill map does not parse is named (`could not read ...`), and
+the replay ends exit 3 however its other rows fare, unless a row lost power or
+crashed (exit 1): its kills went unchecked. Like `run`, a replay refuses (exit 2) on a dirty row file, the run
 lock held, or the journal not git-ignored, and never writes a record or the
 survivors list. Anchor runs it weekly and on demand in CI
 (`.github/workflows/sabotage-replay.yml`, `--max all`).

@@ -241,6 +241,24 @@ defmodule Anchor.Domain.Sabotage.ReplayTest do
                  "1 LOST POWER, 0 crashed, 1 drifted, 0 not replayed (cap)"
     end
 
+    test "a row run by file says so; a row run by name does not" do
+      by_file = Map.put(item(%{id: "aaaaaaaaaaaa"}), :by_file, true)
+      by_name = Map.put(item(), :by_file, false)
+
+      text =
+        Replay.render(%Result{
+          rows: 2,
+          records: 1,
+          results: [{by_file, :still_killed}, {by_name, :still_killed}]
+        })
+
+      assert text =~
+               "still killed aaaaaaaaaaaa Calc.add/2 return_input " <>
+                 "(killer run by file: the record names no test)\n"
+
+      assert text =~ "still killed #{@id} Calc.add/2 return_input\n"
+    end
+
     test "zero rows says COULD NOT MEASURE and names the directories searched" do
       text = Replay.render(%Result{rows: 0, records: 3, searched: ["test/sabotage_records"]})
 

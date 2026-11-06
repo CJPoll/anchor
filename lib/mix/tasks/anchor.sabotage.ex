@@ -89,7 +89,8 @@ defmodule Mix.Tasks.Anchor.Sabotage do
   Exit codes: 0 every replayed row still killed; 1 a row lost power or its
   run crashed; 2 a refusal or usage error (as `run`, and a `--records` glob
   that is absolute or has a `..` segment); 3 `COULD NOT MEASURE` (zero rows,
-  every row drifted, the killers fail with no mutant: main is red).
+  every row drifted, a record that could not be read, the killers fail with
+  no mutant: main is red).
 
   ## coverage (DND-5474)
 

@@ -33,7 +33,7 @@ defmodule Anchor.Managers.Sabotage.Replay do
     5. Each row: `Runner.mutant_outcome/6` (journal, write, run, restore),
        judged by `Replay.judge/2`.
 
-  Adapters as `run`'s options (`Runner.ports/1`).
+  Adapters as `run`'s options, the ones it uses.
   """
 
   alias Anchor.Adapters.ConfigFile
