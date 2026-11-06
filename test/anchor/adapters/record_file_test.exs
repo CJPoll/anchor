@@ -67,6 +67,12 @@ defmodule Anchor.Adapters.RecordFileTest do
     File.write!(Path.join(root, "file"), "x")
     # The directory cannot be made: a file is in its place.
     assert RecordFile.write_report(root, "file/scan.md", "m", "t") == {:error, :enotdir}
+    # The directory cannot be made for want of permission: that cause, never
+    # the :enoent the write after it would hit.
+    File.mkdir_p!(Path.join(root, "ro"))
+    File.chmod!(Path.join(root, "ro"), 0o500)
+    on_exit(fn -> File.chmod(Path.join(root, "ro"), 0o700) end)
+    assert RecordFile.write_report(root, "ro/sub/scan.md", "m", "t") == {:error, :eacces}
     # The markdown cannot be written: a directory is at its path.
     File.mkdir_p!(Path.join(root, "a/scan.md"))
     assert RecordFile.write_report(root, "a/scan.md", "m", "t") == {:error, :eisdir}
