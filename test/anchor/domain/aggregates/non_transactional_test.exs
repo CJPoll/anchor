@@ -63,6 +63,27 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
               defp n29b, do: Repo.insert(%S{})
 
               def n30(fun), do: Repo.transaction(fun)
+
+              def n46, do: Repo.query!("DELETE FROM s")
+
+              def n46_run do
+                Repo.transaction(&n46/0)
+                Task.start(&n46/0)
+              end
+
+              def n47, do: Repo.insert(%#{inspect(@s)}{})
+
+              def n47_run do
+                Repo.transaction(&n47/0)
+                Task.start(&n47/0)
+              end
+
+              def n48, do: Repo.query!("DELETE FROM s")
+
+              def n48_run do
+                Repo.transaction(&n48/0)
+                Repo.transaction(&n48/0)
+              end
               def n44, do: Repo.query!("DELETE FROM s")
               def n44_in, do: Repo.transaction(fn -> n44() end)
               def n44_computed(mod), do: mod.n44()
@@ -148,6 +169,20 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
     refute MapSet.member?(a.always_in_transaction, {@n, :n45, 0})
   end
 
+  test "a capture beside a body capture of one function is outside the transaction", %{
+    analysis: a
+  } do
+    refute MapSet.member?(a.always_in_transaction, {@n, :n46, 0})
+    assert nontx(a, :n47_run).keys == keys([@s])
+    assert [%{keys: body_keys}] = Enum.filter(a.scopes, &(&1.mfa == {@n, :n47_run, 0}))
+    assert body_keys == keys([@s])
+  end
+
+  test "every capture of a function a body: it is always in a transaction", %{analysis: a} do
+    assert MapSet.member?(a.always_in_transaction, {@n, :n48, 0})
+    assert nontx(a, :n48_run).keys == MapSet.new()
+  end
+
   test "an unread transaction is no gap outside a transaction", %{analysis: a} do
     assert %{complete?: true} = nontx(a, :n30, 1)
   end
@@ -220,7 +255,8 @@ defmodule Anchor.Domain.Aggregates.NonTransactionalTest do
              %{mfa: {@n, :n38, 2}},
              %{mfa: {@n, :n39, 2}},
              %{mfa: {@n, :n44, 0}},
-             %{mfa: {@n, :n45, 0}}
+             %{mfa: {@n, :n45, 0}},
+             %{mfa: {@n, :n46, 0}}
            ] = a.unattributed
 
     assert computed_transaction == "a call of transaction/1 on a module held in a variable"

@@ -697,12 +697,30 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
 
     %{
       sites: Enum.reverse(acc.sites),
-      calls: Enum.reverse(acc.calls),
+      calls: acc.calls |> Enum.reverse() |> untag_mixed_captures(prescan),
       dynamic: Enum.reverse(acc.dynamic),
       computed: acc.computed,
       txs: prescan.txs,
       def_line: def_line
     }
+  end
+
+  # One capture of a function can be a body and another not, and Core does not say
+  # which is which: more captures than bodies, and none reads as inside (each
+  # transaction still holds its body's closure through its own `captures`).
+  defp untag_mixed_captures(calls, prescan) do
+    bodies = prescan.txs |> Enum.flat_map(& &1.captures) |> Enum.frequencies()
+    seen = for(%{kind: :capture, to: to} <- calls, do: to) |> Enum.frequencies()
+
+    Enum.map(calls, fn
+      %{kind: :capture, to: to, tags: tags} = call when is_map_key(bodies, to) ->
+        if seen[to] > bodies[to],
+          do: %{call | tags: tags -- Map.get(prescan.capture_tags, to, [])},
+          else: call
+
+      call ->
+        call
+    end)
   end
 
   # A transaction whose body Anchor cannot read is a gap of whatever reaches it:
