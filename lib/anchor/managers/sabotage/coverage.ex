@@ -19,7 +19,8 @@ defmodule Anchor.Managers.Sabotage.Coverage do
        block, so a raise never leaves the VM traced.
     5. The collector's state becomes the map
        (`Anchor.Domain.Sabotage.CoverageMap.finalize/2`); a map with zero
-       tests or zero modules is exit 3 and is not written.
+       tests or zero modules is exit 3 and is not written, and carries the
+       suite's own message when it failed before any test.
     6. The map is written (`Anchor.Adapters.CoverageStore`); a failed suite
        still writes it, and exits 1: the map describes a broken suite.
 
@@ -199,11 +200,20 @@ defmodule Anchor.Managers.Sabotage.Coverage do
         {3,
          [
            "COULD NOT MEASURE: tests: #{length(map.tests)}, modules_traced: " <>
-             "#{map.modules_traced}; no map was written. Fix: check the suite runs tests " <>
-             "and the ebin directories hold the project's modules"
+             "#{map.modules_traced}; no map was written. #{no_tests_cause(suite)}"
          ]}
     end
   end
+
+  # A suite that raised before any test (test_helper.exs refusing a module of
+  # the closure, DND-5690) said why; that message is the only place its name is.
+  defp no_tests_cause(:passed),
+    do: "Fix: check the suite runs tests and the ebin directories hold the project's modules"
+
+  defp no_tests_cause({:failed, message}),
+    do:
+      "The suite failed before any test ran: #{message}\n" <>
+        "Fix: repair what the suite named, then rerun"
 
   defp suite_exit(:passed), do: 0
   defp suite_exit({:failed, _message}), do: 1

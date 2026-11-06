@@ -1,6 +1,6 @@
 defmodule Anchor.TestBootTest do
   # DND-5690: `test/test_helper.exs` loads every module of Anchor's application
-  # closure (`Anchor.TestPreload`) before `ExUnit.start/0`, so no test loads code
+  # closure (`Anchor.TestPreload`) before `ExUnit.start/0`, so no test loads one
   # on demand through `code_server`, and every run has it, the coverage run
   # included. This fails when the helper stops doing that work up front.
   # Sabotage record: ../sabotage_records/test_preload-20261106-dnd_5690_preload.md

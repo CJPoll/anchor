@@ -176,6 +176,21 @@ defmodule Anchor.Managers.SabotageCoverageTest do
 
     assert {3, [message]} = Sabotage.coverage(facts(), @opts)
     assert message =~ "COULD NOT MEASURE: tests: 0, modules_traced: 2; no map was written"
+    refute message =~ "The suite failed"
+    refute :write in calls()
+  end
+
+  # DND-5690: test_helper.exs raises before any test when a module of the closure
+  # cannot load. The suite's message is the only place that name is, so a
+  # zero-test exit 3 must carry it.
+  test "a suite that failed before any test: exit 3 carrying the suite's message" do
+    message = "1 module(s) of :anchor's closure failed to load:\n  Dep: :nofile\nFix: repair it"
+    expect_modules()
+    expect_traced({:failed, message}, CoverageMap.new())
+
+    assert {3, [refusal]} = Sabotage.coverage(facts(), @opts)
+    assert refusal =~ "COULD NOT MEASURE: tests: 0, modules_traced: 2; no map was written"
+    assert refusal =~ "The suite failed before any test ran: #{message}"
     refute :write in calls()
   end
 

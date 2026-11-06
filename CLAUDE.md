@@ -59,8 +59,8 @@ never an adapter.
 - Each check has comprehensive test coverage in `test/anchor/check/`
 - Tests follow the pattern of creating mock modules and asserting on Credo issues
 - `test/test_helper.exs` loads every module of Anchor's application closure before
-  `ExUnit.start/0` (`Anchor.TestPreload`, DND-5690), so no test loads code on demand through
-  `code_server`; `Anchor.TestBootTest` fails when it stops
+  `ExUnit.start/0` (`Anchor.TestPreload`, DND-5690), so no test loads a module of that closure on
+  demand through `code_server`; `Anchor.TestBootTest` fails when it stops
 
 ## Configuration Format
 

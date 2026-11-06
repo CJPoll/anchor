@@ -8,7 +8,10 @@ defmodule Anchor.TestPreload do
   something calls it, and that load is a synchronous request to the one
   `code_server` process, which also serves the test files Elixir 1.19 compiles
   while tests run. Loading the closure first keeps those loads out of every
-  test.
+  test. It does not cover what still reaches `code_server` at run time: test
+  modules compiled while the suite runs, modules a test compiles (fixtures,
+  Hammox mocks), and `:mix`, which is outside the closure because no application
+  lists it.
 
   `test/test_helper.exs` calls `load!/1` before `ExUnit.start/0`, and
   `Anchor.TestBootTest` fails when it stops. Mix's own `--preload-modules` is
