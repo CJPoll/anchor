@@ -244,6 +244,8 @@ defmodule Anchor.Managers.GraphDemandTest do
     beams: beams
   } do
     test = self()
+    # The behaviours read comes first, so the analysis itself is what is judged here.
+    stub(BehaviourSourceMock, :callbacks, fn [] -> %{} end)
 
     report =
       run([sinks()], beams,
