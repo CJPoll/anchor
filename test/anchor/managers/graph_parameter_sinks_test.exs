@@ -28,6 +28,15 @@ defmodule Anchor.Managers.GraphParameterSinksTest do
   alias Anchor.SourceSourceMock
   alias Anchor.Test.GraphRuleStubs, as: Rules
 
+  defmodule NeedsDemand do
+    @moduledoc false
+    @behaviour Anchor.Domain.GraphRule
+    def rule_type, do: :stub_needs_demand
+    def needs, do: [:cfa, :demand]
+    def narrows?(_base_key, _key), do: false
+    def check(_model, _rule), do: []
+  end
+
   setup :verify_on_exit!
 
   @root "/proj"
@@ -96,6 +105,25 @@ defmodule Anchor.Managers.GraphParameterSinksTest do
         graph_rules: [ParameterReachesSink, EffectsMatchBucket | Rules.all()]
       ] ++ opts
     )
+  end
+
+  test "a rule that needs the analysis but is no parameter_reaches_sink reads no behaviour",
+       %{beams: beams} do
+    test = self()
+
+    stub(BehaviourSourceMock, :callbacks, fn _behaviours ->
+      send(test, :read_behaviours)
+      %{}
+    end)
+
+    report =
+      run([rule(:stub_needs_demand, "needs_demand", 1)], beams,
+        graph_rules: [NeedsDemand | Rules.all()]
+      )
+
+    refute_received :read_behaviours
+    assert report.findings == []
+    assert Map.has_key?(report.counts, :demand)
   end
 
   test "no rule that runs needs it: not run, no counts, null in the JSON", %{beams: beams} do
