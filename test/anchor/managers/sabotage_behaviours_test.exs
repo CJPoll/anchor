@@ -149,6 +149,15 @@ defmodule Anchor.Managers.SabotageBehavioursTest do
       end
     end
 
+    test "a map with a test that has no name is refused, not a crash" do
+      [first | rest] = @map.tests
+      config()
+      coverage_read({:ok, %{@map | tests: [Map.delete(first, :name) | rest]}})
+      assert {3, [line]} = Sabotage.behaviours(facts(), @opts)
+      assert line =~ "names no test"
+      assert line =~ "Fix: download the anchor-coverage artifact (CI) and pass --coverage"
+    end
+
     test "no sabotage section" do
       expect(ConfigLoaderMock, :load_in, fn "/repo" -> {:ok, %Anchor.Config{sabotage: nil}} end)
       assert {3, [line]} = Sabotage.behaviours(facts(), @opts)

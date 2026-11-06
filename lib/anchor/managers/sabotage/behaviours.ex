@@ -103,7 +103,8 @@ defmodule Anchor.Managers.Sabotage.Behaviours do
   defp read_coverage(path, root, %{coverage: store}) do
     with {:read, {:ok, term}} <- {:read, store.read(Path.expand(path, root))},
          {:check, {:ok, map}} <- {:check, CoverageMap.check(term)},
-         {:validate, :ok} <- {:validate, CoverageMap.validate(map)} do
+         {:validate, :ok} <- {:validate, CoverageMap.validate(map)},
+         {:named, :ok} <- {:named, BehaviourMap.named(map)} do
       {:ok, map}
     else
       {step, {:error, reason}} ->
@@ -116,6 +117,7 @@ defmodule Anchor.Managers.Sabotage.Behaviours do
   defp coverage_problem(:read, reason), do: "cannot be read (#{inspect(reason)})"
   defp coverage_problem(:check, reason), do: "is not a usable version-1 map (#{inspect(reason)})"
   defp coverage_problem(:validate, reason), do: "measured nothing (#{inspect(reason)})"
+  defp coverage_problem(:named, reason), do: "names no test (#{inspect(reason)})"
 
   # -- 3. the kill maps ----------------------------------------------------------
 

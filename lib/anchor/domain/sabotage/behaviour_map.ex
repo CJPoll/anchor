@@ -95,6 +95,18 @@ defmodule Anchor.Domain.Sabotage.BehaviourMap do
     }
   end
 
+  @doc """
+  `:ok` when every test of the map has a string name; a key is built from it, and
+  `CoverageMap.check/1` does not read the name. Else `{:error, {:test_name, file}}`.
+  """
+  @spec named(map()) :: :ok | {:error, {:test_name, String.t()}}
+  def named(%{tests: tests}) do
+    case Enum.find(tests, &(not is_binary(Map.get(&1, :name)))) do
+      nil -> :ok
+      test -> {:error, {:test_name, test.file}}
+    end
+  end
+
   @doc "The key of the test named `name` in `file`. It holds no line."
   @spec test_key(String.t(), String.t()) :: String.t()
   def test_key(file, name) do

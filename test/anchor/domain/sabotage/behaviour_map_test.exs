@@ -188,6 +188,18 @@ defmodule Anchor.Domain.Sabotage.BehaviourMapTest do
     end
   end
 
+  describe "named/1" do
+    test "every test needs a string name" do
+      assert BehaviourMap.named(map([test_ref([])])) == :ok
+
+      assert BehaviourMap.named(map([test_ref([]), test_ref([], %{name: :atom})])) ==
+               {:error, {:test_name, @t_file}}
+
+      assert BehaviourMap.named(map([Map.delete(test_ref([]), :name)])) ==
+               {:error, {:test_name, @t_file}}
+    end
+  end
+
   describe "test_key/2" do
     test "holds no line, and stays one trimmed baseline line" do
       assert BehaviourMap.test_key("test/a_test.exs", " test a\nb\r ") ==
