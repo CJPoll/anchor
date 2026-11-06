@@ -41,6 +41,40 @@ defmodule Anchor.Domain.Core do
   @labels [:anchor_lambda, :anchor_sites, :anchor_alloc]
   @map_puts [{:maps, :put, 3}, {Map, :put, 3}]
 
+  # A function that takes a module, name and arguments, to where that triple starts.
+  @mfa_taking %{
+    {:erlang, :spawn, 3} => 0,
+    {:erlang, :spawn_link, 3} => 0,
+    {:erlang, :spawn_monitor, 3} => 0,
+    {:erlang, :spawn, 4} => 1,
+    {:erlang, :spawn_link, 4} => 1,
+    {:erlang, :spawn_monitor, 4} => 1,
+    {:erlang, :spawn_opt, 4} => 0,
+    {:erlang, :spawn_opt, 5} => 1,
+    {:erpc, :call, 4} => 1,
+    {:erpc, :call, 5} => 1,
+    {:erpc, :cast, 4} => 1,
+    {:proc_lib, :spawn, 3} => 0,
+    {:proc_lib, :spawn, 4} => 1,
+    {:proc_lib, :spawn_link, 3} => 0,
+    {:proc_lib, :spawn_link, 4} => 1,
+    {:proc_lib, :start, 3} => 0,
+    {:proc_lib, :start_link, 3} => 0,
+    {:rpc, :call, 4} => 1,
+    {:rpc, :cast, 4} => 1,
+    {:timer, :apply_after, 4} => 1,
+    {:timer, :apply_interval, 4} => 1,
+    {Task, :async, 3} => 0,
+    {Task, :start, 3} => 0,
+    {Task, :start_link, 3} => 0,
+    {Task.Supervisor, :async, 4} => 1,
+    {Task.Supervisor, :async, 5} => 1,
+    {Task.Supervisor, :async_nolink, 4} => 1,
+    {Task.Supervisor, :async_nolink, 5} => 1,
+    {Task.Supervisor, :start_child, 4} => 1,
+    {Task.Supervisor, :start_child, 5} => 1
+  }
+
   @typedoc "An apply site: the enclosing function and the site's ordinal in it."
   @type site_id :: {mfa(), non_neg_integer()}
 
@@ -159,6 +193,27 @@ defmodule Anchor.Domain.Core do
     core_fun |> collect(&node_references/1) |> Enum.uniq()
   end
 
+  @doc """
+  Every atom a function's body holds as a value, in a literal of any depth (DND-5448):
+  what could name a module to a supervisor (`children = [M, {N, arg}]`). The module and
+  name a call is made on are not values, so they are not here.
+  """
+  @spec held_atoms(:cerl.cerl()) :: [atom()]
+  def held_atoms(core_fun), do: core_fun |> held_atoms_of() |> Enum.uniq() |> Enum.sort()
+
+  @doc """
+  The calls of a function that takes a module, a function name and arguments and
+  starts that function later (`spawn(mod, name, args)`, `Task.start(M, :f, args)`,
+  the table `@mfa_taking`), whose triple `mfa_references/1` cannot read in full (DND-5448):
+  each `%{module: atom | nil, name: atom | nil, line: line}`, `nil` for what is not a
+  literal atom. A literal module, literal name and a list of known length is not here:
+  it names one arity, and `mfa_references/1` has it.
+  """
+  @spec partial_mfa_calls(:cerl.cerl()) :: [
+          %{module: atom() | nil, name: atom() | nil, line: non_neg_integer() | nil}
+        ]
+  def partial_mfa_calls(core_fun), do: core_fun |> collect(&partial_mfa_call/1) |> Enum.uniq()
+
   # --- labelling ---------------------------------------------------------------
 
   defp label_node(node, {lambdas, sites, allocs}) do
@@ -228,6 +283,33 @@ defmodule Anchor.Domain.Core do
   defp holds_fun?(_term), do: false
 
   # --- literal MFAs ------------------------------------------------------------
+
+  defp held_atoms_of(node) do
+    case :cerl.type(node) do
+      :literal -> node |> :cerl.concrete() |> term_atoms()
+      :call -> node |> :cerl.call_args() |> Enum.flat_map(&held_atoms_of/1)
+      _other -> node |> :cerl.subtrees() |> List.flatten() |> Enum.flat_map(&held_atoms_of/1)
+    end
+  end
+
+  defp term_atoms(term) when is_atom(term), do: [term]
+  defp term_atoms(term) when is_tuple(term), do: term |> Tuple.to_list() |> term_atoms()
+  defp term_atoms(term) when is_map(term), do: term |> Map.to_list() |> term_atoms()
+  defp term_atoms([head | tail]), do: term_atoms(head) ++ term_atoms(tail)
+  defp term_atoms(_other), do: []
+
+  defp partial_mfa_call(node) do
+    with :call <- :cerl.type(node),
+         at when is_integer(at) <- Map.get(@mfa_taking, call_mfa(node)),
+         [module, name, args] <- node |> :cerl.call_args() |> Enum.slice(at, 3),
+         [] <- triple_reference([module, name, args]) do
+      [%{module: literal_atom(module), name: literal_atom(name), line: line(node)}]
+    else
+      _not_partial -> []
+    end
+  end
+
+  defp literal_atom(node), do: if(literal_atom?(node), do: :cerl.concrete(node))
 
   defp node_references(node) do
     case :cerl.type(node) do

@@ -41,6 +41,13 @@ defmodule Anchor.Domain.StructTypes do
   @spec return(t(), mfa()) :: module() | nil
   def return(%{returns: returns}, mfa), do: Map.get(returns, mfa)
 
+  @doc """
+  The one project struct the spec type `type`, written in `module`, names, or `nil`
+  (the moduledoc's rule).
+  """
+  @spec struct_of(Macro.t(), module(), Graph.t()) :: module() | nil
+  def struct_of(type, module, %Graph{modules: modules}), do: resolve(type, module, modules)
+
   defp fields(modules) do
     for {module, %ModuleNode{struct_fields: [_ | _]} = node} <- modules,
         {:ok, body} <- [own_t(node)],

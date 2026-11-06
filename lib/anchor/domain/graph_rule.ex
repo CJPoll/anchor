@@ -29,7 +29,9 @@ defmodule Anchor.Domain.GraphRule do
   (DND-5459) asks for the write analysis, stored on `Model.aggregate_analysis`.
   `[:demand]` (DND-5715) asks for the demand analysis (`Anchor.Domain.Demand`),
   stored on `Model.demand`; it reads the flow analysis, so a rule that needs it
-  names `:cfa` too.
+  names `:cfa` too. `[:placement]` (DND-5448) asks for the placement model
+  (`Anchor.Domain.Placement`), stored on `Model.placement`; it reads the effect
+  inference, so a rule that needs it names `:cfa` and `:effects` too.
   `Anchor.Domain.GraphRules.needs/1` reads and checks it.
 
   ## Narrowed keys (DND-5633)
@@ -50,7 +52,7 @@ defmodule Anchor.Domain.GraphRule do
   @callback check(Anchor.Domain.Model.t(), rule :: map()) :: [Anchor.Domain.Violation.t()]
 
   @doc "The analyses this rule reads from the model (`:cfa`, `Model.cfa`); `[]` when absent."
-  @callback needs() :: [:aggregate_analysis | :cfa | :effects | :demand]
+  @callback needs() :: [:aggregate_analysis | :cfa | :effects | :demand | :placement]
 
   @doc "Whether baseline key `key` is a narrowing of `base_key`; see the moduledoc."
   @callback narrows?(base_key :: String.t(), key :: String.t()) :: boolean()

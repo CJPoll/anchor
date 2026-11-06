@@ -4,6 +4,7 @@ defmodule Anchor.Domain.StructTypesTest do
   # (Anchor.Test.StructFlowFixtures). Only one struct, named exactly, is known.
   #
   # Sabotage record: ../../sabotage_records/struct_flow-20261103-dnd_5447_graph_rules_c.md
+  # DND-5448: ../../sabotage_records/placement-20261106-dnd_5448_placement_core.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.StructFlowFixtures
@@ -82,6 +83,17 @@ defmodule Anchor.Domain.StructTypesTest do
 
   setup_all do
     %{index: StructTypes.index(graph([{@source, "lib/types.ex"}]))}
+  end
+
+  # DND-5448: the one type question, asked of a spec type a caller holds.
+  describe "struct_of/3" do
+    test "a project struct, through a named type, or nil" do
+      graph = graph([{@source, "lib/types.ex"}])
+      type = {{:., [], [@turn, :t]}, [], []}
+
+      assert StructTypes.struct_of(type, @game, graph) == @turn
+      assert StructTypes.struct_of({:integer, [], []}, @game, graph) == nil
+    end
   end
 
   describe "index/1 fields" do

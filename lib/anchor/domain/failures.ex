@@ -706,6 +706,75 @@ defmodule Anchor.Domain.Failures do
   end
 
   @doc """
+  A rule that needs the placement model (DND-5448), which raised, threw or exited:
+  the rule checked nothing.
+  """
+  @spec rule_placement_crashed(map(), atom(), term(), Exception.stacktrace(), String.t() | nil) ::
+          Violation.t()
+  def rule_placement_crashed(rule, kind, reason, stacktrace, config_path) do
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "#{rule_label(rule)} could not run: the placement model it needs " <>
+        "(Anchor.Domain.Placement) crashed: #{crash_summary(kind, reason, stacktrace)}, so it " <>
+        "checked nothing. Fix: this is an Anchor bug; file it with this line."
+    )
+  end
+
+  @doc """
+  The issue for a `reachable_from_root` rule (DND-5448) when a reachable function
+  calls a function whose name is computed: anything could be reached, so the rule
+  reports nothing and says why.
+  """
+  @spec reachability_lost(map(), [map()], String.t() | nil) :: Violation.t()
+  def reachability_lost(rule, sites, config_path) do
+    where = Enum.map_join(sites, ", ", &"#{&1.file || "?"}:#{&1.line || "?"}")
+
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "#{rule_label(rule)} reachability is imprecise: #{where} calls an unknown function " <>
+        "dynamically. Fix: resolve it through a behaviour, or accept that reachable_from_root " <>
+        "cannot judge this repo."
+    )
+  end
+
+  @doc "The issue for a `reachable_from_root` rule (DND-5448) over a model with no roots."
+  @spec reachability_no_roots(map(), String.t() | nil) :: Violation.t()
+  def reachability_no_roots(rule, config_path) do
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "#{rule_label(rule)} no roots: no framework-role bucket matched a module and " <>
+        "architecture.roots is empty. Fix: classify the entry points."
+    )
+  end
+
+  @doc "The issue for a `reachable_from_root` rule (DND-5448) that selects no function it judges."
+  @spec reachable_unjudged(map(), String.t() | nil) :: Violation.t()
+  def reachable_unjudged(rule, config_path) do
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "#{rule_label(rule)} judged no function: the modules it selects have no public function " <>
+        "an author wrote, so it checked nothing. Fix: select modules with public functions of " <>
+        "their own, or remove the rule."
+    )
+  end
+
+  @doc "The issue for a `function_placement` rule (DND-5448) that could judge no function."
+  @spec function_placement_unjudged(map(), String.t() | nil) :: Violation.t()
+  def function_placement_unjudged(rule, config_path) do
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "#{rule_label(rule)} judged no function: every public function of the modules it " <>
+        "selects is a root, generated, a callback or in an interface module, so it checked " <>
+        "nothing. Fix: select modules outside architecture.interfaces, or remove the rule."
+    )
+  end
+
+  @doc """
   The issue for a `parameter_reaches_sink` rule (DND-5470) that selects modules
   of which not one function could be judged: it checked nothing.
   """

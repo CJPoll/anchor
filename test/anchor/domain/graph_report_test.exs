@@ -13,6 +13,7 @@ defmodule Anchor.Domain.GraphReportTest do
   #   ../../sabotage_records/interface-20261103-dnd_5443_graph_rules_b.md
   # Sabotage record (DND-5633): ../../sabotage_records/graph_runner-20261103-dnd_5648_graph_followups.md
   # Sabotage record (DND-5470): ../../sabotage_records/parameter_reaches_sink-20261106-dnd_5470_param_sink_locality.md
+  # DND-5448: ../../sabotage_records/placement-20261106-dnd_5448_placement_core.md
   use ExUnit.Case, async: true
 
   # Sabotage record (DND-5715): ../../sabotage_records/graph_runner-20261106-dnd_5715_bucket_split.md
@@ -226,6 +227,34 @@ defmodule Anchor.Domain.GraphReportTest do
       report = GraphReport.new([], [], Map.put(@counts, :interface_width, %{}))
 
       assert GraphReport.summary(report) =~ "; interface width: no context"
+    end
+  end
+
+  describe "placement precision (DND-5448)" do
+    test "the placement precision: counts, and each reachability answer" do
+      placement = %{
+        functions: 9,
+        no_spec: 2,
+        ambiguous_owner: 1,
+        unjoined: 3,
+        computed_calls: 4,
+        reachability: :precise,
+        lost_sites: 0
+      }
+
+      summary = fn counts ->
+        GraphReport.summary(GraphReport.new([], [], Map.put(@counts, :placement, counts)))
+      end
+
+      assert summary.(placement) =~
+               "; placement: 9 functions placed, 2 with no @spec (ownership unknown), " <>
+                 "1 ambiguous owner, 3 with no clause to slice, 4 calls of a computed name, " <>
+                 "reachability precise"
+
+      assert summary.(%{placement | reachability: :lost, lost_sites: 2}) =~
+               "reachability lost at 2 call sites"
+
+      assert summary.(%{placement | reachability: :no_roots}) =~ "reachability no roots"
     end
   end
 

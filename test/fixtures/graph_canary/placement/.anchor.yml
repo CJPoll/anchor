@@ -1,0 +1,39 @@
+# The placement canary tree (DND-5448): one compliant and one violating example per
+# rule. The integration test (test/anchor/integration/placement_invariant_test.exs)
+# compiles lib/ in the test and runs the Manager over it; EXPECTED lists the findings.
+rules:
+  - type: effects_match_bucket
+    id: effects_match_bucket
+    paths: ["lib/placement/**/*.ex"]
+  - type: function_placement
+    id: function_placement
+    paths: ["lib/placement/**/*.ex"]
+  - type: reachable_from_root
+    id: reachable_from_root
+    paths: ["lib/placement/**/*.ex"]
+
+architecture:
+  contexts:
+    depth: 3
+  buckets:
+    - name: framework
+      role: framework
+      select:
+        - paths: ["lib/placement/web/**/*.ex"]
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/placement/domain/**/*.ex"]
+    - name: managers
+      role: managers
+      select:
+        - paths: ["lib/placement/managers/**/*.ex"]
+    - name: adapters
+      role: adapters
+      select:
+        - paths: ["lib/placement/adapters/**/*.ex"]
+  calls:
+    framework: [framework, managers, domain]
+    domain: [domain]
+    managers: [managers, adapters, domain]
+    adapters: [adapters, domain]

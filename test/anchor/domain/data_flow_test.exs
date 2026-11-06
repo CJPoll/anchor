@@ -2,6 +2,7 @@ defmodule Anchor.Domain.DataFlowTest do
   # DND-5439: intra-function data flow over one clause's source AST.
   # Sabotage record: ../../sabotage_records/data_flow-20261103-dnd_5439.md
   # Sabotage record (refutable case/with sinks, DND-5471): ../../sabotage_records/data_flow-20261103-dnd_5471.md
+  # DND-5448: ../../sabotage_records/placement-20261106-dnd_5448_placement_core.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.DataFlow
@@ -50,6 +51,22 @@ defmodule Anchor.Domain.DataFlowTest do
   end
 
   defp k(name, version), do: {name, nil, version}
+
+  # DND-5448: the placement engine's slice of the return value starts here.
+  describe "result_nodes/1" do
+    test "the final expression, and each value block's final expression" do
+      flow = flow!("def f(a, b) do\n  c = a\n  if c do\n    b\n  else\n    1\n  end\nend")
+
+      assert DataFlow.result_nodes(flow) ==
+               Enum.sort([
+                 flow.result | Map.keys(flow.nodes) -- [flow.result, hd(flow.blocks[[]])]
+               ])
+    end
+
+    test "an empty body has none" do
+      assert DataFlow.result_nodes(DataFlow.analyze({[], [], {:__block__, [], []}})) == []
+    end
+  end
 
   describe "analyze/1 def-use" do
     test "1: a plain binding is defined by its node and used by the final node; a is a parameter" do

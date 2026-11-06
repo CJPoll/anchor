@@ -17,6 +17,7 @@ defmodule Anchor.Domain.FailuresGraphTest do
   # DND-5476 (aggregate_declarations rows): ../../sabotage_records/aggregates-20261103-dnd_5476_aggregate_decls.md
   # DND-5459 (aggregate_no_repo, aggregate_writes_none rows): ../../sabotage_records/aggregates-20261103-dnd_5459_write_sets.md
   # DND-5715 (analyses_*, rule_demand_crashed): ../../sabotage_records/analyses_complete-20261106-dnd_5715_bucket_split.md
+  # DND-5448: ../../sabotage_records/placement-20261106-dnd_5448_placement_core.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Failures
@@ -110,6 +111,13 @@ defmodule Anchor.Domain.FailuresGraphTest do
         raise "demand blew up"
       rescue
         e -> Failures.rule_demand_crashed(rule, :error, e, __STACKTRACE__, nil)
+      end
+
+    placement_crashed =
+      try do
+        raise "placement blew up"
+      rescue
+        e -> Failures.rule_placement_crashed(rule, :error, e, __STACKTRACE__, nil)
       end
 
     effects_crashed =
@@ -333,6 +341,41 @@ defmodule Anchor.Domain.FailuresGraphTest do
          "checked nothing",
          "Fix: this is an Anchor bug"
        ]},
+      {"rule_placement_crashed", placement_crashed, ".anchor.yml",
+       [
+         "could not run: the placement model it needs (Anchor.Domain.Placement) crashed",
+         "RuntimeError: placement blew up",
+         "checked nothing",
+         "Fix: this is an Anchor bug"
+       ]},
+      {"reachability_lost",
+       Failures.reachability_lost(
+         rule,
+         [
+           %{from: {A, :f, 0}, file: "lib/a.ex", line: 3},
+           %{from: {B, :g, 1}, file: nil, line: nil}
+         ],
+         "proj/.anchor.yml"
+       ), "proj/.anchor.yml",
+       [
+         "reachability is imprecise: lib/a.ex:3, ?:? calls an unknown function dynamically",
+         "Fix: resolve it through a behaviour",
+         "cannot judge this repo"
+       ]},
+      {"reachability_no_roots", Failures.reachability_no_roots(rule, nil), ".anchor.yml",
+       [
+         "no roots: no framework-role bucket matched a module and architecture.roots is empty",
+         "Fix: classify the entry points"
+       ]},
+      {"reachable_unjudged", Failures.reachable_unjudged(rule, nil), ".anchor.yml",
+       [
+         "judged no function",
+         "so it checked nothing",
+         "Fix: select modules with public functions"
+       ]},
+      {"function_placement_unjudged", Failures.function_placement_unjudged(rule, nil),
+       ".anchor.yml",
+       ["judged no function", "in an interface module", "Fix: select modules outside"]},
       {"analyses_cfa_bound_hit", Failures.analyses_cfa_bound_hit(rule, 40, "proj/.anchor.yml"),
        "proj/.anchor.yml",
        [

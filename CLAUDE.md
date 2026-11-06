@@ -44,7 +44,7 @@ never an adapter.
 | Framework | `Anchor.Check.*` (Credo checks, `Anchor.Check.Base`, `Anchor.Check.Source`), `Anchor.Aggregate` (the compile-time macro, DND-5476), `Mix.Tasks.Anchor.*` (`lib/mix/tasks/`; `Mix.Tasks.Anchor.Sabotage`, `.Graph`, `.Explain`), the `Anchor` module (by name), `Anchor.Sabotage.CoverageCollector` (an OTP process, in `lib/mix/tasks/anchor/sabotage/` so `mix anchor.graph` buckets it as Framework) |
 | Managers | `Anchor.Managers.Lint`, `Anchor.Managers.AstBaseline`, `Anchor.Managers.Sabotage` (`.Runner`, `.Coverage`, `.CoverageCompare`, `.Replay`, `.Behaviours`), `Anchor.Managers.Graph` (`.Request`), `Anchor.Managers.Explain` |
 | Side Effects | ports: `Anchor.Adapters.ConfigLoader`, `ChangeSource`, `BeamSource`, `Tracing`, `InProcessTests`, `ProjectModuleSource`, `CoverageStore`, `BaselineStore`, `GitBase`, `LintKeys`, `SourceSource`, `GraphStore`, `TestExecution`, `SourceMutation`, `BehaviourSource`; adapters: `ConfigFile`, `CredoKeys`, `GitChangeSource`, `BeamReader`, `BehaviourReader`, `CallTracer`, `SuiteRunner`, `ProjectModules`, `CoverageFile`, `RecordFile` (port `RecordStore`), `BaselineFile`, `GitShow`, `SourceReader`, `GraphArtifact`, `TestRunner`, `SourcePatcher`, `GitStatus`, `GitWorktree` (`lib/anchor/adapters/`); `GitEnv`, the environment the git adapters run git with (DND-5581); `Anchor.Sabotage.ExUnitFormatter` (`lib/anchor/sabotage/`) |
-| Domain | everything under `lib/anchor/domain/`, including `Anchor.Domain.Sabotage.*` (`Mutator`, `Operators`, `DiffHunks`, `FunctionSpans`, `Scope`, `CoverageMap`, `Record`, `RecordNaming`, `KillMap`, `ChangedTests`, `TestPath`: the one rule for a path handed to `mix test`, DND-5640) and `Anchor.Domain.Graph.*`, the graph rules (`GraphRules.*`), `Model`, `Classification`, `Interfaces`, `Explain`, `Subject`, `RuleShapes` |
+| Domain | everything under `lib/anchor/domain/`, including `Anchor.Domain.Sabotage.*` (`Mutator`, `Operators`, `DiffHunks`, `FunctionSpans`, `Scope`, `CoverageMap`, `Record`, `RecordNaming`, `KillMap`, `ChangedTests`, `TestPath`: the one rule for a path handed to `mix test`, DND-5640) and `Anchor.Domain.Graph.*`, the graph rules (`GraphRules.*`), `Model`, `Classification`, `Interfaces`, `Explain`, `Subject`, `RuleShapes`, `Placement` (`.CallGraph`, `.FunctionFacts`, `.Ownership`, `.Rules`), `Proposal` |
 
 ADR 001's module map (*How this maps to Anchor*) lists every `lib/` module
 with its bucket; `test/anchor/adr_module_map_test.exs` fails on a module with
@@ -152,7 +152,9 @@ Every rule type has exactly one engine, `@engine_by_type` in
 (`mix anchor.graph`, DND-5440; the graph types are `layering`, DND-5442,
 `context_acyclic`, DND-5445, `aggregate_declarations`, DND-5476,
 `aggregate_write_sources`, DND-5459, `effects_match_bucket`, DND-5447,
+`function_placement`, DND-5448,
 `parameter_reaches_sink`, DND-5470,
+`reachable_from_root`, DND-5448,
 `struct_owned_by_module_flow`, DND-5454, `analyses_complete`, DND-5715, and
 `interface`, DND-5443). A new rule type adds its entry there too (compilation
 fails without it) and to the README table's Engine column (a test compares
@@ -410,7 +412,7 @@ pure; the result keeps them as `Effects.roots`) is framework; a call of an effec
 (`EffectPrimitives.primitive?/2`, its inference list, not demand's) itself or
 through its own module is adapters; reaching one through another module, or
 an unresolved call, is managers; else domain. Apply sites are read from
-`Model.cfa`, so the rule `needs: [:cfa, :effects]`; the runner computes
+`Model.cfa`, so the rule `needs: [:cfa, :effects]` (and `:placement`, DND-5448); the runner computes
 `Model.effects` once and prints its counts in the summary. The rule judges
 public, non-root, non-`__name__` functions of `domain`/`adapters`/`managers`
 buckets with `infer: true`. Its canary is its own tree,
@@ -525,8 +527,26 @@ an external behaviour with no callbacks read. A caller with no edge and no full 
 candidate would let one silence the rule, so what it might reach stays judged, and a
 public finding is checked by hand. `DynamicCalls.computed_name_count/1` counts the
 `apply`s, as a hint only. `GraphReport.parameter_sinks/4` is the summary's
-precision count. Its `Fix:` is the rule's own text until
-`Anchor.Domain.Placement` lands (DND-5448).
+precision count. Its `Fix:` is still the rule's own text, not a rendered
+`Anchor.Domain.Proposal` (DND-5448 left its reason out).
+
+## The placement model (DND-5448)
+
+`Anchor.Domain.Placement.build/1` is the one model: per `def`/`defp` its role
+(`Effects`), output and input owner (`Placement.Ownership`, from `@spec`s, and for
+the input the slice of the return value over `FunctionNode.clauses`, the expanded
+`elixir_v1` clauses, through `DataFlow.result_nodes/1` and `backward_slice/2`), immediate
+dominator and reachability (`Placement.CallGraph`, `GraphAlgorithms.dominators/2`; a public
+macro counts as a root). A placement rule reports `Placement.proposals/3`, and a violation
+is `Placement.to_violation/3` of an `Anchor.Domain.Proposal`, its `Fix:` exactly
+`Placement.render/1`, one clause per reason, an unknown reason raising. A new reason adds its
+render clause and a row in `placement_render_test.exs`; a new rule type reports through
+`proposals/3` and joins `test/fixtures/graph_canary/placement/` and its `EXPECTED` manifest.
+The rule order is `Placement.Rules`' moduledoc. `effects_match_bucket` is rule 1: its key stays
+`<rule>|<mfa>|<role>`, the key its landed baselines hold. The runner builds the model once
+when a rule that runs declares `needs: [:placement]` (it reads `Model.effects`, so such a rule
+names `:cfa` and `:effects` too), and prints `GraphReport.placement/1`. `reachable_from_root`
+fails closed when a reachable function computes a function's name, or with no root.
 
 ## Important Notes
 

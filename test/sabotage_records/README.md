@@ -55,6 +55,8 @@ before coining a synonym.
   Manager wiring rather than a single check's Domain detection. Also
   `Anchor.Domain.EnforcementPasses` (DND-5631): joining the enforce and report
   passes' findings, one copy each.
+- `placement` — `Anchor.Domain.Placement` and its submodules, `Anchor.Domain.Proposal`,
+  `Anchor.Domain.GraphRules.FunctionPlacement` and `.ReachableFromRoot` (DND-5448).
 - `parameter_reaches_sink` — `Anchor.Domain.GraphRules.ParameterReachesSink` and
   its runner wiring (`:demand` in `Anchor.Managers.Graph`, the summary's counts,
   DND-5470).

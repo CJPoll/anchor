@@ -2,5 +2,4 @@
 parameter_reaches_sink|Anchor.Domain.Cfa.Eval.literal/3|param 2
 parameter_reaches_sink|Anchor.Domain.Checks.StructGetterConvention.detect_violations/2|param 2
 parameter_reaches_sink|Anchor.Domain.Demand.Transfer.protected_call/3|param 2
-parameter_reaches_sink|Anchor.Domain.GraphRules.EffectsMatchBucket.violation/8|param 8
 parameter_reaches_sink|Anchor.Domain.StructFlow.record_write/5|param 5
