@@ -282,6 +282,7 @@ defmodule AnchorFixtures.Attribution.SetupAllCases do
 
   setup_all do
     F.setup_body()
+
     on_exit(fn ->
       F.on_exit_module()
       :ok = GenServer.call(server(), :on_exit_module_server)
