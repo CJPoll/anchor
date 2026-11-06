@@ -928,7 +928,7 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
   end
 
   # `fun.(x)`: a fun this function defines is walked where it is defined, so
-  # run in a body it was not defined in it is a gap; a capture is a call;
+  # run anywhere but where it is read it is a gap; a capture is a call;
   # anything else is a call Anchor cannot resolve.
   defp applied(acc, op, env, tags, line, {ctx, module}) do
     case FunctionWalk.deref(op, env) do
@@ -1032,10 +1032,13 @@ defmodule Anchor.Domain.Aggregates.WriteSites do
 
   defp other_process?(_callee), do: false
 
+  # A fn is walked once, under the tags where it is defined, which are also those
+  # of any transaction it is given to. Run under any other tags, the walk did not
+  # read this run: in a transaction it is not in, or outside the one it was given to.
   defp lambda_run(acc, id, tags, line, ctx) do
-    if tags -- Map.get(ctx.defined_in, id, []) == [],
+    if MapSet.new(tags) == MapSet.new(Map.get(ctx.defined_in, id, [])),
       do: acc,
-      else: dynamic(acc, line, "a fn run in a transaction body it is not defined in", tags)
+      else: dynamic(acc, line, "a fn run where the walk did not read it", tags)
   end
 
   # The functions handed to a library call `HigherOrder` knows: an inline fn or

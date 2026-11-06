@@ -1394,8 +1394,9 @@ it has a gap. So is a `transaction_functions` call with a non-literal argument
 Anchor cannot trace beside the one it can. A function value handed to a listed
 module is a gap too, unless `Anchor.Domain.HigherOrder` names that place.
 
-One read is still false, and its ticket removes it: a `fn` bound once and both
-called and passed to a transaction (DND-5885).
+A `fn` is read once, where it is defined and in any transaction it is given to. A
+run of it anywhere else is a gap there, so a `fn` both called and passed to a
+transaction (`f.(); Repo.transaction(f)`) is a gap at the call (DND-5885).
 
 A Multi that comes back from a project helper is read from what the helper returns
 (DND-5884): an argument it is built on that Anchor cannot trace is a gap, even when

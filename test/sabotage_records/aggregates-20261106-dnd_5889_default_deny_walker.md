@@ -5672,3 +5672,226 @@ Finished in 0.1 seconds (0.1s async, 0.00s sync)
 warning: mtime (modified time) for "lib/anchor/domain/aggregates/multi_roots.ex" was set to the future, resetting to now
 ```
 
+
+## Fifth run: a fn run where the walk did not read it (DND-5885)
+
+The fifth run: `lambda_run/5` in `WriteSites`, on DND-5885's code. Same driver and rules. `LR-UNFIXED` is the regression: the subset test restored as it was.
+
+| # | Mutation | Tests run | Result |
+|---|---|---|---|
+| LR-UNFIXED | restore the unfixed read: only a run in a body it is not defined in is a gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `48 tests, 2 failures` (red) |
+| LR-NOGAP | no run of a fn is a gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `48 tests, 3 failures` (red) |
+| LR-ALWAYS | every run of a fn is a gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `48 tests, 9 failures` (red) |
+| LR-REVERSE | only a run outside a body it is defined in is a gap (`lib/anchor/domain/aggregates/write_sites.ex`) | `write_sites_default_test.exs` | `48 tests, 1 failure` (red) |
+
+### LR-UNFIXED
+
+restore the unfixed read: only a run in a body it is not defined in is a gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `48 tests, 2 failures`.
+
+```
+  1) test a fn run where the walk did not read it row 13: called and passed to a transaction is a gap at the call (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:449
+     match (=) failed
+     code:  assert [{:dynamic_call, {@d, :d30a, 0}, _line}] = nontx(a, :d30a, 0).gaps
+     left:  [{:dynamic_call, {AnchorFixtures.WriteSitesDefaultTest.D, :d30a, 0}, _line}]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:451: (test)
+
+
+
+  2) test a fn run where the walk did not read it row 13: called and given to Multi.run is a gap at the call (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:454
+     match (=) failed
+     code:  assert [{:dynamic_call, {@d, :d30b, 0}, _line}] = nontx(a, :d30b, 0).gaps
+     left:  [{:dynamic_call, {AnchorFixtures.WriteSitesDefaultTest.D, :d30b, 0}, _line}]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:455: (test)
+
+...................
+Finished in 0.5 seconds (0.5s async, 0.00s sync)
+48 tests, 2 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+### LR-NOGAP
+
+no run of a fn is a gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `48 tests, 3 failures`.
+
+```
+  1) test a fn run where the walk did not read it row 13: called and passed to a transaction is a gap at the call (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:449
+     match (=) failed
+     code:  assert [{:dynamic_call, {@d, :d30a, 0}, _line}] = nontx(a, :d30a, 0).gaps
+     left:  [{:dynamic_call, {AnchorFixtures.WriteSitesDefaultTest.D, :d30a, 0}, _line}]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:451: (test)
+
+..
+
+  2) test a fn run where the walk did not read it run in a transaction it is not given to is a gap there (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:458
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d30c)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d30c,
+               1},
+              ordinal: 1,
+              line: 140,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:459: (test)
+
+.........................
+
+  3) test a fn run where the walk did not read it row 13: called and given to Multi.run is a gap at the call (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:454
+     match (=) failed
+     code:  assert [{:dynamic_call, {@d, :d30b, 0}, _line}] = nontx(a, :d30b, 0).gaps
+     left:  [{:dynamic_call, {AnchorFixtures.WriteSitesDefaultTest.D, :d30b, 0}, _line}]
+     right: []
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:455: (test)
+
+.................
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+48 tests, 3 failures
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+
+### LR-ALWAYS
+
+every run of a fn is a gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `48 tests, 9 failures`.
+
+```
+  1) test a function value, or data, that needs no following d20c: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:307
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d20c,
+               1},
+              ordinal: 1,
+              line: 97,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d20c, 1},
+                 97}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:308: (test)
+
+..
+
+  2) test a function value, or data, that needs no following d20b: no gap (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:307
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, name)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, gaps: []}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d20b,
+               1},
+              ordinal: 1,
+              line: 96,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d20b, 1},
+                 96}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:308: (test)
+
+..
+
+  3) test the forms DND-5459 reads stay a fn applied where it is written is read, inside a body or not (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:341
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: true, keys: keys} = one(a, :d16)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: true, keys: keys}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d16, 0},
+              ordinal: 1,
+              line: 88,
+              kind: :fun,
+              writes: [
+                %Anchor.Domain.Aggregates.WriteSite{
+                  mfa: {AnchorFixtures.WriteSitesDefaultTest.D,
+                   :d16, 0},
+                  line: 88,
+                  op: :insert,
+                  via: :repo,
+                  sources: [
+                    schema: AnchorFixtures.WriteSitesDefaultTest.S
+                  ],
+                  unresolved: nil,
+                  scopes: [1],
+                  run_callback?: false
+                }
+              ],
+              keys: MapSet.new([
+                schema: AnchorFixtures.WriteSitesDefaultTest.S
+              ]),
+              no_gap_noticed?: false,
+              gaps: [
+                {:dynamic_call,
+                 {AnchorFixtures.WriteSitesDefaultTest.D, :d16, 0},
+                 88}
+              ]
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:342: (test)
+
+..
+
+  4) test a call the walker does not read row 8: positive controls: data to a lis
+```
+
+### LR-REVERSE
+
+only a run outside a body it is defined in is a gap (`lib/anchor/domain/aggregates/write_sites.ex`). Result: `48 tests, 1 failure`.
+
+```
+  1) test a fn run where the walk did not read it run in a transaction it is not given to is a gap there (Anchor.Domain.Aggregates.WriteSitesDefaultTest)
+     test/anchor/domain/aggregates/write_sites_default_test.exs:458
+     match (=) failed
+     code:  assert %Scope{no_gap_noticed?: false} = one(a, :d30c)
+     left:  %Anchor.Domain.Aggregates.Scope{no_gap_noticed?: false}
+     right: %Anchor.Domain.Aggregates.Scope{
+              mfa: {AnchorFixtures.WriteSitesDefaultTest.D, :d30c,
+               1},
+              ordinal: 1,
+              line: 140,
+              kind: :fun,
+              writes: [],
+              keys: MapSet.new([]),
+              no_gap_noticed?: true,
+              gaps: []
+            }
+     stacktrace:
+       test/anchor/domain/aggregates/write_sites_default_test.exs:459: (test)
+
+.....................
+Finished in 0.4 seconds (0.4s async, 0.00s sync)
+48 tests, 1 failure
+warning: mtime (modified time) for "lib/anchor/domain/aggregates/write_sites.ex" was set to the future, resetting to now
+```
+

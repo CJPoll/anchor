@@ -126,6 +126,47 @@ defmodule Anchor.Domain.Aggregates.WriteSitesDefaultTest do
     end
 
     def d19, do: Repo.transaction(fn -> #{inspect(@macros)}."MACRO-m"(__ENV__, 1) end)
+
+    def d30a do
+      f = fn -> Repo.insert(%S{}) end
+      f.()
+      Repo.transaction(f)
+    end
+
+    def d30b do
+      f = fn _repo, _changes -> Repo.insert(%S{}) end
+      f.(Repo, %{})
+      Multi.new() |> Multi.run(:a, f) |> Repo.transaction()
+    end
+
+    def d30c(l) do
+      f = fn _x -> Repo.insert(%S{}) end
+      Enum.map(l, f)
+      Repo.transaction(fn -> f.(1) end)
+    end
+
+    def d30d(l) do
+      f = fn _x -> Repo.insert(%S{}) end
+      Enum.map(l, f)
+      f.(1)
+    end
+
+    def d30e do
+      Repo.transaction(fn ->
+        f = fn -> Repo.insert(%S{}) end
+        f.()
+      end)
+    end
+
+    def d30f do
+      f = fn -> Repo.insert(%S{}) end
+      Repo.transaction(f)
+    end
+
+    def d30g do
+      f = fn -> Repo.insert(%S{}) end
+      Repo.transaction(fn -> f.() end)
+    end
   end
   """
 
@@ -401,6 +442,32 @@ defmodule Anchor.Domain.Aggregates.WriteSitesDefaultTest do
 
     test "of a listed function with no arguments is cleared", %{analysis: a} do
       assert %Scope{no_gap_noticed?: true} = one(a, :d13c)
+    end
+  end
+
+  describe "a fn run where the walk did not read it" do
+    test "row 13: called and passed to a transaction is a gap at the call", %{analysis: a} do
+      assert %Scope{no_gap_noticed?: true} = one(a, :d30a)
+      assert [{:dynamic_call, {@d, :d30a, 0}, _line}] = nontx(a, :d30a, 0).gaps
+    end
+
+    test "row 13: called and given to Multi.run is a gap at the call", %{analysis: a} do
+      assert [{:dynamic_call, {@d, :d30b, 0}, _line}] = nontx(a, :d30b, 0).gaps
+    end
+
+    test "run in a transaction it is not given to is a gap there", %{analysis: a} do
+      assert %Scope{no_gap_noticed?: false} = one(a, :d30c)
+      assert %Scope{no_gap_noticed?: false} = one(a, :d30g)
+    end
+
+    test "positive: run where it is defined, in or out of a body, is no gap", %{analysis: a} do
+      assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :d30e)
+      assert nontx(a, :d30d, 1).gaps == []
+    end
+
+    test "positive: only given to the transaction is no gap", %{analysis: a} do
+      assert %Scope{no_gap_noticed?: true, gaps: []} = one(a, :d30f)
+      assert nontx(a, :d30f, 0).gaps == []
     end
   end
 
