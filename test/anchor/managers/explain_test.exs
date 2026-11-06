@@ -17,6 +17,7 @@ defmodule Anchor.Managers.ExplainTest do
   alias Anchor.Domain.Explain
   alias Anchor.Domain.Graph
   alias Anchor.Domain.Graph.SourceFacts
+  alias Anchor.Domain.GraphReport.Finding
   alias Anchor.GraphStoreMock
   alias Anchor.Managers.Explain, as: ExplainManager
   alias Anchor.Managers.Graph, as: GraphManager
@@ -60,6 +61,25 @@ defmodule Anchor.Managers.ExplainTest do
     def rule_type, do: :context_acyclic
     def narrows?(_base_key, _key), do: false
     def check(_model, _rule), do: throw(:thrown)
+  end
+
+  # What a real effects_match_bucket reads: a rule run without its analyses
+  # would check nothing and read clean, so this one says which it was given.
+  defmodule NeedsAnalyses do
+    @moduledoc false
+    @behaviour Anchor.Domain.GraphRule
+    def rule_type, do: :effects_match_bucket
+    def narrows?(_base_key, _key), do: false
+    def needs, do: [:cfa, :effects]
+
+    def check(model, rule) do
+      for module <- Anchor.Domain.GraphRules.select(model, rule) do
+        %Anchor.Domain.Violation{
+          filename: model.classification[module].source_file,
+          message: "cfa given: #{model.cfa != nil}; effects given: #{model.effects != nil}."
+        }
+      end
+    end
   end
 
   @root "/proj"
@@ -168,18 +188,16 @@ defmodule Anchor.Managers.ExplainTest do
     )
   end
 
-  # The findings of an explain whose config adds a context_acyclic rule run by
-  # `crashing`, beside the layering double that finds on every module.
-  defp crashed_findings(beams, crashing) do
+  # The findings of an explain whose config adds `rule`, the graph rules being
+  # `modules` and the other adapters `extra_deps`.
+  defp findings_with(beams, rule, modules, extra_deps \\ []) do
     stub_sources()
     # The store double answers this graph whatever key it is asked under (the
     # key check is the store's); this is about the rules.
     {dir, _key, graph} = written_artifact(beams)
 
-    acyclic = %{type: :context_acyclic, id: "acyclic", paths: ["lib/**/*.ex"], index: 2}
-
     expect(ConfigLoaderMock, :load, fn ->
-      {:ok, %{config() | rules: config().rules ++ [acyclic]}}
+      {:ok, %{config() | rules: config().rules ++ [rule]}}
     end)
 
     Mox.expect(BeamSourceMock, :read_ebins, fn _apps -> beams end)
@@ -188,11 +206,20 @@ defmodule Anchor.Managers.ExplainTest do
     {:ok, explain} =
       ExplainManager.explain(
         %{argument: @manager_file, graph: graph_request(), compiled?: true},
-        deps() ++ [graph_rules: [FindsEveryModule, crashing]]
+        deps() ++ [graph_rules: modules] ++ extra_deps
       )
 
     explain.findings
   end
+
+  # An explain's findings with a context_acyclic rule run by `crashing`, beside
+  # the layering double that finds on every module.
+  defp crashed_findings(beams, crashing) do
+    acyclic = %{type: :context_acyclic, id: "acyclic", paths: ["lib/**/*.ex"], index: 2}
+    findings_with(beams, acyclic, [FindsEveryModule, crashing])
+  end
+
+  @effects_rule %{type: :effects_match_bucket, id: "effects", paths: ["lib/**/*.ex"], index: 2}
 
   describe "explain/2" do
     test "the artifact under this build's key is used: model and findings present", %{
@@ -243,7 +270,7 @@ defmodule Anchor.Managers.ExplainTest do
                )
 
       # The rule found both fixture modules; only the subject's file is kept.
-      assert [%{filename: @manager_file, message: message}] = explain.findings
+      assert [%Finding{file: @manager_file, message: message}] = explain.findings
       assert message =~ "AnchorFixtures.ExplainManagerTest.Orders was found"
     end
 
@@ -254,10 +281,53 @@ defmodule Anchor.Managers.ExplainTest do
             {Crashes, "could not run: RuntimeError: rule blew up"},
             {Throws, "could not run: throw: :thrown"}
           ] do
-        assert [%{filename: @manager_file}, crashed] = crashed_findings(beams, crashing)
-        assert crashed.kind == :fail_closed
+        assert [%Finding{file: @manager_file}, crashed] = crashed_findings(beams, crashing)
+        assert crashed.label == Finding.fail_closed_label()
         assert crashed.message =~ text
       end
+    end
+
+    # A rule that needs the analyses was run without them, so it checked nothing
+    # and read clean; the graph run computes them, and so does an explain.
+    test "a rule that needs the flow analysis and the effects is given them", %{beams: beams} do
+      assert [%Finding{file: @manager_file, message: message}] =
+               findings_with(beams, @effects_rule, [NeedsAnalyses])
+
+      assert message == "cfa given: true; effects given: true."
+    end
+
+    test "a flow analysis that crashes is named among the findings; its rule does not run", %{
+      beams: beams
+    } do
+      assert [finding] =
+               findings_with(beams, @effects_rule, [NeedsAnalyses],
+                 cfa: fn _graph -> raise "analysis blew up" end
+               )
+
+      assert finding.label == Finding.fail_closed_label()
+      assert finding.message =~ "analysis blew up"
+    end
+
+    test "an inference that crashes is named among the findings; its rule does not run", %{
+      beams: beams
+    } do
+      assert [finding] =
+               findings_with(beams, @effects_rule, [NeedsAnalyses],
+                 effects: fn _model, _opts -> raise "inference blew up" end
+               )
+
+      assert finding.label == Finding.fail_closed_label()
+      assert finding.message =~ "inference blew up"
+    end
+
+    test "a rule that selects nothing is named among the findings, as in a graph run", %{
+      beams: beams
+    } do
+      rule = %{@effects_rule | paths: ["lib/nothing/**/*.ex"]}
+
+      assert [finding] = findings_with(beams, rule, [NeedsAnalyses])
+      assert finding.label == Finding.fail_closed_label()
+      assert finding.message =~ "effects"
     end
 
     test "a stale artifact (another key) is never used: findings not computed", %{beams: beams} do

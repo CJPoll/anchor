@@ -205,11 +205,7 @@ defmodule Anchor.Managers.Graph do
     by_type = GraphRules.by_type(modules)
     only = Map.get(request.opts, :only, [])
 
-    all =
-      for rule <- config.rules,
-          module = Map.get(by_type, rule.type),
-          module != nil,
-          do: {rule, module}
+    all = rules_with_modules(config, by_type)
 
     ids = Enum.map(all, fn {rule, _module} -> Map.get(rule, :id) end)
 
@@ -217,6 +213,13 @@ defmodule Anchor.Managers.Graph do
       [] -> {:ok, Enum.filter(all, fn {rule, _module} -> only == [] or rule[:id] in only end)}
       unknown -> {:could_not_check, Failures.graph_unknown_only(unknown, config.path)}
     end
+  end
+
+  defp rules_with_modules(config, by_type) do
+    for rule <- config.rules,
+        module = Map.get(by_type, rule.type),
+        module != nil,
+        do: {rule, module}
   end
 
   # Every beam read came from a project ebin, so every one is the project's,
@@ -248,16 +251,12 @@ defmodule Anchor.Managers.Graph do
     unreadable_issues =
       empty_app_issues(request.apps, beams) ++ unreadable_issues(graph)
 
-    rules = Enum.map(rules, fn {rule, module} -> {rule, module, guarded_needs(module)} end)
-    cfa = cfa(rules, graph, deps.cfa)
-    model = %{model | cfa: analysis(cfa)}
-    effects = effects(rules, model, cfa, deps)
-    model = %{model | effects: effects_analysis(effects)}
+    rules = with_needs(rules)
+    {model, analyses} = analysed(rules, model, deps)
 
     deps =
       Map.merge(deps, %{base: base_config(deps.git_base, request, config), now: config.rules})
 
-    analyses = %{cfa: cfa, effects: effects}
     ran = Enum.map(rules, &run_rule(&1, model, analyses, config.path, request, deps))
 
     artifact_notes =
@@ -283,6 +282,47 @@ defmodule Anchor.Managers.Graph do
       held: Enum.flat_map(ran, & &1.held),
       refused: Enum.flat_map(ran, & &1.refused)
     )
+  end
+
+  @doc """
+  The findings every graph rule of `config` makes over `model`, as a run
+  computes them (for `mix anchor.explain`): each rule's floor, the analyses the
+  rules need, each check guarded (a rule that crashes, or whose analysis did, is
+  a fail-closed finding naming it). No baseline judges them, so these are the
+  raw findings. `deps` takes `:graph_rules`, `:cfa`, `:effects` and
+  `:behaviour_source` as `run/2` does.
+  """
+  @spec rule_findings(Model.t(), Config.t(), keyword()) :: [Finding.t()]
+  def rule_findings(%Model{} = model, %Config{} = config, deps \\ []) do
+    deps = deps(deps)
+
+    rules =
+      config
+      |> rules_with_modules(GraphRules.by_type(deps.graph_rules))
+      |> with_needs()
+
+    {model, analyses} = analysed(rules, model, deps)
+
+    Enum.flat_map(rules, fn {rule, module, needs} ->
+      floor_findings(rule, model, config.path) ++
+        checked(run_check(needs, analyses, rule, module, model, config.path))
+    end)
+  end
+
+  defp checked({:ok, findings}), do: findings
+  defp checked({:crashed, finding}), do: [finding]
+
+  defp with_needs(rules),
+    do: Enum.map(rules, fn {rule, module} -> {rule, module, guarded_needs(module)} end)
+
+  # The model with the analyses the rules need, and those analyses as computed
+  # (`{:crashed, ...}` included), for `run_check/6`.
+  defp analysed(rules, model, deps) do
+    cfa = cfa(rules, model.graph, deps.cfa)
+    model = %{model | cfa: analysis(cfa)}
+    effects = effects(rules, model, cfa, deps)
+
+    {%{model | effects: effects_analysis(effects)}, %{cfa: cfa, effects: effects}}
   end
 
   # DND-5476: the declared aggregates and their unknown tables are counted

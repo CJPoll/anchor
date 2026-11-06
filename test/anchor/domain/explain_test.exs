@@ -12,9 +12,9 @@ defmodule Anchor.Domain.ExplainTest do
   alias Anchor.Domain.Explain
   alias Anchor.Domain.Graph
   alias Anchor.Domain.Graph.ModuleNode
+  alias Anchor.Domain.GraphReport.Finding
   alias Anchor.Domain.Model
   alias Anchor.Domain.RuleShapes
-  alias Anchor.Domain.Violation
 
   @yaml %{
     "rules" => [
@@ -194,10 +194,24 @@ defmodule Anchor.Domain.ExplainTest do
     end
 
     test "the findings it was given are kept" do
-      finding = %Violation{message: "x. Fix: y", filename: "lib/app/managers/orders.ex"}
+      finding = %Finding{
+        label: "layering",
+        enforcement: :enforce,
+        message: "x. Fix: y",
+        file: "lib/app/managers/orders.ex"
+      }
+
 
       assert %Explain{findings: [^finding]} =
                Explain.build(config(), model(), subject(%{findings: [finding]}))
+
+      explain = Explain.build(config(), model(), subject(%{findings: [finding]}))
+
+      assert Explain.render(explain, :text) =~
+               "findings:\n  lib/app/managers/orders.ex:1: x. Fix: y"
+
+      assert [%{"file" => "lib/app/managers/orders.ex", "message" => "x. Fix: y"}] =
+               JSON.decode!(Explain.render(explain, :json))["findings"]
     end
 
     test "a module in the graph but in no bucket is unclassified, with every bucket's selectors and the Fix" do

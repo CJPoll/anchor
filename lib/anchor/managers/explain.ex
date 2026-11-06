@@ -19,9 +19,11 @@ defmodule Anchor.Managers.Explain do
        (`Anchor.Adapters.GraphStore.read/2`). Only an artifact under that
        key is used: a missing, unreadable or stale one means no model, never
        an old answer. A run that did not compile reads no beam;
-    4. with the model, run every graph rule of the config over it, each
-       guarded (a rule that crashes is named among the findings, never
-       dropped), and keep the findings on the subject's source file;
+    4. with the model, take every graph rule's findings as a graph run
+       computes them, before any baseline
+       (`Anchor.Managers.Graph.rule_findings/3`: a rule's floor, the analyses
+       it needs, a crash named among the findings), and keep those on the
+       subject's source file and every fail-closed one;
     5. read the subject's source file (`Anchor.Adapters.SourceSource`) to
        know whether it exists and what it defines, and build the answer
        (`Anchor.Domain.Explain.build/3`).
@@ -29,7 +31,8 @@ defmodule Anchor.Managers.Explain do
   ## Options (the adapters, for tests)
 
   `:config_loader`, `:beam_source`, `:source_source`, `:graph_store`,
-  `:graph_rules`, defaulting as `Anchor.Managers.Graph`'s do.
+  `:graph_rules`, `:cfa`, `:effects`, `:behaviour_source`, defaulting as
+  `Anchor.Managers.Graph`'s do.
   """
 
   alias Anchor.Adapters.BeamReader
@@ -40,7 +43,7 @@ defmodule Anchor.Managers.Explain do
   alias Anchor.Domain.Explain
   alias Anchor.Domain.Failures
   alias Anchor.Domain.Graph
-  alias Anchor.Domain.GraphRules
+  alias Anchor.Domain.GraphReport.Finding
   alias Anchor.Domain.Model
   alias Anchor.Domain.Subject
   alias Anchor.Domain.Violation
@@ -62,8 +65,8 @@ defmodule Anchor.Managers.Explain do
   @spec explain(request(), keyword()) ::
           {:ok, Explain.t()}
           | {:error, {:could_not_check, Violation.t()} | {:usage, atom()}}
-  def explain(%{argument: argument, graph: %Request{} = graph} = request, deps \\ []) do
-    deps = deps(deps)
+  def explain(%{argument: argument, graph: %Request{} = graph} = request, given \\ []) do
+    deps = deps(given)
 
     with {:ok, config} <- load_config(deps.config_loader),
          {:ok, parsed} <- parse(argument, graph.root) do
@@ -78,7 +81,7 @@ defmodule Anchor.Managers.Explain do
         exists?: exists?(source),
         source: facts_or_nil(Map.get(facts, path) || source),
         compiled?: request.compiled?,
-        findings: findings(model, config, path, deps.graph_rules)
+        findings: findings(model, config, path, given)
       }
 
       {:ok, Explain.build(config, model, subject)}
@@ -90,8 +93,7 @@ defmodule Anchor.Managers.Explain do
       config_loader: Keyword.get(deps, :config_loader, ConfigFile),
       beam_source: Keyword.get(deps, :beam_source, BeamReader),
       source_source: Keyword.get(deps, :source_source, SourceReader),
-      graph_store: Keyword.get(deps, :graph_store, GraphArtifact),
-      graph_rules: Keyword.get(deps, :graph_rules, GraphRules.all())
+      graph_store: Keyword.get(deps, :graph_store, GraphArtifact)
     }
   end
 
@@ -165,31 +167,14 @@ defmodule Anchor.Managers.Explain do
   defp facts_or_nil(%{defmodules: _} = facts), do: facts
   defp facts_or_nil(_none), do: nil
 
-  # The graph rules' findings on `path`, or `nil` with no model. A rule that
-  # raises, throws or exits is a finding naming it, never a silent omission
-  # (the guard Managers.Graph puts round a rule: rescue, then throw and exit).
-  defp findings(nil, _config, _path, _modules), do: nil
+  # The graph rules' findings on `path` and every fail-closed one (it names a
+  # rule that could not run, wherever that rule's modules sit), or `nil` with
+  # no model.
+  defp findings(nil, _config, _path, _given), do: nil
 
-  defp findings(%Model{} = model, config, path, modules) do
-    by_type = GraphRules.by_type(modules)
-
-    config.rules
-    |> Enum.flat_map(fn rule ->
-      case Map.get(by_type, rule.type) do
-        nil -> []
-        module -> guarded_check(module, model, rule, config.path)
-      end
-    end)
-    |> Enum.filter(&(&1.filename == path or &1.kind == :fail_closed))
-  end
-
-  defp guarded_check(module, model, rule, config_path) do
-    module.check(model, rule)
-  rescue
-    exception ->
-      [Failures.rule_crashed(rule, :error, exception, __STACKTRACE__, config_path)]
-  catch
-    kind, reason when kind in [:throw, :exit] ->
-      [Failures.rule_crashed(rule, kind, reason, __STACKTRACE__, config_path)]
+  defp findings(%Model{} = model, config, path, given) do
+    model
+    |> GraphManager.rule_findings(config, given)
+    |> Enum.filter(&(&1.file == path or &1.label == Finding.fail_closed_label()))
   end
 end

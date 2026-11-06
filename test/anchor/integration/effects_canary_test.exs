@@ -7,6 +7,7 @@ defmodule Anchor.Integration.EffectsCanaryTest do
   # artifact store is doubled, so nothing is written into the repo.
   #
   # Sabotage record: ../../sabotage_records/effects-20261103-dnd_5447_graph_rules_c.md
+  # Sabotage record (the one-Fix assertion): ../../sabotage_records/rule_shapes-20261103-dnd_5443_graph_rules_b.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -18,6 +19,7 @@ defmodule Anchor.Integration.EffectsCanaryTest do
   alias Anchor.BeamSourceMock
   alias Anchor.ConfigLoaderMock
   alias Anchor.Domain.GraphReport
+  alias Anchor.Domain.RuleShapes
   alias Anchor.GraphStoreMock
   alias Anchor.Managers.Graph
   alias Anchor.Managers.Graph.Request
@@ -89,6 +91,12 @@ defmodule Anchor.Integration.EffectsCanaryTest do
     assert reader.line == 4
     assert reader.message =~ "File.read/1"
     assert reader.message =~ "Fix: move the effect into an adapter"
+
+    # DND-5446: the graph half of the Fix-shape invariant, for this rule type's
+    # own canary (graph_canary_test.exs names this test in @own_canary).
+    for finding <- report.findings do
+      assert RuleShapes.fix_count(finding.message) == 1, finding.message
+    end
   end
 
   test "the footer counts the functions per role and the unresolved calls", %{beams: beams} do

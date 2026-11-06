@@ -44,11 +44,11 @@ defmodule Anchor.Domain.Explain do
   alias Anchor.Domain.Classification
   alias Anchor.Domain.Failures
   alias Anchor.Domain.GlobPattern
+  alias Anchor.Domain.GraphReport.Finding
   alias Anchor.Domain.Model
   alias Anchor.Domain.RuleMatching
   alias Anchor.Domain.RuleSchema
   alias Anchor.Domain.RuleShapes
-  alias Anchor.Domain.Violation
 
   @beam_facts ~w(app behaviours exports_function uses_module)
   @text_names 8
@@ -84,7 +84,7 @@ defmodule Anchor.Domain.Explain do
           required(:exists?) => boolean(),
           required(:source) => map() | nil,
           required(:compiled?) => boolean(),
-          required(:findings) => [Violation.t()] | nil
+          required(:findings) => [Finding.t()] | nil
         }
 
   @doc "Builds the answer for `subject` under `config`, with the run's model or `nil`."
@@ -383,13 +383,13 @@ defmodule Anchor.Domain.Explain do
   defp findings_json(nil), do: nil
 
   defp findings_json(findings) do
-    Enum.map(findings, fn %Violation{} = v ->
+    Enum.map(findings, fn %Finding{} = finding ->
       %{
-        "rule_id" => v.rule_id,
-        "key" => v.key,
-        "file" => v.filename,
-        "line" => v.line,
-        "message" => v.message
+        "rule_id" => finding.rule_id,
+        "key" => finding.key,
+        "file" => finding.file,
+        "line" => finding.line,
+        "message" => finding.message
       }
     end)
   end
@@ -482,7 +482,7 @@ defmodule Anchor.Domain.Explain do
   defp findings_lines([]), do: ["findings: none"]
 
   defp findings_lines(findings) do
-    ["findings:" | Enum.map(findings, &"  #{&1.filename}:#{&1.line || 1}: #{&1.message}")]
+    ["findings:" | Enum.map(findings, &"  #{&1.file}:#{&1.line || 1}: #{&1.message}")]
   end
 
   defp unknown_lines([]), do: []
