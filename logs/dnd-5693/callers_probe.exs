@@ -16,8 +16,10 @@ defmodule Spike.CallersTracer do
       {:take, from} ->
         send(from, {:taken, counts})
 
-      {:trace, child, :spawned, _parent, _mfa} ->
-        loop(tally(counts, {:at_spawned, read(child)}), seen)
+      {:trace, child, :spawned, _parent, mfa} ->
+        counts = tally(counts, {:at_spawned, read(child)})
+        # The spawn event's own arguments are a copy, so no race: do they name the caller?
+        loop(tally(counts, {:spawned_args, args_name_caller(mfa)}), seen)
 
       {:trace, pid, :call, {Spike.CallersFix, :mark, _args}} ->
         if MapSet.member?(seen, pid),
@@ -28,6 +30,13 @@ defmodule Spike.CallersTracer do
         loop(counts, seen)
     end
   end
+
+  defp args_name_caller({:proc_lib, :init_p, [_parent, _ancestors, Task.Supervised, :noreply, [_owner, callers, _fun]]}),
+    do: if(self_in?(callers), do: :names_the_caller, else: :other_callers)
+
+  defp args_name_caller({m, f, args}), do: {:other_shape, m, f, length(args)}
+
+  defp self_in?(callers), do: callers == [:persistent_term.get(:spike_caller)]
 
   defp tally(counts, key), do: Map.update(counts, key, 1, &(&1 + 1))
 
@@ -41,6 +50,8 @@ defmodule Spike.CallersTracer do
     end
   end
 end
+
+:persistent_term.put(:spike_caller, self())
 
 run = fn name, task ->
   {:ok, sup} = Task.Supervisor.start_link()
