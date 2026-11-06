@@ -69,7 +69,7 @@ defmodule Spike.Mech do
 
   def class({_mfa, word, label, owner, _origin}) do
     case {owner, label} do
-      {{:test, w}, ^w} -> :owned_label_agrees
+      {{:test, w}, l} when l == w -> :owned_label_agrees
       {{:test, _w}, :none} -> :owned_no_label
       {{:test, _w}, _other} -> :owned_label_disagrees
       {{:module, _m}, :none} -> :setup_all_no_label

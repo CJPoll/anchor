@@ -45,6 +45,27 @@ defmodule Spike.Specs do
     {:_, [{:"==", {:get_tcw}, word}], [{:message, false}]}
   end
 
+  # The spec of a function with `held` keys suppressed, for each shape.
+  def spec(:pr63, [{_pid, word, _label} | _]) do
+    [{:_, [{:"=/=", {:get_tcw}, word}], [{:message, {:get_tcw}}]}]
+  end
+
+  # Guards only, and no clause matches a suppressed key: a guard failure instead
+  # of a matched body. Key (pid, word), as pid_word.
+  def spec(:fallthrough, held) do
+    open =
+      Enum.reduce(held, {:const, false}, fn {pid, word, _label}, acc ->
+        {:orelse, acc, {:andalso, {:"==", {:self}, {:const, pid}}, {:"==", {:get_tcw}, word}}}
+      end)
+
+    [
+      {:_, [{:is_seq_trace}, {:not, open}], [{:message, @payload}]},
+      {:_, [{:not, {:is_seq_trace}}, {:not, open}], [{:message, {{:none, {:get_tcw}}}}]}
+    ]
+  end
+
+  def spec(shape, held), do: call(Enum.map(held, &suppress(shape, &1)))
+
   def window, do: [{[:_, :"$1"], [], [{:set_tcw, {:+, {:get_tcw}, 1}}, {:message, {{:"$1", {:get_tcw}}}}]}]
 
   # The test process's first call into ExUnit: an odd word is an open window,
@@ -245,7 +266,7 @@ defmodule Spike.Gate do
   defp silence(state, mfa, pid, word, label) do
     held = state.active |> Map.get(mfa, []) |> Enum.filter(fn {_pid, w, _label} -> w == word end)
     held = [{pid, word, label} | held]
-    spec = Spike.Specs.call(Enum.map(held, &Spike.Specs.suppress(state.shape, &1)))
+    spec = Spike.Specs.spec(state.shape, held)
     {us, 1} = :timer.tc(fn -> :erlang.trace_pattern(mfa, spec, [:local]) end)
 
     %{

@@ -32,6 +32,13 @@ jobs:
         run: elixir logs/dnd-5693/fixture_probe.exs 2>&1 | tee fixture.log; test "${PIPESTATUS[0]}" = 0
         shell: bash
 
+      - name: Silencing exactness on the fixture, each mode twice
+        shell: bash
+        run: |
+          for mode in every label_body:1 label_body:64 pid_word:64 word:64 fallthrough:64 every label_body:64; do
+            elixir logs/dnd-5693/fixture_k.exs "$mode"
+          done
+
   cost:
     name: Cost Q4
     if: contains(github.event.head_commit.message, '[spike:cost]')
@@ -71,7 +78,7 @@ jobs:
         shell: bash
         run: |
           for round in 1 2 3; do
-            for variant in untraced call_count every label_body:1 label_body:64 pid_word:1 pid_word:64 word:64; do
+            for variant in untraced label_body:64 fallthrough:1 fallthrough:64 pr63:64 pid_word:64; do
               mix run logs/dnd-5693/cost.exs "$variant" 2>&1 | grep -E "^COST|rror" || echo "COST variant=$variant no line"
             done
           done
@@ -111,36 +118,36 @@ jobs:
       - name: Compile
         run: mix compile
 
-      - name: Every-call, seed 0, preloaded, twice (Q5)
-        shell: bash
-        run: |
-          for n in 1 2; do
-            mix run logs/dnd-5693/suite_map.exs every ec$n.etf preload 0 > ec$n.out 2>&1 || echo "EXIT ec$n $?"
-            grep -E "^SUITE|^  [0-9]+\) test|tests, [0-9]+ failure" ec$n.out | cut -c1-400
-          done
-
-      - name: K=64, label read in the body, twice
+      - name: K=64, label read in the body, preloaded, twice (Q5 on a second VM)
         shell: bash
         run: |
           for n in 1 2; do
             mix run logs/dnd-5693/suite_map.exs label_body:64 kk$n.etf preload 0 > kk$n.out 2>&1 || echo "EXIT kk$n $?"
-            grep -E "^SUITE|^  [0-9]+\) test|tests, [0-9]+ failure" kk$n.out | cut -c1-400
+            grep -E "^SUITE|^  [0-9]+\) test|tests, [0-9]+ failure|^Top 3|^  \* test" kk$n.out | cut -c1-400
           done
 
-      - name: K=1, label read in the body, once
+      - name: K=64, label read in the body, NOT preloaded, twice
         shell: bash
         run: |
-          timeout 900 mix run logs/dnd-5693/suite_map.exs label_body:1 k1.etf preload 0 > k1.out 2>&1 || echo "EXIT k1 $?"
-          grep -E "^SUITE|^  [0-9]+\) test|tests, [0-9]+ failure" k1.out | cut -c1-400
+          for n in 1 2; do
+            mix run logs/dnd-5693/suite_map.exs label_body:64 np$n.etf nopreload 0 > np$n.out 2>&1 || echo "EXIT np$n $?"
+            grep -E "^SUITE|^  [0-9]+\) test|tests, [0-9]+ failure|^Top 3|^  \* test" np$n.out | cut -c1-400
+          done
+
+      - name: K=64, guards only, once
+        shell: bash
+        run: |
+          mix run logs/dnd-5693/suite_map.exs fallthrough:64 ft1.etf preload 0 > ft1.out 2>&1 || echo "EXIT ft1 $?"
+          grep -E "^SUITE|^  [0-9]+\) test|tests, [0-9]+ failure|^Top 3|^  \* test" ft1.out | cut -c1-400
 
       - name: Compare
         shell: bash
         run: |
-          elixir logs/dnd-5693/compare.exs shares ec1.etf
-          elixir logs/dnd-5693/compare.exs diff ec1.etf ec2.etf
-          elixir logs/dnd-5693/compare.exs diff kk1.etf kk2.etf
-          elixir logs/dnd-5693/compare.exs diff ec1.etf kk1.etf
-          if [ -f k1.etf ]; then elixir logs/dnd-5693/compare.exs diff ec1.etf k1.etf; fi
+          elixir logs/dnd-5693/compare.exs shares kk1.etf 2>&1 | grep -E "COMPARE (shares|MECH|KIND|LEAK)" | cut -c1-260
+          elixir logs/dnd-5693/compare.exs diff kk1.etf kk2.etf 2>&1 | cut -c1-400
+          elixir logs/dnd-5693/compare.exs diff np1.etf np2.etf 2>&1 | grep -v "DIFF window" | cut -c1-400
+          elixir logs/dnd-5693/compare.exs diff kk1.etf np1.etf 2>&1 | grep -v "DIFF window" | cut -c1-400
+          elixir logs/dnd-5693/compare.exs diff kk1.etf ft1.etf 2>&1 | grep -E "COMPARE (diff|MECH)" | cut -c1-400
 
       - name: Upload the logs and maps
         if: always()

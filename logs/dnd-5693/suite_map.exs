@@ -112,7 +112,7 @@ Spike.Trace.on(modules, gate, collector, [:procs])
 started = System.monotonic_time(:millisecond)
 
 {suite_ms, suite} =
-  :timer.tc(fn -> SuiteRunner.run(["--exclude", "global_tracing", "--seed", seed]) end, :millisecond)
+  :timer.tc(fn -> SuiteRunner.run(["--exclude", "global_tracing", "--seed", seed, "--slowest", "3"]) end, :millisecond)
 
 Spike.Trace.off()
 stats = Spike.Gate.finish(gate)

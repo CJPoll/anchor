@@ -1,7 +1,7 @@
 # DND-5693 Q4 (throwaway, CI only): demand_self's body under each tracing variant.
 #   MIX_ENV=test mix run logs/dnd-5693/cost.exs <variant>
 # Variants: untraced | call_count | every | <shape>:<k>, shape one of label_body,
-# pid_word, word. One variant per VM. Prints one COST line.
+# pid_word, word, fallthrough, pr63. One variant per VM. Prints one COST line.
 Code.require_file("causal_lib.exs", __DIR__)
 
 alias Anchor.Adapters.BeamReader
