@@ -43,4 +43,20 @@ defmodule Anchor.Adapters.GitBase do
                  | {:yaml, String.t()}
                  | {:invalid_config, term()}
                  | {:invalid_rule, term()}}
+
+  @doc """
+  The whole config at `path` as it is on `ref`, every section (DND-5658): the
+  landed judge judges a change by it. The same answers as `rules/3`.
+  """
+  @callback config(root :: Path.t(), ref :: String.t(), path :: Path.t()) ::
+              {:ok, Anchor.Config.t()}
+              | {:error,
+                 :absent
+                 | :bad_ref
+                 | :outside_root
+                 | {:symlink, String.t()}
+                 | {:git, non_neg_integer() | :enoent, String.t()}
+                 | {:yaml, String.t()}
+                 | {:invalid_config, term()}
+                 | {:invalid_rule, term()}}
 end

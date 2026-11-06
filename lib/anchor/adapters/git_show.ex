@@ -45,10 +45,19 @@ defmodule Anchor.Adapters.GitShow do
   """
   @impl Anchor.Adapters.GitBase
   def rules(root, ref, path) do
+    with {:ok, %Config{rules: rules}} <- config(root, ref, path), do: {:ok, rules}
+  end
+
+  @doc """
+  The whole config at `path` on `ref` (DND-5658), read and parsed as `rules/3`
+  reads it.
+  """
+  @impl Anchor.Adapters.GitBase
+  def config(root, ref, path) do
     with {:ok, bytes} <- blob(root, ref, path),
          {:ok, data} <- decode(bytes),
-         %Config{rules: rules} <- Config.parse_config(data) do
-      {:ok, rules}
+         %Config{} = config <- Config.parse_config(data) do
+      {:ok, config}
     end
   end
 

@@ -917,6 +917,75 @@ defmodule Anchor.Domain.Failures do
   end
 
   @doc """
+  The issue for a landed judge (DND-5658) whose base config could not be read:
+  nothing it decides against that config can be judged, exit 3.
+  """
+  @spec landed_judge_base_unreadable(String.t(), String.t(), term()) :: Violation.t()
+  def landed_judge_base_unreadable(config, ref, reason) do
+    graph_issue(
+      config,
+      nil,
+      "COULD NOT MEASURE: the landed judge could not read #{config} at #{ref} " <>
+        "(#{capped(inspect(reason))}), so no removed or retyped base rule and no baseline's " <>
+        "GREW could be judged. Fix: pass a --base ref whose #{config} loads."
+    )
+  end
+
+  @doc """
+  The note for a rule the landed judge does not know (DND-5658): its type is
+  new in this change, so `mix anchor.graph --project` sets it aside. The
+  change's own `mix anchor.graph --base` step judges it. Report-only.
+  """
+  @spec landed_judge_first_landing(String.t(), map(), String.t() | nil) :: Violation.t()
+  def landed_judge_first_landing(config, %{index: index, id: id, type: type} = rule, ref) do
+    name =
+      if id, do: "rule #{index} (id: #{inspect(id)}, #{type})", else: "rule #{index} (#{type})"
+
+    baseline = if rule[:baseline], do: ", baseline #{rule.baseline}", else: ""
+    at = if ref, do: " landed on #{ref}", else: ""
+
+    graph_issue(
+      config,
+      nil,
+      "NOTE: FIRST LANDING of #{name}#{baseline}: the anchor#{at} has no rule type " <>
+        "#{inspect(type)}, so it does not judge this rule; this change's own mix " <>
+        "anchor.graph --base step does. Fix: review the rule and its baseline in this change."
+    )
+  end
+
+  @doc """
+  A rule the base config has and this change removes (DND-5658), or renames
+  (a remove plus an add): the landed judge refuses losing a check.
+  """
+  @spec landed_judge_rule_removed(String.t(), String.t(), atom(), String.t()) :: Violation.t()
+  def landed_judge_rule_removed(config, id, type, ref) do
+    graph_issue(
+      config,
+      nil,
+      "rule #{inspect(id)} (#{type}) is in #{config} at #{ref} and not in this change: removing " <>
+        "or renaming a rule removes a check, which the landed judge does not pass. Fix: keep " <>
+        "the rule with its id; a removed check is landed by the owner."
+    )
+  end
+
+  @doc """
+  A rule the base config has whose type this change replaces (DND-5658): the
+  landed judge refuses replacing a check with another.
+  """
+  @spec landed_judge_rule_retyped(String.t(), String.t(), atom(), atom() | String.t(), String.t()) ::
+          Violation.t()
+  def landed_judge_rule_retyped(config, id, base_type, type, ref) do
+    graph_issue(
+      config,
+      nil,
+      "rule #{inspect(id)} is #{base_type} in #{config} at #{ref} and #{type} in this change: " <>
+        "changing a rule's type replaces its check, which the landed judge does not pass. " <>
+        "Fix: keep the type and add the new rule under a new id; a replaced check is landed " <>
+        "by the owner."
+    )
+  end
+
+  @doc """
   The refusal of `--write-baseline` over an existing file (DND-5441, exit 2):
   it only creates, so a baseline can never be loosened by rewriting it.
   """

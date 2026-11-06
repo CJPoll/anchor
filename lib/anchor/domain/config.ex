@@ -87,7 +87,7 @@ defmodule Anchor.Config do
   # when the document has none. `sabotage` is the parsed `sabotage:` section
   # (DND-5473), or `nil`. `aggregates` is the parsed `aggregates:` section
   # (DND-5476), or `nil` when the document has none: no declarations.
-  defstruct rules: [], path: nil, architecture: nil, aggregates: nil, sabotage: nil
+  defstruct rules: [], path: nil, architecture: nil, aggregates: nil, sabotage: nil, deferred: []
 
   @matches %{"call" => :call, "reference" => :reference}
 
@@ -105,8 +105,27 @@ defmodule Anchor.Config do
           path: String.t() | nil,
           architecture: Architecture.t() | nil,
           aggregates: AggregatesConfig.t() | nil,
-          sabotage: SabotageConfig.t() | nil
+          sabotage: SabotageConfig.t() | nil,
+          deferred: [deferred()]
         }
+
+  @typedoc "A rule set aside under `defer_unknown_types: true` (DND-5658)."
+  @type deferred :: %{
+          index: pos_integer(),
+          id: String.t() | nil,
+          type: String.t(),
+          baseline: String.t() | nil
+        }
+
+  @doc """
+  The config the landed judge runs (DND-5658): every section of `base`, the
+  base branch's, with `rules` as its rules. Only what names the change's own
+  file stays the change's: its `path` and the rule types the judge set aside. A
+  section this struct gains later is the base's by construction.
+  """
+  @spec judged(t(), t(), [map()]) :: t()
+  def judged(%__MODULE__{} = config, %__MODULE__{} = base, rules),
+    do: %{base | rules: rules, path: config.path, deferred: config.deferred}
 
   @doc """
   The rule `type`s Anchor knows: one per shipped check's `rule_type/0`
@@ -133,10 +152,25 @@ defmodule Anchor.Config do
   A rule that fails validation surfaces `{:error, {:invalid_rule, reason}}`,
   its reason prefixed with the rule's 1-based position (`rule 2: ...`).
   """
-  def parse_config(data) when is_map(data) do
+  def parse_config(data), do: parse_config(data, [])
+
+  @doc """
+  `parse_config/1` with options (DND-5658):
+
+    * `defer_unknown_types: true` -- a rule whose `type` is a string this
+      Anchor does not know is set aside, not refused: it lands in `:deferred`
+      as `%{index: position, id: id | nil, type: string, baseline: path | nil}`
+      and is not parsed. Every other rule is parsed as `parse_config/1` parses
+      it, keeping its position, and every other refusal stands: an unknown key
+      on a known rule, an unknown top-level key, a malformed section. The
+      landed judge (`mix anchor.graph --project`) loads this way, so a rule
+      type new in a pull request is a first landing, not a refusal.
+  """
+  def parse_config(data, opts) when is_map(data) do
     with :ok <- validate_top_level_keys(data),
          {:ok, rules} <- fetch_rules(data),
-         {:ok, parsed} <- parse_rules(rules),
+         {indexed, deferred} = split_deferred(rules, Keyword.get(opts, :defer_unknown_types)),
+         {:ok, parsed} <- parse_rules(indexed),
          {:ok, architecture} <- parse_architecture(data),
          :ok <- validate_graph_rules(parsed, architecture),
          {:ok, aggregates} <- parse_aggregates(data),
@@ -146,16 +180,17 @@ defmodule Anchor.Config do
         rules: parsed,
         architecture: architecture,
         aggregates: aggregates,
-        sabotage: sabotage
+        sabotage: sabotage,
+        deferred: deferred
       }
     end
   end
 
-  def parse_config(nil) do
+  def parse_config(nil, _opts) do
     {:error, {:invalid_config, "the document is empty; it needs a `rules:` list"}}
   end
 
-  def parse_config(data) do
+  def parse_config(data, _opts) do
     {:error,
      {:invalid_config,
       "the top level must be a mapping with a `rules:` list, got: #{inspect(data)}"}}
@@ -279,11 +314,42 @@ defmodule Anchor.Config do
   # Gap F (DND-149) / DND-1265: propagate the FIRST invalid rule, naming its
   # position, so a malformed rule fails the load (via
   # `Anchor.Adapters.ConfigFile`) instead of becoming a silent green no-op.
-  defp parse_rules(rules) do
-    with {:ok, parsed} <- rules |> Enum.with_index(1) |> parse_indexed_rules() do
+  defp parse_rules(indexed_rules) do
+    with {:ok, parsed} <- parse_indexed_rules(indexed_rules) do
       refuse_shared_ids(parsed)
     end
   end
+
+  # DND-5658: the rules to parse, each with its 1-based position, and (under
+  # `defer_unknown_types: true`) the rules set aside because their type is a
+  # string this Anchor does not know.
+  defp split_deferred(rules, true) do
+    rules
+    |> Enum.with_index(1)
+    |> Enum.split_with(fn {rule, _index} -> deferred_type(rule) == nil end)
+    |> then(fn {indexed, deferred} -> {indexed, Enum.map(deferred, &deferred_rule/1)} end)
+  end
+
+  defp split_deferred(rules, _off), do: {Enum.with_index(rules, 1), []}
+
+  defp deferred_type(%{"type" => ":" <> type}), do: deferred_type(%{"type" => type})
+
+  defp deferred_type(%{"type" => type}) when is_binary(type) and type != "",
+    do: if(Map.has_key?(@rule_types, type), do: nil, else: type)
+
+  defp deferred_type(_rule), do: nil
+
+  defp deferred_rule({rule, index}) do
+    %{
+      index: index,
+      id: string_or_nil(rule["id"]),
+      type: deferred_type(rule),
+      baseline: string_or_nil(rule["baseline"])
+    }
+  end
+
+  defp string_or_nil(value) when is_binary(value), do: value
+  defp string_or_nil(_value), do: nil
 
   defp parse_indexed_rules(indexed_rules) do
     indexed_rules

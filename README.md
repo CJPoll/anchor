@@ -588,7 +588,7 @@ mix credo --strict
 
 ```bash
 mix anchor.graph [--format text|json] [--only RULE_ID]... [--base REF]
-                 [--write-baseline RULE_ID] [--verbose]
+                 [--write-baseline RULE_ID] [--project DIR] [--verbose]
 ```
 
 Judges the project's compiled code against `.anchor.yml`'s `architecture:`
@@ -651,6 +651,58 @@ findings can only shrink along the way:
    with git, never from the branch: a baseline only shrinks, and adding to it
    is a review decision on the base branch. A baseline absent at `REF` is a
    first landing, printed as a NOTE.
+
+**The base branch judges a pull request (DND-5658).** `--base` reads the
+baselines at `REF`, but the code that compares them (`Enforcement`,
+`Baseline`, `BaselineBase`, each rule's `check/2`) is the
+code that runs. In Anchor's own CI that is the pull request's code, so a pull
+request could change the judge that judges it. CI therefore also runs
+`bin/ci/judge-with-base.sh origin/<base>`: it takes `bin/ci/base-judge.sh` as
+it is on the base branch (never the pull request's copy), which checks the
+base out in a scratch worktree, builds it, compiles the pull request under
+`MIX_ENV=dev`, and runs the base's `mix anchor.graph --project <pull request>
+--base origin/<base>`. `--project DIR` judges the checkout at `DIR` (its
+`.anchor.yml`, sources, baselines, git, and its beams at this checkout's
+compile path relative to its root) with the Anchor of the checkout it runs
+in; it refuses (exit 2) a `DIR` that is not a directory, an umbrella judge, a
+build path outside the judge's own root, and `--write-baseline`. A base that
+cannot be checked out or built, a pull request that does not compile, and a
+judge that exits other than 0 or 1 are exit 3 (COULD NOT MEASURE), never a
+pass. The landed judge (`--project`) loads the config with rule types it does
+not know set aside, and judges by the BASE's config: every rule the base has as
+the base defines it (its selector, keys and enforcement), plus the pull
+request's rules the base does not have, all under the base's `architecture:`
+and `aggregates:`. So a pull request that widens the calls matrix, moves a
+module to another bucket or lowers a floor in `.anchor.yml` fails this step
+when its code relies on that; the owner lands such a change. Per rule id:
+
+| The pull request's rule | Landed judge | Exit |
+|---|---|---|
+| on the base, same type, only keys the base knows | ratchets the base's definition, as `--base` does | 0 / 1 |
+| new, of a type the base does not know | `NOTE: FIRST LANDING ...`, report-only; the pull request's own `--base` step judges it | 0 |
+| new, of a type the base knows | judged, its baseline a first landing | 0 / 1 |
+| on the base, removed or renamed by the pull request | fails: a check removed | 1 |
+| on the base, its type changed | fails: a check replaced | 1 |
+| on the base, with a key the base does not know | COULD NOT MEASURE | 3 |
+| any, beside a top-level section the base does not know | COULD NOT MEASURE | 3 |
+| on the base, narrowed (a smaller selector, `enforcement: report`) with its baseline shrunk or grown to match | the base's definition still finds it: NEW or GREW | 1 |
+| on the base, its new entry excused by a `narrows?/2` the pull request changed | the base's `narrows?/2` decides: GREW | 1 |
+| any, with a `.anchor.yml` at the base that cannot be read | COULD NOT MEASURE | 3 |
+| any, with `architecture:` or `aggregates:` changed | the base's sections are the ones judged: NEW, STALE or a bucket floor where the code relies on the change | 0 / 1 |
+
+The refused rows are landed by the owner. The pull request's own `mix anchor.graph --base` step still runs:
+it is the product under test. A base with no `bin/ci/base-judge.sh` prints
+`BOOTSTRAP` and exits 0 only for a pull request whose diff adds the script;
+any other pull request into such a base is exit 3. Self-test: `bin/tests/base-judge-test.sh` (CI job `Base judge
+self-test`). Not caught: a pull request that edits `.github/workflows/ci.yml`
+or `bin/ci/judge-with-base.sh` itself (GitHub runs the pull request's
+workflow), and build-time code a deliberately hostile pull request runs
+earlier in the same CI job; review is the gate for those. This guards
+`mix anchor.graph` against a change to `lib/`, not against an attacker who
+controls the job; `mix anchor.baseline --base` and `mix credo` still run the
+pull request's own code, and a behaviour from a dependency the pull request
+adds reads as having no callbacks here (the judge has the base's deps), so its
+own `--base` step alone sees those implementations as roots.
 
 A baseline file holds one key per line; `#` comments and blank lines are
 ignored and the entries are a multiset (a key listed twice holds two
@@ -1590,8 +1642,8 @@ line.
 | Findings of a `report` rule | 0 | the finding | printed `[report]` |
 
 Exit 2 is a usage error (an unknown option, `--format` other than `text` or
-`json`, an argument, a `--base` ref Anchor refuses) or a refused
-`--write-baseline` (the file exists, or the id names no rule with a
+`json`, an argument, a `--base` ref Anchor refuses), a refused `--project`, or
+a refused `--write-baseline` (the file exists, or the id names no rule with a
 `baseline:`), with a `Fix:` line.
 
 ## Ask Anchor before you write: `mix anchor.explain` (DND-5446)

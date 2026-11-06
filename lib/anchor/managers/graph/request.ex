@@ -17,8 +17,9 @@ defmodule Anchor.Managers.Graph.Request do
     * `env` — the Mix env (`:dev`, `:test`, ...);
     * `opts` — `%{format: :text | :json, only: [rule_id]}`, and optionally
       (DND-5441) `base: ref` (judge GREW against that ref's baselines),
-      `write_baseline: rule_id` (create that rule's baseline) and
-      `verbose: true` (print held findings).
+      `write_baseline: rule_id` (create that rule's baseline),
+      `verbose: true` (print held findings) and (DND-5658) `judge: true` (the
+      landed judge, set by `--project`: judge by the base's config).
   """
 
   @enforce_keys [:apps, :root, :build_path, :env]
@@ -34,6 +35,7 @@ defmodule Anchor.Managers.Graph.Request do
             optional(:base) => String.t() | nil,
             optional(:write_baseline) => String.t() | nil,
             optional(:verbose) => boolean(),
+            optional(:judge) => boolean(),
             format: :text | :json,
             only: [String.t()]
           }
