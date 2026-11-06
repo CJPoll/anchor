@@ -8,7 +8,6 @@ defmodule Anchor.Domain.CfaTest do
   # Sabotage record: ../../sabotage_records/cfa-20261103-dnd_5497_zero_cfa.md
   # Sabotage record (DND-5575): ../../sabotage_records/cfa-20261103-dnd_5617_sabotage_cfa_batch.md
   # Sabotage record (DND-5715): ../../sabotage_records/cfa-20261106-dnd_5715_bucket_split.md
-  # Sabotage record (DND-5674): ../../sabotage_records/cfa-20261106-dnd_5676_effects_cfa_batch.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -579,59 +578,6 @@ defmodule Anchor.Domain.CfaTest do
 
       assert sites(cfa, @nested, 0..1) ==
                [set([lambda(@nested, 2)]), set([lambda(@nested, 2)])]
-    end
-  end
-
-  describe "a higher-order argument written as a literal (DND-5674)" do
-    @literal AnchorFixtures.CfaTest.Literal
-
-    setup do
-      graph =
-        graph!("""
-        defmodule AnchorFixtures.CfaTest.Literal do
-          def capture(xs), do: Enum.map(xs, &AnchorFixtures.CfaTest.Literal.f/1)
-          def lambda(xs), do: Enum.map(xs, fn x -> x end)
-          def offset(xs), do: Enum.with_index(xs, 1)
-          def desc(xs), do: Enum.sort(xs, :desc)
-          def asc(xs), do: Enum.sort_by(xs, &AnchorFixtures.CfaTest.Literal.f/1, :asc)
-          def module(xs), do: Enum.sort(xs, Date)
-          def tuple(xs), do: Enum.sort(xs, {:desc, Date})
-          def variable(xs, fun), do: Enum.map(xs, fun)
-          def f(x), do: x
-        end
-        """)
-
-      %{cfa: Cfa.analyze(graph, Cfa.default_seed(graph))}
-    end
-
-    test "a literal capture or fn resolves to its target, under the open-world seed", %{cfa: cfa} do
-      assert Cfa.closures_at(cfa, site({@literal, :capture, 1})) == set([{@literal, :f, 1}])
-
-      assert Cfa.closures_at(cfa, site({@literal, :lambda, 1})) ==
-               set([lambda({@literal, :lambda, 1}, 0)])
-    end
-
-    test "a literal that is no function applies nothing: the empty set, never :any", %{cfa: cfa} do
-      assert Cfa.closures_at(cfa, site({@literal, :offset, 1})) == set([])
-      assert Cfa.closures_at(cfa, site({@literal, :desc, 1})) == set([])
-      # sort_by/3: the mapper resolves, the :asc sorter applies nothing.
-      assert Cfa.closures_at(cfa, site({@literal, :asc, 1}, 0)) == set([{@literal, :f, 1}])
-      assert Cfa.closures_at(cfa, site({@literal, :asc, 1}, 1)) == set([])
-    end
-
-    test "control: a module or a {dir, module} tuple may name compare/2: :any", %{cfa: cfa} do
-      assert Cfa.closures_at(cfa, site({@literal, :module, 1})) == :any
-      assert Cfa.closures_at(cfa, site({@literal, :tuple, 1})) == :any
-    end
-
-    test "control: a variable argument stays as the analysis finds it (a root's parameter: :any)",
-         %{cfa: cfa} do
-      assert Cfa.closures_at(cfa, site({@literal, :variable, 2})) == :any
-    end
-
-    test "the counts move the literal sites from any to resolved", %{cfa: cfa} do
-      assert cfa.counts.by_function[{@literal, :offset, 1}] == %{total: 1, resolved: 1, any: 0}
-      assert cfa.counts.by_function[{@literal, :desc, 1}] == %{total: 1, resolved: 1, any: 0}
     end
   end
 end

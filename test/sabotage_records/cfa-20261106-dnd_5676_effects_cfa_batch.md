@@ -176,3 +176,7 @@ after: 68 tests, 0 failures
 ```
 
 Over Anchor's own lib (`MIX_ENV=dev mix anchor.graph`): apply sites 2332 resolved, 118 any before; 2340 resolved, 103 any after. The fifteen sites that moved are the `Enum.with_index(_, 1)` and `Enum.sort(_, :desc)` calls; 0 violations, 203 baselined, before and after.
+
+## Note: the tests moved
+
+After these runs the DND-5674 tests moved, unchanged but for the fixture's module name, from `test/anchor/domain/cfa_test.exs` to `test/anchor/domain/cfa/eval_test.exs`: `mix anchor.sabotage run` selects a mutant's tests by the mirror of its file, and found none for `lib/anchor/domain/cfa/eval.ex` (its first run on this head reported six `no_tests` mutants of `data_literal?/1` and `invoked/2`; that run's records were discarded uncommitted, and the run that follows is the one recorded).
