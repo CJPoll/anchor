@@ -1,3 +1,10 @@
+# DND-5690: load every module of Anchor's application closure now, the way a
+# release boots, so no test loads one on demand through code_server. Before
+# ExUnit.start/0, so every run has it, the coverage run included; the coverage
+# run's trace patterns are already set by then, on project modules only, and no
+# test window is open yet. Anchor.TestBootTest fails when this stops.
+Anchor.TestPreload.load!(:anchor)
+
 ExUnit.start()
 
 # Hammox mock for the config-loading port. `Anchor.Managers.Lint` depends on the

@@ -6,6 +6,7 @@ defmodule Anchor.Adapters.CallTracerTest do
   # run is already traced, and this test would find the tracer taken.
   # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5474_coverage_map.md
   # Sabotage record (DND-5642): ../../sabotage_records/sabotage-20261103-dnd_5639_sabotage_followups.md
+  # Sabotage record (DND-5690): ../../sabotage_records/sabotage-20261106-dnd_5690_preload.md
   use ExUnit.Case, async: false
 
   alias Anchor.Adapters.CallTracer
@@ -95,6 +96,28 @@ defmodule Anchor.Adapters.CallTracerTest do
              {:traced, false}
 
     assert :erlang.trace_info(self(), :flags) == {:flags, []}
+  end
+
+  # DND-5690: this filtered on Code.ensure_loaded?/1, so a project module that
+  # could not load was left untraced with nothing said, and the map read as if
+  # it had never been called.
+  test "a project module that cannot load refuses by name, and nothing is traced",
+       %{modules: [a, b]} do
+    missing = [AnchorFixtures.CallTracerTest.NoBeamB, AnchorFixtures.CallTracerTest.NoBeamA]
+    {:ok, collector} = CoverageCollector.start_link()
+
+    try do
+      assert CallTracer.start(collector, [a | missing] ++ [b]) ==
+               {:error, {:not_loadable, Enum.sort(missing)}}
+
+      assert :erlang.trace_info(:new_processes, :tracer) == {:tracer, []}
+      assert :erlang.trace_info({a, :f, 0}, :traced) == {:traced, false}
+
+      assert :erlang.trace_info({ExUnit.EventManager, :test_started, 2}, :traced) ==
+               {:traced, false}
+    after
+      CallTracer.stop()
+    end
   end
 
   test "a call's message carries its arity, never its arguments", %{modules: [a, _b]} do

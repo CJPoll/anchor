@@ -1611,7 +1611,7 @@ acceptable`). Anchor's own map is built by `.github/workflows/coverage-map.yml`
 | the map was written | 0 |
 | the map was written, but the suite failed (`suite_exit: 1`; `Fix: make the suite green first`) | 1 |
 | not CI and no `--local`; `MIX_ENV` not `test`; `TEST_ARGS` that set `--max-cases` (two tests at once would share their calls); another tracer already on; the map not writable | 2, with `Fix:` |
-| zero project modules or zero tests: no map is written | 3, `COULD NOT MEASURE` |
+| zero project modules or zero tests (with the suite's own message when it failed before any test), or a project module that cannot load (named, with nothing traced): no map is written | 3, `COULD NOT MEASURE` |
 
 ## Check Types
 
