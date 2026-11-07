@@ -116,8 +116,9 @@ defmodule Mix.Tasks.Anchor.Sabotage do
       mix anchor.sabotage replay [--max N|all] [--records DIR_GLOB]...
 
   Re-applies each `killed` or `timeout` row of the landed sabotage records
-  (the `anchor-kills` blocks under `sabotage.records.dir`, or each
-  `--records` directory glob) on the current tree and runs the tests that
+  (the `anchor-kills` blocks under `sabotage.records.dir` and
+  `sabotage.records.outside_apps_dir` when set, or each `--records`
+  directory glob) on the current tree and runs the tests that
   killed it, by file and test name (`Anchor.Managers.Sabotage.Replay`). A
   row whose killers all pass is LOST POWER; a row that can no longer be
   replayed as recorded is drifted (its file, function or killer is gone, no

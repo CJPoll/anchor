@@ -17,8 +17,9 @@ defmodule Anchor.Managers.Sabotage.Verify do
        config's operators and effect calls, as the run makes them). A function
        no literal clause defines is NOT IN SOURCE; one whose file cannot be read
        or parsed is COULD NOT MEASURE.
-    5. The records the diff added or modified under `sabotage.records.dir`
-       (`Verify.record_path?/2`), each read (`RecordStore`) and parsed by block
+    5. The records the diff added or modified under the directories
+       `Record.dir_globs/1` names (`sabotage.records.dir`, and
+       `outside_apps_dir` when set; `Verify.record_path?/2`), each read (`RecordStore`) and parsed by block
        (`KillMap.parse_blocks/1`); one that cannot be read is COULD NOT
        MEASURE, one that does not parse is a BAD RECORD and covers nothing. A
        record the diff deleted is RECORD REMOVED.

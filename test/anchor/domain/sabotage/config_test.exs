@@ -119,6 +119,8 @@ defmodule Anchor.Domain.Sabotage.ConfigTest do
        %{"records" => %{"domain_strip_prefixes" => [1]}},
        "sabotage.records.domain_strip_prefixes"},
       {"an empty records dir (DND-5484)", %{"records" => %{"dir" => ""}}, "sabotage.records.dir"},
+      {"an adr that is not a string (DND-6031)", %{"records" => %{"adr" => 3}},
+       "sabotage.records.adr must be a non-empty string"},
       {"an absolute records dir (DND-5484)", %{"records" => %{"dir" => "/tmp/r"}},
        "sabotage.records.dir must be a directory inside the project"},
       {"a records dir with a .. segment (DND-5484)", %{"records" => %{"dir" => "test/../../r"}},
@@ -135,6 +137,9 @@ defmodule Anchor.Domain.Sabotage.ConfigTest do
            "outside_apps_dir" => "apps/{app}/r"
          }
        }, "sabotage.records.outside_apps_dir must not hold {app}"},
+      {"an outside_apps_dir holding a glob character (DND-6031)",
+       %{"records" => %{"dir" => "apps/{app}/t", "outside_apps_dir" => "tools/*"}},
+       "sabotage.records.outside_apps_dir must name one directory, not a glob"},
       {"an absolute outside_apps_dir (DND-6031)",
        %{"records" => %{"dir" => "apps/{app}/t", "outside_apps_dir" => "/tmp/r"}},
        "sabotage.records.outside_apps_dir must be a directory inside the project"},

@@ -645,6 +645,30 @@ defmodule Anchor.Managers.SabotageReplayTest do
     assert Replay.exit_code(result) == 3
   end
 
+  test "DND-6031: a record both globs list (outside_apps_dir under apps/*) is read once" do
+    expect(SourceMutationMock, :read_journal, fn @root -> :none end)
+    outside = "apps/tooling/test/sabotage_records"
+    path = outside <> "/lib-20261107-DND_6031.md"
+
+    records = %{
+      %SabotageConfig{}.records
+      | dir: "apps/{app}/test/sabotage_records",
+        outside_apps_dir: outside
+    }
+
+    expect(ConfigLoaderMock, :load_in, fn @root ->
+      {:ok, %Anchor.Config{rules: [], sabotage: %SabotageConfig{records: records}}}
+    end)
+
+    expect(GitWorktreeMock, :ignored?, fn @root, _path -> {:ok, true} end)
+    expect(RecordStoreMock, :list, fn @root, "apps/*/test/sabotage_records" -> [path] end)
+    expect(RecordStoreMock, :list, fn @root, ^outside -> [path] end)
+    expect(RecordStoreMock, :read, 1, fn @root, ^path -> {:ok, "# record\n"} end)
+
+    result = Sabotage.replay(@facts, @opts)
+    assert result.records == 1
+  end
+
   test "a replayable row's file with uncommitted changes refuses, exit 2, before any test runs" do
     [first | _rest] = mutants()
     expect_until_plan(%{"test/sabotage_records/a.md" => record([first])})

@@ -2447,8 +2447,8 @@ mix anchor.sabotage replay [--max N|all] [--records DIR_GLOB]...
 A record proves a test failed once; a test can lose that power later (an
 assertion loosened, a setup changed). `replay` (DND-5485) reads every
 `killed` or `timeout` row of the `anchor-kills` blocks under
-`sabotage.records.dir` (or each `--records` directory glob, inside the
-project), and for each row:
+`sabotage.records.dir` and `sabotage.records.outside_apps_dir` when set (or
+each `--records` directory glob, inside the project), and for each row:
 
 1. regenerates the mutants of its `Module.fun/arity` on the current tree,
    with every operator, and finds the one with the recorded id (ids do not

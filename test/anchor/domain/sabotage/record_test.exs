@@ -235,7 +235,7 @@ defmodule Anchor.Domain.Sabotage.RecordTest do
       refute lacking =~ "x_test.exs:3"
     end
 
-    test "O4: a test listed in an app's record is not listed again in outside_apps_dir's" do
+    test "O4: a test two records in one directory claim is listed once, in the first (the no-app one)" do
       records = Map.put(@crew_outside, :outside_apps_dir, @outside)
 
       run = %Run{
@@ -247,10 +247,33 @@ defmodule Anchor.Domain.Sabotage.RecordTest do
 
       changed = [%{file: "apps/tooling/test/t_test.exs", line: 9, name: "test t"}]
 
-      assert {:ok, entries} = Record.render(run, ctx(%{records: records, changed_tests: changed}))
-      assert length(entries) == 2
-      listed = Enum.count(entries, &(&1.content =~ "t_test.exs:9 \"test t\""))
-      assert listed == 1
+      assert {:ok, [outside, tooling]} =
+               Record.render(run, ctx(%{records: records, changed_tests: changed}))
+
+      assert outside.path == "#{@outside}/lib-20261105-dnd_5484_records.md"
+      assert tooling.path == "#{@outside}/agents-20261105-dnd_5484_records.md"
+      assert outside.content =~ "t_test.exs:9 \"test t\""
+      refute tooling.content =~ "t_test.exs:9"
+    end
+
+    test "O5: a no-app file and an app file in one record file: created, then appended to" do
+      records = Map.put(@crew_outside, :outside_apps_dir, @outside)
+
+      run = %Run{
+        outcomes: [
+          killed("a1", file: "apps/tooling/lib/tooling/x.ex"),
+          killed("b2", file: "credo/checks/c.ex", module: Crew.Check)
+        ]
+      }
+
+      path = "#{@outside}/checks-20261105-dnd_5484_records.md"
+
+      assert {:ok, [first, second]} =
+               Record.render(run, ctx(%{records: records, domain: "checks", changed_tests: []}))
+
+      assert {first.path, first.mode} == {path, :create}
+      assert {second.path, second.mode} == {path, :append}
+      assert first.content =~ "b2 " and second.content =~ "a1 "
     end
   end
 

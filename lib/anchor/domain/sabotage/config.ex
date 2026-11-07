@@ -24,7 +24,7 @@ defmodule Anchor.Domain.Sabotage.Config do
   directory), `outside_apps_dir` (DND-6031; default none: the records
   directory of a mutated file not under `apps/<app>/` when `dir` holds
   `{app}`, such as a repo's own Credo checks; read as `dir` is, and it may
-  not hold `{app}`; set while `dir` holds no `{app}` it is refused, since it
+  not hold `{app}` or another glob character; set while `dir` holds no `{app}` it is refused, since it
   would never be used; unset, such a file is refused by the run), `naming`
   (`domain_date_slot`, the default, or
   `ticket_nn_what`), `domain_from` (`module`, the default, or `context_dir`),
@@ -423,6 +423,13 @@ defmodule Anchor.Domain.Sabotage.Config do
         refuse(
           "sabotage.records.outside_apps_dir must not hold {app}, got: #{inspect(outside)}",
           "name the one directory for files outside apps/<app>/"
+        )
+
+      String.contains?(outside, ["*", "?", "[", "]", "{", "}"]) ->
+        refuse(
+          "sabotage.records.outside_apps_dir must name one directory, not a glob, got: " <>
+            inspect(outside),
+          "remove the *, ?, [, ], { and } characters"
         )
 
       not String.contains?(dir, "{app}") ->

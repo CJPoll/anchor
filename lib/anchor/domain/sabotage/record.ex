@@ -8,7 +8,9 @@ defmodule Anchor.Domain.Sabotage.Record do
   the same domain and slot, adds a section).
 
   One record per (app, domain) the run touched under `:domain_date_slot`; one
-  per app under `:ticket_nn_what` (that file name holds no domain). Sections,
+  per app under `:ticket_nn_what` (that file name holds no domain). Two groups
+  can name one file (a no-app file and an app file under `outside_apps_dir`,
+  with one domain): the first is created and the second appended to it. Sections,
   in order (`test/fixtures/sabotage/record_golden.md` is the authority for
   exact spacing):
 
@@ -29,8 +31,10 @@ defmodule Anchor.Domain.Sabotage.Record do
     6. `## Skipped, invalid, not run`: each with its reason, and the changed
        functions no mutant could be made of;
     7. `## Tests still lacking a red`: each new or changed test (in this
-       record's app) that no mutant's run failed: it still needs a hand
-       sabotage under the repo's ADR;
+       record's app; a record outside the apps, DND-6031, also takes a test
+       whose own records directory is `outside_apps_dir`) that no mutant's
+       run failed, listed once, in the first record that takes it: it still
+       needs a hand sabotage under the repo's ADR;
     8. `## Kill map`: the `anchor-kills` block (`Anchor.Domain.Sabotage.KillMap`).
 
   An appended section starts `## Run HH:MM UTC` and repeats sections 2 to 8
