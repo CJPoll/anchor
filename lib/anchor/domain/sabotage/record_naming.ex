@@ -7,6 +7,9 @@ defmodule Anchor.Domain.Sabotage.RecordNaming do
 
     * `dir` — the records directory, relative to the project root; it may
       hold `{app}`, the segment after `apps/` in the mutated file's path;
+    * `outside_apps_dir` (DND-6031) — the records directory of a file not
+      under `apps/<app>/` when `dir` holds `{app}` (`nil`, or no key: such a
+      file has no directory, `{:error, :no_app}`);
     * `naming` — `:domain_date_slot` (anchor ADR 003, crew ADR 008):
       `<domain>-YYYYMMDD-<slot>.md`; or `:ticket_nn_what` (gen_saas ADR 26):
       `<TICKET>-<NN>-anchor-sabotage-run.md`, `NN` one above the highest
@@ -26,6 +29,7 @@ defmodule Anchor.Domain.Sabotage.RecordNaming do
 
   @type naming :: :domain_date_slot | :ticket_nn_what
   @type config :: %{
+          optional(:outside_apps_dir) => String.t() | nil,
           dir: String.t(),
           naming: naming(),
           domain_from: :module | :context_dir,
@@ -92,12 +96,18 @@ defmodule Anchor.Domain.Sabotage.RecordNaming do
 
   def app_for(_path), do: nil
 
-  @doc "The records directory for `app` (`dir` with `{app}` filled)."
+  @doc """
+  The records directory for `app` (`dir` with `{app}` filled; for no app,
+  `outside_apps_dir` when it is set).
+  """
   @spec dir(config(), String.t() | nil) :: {:ok, String.t()} | {:error, :no_app}
-  def dir(%{dir: dir}, app) do
+  def dir(%{dir: dir} = cfg, app) do
+    outside = Map.get(cfg, :outside_apps_dir)
+
     cond do
       not String.contains?(dir, "{app}") -> {:ok, dir}
       is_binary(app) -> {:ok, String.replace(dir, "{app}", app)}
+      is_binary(outside) -> {:ok, outside}
       true -> {:error, :no_app}
     end
   end

@@ -65,7 +65,8 @@ defmodule Anchor.Managers.Sabotage.Runner do
        Before step 8 (so a run that could not name its record never applies
        a mutant) the naming is checked: a detached `HEAD` with no `--slot`,
        `ticket_nn_what` with no ticket key and no `--ticket`, and `{app}` in
-       the records dir for a file outside `apps/<app>/` are each exit 2. A
+       the records dir for a file outside `apps/<app>/` with no
+       `records.outside_apps_dir` (DND-6031) are each exit 2. A
        record that cannot be written sets `record_error`: said loudly, and
        exit 2 only when every measured mutant passed (DND-5641).
 
@@ -1033,7 +1034,7 @@ defmodule Anchor.Managers.Sabotage.Runner do
   # The records already there: their kill maps (for selection) and their
   # names (for create vs append, and NN).
   defp existing_records(root, config, %{records: store}) do
-    paths = store.list(root, Record.dir_glob(config.records))
+    paths = list_records(root, config, store)
 
     {rows, notes} =
       Enum.reduce(paths, {[], []}, fn path, {rows, notes} ->
@@ -1052,6 +1053,15 @@ defmodule Anchor.Managers.Sabotage.Runner do
 
     names = Enum.group_by(paths, &Path.dirname/1, &Path.basename/1)
     {:ok, %{kill_map: kill_map, names: names, notes: notes}}
+  end
+
+  # DND-6031: every records directory, outside_apps_dir too; a path two globs
+  # list is read once.
+  defp list_records(root, config, store) do
+    config.records
+    |> Record.dir_globs()
+    |> Enum.flat_map(&store.list(root, &1))
+    |> Enum.uniq()
   end
 
   defp kill_rows(store, root, path) do
@@ -1173,8 +1183,9 @@ defmodule Anchor.Managers.Sabotage.Runner do
 
       file ->
         {:refuse, 2,
-         "records.dir #{cfg.dir} holds {app}, but #{file} is not under apps/<app>/. " <>
-           "Fix: set records.dir without {app}"}
+         "records.dir #{cfg.dir} holds {app}, but #{file} is not under apps/<app>/, " <>
+           "and records.outside_apps_dir is not set. Fix: set records.outside_apps_dir to " <>
+           "the records directory for such a file, or records.dir without {app}"}
     end
   end
 

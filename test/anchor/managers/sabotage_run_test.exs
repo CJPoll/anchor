@@ -1333,7 +1333,32 @@ defmodule Anchor.Managers.SabotageRunTest do
 
       assert %{refusal: {2, message}} = Sabotage.run(@rec_facts, @opts)
       assert message =~ "but lib/calc.ex is not under apps/<app>/"
-      assert message =~ "Fix: set records.dir without {app}"
+
+      assert message =~
+               "Fix: set records.outside_apps_dir to the records directory for such a file, " <>
+                 "or records.dir without {app}"
+    end
+
+    test "DND-6031: with records.outside_apps_dir, a file outside apps/ is recorded there" do
+      records = %{
+        %SabotageConfig{}.records
+        | dir: "apps/{app}/test/sabotage_records",
+          outside_apps_dir: "tools/sabotage_records"
+      }
+
+      path = "tools/sabotage_records/calc-20261105-dnd_5484_records.md"
+      expect_full_run(%SabotageConfig{records: records})
+      expect_git_for_record()
+
+      # Both directories are read for the records already there.
+      expect(Anchor.RecordStoreMock, :list, fn @root, "apps/*/test/sabotage_records" -> [] end)
+      expect(Anchor.RecordStoreMock, :list, fn @root, "tools/sabotage_records" -> [] end)
+      expect(Anchor.RecordStoreMock, :create, fn @root, ^path, _content -> :ok end)
+
+      run = Sabotage.run(@rec_facts, @opts)
+
+      assert run.refusal == nil
+      assert run.records == [{:create, path}]
     end
 
     defp expect_until_selection_but_existing(config \\ %SabotageConfig{}) do

@@ -667,7 +667,9 @@ A diff-scoped `mix anchor.sabotage run` writes its own sabotage record after the
 (`Anchor.Domain.Sabotage.Record`, the golden file
 `test/fixtures/sabotage/record_golden.md` is the authority for its text),
 named per `sabotage.records` (`RecordNaming`: anchor and crew
-`domain_date_slot`, gen_saas `ticket_nn_what`). Its `anchor-kills` block
+`domain_date_slot`, gen_saas `ticket_nn_what`). A file outside `apps/<app>/`
+under a `{app}` dir goes to `records.outside_apps_dir` (DND-6031), and every
+reader lists the dirs `Record.dir_globs/1` names, never one glob. Its `anchor-kills` block
 (`KillMap`, render and parse) is what `run` selects tests from next time
 (source `kill_map`, after `coverage`, before `mirror`) and what DND-5485
 replays. `RecordFile.create/3` never overwrites; a README is never written;

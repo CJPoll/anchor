@@ -25,6 +25,7 @@ defmodule Anchor.Domain.Sabotage.ConfigTest do
 
       assert config.records == %{
                dir: "test/sabotage_records",
+               outside_apps_dir: nil,
                naming: :domain_date_slot,
                domain_from: :module,
                domain_strip_prefixes: [],
@@ -57,6 +58,7 @@ defmodule Anchor.Domain.Sabotage.ConfigTest do
                  "scan_shards" => 30,
                  "records" => %{
                    "dir" => "apps/{app}/test/sabotage_records",
+                   "outside_apps_dir" => "apps/tooling/test/sabotage_records",
                    "naming" => "ticket_nn_what",
                    "domain_from" => "context_dir",
                    "domain_strip_prefixes" => ["App."],
@@ -77,6 +79,7 @@ defmodule Anchor.Domain.Sabotage.ConfigTest do
 
       assert config.records == %{
                dir: "apps/{app}/test/sabotage_records",
+               outside_apps_dir: "apps/tooling/test/sabotage_records",
                naming: :ticket_nn_what,
                domain_from: :context_dir,
                domain_strip_prefixes: ["App."],
@@ -116,12 +119,36 @@ defmodule Anchor.Domain.Sabotage.ConfigTest do
        %{"records" => %{"domain_strip_prefixes" => [1]}},
        "sabotage.records.domain_strip_prefixes"},
       {"an empty records dir (DND-5484)", %{"records" => %{"dir" => ""}}, "sabotage.records.dir"},
+      {"an adr that is not a string (DND-6031)", %{"records" => %{"adr" => 3}},
+       "sabotage.records.adr must be a non-empty string"},
       {"an absolute records dir (DND-5484)", %{"records" => %{"dir" => "/tmp/r"}},
        "sabotage.records.dir must be a directory inside the project"},
       {"a records dir with a .. segment (DND-5484)", %{"records" => %{"dir" => "test/../../r"}},
        "sabotage.records.dir must be a directory inside the project"},
       {"a records dir of only ./ (DND-5484)", %{"records" => %{"dir" => "./"}},
        "sabotage.records.dir must be a directory inside the project"},
+      {"an outside_apps_dir with records.dir holding no {app} (DND-6031)",
+       %{"records" => %{"outside_apps_dir" => "tools/sabotage_records"}},
+       "sabotage.records.outside_apps_dir is set, but records.dir test/sabotage_records holds no {app}"},
+      {"an outside_apps_dir holding {app} (DND-6031)",
+       %{
+         "records" => %{
+           "dir" => "apps/{app}/test/sabotage_records",
+           "outside_apps_dir" => "apps/{app}/r"
+         }
+       }, "sabotage.records.outside_apps_dir must not hold {app}"},
+      {"an outside_apps_dir holding a glob character (DND-6031)",
+       %{"records" => %{"dir" => "apps/{app}/t", "outside_apps_dir" => "tools/*"}},
+       "sabotage.records.outside_apps_dir must name one directory, not a glob"},
+      {"an absolute outside_apps_dir (DND-6031)",
+       %{"records" => %{"dir" => "apps/{app}/t", "outside_apps_dir" => "/tmp/r"}},
+       "sabotage.records.outside_apps_dir must be a directory inside the project"},
+      {"an outside_apps_dir with a .. segment (DND-6031)",
+       %{"records" => %{"dir" => "apps/{app}/t", "outside_apps_dir" => "a/../../r"}},
+       "sabotage.records.outside_apps_dir must be a directory inside the project"},
+      {"an empty outside_apps_dir (DND-6031)",
+       %{"records" => %{"dir" => "apps/{app}/t", "outside_apps_dir" => ""}},
+       "sabotage.records.outside_apps_dir must be a non-empty string"},
       {"an empty test_command", %{"test_command" => []}, "sabotage.test_command"},
       {"a non-string test_command element", %{"test_command" => [1]}, "sabotage.test_command"},
       {"max_mutants 0", %{"max_mutants" => 0}, "sabotage.max_mutants"},
@@ -151,6 +178,18 @@ defmodule Anchor.Domain.Sabotage.ConfigTest do
       for dir <- ["test/sabotage_records/", "./test/sabotage_records", "test//sabotage_records"] do
         assert {:ok, %Config{records: %{dir: "test/sabotage_records"}}} =
                  Config.parse(%{"records" => %{"dir" => dir}}),
+               dir
+      end
+    end
+
+    test "DND-6031: records.outside_apps_dir is read without a leading ./ or a trailing /" do
+      for dir <- ["apps/tooling/test/sabotage_records/", "./apps/tooling/test/sabotage_records"] do
+        section = %{
+          "records" => %{"dir" => "apps/{app}/test/sabotage_records", "outside_apps_dir" => dir}
+        }
+
+        assert {:ok, %Config{records: %{outside_apps_dir: "apps/tooling/test/sabotage_records"}}} =
+                 Config.parse(section),
                dir
       end
     end

@@ -8,7 +8,9 @@ defmodule Anchor.Domain.Sabotage.Record do
   the same domain and slot, adds a section).
 
   One record per (app, domain) the run touched under `:domain_date_slot`; one
-  per app under `:ticket_nn_what` (that file name holds no domain). Sections,
+  per app under `:ticket_nn_what` (that file name holds no domain). Two groups
+  can name one file (a no-app file and an app file under `outside_apps_dir`,
+  with one domain): the first is created and the second appended to it. Sections,
   in order (`test/fixtures/sabotage/record_golden.md` is the authority for
   exact spacing):
 
@@ -29,8 +31,10 @@ defmodule Anchor.Domain.Sabotage.Record do
     6. `## Skipped, invalid, not run`: each with its reason, and the changed
        functions no mutant could be made of;
     7. `## Tests still lacking a red`: each new or changed test (in this
-       record's app) that no mutant's run failed: it still needs a hand
-       sabotage under the repo's ADR;
+       record's app; a record outside the apps, DND-6031, also takes a test
+       whose own records directory is `outside_apps_dir`) that no mutant's
+       run failed, listed once, in the first record that takes it: it still
+       needs a hand sabotage under the repo's ADR;
     8. `## Kill map`: the `anchor-kills` block (`Anchor.Domain.Sabotage.KillMap`).
 
   An appended section starts `## Run HH:MM UTC` and repeats sections 2 to 8
@@ -71,9 +75,15 @@ defmodule Anchor.Domain.Sabotage.Record do
     end
   end
 
-  @doc "The directories the kill-map reader lists: `dir`, `{app}` as `*`."
-  @spec dir_glob(RecordNaming.config()) :: String.t()
-  def dir_glob(%{dir: dir}), do: String.replace(dir, "{app}", "*")
+  @doc """
+  The directories the record readers list: `dir`, `{app}` as `*`, then
+  `outside_apps_dir` when it is set (DND-6031). A path both match is listed
+  by each, so a caller takes the union of what they list.
+  """
+  @spec dir_globs(RecordNaming.config()) :: [String.t(), ...]
+  def dir_globs(%{dir: dir} = cfg) do
+    [String.replace(dir, "{app}", "*") | List.wrap(Map.get(cfg, :outside_apps_dir))]
+  end
 
   # -- grouping ---------------------------------------------------------------
 
@@ -124,26 +134,35 @@ defmodule Anchor.Domain.Sabotage.Record do
     end
   end
 
-  # The changed tests of this record's app that no mutant's run failed, listed
-  # once per app (in its first record).
+  # The changed tests of this record's app that no mutant's run failed, each
+  # listed once (in the first record that claims it). A record outside the
+  # apps (DND-6031) also claims a test whose own records directory is its
+  # directory, such as a Credo check's test under apps/tooling/ when
+  # outside_apps_dir is apps/tooling/test/sabotage_records.
   defp lacking(app, run, ctx, done) do
-    if MapSet.member?(done, app) do
-      {[], done}
-    else
-      killed =
-        for %{killers: killers} <- run.outcomes,
-            {file, line, _name} <- killers,
-            into: MapSet.new(),
-            do: {file, line}
+    killed =
+      for %{killers: killers} <- run.outcomes,
+          {file, line, _name} <- killers,
+          into: MapSet.new(),
+          do: {file, line}
 
-      tests =
-        Enum.filter(ctx.changed_tests, fn test ->
-          RecordNaming.app_for(test.file) == app and
-            not MapSet.member?(killed, {test.file, test.line})
-        end)
+    tests =
+      Enum.filter(ctx.changed_tests, fn test ->
+        key = {test.file, test.line}
 
-      {tests, MapSet.put(done, app)}
-    end
+        claims?(test, app, ctx.records) and not MapSet.member?(killed, key) and
+          not MapSet.member?(done, key)
+      end)
+
+    {tests, Enum.into(tests, done, &{&1.file, &1.line})}
+  end
+
+  defp claims?(test, app, cfg) do
+    test_app = RecordNaming.app_for(test.file)
+    outside = Map.get(cfg, :outside_apps_dir)
+
+    test_app == app or
+      (is_nil(app) and is_binary(outside) and RecordNaming.dir(cfg, test_app) == {:ok, outside})
   end
 
   # -- text -------------------------------------------------------------------

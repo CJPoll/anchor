@@ -99,7 +99,7 @@ defmodule Anchor.Managers.Sabotage.Replay do
   defp records(result, facts, config, %{records: store}) do
     globs =
       case Map.get(facts, :records, []) do
-        [] -> [Record.dir_glob(config.records)]
+        [] -> Record.dir_globs(config.records)
         globs -> globs
       end
 

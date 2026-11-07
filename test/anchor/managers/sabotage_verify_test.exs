@@ -131,6 +131,26 @@ defmodule Anchor.Managers.SabotageVerifyTest do
       assert Enum.map(verdict.uncovered, & &1.id) == [dropped.id]
     end
 
+    test "DND-6031: a record in records.outside_apps_dir covers the branch's mutants" do
+      outside = "tools/sabotage_records/calc-20261106-x.md"
+
+      records = %{
+        %SabotageConfig{}.records
+        | dir: "apps/{app}/test/sabotage_records",
+          outside_apps_dir: "tools/sabotage_records"
+      }
+
+      expect_config(%SabotageConfig{records: records})
+      expect_git(source_diff() <> record_diff(:added, outside))
+      expect_source()
+      expect(RecordStoreMock, :read, fn @root, ^outside -> {:ok, record(mutants())} end)
+      expect_survivors()
+
+      assert {:ok, verdict} = verify()
+      assert verdict.uncovered == []
+      assert Verify.exit_code(verdict) == 0
+    end
+
     test "3: no base is {:error, :no_base}, and nothing is read" do
       assert Sabotage.verify(%{root: @root}, @opts) == {:error, :no_base}
       assert Sabotage.verify(%{root: @root, base: ""}, @opts) == {:error, :no_base}

@@ -109,6 +109,22 @@ defmodule Anchor.Domain.Sabotage.RecordNamingTest do
                {:error, :no_app}
     end
 
+    test "DND-6031: {app} for a file outside apps/ takes outside_apps_dir when it is set" do
+      crew = Map.put(@crew, :outside_apps_dir, "apps/tooling/test/sabotage_records")
+      app = RecordNaming.app_for("credo/checks/run_command_built_only.ex")
+      assert app == nil
+
+      assert RecordNaming.path(crew, ctx(%{app: app})) ==
+               {:ok, "apps/tooling/test/sabotage_records/sabotage-20261105-dnd_5473_runner.md"}
+
+      # A file under apps/<app>/ still goes to its own app's directory.
+      assert RecordNaming.dir(crew, "core") == {:ok, "apps/core/test/sabotage_records"}
+    end
+
+    test "DND-6031: outside_apps_dir nil is the refusal, as with no key" do
+      assert RecordNaming.dir(Map.put(@crew, :outside_apps_dir, nil), nil) == {:error, :no_app}
+    end
+
     test "6: ticket_nn_what with no ticket is refused" do
       {:ok, slot} = RecordNaming.slot("feat/umbrella-paths")
 
