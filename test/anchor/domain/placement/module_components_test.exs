@@ -265,6 +265,13 @@ defmodule Anchor.Domain.Placement.ModuleComponentsTest do
                Enum.filter(proposals, &(&1.reason == :shared_private_helper))
     end
 
+    test "two parts led by one name at two arities: the second takes its arity" do
+      modules = [{M, "domain", [{:a, 0}, {:q, 0}, {:q, 1}], []}]
+
+      assert [%{proposed: {:split, [{M, _}, {M.Q, [{M, :q, 0}]}, {M.Q1, [{M, :q, 1}]}]}}] =
+               model_of(modules, []) |> ModuleComponents.proposals()
+    end
+
     test "when every name candidate is taken, a numbered part name, never a clash" do
       modules = [{M, "domain", [{:a, 0}, {:q, 0}, {:q2, 0}, {:q, 2, :defp}], []}]
       calls = [{{M, :a, 0}, {M, :q, 2}, :local}, {{M, :q, 0}, {M, :q, 2}, :local}]
