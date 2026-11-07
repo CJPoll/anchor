@@ -2987,6 +2987,200 @@ First failure, verbatim:
 ```
 
 
+## DND-5463 critic round 2: no name is given twice
+
+Group E: `mix test --timeout 2000 --max-cases 2 test/anchor/domain/placement/module_components_test.exs test/anchor/domain/graph_rules/module_one_component_test.exs test/anchor/domain/placement_test.exs test/anchor/integration/placement_invariant_test.exs`, through `test-slot`.
+
+MC-Y and MC-Z ran at c1d433e (101 tests). MC-AA and MC-AC first forms left a variable unused and did not compile; the rows are their second forms, at c1d433e. MC-AB's first run survived (no test reached a part's arity fallback); a945b51 adds that test, and the row is its run there (102 tests).
+
+| # | Mutation | File | Result | Failing tests |
+|---|---|---|---|---|
+| MC-Y | a name is given whether or not it is taken | `lib/anchor/domain/placement/module_components.ex` | `101 tests, 4 failures` (red) | proposals/1 when every name candidate is taken, a numbered part name, never a clash; proposals/1 two parts never get one name: the second falls back to its first function; proposals/1 a part never gets the module's own name; proposals/1 a shared helper's module never takes a part's name |
+| MC-Z | a part's name is not kept as taken | `lib/anchor/domain/placement/module_components.ex` | `101 tests, 1 failure` (red) | proposals/1 two parts never get one name: the second falls back to its first function |
+| MC-AA | the helpers do not see the parts' names | `lib/anchor/domain/placement/module_components.ex` | `101 tests, 2 failures` (red) | proposals/1 a shared helper's module never takes a part's name; proposals/1 when every name candidate is taken, a numbered part name, never a clash |
+| MC-AB | the arity fallback always reads arity 0 | `lib/anchor/domain/placement/module_components.ex` | `102 tests, 1 failure` (red) | proposals/1 two parts led by one name at two arities: the second takes its arity |
+| MC-AC | the rename note does not name the new module | `lib/anchor/domain/placement/module_components.ex` | `101 tests, 1 failure` (red) | proposals/1 two parts never get one name: the second falls back to its first function |
+
+### MC-Y: a name is given whether or not it is taken
+
+Mutation:
+
+```elixir
+# before
+    |> Enum.find(&(not MapSet.member?(taken, &1)))
+# after
+    |> Enum.find(&(&1 != nil or MapSet.member?(taken, &1)))
+```
+
+First failure, verbatim:
+
+```text
+  1) test proposals/1 when every name candidate is taken, a numbered part name, never a clash (Anchor.Domain.Placement.ModuleComponentsTest)
+     test/anchor/domain/placement/module_components_test.exs:268
+     match (=) failed
+     code:  assert [%{proposed: {:extract, M.Part2}}] =
+              Enum.filter(proposals, &(&1.reason == :shared_private_helper))
+     left:  [%{proposed: {:extract, M.Part2}}]
+     right: [
+              %Anchor.Domain.Proposal{
+                level: :function,
+                subject: {M, :q, 2},
+                current: M,
+                proposed: {:extract, M.Q},
+                rule: :module_one_component,
+                reason: :shared_private_helper,
+                evidence: ["component a/0", "component q/0"],
+                key: "module_one_component|function|M.q/2|M.Q"
+              }
+            ]
+     stacktrace:
+       test/anchor/domain/placement/module_components_test.exs:276: (test)
+101 tests, 4 failures
+```
+
+### MC-Z: a part's name is not kept as taken
+
+Mutation:
+
+```elixir
+# before
+          {{name, component, notes}, MapSet.put(taken, name)}
+# after
+          {{name, component, notes}, MapSet.put(taken, module)}
+```
+
+First failure, verbatim:
+
+```text
+  1) test proposals/1 two parts never get one name: the second falls back to its first function (Anchor.Domain.Placement.ModuleComponentsTest)
+     test/anchor/domain/placement/module_components_test.exs:217
+     Assertion with == failed
+     code:  assert parts == [{M, [{M, :new, 1}]}, {Currency, [{M, :x, 0}]}, {M.Y, [{M, :y, 0}]}]
+     left:  [
+              {M, [{M, :new, 1}]},
+              {Currency, [{M, :x, 0}]},
+              {Currency, [{M, :y, 0}]}
+            ]
+     right: [{M, [{M, :new, 1}]}, {Currency, [{M, :x, 0}]}, {M.Y, [{M, :y, 0}]}]
+     stacktrace:
+       test/anchor/domain/placement/module_components_test.exs:232: (test)
+............................................................................
+101 tests, 1 failure
+```
+
+### MC-AA: the helpers do not see the parts' names
+
+Mutation:
+
+```elixir
+# before
+        taken = MapSet.new(parts, &elem(&1, 0))
+# after
+        taken = MapSet.new([module | Enum.take(parts, 0)])
+```
+
+First failure, verbatim:
+
+```text
+  1) test proposals/1 a shared helper's module never takes a part's name (Anchor.Domain.Placement.ModuleComponentsTest)
+     test/anchor/domain/placement/module_components_test.exs:256
+     match (=) failed
+     code:  assert [%{proposed: {:extract, M.P0}}] = Enum.filter(proposals, &(&1.reason == :shared_private_helper))
+     left:  [%{proposed: {:extract, M.P0}}]
+     right: [
+              %Anchor.Domain.Proposal{
+                level: :function,
+                subject: {M, :p, 0},
+                current: M,
+                proposed: {:extract, M.P},
+                rule: :module_one_component,
+                reason: :shared_private_helper,
+                evidence: ["component a/0", "component b/0"],
+                key: "module_one_component|function|M.p/0|M.P"
+              }
+            ]
+     stacktrace:
+       test/anchor/domain/placement/module_components_test.exs:264: (test)
+....
+101 tests, 2 failures
+```
+
+### MC-AB: the arity fallback always reads arity 0
+
+Mutation:
+
+```elixir
+# before
+    fallbacks = [by_function, Module.concat(module, Macro.camelize("#{name}#{arity}"))]
+# after
+    fallbacks = [by_function, Module.concat(module, Macro.camelize("#{name}#{arity * 0}"))]
+```
+
+First failure, verbatim:
+
+```text
+  1) test proposals/1 two parts led by one name at two arities: the second takes its arity (Anchor.Domain.Placement.ModuleComponentsTest)
+     test/anchor/domain/placement/module_components_test.exs:268
+     match (=) failed
+     code:  assert [%{proposed: {:split, [{M, _}, {M.Q, [{M, :q, 0}]}, {M.Q1, [{M, :q, 1}]}]}}] =
+              model_of(modules, []) |> ModuleComponents.proposals()
+     left:  [%{proposed: {:split, [{M, _}, {M.Q, [{M, :q, 0}]}, {M.Q1, [{M, :q, 1}]}]}}]
+     right: [
+              %Anchor.Domain.Proposal{
+                level: :module,
+                subject: M,
+                current: M,
+                proposed: {:split,
+                 [
+                   {M, [{M, :a, 0}]},
+                   {M.Q, [{M, :q, 0}]},
+                   {M.Q0, [{M, :q, 1}]}
+                 ]},
+                rule: :module_one_component,
+                reason: :components,
+                evidence: ["M: M.a/0",
+                 "M.Q: M.q/0; no owned type: rename M.Q",
+                 "M.Q0: M.q/1; no owned type: rename M.Q0"],
+                key: "module_one_component|module|M|a/0;q/0;q/1"
+              }
+            ]
+     stacktrace:
+       test/anchor/domain/placement/module_components_test.exs:271: (test)
+.................................................................................................
+102 tests, 1 failure
+```
+
+### MC-AC: the rename note does not name the new module
+
+Mutation:
+
+```elixir
+# before
+    do: ["owns %#{inspect(type)}{}", "#{inspect(typed)} is taken: rename #{inspect(target)}"]
+# after
+    do: ["owns %#{inspect(type)}{}", "#{inspect(typed)} is taken: rename #{inspect(target != nil)}"]
+```
+
+First failure, verbatim:
+
+```text
+  1) test proposals/1 two parts never get one name: the second falls back to its first function (Anchor.Domain.Placement.ModuleComponentsTest)
+     test/anchor/domain/placement/module_components_test.exs:217
+     Expected truthy, got false
+     code: assert Enum.any?(evidence, &(&1 =~ "Currency is taken: rename M.Y"))
+     arguments:
+         # 1
+         ["M: M.new/1", "Currency: M.x/0; owns %Money.Currency{}",
+          "M.Y: M.y/0; owns %Money.Currency{}; Currency is taken: rename true"]
+         # 2
+         #Function<10.107451895/1 in Anchor.Domain.Placement.ModuleComponentsTest."test proposals/1 two parts never get one name: the second falls back to its first function"/1>
+     stacktrace:
+       test/anchor/domain/placement/module_components_test.exs:233: (test)
+.................................................................................
+101 tests, 1 failure
+```
+
+
 ## Run 23:09 UTC
 
 - **Code under test:** `Anchor.Domain.Placement.all_proposals/3`, `Anchor.Domain.Placement.facts_for_ownership/3`, `Anchor.Domain.Placement.headline/2`, `Anchor.Domain.Placement.proposals/3`, `Anchor.Domain.Placement.render/1`, `Anchor.Domain.Placement.Forwarders.aggregates/2`, `Anchor.Domain.Placement.Forwarders.app/2`, `Anchor.Domain.Placement.Forwarders.behaviour_callbacks/3`, `Anchor.Domain.Placement.Forwarders.boundary/3`, `Anchor.Domain.Placement.Forwarders.call_of/3`, `Anchor.Domain.Placement.Forwarders.callback?/2`, `Anchor.Domain.Placement.Forwarders.callers_text/1`, `Anchor.Domain.Placement.Forwarders.case_forward/2`, `Anchor.Domain.Placement.Forwarders.case_values/1`, `Anchor.Domain.Placement.Forwarders.classified_boundary/4`, `Anchor.Domain.Placement.Forwarders.compiler_generated?/1`, `Anchor.Domain.Placement.Forwarders.default_clause?/2`, `Anchor.Domain.Placement.Forwarders.forwarded_call/2`, `Anchor.Domain.Placement.Forwarders.forwarder/1`, `Anchor.Domain.Placement.Forwarders.forwarding_call/3`, `Anchor.Domain.Placement.Forwarders.literal_mfa/1`, `Anchor.Domain.Placement.Forwarders.renaming_let/3`, `Anchor.Domain.Placement.Forwarders.static_caller?/1`, `Anchor.Domain.Placement.Forwarders.true_guard?/1`, `Anchor.Domain.Placement.Forwarders.vars/1`
