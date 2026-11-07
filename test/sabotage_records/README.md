@@ -137,6 +137,10 @@ before coining a synonym.
   the `SourceReader` and `GraphArtifact` adapters, and the canary tree. Its
   changes to modules that have a word of their own are filed under that word
   (`classification`, `failures`, `rule_coverage`, `architecture`, `builder`).
+- `graph_rules`, `graph_report` — the words `mix anchor.sabotage run` coins for a
+  generated run's mutants in `Anchor.Domain.GraphRules` and its rules, and in
+  `Anchor.Domain.GraphReport` (DND-5461 batch). A hand record for those modules
+  stays under `graph_runner`.
 - `source_facts` — `Anchor.Domain.Graph.SourceFacts` (DND-5438): the literal
   `defmodule`s and `use`s of a source file.
 - `glob_pattern` — `Anchor.Domain.GlobPattern` (glob / module-name pattern

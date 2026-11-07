@@ -3,6 +3,7 @@ defmodule Anchor.Domain.Placement.ModuleComponentsTest do
   # helpers (M3), on hand-built models (Anchor.Test.PlacementModels).
   #
   # Sabotage record: ../../../sabotage_records/placement-20261106-dnd_5461_placement_rules.md
+  # and ../../../sabotage_records/placement-20261107-dnd_5461_placement_rules.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.PlacementModels

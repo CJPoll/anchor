@@ -3,6 +3,7 @@ defmodule Anchor.Domain.Placement.ForwardersTest do
   # (AnchorFixtures.ForwardersTest.*), and the boundary test on hand-built models.
   #
   # Sabotage record: ../../../sabotage_records/placement-20261106-dnd_5461_placement_rules.md
+  # and ../../../sabotage_records/placement-20261107-dnd_5461_placement_rules.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures

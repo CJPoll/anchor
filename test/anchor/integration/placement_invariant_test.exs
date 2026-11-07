@@ -9,6 +9,7 @@ defmodule Anchor.Integration.PlacementInvariantTest do
   # list `Placement.proposals/3`, read here directly.
   #
   # Sabotage record: ../../sabotage_records/placement-20261106-dnd_5448_placement_core.md
+  # DND-5461 batch (its review floor): ../../sabotage_records/placement-20261107-dnd_5461_placement_rules.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures

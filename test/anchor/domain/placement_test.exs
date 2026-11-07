@@ -6,6 +6,7 @@ defmodule Anchor.Domain.PlacementTest do
   # DND-5461 (render/1 joins this file, the mirror the generated sabotage runs):
   # ../../sabotage_records/placement-20261106-dnd_5461_placement_rules.md (DND-5461 to
   # DND-5463)
+  # and ../../sabotage_records/placement-20261107-dnd_5461_placement_rules.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.PlacementModels

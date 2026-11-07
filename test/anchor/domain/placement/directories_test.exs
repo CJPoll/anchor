@@ -4,6 +4,7 @@ defmodule Anchor.Domain.Placement.DirectoriesTest do
   # (Anchor.Test.DirectoryModels).
   #
   # Sabotage record: ../../../sabotage_records/placement-20261106-dnd_5461_placement_rules.md
+  # and ../../../sabotage_records/placement-20261107-dnd_5461_placement_rules.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.DirectoryModels
