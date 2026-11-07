@@ -13,7 +13,9 @@ defmodule Anchor.Domain.Placement.ModuleComponents do
     * both build, update or match the module's own struct, a private function's use
       counting for every public function that reaches it;
     * both implement the callbacks of one behaviour (a project behaviour's, or an
-      external one's the effect inference was given, `Effects.callbacks`).
+      external one's the effect inference was given, `Effects.callbacks`), or one does
+      and the other calls into that behaviour's module, itself or through a private
+      function (a GenServer's `start_link/1` and `GenServer.call/2` client API).
 
   The connected components of those links are the module's causal components. A
   shared private callee does not link: if it did, M3 could never fire (DND-5463's
@@ -29,7 +31,8 @@ defmodule Anchor.Domain.Placement.ModuleComponents do
       split it, one module per component. The component that uses the module's own
       struct keeps the name (at most one can: its users are linked); with none, the
       one with the most public functions does (ties: the one holding the
-      alphabetically first function). Each other is named after the type it owns: the project struct its
+      alphabetically first function). Each other is named after the type it owns: the
+      project struct its
       functions return by `@spec` (`Ownership.output_owner/2`) or build, most frequent
       first, ties alphabetical, as the module's last name segment. One that owns no
       type is named after its first public function (`Ledger.FormatCurrency`), and
@@ -69,13 +72,37 @@ defmodule Anchor.Domain.Placement.ModuleComponents do
 
   @doc "The causal components of `module`, sorted by first function; see the moduledoc."
   @spec components(Model.t(), module()) :: [component()]
-  def components(%Model{graph: graph} = model, module) do
+  def components(%Model{} = model, module), do: components(model, module, index(model))
+
+  @doc "The M1 and M3 proposals of every judged module, sorted by key; see the moduledoc."
+  @spec proposals(Model.t()) :: [Proposal.t()]
+  def proposals(%Model{graph: graph} = model) do
+    index = index(model)
+
+    graph.modules
+    |> Map.keys()
+    |> Enum.filter(&judged?(model, &1))
+    |> Enum.flat_map(&module_proposals(model, &1, index))
+    |> Enum.sort_by(& &1.key)
+  end
+
+  # The calls and struct uses of each module, grouped once: one pass over the graph,
+  # not one per module.
+  defp index(%Model{graph: %Graph{calls: calls, struct_uses: uses}}) do
+    %{
+      calls: Enum.group_by(calls, fn %Call{from: {module, _f, _a}} -> module end),
+      uses: Enum.group_by(uses, fn %StructUse{from: {module, _f, _a}} -> module end)
+    }
+  end
+
+  defp components(%Model{graph: graph} = model, module, index) do
     node = Map.fetch!(graph.modules, module)
+    calls = Map.get(index.calls, module, [])
+    uses = Map.get(index.uses, module, [])
     public = public_functions(module, node)
-    local = local_edges(graph, module)
-    reach = Map.new(public, &{&1, reach(&1, local, MapSet.new(public))})
-    struct_users = struct_users(graph, module, public, reach)
-    callback_groups = callback_groups(model, module, node, public)
+    reach = Map.new(public, &{&1, reach(&1, local_edges(calls, module), MapSet.new(public))})
+    struct_users = struct_users(uses, module, public, reach)
+    callback_groups = callback_groups(model, {module, node, public, reach}, calls)
 
     links =
       for({from, %{public: reached}} <- reach, to <- reached, do: {from, to}) ++
@@ -90,21 +117,11 @@ defmodule Anchor.Domain.Placement.ModuleComponents do
       %{
         functions: members,
         privates: privates,
-        owned_type: owned_type(graph, module, members, privates),
+        owned_type: owned_type(graph, uses, module, members, privates),
         own_struct?: Enum.any?(members, &(&1 in struct_users))
       }
     end)
     |> Enum.sort_by(&hd(&1.functions))
-  end
-
-  @doc "The M1 and M3 proposals of every judged module, sorted by key; see the moduledoc."
-  @spec proposals(Model.t()) :: [Proposal.t()]
-  def proposals(%Model{graph: graph} = model) do
-    graph.modules
-    |> Map.keys()
-    |> Enum.filter(&judged?(model, &1))
-    |> Enum.flat_map(&module_proposals(model, &1))
-    |> Enum.sort_by(& &1.key)
   end
 
   # --- which modules ---------------------------------------------------------------
@@ -131,7 +148,7 @@ defmodule Anchor.Domain.Placement.ModuleComponents do
 
   # --- links -----------------------------------------------------------------------
 
-  defp local_edges(%Graph{calls: calls}, module) do
+  defp local_edges(calls, module) do
     for %Call{from: {^module, _f, _a} = from, to: {^module, _g, _b} = to} <- calls,
         from != to,
         reduce: %{} do
@@ -170,7 +187,7 @@ defmodule Anchor.Domain.Placement.ModuleComponents do
     end
   end
 
-  defp struct_users(%Graph{struct_uses: uses}, module, public, reach) do
+  defp struct_users(uses, module, public, reach) do
     users =
       for %StructUse{from: {^module, _f, _a} = from, struct: ^module} <- uses,
           into: MapSet.new(),
@@ -181,7 +198,9 @@ defmodule Anchor.Domain.Placement.ModuleComponents do
     end)
   end
 
-  defp callback_groups(%Model{graph: graph} = model, module, node, public) do
+  # One group per behaviour: its callbacks the module implements, and every public
+  # function that calls into the behaviour's module, itself or through a private one.
+  defp callback_groups(%Model{graph: graph} = model, {module, node, public, reach}, calls) do
     external = if model.effects, do: model.effects.callbacks, else: %{}
 
     for behaviour <- node.behaviours do
@@ -191,7 +210,13 @@ defmodule Anchor.Domain.Placement.ModuleComponents do
           nil -> Map.get(external, behaviour, [])
         end
 
-      Enum.filter(public, fn {^module, name, arity} -> {name, arity} in callbacks end)
+      callers =
+        for %Call{from: from, to: {^behaviour, _g, _b}} <- calls, into: MapSet.new(), do: from
+
+      Enum.filter(public, fn {^module, name, arity} = mfa ->
+        {name, arity} in callbacks or MapSet.member?(callers, mfa) or
+          Enum.any?(reach[mfa].privates, &MapSet.member?(callers, &1))
+      end)
     end
   end
 
@@ -200,7 +225,7 @@ defmodule Anchor.Domain.Placement.ModuleComponents do
 
   # --- naming ----------------------------------------------------------------------
 
-  defp owned_type(%Graph{} = graph, module, functions, privates) do
+  defp owned_type(%Graph{} = graph, uses, module, functions, privates) do
     returned =
       for mfa <- functions,
           {:ok, owner} <- [Ownership.output_owner(graph, mfa)],
@@ -208,7 +233,7 @@ defmodule Anchor.Domain.Placement.ModuleComponents do
           do: owner
 
     built =
-      for %StructUse{from: from, struct: struct, op: :build} <- graph.struct_uses,
+      for %StructUse{from: from, struct: struct, op: :build} <- uses,
           from in functions or from in privates,
           struct != module,
           Map.has_key?(graph.modules, struct),
@@ -222,8 +247,8 @@ defmodule Anchor.Domain.Placement.ModuleComponents do
 
   # --- proposals -------------------------------------------------------------------
 
-  defp module_proposals(model, module) do
-    case components(model, module) do
+  defp module_proposals(model, module, index) do
+    case components(model, module, index) do
       [_one] ->
         []
 

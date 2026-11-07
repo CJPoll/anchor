@@ -7,6 +7,7 @@ defmodule Anchor.Domain.GraphRules.DirectoryPlacementTest do
 
   import Anchor.Test.DirectoryModels
 
+  alias Anchor.Domain.Graph.Call
   alias Anchor.Domain.GraphRules.DirectoryPlacement
   alias Anchor.Domain.Placement
 
@@ -109,6 +110,25 @@ defmodule Anchor.Domain.GraphRules.DirectoryPlacementTest do
     assert [issue] = DirectoryPlacement.check(model, @rule)
     assert issue.kind == :fail_closed
     assert issue.message =~ "no roots"
+  end
+
+  test "lost precision: one fail-closed issue naming the site, and no finding" do
+    model = directory_model(@modules, @calls, @files)
+
+    lost = %Call{
+      from: {W, :run, 0},
+      to: {:dynamic, nil, 2, :call},
+      kind: :apply,
+      line: 7,
+      line_source: :call
+    }
+
+    model = update_in(model.graph.calls, &[lost | &1])
+
+    assert [issue] = DirectoryPlacement.check(model, @rule)
+    assert issue.kind == :fail_closed
+    assert issue.message =~ "reachability is imprecise"
+    assert issue.message =~ "accept that directory_placement cannot judge this repo"
   end
 
   test "shape/1, needs/0 and narrows?/2" do

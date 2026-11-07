@@ -101,6 +101,35 @@ defmodule Anchor.Domain.Placement.ModuleComponentsTest do
       assert length(function_sets(model_of(modules, []), M)) == 2
     end
 
+    test "a GenServer's client API is one component with its callbacks" do
+      functions = [
+        {:start_link, 1},
+        {:value, 0},
+        {:init, 1},
+        {:handle_call, 3},
+        {:call, 1, :defp}
+      ]
+
+      modules = [{M, "domain", functions, behaviours: [GenServer]}]
+
+      calls = [
+        {{M, :start_link, 1}, {GenServer, :start_link, 3}},
+        {{M, :value, 0}, {M, :call, 1}, :local},
+        {{M, :call, 1}, {GenServer, :call, 2}}
+      ]
+
+      model = model_of(modules, calls)
+
+      model = %{
+        model
+        | effects: %Effects{callbacks: %{GenServer => [{:init, 1}, {:handle_call, 3}]}}
+      }
+
+      assert function_sets(model, M) == [
+               [{M, :handle_call, 3}, {M, :init, 1}, {M, :start_link, 1}, {M, :value, 0}]
+             ]
+    end
+
     test "struct use in a private helper counts for its callers" do
       modules = [{M, "domain", [{:a, 0}, {:b, 1}, {:p, 0, :defp}], []}]
       calls = [{{M, :a, 0}, {M, :p, 0}, :local}]

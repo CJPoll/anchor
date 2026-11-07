@@ -55,8 +55,8 @@ defmodule Anchor.Domain.GraphRules.NoInertHopTest do
   end
 
   # The hand-built model, each function given the Core of its fixture.
-  defp model_with_core(modules, calls, binaries) do
-    model = model(modules, calls)
+  defp model_with_core(modules, calls, binaries, opts \\ []) do
+    model = model(modules, calls, opts)
 
     Enum.reduce(modules, model, fn {module, _bucket, functions, _opts}, model ->
       Enum.reduce(functions, model, fn name_arity, model ->
@@ -128,6 +128,15 @@ defmodule Anchor.Domain.GraphRules.NoInertHopTest do
              "AnchorFixtures.NoInertHopTest.Invoices.show/2",
              "AnchorFixtures.NoInertHopTest.Totals.sum/1"
            ]
+  end
+
+  test "a root that forwards is never inlined: its callers are outside the project", %{
+    binaries: binaries
+  } do
+    roots = [%{"pattern" => "AnchorFixtures.NoInertHopTest.Totals"}]
+    model = model_with_core(modules(invoices: [interface: true]), @calls, binaries, roots: roots)
+
+    assert NoInertHop.check(model, @rule) == []
   end
 
   test "a forwarder no call names is still inert: dynamic callers only", %{binaries: binaries} do

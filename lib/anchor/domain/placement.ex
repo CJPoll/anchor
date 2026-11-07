@@ -498,7 +498,7 @@ defmodule Anchor.Domain.Placement do
         do: Enum.flat_map(facts, &(&1 |> Rules.unreachable() |> List.wrap())),
         else: []
 
-    hops = Forwarders.proposals(%{model | effects: effects})
+    hops = Forwarders.proposals(%{model | effects: effects}, placement.roots)
     directories = Directories.proposals(placement, model, nil)
     components = ModuleComponents.proposals(%{model | effects: effects})
 

@@ -99,14 +99,18 @@ defmodule Anchor.Domain.Placement.Forwarders do
     end
   end
 
-  @doc "The `:inert_hop` proposal of every inert forwarder of `model`, sorted by key."
-  @spec proposals(Model.t()) :: [Proposal.t()]
-  def proposals(%Model{graph: graph} = model) do
+  @doc """
+  The `:inert_hop` proposal of every inert forwarder of `model`, sorted by key. A root
+  (`roots`) is never one: something outside the project calls it by name.
+  """
+  @spec proposals(Model.t(), MapSet.t(mfa())) :: [Proposal.t()]
+  def proposals(%Model{graph: graph} = model, roots) do
     callers = static_callers(graph.calls)
 
     for {module, %ModuleNode{functions: functions} = node} <- graph.modules,
         {{name, arity}, %FunctionNode{kind: kind} = function} <- functions,
         kind in [:def, :defp],
+        not MapSet.member?(roots, {module, name, arity}),
         not Placement.generated_function?(function, node),
         not defaults?(node, name, arity),
         {:forwards, to} <- [forwarder(function)],

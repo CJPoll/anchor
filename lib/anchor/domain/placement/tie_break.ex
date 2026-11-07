@@ -3,7 +3,7 @@ defmodule Anchor.Domain.Placement.TieBreak do
   The tie-break seam of directory placement (DND-5462) — **Domain**, pure.
 
   Where the static rules leave a choice (a shared module whose callers sit in several
-  directories of one context), `choose/3` picks the directory. With no evidence it
+  directories of one context), `choose/2` picks the directory. With no evidence it
   keeps the first candidate, the bucket root, and says so: `{:none, root}`. The
   co-causation tie-break (DND-5475) adds the clause that reads coverage evidence and
   answers `{:coverage, dir}`; until then any evidence raises, so a caller that passes

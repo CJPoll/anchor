@@ -1303,7 +1303,7 @@ unrelated places) get no move from rules 2 to 4; rule 1 still names their bucket
 **Every run prints the model's precision**, whenever a rule needed it:
 
 ```text
-; placement: 42 functions placed, 3 with no @spec (ownership unknown), 0 ambiguous owner, 0 with no clause to slice, 1 calls of a computed name, reachability lost at 1 call sites, 0 modules not placed (generated, or no source)
+; placement: 42 functions placed, 3 with no @spec (ownership unknown), 0 ambiguous owner, 0 with no clause to slice, 1 calls of a computed name, reachability lost at 1 call sites, 0 modules not placed (generated, unclassified, or no source)
 ```
 
 A project module a function holds as a value (`children = [M, {N, arg}]`) reaches that
@@ -1413,10 +1413,11 @@ one bucket of one context:
   modules of one bucket and context, none reached only through a module of that directory or its companion
   module (`<dir>.ex`), encapsulates nothing: flatten it.
 
-A generated module, or one with no source file, is not placed, and the precision line
-counts it (`<m> modules not placed (generated, or no source)`). A module violation sits at its
+A generated or unclassified module, or one with no source file, is not placed, and the precision line
+counts it (`<m> modules not placed (generated, unclassified, or no source)`). A module violation sits at its
 `defmodule` line; a directory's on the first file in it. With no roots the rule fails
-closed.
+closed, and so does lost precision (a call of a computed name in a reachable function):
+the dominator tree's edges are not all known.
 
 ```text
 lib/billing/domain/rounding.ex:2: [enforce] rule 1 (id: "directory_placement", directory_placement) Billing.Domain.Rounding sits in lib/billing/domain, but only Billing.Domain.Invoice reaches it. Fix: move Billing.Domain.Rounding from lib/billing/domain to lib/billing/domain/invoice (only Billing.Domain.Invoice reaches it; Billing.Domain.Invoice is the directory's public module)
@@ -1925,8 +1926,8 @@ line.
 | An `effects_match_bucket` rule selects modules of a judged bucket of which no public function was analysed (DND-5447) | 1 | the config | `rule 4 (id: "effects", effects_match_bucket) judged no public function of bucket domain: the modules it selects there have none that was analysed (every one is a root, generated, or has no Core body), so the bucket is below the rule's floor. Fix: select modules of domain with public functions, or set infer: false on domain in a reviewed change.` |
 | The demand analysis a rule needs, or the behaviour read beside it, raises, throws or exits, or the analysis returns no `%Demand{}` (DND-5470) | 1 | the config | `rule 2 (id: "sinks", parameter_reaches_sink) could not run: the demand analysis it needs (Anchor.Domain.Demand) crashed: RuntimeError: ..., so it checked nothing. Fix: this is an Anchor bug; file it with this line.` One per rule that needs it; the rules that do not still run. |
 | The placement model a rule needs raises, throws or exits, or is no `%Placement{}` (DND-5448) | 1 | the config | `rule 2 (id: "placed", function_placement) could not run: the placement model it needs (Anchor.Domain.Placement) crashed: RuntimeError: ..., so it checked nothing. Fix: this is an Anchor bug; file it with this line.` One per rule that needs it; the rules that do not still run. |
-| A reachable function calls a function whose name is computed, under a `reachable_from_root` rule (DND-5448) | 1 | the config | `rule 3 (id: "reach", reachable_from_root) reachability is imprecise: lib/a.ex:3 calls an unknown function dynamically. Fix: resolve it through a behaviour, or accept that reachable_from_root cannot judge this repo.` Names each call site; the rule reports no function that run. |
-| A `reachable_from_root` rule over a model with no root (DND-5448) | 1 | the config | `rule 3 (id: "reach", reachable_from_root) no roots: no framework-role bucket matched a module and architecture.roots is empty. Fix: classify the entry points.` |
+| A reachable function calls a function whose name is computed, under a `reachable_from_root` or `directory_placement` rule (DND-5448, DND-5462) | 1 | the config | `rule 3 (id: "reach", reachable_from_root) reachability is imprecise: lib/a.ex:3 calls an unknown function dynamically. Fix: resolve it through a behaviour, or accept that reachable_from_root cannot judge this repo.` Names each call site and the rule's own type; the rule reports nothing that run. |
+| A `reachable_from_root` or `directory_placement` rule over a model with no root (DND-5448, DND-5462) | 1 | the config | `rule 3 (id: "reach", reachable_from_root) no roots: no framework-role bucket matched a module and architecture.roots is empty. Fix: classify the entry points.` |
 | A `reachable_from_root` rule selects no public function an author wrote (DND-5448) | 1 | the config | `rule 3 (id: "reach", reachable_from_root) judged no function: the modules it selects have no public function an author wrote, so it checked nothing. Fix: select modules with public functions of their own, or remove the rule.` |
 | A `function_placement` rule can judge no function of what it selects (DND-5448) | 1 | the config | `rule 2 (id: "placed", function_placement) judged no function: every public function of the modules it selects is a root, generated, a callback or in an interface module, so it checked nothing. Fix: select modules outside architecture.interfaces, or remove the rule.` |
 | A `parameter_reaches_sink` rule selects modules of which no function could be judged (DND-5470) | 1 | the config | `rule 2 (id: "sinks", parameter_reaches_sink) judged no function: every function of the modules it selects is exempt, has no Core body, or could not be analysed, so it checked nothing. Fix: select modules with functions of their own, or remove the rule.` |

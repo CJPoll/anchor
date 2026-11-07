@@ -234,8 +234,14 @@ defmodule Anchor.Integration.PlacementInvariantTest do
     {report, placement, _model} = run([extra | beams])
 
     assert placement.precision.reachability == :lost
-    assert [issue] = Enum.filter(report.findings, &(&1.message =~ "reachability is imprecise"))
-    assert issue.message =~ "lib/placement/web/computed_spawn.ex:2"
+
+    # One issue per rule that reads reachability (DND-5462: directory_placement too).
+    assert [reach, dirs] =
+             Enum.filter(report.findings, &(&1.message =~ "reachability is imprecise"))
+
+    assert reach.message =~ "reachable_from_root) reachability is imprecise"
+    assert dirs.message =~ "directory_placement) reachability is imprecise"
+    assert reach.message =~ "lib/placement/web/computed_spawn.ex:2"
   end
 
   test "a known name with arguments of unknown length reaches every arity, and stays public", %{
@@ -401,13 +407,17 @@ defmodule Anchor.Integration.PlacementInvariantTest do
     assert summary =~ "; placement: "
     assert summary =~ "1 calls of a computed name, reachability lost at 1 call sites"
 
-    assert [issue] = Enum.filter(report.findings, &(&1.message =~ "reachability is imprecise"))
-    assert issue.message =~ "lib/placement/web/computed.ex:2 calls an unknown function"
+    assert [_reach, _dirs] =
+             issues = Enum.filter(report.findings, &(&1.message =~ "reachability is imprecise"))
 
-    # No per-function finding of that rule stands beside it.
+    assert Enum.all?(issues, &(&1.message =~ "lib/placement/web/computed.ex:2 calls an unknown"))
+
+    # No finding of either rule stands beside its issue.
     refute Enum.any?(
              report.findings,
-             &(&1.key && String.starts_with?(&1.key, "reachable_from_root"))
+             &(&1.key &&
+                 (String.starts_with?(&1.key, "reachable_from_root") or
+                    String.starts_with?(&1.key, "directory_placement")))
            )
   end
 end

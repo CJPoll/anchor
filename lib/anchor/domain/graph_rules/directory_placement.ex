@@ -8,8 +8,9 @@ defmodule Anchor.Domain.GraphRules.DirectoryPlacement do
   module violation sits at its `defmodule` line; a directory's on the first file in
   it. The `Fix:` is `Anchor.Domain.Placement.render/1`.
 
-  With no roots there is no dominator tree: one `:fail_closed` issue, and no
-  finding.
+  With no roots there is no dominator tree, and under lost precision (a call of a
+  computed name in a reachable function) its edges are not all known: either is one
+  `:fail_closed` issue, and no finding.
   """
 
   @behaviour Anchor.Domain.GraphRule
@@ -39,9 +40,16 @@ defmodule Anchor.Domain.GraphRules.DirectoryPlacement do
   def check(%Model{} = model, rule) do
     placement = model.placement || Placement.build(model)
 
-    if placement.precision.reachability == :no_roots,
-      do: [Failures.reachability_no_roots(rule, model.config.path)],
-      else: judged(placement, model, rule)
+    case placement.precision.reachability do
+      :lost ->
+        [Failures.reachability_lost(rule, placement.precision.lost_sites, model.config.path)]
+
+      :no_roots ->
+        [Failures.reachability_no_roots(rule, model.config.path)]
+
+      :precise ->
+        judged(placement, model, rule)
+    end
   end
 
   defp judged(placement, model, rule) do
