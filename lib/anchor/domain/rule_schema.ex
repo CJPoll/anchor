@@ -209,6 +209,10 @@ defmodule Anchor.Domain.RuleSchema do
     # DND-5445: context_acyclic reads only the graph common keys (the contexts
     # are the `architecture:` section's).
     context_acyclic: [],
+    # DND-5462: directory_placement reads only the graph common keys.
+    directory_placement: [],
+    # DND-5463: module_one_component reads only the graph common keys.
+    module_one_component: [],
     # DND-5447: effects_match_bucket reads only the graph common keys (the
     # buckets, effects and roots are the `architecture:` section's).
     effects_match_bucket: [],
@@ -230,6 +234,8 @@ defmodule Anchor.Domain.RuleSchema do
     no_discarded_pure_expression: ~w(pure_patterns),
     no_discarding_arrow_in_with: [],
     no_forwarding_function: [],
+    # DND-5461: no_inert_hop reads only the graph common keys.
+    no_inert_hop: [],
     no_transitive_dependency: ~w(forbidden_modules forbidden_patterns),
     no_tuple_match_in_head: [],
     # DND-5470: parameter_reaches_sink reads only the graph common keys.
@@ -252,11 +258,13 @@ defmodule Anchor.Domain.RuleSchema do
     analyses_complete: [],
     case_on_bare_arg: [],
     context_acyclic: [],
+    directory_placement: [],
     effects_match_bucket: [],
     function_placement: [],
     interface: [],
     layering: [],
     max_file_length: [],
+    module_one_component: [],
     module_pattern_restrictions: [],
     must_use_module: ~w(required_modules),
     no_comparison_in_if: [],
@@ -264,6 +272,7 @@ defmodule Anchor.Domain.RuleSchema do
     no_discarded_pure_expression: [],
     no_discarding_arrow_in_with: [],
     no_forwarding_function: [],
+    no_inert_hop: [],
     no_transitive_dependency: ~w(forbidden_modules forbidden_patterns),
     no_tuple_match_in_head: [],
     parameter_reaches_sink: [],
@@ -284,11 +293,13 @@ defmodule Anchor.Domain.RuleSchema do
     analyses_complete: :graph,
     case_on_bare_arg: :ast,
     context_acyclic: :graph,
+    directory_placement: :graph,
     effects_match_bucket: :graph,
     function_placement: :graph,
     interface: :graph,
     layering: :graph,
     max_file_length: :ast,
+    module_one_component: :graph,
     module_pattern_restrictions: :ast,
     must_use_module: :ast,
     no_comparison_in_if: :ast,
@@ -296,6 +307,7 @@ defmodule Anchor.Domain.RuleSchema do
     no_discarded_pure_expression: :ast,
     no_discarding_arrow_in_with: :ast,
     no_forwarding_function: :ast,
+    no_inert_hop: :graph,
     no_transitive_dependency: :ast,
     no_tuple_match_in_head: :ast,
     parameter_reaches_sink: :graph,

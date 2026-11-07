@@ -103,7 +103,8 @@ defmodule Anchor.Domain.Effects do
             unresolved_calls: 0,
             counts: %{},
             not_analysed: 0,
-            roots: MapSet.new()
+            roots: MapSet.new(),
+            callbacks: %{}
 
   @type t :: %__MODULE__{
           roles: %{mfa() => role()},
@@ -111,19 +112,23 @@ defmodule Anchor.Domain.Effects do
           unresolved_calls: non_neg_integer(),
           counts: %{role() => non_neg_integer()},
           not_analysed: non_neg_integer(),
-          roots: MapSet.t(mfa())
+          roots: MapSet.t(mfa()),
+          callbacks: Roots.callbacks()
         }
 
   @doc """
   Infers the role of every analysed function of `model`'s graph (see the
   moduledoc). `opts`: `:callbacks`, the external behaviours' callbacks
   `Anchor.Domain.Roots.roots/2` takes (default `%{}`: no external callback is
-  a root, so each is judged). The roots it used are kept on the result.
+  a root, so each is judged). The roots it used are kept on the result, and so
+  are the callbacks it was given (`callbacks`: `no_inert_hop` reads them to tell
+  a callback's implementation, DND-5461).
   """
   @spec infer(Model.t(), keyword()) :: t()
   def infer(%Model{graph: graph} = model, opts \\ []) do
     primitives = EffectPrimitives.build(model.architecture, graph)
-    roots = Roots.roots(model, Keyword.get(opts, :callbacks, %{}))
+    callbacks = Keyword.get(opts, :callbacks, %{})
+    roots = Roots.roots(model, callbacks)
     no_core = no_core(graph)
     calls = Enum.group_by(graph.calls, & &1.from)
 
@@ -164,7 +169,8 @@ defmodule Anchor.Domain.Effects do
       unresolved_calls: count_unresolved(targets),
       counts: roles |> Map.values() |> Enum.frequencies(),
       not_analysed: MapSet.size(no_core),
-      roots: roots
+      roots: roots,
+      callbacks: callbacks
     }
   end
 

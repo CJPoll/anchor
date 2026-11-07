@@ -9,6 +9,7 @@ defmodule Anchor.Integration.PlacementInvariantTest do
   # list `Placement.proposals/3`, read here directly.
   #
   # Sabotage record: ../../sabotage_records/placement-20261106-dnd_5448_placement_core.md
+  # DND-5461 batch (its review floor): ../../sabotage_records/placement-20261107-dnd_5461_placement_rules.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -42,6 +43,8 @@ defmodule Anchor.Integration.PlacementInvariantTest do
     lib/placement/domain/rounding.ex
     lib/placement/domain/dead.ex
     lib/placement/domain/leaky.ex
+    lib/placement/domain/totals.ex
+    lib/placement/domain/ledger.ex
     lib/placement/managers/calc.ex
   )
 
@@ -99,6 +102,11 @@ defmodule Anchor.Integration.PlacementInvariantTest do
     {report, placement, model}
   end
 
+  # Every level's proposals: what the checks report, and what `mix anchor.propose` lists.
+  defp all_proposals(placement, model),
+    do:
+      Enum.flat_map([:function, :directory, :module], &Placement.proposals(placement, model, &1))
+
   defp without_violating(beams),
     do: Enum.reject(beams, &(&1.elixir.relative_file in @violating))
 
@@ -114,7 +122,7 @@ defmodule Anchor.Integration.PlacementInvariantTest do
     beams: beams
   } do
     {report, placement, model} = run(beams)
-    proposals = placement |> Placement.proposals(model, :function) |> Map.new(&{&1.key, &1})
+    proposals = placement |> all_proposals(model) |> Map.new(&{&1.key, &1})
 
     assert map_size(proposals) == length(@expected)
 
@@ -146,7 +154,35 @@ defmodule Anchor.Integration.PlacementInvariantTest do
              {:dominated_by, AnchorFixtures.PlacementTest.Billing.Domain.Statement}
 
     assert reasons["Dead"] == {:unreachable, :delete}
+
+    assert reasons["Totals"] ==
+             {:inert_hop,
+              {:inline, {AnchorFixtures.PlacementTest.Billing.Domain.Statement, :total, 1}}}
+
     assert {:bucket_from_effects, {:bucket, :adapters, _context, nil}} = reasons["Leaky"]
+
+    # DND-5462: only Statement reaches Rounding, so its directory is Statement's.
+    assert [%{subject: rounding, reason: :dominator_subtree, proposed: dir}] =
+             Placement.proposals(placement, model, :directory)
+
+    assert {rounding, dir} ==
+             {AnchorFixtures.PlacementTest.Billing.Domain.Rounding,
+              "lib/placement/domain/statement"}
+
+    # DND-5463: the Ledger's own-struct group keeps its name; the other is renamed, and
+    # the private helper both reach is extracted.
+    ledger = AnchorFixtures.PlacementTest.Billing.Domain.Ledger
+
+    assert reasons["Ledger"] == {:shared_private_helper, {:extract, Module.concat(ledger, Total)}}
+
+    assert %{proposed: {:split, [{^ledger, kept}, {renamed, moved}]}} =
+             placement
+             |> Placement.proposals(model, :module)
+             |> Enum.find(&(&1.subject == ledger))
+
+    assert {kept, renamed, moved} ==
+             {[{ledger, :balance, 1}, {ledger, :new, 1}], Module.concat(ledger, Label),
+              [{ledger, :label, 1}, {ledger, :parse_label, 1}]}
   end
 
   test "the same function captured by a reachable one is reachable", %{beams: beams} do
@@ -199,8 +235,14 @@ defmodule Anchor.Integration.PlacementInvariantTest do
     {report, placement, _model} = run([extra | beams])
 
     assert placement.precision.reachability == :lost
-    assert [issue] = Enum.filter(report.findings, &(&1.message =~ "reachability is imprecise"))
-    assert issue.message =~ "lib/placement/web/computed_spawn.ex:2"
+
+    # One issue per rule that reads reachability (DND-5462: directory_placement too).
+    assert [reach, dirs] =
+             Enum.filter(report.findings, &(&1.message =~ "reachability is imprecise"))
+
+    assert reach.message =~ "reachable_from_root) reachability is imprecise"
+    assert dirs.message =~ "directory_placement) reachability is imprecise"
+    assert reach.message =~ "lib/placement/web/computed_spawn.ex:2"
   end
 
   test "a known name with arguments of unknown length reaches every arity, and stays public", %{
@@ -293,17 +335,21 @@ defmodule Anchor.Integration.PlacementInvariantTest do
     refute Placement.facts(placement, {unsupervised, :start_link, 1}).reachable?
   end
 
-  test "every reason the canary emits renders one non-empty line, and all five are there", %{
+  test "every reason the canary emits renders one non-empty line, and each is there", %{
     beams: beams
   } do
     {_report, placement, model} = run(beams)
-    proposals = Placement.proposals(placement, model, :function)
+    proposals = all_proposals(placement, model)
 
     assert proposals |> Enum.map(& &1.reason) |> Enum.uniq() |> Enum.sort() == [
              :bucket_from_effects,
+             :components,
              :dominated_by,
+             :dominator_subtree,
+             :inert_hop,
              :input_type_owner,
              :output_type_owner,
+             :shared_private_helper,
              :unreachable
            ]
 
@@ -362,13 +408,17 @@ defmodule Anchor.Integration.PlacementInvariantTest do
     assert summary =~ "; placement: "
     assert summary =~ "1 calls of a computed name, reachability lost at 1 call sites"
 
-    assert [issue] = Enum.filter(report.findings, &(&1.message =~ "reachability is imprecise"))
-    assert issue.message =~ "lib/placement/web/computed.ex:2 calls an unknown function"
+    assert [_reach, _dirs] =
+             issues = Enum.filter(report.findings, &(&1.message =~ "reachability is imprecise"))
 
-    # No per-function finding of that rule stands beside it.
+    assert Enum.all?(issues, &(&1.message =~ "lib/placement/web/computed.ex:2 calls an unknown"))
+
+    # No finding of either rule stands beside its issue.
     refute Enum.any?(
              report.findings,
-             &(&1.key && String.starts_with?(&1.key, "reachable_from_root"))
+             &(&1.key &&
+                 (String.starts_with?(&1.key, "reachable_from_root") or
+                    String.starts_with?(&1.key, "directory_placement")))
            )
   end
 end

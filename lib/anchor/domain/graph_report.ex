@@ -76,7 +76,10 @@ defmodule Anchor.Domain.GraphReport do
   zeros included: a zero there was measured. When the placement model was built
   (DND-5448), it then has `; placement: <f> functions placed, <n> with no @spec
   (ownership unknown), <a> ambiguous owner, <j> with no clause to slice, <c> calls
-  of a computed name, reachability <precise|lost at <s> call sites|no roots>`.
+  of a computed name, reachability <precise|lost at <s> call sites|no roots>, <m>
+  modules not placed (generated, unclassified, or no source)`: the graph's modules directory
+  placement does not place (generated or possibly generated, unclassified, or with
+  no source file, DND-5462).
   """
 
   alias Anchor.Domain.Cfa
@@ -163,7 +166,8 @@ defmodule Anchor.Domain.GraphReport do
           unjoined: non_neg_integer(),
           computed_calls: non_neg_integer(),
           reachability: :precise | :lost | :no_roots,
-          lost_sites: non_neg_integer()
+          lost_sites: non_neg_integer(),
+          modules_not_placed: non_neg_integer()
         }
 
   @type effects :: %{
@@ -471,7 +475,9 @@ defmodule Anchor.Domain.GraphReport do
     "; placement: #{placement.functions} functions placed, #{placement.no_spec} with no " <>
       "@spec (ownership unknown), #{placement.ambiguous_owner} ambiguous owner, " <>
       "#{placement.unjoined} with no clause to slice, #{placement.computed_calls} calls of a " <>
-      "computed name, reachability " <> reachability_note(placement)
+      "computed name, reachability " <>
+      reachability_note(placement) <>
+      ", #{placement.modules_not_placed} modules not placed (generated, unclassified, or no source)"
   end
 
   defp reachability_note(%{reachability: :precise}), do: "precise"

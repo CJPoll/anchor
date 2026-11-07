@@ -444,6 +444,8 @@ Credo checks over source, `graph` rules run under `mix anchor.graph` over the
 compiled code (DND-5440; `layering`, DND-5442, `context_acyclic`, DND-5445,
 `aggregate_declarations`, DND-5476, `aggregate_write_sources`, DND-5459,
 `effects_match_bucket`, DND-5447, `function_placement`, DND-5448,
+`no_inert_hop`, DND-5461, `directory_placement`, DND-5462,
+`module_one_component`, DND-5463,
 `parameter_reaches_sink`, DND-5470, `reachable_from_root`, DND-5448,
 `struct_owned_by_module_flow`, DND-5454,
 `analyses_complete`, DND-5715, and `interface`, DND-5443). Credo never reports a
@@ -457,11 +459,13 @@ compiled code (DND-5440; `layering`, DND-5442, `context_acyclic`, DND-5445,
 | `analyses_complete` | `min_absent_parameters`, `min_apply_sites`, `min_functions` | none | `graph` |
 | `case_on_bare_arg` | none | none | `ast` |
 | `context_acyclic` | none | none | `graph` |
+| `directory_placement` | none | none | `graph` |
 | `effects_match_bucket` | none | none | `graph` |
 | `function_placement` | none | none | `graph` |
 | `interface` | `max_width` | none | `graph` |
 | `layering` | none | none | `graph` |
 | `max_file_length` | `max_lines` | none | `ast` |
+| `module_one_component` | none | none | `graph` |
 | `module_pattern_restrictions` | `allowed_functions` | none | `ast` |
 | `must_use_module` | `required_modules` | `required_modules` | `ast` |
 | `no_comparison_in_if` | none | none | `ast` |
@@ -469,6 +473,7 @@ compiled code (DND-5440; `layering`, DND-5442, `context_acyclic`, DND-5445,
 | `no_discarded_pure_expression` | `pure_patterns` | none | `ast` |
 | `no_discarding_arrow_in_with` | none | none | `ast` |
 | `no_forwarding_function` | none | none | `ast` |
+| `no_inert_hop` | none | none | `graph` |
 | `no_transitive_dependency` | `forbidden_modules`, `forbidden_patterns` | `forbidden_modules`, `forbidden_patterns` | `ast` |
 | `no_tuple_match_in_head` | none | none | `ast` |
 | `parameter_reaches_sink` | none | none | `graph` |
@@ -1310,7 +1315,7 @@ unrelated places) get no move from rules 2 to 4; rule 1 still names their bucket
 **Every run prints the model's precision**, whenever a rule needed it:
 
 ```text
-; placement: 42 functions placed, 3 with no @spec (ownership unknown), 0 ambiguous owner, 0 with no clause to slice, 1 calls of a computed name, reachability lost at 1 call sites
+; placement: 42 functions placed, 3 with no @spec (ownership unknown), 0 ambiguous owner, 0 with no clause to slice, 1 calls of a computed name, reachability lost at 1 call sites, 0 modules not placed (generated, unclassified, or no source)
 ```
 
 A project module a function holds as a value (`children = [M, {N, arg}]`) reaches that
@@ -1325,6 +1330,158 @@ Over a project whose every non-framework bucket is an interface, `function_place
 judges nothing, and says so. Anchor's own `.anchor.yml` is such a project, and it has one
 computed name (`Mutator.generate/4`), so it enables neither rule yet; its
 `effects_match_bucket` builds the model on every run.
+
+### The `no_inert_hop` rule (DND-5461)
+
+```yaml
+rules:
+  - type: no_inert_hop
+    id: no_inert_hop
+    paths: ["lib/**/*.ex"]
+
+architecture:
+  contexts:
+    depth: 2
+  buckets:
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/**/domain/**/*.ex"]
+    - name: web
+      role: framework
+      select:
+        - paths: ["lib/**/web/**/*.ex"]
+  calls:
+    domain: [domain]
+    web: [domain]
+```
+
+A function is a **forwarder** when its Core Erlang is one clause of distinct bare
+parameters, guard `true`, whose body is one call to another module's function with
+exactly those parameters, in order. `defdelegate` compiles to the same Core, so it is read
+the same way. A pattern, a guard, a second clause, a literal, extra or reordered argument,
+a transforming pipe, or a default argument makes it no forwarder. A hop inside one module
+is the AST rule `no_forwarding_function`'s.
+
+A forwarder from `M.f` to `N.g` is **inert** only when it crosses no boundary, and then it
+is one violation, proposal `inline`: its callers call `N.g` directly. It is legal when:
+
+- `N` is not a project module (a wrapper over a dependency or the standard library is an
+  adapter seam);
+- `M` and `N` are in different buckets, contexts or OTP apps;
+- aggregates are declared and `M` and `N` belong to different ones;
+- `M` is an interface module and `N` is not (a facade forwarding to its interior);
+- `M.f` implements a behaviour callback (its signature is the behaviour's).
+
+So Framework to Manager to Adapter forwarding and a context facade's `defdelegate`s are
+legal by construction. An unclassified module is reported by the run; a hop to or from one
+is not judged inert. The evidence lists the static callers, or says `dynamic callers only`.
+
+```text
+lib/billing/domain/totals.ex:2: [enforce] rule 1 (id: "no_inert_hop", no_inert_hop) Billing.Domain.Totals.sum/1 only forwards to Billing.Domain.Math.sum/1, and the hop crosses no boundary. Fix: inline Billing.Domain.Totals.sum/1: its callers (BillingWeb.Show.run/1) call Billing.Domain.Math.sum/1 directly (it forwards without crossing a bucket, context, app, aggregate, interface or callback boundary)
+```
+
+### The `directory_placement` rule (DND-5462)
+
+```yaml
+rules:
+  - type: directory_placement
+    id: directory_placement
+    paths: ["lib/**/*.ex"]
+
+architecture:
+  contexts:
+    depth: 2
+  buckets:
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/**/domain/**/*.ex"]
+    - name: web
+      role: framework
+      select:
+        - paths: ["lib/**/web/**/*.ex"]
+  calls:
+    domain: [domain]
+    web: [domain]
+```
+
+The placement model's call graph collapsed to modules gives each module an immediate
+dominator, from every module that holds a root. A directory is a dominator subtree inside
+one bucket of one context:
+
+- **Dominated.** A module whose immediate dominator `d` is another module of its bucket and
+  context belongs in `d`'s companion directory, `d`'s source path without `.ex`
+  (`lib/billing/domain/invoice.ex` gives `lib/billing/domain/invoice/`); `d` stays where it
+  is, the directory's public module. Direct dominance only, so a chain nests one level per
+  move. A module defined in `d`'s own file is left there.
+- **Shared.** A module reached from unrelated places (its dominator is the virtual root) and
+  holding no root belongs at its bucket root, the deepest directory holding every module of
+  that bucket in that context. The proposal says `no tie-break evidence` until the
+  co-causation tie-break (DND-5475) can pick a caller's directory. Callers in several
+  contexts propose a library context, naming them, with no path invented. Callers all in
+  one other context are the context rules' question, and get no directory proposal.
+- **Inert directory.** A directory below its bucket root holding two or more files of
+  modules of one bucket and context, none reached only through a module of that directory or its companion
+  module (`<dir>.ex`), encapsulates nothing: flatten it.
+
+A generated or unclassified module, or one with no source file, is not placed, and the precision line
+counts it (`<m> modules not placed (generated, unclassified, or no source)`). A module violation sits at its
+`defmodule` line; a directory's on the first file in it. With no roots the rule fails
+closed, and so does lost precision (a call of a computed name in a reachable function):
+the dominator tree's edges are not all known.
+
+```text
+lib/billing/domain/rounding.ex:2: [enforce] rule 1 (id: "directory_placement", directory_placement) Billing.Domain.Rounding sits in lib/billing/domain, but only Billing.Domain.Invoice reaches it. Fix: move Billing.Domain.Rounding from lib/billing/domain to lib/billing/domain/invoice (only Billing.Domain.Invoice reaches it; Billing.Domain.Invoice is the directory's public module)
+```
+
+### The `module_one_component` rule (DND-5463)
+
+```yaml
+rules:
+  - type: module_one_component
+    id: module_one_component
+    paths: ["lib/**/*.ex"]
+
+architecture:
+  contexts:
+    depth: 2
+  buckets:
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/**/domain/**/*.ex"]
+    - name: web
+      role: framework
+      select:
+        - paths: ["lib/**/web/**/*.ex"]
+  calls:
+    domain: [domain]
+    web: [domain]
+```
+
+A module's public functions are linked when one reaches the other through the
+module's own calls (walking through its private functions), when both build,
+update or match the module's own struct (a private helper's use counting for every
+public function that reaches it), or when both implement the callbacks of one
+behaviour. The connected groups of those links are the module's causal components
+(LCOM4). Length never triggers anything; a context's interface module and a
+generated module are exempt.
+
+- **Split (M1).** A module with two or more components is one violation at its
+  `defmodule`: one module per component. The component that uses the module's own
+  struct keeps the name (at most one can: its users are linked); with none, the
+  component with the most public functions does, and a tie goes to the one holding
+  the alphabetically first function. Each other is named after the project struct its
+  functions return (`@spec`) or build, as a sibling module, and one that owns no
+  type is named after its first public function, with a note to rename it. A name
+  an existing module has says to merge into it.
+- **Shared private helper (M3).** A private function two components reach does not
+  link them; it is one violation at the function: extract it into its own module.
+
+```text
+lib/billing/domain/ledger.ex:1: [enforce] rule 1 (id: "module_one_component", module_one_component) Billing.Domain.Ledger holds 2 unrelated groups of public functions. Fix: split Billing.Domain.Ledger into Billing.Domain.Currency: Billing.Domain.Ledger.format/1, Billing.Domain.Ledger.parse/1; owns %Billing.Domain.Currency{}; merge into existing Billing.Domain.Currency | Billing.Domain.Ledger: Billing.Domain.Ledger.get/1, Billing.Domain.Ledger.new/1 (no call, own-struct use or behaviour links these 2 groups of public functions)
+```
 
 ### The `parameter_reaches_sink` rule (DND-5470)
 
@@ -1865,8 +2022,8 @@ line.
 | An `effects_match_bucket` rule selects modules of a judged bucket of which no public function was analysed (DND-5447) | 1 | the config | `rule 4 (id: "effects", effects_match_bucket) judged no public function of bucket domain: the modules it selects there have none that was analysed (every one is a root, generated, or has no Core body), so the bucket is below the rule's floor. Fix: select modules of domain with public functions, or set infer: false on domain in a reviewed change.` |
 | The demand analysis a rule needs, or the behaviour read beside it, raises, throws or exits, or the analysis returns no `%Demand{}` (DND-5470) | 1 | the config | `rule 2 (id: "sinks", parameter_reaches_sink) could not run: the demand analysis it needs (Anchor.Domain.Demand) crashed: RuntimeError: ..., so it checked nothing. Fix: this is an Anchor bug; file it with this line.` One per rule that needs it; the rules that do not still run. |
 | The placement model a rule needs raises, throws or exits, or is no `%Placement{}` (DND-5448) | 1 | the config | `rule 2 (id: "placed", function_placement) could not run: the placement model it needs (Anchor.Domain.Placement) crashed: RuntimeError: ..., so it checked nothing. Fix: this is an Anchor bug; file it with this line.` One per rule that needs it; the rules that do not still run. |
-| A reachable function calls a function whose name is computed, under a `reachable_from_root` rule (DND-5448) | 1 | the config | `rule 3 (id: "reach", reachable_from_root) reachability is imprecise: lib/a.ex:3 calls an unknown function dynamically. Fix: resolve it through a behaviour, or accept that reachable_from_root cannot judge this repo.` Names each call site; the rule reports no function that run. |
-| A `reachable_from_root` rule over a model with no root (DND-5448) | 1 | the config | `rule 3 (id: "reach", reachable_from_root) no roots: no framework-role bucket matched a module and architecture.roots is empty. Fix: classify the entry points.` |
+| A reachable function calls a function whose name is computed, under a `reachable_from_root` or `directory_placement` rule (DND-5448, DND-5462) | 1 | the config | `rule 3 (id: "reach", reachable_from_root) reachability is imprecise: lib/a.ex:3 calls an unknown function dynamically. Fix: resolve it through a behaviour, or accept that reachable_from_root cannot judge this repo.` Names each call site and the rule's own type; the rule reports nothing that run. |
+| A `reachable_from_root` or `directory_placement` rule over a model with no root (DND-5448, DND-5462) | 1 | the config | `rule 3 (id: "reach", reachable_from_root) no roots: no framework-role bucket matched a module and architecture.roots is empty. Fix: classify the entry points.` |
 | A `reachable_from_root` rule selects no public function an author wrote (DND-5448) | 1 | the config | `rule 3 (id: "reach", reachable_from_root) judged no function: the modules it selects have no public function an author wrote, so it checked nothing. Fix: select modules with public functions of their own, or remove the rule.` |
 | A `function_placement` rule can judge no function of what it selects (DND-5448) | 1 | the config | `rule 2 (id: "placed", function_placement) judged no function: every public function of the modules it selects is a root, generated, a callback or in an interface module, so it checked nothing. Fix: select modules outside architecture.interfaces, or remove the rule.` |
 | A `parameter_reaches_sink` rule selects modules of which no function could be judged (DND-5470) | 1 | the config | `rule 2 (id: "sinks", parameter_reaches_sink) judged no function: every function of the modules it selects is exempt, has no Core body, or could not be analysed, so it checked nothing. Fix: select modules with functions of their own, or remove the rule.` |

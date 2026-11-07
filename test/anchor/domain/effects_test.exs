@@ -6,6 +6,7 @@ defmodule Anchor.Domain.EffectsTest do
   # test/anchor/integration/effects_canary_test.exs.
   #
   # Sabotage record: ../../sabotage_records/effects-20261103-dnd_5447_graph_rules_c.md
+  # DND-5461 (callbacks kept): ../../sabotage_records/placement-20261106-dnd_5461_placement_rules.md
   # Sabotage record (DND-5679): ../../sabotage_records/effects-20261106-dnd_5676_effects_cfa_batch.md
   # The DND-5679 compiled case reads one Erlang and one Elixir fixture beam
   # through BeamReader's pure decode and the builder, as cfa_test.exs does.
@@ -189,6 +190,14 @@ defmodule Anchor.Domain.EffectsTest do
     assert Effects.role(effects, {D, :g, 1}) == nil
     assert Effects.role(effects, {D, :f, 1}) == :domain
     assert effects.not_analysed == 1
+  end
+
+  test "the callbacks it was given are kept on the result (DND-5461)" do
+    callbacks = %{GenServer => [{:init, 1}]}
+    model = model([{D, "domain", [{:f, 1}], []}], [])
+
+    assert Effects.infer(model, callbacks: callbacks).callbacks == callbacks
+    assert Effects.infer(model).callbacks == %{}
   end
 
   describe "a call into a project function whose body was not read (DND-5679)" do

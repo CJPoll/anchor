@@ -239,7 +239,8 @@ defmodule Anchor.Domain.GraphReportTest do
         unjoined: 3,
         computed_calls: 4,
         reachability: :precise,
-        lost_sites: 0
+        lost_sites: 0,
+        modules_not_placed: 5
       }
 
       summary = fn counts ->
@@ -249,7 +250,7 @@ defmodule Anchor.Domain.GraphReportTest do
       assert summary.(placement) =~
                "; placement: 9 functions placed, 2 with no @spec (ownership unknown), " <>
                  "1 ambiguous owner, 3 with no clause to slice, 4 calls of a computed name, " <>
-                 "reachability precise"
+                 "reachability precise, 5 modules not placed (generated, unclassified, or no source)"
 
       assert summary.(%{placement | reachability: :lost, lost_sites: 2}) =~
                "reachability lost at 2 call sites"

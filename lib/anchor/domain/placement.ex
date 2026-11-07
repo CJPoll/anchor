@@ -10,6 +10,17 @@ defmodule Anchor.Domain.Placement do
   proposed, built by `to_violation/3`, and its `Fix:` is `render/1` of the proposal,
   character for character. The rule order is `Anchor.Domain.Placement.Rules`.
 
+  The other function-level rule is `no_inert_hop` (DND-5461): a forwarder that
+  crosses no boundary, read from Core by `Anchor.Domain.Placement.Forwarders`.
+
+  `directory_placement` (DND-5462) proposes at the directory level, from the module
+  dominator tree `Anchor.Domain.Placement.Directories` derives from this model; its
+  proposals' subjects are a module or a directory path (`subject_modules/2`).
+
+  `module_one_component` (DND-5463) proposes at the module level: a module whose
+  public functions form two or more causal components is split, and a private helper
+  two components share is extracted (`Anchor.Domain.Placement.ModuleComponents`).
+
   ## Roots
 
   `roots` are the effect inference's (`Anchor.Domain.Roots`), plus every public macro:
@@ -40,7 +51,10 @@ defmodule Anchor.Domain.Placement do
   alias Anchor.Domain.GraphAlgorithms
   alias Anchor.Domain.Model
   alias Anchor.Domain.Placement.CallGraph
+  alias Anchor.Domain.Placement.Directories
+  alias Anchor.Domain.Placement.Forwarders
   alias Anchor.Domain.Placement.FunctionFacts
+  alias Anchor.Domain.Placement.ModuleComponents
   alias Anchor.Domain.Placement.Ownership
   alias Anchor.Domain.Placement.Rules
   alias Anchor.Domain.Proposal
@@ -59,7 +73,8 @@ defmodule Anchor.Domain.Placement do
               unjoined: 0,
               computed_calls: 0,
               reachability: :precise,
-              lost_sites: []
+              lost_sites: [],
+              modules_not_placed: 0
             }
 
   @type precision :: %{
@@ -69,7 +84,8 @@ defmodule Anchor.Domain.Placement do
           unjoined: non_neg_integer(),
           computed_calls: non_neg_integer(),
           reachability: :precise | :lost | :no_roots,
-          lost_sites: [CallGraph.site()]
+          lost_sites: [CallGraph.site()],
+          modules_not_placed: non_neg_integer()
         }
 
   @type t :: %__MODULE__{
@@ -83,7 +99,25 @@ defmodule Anchor.Domain.Placement do
 
   @typedoc "What `proposals/3` lists: a level, or one rule's own."
   @type selection ::
-          :function | :function_placement | :reachable_from_root | :effects_match_bucket
+          :function
+          | :function_placement
+          | :reachable_from_root
+          | :effects_match_bucket
+          | :no_inert_hop
+          | :directory
+          | :directory_placement
+          | :module
+          | :module_one_component
+
+  @rules [
+    :function_placement,
+    :reachable_from_root,
+    :effects_match_bucket,
+    :no_inert_hop,
+    :directory_placement,
+    :module_one_component
+  ]
+  @levels [:function, :directory, :module]
 
   @doc "The model of `model`; see the moduledoc."
   @spec build(Model.t()) :: t()
@@ -102,7 +136,7 @@ defmodule Anchor.Domain.Placement do
       roots: roots,
       idom: dominators.idom,
       reachable: reachable,
-      precision: precision(functions, answers, calls, reachable, effects.roots)
+      precision: precision(model, functions, answers, calls, reachable, effects.roots)
     }
 
     %{placement | proposals: all_proposals(placement, model, effects)}
@@ -113,15 +147,16 @@ defmodule Anchor.Domain.Placement do
   def facts(%__MODULE__{functions: functions}, mfa), do: Map.get(functions, mfa)
 
   @doc """
-  The proposals of `selection`, sorted by key: `:function` is every one, the others
-  one rule's. Under lost precision `:reachable_from_root` lists none.
+  The proposals of `selection`, sorted by key: a level (`:function`) is every
+  proposal of that level, a rule type one rule's. Under lost precision
+  `:reachable_from_root` lists none.
   """
   @spec proposals(t(), Model.t(), selection()) :: [Proposal.t()]
-  def proposals(%__MODULE__{proposals: proposals}, %Model{}, :function), do: proposals
+  def proposals(%__MODULE__{proposals: proposals}, %Model{}, level) when level in @levels,
+    do: Enum.filter(proposals, &(&1.level == level))
 
-  def proposals(%__MODULE__{proposals: proposals}, %Model{}, rule)
-      when rule in [:function_placement, :reachable_from_root, :effects_match_bucket],
-      do: Enum.filter(proposals, &(&1.rule == rule))
+  def proposals(%__MODULE__{proposals: proposals}, %Model{}, rule) when rule in @rules,
+    do: Enum.filter(proposals, &(&1.rule == rule))
 
   @doc "The one line a placement `Fix:` carries. An unknown reason raises: no default text."
   @spec render(Proposal.t()) :: String.t()
@@ -151,12 +186,60 @@ defmodule Anchor.Domain.Placement do
     "delete #{subject(proposal)} (no root reaches it), or add the root that should call it"
   end
 
+  def render(%Proposal{reason: :dominator_subtree, evidence: ["dominated by " <> owner]} = p) do
+    "move #{subject(p)} from #{p.current} to #{p.proposed} (only #{owner} reaches it; " <>
+      "#{owner} is the directory's public module)"
+  end
+
+  def render(%Proposal{reason: :shared_module, proposed: {:library_context, contexts}} = p),
+    do: "move #{subject(p)} to a library context used by #{Enum.join(contexts, ", ")}"
+
+  def render(%Proposal{reason: :shared_module, evidence: [reached | notes]} = p) do
+    count = reached |> String.split(" ") |> Enum.at(2)
+
+    "move #{subject(p)} to #{p.proposed} (reached from #{count} unrelated callers: shared, " <>
+      "not a private helper)" <> Enum.map_join(notes, &"; #{&1}")
+  end
+
+  def render(%Proposal{reason: :inert_directory} = p),
+    do: "flatten #{p.subject} into #{p.proposed} (no module in it is reached only through it)"
+
+  def render(%Proposal{reason: :inert_hop, proposed: {:inline, to}, evidence: [_to, callers]} = p) do
+    "inline #{subject(p)}: its callers (#{String.replace_prefix(callers, "callers: ", "")}) " <>
+      "call #{ViolationKey.mfa(to)} directly (it forwards without crossing a bucket, context, " <>
+      "app, aggregate, interface or callback boundary)"
+  end
+
+  def render(%Proposal{reason: :components, proposed: {:split, parts}} = p) do
+    "split #{subject(p)} into #{Enum.join(p.evidence, " | ")} (no call, own-struct use or " <>
+      "behaviour links these #{length(parts)} groups of public functions)"
+  end
+
+  def render(%Proposal{reason: :shared_private_helper, proposed: {:extract, target}} = p) do
+    "extract #{subject(p)} into #{inspect(target)} (#{length(p.evidence)} unrelated groups of " <>
+      "#{inspect(p.current)} call it: #{Enum.join(p.evidence, "; ")})"
+  end
+
   @doc """
   The violation of `proposal` under `rule` (a parsed rule map): the subject's def file
   and line, the proposal's key under the rule's name, and a message ending
   `Fix: <render/1>`.
   """
   @spec to_violation(Proposal.t(), Model.t(), map()) :: Violation.t()
+  def to_violation(%Proposal{subject: subject} = proposal, %Model{} = model, rule)
+      when is_atom(subject) or is_binary(subject) do
+    module = proposal |> subject_modules(model) |> hd()
+
+    %Violation{
+      filename: Map.fetch!(model.classification, module).source_file,
+      line: model.graph.modules[module].line,
+      trigger: subject(proposal),
+      rule_id: Map.get(rule, :id),
+      key: rule_key(proposal.key, rule),
+      message: headline(proposal, model) <> " Fix: " <> render(proposal)
+    }
+  end
+
   def to_violation(
         %Proposal{subject: {module, name, arity} = mfa} = proposal,
         %Model{} = model,
@@ -172,6 +255,26 @@ defmodule Anchor.Domain.Placement do
     }
   end
 
+  @doc """
+  The modules a proposal is about: the module of a function or module subject, or every
+  classified module whose source file sits directly in a directory subject, sorted by
+  source file (the first is where its violation goes).
+  """
+  @spec subject_modules(Proposal.t(), Model.t()) :: [module()]
+  def subject_modules(%Proposal{subject: {module, _name, _arity}}, %Model{}), do: [module]
+
+  def subject_modules(%Proposal{subject: module}, %Model{}) when is_atom(module), do: [module]
+
+  def subject_modules(%Proposal{subject: dir}, %Model{classification: classification})
+      when is_binary(dir) do
+    for {module, %Classification{source_file: file}} <- classification,
+        is_binary(file) and Path.dirname(file) == dir do
+      {file, module}
+    end
+    |> Enum.sort()
+    |> Enum.map(&elem(&1, 1))
+  end
+
   defp rule_key(key, rule) do
     [_rule | rest] = String.split(key, "|")
     Enum.join([ViolationKey.rule_name(rule) | rest], "|")
@@ -184,7 +287,9 @@ defmodule Anchor.Domain.Placement do
     end
   end
 
-  defp subject(%Proposal{subject: mfa}), do: ViolationKey.mfa(mfa)
+  defp subject(%Proposal{subject: {_m, _f, _a} = mfa}), do: ViolationKey.mfa(mfa)
+  defp subject(%Proposal{subject: dir}) when is_binary(dir), do: dir
+  defp subject(%Proposal{subject: module}), do: inspect(module)
 
   defp of_context(nil), do: ""
   defp of_context(context), do: " of #{context}"
@@ -203,6 +308,30 @@ defmodule Anchor.Domain.Placement do
 
   defp headline(%Proposal{reason: :unreachable} = proposal, _model),
     do: "#{subject(proposal)} is public and no root reaches it."
+
+  defp headline(
+         %Proposal{reason: :dominator_subtree, evidence: ["dominated by " <> owner]} = p,
+         _model
+       ),
+       do: "#{subject(p)} sits in #{p.current}, but only #{owner} reaches it."
+
+  defp headline(%Proposal{reason: :shared_module} = proposal, _model),
+    do: "#{subject(proposal)} is shared: no one module reaches it."
+
+  defp headline(%Proposal{reason: :inert_directory} = proposal, _model),
+    do: "#{subject(proposal)} encapsulates nothing: no module in it is reached only through it."
+
+  defp headline(%Proposal{reason: :inert_hop, proposed: {:inline, to}} = proposal, _model),
+    do:
+      "#{subject(proposal)} only forwards to #{ViolationKey.mfa(to)}, and the hop crosses no boundary."
+
+  defp headline(%Proposal{reason: :components, proposed: {:split, parts}} = proposal, _model),
+    do: "#{subject(proposal)} holds #{length(parts)} unrelated groups of public functions."
+
+  defp headline(%Proposal{reason: :shared_private_helper} = proposal, _model) do
+    "#{subject(proposal)} is a private helper of #{length(proposal.evidence)} unrelated " <>
+      "groups of #{inspect(proposal.current)}."
+  end
 
   defp headline(%Proposal{reason: reason} = proposal, model) do
     {module, _f, _a} = proposal.subject
@@ -272,7 +401,7 @@ defmodule Anchor.Domain.Placement do
   end
 
   defp facts_for_ownership(mfa, function, node) do
-    %FunctionFacts{mfa: mfa, kind: function.kind, generated?: generated?(function, node)}
+    %FunctionFacts{mfa: mfa, kind: function.kind, generated?: generated_function?(function, node)}
   end
 
   defp answers(graph, mfa, function) do
@@ -307,7 +436,7 @@ defmodule Anchor.Domain.Placement do
       idom: idom,
       reachable?: idom != nil,
       shared?: GraphAlgorithms.shared?(dominators, mfa),
-      generated?: generated?(function, node),
+      generated?: generated_function?(function, node),
       callers: calls.digraph |> Digraph.predecessors(mfa),
       named?: MapSet.member?(calls.named, mfa)
     }
@@ -316,17 +445,21 @@ defmodule Anchor.Domain.Placement do
   defp owner_of({:ok, owner}), do: owner
   defp owner_of(_no_owner), do: nil
 
-  # A module the source shows no literal `defmodule` for, or may not, and a clause a
-  # macro wrote: `quote` puts `context` on the def, `quote generated: true` puts
-  # `generated`.
-  defp generated?(%FunctionNode{clauses: clauses}, %ModuleNode{generated?: module}) do
+  @doc """
+  Whether `function` of `node` is macro or DSL output, or may be: a module the
+  source shows no literal `defmodule` for, or may not, and a clause a macro wrote
+  (`quote` puts `context` on the def, `quote generated: true` puts `generated`).
+  No placement rule judges it.
+  """
+  @spec generated_function?(FunctionNode.t(), ModuleNode.t()) :: boolean()
+  def generated_function?(%FunctionNode{clauses: clauses}, %ModuleNode{generated?: module}) do
     module != false or Enum.any?(clauses, &macro_clause?/1)
   end
 
   defp macro_clause?({meta, _args, _guards, _body}),
     do: Keyword.has_key?(meta, :generated) or Keyword.has_key?(meta, :context)
 
-  defp precision(functions, answers, calls, reachable, roots) do
+  defp precision(model, functions, answers, calls, reachable, roots) do
     outcomes = answers |> Map.values() |> Enum.flat_map(&[&1.output, &1.input])
 
     %{
@@ -336,7 +469,8 @@ defmodule Anchor.Domain.Placement do
       unjoined: Enum.count(outcomes, &(&1 == :unjoined)),
       computed_calls: length(calls.computed),
       reachability: reachability(calls, reachable, roots),
-      lost_sites: lost_sites(calls, reachable)
+      lost_sites: lost_sites(calls, reachable),
+      modules_not_placed: Directories.not_placed(model)
     }
   end
 
@@ -364,6 +498,10 @@ defmodule Anchor.Domain.Placement do
         do: Enum.flat_map(facts, &(&1 |> Rules.unreachable() |> List.wrap())),
         else: []
 
-    Enum.sort_by(function_rules ++ unreachable, & &1.key)
+    hops = Forwarders.proposals(%{model | effects: effects}, placement.roots)
+    directories = Directories.proposals(placement, model, nil)
+    components = ModuleComponents.proposals(%{model | effects: effects})
+
+    Enum.sort_by(function_rules ++ unreachable ++ hops ++ directories ++ components, & &1.key)
   end
 end

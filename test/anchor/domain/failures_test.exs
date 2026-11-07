@@ -6,6 +6,8 @@ defmodule Anchor.Domain.FailuresTest do
   # Sabotage record: ../../sabotage_records/failures-20260929-dnd_1265_anchor_fail_closed.md
   # DND-5446 (one Fix: per issue; the moved refusals):
   #   ../../sabotage_records/rule_shapes-20261103-dnd_5443_graph_rules_b.md
+  # DND-5461 batch (reachability_lost/3 names its rule's type):
+  #   ../../sabotage_records/placement-20261107-dnd_5461_placement_rules.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Failures
@@ -324,6 +326,21 @@ defmodule Anchor.Domain.FailuresTest do
         assert length(String.split(message, "Fix:")) == 2, message
         refute message =~ "correct .anchor.yml to match"
       end
+    end
+  end
+
+  describe "reachability_lost/3" do
+    test "the whole issue: the config, each site, and the rule's own type in the Fix" do
+      rule = %{type: :directory_placement, id: "dirs", index: 1}
+      sites = [%{file: "lib/a.ex", line: 3}, %{file: nil, line: nil}]
+
+      assert %Violation{filename: "proj/.anchor.yml", kind: :fail_closed, message: message} =
+               Failures.reachability_lost(rule, sites, "proj/.anchor.yml")
+
+      assert message ==
+               "rule 1 (id: \"dirs\", directory_placement) reachability is imprecise: lib/a.ex:3, " <>
+                 "?:? calls an unknown function dynamically. Fix: resolve it through a behaviour, " <>
+                 "or accept that directory_placement cannot judge this repo."
     end
   end
 end

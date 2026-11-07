@@ -1,6 +1,11 @@
+directory_placement|directory|AnchorFixtures.PlacementTest.Billing.Domain.Rounding|lib/placement/domain/statement
 effects_match_bucket|AnchorFixtures.PlacementTest.Billing.Domain.Leaky.read/1|adapters
 effects_match_bucket|AnchorFixtures.PlacementTest.Billing.Managers.Calc.total/1|domain
 function_placement|function|AnchorFixtures.PlacementTest.Billing.Domain.Format.invoice_line/1|AnchorFixtures.PlacementTest.Billing.Domain.Invoice.Line
 function_placement|function|AnchorFixtures.PlacementTest.Billing.Domain.Lease.expired?/2|AnchorFixtures.PlacementTest.Billing.Domain.Invoice
 function_placement|function|AnchorFixtures.PlacementTest.Billing.Domain.Rounding.round_cents/1|AnchorFixtures.PlacementTest.Billing.Domain.Statement
+module_one_component|function|AnchorFixtures.PlacementTest.Billing.Domain.Ledger.total/1|AnchorFixtures.PlacementTest.Billing.Domain.Ledger.Total
+module_one_component|module|AnchorFixtures.PlacementTest.Billing.Domain.Dead|captured/1;unused/0
+module_one_component|module|AnchorFixtures.PlacementTest.Billing.Domain.Ledger|balance/1,new/1;label/1,parse_label/1
+no_inert_hop|function|AnchorFixtures.PlacementTest.Billing.Domain.Totals.sum/1|AnchorFixtures.PlacementTest.Billing.Domain.Statement.total/1
 reachable_from_root|function|AnchorFixtures.PlacementTest.Billing.Domain.Dead.unused/0|delete

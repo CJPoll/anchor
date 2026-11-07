@@ -740,9 +740,9 @@ defmodule Anchor.Domain.Failures do
   end
 
   @doc """
-  The issue for a `reachable_from_root` rule (DND-5448) when a reachable function
-  calls a function whose name is computed: anything could be reached, so the rule
-  reports nothing and says why.
+  The issue for a `reachable_from_root` (DND-5448) or `directory_placement` (DND-5462)
+  rule when a reachable function calls a function whose name is computed: anything
+  could be reached, so the rule reports nothing and says why.
   """
   @spec reachability_lost(map(), [map()], String.t() | nil) :: Violation.t()
   def reachability_lost(rule, sites, config_path) do
@@ -752,12 +752,15 @@ defmodule Anchor.Domain.Failures do
       config_path || @config_filename,
       nil,
       "#{rule_label(rule)} reachability is imprecise: #{where} calls an unknown function " <>
-        "dynamically. Fix: resolve it through a behaviour, or accept that reachable_from_root " <>
-        "cannot judge this repo."
+        "dynamically. Fix: resolve it through a behaviour, or accept that " <>
+        "#{Map.get(rule, :type)} cannot judge this repo."
     )
   end
 
-  @doc "The issue for a `reachable_from_root` rule (DND-5448) over a model with no roots."
+  @doc """
+  The issue for a `reachable_from_root` (DND-5448) or `directory_placement` (DND-5462)
+  rule over a model with no roots.
+  """
   @spec reachability_no_roots(map(), String.t() | nil) :: Violation.t()
   def reachability_no_roots(rule, config_path) do
     graph_issue(

@@ -56,7 +56,9 @@ before coining a synonym.
   `Anchor.Domain.EnforcementPasses` (DND-5631): joining the enforce and report
   passes' findings, one copy each.
 - `placement` — `Anchor.Domain.Placement` and its submodules, `Anchor.Domain.Proposal`,
-  `Anchor.Domain.GraphRules.FunctionPlacement` and `.ReachableFromRoot` (DND-5448).
+  `Anchor.Domain.GraphRules.FunctionPlacement` and `.ReachableFromRoot` (DND-5448),
+  `.NoInertHop` (DND-5461), `.DirectoryPlacement` (DND-5462) and `.ModuleOneComponent`
+  (DND-5463).
 - `parameter_reaches_sink` — `Anchor.Domain.GraphRules.ParameterReachesSink` and
   its runner wiring (`:demand` in `Anchor.Managers.Graph`, the summary's counts,
   DND-5470).
@@ -145,6 +147,10 @@ before coining a synonym.
   the `SourceReader` and `GraphArtifact` adapters, and the canary tree. Its
   changes to modules that have a word of their own are filed under that word
   (`classification`, `failures`, `rule_coverage`, `architecture`, `builder`).
+- `graph_rules`, `graph_report` — the words `mix anchor.sabotage run` coins for a
+  generated run's mutants in `Anchor.Domain.GraphRules` and its rules, and in
+  `Anchor.Domain.GraphReport` (DND-5461 batch). A hand record for those modules
+  stays under `graph_runner`.
 - `source_facts` — `Anchor.Domain.Graph.SourceFacts` (DND-5438): the literal
   `defmodule`s and `use`s of a source file.
 - `glob_pattern` — `Anchor.Domain.GlobPattern` (glob / module-name pattern
