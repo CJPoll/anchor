@@ -33,11 +33,15 @@ defmodule Anchor.Domain.Placement.ModuleComponents do
       functions return by `@spec` (`Ownership.output_owner/2`) or build, most frequent
       first, ties alphabetical, as the module's last name segment. One that owns no
       type is named after its first public function (`Ledger.FormatCurrency`), and
-      the evidence says to rename it. A name an existing module already has makes the
-      proposal name that module as the target, and the evidence says to merge into it.
+      the evidence says to rename it. No name is given twice: a name the module or
+      another part already has falls back to the first function's name, then to it
+      with the arity (`Ledger.Fmt1`), then to `Ledger.Part2`, ...; the evidence says to
+      rename it. A name an existing module already has makes the proposal name that
+      module as the target, and the evidence says to merge into it.
     * **M3.** A private function reached from two or more components is a shared
       private helper: one `:shared_private_helper` proposal to extract it into its own
-      module, naming the components. One reached from one component moves with it.
+      module (its name camelized, never a part's or another helper's: else with its
+      arity), naming the components. One reached from one component moves with it.
   """
 
   alias Anchor.Domain.Classification
@@ -220,8 +224,13 @@ defmodule Anchor.Domain.Placement.ModuleComponents do
 
   defp module_proposals(model, module) do
     case components(model, module) do
-      [_one] -> []
-      several -> [split(model, module, several) | shared_helpers(module, several)]
+      [_one] ->
+        []
+
+      several ->
+        %Proposal{proposed: {:split, parts}} = split = split(model, module, several)
+        taken = MapSet.new(parts, &elem(&1, 0))
+        [split | shared_helpers(module, several, taken)]
     end
   end
 
@@ -232,11 +241,14 @@ defmodule Anchor.Domain.Placement.ModuleComponents do
     kept =
       Enum.find(components, & &1.own_struct?) || Enum.max_by(components, &length(&1.functions))
 
-    parts =
-      Enum.map(components, fn component ->
-        if component == kept,
-          do: {module, component, []},
-          else: named(model, module, component)
+    {parts, _taken} =
+      Enum.map_reduce(components, MapSet.new([module]), fn
+        ^kept, taken ->
+          {{module, kept, []}, taken}
+
+        component, taken ->
+          {name, notes} = named(model, module, component, taken)
+          {{name, component, notes}, MapSet.put(taken, name)}
       end)
 
     %Proposal{
@@ -261,20 +273,46 @@ defmodule Anchor.Domain.Placement.ModuleComponents do
     }
   end
 
-  defp named(model, module, %{owned_type: nil, functions: [{_m, name, _a} | _]} = component) do
-    target = Module.concat(module, Macro.camelize(Atom.to_string(name)))
-    {target, component, ["no owned type: rename #{inspect(target)}" | merge_note(model, target)]}
+  # The part's name: its owned type's, as the module's sibling; else its first public
+  # function's, with a note to rename it. A name the module or another part already
+  # has is never given twice: the next candidate is tried (`unique/3`).
+  defp named(model, module, %{owned_type: type, functions: [{_m, name, arity} | _]}, taken) do
+    by_function = Module.concat(module, Macro.camelize(Atom.to_string(name)))
+    fallbacks = [by_function, Module.concat(module, Macro.camelize("#{name}#{arity}"))]
+
+    candidates =
+      if type == nil,
+        do: fallbacks,
+        else: [sibling(module, type) | fallbacks]
+
+    target = unique(candidates, module, taken)
+    {target, notes(type, target, sibling_or_nil(module, type)) ++ merge_note(model, target)}
   end
 
-  defp named(model, module, %{owned_type: type} = component) do
-    target =
-      module
-      |> Module.split()
-      |> Enum.drop(-1)
-      |> Kernel.++([type |> Module.split() |> List.last()])
-      |> Module.concat()
+  defp sibling(module, type) do
+    module
+    |> Module.split()
+    |> Enum.drop(-1)
+    |> Kernel.++([type |> Module.split() |> List.last()])
+    |> Module.concat()
+  end
 
-    {target, component, ["owns %#{inspect(type)}{}" | merge_note(model, target)]}
+  defp sibling_or_nil(_module, nil), do: nil
+  defp sibling_or_nil(module, type), do: sibling(module, type)
+
+  defp notes(nil, target, nil), do: ["no owned type: rename #{inspect(target)}"]
+  defp notes(type, target, target), do: ["owns %#{inspect(type)}{}"]
+
+  defp notes(type, target, typed),
+    do: ["owns %#{inspect(type)}{}", "#{inspect(typed)} is taken: rename #{inspect(target)}"]
+
+  # The first candidate no one has, then `<module>.Part2`, `Part3`, ...: always one.
+  defp unique(candidates, module, taken) do
+    numbered = Stream.map(Stream.iterate(2, &(&1 + 1)), &Module.concat(module, "Part#{&1}"))
+
+    candidates
+    |> Stream.concat(numbered)
+    |> Enum.find(&(not MapSet.member?(taken, &1)))
   end
 
   defp merge_note(%Model{graph: graph}, target),
@@ -297,30 +335,45 @@ defmodule Anchor.Domain.Placement.ModuleComponents do
   defp function_set(%{functions: functions}),
     do: Enum.map_join(functions, ",", fn {_m, name, arity} -> "#{name}/#{arity}" end)
 
-  defp shared_helpers(module, components) do
+  defp shared_helpers(module, components, taken) do
     components
     |> Enum.with_index()
     |> Enum.flat_map(fn {component, index} -> Enum.map(component.privates, &{&1, index}) end)
     |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
     |> Enum.filter(fn {_private, indexes} -> length(Enum.uniq(indexes)) >= 2 end)
-    |> Enum.map(fn {{_m, name, _a} = private, indexes} ->
+    |> Enum.sort()
+    |> Enum.map_reduce(taken, fn {{_m, name, arity} = private, indexes}, taken ->
       sharing = Enum.map(Enum.uniq(indexes), &Enum.at(components, &1))
-      target = Module.concat(module, Macro.camelize(Atom.to_string(name)))
 
-      %Proposal{
-        level: :function,
-        subject: private,
-        current: module,
-        proposed: {:extract, target},
-        rule: :module_one_component,
-        reason: :shared_private_helper,
-        evidence: Enum.map(sharing, &("component " <> function_set(&1))),
-        key:
-          Enum.join(
-            ["module_one_component", "function", ViolationKey.mfa(private), inspect(target)],
-            "|"
-          )
-      }
+      target =
+        unique(
+          [
+            Module.concat(module, Macro.camelize(Atom.to_string(name))),
+            Module.concat(module, Macro.camelize("#{name}#{arity}"))
+          ],
+          module,
+          taken
+        )
+
+      {helper(module, private, target, sharing), MapSet.put(taken, target)}
     end)
+    |> elem(0)
+  end
+
+  defp helper(module, private, target, sharing) do
+    %Proposal{
+      level: :function,
+      subject: private,
+      current: module,
+      proposed: {:extract, target},
+      rule: :module_one_component,
+      reason: :shared_private_helper,
+      evidence: Enum.map(sharing, &("component " <> function_set(&1))),
+      key:
+        Enum.join(
+          ["module_one_component", "function", ViolationKey.mfa(private), inspect(target)],
+          "|"
+        )
+    }
   end
 end

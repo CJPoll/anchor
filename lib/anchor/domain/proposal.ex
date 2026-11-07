@@ -7,8 +7,8 @@ defmodule Anchor.Domain.Proposal do
   from its `proposed`, and its `Fix:` is `Anchor.Domain.Placement.render/1` of the
   proposal.
 
-    * `level` — what moves: `:function` here; later tickets add `:expression`,
-      `:module`, `:directory`, `:context`, `:app` and `:aggregate`.
+    * `level` — what moves: `:function`, `:directory` (DND-5462) or `:module`
+      (DND-5463); later tickets add `:expression`, `:context`, `:app` and `:aggregate`.
     * `subject` — what the proposal is about: an mfa at the function level, a module
       or a directory path at the directory level (DND-5462), a module at the module
       level (DND-5463).

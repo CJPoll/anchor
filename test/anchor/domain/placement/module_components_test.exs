@@ -214,6 +214,69 @@ defmodule Anchor.Domain.Placement.ModuleComponentsTest do
                model_of(modules, []) |> ModuleComponents.proposals()
     end
 
+    test "two parts never get one name: the second falls back to its first function" do
+      modules = [
+        {M, "domain", [{:new, 1}, {:x, 0}, {:y, 0}], []},
+        {Money.Currency, "domain", [], struct: [:code]}
+      ]
+
+      uses = [
+        {{M, :new, 1}, M, :build},
+        {{M, :x, 0}, Money.Currency, :build},
+        {{M, :y, 0}, Money.Currency, :build}
+      ]
+
+      assert [%{proposed: {:split, parts}, evidence: evidence}] =
+               model_of(modules, [], uses) |> ModuleComponents.proposals()
+
+      assert parts == [{M, [{M, :new, 1}]}, {Currency, [{M, :x, 0}]}, {M.Y, [{M, :y, 0}]}]
+      assert Enum.any?(evidence, &(&1 =~ "Currency is taken: rename M.Y"))
+    end
+
+    test "a part never gets the module's own name" do
+      modules = [
+        {Billing.Ledger, "domain", [{:new, 1}, {:report, 0}], []},
+        {Reports.Ledger, "domain", [], struct: [:rows]}
+      ]
+
+      uses = [
+        {{Billing.Ledger, :new, 1}, Billing.Ledger, :build},
+        {{Billing.Ledger, :report, 0}, Reports.Ledger, :build}
+      ]
+
+      assert [%{proposed: {:split, parts}}] =
+               model_of(modules, [], uses) |> ModuleComponents.proposals()
+
+      assert parts == [
+               {Billing.Ledger, [{Billing.Ledger, :new, 1}]},
+               {Billing.Ledger.Report, [{Billing.Ledger, :report, 0}]}
+             ]
+    end
+
+    test "a shared helper's module never takes a part's name" do
+      modules = [{M, "domain", [{:a, 0}, {:b, 0}, {:p, 1}, {:p, 0, :defp}], []}]
+      calls = [{{M, :a, 0}, {M, :p, 0}, :local}, {{M, :b, 0}, {M, :p, 0}, :local}]
+      proposals = model_of(modules, calls) |> ModuleComponents.proposals()
+
+      assert [%{proposed: {:split, parts}}] = Enum.filter(proposals, &(&1.reason == :components))
+      assert {M.P, [{M, :p, 1}]} in parts
+
+      assert [%{proposed: {:extract, M.P0}}] =
+               Enum.filter(proposals, &(&1.reason == :shared_private_helper))
+    end
+
+    test "when every name candidate is taken, a numbered part name, never a clash" do
+      modules = [{M, "domain", [{:a, 0}, {:q, 0}, {:q2, 0}, {:q, 2, :defp}], []}]
+      calls = [{{M, :a, 0}, {M, :q, 2}, :local}, {{M, :q, 0}, {M, :q, 2}, :local}]
+      proposals = model_of(modules, calls) |> ModuleComponents.proposals()
+
+      assert [%{proposed: {:split, [{M, _}, {M.Q, _}, {M.Q2, _}]}}] =
+               Enum.filter(proposals, &(&1.reason == :components))
+
+      assert [%{proposed: {:extract, M.Part2}}] =
+               Enum.filter(proposals, &(&1.reason == :shared_private_helper))
+    end
+
     test "the kept name goes to the larger component" do
       modules = [{M, "domain", [{:a, 0}, {:b, 0}, {:c, 0}], []}]
       calls = [{{M, :b, 0}, {M, :c, 0}, :local}]
