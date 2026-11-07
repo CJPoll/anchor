@@ -57,7 +57,8 @@ before coining a synonym.
   passes' findings, one copy each.
 - `placement` — `Anchor.Domain.Placement` and its submodules, `Anchor.Domain.Proposal`,
   `Anchor.Domain.GraphRules.FunctionPlacement` and `.ReachableFromRoot` (DND-5448),
-  and `.NoInertHop` (DND-5461).
+  `.NoInertHop` (DND-5461), `.DirectoryPlacement` (DND-5462) and `.ModuleOneComponent`
+  (DND-5463).
 - `parameter_reaches_sink` — `Anchor.Domain.GraphRules.ParameterReachesSink` and
   its runner wiring (`:demand` in `Anchor.Managers.Graph`, the summary's counts,
   DND-5470).

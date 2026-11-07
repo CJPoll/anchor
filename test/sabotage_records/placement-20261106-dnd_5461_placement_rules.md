@@ -1,9 +1,9 @@
-# Sabotage record: the batch's placement rules (DND-5461 no_inert_hop, DND-5462 directory_placement)
+# Sabotage record: the batch's placement rules (DND-5461 no_inert_hop, DND-5462 directory_placement, DND-5463 module_one_component)
 
 - **Domain:** placement
 - **Branch:** dnd-5461-placement-rules
 - **Date:** 2026-11-06
-- **Code under test:** `Anchor.Domain.Placement.Forwarders` and `Anchor.Domain.GraphRules.NoInertHop` (DND-5461); `Anchor.Domain.Placement.Directories`, `.TieBreak` and `Anchor.Domain.GraphRules.DirectoryPlacement` (DND-5462); and the `Placement` render, proposal and violation clauses each adds. Each later ticket of the batch adds its own section.
+- **Code under test:** `Anchor.Domain.Placement.Forwarders` and `Anchor.Domain.GraphRules.NoInertHop` (DND-5461); `Anchor.Domain.Placement.Directories`, `.TieBreak` and `Anchor.Domain.GraphRules.DirectoryPlacement` (DND-5462); `Anchor.Domain.Placement.ModuleComponents` and `Anchor.Domain.GraphRules.ModuleOneComponent` (DND-5463); and the `Placement` render, proposal and violation clauses each adds. Each later ticket of the batch adds its own section.
 
 One record for the batch, one section per ticket, as each ticket's QA plan asks (`placement-YYYYMMDD-<branch>.md`). Each mutation replaced one exact text (the driver refuses a text found zero or two times), set the file's mtime two seconds ahead so no beam was stale, ran the group's tests, and restored the file from its in-memory copy, again with its mtime moved ahead.
 
@@ -2152,6 +2152,712 @@ First failure, verbatim:
        test/anchor/domain/placement/forwarders_test.exs:102: (test)
 .........................
 91 tests, 1 failure
+```
+
+
+## DND-5463: module_one_component (Placement.ModuleComponents, GraphRules.ModuleOneComponent)
+
+Group E: `mix test --timeout 2000 --max-cases 2 test/anchor/domain/placement/module_components_test.exs test/anchor/domain/graph_rules/module_one_component_test.exs test/anchor/domain/placement_test.exs test/anchor/integration/placement_invariant_test.exs`, through `test-slot`.
+
+Rows MC-F, MC-G, MC-I and MC-O ran at f5f3e17 (97 tests): their first forms did not compile (MC-F, MC-G) or survived (MC-I: the module-level generated? check was dead and is deleted, and MC-I now mutates the real path; MC-O: no test pinned it, now one does). The other rows ran at 6300a40 (96 tests).
+
+| # | Mutation | File | Result | Failing tests |
+|---|---|---|---|---|
+| MC-A | a shared private callee links the components (QA named) | `lib/anchor/domain/placement/module_components.ex` | `96 tests, 18 failures` (red) | one violation per proposal: a split at the module, a shared helper at the function; the selector limits the subjects; components/2 struct use in a private helper counts for its callers; proposals/1 a shared private helper is one proposal naming both components; components/2 a shared private callee does not link; it is in both privates lists; proposals/3 build/1 holds the module proposals; :module and :module_one_component list them; the same function captured by a reachable one is reachable; no key carries a line number: every module shifted five lines gives the same keys; a supervised process outside a framework bucket is reached through its child spec; the canary yields exactly its listed findings; the precision is printed, and a computed name turns reachability into one issue; every placement violation's Fix equals the render of the proposal with its key; every reason the canary emits renders one non-empty line, and each is there; report mode never fails, and still prints each finding; each finding carries the acceptance criteria's reason and target; a known name with arguments of unknown length reaches every arity, and stays public; a function a literal {M, :f, args} names is reachable, and stays public; spawn with a computed name loses reachability, naming its line |
+| MC-B | drop the struct-use links (QA named) | `lib/anchor/domain/placement/module_components.ex` | `96 tests, 12 failures` (red) | proposals/1 a split names the second part by the type it owns; the first keeps the name; components/2 unrelated groups are two components; components/2 own-struct users are linked; proposals/1 a name an existing module has makes the proposal merge into it; components/2 struct use in a private helper counts for its callers; proposals/1 a part that owns no type is named by its first function, with a rename note; no key carries a line number: every module shifted five lines gives the same keys; every placement violation's Fix equals the render of the proposal with its key; each finding carries the acceptance criteria's reason and target; the canary yields exactly its listed findings; report mode never fails, and still prints each finding; positive control: the compliant half alone gives no finding |
+| MC-C | drop the interface exemption (QA named) | `lib/anchor/domain/placement/module_components.ex` | `96 tests, 1 failure` (red) | proposals/1 an interface module is exempt |
+| MC-D | the walk stops at the first private function | `lib/anchor/domain/placement/module_components.ex` | `96 tests, 1 failure` (red) | components/2 a call through a private hop links |
+| MC-E | any struct's users are linked, not only the module's own | `lib/anchor/domain/placement/module_components.ex` | `96 tests, 1 failure` (red) | components/2 another module's struct does not link |
+| MC-F | a private helper's struct use counts for no caller | `lib/anchor/domain/placement/module_components.ex` | `97 tests, 1 failure` (red) | components/2 struct use in a private helper counts for its callers |
+| MC-G | drop the behaviour-callback links | `lib/anchor/domain/placement/module_components.ex` | `97 tests, 1 failure` (red) | components/2 callbacks of one behaviour are linked |
+| MC-H | an external behaviour's callbacks are ignored | `lib/anchor/domain/placement/module_components.ex` | `96 tests, 1 failure` (red) | components/2 callbacks of one behaviour are linked |
+| MC-I | generated functions count as authored, so a generated module is judged | `lib/anchor/domain/placement/module_components.ex` | `97 tests, 1 failure` (red) | proposals/1 a generated module is exempt |
+| MC-J | the owned type ignores the returned structs | `lib/anchor/domain/placement/module_components.ex` | `96 tests, 2 failures` (red) | proposals/1 a name an existing module has makes the proposal merge into it; proposals/1 a split names the second part by the type it owns; the first keeps the name |
+| MC-K | the own-struct component does not keep the name | `lib/anchor/domain/placement/module_components.ex` | `96 tests, 4 failures` (red) | proposals/1 the component using the module's own struct keeps the name, even when smaller; proposals/1 a name an existing module has makes the proposal merge into it; proposals/1 a split names the second part by the type it owns; the first keeps the name; proposals/1 a part that owns no type is named by its first function, with a rename note |
+| MC-L | a tie keeps the name for the last component | `lib/anchor/domain/placement/module_components.ex` | `96 tests, 2 failures` (red) | one violation per proposal: a split at the module, a shared helper at the function; proposals/1 with no own struct, a tie keeps the name for the alphabetically first |
+| MC-M | no merge note for an existing name | `lib/anchor/domain/placement/module_components.ex` | `96 tests, 1 failure` (red) | proposals/1 a name an existing module has makes the proposal merge into it |
+| MC-N | no rename note for a part that owns no type | `lib/anchor/domain/placement/module_components.ex` | `96 tests, 2 failures` (red) | one violation per proposal: a split at the module, a shared helper at the function; proposals/1 a part that owns no type is named by its first function, with a rename note |
+| MC-O | a private one component reaches is a shared helper | `lib/anchor/domain/placement/module_components.ex` | `97 tests, 1 failure` (red) | proposals/1 a private helper one component reaches moves with it: no helper proposal |
+| MC-P | one component still gives a split | `lib/anchor/domain/placement/module_components.ex` | `96 tests, 7 failures` (red) | one violation per proposal: a split at the module, a shared helper at the function; proposals/1 one component gives no proposal, however long the module; every placement violation's Fix equals the render of the proposal with its key; the canary yields exactly its listed findings; no key carries a line number: every module shifted five lines gives the same keys; positive control: the compliant half alone gives no finding; report mode never fails, and still prints each finding |
+| MC-Q | placement.build omits the module proposals | `lib/anchor/domain/placement.ex` | `96 tests, 9 failures` (red) | the selector limits the subjects; one violation per proposal: a split at the module, a shared helper at the function; proposals/3 build/1 holds the module proposals; :module and :module_one_component list them; every reason the canary emits renders one non-empty line, and each is there; each finding carries the acceptance criteria's reason and target; report mode never fails, and still prints each finding; every placement violation's Fix equals the render of the proposal with its key; the canary yields exactly its listed findings; no key carries a line number: every module shifted five lines gives the same keys |
+| MC-R | the split render drops the groups | `lib/anchor/domain/placement.ex` | `96 tests, 2 failures` (red) | one violation per proposal: a split at the module, a shared helper at the function; render/1 module texts (DND-5463) |
+| MC-S | the rule ignores its selector | `lib/anchor/domain/graph_rules/module_one_component.ex` | `96 tests, 1 failure` (red) | the selector limits the subjects |
+| MC-T | a remote call into the same module does not link | `lib/anchor/domain/placement/module_components.ex` | `96 tests, 1 failure` (red) | components/2 a remote call into the same module links |
+
+### MC-A: a shared private callee links the components (QA named)
+
+Mutation:
+
+```elixir
+# before
+      MapSet.member?(public, next) ->
+        walk(rest, local, public, MapSet.put(seen, next), %{acc | public: [next | acc.public]})
+# after
+      MapSet.member?(public, next) or Map.has_key?(local, next) == false ->
+        walk(rest, local, public, MapSet.put(seen, next), %{acc | public: [next | acc.public]})
+```
+
+First failure, verbatim:
+
+```text
+  1) test one violation per proposal: a split at the module, a shared helper at the function (Anchor.Domain.GraphRules.ModuleOneComponentTest)
+     test/anchor/domain/graph_rules/module_one_component_test.exs:30
+     ** (BadMapError) expected a map, got:
+         nil
+     code: violations = ModuleOneComponent.check(model, @rule)
+     stacktrace:
+       (anchor 0.1.0) lib/anchor/domain/placement/module_components.ex:84: anonymous fn/2 in Anchor.Domain.Placement.ModuleComponents.components/2
+       (elixir 1.19.4) lib/enum.ex:4497: Enum.flat_map_list/2
+       (anchor 0.1.0) lib/anchor/domain/placement/module_components.ex:84: anonymous fn/5 in Anchor.Domain.Placement.ModuleComponents.components/2
+       (elixir 1.19.4) lib/enum.ex:1688: Enum."-map/2-lists^map/1-1-"/2
+       (anchor 0.1.0) lib/anchor/domain/placement/module_components.ex:83: Anchor.Domain.Placement.ModuleComponents.components/2
+       (anchor 0.1.0) lib/anchor/domain/placement/module_components.ex:220: Anchor.Domain.Placement.ModuleComponents.module_proposals/2
+       (elixir 1.19.4) lib/enum.ex:4497: Enum.flat_map_list/2
+       (anchor 0.1.0) lib/anchor/domain/placement/module_components.ex:102: Anchor.Domain.Placement.ModuleComponents.proposals/1
+       (anchor 0.1.0) lib/anchor/domain/placement.ex:503: Anchor.Domain.Placement.all_proposals/3
+       (anchor 0.1.0) lib/anchor/domain/placement.ex:142: Anchor.Domain.Placement.build/1
+       (anchor 0.1.0) lib/anchor/domain/graph_rules/module_one_component.ex:37: Anchor.Domain.GraphRules.ModuleOneComponent.check/2
+       test/anchor/domain/graph_rules/module_one_component_test.exs:32: (test)
+96 tests, 18 failures
+```
+
+### MC-B: drop the struct-use links (QA named)
+
+Mutation:
+
+```elixir
+# before
+        chain(struct_users) ++ Enum.flat_map(callback_groups, &chain/1)
+# after
+        Enum.flat_map(callback_groups, &chain/1)
+```
+
+First failure, verbatim:
+
+```text
+  1) test proposals/1 a split names the second part by the type it owns; the first keeps the name (Anchor.Domain.Placement.ModuleComponentsTest)
+     test/anchor/domain/placement/module_components_test.exs:114
+     Assertion with == failed
+     code:  assert proposal.proposed ==
+              {:split, [{Currency, [{M, :fmt, 1}, {M, :parse, 1}]}, {M, [{M, :get, 1}, {M, :new, 1}]}]}
+     left:  {:split,
+             [
+               {Currency, [{M, :fmt, 1}, {M, :parse, 1}]},
+               {M, [{M, :get, 1}]},
+               {M.New, [{M, :new, 1}]}
+             ]}
+     right: {:split,
+             [
+               {Currency, [{M, :fmt, 1}, {M, :parse, 1}]},
+               {M, [{M, :get, 1}, {M, :new, 1}]}
+             ]}
+     stacktrace:
+       test/anchor/domain/placement/module_components_test.exs:129: (test)
+......
+96 tests, 12 failures
+```
+
+### MC-C: drop the interface exemption (QA named)
+
+Mutation:
+
+```elixir
+# before
+    match?(%Classification{interface?: false}, Map.get(classification, module)) and
+# after
+    match?(%Classification{}, Map.get(classification, module)) and
+```
+
+First failure, verbatim:
+
+```text
+  1) test proposals/1 an interface module is exempt (Anchor.Domain.Placement.ModuleComponentsTest)
+     test/anchor/domain/placement/module_components_test.exs:165
+     Assertion with == failed
+     code:  assert model_of(ledger(interface: true), @ledger_calls, @ledger_uses) |> ModuleComponents.proposals() ==
+              []
+     left:  [
+              %Anchor.Domain.Proposal{
+                level: :module,
+                subject: M,
+                current: M,
+                proposed: {:split,
+                 [
+                   {M.Fmt, [{M, :fmt, 1}, {M, :parse, 1}]},
+                   {M, [{M, :get, 1}, {M, :new, 1}]}
+                 ]},
+                rule: :module_one_component,
+                reason: :components,
+                evidence: ["M.Fmt: M.fmt/1, M.parse/1; no owned type: rename M.Fmt",
+                 "M: M.get/1, M.new/1"],
+                key: "module_one_component|module|M|fmt/1,parse/1;get/1,new/1"
+              }
+            ]
+     right: []
+     stacktrace:
+       test/anchor/domain/placement/module_components_test.exs:166: (test)
+..........................................................................
+96 tests, 1 failure
+```
+
+### MC-D: the walk stops at the first private function
+
+Mutation:
+
+```elixir
+# before
+          rest ++ Map.get(local, next, []),
+# after
+          rest,
+```
+
+First failure, verbatim:
+
+```text
+  1) test components/2 a call through a private hop links (Anchor.Domain.Placement.ModuleComponentsTest)
+     test/anchor/domain/placement/module_components_test.exs:46
+     match (=) failed
+     code:  assert [%{functions: [{M, :a, 0}, {M, :b, 0}], privates: [{M, :p, 0}]}] =
+              model_of(modules, calls) |> ModuleComponents.components(M)
+     left:  [%{functions: [{M, :a, 0}, {M, :b, 0}], privates: [{M, :p, 0}]}]
+     right: [
+              %{
+                functions: [{M, :a, 0}],
+                privates: [{M, :p, 0}],
+                owned_type: nil,
+                own_struct?: false
+              },
+              %{
+                functions: [{M, :b, 0}],
+                privates: [],
+                owned_type: nil,
+                own_struct?: false
+              }
+            ]
+     stacktrace:
+       test/anchor/domain/placement/module_components_test.exs:50: (test)
+..........................................................................................
+96 tests, 1 failure
+```
+
+### MC-E: any struct's users are linked, not only the module's own
+
+Mutation:
+
+```elixir
+# before
+      for %StructUse{from: {^module, _f, _a} = from, struct: ^module} <- uses,
+# after
+      for %StructUse{from: {^module, _f, _a} = from} <- uses,
+```
+
+First failure, verbatim:
+
+```text
+  1) test components/2 another module's struct does not link (Anchor.Domain.Placement.ModuleComponentsTest)
+     test/anchor/domain/placement/module_components_test.exs:64
+     Assertion with == failed
+     code:  assert length(function_sets(model, M)) == 2
+     left:  1
+     right: 2
+     stacktrace:
+       test/anchor/domain/placement/module_components_test.exs:67: (test)
+....................................................................................
+96 tests, 1 failure
+```
+
+### MC-F: a private helper's struct use counts for no caller
+
+Mutation:
+
+```elixir
+# before
+      MapSet.member?(users, mfa) or Enum.any?(reach[mfa].privates, &MapSet.member?(users, &1))
+# after
+      MapSet.member?(users, mfa) or
+        (Application.get_env(:anchor, :sabotage_never_set, false) and Enum.any?(reach[mfa].privates, &MapSet.member?(users, &1)))
+```
+
+First failure, verbatim:
+
+```text
+  1) test components/2 struct use in a private helper counts for its callers (Anchor.Domain.Placement.ModuleComponentsTest)
+     test/anchor/domain/placement/module_components_test.exs:104
+     Assertion with == failed
+     code:  assert function_sets(model_of(modules, calls, uses), M) == [[{M, :a, 0}, {M, :b, 1}]]
+     left:  [[{M, :a, 0}], [{M, :b, 1}]]
+     right: [[{M, :a, 0}, {M, :b, 1}]]
+     stacktrace:
+       test/anchor/domain/placement/module_components_test.exs:109: (test)
+...........................................................................................
+97 tests, 1 failure
+```
+
+### MC-G: drop the behaviour-callback links
+
+Mutation:
+
+```elixir
+# before
+        chain(struct_users) ++ Enum.flat_map(callback_groups, &chain/1)
+# after
+        chain(struct_users) ++ Enum.flat_map(Enum.take(callback_groups, 0), &chain/1)
+```
+
+First failure, verbatim:
+
+```text
+  1) test components/2 callbacks of one behaviour are linked (Anchor.Domain.Placement.ModuleComponentsTest)
+     test/anchor/domain/placement/module_components_test.exs:90
+     Assertion with == failed
+     code:  assert function_sets(model, M) == [[{M, :handle_call, 3}, {M, :init, 1}]]
+     left:  [[{M, :handle_call, 3}], [{M, :init, 1}]]
+     right: [[{M, :handle_call, 3}, {M, :init, 1}]]
+     stacktrace:
+       test/anchor/domain/placement/module_components_test.exs:99: (test)
+.............................................................................
+97 tests, 1 failure
+```
+
+### MC-H: an external behaviour's callbacks are ignored
+
+Mutation:
+
+```elixir
+# before
+          nil -> Map.get(external, behaviour, [])
+# after
+          nil -> Map.get(Map.take(external, []), behaviour, [])
+```
+
+First failure, verbatim:
+
+```text
+  1) test components/2 callbacks of one behaviour are linked (Anchor.Domain.Placement.ModuleComponentsTest)
+     test/anchor/domain/placement/module_components_test.exs:90
+     Assertion with == failed
+     code:  assert function_sets(model, M) == [[{M, :handle_call, 3}, {M, :init, 1}]]
+     left:  [[{M, :handle_call, 3}], [{M, :init, 1}]]
+     right: [[{M, :handle_call, 3}, {M, :init, 1}]]
+     stacktrace:
+       test/anchor/domain/placement/module_components_test.exs:99: (test)
+.................................................................................
+96 tests, 1 failure
+```
+
+### MC-I: generated functions count as authored, so a generated module is judged
+
+Mutation:
+
+```elixir
+# before
+          generated?: Placement.generated_function?(function, node)
+# after
+          generated?: Placement.generated_function?(function, node) and Application.get_env(:anchor, :sabotage_never_set, false)
+```
+
+First failure, verbatim:
+
+```text
+  1) test proposals/1 a generated module is exempt (Anchor.Domain.Placement.ModuleComponentsTest)
+     test/anchor/domain/placement/module_components_test.exs:177
+     Assertion with == failed
+     code:  assert model_of(ledger(generated: true), @ledger_calls, @ledger_uses) |> ModuleComponents.proposals() ==
+              []
+     left:  [
+              %Anchor.Domain.Proposal{
+                level: :module,
+                subject: M,
+                current: M,
+                proposed: {:split,
+                 [
+                   {M.Fmt, [{M, :fmt, 1}, {M, :parse, 1}]},
+                   {M, [{M, :get, 1}, {M, :new, 1}]}
+                 ]},
+                rule: :module_one_component,
+                reason: :components,
+                evidence: ["M.Fmt: M.fmt/1, M.parse/1; no owned type: rename M.Fmt",
+                 "M: M.get/1, M.new/1"],
+                key: "module_one_component|module|M|fmt/1,parse/1;get/1,new/1"
+              }
+            ]
+     right: []
+     stacktrace:
+       test/anchor/domain/placement/module_components_test.exs:178: (test)
+...................................................................................
+97 tests, 1 failure
+```
+
+### MC-J: the owned type ignores the returned structs
+
+Mutation:
+
+```elixir
+# before
+          {:ok, owner} <- [Ownership.output_owner(graph, mfa)],
+# after
+          {:ok, owner} <- [Ownership.output_owner(graph, mfa)],
+          owner == :sabotage,
+```
+
+First failure, verbatim:
+
+```text
+  1) test proposals/1 a name an existing module has makes the proposal merge into it (Anchor.Domain.Placement.ModuleComponentsTest)
+     test/anchor/domain/placement/module_components_test.exs:175
+     match (=) failed
+     code:  assert {:split, [{Currency, _fns}, {M, _kept}]} = proposal.proposed
+     left:  {:split, [{Currency, _fns}, {M, _kept}]}
+     right: {:split,
+             [
+               {M.Fmt, [{M, :fmt, 1}, {M, :parse, 1}]},
+               {M, [{M, :get, 1}, {M, :new, 1}]}
+             ]}
+     stacktrace:
+       test/anchor/domain/placement/module_components_test.exs:187: (test)
+...............
+96 tests, 2 failures
+```
+
+### MC-K: the own-struct component does not keep the name
+
+Mutation:
+
+```elixir
+# before
+      Enum.find(components, & &1.own_struct?) || Enum.max_by(components, &length(&1.functions))
+# after
+      Enum.max_by(components, &length(&1.functions))
+```
+
+First failure, verbatim:
+
+```text
+  1) test proposals/1 the component using the module's own struct keeps the name, even when smaller (Anchor.Domain.Placement.ModuleComponentsTest)
+     test/anchor/domain/placement/module_components_test.exs:191
+     Assertion with in failed
+     code:  assert {M, [{M, :new, 1}]} in parts
+     left:  {M, [{M, :new, 1}]}
+     right: [{M, [{M, :a, 0}, {M, :b, 0}]}, {M.New, [{M, :new, 1}]}]
+     stacktrace:
+       test/anchor/domain/placement/module_components_test.exs:199: (test)
+96 tests, 4 failures
+```
+
+### MC-L: a tie keeps the name for the last component
+
+Mutation:
+
+```elixir
+# before
+      Enum.find(components, & &1.own_struct?) || Enum.max_by(components, &length(&1.functions))
+# after
+      Enum.find(components, & &1.own_struct?) ||
+        components |> Enum.reverse() |> Enum.max_by(&length(&1.functions))
+```
+
+First failure, verbatim:
+
+```text
+  1) test one violation per proposal: a split at the module, a shared helper at the function (Anchor.Domain.GraphRules.ModuleOneComponentTest)
+     test/anchor/domain/graph_rules/module_one_component_test.exs:30
+     Assertion with == failed
+     code:  assert Enum.map(violations, & &1.message) == [
+              "M.p/0 is a private helper of 2 unrelated groups of M. Fix: extract M.p/0 into " <>
+                "M.P (2 unrelated groups of M call it: component a/0; component b/0)",
+              "M holds 2 unrelated groups of public functions. Fix: split M into M: M.a/0 | " <>
+                "M.B: M.b/0; no owned type: rename M.B (no call, own-struct use or behaviour " <>
+                "links these 2 groups of public functions)"
+            ]
+     left:  ["M.p/0 is a private helper of 2 unrelated groups of M. Fix: extract M.p/0 into M.P (2 unrelated groups of M call it: component a/0; component b/0)",
+             "M holds 2 unrelated groups of public functions. Fix: split M into M.A: M.a/0; no owned type: rename M.A | M: M.b/0 (no call, own-struct use or behaviour links these 2 groups of public functions)"]
+     right: ["M.p/0 is a private helper of 2 unrelated groups of M. Fix: extract M.p/0 into M.P (2 unrelated groups of M call it: component a/0; component b/0)",
+             "M holds 2 unrelated groups of public functions. Fix: split M into M: M.a/0 | M.B: M.b/0; no owned type: rename M.B (no call, own-struct use or behaviour links these 2 groups of public functions)"]
+     stacktrace:
+       test/anchor/domain/graph_rules/module_one_component_test.exs:44: (test)
+.........
+96 tests, 2 failures
+```
+
+### MC-M: no merge note for an existing name
+
+Mutation:
+
+```elixir
+# before
+      if(Map.has_key?(graph.modules, target),
+# after
+      if(Map.has_key?(graph.modules, target) and Application.get_env(:anchor, :sabotage_never_set, false),
+```
+
+First failure, verbatim:
+
+```text
+  1) test proposals/1 a name an existing module has makes the proposal merge into it (Anchor.Domain.Placement.ModuleComponentsTest)
+     test/anchor/domain/placement/module_components_test.exs:175
+     Expected truthy, got false
+     code: assert Enum.any?(proposal.evidence, &(&1 =~ "merge into existing Currency"))
+     arguments:
+         # 1
+         ["Currency: M.fmt/1, M.parse/1; owns %Money.Currency{}",
+          "M: M.get/1, M.new/1"]
+         # 2
+         #Function<3.125673267/1 in Anchor.Domain.Placement.ModuleComponentsTest."test proposals/1 a name an existing module has makes the proposal merge into it"/1>
+     stacktrace:
+       test/anchor/domain/placement/module_components_test.exs:188: (test)
+......................................................................................
+96 tests, 1 failure
+```
+
+### MC-N: no rename note for a part that owns no type
+
+Mutation:
+
+```elixir
+# before
+    {target, component, ["no owned type: rename #{inspect(target)}" | merge_note(model, target)]}
+# after
+    {target, component, merge_note(model, target)}
+```
+
+First failure, verbatim:
+
+```text
+  1) test one violation per proposal: a split at the module, a shared helper at the function (Anchor.Domain.GraphRules.ModuleOneComponentTest)
+     test/anchor/domain/graph_rules/module_one_component_test.exs:30
+     Assertion with == failed
+     code:  assert Enum.map(violations, & &1.message) == [
+              "M.p/0 is a private helper of 2 unrelated groups of M. Fix: extract M.p/0 into " <>
+                "M.P (2 unrelated groups of M call it: component a/0; component b/0)",
+              "M holds 2 unrelated groups of public functions. Fix: split M into M: M.a/0 | " <>
+                "M.B: M.b/0; no owned type: rename M.B (no call, own-struct use or behaviour " <>
+                "links these 2 groups of public functions)"
+            ]
+     left:  ["M.p/0 is a private helper of 2 unrelated groups of M. Fix: extract M.p/0 into M.P (2 unrelated groups of M call it: component a/0; component b/0)",
+             "M holds 2 unrelated groups of public functions. Fix: split M into M: M.a/0 | M.B: M.b/0 (no call, own-struct use or behaviour links these 2 groups of public functions)"]
+     right: ["M.p/0 is a private helper of 2 unrelated groups of M. Fix: extract M.p/0 into M.P (2 unrelated groups of M call it: component a/0; component b/0)",
+             "M holds 2 unrelated groups of public functions. Fix: split M into M: M.a/0 | M.B: M.b/0; no owned type: rename M.B (no call, own-struct use or behaviour links these 2 groups of public functions)"]
+     stacktrace:
+       test/anchor/domain/graph_rules/module_one_component_test.exs:44: (test)
+........
+96 tests, 2 failures
+```
+
+### MC-O: a private one component reaches is a shared helper
+
+Mutation:
+
+```elixir
+# before
+    |> Enum.filter(fn {_private, indexes} -> length(Enum.uniq(indexes)) >= 2 end)
+# after
+    |> Enum.filter(fn {_private, indexes} -> length(Enum.uniq(indexes)) >= 1 end)
+```
+
+First failure, verbatim:
+
+```text
+  1) test proposals/1 a private helper one component reaches moves with it: no helper proposal (Anchor.Domain.Placement.ModuleComponentsTest)
+     test/anchor/domain/placement/module_components_test.exs:155
+     match (=) failed
+     code:  assert [%{reason: :components}] = model_of(modules, calls) |> ModuleComponents.proposals()
+     left:  [%{reason: :components}]
+     right: [
+              %Anchor.Domain.Proposal{
+                level: :function,
+                subject: {M, :p, 0},
+                current: M,
+                proposed: {:extract, M.P},
+                rule: :module_one_component,
+                reason: :shared_private_helper,
+                evidence: ["component a/0"],
+                key: "module_one_component|function|M.p/0|M.P"
+              },
+              %Anchor.Domain.Proposal{
+                level: :module,
+                subject: M,
+                current: M,
+                proposed: {:split,
+                 [{M, [{M, :a, 0}]}, {M.B, [{M, :b, 0}]}]},
+                rule: :module_one_component,
+                reason: :components,
+                evidence: ["M: M.a/0",
+                 "M.B: M.b/0; no owned type: rename M.B"],
+                key: "module_one_component|module|M|a/0;b/0"
+              }
+            ]
+     stacktrace:
+       test/anchor/domain/placement/module_components_test.exs:159: (test)
+............................................................................
+97 tests, 1 failure
+```
+
+### MC-P: one component still gives a split
+
+Mutation:
+
+```elixir
+# before
+      [_one] -> []
+# after
+
+```
+
+First failure, verbatim:
+
+```text
+  1) test one violation per proposal: a split at the module, a shared helper at the function (Anchor.Domain.GraphRules.ModuleOneComponentTest)
+     test/anchor/domain/graph_rules/module_one_component_test.exs:30
+     Assertion with == failed
+     code:  assert Enum.map(violations, &{&1.trigger, &1.filename, &1.key}) == [
+              {"M.p/0", "lib/domain/M.ex", "one|function|M.p/0|M.P"},
+              {"M", "lib/domain/M.ex", "one|module|M|a/0;b/0"}
+            ]
+     left:  [
+              {"M.p/0", "lib/domain/M.ex", "one|function|M.p/0|M.P"},
+              {"M", "lib/domain/M.ex", "one|module|M|a/0;b/0"},
+              {"N", "lib/domain/N.ex", "one|module|N|c/0,d/0"}
+            ]
+     right: [
+              {"M.p/0", "lib/domain/M.ex", "one|function|M.p/0|M.P"},
+              {"M", "lib/domain/M.ex", "one|module|M|a/0;b/0"}
+            ]
+     stacktrace:
+       test/anchor/domain/graph_rules/module_one_component_test.exs:35: (test)
+............
+96 tests, 7 failures
+```
+
+### MC-Q: placement.build omits the module proposals
+
+Mutation:
+
+```elixir
+# before
+    Enum.sort_by(function_rules ++ unreachable ++ hops ++ directories ++ components, & &1.key)
+# after
+    Enum.sort_by(function_rules ++ unreachable ++ hops ++ directories ++ Enum.take(components, 0), & &1.key)
+```
+
+First failure, verbatim:
+
+```text
+  1) test the selector limits the subjects (Anchor.Domain.GraphRules.ModuleOneComponentTest)
+     test/anchor/domain/graph_rules/module_one_component_test.exs:53
+     Assertion with == failed
+     code:  assert length(ModuleOneComponent.check(model, %{@rule | paths: ["lib/domain/M.ex"]})) == 2
+     left:  0
+     right: 2
+     stacktrace:
+       test/anchor/domain/graph_rules/module_one_component_test.exs:56: (test)
+96 tests, 9 failures
+```
+
+### MC-R: the split render drops the groups
+
+Mutation:
+
+```elixir
+# before
+    "split #{subject(p)} into #{Enum.join(p.evidence, " | ")} (no call, own-struct use or " <>
+# after
+    "split #{subject(p)} into #{length(p.evidence)} (no call, own-struct use or " <>
+```
+
+First failure, verbatim:
+
+```text
+  1) test one violation per proposal: a split at the module, a shared helper at the function (Anchor.Domain.GraphRules.ModuleOneComponentTest)
+     test/anchor/domain/graph_rules/module_one_component_test.exs:30
+     Assertion with == failed
+     code:  assert Enum.map(violations, & &1.message) == [
+              "M.p/0 is a private helper of 2 unrelated groups of M. Fix: extract M.p/0 into " <>
+                "M.P (2 unrelated groups of M call it: component a/0; component b/0)",
+              "M holds 2 unrelated groups of public functions. Fix: split M into M: M.a/0 | " <>
+                "M.B: M.b/0; no owned type: rename M.B (no call, own-struct use or behaviour " <>
+                "links these 2 groups of public functions)"
+            ]
+     left:  ["M.p/0 is a private helper of 2 unrelated groups of M. Fix: extract M.p/0 into M.P (2 unrelated groups of M call it: component a/0; component b/0)",
+             "M holds 2 unrelated groups of public functions. Fix: split M into 2 (no call, own-struct use or behaviour links these 2 groups of public functions)"]
+     right: ["M.p/0 is a private helper of 2 unrelated groups of M. Fix: extract M.p/0 into M.P (2 unrelated groups of M call it: component a/0; component b/0)",
+             "M holds 2 unrelated groups of public functions. Fix: split M into M: M.a/0 | M.B: M.b/0; no owned type: rename M.B (no call, own-struct use or behaviour links these 2 groups of public functions)"]
+     stacktrace:
+       test/anchor/domain/graph_rules/module_one_component_test.exs:44: (test)
+................................................................
+96 tests, 2 failures
+```
+
+### MC-S: the rule ignores its selector
+
+Mutation:
+
+```elixir
+# before
+        Enum.any?(Placement.subject_modules(proposal, model), &MapSet.member?(selected, &1)),
+# after
+        Enum.any?(Placement.subject_modules(proposal, model), &(MapSet.member?(selected, &1) or Application.get_env(:anchor, :sabotage_never_set, true))),
+```
+
+First failure, verbatim:
+
+```text
+  1) test the selector limits the subjects (Anchor.Domain.GraphRules.ModuleOneComponentTest)
+     test/anchor/domain/graph_rules/module_one_component_test.exs:53
+     Assertion with == failed
+     code:  assert ModuleOneComponent.check(model, %{@rule | paths: ["lib/framework/*.ex"]}) == []
+     left:  [
+              %Anchor.Domain.Violation{
+                line: 10,
+                trigger: "M.p/0",
+                message: "M.p/0 is a private helper of 2 unrelated groups of M. Fix: extract M.p/0 into M.P (2 unrelated groups of M call it: component a/0; component b/0)",
+                filename: "lib/domain/M.ex",
+                kind: :rule,
+                key: "one|function|M.p/0|M.P",
+                rule_id: "one",
+                enforcement: :enforce
+              },
+              %Anchor.Domain.Violation{
+                line: nil,
+                trigger: "M",
+                message: "M holds 2 unrelated groups of public functions. Fix: split M into M: M.a/0 | M.B: M.b/0; no owned type: rename M.B (no call, own-struct use or behaviour links these 2 groups of public functions)",
+                filename: "lib/domain/M.ex",
+                kind: :rule,
+                key: "one|module|M|a/0;b/0",
+                rule_id: "one",
+                enforcement: :enforce
+              }
+            ]
+     right: []
+     stacktrace:
+       test/anchor/domain/graph_rules/module_one_component_test.exs:55: (test)
+...............................................................................................
+96 tests, 1 failure
+```
+
+### MC-T: a remote call into the same module does not link
+
+Mutation:
+
+```elixir
+# before
+    for %Call{from: {^module, _f, _a} = from, to: {^module, _g, _b} = to} <- calls,
+# after
+    for %Call{from: {^module, _f, _a} = from, to: {^module, _g, _b} = to, kind: :local} <- calls,
+```
+
+First failure, verbatim:
+
+```text
+  1) test components/2 a remote call into the same module links (Anchor.Domain.Placement.ModuleComponentsTest)
+     test/anchor/domain/placement/module_components_test.exs:54
+     Assertion with == failed
+     code:  assert function_sets(model, M) == [[{M, :a, 0}, {M, :b, 0}]]
+     left:  [[{M, :a, 0}], [{M, :b, 0}]]
+     right: [[{M, :a, 0}, {M, :b, 0}]]
+     stacktrace:
+       test/anchor/domain/placement/module_components_test.exs:56: (test)
+...........................................................................................
+96 tests, 1 failure
 ```
 
 
