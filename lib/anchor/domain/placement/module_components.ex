@@ -108,8 +108,10 @@ defmodule Anchor.Domain.Placement.ModuleComponents do
   defp judged?(%Model{graph: graph, classification: classification}, module) do
     node = graph.modules[module]
 
+    # A generated module has no authored function (`Placement.generated_function?/2`
+    # answers for the module too), so it never has two.
     match?(%Classification{interface?: false}, Map.get(classification, module)) and
-      node.generated? == false and length(public_functions(module, node)) >= 2
+      length(public_functions(module, node)) >= 2
   end
 
   defp public_functions(module, %ModuleNode{functions: functions} = node) do

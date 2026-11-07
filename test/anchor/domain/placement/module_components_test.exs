@@ -152,6 +152,13 @@ defmodule Anchor.Domain.Placement.ModuleComponentsTest do
       assert helper.evidence == ["component a/0", "component b/0"]
     end
 
+    test "a private helper one component reaches moves with it: no helper proposal" do
+      modules = [{M, "domain", [{:a, 0}, {:b, 0}, {:p, 0, :defp}], []}]
+      calls = [{{M, :a, 0}, {M, :p, 0}, :local}]
+
+      assert [%{reason: :components}] = model_of(modules, calls) |> ModuleComponents.proposals()
+    end
+
     test "one component gives no proposal, however long the module" do
       functions = for i <- 1..40, do: {String.to_atom("f#{i}"), 0}
 
