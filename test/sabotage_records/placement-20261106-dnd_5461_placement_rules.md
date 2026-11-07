@@ -2026,6 +2026,91 @@ First failure, verbatim:
 58 tests, 1 failure
 ```
 
+## DND-5462 critic round 4: a module in its owner's file, a one-file directory
+
+Group D: `mix test --timeout 2000 --max-cases 2 test/anchor/domain/placement/directories_test.exs test/anchor/domain/placement/tie_break_test.exs test/anchor/domain/graph_rules/directory_placement_test.exs test/anchor/domain/placement_test.exs test/anchor/integration/placement_invariant_test.exs test/anchor/domain/graph_report_test.exs`, through `test-slot`.
+
+| # | Mutation | File | Result | Failing tests |
+|---|---|---|---|---|
+| DIR-T | a module in its dominator's own file still moves | `lib/anchor/domain/placement/directories.ex` | `137 tests, 1 failure` (red) | proposals/3 a module defined in its dominator's own file gives nothing |
+| DIR-U | a one-file directory of several modules can be flattened | `lib/anchor/domain/placement/directories.ex` | `137 tests, 1 failure` (red) | proposals/3 a directory of one file, however many modules it defines, is not inert |
+
+### DIR-T: a module in its dominator's own file still moves
+
+Mutation:
+
+```elixir
+# before
+if current != companion and class.source_file != owner.source_file,
+# after
+if current != companion,
+```
+
+First failure, verbatim:
+
+```text
+  1) test proposals/3 a module defined in its dominator's own file gives nothing (Anchor.Domain.Placement.DirectoriesTest)
+     test/anchor/domain/placement/directories_test.exs:89
+     Assertion with == failed
+     code:  assert proposals(@chain, [{W, Inv}, {Inv, Rnd}], files) == []
+     left:  [
+              %Anchor.Domain.Proposal{
+                level: :directory,
+                subject: Rnd,
+                current: "lib/b/domain",
+                proposed: "lib/b/domain/invoice",
+                rule: :directory_placement,
+                reason: :dominator_subtree,
+                evidence: ["dominated by Inv"],
+                key: "directory_placement|directory|Rnd|lib/b/domain/invoice"
+              }
+            ]
+     right: []
+     stacktrace:
+       test/anchor/domain/placement/directories_test.exs:91: (test)
+............................................................................................................
+137 tests, 1 failure
+```
+
+### DIR-U: a one-file directory of several modules can be flattened
+
+Mutation:
+
+```elixir
+# before
+with [_, _ | _] <- files,
+# after
+with [_, _ | _] <- modules,
+         [_ | _] <- files,
+```
+
+First failure, verbatim:
+
+```text
+  1) test proposals/3 a directory of one file, however many modules it defines, is not inert (Anchor.Domain.Placement.DirectoriesTest)
+     test/anchor/domain/placement/directories_test.exs:180
+     Assertion with == failed
+     code:  assert proposals(modules, [{W, Inv}, {W, U1}, {W, U2}], files) == []
+     left:  [
+              %Anchor.Domain.Proposal{
+                level: :directory,
+                subject: "lib/b/domain/util",
+                current: "lib/b/domain/util",
+                proposed: "lib/b/domain",
+                rule: :directory_placement,
+                reason: :inert_directory,
+                evidence: ["holds U1, U2"],
+                key: "directory_placement|directory|lib/b/domain/util|lib/b/domain"
+              }
+            ]
+     right: []
+     stacktrace:
+       test/anchor/domain/placement/directories_test.exs:195: (test)
+....................................................................................................................
+137 tests, 1 failure
+```
+
+
 ## Run 23:09 UTC
 
 - **Code under test:** `Anchor.Domain.Placement.all_proposals/3`, `Anchor.Domain.Placement.facts_for_ownership/3`, `Anchor.Domain.Placement.headline/2`, `Anchor.Domain.Placement.proposals/3`, `Anchor.Domain.Placement.render/1`, `Anchor.Domain.Placement.Forwarders.aggregates/2`, `Anchor.Domain.Placement.Forwarders.app/2`, `Anchor.Domain.Placement.Forwarders.behaviour_callbacks/3`, `Anchor.Domain.Placement.Forwarders.boundary/3`, `Anchor.Domain.Placement.Forwarders.call_of/3`, `Anchor.Domain.Placement.Forwarders.callback?/2`, `Anchor.Domain.Placement.Forwarders.callers_text/1`, `Anchor.Domain.Placement.Forwarders.case_forward/2`, `Anchor.Domain.Placement.Forwarders.case_values/1`, `Anchor.Domain.Placement.Forwarders.classified_boundary/4`, `Anchor.Domain.Placement.Forwarders.compiler_generated?/1`, `Anchor.Domain.Placement.Forwarders.default_clause?/2`, `Anchor.Domain.Placement.Forwarders.forwarded_call/2`, `Anchor.Domain.Placement.Forwarders.forwarder/1`, `Anchor.Domain.Placement.Forwarders.forwarding_call/3`, `Anchor.Domain.Placement.Forwarders.literal_mfa/1`, `Anchor.Domain.Placement.Forwarders.renaming_let/3`, `Anchor.Domain.Placement.Forwarders.static_caller?/1`, `Anchor.Domain.Placement.Forwarders.true_guard?/1`, `Anchor.Domain.Placement.Forwarders.vars/1`
