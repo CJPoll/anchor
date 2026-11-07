@@ -445,6 +445,7 @@ compiled code (DND-5440; `layering`, DND-5442, `context_acyclic`, DND-5445,
 `aggregate_declarations`, DND-5476, `aggregate_write_sources`, DND-5459,
 `effects_match_bucket`, DND-5447, `function_placement`, DND-5448,
 `no_inert_hop`, DND-5461, `directory_placement`, DND-5462,
+`module_one_component`, DND-5463,
 `parameter_reaches_sink`, DND-5470, `reachable_from_root`, DND-5448,
 `struct_owned_by_module_flow`, DND-5454,
 `analyses_complete`, DND-5715, and `interface`, DND-5443). Credo never reports a
@@ -464,6 +465,7 @@ compiled code (DND-5440; `layering`, DND-5442, `context_acyclic`, DND-5445,
 | `interface` | `max_width` | none | `graph` |
 | `layering` | none | none | `graph` |
 | `max_file_length` | `max_lines` | none | `ast` |
+| `module_one_component` | none | none | `graph` |
 | `module_pattern_restrictions` | `allowed_functions` | none | `ast` |
 | `must_use_module` | `required_modules` | `required_modules` | `ast` |
 | `no_comparison_in_if` | none | none | `ast` |
@@ -1418,6 +1420,52 @@ closed.
 
 ```text
 lib/billing/domain/rounding.ex:2: [enforce] rule 1 (id: "directory_placement", directory_placement) Billing.Domain.Rounding sits in lib/billing/domain, but only Billing.Domain.Invoice reaches it. Fix: move Billing.Domain.Rounding from lib/billing/domain to lib/billing/domain/invoice (only Billing.Domain.Invoice reaches it; Billing.Domain.Invoice is the directory's public module)
+```
+
+### The `module_one_component` rule (DND-5463)
+
+```yaml
+rules:
+  - type: module_one_component
+    id: module_one_component
+    paths: ["lib/**/*.ex"]
+
+architecture:
+  contexts:
+    depth: 2
+  buckets:
+    - name: domain
+      role: domain
+      select:
+        - paths: ["lib/**/domain/**/*.ex"]
+    - name: web
+      role: framework
+      select:
+        - paths: ["lib/**/web/**/*.ex"]
+  calls:
+    domain: [domain]
+    web: [domain]
+```
+
+A module's public functions are linked when one reaches the other through the
+module's own calls (walking through its private functions), when both build,
+update or match the module's own struct (a private helper's use counting for every
+public function that reaches it), or when both implement the callbacks of one
+behaviour. The connected groups of those links are the module's causal components
+(LCOM4). Length never triggers anything; a context's interface module and a
+generated module are exempt.
+
+- **Split (M1).** A module with two or more components is one violation at its
+  `defmodule`: one module per component. The component with the most public
+  functions keeps the name; each other is named after the project struct its
+  functions return (`@spec`) or build, as a sibling module, and one that owns no
+  type is named after its first public function, with a note to rename it. A name
+  an existing module has says to merge into it.
+- **Shared private helper (M3).** A private function two components reach does not
+  link them; it is one violation at the function: extract it into its own module.
+
+```text
+lib/billing/domain/ledger.ex:1: [enforce] rule 1 (id: "module_one_component", module_one_component) Billing.Domain.Ledger holds 2 unrelated groups of public functions. Fix: split Billing.Domain.Ledger into Billing.Domain.Currency: Billing.Domain.Ledger.format/1, Billing.Domain.Ledger.parse/1; owns %Billing.Domain.Currency{}; merge into existing Billing.Domain.Currency | Billing.Domain.Ledger: Billing.Domain.Ledger.get/1, Billing.Domain.Ledger.new/1 (no call, own-struct use or behaviour links these 2 groups of public functions)
 ```
 
 ### The `parameter_reaches_sink` rule (DND-5470)

@@ -17,6 +17,9 @@ rules:
   - type: directory_placement
     id: directory_placement
     paths: ["lib/placement/**/*.ex"]
+  - type: module_one_component
+    id: module_one_component
+    paths: ["lib/placement/**/*.ex"]
 
 architecture:
   contexts:

@@ -4,7 +4,8 @@ defmodule Anchor.Domain.PlacementTest do
   #
   # Sabotage record: ../../sabotage_records/placement-20261106-dnd_5448_placement_core.md
   # DND-5461 (render/1 joins this file, the mirror the generated sabotage runs):
-  # ../../sabotage_records/placement-20261106-dnd_5461_placement_rules.md
+  # ../../sabotage_records/placement-20261106-dnd_5461_placement_rules.md (DND-5461 to
+  # DND-5463)
   use ExUnit.Case, async: true
 
   import Anchor.Test.PlacementModels
@@ -539,6 +540,30 @@ defmodule Anchor.Domain.PlacementTest do
       assert [%{reason: :bucket_from_effects}] =
                Placement.proposals(placement, model, :effects_match_bucket)
     end
+
+    test "build/1 holds the module proposals; :module and :module_one_component list them" do
+      modules = [
+        {W, "framework", [{:run, 0}], []},
+        {M, "domain", [{:a, 0}, {:b, 0}, {:p, 0, :defp}], []}
+      ]
+
+      calls = [
+        {{W, :run, 0}, {M, :a, 0}},
+        {{W, :run, 0}, {M, :b, 0}},
+        {{M, :a, 0}, {M, :p, 0}, :local},
+        {{M, :b, 0}, {M, :p, 0}, :local}
+      ]
+
+      model = model(modules, calls)
+      placement = Placement.build(model)
+
+      assert [%{reason: :components, subject: M}] = Placement.proposals(placement, model, :module)
+
+      assert placement
+             |> Placement.proposals(model, :module_one_component)
+             |> Enum.map(& &1.reason) ==
+               [:shared_private_helper, :components]
+    end
   end
 
   describe "facts/2" do
@@ -645,6 +670,35 @@ defmodule Anchor.Domain.PlacementTest do
       assert Placement.render(dir.(:inert_directory, "lib/b/domain/util", "lib/b/domain", [])) ==
                "flatten lib/b/domain/util into lib/b/domain (no module in it is reached only " <>
                  "through it)"
+    end
+
+    test "module texts (DND-5463)" do
+      split = %Proposal{
+        level: :module,
+        subject: M,
+        current: M,
+        proposed: {:split, [{Cur, [{M, :fmt, 1}]}, {M, [{M, :get, 1}, {M, :new, 1}]}]},
+        rule: :module_one_component,
+        reason: :components,
+        evidence: ["Cur: M.fmt/1; owns %Cur{}", "M: M.get/1, M.new/1"]
+      }
+
+      assert Placement.render(split) ==
+               "split M into Cur: M.fmt/1; owns %Cur{} | M: M.get/1, M.new/1 (no call, " <>
+                 "own-struct use or behaviour links these 2 groups of public functions)"
+
+      helper = %Proposal{
+        split
+        | level: :function,
+          subject: {M, :p, 0},
+          proposed: {:extract, M.P},
+          reason: :shared_private_helper,
+          evidence: ["component a/0", "component b/0", "component c/0"]
+      }
+
+      assert Placement.render(helper) ==
+               "extract M.p/0 into M.P (3 unrelated groups of M call it: component a/0; " <>
+                 "component b/0; component c/0)"
     end
 
     test "an unknown reason raises: there is no default text" do
@@ -792,6 +846,47 @@ defmodule Anchor.Domain.PlacementTest do
 
       assert Placement.to_violation(shared, model, %{id: "d"}).message =~
                ~r/^U1 is shared: no one module reaches it. Fix: /
+    end
+
+    test "a split sits at its module's defmodule; a shared helper at the function (DND-5463)" do
+      model = model([{M, "domain", [{:get, 1}, {:p, 0, :defp}], []}], [])
+      model = put_in(model.graph.modules[M].line, 4)
+
+      split = %Proposal{
+        level: :module,
+        subject: M,
+        current: M,
+        proposed: {:split, [{M, [{M, :get, 1}]}, {M.B, [{M, :b, 0}]}]},
+        rule: :module_one_component,
+        reason: :components,
+        evidence: ["M: M.get/1", "M.B: M.b/0; no owned type: rename M.B"],
+        key: "module_one_component|module|M|b/0;get/1"
+      }
+
+      violation = Placement.to_violation(split, model, %{id: "m"})
+
+      assert {violation.filename, violation.line, violation.trigger, violation.key} ==
+               {"lib/domain/M.ex", 4, "M", "m|module|M|b/0;get/1"}
+
+      assert violation.message ==
+               "M holds 2 unrelated groups of public functions. Fix: " <> Placement.render(split)
+
+      helper = %Proposal{
+        split
+        | level: :function,
+          subject: {M, :p, 0},
+          proposed: {:extract, M.P},
+          reason: :shared_private_helper,
+          evidence: ["component a/0", "component b/0"],
+          key: "module_one_component|function|M.p/0|M.P"
+      }
+
+      violation = Placement.to_violation(helper, model, %{id: "m"})
+      assert {violation.line, violation.trigger} == {10, "M.p/0"}
+
+      assert violation.message ==
+               "M.p/0 is a private helper of 2 unrelated groups of M. Fix: " <>
+                 Placement.render(helper)
     end
 
     test "each effects sentence names the bucket and what the inference found" do

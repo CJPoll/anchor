@@ -34,6 +34,7 @@ defmodule Anchor.Domain.RuleShapes do
     interface: GraphRules.Interface,
     layering: GraphRules.Layering,
     max_file_length: Checks.MaxFileLength,
+    module_one_component: GraphRules.ModuleOneComponent,
     module_pattern_restrictions: Checks.ModulePatternRestrictions,
     must_use_module: Checks.MustUseModule,
     no_comparison_in_if: Checks.NoComparisonInIf,

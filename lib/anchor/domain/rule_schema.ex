@@ -211,6 +211,8 @@ defmodule Anchor.Domain.RuleSchema do
     context_acyclic: [],
     # DND-5462: directory_placement reads only the graph common keys.
     directory_placement: [],
+    # DND-5463: module_one_component reads only the graph common keys.
+    module_one_component: [],
     # DND-5447: effects_match_bucket reads only the graph common keys (the
     # buckets, effects and roots are the `architecture:` section's).
     effects_match_bucket: [],
@@ -262,6 +264,7 @@ defmodule Anchor.Domain.RuleSchema do
     interface: [],
     layering: [],
     max_file_length: [],
+    module_one_component: [],
     module_pattern_restrictions: [],
     must_use_module: ~w(required_modules),
     no_comparison_in_if: [],
@@ -296,6 +299,7 @@ defmodule Anchor.Domain.RuleSchema do
     interface: :graph,
     layering: :graph,
     max_file_length: :ast,
+    module_one_component: :graph,
     module_pattern_restrictions: :ast,
     must_use_module: :ast,
     no_comparison_in_if: :ast,

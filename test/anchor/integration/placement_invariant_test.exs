@@ -43,6 +43,7 @@ defmodule Anchor.Integration.PlacementInvariantTest do
     lib/placement/domain/dead.ex
     lib/placement/domain/leaky.ex
     lib/placement/domain/totals.ex
+    lib/placement/domain/ledger.ex
     lib/placement/managers/calc.ex
   )
 
@@ -102,7 +103,8 @@ defmodule Anchor.Integration.PlacementInvariantTest do
 
   # Every level's proposals: what the checks report, and what `mix anchor.propose` lists.
   defp all_proposals(placement, model),
-    do: Enum.flat_map([:function, :directory], &Placement.proposals(placement, model, &1))
+    do:
+      Enum.flat_map([:function, :directory, :module], &Placement.proposals(placement, model, &1))
 
   defp without_violating(beams),
     do: Enum.reject(beams, &(&1.elixir.relative_file in @violating))
@@ -165,6 +167,21 @@ defmodule Anchor.Integration.PlacementInvariantTest do
     assert {rounding, dir} ==
              {AnchorFixtures.PlacementTest.Billing.Domain.Rounding,
               "lib/placement/domain/statement"}
+
+    # DND-5463: the Ledger's own-struct group keeps its name; the other is renamed, and
+    # the private helper both reach is extracted.
+    ledger = AnchorFixtures.PlacementTest.Billing.Domain.Ledger
+
+    assert reasons["Ledger"] == {:shared_private_helper, {:extract, Module.concat(ledger, Total)}}
+
+    assert %{proposed: {:split, [{^ledger, kept}, {renamed, moved}]}} =
+             placement
+             |> Placement.proposals(model, :module)
+             |> Enum.find(&(&1.subject == ledger))
+
+    assert {kept, renamed, moved} ==
+             {[{ledger, :balance, 1}, {ledger, :new, 1}], Module.concat(ledger, Label),
+              [{ledger, :label, 1}, {ledger, :parse_label, 1}]}
   end
 
   test "the same function captured by a reachable one is reachable", %{beams: beams} do
@@ -319,11 +336,13 @@ defmodule Anchor.Integration.PlacementInvariantTest do
 
     assert proposals |> Enum.map(& &1.reason) |> Enum.uniq() |> Enum.sort() == [
              :bucket_from_effects,
+             :components,
              :dominated_by,
              :dominator_subtree,
              :inert_hop,
              :input_type_owner,
              :output_type_owner,
+             :shared_private_helper,
              :unreachable
            ]
 

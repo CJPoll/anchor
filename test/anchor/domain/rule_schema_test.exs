@@ -67,6 +67,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
     effects_match_bucket: "min_module",
     function_placement: "min_module",
     interface: "max_widht",
+    module_one_component: "min_module",
     layering: "min_module",
     max_file_length: "max_line",
     module_pattern_restrictions: "allowed_function",

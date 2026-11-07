@@ -36,7 +36,7 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
   # Sabotage record (DND-5470): ../../sabotage_records/parameter_reaches_sink-20261106-dnd_5470_param_sink_locality.md
   # DND-5459 (aggregate_write_sources rows): ../../sabotage_records/aggregates-20261103-dnd_5459_write_sets.md
   # Sabotage record (DND-5448): ../../sabotage_records/placement-20261106-dnd_5448_placement_core.md
-  # Sabotage record (DND-5461, DND-5462): ../../sabotage_records/placement-20261106-dnd_5461_placement_rules.md
+  # Sabotage record (DND-5461, DND-5462, DND-5463): ../../sabotage_records/placement-20261106-dnd_5461_placement_rules.md
   use ExUnit.Case, async: true
 
   alias Anchor.Config
@@ -451,6 +451,7 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
               :directory_placement,
               :effects_match_bucket,
               :function_placement,
+              :module_one_component,
               :no_inert_hop,
               :parameter_reaches_sink,
               :reachable_from_root

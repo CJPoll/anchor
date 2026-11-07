@@ -155,6 +155,7 @@ Every rule type has exactly one engine, `@engine_by_type` in
 `function_placement`, DND-5448,
 `no_inert_hop`, DND-5461,
 `directory_placement`, DND-5462,
+`module_one_component`, DND-5463,
 `parameter_reaches_sink`, DND-5470,
 `reachable_from_root`, DND-5448,
 `struct_owned_by_module_flow`, DND-5454, `analyses_complete`, DND-5715, and

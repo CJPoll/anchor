@@ -17,6 +17,10 @@ defmodule Anchor.Domain.Placement do
   dominator tree `Anchor.Domain.Placement.Directories` derives from this model; its
   proposals' subjects are a module or a directory path (`subject_modules/2`).
 
+  `module_one_component` (DND-5463) proposes at the module level: a module whose
+  public functions form two or more causal components is split, and a private helper
+  two components share is extracted (`Anchor.Domain.Placement.ModuleComponents`).
+
   ## Roots
 
   `roots` are the effect inference's (`Anchor.Domain.Roots`), plus every public macro:
@@ -50,6 +54,7 @@ defmodule Anchor.Domain.Placement do
   alias Anchor.Domain.Placement.Directories
   alias Anchor.Domain.Placement.Forwarders
   alias Anchor.Domain.Placement.FunctionFacts
+  alias Anchor.Domain.Placement.ModuleComponents
   alias Anchor.Domain.Placement.Ownership
   alias Anchor.Domain.Placement.Rules
   alias Anchor.Domain.Proposal
@@ -101,15 +106,18 @@ defmodule Anchor.Domain.Placement do
           | :no_inert_hop
           | :directory
           | :directory_placement
+          | :module
+          | :module_one_component
 
   @rules [
     :function_placement,
     :reachable_from_root,
     :effects_match_bucket,
     :no_inert_hop,
-    :directory_placement
+    :directory_placement,
+    :module_one_component
   ]
-  @levels [:function, :directory]
+  @levels [:function, :directory, :module]
 
   @doc "The model of `model`; see the moduledoc."
   @spec build(Model.t()) :: t()
@@ -200,6 +208,16 @@ defmodule Anchor.Domain.Placement do
     "inline #{subject(p)}: its callers (#{String.replace_prefix(callers, "callers: ", "")}) " <>
       "call #{ViolationKey.mfa(to)} directly (it forwards without crossing a bucket, context, " <>
       "app, aggregate, interface or callback boundary)"
+  end
+
+  def render(%Proposal{reason: :components, proposed: {:split, parts}} = p) do
+    "split #{subject(p)} into #{Enum.join(p.evidence, " | ")} (no call, own-struct use or " <>
+      "behaviour links these #{length(parts)} groups of public functions)"
+  end
+
+  def render(%Proposal{reason: :shared_private_helper, proposed: {:extract, target}} = p) do
+    "extract #{subject(p)} into #{inspect(target)} (#{length(p.evidence)} unrelated groups of " <>
+      "#{inspect(p.current)} call it: #{Enum.join(p.evidence, "; ")})"
   end
 
   @doc """
@@ -306,6 +324,14 @@ defmodule Anchor.Domain.Placement do
   defp headline(%Proposal{reason: :inert_hop, proposed: {:inline, to}} = proposal, _model),
     do:
       "#{subject(proposal)} only forwards to #{ViolationKey.mfa(to)}, and the hop crosses no boundary."
+
+  defp headline(%Proposal{reason: :components, proposed: {:split, parts}} = proposal, _model),
+    do: "#{subject(proposal)} holds #{length(parts)} unrelated groups of public functions."
+
+  defp headline(%Proposal{reason: :shared_private_helper} = proposal, _model) do
+    "#{subject(proposal)} is a private helper of #{length(proposal.evidence)} unrelated " <>
+      "groups of #{inspect(proposal.current)}."
+  end
 
   defp headline(%Proposal{reason: reason} = proposal, model) do
     {module, _f, _a} = proposal.subject
@@ -474,7 +500,8 @@ defmodule Anchor.Domain.Placement do
 
     hops = Forwarders.proposals(%{model | effects: effects})
     directories = Directories.proposals(placement, model, nil)
+    components = ModuleComponents.proposals(%{model | effects: effects})
 
-    Enum.sort_by(function_rules ++ unreachable ++ hops ++ directories, & &1.key)
+    Enum.sort_by(function_rules ++ unreachable ++ hops ++ directories ++ components, & &1.key)
   end
 end

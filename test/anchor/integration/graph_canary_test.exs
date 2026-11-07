@@ -270,6 +270,7 @@ defmodule Anchor.Integration.GraphCanaryTest do
     directory_placement: "test/anchor/integration/placement_invariant_test.exs",
     effects_match_bucket: "test/anchor/integration/effects_canary_test.exs",
     function_placement: "test/anchor/integration/placement_invariant_test.exs",
+    module_one_component: "test/anchor/integration/placement_invariant_test.exs",
     no_inert_hop: "test/anchor/integration/placement_invariant_test.exs",
     parameter_reaches_sink: "test/anchor/integration/parameter_reaches_sink_canary_test.exs",
     reachable_from_root: "test/anchor/integration/placement_invariant_test.exs"
