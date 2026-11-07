@@ -86,6 +86,11 @@ defmodule Anchor.Domain.Placement.DirectoriesTest do
       assert proposals(@chain, [{W, Inv}, {Inv, Rnd}], files) == []
     end
 
+    test "a module defined in its dominator's own file gives nothing" do
+      files = %{@chain_files | Rnd => "lib/b/domain/invoice.ex"}
+      assert proposals(@chain, [{W, Inv}, {Inv, Rnd}], files) == []
+    end
+
     test "a dominator in another bucket gives nothing" do
       modules = [{W, "framework", "b"}, {Mgr, "managers", "b"}, {Calc, "domain", "b"}]
 
@@ -170,6 +175,24 @@ defmodule Anchor.Domain.Placement.DirectoriesTest do
 
       assert {proposal.subject, proposal.reason, proposal.proposed, proposal.level} ==
                {"lib/b/domain/util", :inert_directory, "lib/b/domain", :directory}
+    end
+
+    test "a directory of one file, however many modules it defines, is not inert" do
+      modules = [
+        {W, "framework", "b"},
+        {Inv, "domain", "b"},
+        {U1, "domain", "b"},
+        {U2, "domain", "b"}
+      ]
+
+      files = %{
+        W => "lib/b/web/w.ex",
+        Inv => "lib/b/domain/invoice.ex",
+        U1 => "lib/b/domain/util/u.ex",
+        U2 => "lib/b/domain/util/u.ex"
+      }
+
+      assert proposals(modules, [{W, Inv}, {W, U1}, {W, U2}], files) == []
     end
 
     test "a directory with a member dominated by another is not inert" do

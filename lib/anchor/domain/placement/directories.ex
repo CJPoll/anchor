@@ -22,7 +22,8 @@ defmodule Anchor.Domain.Placement.Directories do
       context belongs in `d`'s companion directory, `d`'s source path without `.ex`
       (`lib/billing/domain/invoice.ex` gives `lib/billing/domain/invoice`), and `d`
       stays where it is as the directory's public module. Direct dominance only, so a
-      chain nests one level per move. Reason `:dominator_subtree`.
+      chain nests one level per move. A module defined in `d`'s own file gets nothing.
+      Reason `:dominator_subtree`.
     * **Shared modules.** A module whose immediate dominator is the virtual root and
       that holds no root is shared. When its callers are all in its own context it
       belongs at the bucket root (`bucket_root/3`), unless the tie-break
@@ -32,8 +33,8 @@ defmodule Anchor.Domain.Placement.Directories do
       evidence names the contexts. Callers all in one other context are the context
       rule's question (DND-5460), not a directory's: no proposal. Reason
       `:shared_module`.
-    * **Inert directories.** A directory strictly below its bucket root that holds two
-      or more placed modules of one bucket and context, each reached from a root,
+    * **Inert directories.** A directory strictly below its bucket root whose placed
+      modules, of one bucket and context, sit in two or more files, each reached from a root,
       none of whose immediate dominator is a module of that directory or the
       directory's companion module (`<dir>.ex`), encapsulates nothing: flatten it, its
       modules moving up one level. Reason `:inert_directory`.
@@ -141,7 +142,8 @@ defmodule Anchor.Domain.Placement.Directories do
       companion = Path.rootname(owner.source_file)
       current = Path.dirname(class.source_file)
 
-      if current != companion,
+      # A module defined in its dominator's own file is as enclosed as it can be.
+      if current != companion and class.source_file != owner.source_file,
         do:
           proposal(module, current, companion, :dominator_subtree, [
             "dominated by #{inspect(dominator)}"
@@ -233,7 +235,11 @@ defmodule Anchor.Domain.Placement.Directories do
     classes = Enum.map(modules, &model.classification[&1])
     places = classes |> Enum.map(&{&1.bucket, &1.context}) |> Enum.uniq()
 
-    with [_, _ | _] <- modules,
+    files = classes |> Enum.map(& &1.source_file) |> Enum.uniq()
+
+    # Two or more files: one file defining several modules is one unit, not a directory
+    # that could encapsulate anything.
+    with [_, _ | _] <- files,
          [{bucket, context}] <- places,
          root when is_binary(root) <- bucket_root(model, bucket, context),
          true <- String.starts_with?(dir, root <> "/"),

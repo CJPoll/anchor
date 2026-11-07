@@ -1400,15 +1400,15 @@ one bucket of one context:
   context belongs in `d`'s companion directory, `d`'s source path without `.ex`
   (`lib/billing/domain/invoice.ex` gives `lib/billing/domain/invoice/`); `d` stays where it
   is, the directory's public module. Direct dominance only, so a chain nests one level per
-  move.
+  move. A module defined in `d`'s own file is left there.
 - **Shared.** A module reached from unrelated places (its dominator is the virtual root) and
   holding no root belongs at its bucket root, the deepest directory holding every module of
   that bucket in that context. The proposal says `no tie-break evidence` until the
   co-causation tie-break (DND-5475) can pick a caller's directory. Callers in several
   contexts propose a library context, naming them, with no path invented. Callers all in
   one other context are the context rules' question, and get no directory proposal.
-- **Inert directory.** A directory below its bucket root holding two or more modules of one
-  bucket and context, none reached only through a module of that directory or its companion
+- **Inert directory.** A directory below its bucket root holding two or more files of
+  modules of one bucket and context, none reached only through a module of that directory or its companion
   module (`<dir>.ex`), encapsulates nothing: flatten it.
 
 A generated module, or one with no source file, is not placed, and the precision line
