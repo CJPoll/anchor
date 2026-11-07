@@ -9,6 +9,7 @@ defmodule Anchor.Domain.FailuresGraphTest do
   # (rule_effects_crashed, effects_bucket_unanalysed, DND-5447:
   #   ../../sabotage_records/effects-20261103-dnd_5447_graph_rules_c.md)
   # Sabotage record: ../../sabotage_records/failures-20261103-dnd_5581_hardening_batch.md
+  # Sabotage record (DND-5676): ../../sabotage_records/struct_flow-20261106-dnd_5676_effects_cfa_batch.md
   # DND-5441 (the baseline_* messages):
   #   ../../sabotage_records/baseline-20261103-dnd_5441_graph_rules_a.md
   # DND-5584 (graph_app_no_modules): ../../sabotage_records/graph_runner-20261103-dnd_5441_graph_rules_a.md
@@ -392,6 +393,15 @@ defmodule Anchor.Domain.FailuresGraphTest do
          "MyApp.X.f/1, MyApp.X.g/2",
          "read as used without being judged",
          "Fix: this is a scale limit of Anchor"
+       ]},
+      {"struct_flow_bound_hit",
+       Failures.struct_flow_bound_hit(rule, [{MyApp.X, :f, 1}, {MyApp.X, :g, 2}], 6, nil),
+       ".anchor.yml",
+       [
+         "the struct value flow (Anchor.Domain.StructFlow) hit its bound of 6 passes on 2 function(s)",
+         "MyApp.X.f/1, MyApp.X.g/2",
+         "a write to a struct there may not be judged",
+         "Fix: split the function's nested anonymous functions apart"
        ]},
       {"analyses_unsummarised names five functions and counts the rest",
        Failures.analyses_unsummarised(rule, for(a <- 0..6, do: {MyApp.X, :f, a}), nil),

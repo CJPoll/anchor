@@ -46,6 +46,18 @@ defmodule Anchor.Domain.StructFlow do
   Map.update!(t, :status, ...) end)`, so it is two writes, one on `g` and one
   on `g.turn` (known by its field type); the leaf `status` is not a container
   and is never judged. Each write carries the line of its Core annotation.
+
+  ## The pass bound (DND-5676)
+
+  A `fun`'s parameter is known only after the call it is handed to has been
+  walked, so the walk repeats until those seeds settle, at most
+  six passes (`max_passes/0`). A function whose seeds still change at the
+  last pass is not settled: `known/3` and `writes/3` answer
+  `{:bound_hit, passes, result}` with what the last pass found from the seeds
+  it started with, never
+  `{:ok, result}`, so a capped analysis never reads as a complete one. The
+  `struct_owned_by_module_flow` rule reports it as a fail-closed issue naming
+  the function.
   """
 
   alias Anchor.Domain.StructTypes
@@ -90,27 +102,44 @@ defmodule Anchor.Domain.StructFlow do
 
   @max_passes 6
 
+  @typedoc "A result, settled or cut at the pass bound."
+  @type result(value) :: {:ok, value} | {:bound_hit, pos_integer(), value}
+
+  @doc "The most passes the seed fixpoint walks before it answers `:bound_hit`."
+  @spec max_passes() :: pos_integer()
+  def max_passes, do: @max_passes
+
   @doc """
   Every variable of `core` (one function's `c_fun`, in `module`) known as one
-  struct, `%{var => {struct, how}}`, under `index` (`StructTypes.index/1`).
+  struct, `%{var => {struct, how}}`, under `index` (`StructTypes.index/1`):
+  `{:ok, known}`, or `{:bound_hit, passes, known}` when the seeds did not
+  settle within `max_passes/0` (see the moduledoc).
   """
-  @spec known(:cerl.cerl(), StructTypes.t(), module()) :: %{core_var() => {module(), how()}}
+  @spec known(:cerl.cerl(), StructTypes.t(), module()) ::
+          result(%{core_var() => {module(), how()}})
   def known(core, index, module) do
     ctx = %{index: index, module: module}
-    st = walk(core, ctx, new_state(fixpoint(core, ctx, %{}, 1), nil))
-    settled(st.seen)
+    {status, seeds} = fixpoint(core, ctx, %{}, 1)
+    st = walk(core, ctx, new_state(seeds, nil))
+    tag(status, settled(st.seen))
   end
 
   @doc """
   The writes in `core` (a `c_fun` in `module`) that change a value known
-  (`known/3`) as a struct, in Core order.
+  (`known/3`) as a struct, in Core order: `{:ok, writes}`, or
+  `{:bound_hit, passes, writes}` when the seeds did not settle within
+  `max_passes/0` (see the moduledoc).
   """
-  @spec writes(:cerl.cerl(), StructTypes.t(), module()) :: [write()]
+  @spec writes(:cerl.cerl(), StructTypes.t(), module()) :: result([write()])
   def writes(core, index, module) do
     ctx = %{index: index, module: module}
-    st = walk(core, ctx, new_state(fixpoint(core, ctx, %{}, 1), []))
-    Enum.reverse(st.writes)
+    {status, seeds} = fixpoint(core, ctx, %{}, 1)
+    st = walk(core, ctx, new_state(seeds, []))
+    tag(status, Enum.reverse(st.writes))
   end
+
+  defp tag(:settled, value), do: {:ok, value}
+  defp tag(:bound_hit, value), do: {:bound_hit, @max_passes, value}
 
   # ---- the fixpoint: a function argument's binding is found after its body ----
 
@@ -120,13 +149,17 @@ defmodule Anchor.Domain.StructFlow do
     do: %{env: %{}, seen: %{}, seeds: seeds, funs: %{}, writes: writes}
 
   # The seeds (a `fun`'s parameter known from the call it is handed to) a
-  # pass finds after it walked the `fun`: walk again until they settle.
+  # pass finds after it walked the `fun`: walk again until they settle. Seeds
+  # still changing at the last pass are not settled: `:bound_hit`, with the
+  # seeds that pass started from.
   defp fixpoint(core, ctx, seeds, pass) do
     st = walk(core, ctx, new_state(seeds, nil))
 
-    if st.seeds == seeds or pass >= @max_passes,
-      do: seeds,
-      else: fixpoint(core, ctx, st.seeds, pass + 1)
+    cond do
+      st.seeds == seeds -> {:settled, seeds}
+      pass >= @max_passes -> {:bound_hit, seeds}
+      true -> fixpoint(core, ctx, st.seeds, pass + 1)
+    end
   end
 
   defp settled(seen) do

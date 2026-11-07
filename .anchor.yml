@@ -186,7 +186,7 @@ rules:
   # effect until DND-5500's closed-world values narrow it), GraphRules.needs/1
   # loading the rule modules through the code server (DND-5574), and adapter
   # functions that are pure (conversions, GitEnv's environment list, a
-  # GenServer child_spec, DiffHunks' IO.iodata_to_binary/1).
+  # GenServer child_spec).
   - type: effects_match_bucket
     id: effects_match_bucket
     paths: ["lib/**/*.ex"]

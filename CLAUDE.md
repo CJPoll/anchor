@@ -428,7 +428,12 @@ causes: a root (`Anchor.Domain.Roots`: framework-bucket public functions,
 `architecture.roots`, external behaviour callbacks, which the runner reads
 through the `Anchor.Adapters.BehaviourSource` port (`BehaviourReader`) for
 `Roots.external_behaviours/1` and passes in as `:callbacks`, so `Roots` stays
-pure; the result keeps them as `Effects.roots`) is framework; a call of an effect primitive
+pure; the result keeps them as `Effects.roots`) is framework (the clock and random
+draws are primitives with a kind, `EffectPrimitives.inference_kind/1`, DND-5677, which
+the `Fix:` chain names); a call of a project
+function whose body the graph did not read (a module in `unreadable` the graph has no
+node for, or a `{:no_core, _}` function) is unresolved, named, never pure (DND-5679);
+a call of an effect primitive
 (`EffectPrimitives.primitive?/2`, its inference list, not demand's) itself or
 through its own module is adapters; reaching one through another module, or
 an unresolved call, is managers; else domain. Apply sites are read from
@@ -481,7 +486,11 @@ It skips the AST rule's sites: a line with another struct's `:build` or
 carry no macro `:context`. One violation per (function, line). In a `for`
 comprehension a `x = expr` line is a filter: bind a value that may be false
 with `x <- [expr]`. Fixtures that hold a `defimpl` put `@compile {:debug_info,
-true}` in its body (BeamFixtures adds it to `defmodule`s only).
+true}` in its body (BeamFixtures adds it to `defmodule`s only). StructFlow's seed
+fixpoint is bounded (`StructFlow.max_passes/0`); a function whose seeds still
+change at the last pass answers `{:bound_hit, passes, result}`, never `{:ok,
+result}`, and the rule fails closed naming it (`Failures.struct_flow_bound_hit/4`,
+DND-5676).
 
 ## Higher-order flow (DND-5497)
 
@@ -498,11 +507,16 @@ a missing row costs precision (its arguments escape), never soundness. A
 `letrec` name is keyed per scope, the letrec node (DND-5575): an apply of it
 reaches the innermost enclosing letrec that binds it (`Cfa` keeps each
 lambda's lexical scope; `Eval` adds a letrec's names at the node), never a
-same-named letrec elsewhere in the function.
+same-named letrec elsewhere in the function. A higher-order argument written as a literal that is no
+function (a number, binary, list, map, `:asc`/`:desc`) applies nothing: its site
+is the empty set, never `any` (DND-5674); a module atom or a tuple stays with the
+analysis (a sort may call its `compare/2`).
 
 The runner wires it lazily (DND-5574): a graph rule that reads it declares
 `needs: [:cfa]` (`GraphRule`'s optional `needs/0`, read and checked by
-`GraphRules.needs/1`), and `Anchor.Managers.Graph` runs
+`GraphRules.needs/1`, which also refuses a need named without one it reads:
+`:effects` and `:demand` read `:cfa`, `:placement` reads `:cfa` and `:effects`,
+DND-5675), and `Anchor.Managers.Graph` runs
 `Cfa.analyze(graph, Cfa.default_seed(graph))` once per run, under the rule
 guard, only when a rule that runs needs it, and puts it on `Model.cfa` (`nil`
 otherwise). The summary then ends `; apply sites: <r> resolved, <a> any`, and

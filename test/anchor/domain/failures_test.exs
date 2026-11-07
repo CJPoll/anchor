@@ -166,6 +166,33 @@ defmodule Anchor.Domain.FailuresTest do
     end
   end
 
+  # DND-5676. Sabotage record:
+  # ../../sabotage_records/failures-20261106-dnd_5676_effects_cfa_batch.md
+  describe "struct_flow_bound_hit/4" do
+    test "one fail-closed issue on the config, naming the bound, the count and each function" do
+      rule = %{id: "flow", type: :struct_owned_by_module_flow}
+      functions = [{MyApp.X, :f, 1}, {MyApp.X, :g, 2}]
+
+      assert %Violation{kind: :fail_closed, filename: "config/anchor.yml", line: nil} =
+               violation =
+               Failures.struct_flow_bound_hit(rule, functions, 6, "config/anchor.yml")
+
+      assert violation.message ==
+               ~s|rule (id: "flow", struct_owned_by_module_flow): the struct value flow | <>
+                 "(Anchor.Domain.StructFlow) hit its bound of 6 passes on 2 function(s) " <>
+                 "(MyApp.X.f/1, MyApp.X.g/2), so a write to a struct there may not be judged. " <>
+                 "Fix: split the function's nested anonymous functions apart, or file this " <>
+                 "line as a scale limit of Anchor. Raising the bound is the owner's call."
+    end
+
+    test "with no config path, the issue sits on the default config file" do
+      violation =
+        Failures.struct_flow_bound_hit(%{type: :struct_owned_by_module_flow}, [], 6, nil)
+
+      assert violation.filename == ".anchor.yml"
+    end
+  end
+
   # DND-1310. Sabotage record:
   # ../../sabotage_records/failures-20260929-dnd_1310_analyzer_quote_crash.md
   describe "analysis_crash_violation/4" do

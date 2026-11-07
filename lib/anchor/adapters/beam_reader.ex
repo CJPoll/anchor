@@ -97,12 +97,19 @@ defmodule Anchor.Adapters.BeamReader do
         error(path, module, :no_debug_info)
 
       {:error, :beam_lib, {:key_missing_or_invalid, _file, :debug_info}} ->
-        error(path, nil, :debug_info_stripped)
+        error(path, beam_module(binary), :debug_info_stripped)
 
       {:error, :beam_lib, reason} ->
         error(path, nil, {:unreadable, reason})
     end
   end
+
+  # The module an unreadable chunk's beam defines, so a call into it is named
+  # as a project module whose body was not read (DND-5679), never as a call
+  # outside the project. `:beam_lib.chunks/3` has already read this binary's
+  # chunk table, so `:beam_lib.info/1` answers a list; were it ever an error,
+  # `Keyword.get/2` raises and `guarded/3` makes it `{:decode_crashed, _}`.
+  defp beam_module(binary), do: binary |> :beam_lib.info() |> Keyword.get(:module)
 
   defp guarded(module, path, fun) do
     fun.()

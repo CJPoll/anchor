@@ -5,12 +5,14 @@ defmodule Anchor.Domain.GraphRules.StructOwnedByModuleFlowTest do
   # AST rule struct_owned_by_module (DND-5453), one finding per site.
   #
   # Sabotage record: ../../../sabotage_records/struct_flow-20261103-dnd_5447_graph_rules_c.md
+  # Sabotage record (DND-5676): ../../../sabotage_records/struct_flow-20261106-dnd_5676_effects_cfa_batch.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures, only: [line_of: 2]
   import Anchor.Test.StructFlowFixtures
 
   alias Anchor.Domain.GraphRules.StructOwnedByModuleFlow
+  alias Anchor.Domain.StructFlow
 
   @ns "AnchorFixtures.StructFlow.Rule"
   @turn AnchorFixtures.StructFlow.Rule.Runtime.Turn
@@ -88,9 +90,67 @@ defmodule Anchor.Domain.GraphRules.StructOwnedByModuleFlowTest do
 
   @file_path "lib/runtime/decider.ex"
 
+  # DND-5676: nested funs whose parameters StructFlow knows one pass after the
+  # last. deep4 settles within its bound; deep5 does not.
+  @deep """
+  defmodule AnchorFixtures.StructFlow.Rule.Deep.D0 do
+    defstruct [:a]
+    @type t :: %__MODULE__{a: AnchorFixtures.StructFlow.Rule.Deep.D1.t()}
+  end
+
+  defmodule AnchorFixtures.StructFlow.Rule.Deep.D1 do
+    defstruct [:a]
+    @type t :: %__MODULE__{a: AnchorFixtures.StructFlow.Rule.Deep.D2.t()}
+  end
+
+  defmodule AnchorFixtures.StructFlow.Rule.Deep.D2 do
+    defstruct [:a]
+    @type t :: %__MODULE__{a: AnchorFixtures.StructFlow.Rule.Deep.D3.t()}
+  end
+
+  defmodule AnchorFixtures.StructFlow.Rule.Deep.D3 do
+    defstruct [:a]
+    @type t :: %__MODULE__{a: AnchorFixtures.StructFlow.Rule.Deep.D4.t()}
+  end
+
+  defmodule AnchorFixtures.StructFlow.Rule.Deep.D4 do
+    defstruct [:a]
+    @type t :: %__MODULE__{a: AnchorFixtures.StructFlow.Rule.Deep.D5.t()}
+  end
+
+  defmodule AnchorFixtures.StructFlow.Rule.Deep.D5 do
+    defstruct [:a]
+    @type t :: %__MODULE__{a: AnchorFixtures.StructFlow.Rule.Deep.D6.t()}
+  end
+
+  defmodule AnchorFixtures.StructFlow.Rule.Deep.D6 do
+    defstruct [:a]
+    @type t :: %__MODULE__{a: term()}
+  end
+
+  defmodule AnchorFixtures.StructFlow.Rule.Deep.W do
+    def deep4(%AnchorFixtures.StructFlow.Rule.Deep.D0{} = g) do
+      f4 = fn p -> Map.update!(p, :a, fn x -> x end) end
+      f3 = fn p -> Map.update!(p, :a, f4) end
+      f2 = fn p -> Map.update!(p, :a, f3) end
+      f1 = fn p -> Map.update!(p, :a, f2) end
+      Map.update!(g, :a, f1)
+    end
+
+    def deep5(%AnchorFixtures.StructFlow.Rule.Deep.D0{} = g) do
+      f5 = fn p -> Map.update!(p, :a, fn x -> x end) end
+      f4 = fn p -> Map.update!(p, :a, f5) end
+      f3 = fn p -> Map.update!(p, :a, f4) end
+      f2 = fn p -> Map.update!(p, :a, f3) end
+      f1 = fn p -> Map.update!(p, :a, f2) end
+      Map.update!(g, :a, f1)
+    end
+  end
+  """
+
   setup_all do
     model = model(graph([{@types, "lib/runtime/types.ex"}, {@decider, @file_path}]))
-    %{model: model}
+    %{model: model, deep: model(graph([{@deep, "lib/deep.ex"}]))}
   end
 
   defp rule(opts),
@@ -194,6 +254,34 @@ defmodule Anchor.Domain.GraphRules.StructOwnedByModuleFlowTest do
                "flow|#{@ns}.Runtime.Proto.#{@ns}.Runtime.Game.touch/1|#{inspect(@turn)}|Map.put",
                "flow|#{@ns}.Runtime.Proto.#{@ns}.Runtime.Turn.touch/1|#{inspect(@turn)}|Map.put"
              ]
+    end
+  end
+
+  describe "check/2: the struct flow's pass bound (DND-5676)" do
+    test "a function whose flow did not settle is one fail-closed issue naming it", %{deep: deep} do
+      assert [issue] = deep |> check() |> Enum.filter(&(&1.kind == :fail_closed))
+
+      assert issue.key == nil
+      assert issue.filename == ".anchor.yml"
+
+      assert issue.message =~
+               "the struct value flow (Anchor.Domain.StructFlow) hit its bound of " <>
+                 "#{StructFlow.max_passes()} passes on 1 function(s) " <>
+                 "(AnchorFixtures.StructFlow.Rule.Deep.W.deep5/1)"
+    end
+
+    test "the writes the flow did find are still judged, in a function that settled or not", %{
+      deep: deep
+    } do
+      triggers =
+        deep |> check() |> Enum.reject(&(&1.kind == :fail_closed)) |> Enum.map(& &1.trigger)
+
+      assert "AnchorFixtures.StructFlow.Rule.Deep.W.deep4/1" in triggers
+      assert "AnchorFixtures.StructFlow.Rule.Deep.W.deep5/1" in triggers
+    end
+
+    test "a model whose every flow settled has no fail-closed issue", %{model: model} do
+      assert model |> check() |> Enum.filter(&(&1.kind == :fail_closed)) == []
     end
   end
 

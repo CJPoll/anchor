@@ -1032,12 +1032,20 @@ every function's role from the compiled code (`Anchor.Domain.Effects`):
 The effect primitives are every function of `File`, `IO`, `Logger`,
 `:logger`, `:telemetry`, `System`, `Process`, `Port`, `Node`, `GenServer`,
 `Agent`, `Task`, `Task.Supervisor`, `Registry`, `:ets`, `:dets`,
-`:persistent_term`, `:gen_tcp`, `:gen_udp`, `:ssl`, `:httpc`, `:os`, `:file`
-and `:rand`; `send`, `spawn*`, the process dictionary, the clocks
-(`DateTime.utc_now`, `NaiveDateTime.utc_now`, `Date.utc_today`,
-`:erlang.system_time`, `:erlang.monotonic_time`) and
-`:crypto.strong_rand_bytes/1`; and every project module declaring `@behaviour
-Ecto.Repo`. `architecture.effects` adds to them; nothing removes one. A call is
+`:persistent_term`, `:gen_tcp`, `:gen_udp`, `:ssl`, `:httpc`, `:os` and
+`:file`; `send`, `spawn*`, the process dictionary; the clock reads
+(`DateTime.utc_now/now/now!`, `NaiveDateTime.utc_now/local_now`,
+`Time.utc_now`, `Date.utc_today`, `System.system_time/monotonic_time/os_time`,
+`:os.timestamp/system_time/perf_counter`, `:erlang.timestamp/now/time/date/
+localtime/universaltime/system_time/monotonic_time/time_offset`,
+`:calendar.local_time/universal_time`) and the random draws (every function of
+`:rand` and `:random`, `Enum.random/1`, `Enum.take_random/2`, `Enum.shuffle/1`,
+`:crypto.strong_rand_bytes/1`, `:crypto.rand_seed`, `System.unique_integer`),
+DND-5677: a chain that ends in one says so in the `Fix:` ("reads the clock",
+"draws a random value"); and every project module declaring `@behaviour
+Ecto.Repo`. `IO.iodata_to_binary/1`, `IO.iodata_length/1` and
+`IO.chardata_to_string/1` are pure and no primitive, by exact name and arity
+(DND-5678). `architecture.effects` adds to them; nothing removes one. A call is
 matched by every name it may have been written as (`System.unique_integer/0`
 reaches Core as `:erlang.unique_integer/0`, DND-5613).
 
@@ -1050,7 +1058,11 @@ project. A comprehension's collector (`for ..., into: target`) applies
 nothing to resolve when the target is a literal (no struct but a `MapSet`)
 or a `Map.new`/`MapSet.new`
 the function builds itself; into any other target (a parameter, which may be
-an `IO.stream/0`), it is unresolved. **An unresolved call counts as an effect**: it never makes a
+an `IO.stream/0`), it is unresolved. A call of a project function whose body
+Anchor did not read is unresolved too, naming the function and why (DND-5679):
+a function of a project module the graph could not decode (an Erlang module,
+`{:not_elixir, _}`, or a beam whose debug info is stripped) or a public
+function with no Core body. **An unresolved call counts as an effect**: it never makes a
 function look pure, and the run prints how many there were.
 
 For each module the rule selects in a bucket of role `domain`, `adapters` or
@@ -1819,6 +1831,7 @@ line.
 | An `aggregates:` section of the wrong shape (DND-5476) | 3 | the config path | `aggregates.declare[1].schemas must be a list of exact module names: "MyApp.*" is not an exact Elixir module name (no glob, no Erlang module). Fix: name each module in full, as its defmodule spells it; aggregates: declare: - name: <Aggregate>, ...` |
 | An `analyses_complete` rule when the flow analysis hit its step bound (DND-5715) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "analyses_complete", analyses_complete): the higher-order flow analysis (Anchor.Domain.Cfa) hit its step bound after 40 steps, so every apply site reads any and no closure was resolved. Fix: this is a scale limit of Anchor; ...` |
 | An `analyses_complete` rule when the demand analysis hit its round bound (DND-5715) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "analyses_complete", analyses_complete): the demand analysis (Anchor.Domain.Demand) hit its round bound on 2 function(s) (MyApp.X.f/1, MyApp.X.g/2), so their parameters read as used without being judged. Fix: this is a scale limit of Anchor; ...` |
+| A `struct_owned_by_module_flow` rule when the struct value flow did not settle within its pass bound on some function (DND-5676) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "struct_owned_by_module_flow", struct_owned_by_module_flow): the struct value flow (Anchor.Domain.StructFlow) hit its bound of 6 passes on 1 function(s) (MyApp.X.f/1), so a write to a struct there may not be judged. Fix: split the function's nested anonymous functions apart, ...` |
 | An `analyses_complete` rule when a selected function with a Core body has no demand summary (DND-5715) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "analyses_complete", analyses_complete): 1 function(s) have a Core body and no demand summary (MyApp.X.f/1), so the analysis judged none of their parameters. Fix: this is an Anchor bug; ...` |
 | An `analyses_complete` rule when the analyses judged fewer than a floor it declares (DND-5715) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "analyses_complete", analyses_complete): the whole-program analyses judged 3, below min_functions 501, so they may be judging nothing. Fix: find what stopped them reading this code; ...` |
 | An `aggregate_declarations` rule with no aggregate declared anywhere (DND-5476) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "aggregate_declarations", aggregate_declarations) checks nothing: no aggregate is declared in .anchor.yml or by an @anchor_aggregate attribute. Fix: declare one or remove the rule: ...` |
@@ -1844,6 +1857,7 @@ line.
 | `--write-baseline` over an existing file, or naming no rule with a `baseline:` | 2 | the baseline path, or the config | `.anchor/baselines/web.txt exists; --write-baseline only creates, and never rewrites a baseline. Fix: ...` |
 | A `--base` ref with a character git must not see (a leading `-`, a space, `;`, `$`, `:`) | 2 | | usage, with a `Fix:` line |
 | A graph rule whose `needs/0` names an analysis the runner does not compute, or is not a list (DND-5574) | 1 | the config | `rule 2 (id: "web", layering) could not run: ArgumentError: MyApp.Rule.needs/0 names [:nope], which the graph runner does not compute (it computes [:aggregate_analysis, :cfa, :effects, :demand]), so it checked nothing. Fix: this is an Anchor bug; file it with this line.` The rule is not run; the other rules still run. |
+| A graph rule whose `needs/0` names an analysis without one it reads: `:effects` or `:demand` without `:cfa`, `:placement` without `:cfa` and `:effects` (DND-5675) | 1 | the config | `rule 2 (id: "effects", effects_match_bucket) could not run: ArgumentError: MyApp.Rule.needs/0 names :effects without :cfa, which :effects reads, so it would run degraded; add :cfa to MyApp.Rule.needs/0. Fix: this is an Anchor bug; file it with this line.` The rule is not run; the other rules still run. |
 | The higher-order flow analysis a rule needs raises, throws or exits (DND-5574) | 1 | the config | `rule 2 (id: "web", layering) could not run: the higher-order flow analysis it needs (Anchor.Domain.Cfa) crashed: RuntimeError: ..., so it checked nothing. Fix: this is an Anchor bug; file it with this line.` One per rule that needs it; the rules that do not still run. |
 | The effect inference a rule needs raises, throws or exits, or returns no `%Effects{}` (DND-5447) | 1 | the config | `rule 2 (id: "effects", effects_match_bucket) could not run: the effect inference it needs (Anchor.Domain.Effects) crashed: RuntimeError: ..., so it checked nothing. Fix: this is an Anchor bug; file it with this line.` One per rule that needs it; the rules that do not still run. |
 | The demand analysis a rule needs raises, throws or exits, or returns no `%Demand{}` (DND-5715) | 1 | the config | `rule 1 (id: "analyses_complete", analyses_complete) could not run: the demand analysis it needs (Anchor.Domain.Demand) crashed: ... Fix: this is an Anchor bug; file it with this line.` The other rules still run. |

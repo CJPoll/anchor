@@ -191,20 +191,19 @@ defmodule Anchor.Domain.Sabotage.DiffHunks do
     end
   end
 
-  defp unquote_path("\"" <> rest), do: unquote_chars(rest, [])
+  defp unquote_path("\"" <> rest), do: unquote_chars(rest, <<>>)
   defp unquote_path(_unquoted), do: :error
 
-  defp unquote_chars("\"" <> rest, acc),
-    do: {:ok, acc |> Enum.reverse() |> IO.iodata_to_binary(), rest}
+  defp unquote_chars("\"" <> rest, acc), do: {:ok, acc, rest}
 
   defp unquote_chars(<<?\\, a, b, c, rest::binary>>, acc)
        when a in ?0..?3 and b in ?0..?7 and c in ?0..?7,
-       do: unquote_chars(rest, [(a - ?0) * 64 + (b - ?0) * 8 + (c - ?0) | acc])
+       do: unquote_chars(rest, <<acc::binary, (a - ?0) * 64 + (b - ?0) * 8 + (c - ?0)>>)
 
   defp unquote_chars(<<?\\, escaped, rest::binary>>, acc),
-    do: unquote_chars(rest, [escape(escaped) | acc])
+    do: unquote_chars(rest, <<acc::binary, escape(escaped)>>)
 
-  defp unquote_chars(<<char, rest::binary>>, acc), do: unquote_chars(rest, [char | acc])
+  defp unquote_chars(<<char, rest::binary>>, acc), do: unquote_chars(rest, <<acc::binary, char>>)
   defp unquote_chars(<<>>, _acc), do: :error
 
   defp escape(?n), do: ?\n
