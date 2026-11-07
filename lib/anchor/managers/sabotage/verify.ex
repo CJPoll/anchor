@@ -160,11 +160,11 @@ defmodule Anchor.Managers.Sabotage.Verify do
          "Fix: make #{function.file} a readable file"}
 
   defp records(root, files, config, %{records: store}) do
-    glob = Record.dir_glob(config.records)
+    globs = Record.dir_globs(config.records)
 
     changed =
       for {path, %{status: status}} <- Enum.sort(files),
-          Verify.record_path?(path, glob),
+          Verify.record_path?(path, globs),
           do: {path, status}
 
     deleted = for {path, :deleted} <- changed, do: path

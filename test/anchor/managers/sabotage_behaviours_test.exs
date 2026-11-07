@@ -171,6 +171,30 @@ defmodule Anchor.Managers.SabotageBehavioursTest do
       assert line =~ "no sabotage: section"
     end
 
+    test "DND-6031: the records in records.outside_apps_dir are read too" do
+      config(%{
+        records: %{
+          %Config{}.records
+          | dir: "apps/{app}/test/sabotage_records",
+            outside_apps_dir: "tools/sabotage_records"
+        }
+      })
+
+      coverage_read()
+      expect(RecordStoreMock, :list, fn "/repo", "apps/*/test/sabotage_records" -> [] end)
+
+      expect(RecordStoreMock, :list, fn "/repo", "tools/sabotage_records" ->
+        ["tools/sabotage_records/r.md"]
+      end)
+
+      expect(RecordStoreMock, :read, fn "/repo", "tools/sabotage_records/r.md" ->
+        {:error, :eacces}
+      end)
+
+      assert {3, [line]} = Sabotage.behaviours(facts(), @opts)
+      assert line =~ "the record tools/sabotage_records/r.md cannot be read (:eacces)"
+    end
+
     test "zero records" do
       config()
       coverage_read()

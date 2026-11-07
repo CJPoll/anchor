@@ -178,6 +178,82 @@ defmodule Anchor.Domain.Sabotage.RecordTest do
     assert core.content =~ "a1 " and not (core.content =~ "b2 ")
   end
 
+  describe "outside_apps_dir (DND-6031)" do
+    @crew_outside %{
+      @anchor
+      | dir: "apps/{app}/test/sabotage_records",
+        domain_from: :context_dir
+    }
+    @outside "apps/tooling/test/sabotage_records"
+
+    test "O1: dir_globs/1 lists dir ({app} as *) and then outside_apps_dir" do
+      assert Record.dir_globs(@anchor) == ["test/sabotage_records"]
+      assert Record.dir_globs(@crew_outside) == ["apps/*/test/sabotage_records"]
+
+      assert Record.dir_globs(Map.put(@crew_outside, :outside_apps_dir, "tools/r")) ==
+               ["apps/*/test/sabotage_records", "tools/r"]
+    end
+
+    test "O2: a file outside apps/ is recorded in outside_apps_dir, beside the apps' records" do
+      records = Map.put(@crew_outside, :outside_apps_dir, @outside)
+
+      run = %Run{
+        outcomes: [
+          killed("a1", file: "credo/checks/run_command_built_only.ex", module: Crew.Check),
+          killed("b2", file: "apps/core/lib/core/agents/y.ex")
+        ]
+      }
+
+      # The no-app group sorts first: nil before any app name.
+      assert {:ok, [outside, core]} =
+               Record.render(run, ctx(%{records: records, changed_tests: []}))
+
+      assert core.path == "apps/core/test/sabotage_records/agents-20261105-dnd_5484_records.md"
+      assert outside.path == "#{@outside}/lib-20261105-dnd_5484_records.md"
+      assert outside.content =~ "a1 " and not (outside.content =~ "b2 ")
+    end
+
+    test "O3: a changed test whose own records dir is outside_apps_dir is listed in that record" do
+      records = Map.put(@crew_outside, :outside_apps_dir, @outside)
+      file = "credo/checks/run_command_built_only.ex"
+      run = %Run{outcomes: [killed("a1", file: file, module: Crew.Check)]}
+
+      changed = [
+        %{
+          file: "apps/tooling/test/credo/run_command_built_only_test.exs",
+          line: 9,
+          name: "test t"
+        },
+        %{file: "apps/core/test/core/x_test.exs", line: 3, name: "test other app"}
+      ]
+
+      assert {:ok, [entry]} = Record.render(run, ctx(%{records: records, changed_tests: changed}))
+
+      [_, lacking] = String.split(entry.content, "## Tests still lacking a red\n")
+      [lacking, _] = String.split(lacking, "## Kill map")
+      assert lacking =~ "run_command_built_only_test.exs:9 \"test t\""
+      refute lacking =~ "x_test.exs:3"
+    end
+
+    test "O4: a test listed in an app's record is not listed again in outside_apps_dir's" do
+      records = Map.put(@crew_outside, :outside_apps_dir, @outside)
+
+      run = %Run{
+        outcomes: [
+          killed("a1", file: "apps/tooling/lib/tooling/agents/x.ex"),
+          killed("b2", file: "credo/checks/c.ex", module: Crew.Check)
+        ]
+      }
+
+      changed = [%{file: "apps/tooling/test/t_test.exs", line: 9, name: "test t"}]
+
+      assert {:ok, entries} = Record.render(run, ctx(%{records: records, changed_tests: changed}))
+      assert length(entries) == 2
+      listed = Enum.count(entries, &(&1.content =~ "t_test.exs:9 \"test t\""))
+      assert listed == 1
+    end
+  end
+
   test "4: outcomes in two domains: two files" do
     run = %Run{
       outcomes: [

@@ -21,7 +21,12 @@ defmodule Anchor.Domain.Sabotage.Config do
   `records` (every key optional): `dir` (default `test/sabotage_records`;
   may hold `{app}`; relative, with no `..` segment, read with a leading `./`
   and trailing `/` dropped, so `test/sabotage_records/` names the same
-  directory), `naming` (`domain_date_slot`, the default, or
+  directory), `outside_apps_dir` (DND-6031; default none: the records
+  directory of a mutated file not under `apps/<app>/` when `dir` holds
+  `{app}`, such as a repo's own Credo checks; read as `dir` is, and it may
+  not hold `{app}`; set while `dir` holds no `{app}` it is refused, since it
+  would never be used; unset, such a file is refused by the run), `naming`
+  (`domain_date_slot`, the default, or
   `ticket_nn_what`), `domain_from` (`module`, the default, or `context_dir`),
   `domain_strip_prefixes` (a list of module-name prefixes, default `[]`),
   `adr` (the rule a test still lacking a red follows, named in the record;
@@ -60,6 +65,7 @@ defmodule Anchor.Domain.Sabotage.Config do
             scan_shards: 7,
             records: %{
               dir: "test/sabotage_records",
+              outside_apps_dir: nil,
               naming: :domain_date_slot,
               domain_from: :module,
               domain_strip_prefixes: [],
@@ -80,6 +86,7 @@ defmodule Anchor.Domain.Sabotage.Config do
           scan_shards: pos_integer(),
           records: %{
             dir: String.t(),
+            outside_apps_dir: String.t() | nil,
             naming: :domain_date_slot | :ticket_nn_what,
             domain_from: :module | :context_dir,
             domain_strip_prefixes: [String.t()],
@@ -338,7 +345,7 @@ defmodule Anchor.Domain.Sabotage.Config do
 
   defp locality_enforcement(_section), do: {:ok, :report}
 
-  @record_keys ~w(dir naming domain_from domain_strip_prefixes adr)
+  @record_keys ~w(dir outside_apps_dir naming domain_from domain_strip_prefixes adr)
   @namings %{"domain_date_slot" => :domain_date_slot, "ticket_nn_what" => :ticket_nn_what}
   @domain_froms %{"module" => :module, "context_dir" => :context_dir}
 
@@ -347,13 +354,21 @@ defmodule Anchor.Domain.Sabotage.Config do
 
     with :ok <- known_record_keys(section),
          {:ok, dir} <- record_string(section, "dir", defaults.dir),
-         {:ok, dir} <- record_dir(dir),
+         {:ok, dir} <- record_dir("dir", dir),
+         {:ok, outside} <- outside_apps_dir(section, dir),
          {:ok, naming} <- record_choice(section, "naming", @namings, defaults.naming),
          {:ok, from} <- record_choice(section, "domain_from", @domain_froms, defaults.domain_from),
          {:ok, prefixes} <- record_prefixes(section),
          {:ok, adr} <- record_string(section, "adr", defaults.adr) do
       {:ok,
-       %{dir: dir, naming: naming, domain_from: from, domain_strip_prefixes: prefixes, adr: adr}}
+       %{
+         dir: dir,
+         outside_apps_dir: outside,
+         naming: naming,
+         domain_from: from,
+         domain_strip_prefixes: prefixes,
+         adr: adr
+       }}
     end
   end
 
@@ -392,12 +407,42 @@ defmodule Anchor.Domain.Sabotage.Config do
     end
   end
 
-  defp record_dir(dir) do
+  # DND-6031: the directory for a file no `{app}` can be read from.
+  defp outside_apps_dir(%{"outside_apps_dir" => _value} = section, dir) do
+    with {:ok, outside} <- record_string(section, "outside_apps_dir", nil),
+         {:ok, outside} <- record_dir("outside_apps_dir", outside) do
+      outside_for(outside, dir)
+    end
+  end
+
+  defp outside_apps_dir(_section, _dir), do: {:ok, nil}
+
+  defp outside_for(outside, dir) do
+    cond do
+      String.contains?(outside, "{app}") ->
+        refuse(
+          "sabotage.records.outside_apps_dir must not hold {app}, got: #{inspect(outside)}",
+          "name the one directory for files outside apps/<app>/"
+        )
+
+      not String.contains?(dir, "{app}") ->
+        refuse(
+          "sabotage.records.outside_apps_dir is set, but records.dir #{dir} holds no {app}, " <>
+            "so every record already goes there",
+          "remove outside_apps_dir"
+        )
+
+      true ->
+        {:ok, outside}
+    end
+  end
+
+  defp record_dir(key, dir) do
     segments = dir |> String.split("/") |> drop_dot_slash() |> Enum.reject(&(&1 == ""))
 
     if String.starts_with?(dir, "/") or ".." in segments or segments == [] do
       refuse(
-        "sabotage.records.dir must be a directory inside the project, got: #{inspect(dir)}",
+        "sabotage.records.#{key} must be a directory inside the project, got: #{inspect(dir)}",
         "set it relative to the project root, with no .. segment"
       )
     else

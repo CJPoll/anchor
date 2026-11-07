@@ -122,8 +122,10 @@ defmodule Anchor.Managers.Sabotage.Behaviours do
   # -- 3. the kill maps ----------------------------------------------------------
 
   defp kill_rows(root, config, %{records: store}) do
-    root
-    |> store.list(Record.dir_glob(config.records))
+    config.records
+    |> Record.dir_globs()
+    |> Enum.flat_map(&store.list(root, &1))
+    |> Enum.uniq()
     |> Enum.reduce_while({:ok, []}, fn path, {:ok, rows} ->
       case read_rows(root, path, store) do
         {:ok, more} -> {:cont, {:ok, rows ++ more}}

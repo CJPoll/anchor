@@ -250,6 +250,15 @@ defmodule Anchor.Domain.Sabotage.VerifyTest do
       refute Verify.record_path?("test/sabotage_records/sub/a.md", "test/sabotage_records")
       refute Verify.record_path?("docs/a.md", "test/sabotage_records")
     end
+
+    test "DND-6031: a list of directory globs: a record under any of them" do
+      globs = ["apps/*/test/sabotage_records", "tools/sabotage_records"]
+
+      assert Verify.record_path?("apps/web/test/sabotage_records/a.md", globs)
+      assert Verify.record_path?("tools/sabotage_records/a.md", globs)
+      refute Verify.record_path?("tools/other/a.md", globs)
+      refute Verify.record_path?("tools/sabotage_records/README.md", globs)
+    end
   end
 
   describe "unmeasured_scope?/3" do

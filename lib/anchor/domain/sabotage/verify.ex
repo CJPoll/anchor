@@ -153,11 +153,15 @@ defmodule Anchor.Domain.Sabotage.Verify do
     end
   end
 
-  @doc "Whether `path` is a sabotage record under the records `dir_glob` (`{app}` read as `*`)."
-  @spec record_path?(String.t(), String.t()) :: boolean()
-  def record_path?(path, dir_glob) do
+  @doc """
+  Whether `path` is a sabotage record under a records directory glob
+  (`{app}` read as `*`), or under any of a list of them
+  (`Anchor.Domain.Sabotage.Record.dir_globs/1`, DND-6031).
+  """
+  @spec record_path?(String.t(), String.t() | [String.t()]) :: boolean()
+  def record_path?(path, dir_globs) do
     Path.extname(path) == ".md" and Path.basename(path) != "README.md" and
-      GlobPattern.matches_pattern?(Path.dirname(path), dir_glob)
+      Enum.any?(List.wrap(dir_globs), &GlobPattern.matches_pattern?(Path.dirname(path), &1))
   end
 
   @doc """

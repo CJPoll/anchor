@@ -2224,6 +2224,7 @@ sabotage:
   coverage_map: anchor-coverage.etf  # optional: a per-test coverage map; --coverage PATH overrides
   records:                           # where the run's sabotage record goes (DND-5484)
     dir: "test/sabotage_records"     # may hold {app}: "apps/{app}/test/sabotage_records"
+    outside_apps_dir: "apps/tooling/test/sabotage_records"  # DND-6031, only with {app} in dir: the records dir of a file outside apps/<app>/ (e.g. credo/checks/*.ex); unset, such a file is refused
     naming: domain_date_slot         # <domain>-YYYYMMDD-<slot>.md; or ticket_nn_what: <TICKET>-<NN>-anchor-sabotage-run.md
     domain_from: module              # or context_dir: the directory under lib/<app>/
     domain_strip_prefixes: []        # e.g. ["MyApp.Domain.", "MyApp."]; the longest match is dropped
@@ -2319,7 +2320,10 @@ How a run goes:
    applied, a record that could not be named is refused, exit 2: a detached
    `HEAD` with no `--slot`, `ticket_nn_what` with no ticket key and no
    `--ticket` (`Fix: pass --ticket DND-NNN`), `{app}` in `dir` for a file
-   outside `apps/<app>/`.
+   outside `apps/<app>/` while `outside_apps_dir` is unset. With
+   `outside_apps_dir` set (DND-6031), such a file's record goes there, and
+   `run`, `verify`, `replay` and `behaviours` read the records in it as well
+   as those under `dir`.
 
 | Status | Meaning |
 |---|---|
