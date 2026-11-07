@@ -1456,8 +1456,10 @@ behaviour. The connected groups of those links are the module's causal component
 generated module are exempt.
 
 - **Split (M1).** A module with two or more components is one violation at its
-  `defmodule`: one module per component. The component with the most public
-  functions keeps the name; each other is named after the project struct its
+  `defmodule`: one module per component. The component that uses the module's own
+  struct keeps the name (at most one can: its users are linked); with none, the
+  component with the most public functions does, and a tie goes to the one holding
+  the alphabetically first function. Each other is named after the project struct its
   functions return (`@spec`) or build, as a sibling module, and one that owns no
   type is named after its first public function, with a note to rename it. A name
   an existing module has says to merge into it.
