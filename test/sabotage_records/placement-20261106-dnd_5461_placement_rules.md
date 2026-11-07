@@ -2111,6 +2111,50 @@ First failure, verbatim:
 ```
 
 
+## DND-5462 critic round 5: the repeated-parameter forwarder test, restored
+
+Group F: `mix test --timeout 2000 --max-cases 2 test/anchor/domain/placement/forwarders_test.exs test/anchor/domain/graph_rules/no_inert_hop_test.exs test/anchor/domain/placement_test.exs`, through `test-slot`.
+
+| # | Mutation | File | Result | Failing tests |
+|---|---|---|---|---|
+| HOP-X | a repeated parameter's =:= guard is accepted, and its two variables read as one | `lib/anchor/domain/placement/forwarders.ex` | `91 tests, 1 failure` (red) | forwarder/1 a repeated parameter is not a forwarder |
+
+### HOP-X: a repeated parameter's =:= guard is accepted, and its two variables read as one
+
+Mutation:
+
+```elixir
+# before
+         pattern_vars when is_list(pattern_vars) <- vars(:cerl.clause_pats(clause)),
+         true <- true_guard?(:cerl.clause_guard(clause)) do
+      call_of(:cerl.clause_body(clause), pattern_vars, %{})
+# after
+         pattern_vars when is_list(pattern_vars) <- vars(:cerl.clause_pats(clause)),
+         guard = :cerl.clause_guard(clause),
+         true <-
+           true_guard?(guard) or
+             (:cerl.type(guard) == :call and :cerl.atom_val(:cerl.call_name(guard)) == :"=:=") do
+      pair = if true_guard?(guard), do: [], else: Enum.map(:cerl.call_args(guard), &:cerl.var_name/1)
+      first = Enum.find(pattern_vars, &(&1 in pair))
+      call_of(:cerl.clause_body(clause), Enum.map(pattern_vars, &if(&1 in pair, do: first, else: &1)), %{})
+```
+
+First failure, verbatim:
+
+```text
+  1) test forwarder/1 a repeated parameter is not a forwarder (Anchor.Domain.Placement.ForwardersTest)
+     test/anchor/domain/placement/forwarders_test.exs:101
+     Assertion with == failed
+     code:  assert forwarder(binary, {:repeated, 2}) == :no
+     left:  {:forwards, {N, :g, 2}}
+     right: :no
+     stacktrace:
+       test/anchor/domain/placement/forwarders_test.exs:102: (test)
+.........................
+91 tests, 1 failure
+```
+
+
 ## Run 23:09 UTC
 
 - **Code under test:** `Anchor.Domain.Placement.all_proposals/3`, `Anchor.Domain.Placement.facts_for_ownership/3`, `Anchor.Domain.Placement.headline/2`, `Anchor.Domain.Placement.proposals/3`, `Anchor.Domain.Placement.render/1`, `Anchor.Domain.Placement.Forwarders.aggregates/2`, `Anchor.Domain.Placement.Forwarders.app/2`, `Anchor.Domain.Placement.Forwarders.behaviour_callbacks/3`, `Anchor.Domain.Placement.Forwarders.boundary/3`, `Anchor.Domain.Placement.Forwarders.call_of/3`, `Anchor.Domain.Placement.Forwarders.callback?/2`, `Anchor.Domain.Placement.Forwarders.callers_text/1`, `Anchor.Domain.Placement.Forwarders.case_forward/2`, `Anchor.Domain.Placement.Forwarders.case_values/1`, `Anchor.Domain.Placement.Forwarders.classified_boundary/4`, `Anchor.Domain.Placement.Forwarders.compiler_generated?/1`, `Anchor.Domain.Placement.Forwarders.default_clause?/2`, `Anchor.Domain.Placement.Forwarders.forwarded_call/2`, `Anchor.Domain.Placement.Forwarders.forwarder/1`, `Anchor.Domain.Placement.Forwarders.forwarding_call/3`, `Anchor.Domain.Placement.Forwarders.literal_mfa/1`, `Anchor.Domain.Placement.Forwarders.renaming_let/3`, `Anchor.Domain.Placement.Forwarders.static_caller?/1`, `Anchor.Domain.Placement.Forwarders.true_guard?/1`, `Anchor.Domain.Placement.Forwarders.vars/1`

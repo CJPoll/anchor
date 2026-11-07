@@ -458,8 +458,8 @@ compiled code (DND-5440; `layering`, DND-5442, `context_acyclic`, DND-5445,
 | `analyses_complete` | `min_absent_parameters`, `min_apply_sites`, `min_functions` | none | `graph` |
 | `case_on_bare_arg` | none | none | `ast` |
 | `context_acyclic` | none | none | `graph` |
-| `effects_match_bucket` | none | none | `graph` |
 | `directory_placement` | none | none | `graph` |
+| `effects_match_bucket` | none | none | `graph` |
 | `function_placement` | none | none | `graph` |
 | `interface` | `max_width` | none | `graph` |
 | `layering` | none | none | `graph` |
