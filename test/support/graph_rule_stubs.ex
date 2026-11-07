@@ -150,6 +150,33 @@ defmodule Anchor.Test.GraphRuleStubs do
     def check(_model, _rule), do: []
   end
 
+  defmodule NeedsEffectsWithoutCfa do
+    @moduledoc false
+    @behaviour Anchor.Domain.GraphRule
+    def rule_type, do: :stub_needs_effects_without_cfa
+    def narrows?(_base_key, _key), do: false
+    def needs, do: [:effects]
+    def check(_model, _rule), do: []
+  end
+
+  defmodule NeedsPlacementWithoutEffects do
+    @moduledoc false
+    @behaviour Anchor.Domain.GraphRule
+    def rule_type, do: :stub_needs_placement_without_effects
+    def narrows?(_base_key, _key), do: false
+    def needs, do: [:cfa, :placement]
+    def check(_model, _rule), do: []
+  end
+
+  defmodule NeedsDemandWithoutCfa do
+    @moduledoc false
+    @behaviour Anchor.Domain.GraphRule
+    def rule_type, do: :stub_needs_demand_without_cfa
+    def narrows?(_base_key, _key), do: false
+    def needs, do: [:demand]
+    def check(_model, _rule), do: []
+  end
+
   def all,
     do: [
       Ok,
@@ -162,6 +189,9 @@ defmodule Anchor.Test.GraphRuleStubs do
       CfaProbe,
       NeedsCfa,
       NeedsUnknown,
-      NeedsNonList
+      NeedsNonList,
+      NeedsEffectsWithoutCfa,
+      NeedsPlacementWithoutEffects,
+      NeedsDemandWithoutCfa
     ]
 end

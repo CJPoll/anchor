@@ -16,6 +16,7 @@ defmodule Anchor.Domain.Sabotage.Config do
   | `survivors` | `.anchor/sabotage/survivors.txt` | the survivors list (DND-5483), relative to the project root; named here, it must exist; at the default path an absent file is an empty list, said loudly |
   | `behaviour_locality_baseline` | `.anchor/baselines/behaviour-locality.txt` | the behaviour locality baseline (DND-5489), relative to the project root; named here, it must exist |
   | `behaviour_locality_enforcement` | `report` | `report` prints the verdict and exits 0; `enforce` fails on NEW, STALE or GREW |
+  | `scan_shards` | 7 | the nightly scan's shard count (DND-5490): `--shard auto` runs shard (days since 1970-01-01) mod `scan_shards`, so any `scan_shards` nights in a row scan all of main |
 
   `records` (every key optional): `dir` (default `test/sabotage_records`;
   may hold `{app}`; relative, with no `..` segment, read with a leading `./`
@@ -44,7 +45,7 @@ defmodule Anchor.Domain.Sabotage.Config do
   ]
   @keys ~w(test_command max_mutants timeout_seconds operators effect_calls test_mirror
            coverage_map records survivors behaviour_locality_baseline
-           behaviour_locality_enforcement)
+           behaviour_locality_enforcement scan_shards)
 
   defstruct test_command: ["mix", "test", "--max-cases", "2"],
             max_mutants: 30,
@@ -56,6 +57,7 @@ defmodule Anchor.Domain.Sabotage.Config do
             survivors: nil,
             behaviour_locality_baseline: nil,
             behaviour_locality_enforcement: :report,
+            scan_shards: 7,
             records: %{
               dir: "test/sabotage_records",
               naming: :domain_date_slot,
@@ -75,6 +77,7 @@ defmodule Anchor.Domain.Sabotage.Config do
           survivors: String.t() | nil,
           behaviour_locality_baseline: String.t() | nil,
           behaviour_locality_enforcement: :report | :enforce,
+          scan_shards: pos_integer(),
           records: %{
             dir: String.t(),
             naming: :domain_date_slot | :ticket_nn_what,
@@ -100,7 +103,8 @@ defmodule Anchor.Domain.Sabotage.Config do
          {:ok, records} <- records(section),
          {:ok, survivors} <- survivors(section),
          {:ok, locality_baseline} <- locality_baseline(section),
-         {:ok, locality_enforcement} <- locality_enforcement(section) do
+         {:ok, locality_enforcement} <- locality_enforcement(section),
+         {:ok, scan_shards} <- positive(section, "scan_shards", 7) do
       {:ok,
        %__MODULE__{
          test_command: command,
@@ -113,6 +117,7 @@ defmodule Anchor.Domain.Sabotage.Config do
          survivors: survivors,
          behaviour_locality_baseline: locality_baseline,
          behaviour_locality_enforcement: locality_enforcement,
+         scan_shards: scan_shards,
          records: records
        }}
     end

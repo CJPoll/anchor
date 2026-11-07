@@ -91,10 +91,19 @@ before coining a synonym.
   `Anchor.Domain.Roots`, `Anchor.Domain.Effects`,
   `Anchor.Domain.GraphRules.EffectsMatchBucket`, and their wiring in the graph
   runner.
+- `effect_primitives` and `graph_rules` — the words `mix anchor.sabotage run`
+  derives from `lib/anchor/domain/effect_primitives.ex` and
+  `lib/anchor/domain/graph_rules.ex` for its generated records (DND-5677,
+  DND-5675). A hand run on the same change may be appended to that generated
+  record's file.
 - `struct_flow` — the `struct_owned_by_module_flow` graph rule (DND-5454):
   `Anchor.Domain.StructTypes`, `Anchor.Domain.StructFlow`,
   `Anchor.Domain.GraphRules.StructOwnedByModuleFlow`, and the scope it shares
   with the AST rule, `Anchor.Domain.StructOwnership`.
+- `mix` and `record_file` — the words `mix anchor.sabotage run`'s own records
+  derive (`domain_from: module` after `domain_strip_prefixes`) for
+  `Mix.Tasks.Anchor.Sabotage` and `Anchor.Adapters.RecordFile`; a hand record
+  for that code stays under `sabotage`.
 - `sabotage` — the causal sabotage generator (DND-5471): every
   `Anchor.Domain.Sabotage.*` module that makes mutants (`Mutator`,
   `Operators`, `OrphanCheck`, `SourceTree`, `Patch`, `MutantId`,
@@ -106,7 +115,8 @@ before coining a synonym.
   `GitStatus` and `TestRunner`, and `Anchor.Sabotage.ExUnitFormatter`; the
   survivors list (DND-5483: `Survivors`) and the replay (DND-5485: `Replay`,
   `KillerRef`, `TestRunRefusal`, `Anchor.Managers.Sabotage.Replay`); behaviour
-  locality (DND-5489: `BehaviourMap`, `Anchor.Managers.Sabotage.Behaviours`).
+  locality (DND-5489: `BehaviourMap`, `Anchor.Managers.Sabotage.Behaviours`); verify (DND-5516: `Verify`, `Anchor.Managers.Sabotage.Verify`) and the
+  nightly scan (DND-5490: `ScanReport`, `Scope.all/1`, `Plan.shard/3`).
   `sabotage_scope` stays the word for the diff scope.
 - `dependency_analyzer` — `Anchor.Domain.DependencyAnalyzer`, the pure AST
   walk behind every dependency fact (module names, references, calls, uses,
@@ -282,6 +292,12 @@ before coining a synonym.
   `Inference`, `Analysis` and the `aggregate_write_sources` graph rule); and
   `declare: none` (DND-5659: `Config`'s `none`, `Persistence`, the
   `:persists_under_none` issue).
+- `backstop` — the test-time aggregate backstop (DND-5480): `Anchor.Backstop`,
+  `Anchor.Managers.Backstop`, `TelemetryRecorder`, `EctoTransactionProbe` and
+  the Domain modules `Aggregates.Backstop`, `BackstopEvent` and
+  `QueryStatement`. The generated runs name records by module instead
+  (`domain_from: module`): `telemetry_recorder`, `ecto_transaction_probe`,
+  and `aggregates` for the Domain modules.
 - `context_acyclic` — the `context_acyclic` graph rule (DND-5445):
   `Anchor.Domain.ContextGraph`, `GraphRules.ContextAcyclic`,
   `ViolationKey.graph_key/2` and its registration.

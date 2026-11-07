@@ -7,6 +7,7 @@ defmodule Anchor.Adapters.BeamReaderTest do
   # Sabotage record (compile option allowlist): ../../sabotage_records/beam_reader-20261103-dnd_5551_graph_hardening.md
   # Sabotage record (Failures.crash_summary/3): ../../sabotage_records/failures-20261103-dnd_5438.md
   # Sabotage record (DND-5633): ../../sabotage_records/beam_reader-20261103-dnd_5648_graph_followups.md
+  # Sabotage record (DND-5679): ../../sabotage_records/effects-20261106-dnd_5676_effects_cfa_batch.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.BeamFixtures
@@ -277,7 +278,9 @@ defmodule Anchor.Adapters.BeamReaderTest do
           {:debug_info_key, ~c"anchor-test-key"}
         ])
 
-      assert {:error, %{reason: :debug_info_stripped}} =
+      # DND-5679: the module is named, so a call into it is a project call
+      # whose body was not read, never one outside the project.
+      assert {:error, %{reason: :debug_info_stripped, module: :anchor_fixtures_beam_reader_crypt}} =
                BeamReader.decode(binary, app: :demo, path: "x.beam")
     end
 

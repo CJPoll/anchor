@@ -9,6 +9,7 @@ defmodule Anchor.Domain.GraphRulesTest do
   # Sabotage record (DND-5447, DND-5454 rows): ../../sabotage_records/rule_schema-20261103-dnd_5447_graph_rules_c.md
   # (needs/1, DND-5574: ../../sabotage_records/graph_runner-20261103-dnd_5574_cfa_wiring.md)
   # DND-5448: ../../sabotage_records/placement-20261106-dnd_5448_placement_core.md
+  # Sabotage record (DND-5675): ../../sabotage_records/graph_rules-20261106-dnd_5676_effects_cfa_batch.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Classification
@@ -56,6 +57,29 @@ defmodule Anchor.Domain.GraphRulesTest do
       assert error.message ==
                "Anchor.Test.GraphRuleStubs.NeedsUnknown.needs/0 names [:nope], which the " <>
                  "graph runner does not compute (it computes [:aggregate_analysis, :cfa, :effects, :demand, :placement])"
+    end
+
+    test "DND-5675: an analysis named without one it reads raises, naming both" do
+      error = assert_raise ArgumentError, fn -> GraphRules.needs(Stubs.NeedsEffectsWithoutCfa) end
+
+      assert error.message ==
+               "Anchor.Test.GraphRuleStubs.NeedsEffectsWithoutCfa.needs/0 names :effects without " <>
+                 ":cfa, which :effects reads, so it would run degraded; add :cfa to " <>
+                 "Anchor.Test.GraphRuleStubs.NeedsEffectsWithoutCfa.needs/0"
+
+      error = assert_raise ArgumentError, fn -> GraphRules.needs(Stubs.NeedsDemandWithoutCfa) end
+      assert error.message =~ "names :demand without :cfa"
+
+      error =
+        assert_raise ArgumentError, fn -> GraphRules.needs(Stubs.NeedsPlacementWithoutEffects) end
+
+      assert error.message =~ "names :placement without :effects"
+    end
+
+    test "DND-5675 control: every rule Anchor ships names what its analyses read" do
+      for module <- GraphRules.all(), do: GraphRules.needs(module)
+      assert GraphRules.needs(GraphRules.EffectsMatchBucket) == [:cfa, :effects, :placement]
+      assert GraphRules.needs(GraphRules.ParameterReachesSink) == [:cfa, :demand]
     end
 
     test "a needs/0 that is not a list raises" do

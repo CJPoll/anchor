@@ -61,6 +61,10 @@ defmodule Anchor.Domain.Sabotage.Report do
   `--print-survivor-lines` adds one block of the NEW survivors' lines at the
   end, to paste; the run writes no file.
 
+  A scan (`Run.scan`, DND-5490) writes a report instead of records: its exit
+  code is 3 when it measured nothing, 2 when the report could not be written
+  (`sabotage: scan report not written: <why>`), else 0, whatever survived.
+
   A sabotage record that could not be written (DND-5484) is said loudly,
   `sabotage: record not written: <why>`, and changes only a passing verdict:
   0 becomes 2. A survivor stays 1 and an unmeasured run stays 3 (DND-5641).
@@ -77,7 +81,14 @@ defmodule Anchor.Domain.Sabotage.Report do
   @spec exit_code(Run.t()) :: 0 | 1 | pos_integer()
   def exit_code(%Run{refusal: {code, _message}}), do: code
   def exit_code(%Run{dry_run: true}), do: 0
+  def exit_code(%Run{scan: %{}} = run), do: run |> verdict() |> scan_code(run)
   def exit_code(%Run{} = run), do: run |> verdict() |> verdict_code() |> with_record(run)
+
+  # DND-5490: a scan is a report. Its survivors are findings, never a failure;
+  # only a run that measured nothing (3) or a report not written (2) fails.
+  defp scan_code(:unmeasured, _run), do: 3
+  defp scan_code(_verdict, %Run{report_error: message}) when is_binary(message), do: 2
+  defp scan_code(_verdict, _run), do: 0
 
   # DND-5641: the measured verdict wins; a record that could not be written
   # turns only a pass into a failure (exit 2).
@@ -316,9 +327,18 @@ defmodule Anchor.Domain.Sabotage.Report do
         {:append, path} -> "sabotage record appended: #{path}"
       end)
 
-    if run.record_error,
-      do: written ++ ["sabotage: record not written: " <> run.record_error],
-      else: written
+    written = written ++ Enum.map(run.report, &"sabotage scan report written: #{&1}")
+
+    errors =
+      Enum.flat_map(
+        [{"record", run.record_error}, {"scan report", run.report_error}],
+        fn
+          {_what, nil} -> []
+          {what, message} -> ["sabotage: #{what} not written: " <> message]
+        end
+      )
+
+    written ++ errors
   end
 
   defp sources(%Run{outcomes: []}), do: []

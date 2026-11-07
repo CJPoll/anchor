@@ -431,6 +431,41 @@ defmodule Anchor.Domain.Sabotage.ReportTest do
     end
   end
 
+  describe "a scan (DND-5490)" do
+    # Sabotage record: ../../../sabotage_records/sabotage-20261106-dnd_5490_scan.md
+    @scan %{report: "scan.md", shard: {0, 7}, coverage: nil}
+
+    test "its survivors and no_tests mutants are findings, never a failure: exit 0" do
+      run = %Run{
+        scan: @scan,
+        outcomes: [outcome("a", :killed, [@killer]), outcome("b", :survived)]
+      }
+
+      assert Report.exit_code(run) == 0
+      assert Report.exit_code(%{run | scan: nil}) == 1
+
+      assert Report.exit_code(%Run{
+               scan: @scan,
+               outcomes: [outcome("a", :survived), outcome("b", :no_tests)]
+             }) ==
+               0
+    end
+
+    test "a scan that measured nothing is 3; a report not written is 2, said loudly" do
+      assert Report.exit_code(%Run{scan: @scan, outcomes: [outcome("a", :invalid, [], "why")]}) ==
+               3
+
+      run = %Run{scan: @scan, outcomes: [outcome("a", :survived)], report_error: "eacces"}
+      assert Report.exit_code(run) == 2
+      assert Report.render(run) =~ "sabotage: scan report not written: eacces\n"
+
+      written = %{run | report_error: nil, report: ["scan.md", "scan.etf"]}
+
+      assert Report.render(written) =~
+               "sabotage scan report written: scan.md\nsabotage scan report written: scan.etf\n"
+    end
+  end
+
   describe "kills that rest on time alone (DND-5653)" do
     test "R1: the timeout kills get their own line, naming each mutant and its killers; still exit 0" do
       run = %Run{

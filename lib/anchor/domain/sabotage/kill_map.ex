@@ -74,14 +74,30 @@ defmodule Anchor.Domain.Sabotage.KillMap do
   @doc "Every row of every `anchor-kills` block in `text`."
   @spec parse(String.t()) :: {:ok, [row()]} | {:error, {pos_integer(), String.t()}}
   def parse(text) do
+    with {:ok, blocks} <- parse_blocks(text), do: {:ok, Enum.concat(blocks)}
+  end
+
+  @doc """
+  The rows of each `anchor-kills` block in `text`, one list per block, in the
+  order the blocks appear (an appended record holds one block per run,
+  oldest first; DND-5516 reads the latest run of a function from it). It
+  refuses what `parse/1` refuses.
+  """
+  @spec parse_blocks(String.t()) :: {:ok, [[row()]]} | {:error, {pos_integer(), String.t()}}
+  def parse_blocks(text) do
     text
     |> String.split("\n")
     |> Enum.with_index(1)
     |> Enum.reduce_while({:out, []}, &step/2)
     |> case do
-      {:out, rows} -> {:ok, Enum.reverse(rows)}
-      {:in, _rows, line} -> {:error, {line, "the anchor-kills block opened here is never closed"}}
-      {:error, _reason} = error -> error
+      {:out, blocks} ->
+        {:ok, Enum.reverse(blocks)}
+
+      {:in, _blocks, _rows, line} ->
+        {:error, {line, "the anchor-kills block opened here is never closed"}}
+
+      {:error, _reason} = error ->
+        error
     end
   end
 
@@ -103,15 +119,18 @@ defmodule Anchor.Domain.Sabotage.KillMap do
   def killer({file, line, name}), do: "#{file}:#{line} #{name}"
   def killer(text) when is_binary(text), do: text
 
-  defp step({@fence <> @info, line}, {:out, rows}), do: {:cont, {:in, rows, line}}
-  defp step({_text, _line}, {:out, _rows} = acc), do: {:cont, acc}
-  defp step({@fence, _line}, {:in, rows, _open}), do: {:cont, {:out, rows}}
-  defp step({"#" <> _comment, _line}, {:in, _rows, _open} = acc), do: {:cont, acc}
-  defp step({"", _line}, {:in, _rows, _open} = acc), do: {:cont, acc}
+  defp step({@fence <> @info, line}, {:out, blocks}), do: {:cont, {:in, blocks, [], line}}
+  defp step({_text, _line}, {:out, _blocks} = acc), do: {:cont, acc}
 
-  defp step({text, line}, {:in, rows, open}) do
+  defp step({@fence, _line}, {:in, blocks, rows, _open}),
+    do: {:cont, {:out, [Enum.reverse(rows) | blocks]}}
+
+  defp step({"#" <> _comment, _line}, {:in, _blocks, _rows, _open} = acc), do: {:cont, acc}
+  defp step({"", _line}, {:in, _blocks, _rows, _open} = acc), do: {:cont, acc}
+
+  defp step({text, line}, {:in, blocks, rows, open}) do
     case row(text) do
-      {:ok, row} -> {:cont, {:in, [row | rows], open}}
+      {:ok, row} -> {:cont, {:in, blocks, [row | rows], open}}
       {:error, message} -> {:halt, {:error, {line, message}}}
     end
   end

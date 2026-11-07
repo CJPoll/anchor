@@ -1,5 +1,5 @@
 defmodule Anchor.Domain.Sabotage.PlanTest do
-  # DND-5473: the run's order, cap and --only filter.
+  # DND-5473: the run's order, cap and --only filter. DND-5490: the scan's shard.
   # Sabotage record: ../../../sabotage_records/sabotage-20261103-dnd_5473_sabotage_run.md
   use ExUnit.Case, async: true
 
@@ -60,6 +60,57 @@ defmodule Anchor.Domain.Sabotage.PlanTest do
 
       assert Plan.build(forty(), cap: 1, only: [y.id, x.id]) ==
                {:ok, %{planned: [x], not_run: [y]}}
+    end
+  end
+
+  describe "shard/3 (DND-5490)" do
+    # Sabotage record: ../../../sabotage_records/sabotage-20261106-dnd_5490_scan.md
+    defp seventy do
+      Enum.map(1..70, fn i ->
+        id = :sha256 |> :crypto.hash("m#{i}") |> Base.encode16(case: :lower) |> binary_part(0, 12)
+        %{mutant(i) | id: id}
+      end)
+    end
+
+    test "1: shards 0..6 of 70 mutants are pairwise disjoint and together the input" do
+      mutants = seventy()
+      shards = for i <- 0..6, do: elem(Plan.shard(mutants, i, 7), 1)
+
+      assert Enum.sort(Enum.concat(shards)) == Enum.sort(mutants)
+
+      for {a, i} <- Enum.with_index(shards), {b, j} <- Enum.with_index(shards), i < j do
+        assert MapSet.disjoint?(MapSet.new(a), MapSet.new(b)), "shards #{i} and #{j}"
+      end
+
+      # Every shard holds some: no shard is everything, none is empty.
+      assert Enum.all?(shards, &(&1 != [] and length(&1) < 70))
+    end
+
+    test "a mutant's shard is its id's: the same id is in the same shard wherever it moved" do
+      [m | _rest] = seventy()
+      moved = %{m | range: {{90, 1}, {91, 2}}, file: "lib/elsewhere.ex"}
+      n = rem(String.to_integer(m.id, 16), 7)
+
+      assert Plan.shard([m, moved], n, 7) == {:ok, [m, moved]}
+      assert Plan.shard([m, moved], rem(n + 1, 7), 7) == {:ok, []}
+    end
+
+    test "2: i = n, a negative i, or n = 0 is {:error, :bad_shard}" do
+      assert Plan.shard(seventy(), 7, 7) == {:error, :bad_shard}
+      assert Plan.shard(seventy(), -1, 7) == {:error, :bad_shard}
+      assert Plan.shard(seventy(), 0, 0) == {:error, :bad_shard}
+    end
+
+    test "shard_of_day/2: any n days in a row run every shard once, across a new year too" do
+      for n <- [7, 30], start <- [~D[2026-12-20], ~D[2028-12-15], ~D[2026-06-01]] do
+        shards = for d <- 0..(n - 1), do: elem(Plan.shard_of_day(Date.add(start, d), n), 0)
+        assert Enum.sort(shards) == Enum.to_list(0..(n - 1)), "n=#{n} from #{start}"
+      end
+
+      assert Plan.shard_of_day(~D[1970-01-08], 7) == {0, 7}
+
+      assert Plan.shard_of_day(~D[2027-01-01], 7) ==
+               {rem(elem(Plan.shard_of_day(~D[2026-12-31], 7), 0) + 1, 7), 7}
     end
   end
 end

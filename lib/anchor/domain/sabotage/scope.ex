@@ -99,6 +99,25 @@ defmodule Anchor.Domain.Sabotage.Scope do
   end
 
   @doc """
+  Every function with a literal `def`/`defp` clause in `spans_by_file` (each
+  file's `FunctionSpans`), the scope of `mix anchor.sabotage run --scope all`
+  (DND-5490): each file is read as wholly added, so a macro, a guard macro, a
+  function defined inside `quote` and a function a `use` generates are left
+  out, as `build/3` leaves them out. Functions are in path order, then by first
+  line. Zero files is an empty scope: the Manager refuses it.
+  """
+  @spec all(%{String.t() => [Span.t()]}) :: t()
+  def all(spans_by_file) do
+    spans_by_file
+    |> Map.new(fn {path, _spans} -> {path, %{status: :added, hunks: [], old_hunks: []}} end)
+    |> build(spans_by_file)
+  end
+
+  @doc "The scope, with the merge-base `sha` it was read against."
+  @spec put_base_sha(t(), String.t()) :: t()
+  def put_base_sha(%__MODULE__{} = scope, sha) when is_binary(sha), do: %{scope | base_sha: sha}
+
+  @doc """
   The changed `_test.exs` files that still exist, each with its hunks' new
   side (`{start, count}`): the lines a sabotage record's "tests still lacking
   a red" reads (DND-5484). An untracked test file is not in the diff, so it

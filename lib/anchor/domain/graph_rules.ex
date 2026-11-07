@@ -31,7 +31,9 @@ defmodule Anchor.Domain.GraphRules do
   (`Anchor.Domain.GraphRule`): what the runner must compute before the rule's
   `check/2`. A need the runner does not compute, or a return that is not a
   list, raises, so a rule asking for something it would never get is reported
-  (the runner reads it under the rule's guard), never run without it. It
+  (the runner reads it under the rule's guard), never run without it. So
+  does a need named without the analyses it reads (DND-5675): `:effects` and
+  `:demand` read `:cfa`, `:placement` reads `:cfa` and `:effects`. It
   loads the module first (`Code.ensure_loaded?/1`), the one code-server call
   in this module: `function_exported?/3` is false for a module not yet
   loaded, which would read as needing nothing.
@@ -58,6 +60,12 @@ defmodule Anchor.Domain.GraphRules do
 
   # What the runner computes on demand (`Anchor.Managers.Graph`).
   @provided_needs [:aggregate_analysis, :cfa, :effects, :demand, :placement]
+
+  # The analyses each analysis reads (DND-5675): the runner computes a need
+  # from what the rule names, so one named without what it reads would run
+  # degraded (effects with no flow analysis read every `fun.(x)` as
+  # unresolved) instead of failing.
+  @prerequisites %{effects: [:cfa], demand: [:cfa], placement: [:cfa, :effects]}
 
   # Every module implementing `Anchor.Domain.GraphRule`. The rule tickets add
   # theirs here (see the moduledoc).
@@ -100,6 +108,7 @@ defmodule Anchor.Domain.GraphRules do
     module
     |> declared_needs()
     |> provided_needs!(module)
+    |> prerequisites!(module)
   end
 
   @doc """
@@ -154,6 +163,28 @@ defmodule Anchor.Domain.GraphRules do
     raise ArgumentError,
           "#{inspect(module)}.needs/0 returned #{inspect(other, limit: 5)}, not a list of " <>
             inspect(@provided_needs)
+  end
+
+  # Every need's prerequisites are named too (DND-5675), or the declaration
+  # is refused: a rule never runs on an analysis computed without what it reads.
+  defp prerequisites!(needs, module) do
+    missing =
+      for need <- needs,
+          prerequisite <- Map.get(@prerequisites, need, []),
+          prerequisite not in needs,
+          uniq: true,
+          do: {need, prerequisite}
+
+    case missing do
+      [] ->
+        needs
+
+      [{need, prerequisite} | _rest] ->
+        raise ArgumentError,
+              "#{inspect(module)}.needs/0 names #{inspect(need)} without #{inspect(prerequisite)}, " <>
+                "which #{inspect(need)} reads, so it would run degraded; add " <>
+                "#{inspect(prerequisite)} to #{inspect(module)}.needs/0"
+    end
   end
 
   defp selects?(%{bucket: bucket}, classified) when is_binary(bucket),

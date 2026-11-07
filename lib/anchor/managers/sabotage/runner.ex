@@ -117,6 +117,7 @@ defmodule Anchor.Managers.Sabotage.Runner do
   alias Anchor.Adapters.GitStatus
   alias Anchor.Adapters.RecordFile
   alias Anchor.Adapters.SourcePatcher
+  alias Anchor.Adapters.SourceReader
   alias Anchor.Adapters.TestRunner
   alias Anchor.Domain.Failures
   alias Anchor.Domain.Sabotage.ChangedTests
@@ -127,11 +128,14 @@ defmodule Anchor.Managers.Sabotage.Runner do
   alias Anchor.Domain.Sabotage.NoMutant
   alias Anchor.Domain.Sabotage.Outcome
   alias Anchor.Domain.Sabotage.Patch
+  alias Anchor.Domain.Sabotage.FunctionSpans
   alias Anchor.Domain.Sabotage.KillMap
   alias Anchor.Domain.Sabotage.Plan
   alias Anchor.Domain.Sabotage.Record
   alias Anchor.Domain.Sabotage.RecordNaming
   alias Anchor.Domain.Sabotage.Run
+  alias Anchor.Domain.Sabotage.ScanReport
+  alias Anchor.Domain.Sabotage.Scope
   alias Anchor.Domain.Sabotage.SharedRun
   alias Anchor.Domain.Sabotage.Survivors
   alias Anchor.Domain.Sabotage.TestRun
@@ -253,7 +257,8 @@ defmodule Anchor.Managers.Sabotage.Runner do
          {:ok, scope} <- scope(facts, ports),
          :ok <- clean_targets(root, scope, ports),
          {:ok, run, sources, mutants} <- generate(run, root, scope, config, ports),
-         {:ok, plan} <- plan(mutants, facts, config),
+         {:ok, shard} <- shard(facts, config),
+         {:ok, plan} <- plan(mutants, shard, facts, config),
          {:ok, coverage, notes} <- coverage(facts, config, ports),
          {:ok, records} <- existing_records(root, config, ports),
          {:ok, recording} <- recording(facts, config, scope, run, plan, records, ports),
@@ -264,7 +269,8 @@ defmodule Anchor.Managers.Sabotage.Runner do
           notes: run.notes ++ notes ++ records.notes ++ survivor_notes(list),
           scope_functions: Enum.map(scope.functions, &mfa/1),
           not_selected: not_selected(mutants, plan),
-          print_survivor_lines: Map.get(facts, :print_survivor_lines, false)
+          print_survivor_lines: Map.get(facts, :print_survivor_lines, false),
+          scan: scan(facts, config, shard)
       }
 
       selection = select(plan.planned, root, config, {coverage, records.kill_map}, ports)
@@ -277,6 +283,7 @@ defmodule Anchor.Managers.Sabotage.Runner do
           |> measure(facts, config, sources, planned, ports)
           |> judge_survivors(list)
           |> write_records(recording, root, ports)
+          |> write_report(list, root, ports)
           |> save(facts, ports)
     else
       {:refuse, run, code, message} -> %{run | refusal: {code, message}}
@@ -295,6 +302,7 @@ defmodule Anchor.Managers.Sabotage.Runner do
       records: Keyword.get(opts, :record_store, RecordFile),
       baseline_store: Keyword.get(opts, :baseline_store, BaselineFile),
       git_base: Keyword.get(opts, :git_base, GitShow),
+      sources: Keyword.get(opts, :source_source, SourceReader),
       opts: opts
     }
   end
@@ -424,6 +432,15 @@ defmodule Anchor.Managers.Sabotage.Runner do
     end
   end
 
+  defp scope(%{scope: :all} = facts, %{sources: sources, change: change}) do
+    paths = sources.list(facts.root)
+
+    case read_all_spans(paths, facts.root, change) do
+      {:ok, spans} -> all_scope(Scope.all(spans), length(paths))
+      {:error, reason} -> {:refuse, 3, Failures.scope_could_not_measure(reason)}
+    end
+  end
+
   defp scope(facts, %{change: change, opts: opts}) do
     args = %{root: facts.root, base: Map.get(facts, :base, @default_base)}
 
@@ -525,12 +542,93 @@ defmodule Anchor.Managers.Sabotage.Runner do
 
   # -- 7. plan and selection -------------------------------------------------
 
-  defp plan(mutants, facts, config) do
+  defp plan(mutants, shard, facts, config) do
     cap = Map.get(facts, :max) || config.max_mutants
 
-    case Plan.build(mutants, cap: cap, only: Map.get(facts, :only, [])) do
-      {:ok, plan} -> {:ok, plan}
+    with {:ok, mutants} <- sharded(mutants, shard),
+         {:ok, plan} <- Plan.build(mutants, cap: cap, only: Map.get(facts, :only, [])) do
+      {:ok, plan}
+    else
       {:error, message} -> {:refuse, 2, message}
+    end
+  end
+
+  # -- DND-5490: the scan's shard and report ---------------------------------
+
+  defp shard(facts, config) do
+    case Map.get(facts, :shard) do
+      nil ->
+        {:ok, nil}
+
+      {:auto, %Date{} = date} ->
+        {:ok, Plan.shard_of_day(date, config.scan_shards)}
+
+      {i, n} when is_integer(i) and is_integer(n) and n >= 1 and i >= 0 and i < n ->
+        {:ok, {i, n}}
+
+      other ->
+        {:refuse, 2,
+         "--shard #{inspect(other)} is not I/N with 0 <= I < N. Fix: pass --shard 0/7, or --shard auto"}
+    end
+  end
+
+  defp sharded(mutants, nil), do: {:ok, mutants}
+
+  defp sharded(mutants, {i, n}) do
+    case Plan.shard(mutants, i, n) do
+      {:ok, kept} -> {:ok, kept}
+      {:error, :bad_shard} -> {:error, "--shard #{i}/#{n} is not a shard. Fix: pass 0 <= I < N"}
+    end
+  end
+
+  defp scan(facts, config, shard) do
+    case Map.get(facts, :report) do
+      nil ->
+        nil
+
+      path ->
+        %{report: path, shard: shard, coverage: Map.get(facts, :coverage) || config.coverage_map}
+    end
+  end
+
+  defp read_all_spans(paths, root, change) do
+    Enum.reduce_while(paths, {:ok, %{}}, fn path, {:ok, acc} ->
+      with {:read, {:ok, text}} <- {:read, change.read(root, path)},
+           {:spans, {:ok, spans}} <- {:spans, FunctionSpans.spans(text, path)} do
+        {:cont, {:ok, Map.put(acc, path, spans)}}
+      else
+        {:read, {:error, posix}} -> {:halt, {:error, {:unreadable, path, posix}}}
+        {:spans, {:error, {line, why}}} -> {:halt, {:error, {:unparseable, path, line, why}}}
+      end
+    end)
+  end
+
+  defp all_scope(%Scope{functions: []}, files) do
+    {:refuse, 3,
+     "COULD NOT MEASURE: --scope all found no function with a literal clause in #{files} " <>
+       "lib source files. Fix: run it from the project root, whose lib/ holds the code to scan"}
+  end
+
+  defp all_scope(scope, _files), do: {:ok, scope}
+
+  defp write_report(%Run{scan: nil} = run, _list, _root, _ports), do: run
+  defp write_report(%Run{refusal: {_code, _message}} = run, _list, _root, _ports), do: run
+
+  defp write_report(%Run{scan: scan} = run, list, root, %{records: store}) do
+    entries = if list, do: list.entries, else: []
+    {markdown, term} = ScanReport.render(run, entries, scan)
+
+    case store.write_report(root, scan.report, markdown, :erlang.term_to_binary(term)) do
+      {:ok, paths} ->
+        %{run | report: paths}
+
+      {:error, posix} ->
+        %{
+          run
+          | report_error:
+              "could not write #{scan.report} (#{inspect(posix)}). " <>
+                "Fix: pass a --report path in a writable directory"
+        }
     end
   end
 
@@ -973,6 +1071,11 @@ defmodule Anchor.Managers.Sabotage.Runner do
   # Everything a record needs, checked before any mutant is applied.
   defp recording(%{no_record: true}, _config, _scope, _run, _plan, _records, _ports),
     do: {:ok, nil}
+
+  # DND-5490: a scan writes its report, never a record, whatever --no-record says.
+  defp recording(%{report: path}, _config, _scope, _run, _plan, _records, _ports)
+       when is_binary(path),
+       do: {:ok, nil}
 
   # A dry run writes nothing, so it needs nothing a record needs.
   defp recording(%{dry_run: true}, _config, _scope, _run, _plan, _records, _ports),

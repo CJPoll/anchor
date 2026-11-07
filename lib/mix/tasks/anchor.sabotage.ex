@@ -1,5 +1,5 @@
 defmodule Mix.Tasks.Anchor.Sabotage do
-  @shortdoc "Generated sabotage: scope, run, restore, replay, coverage and behaviours"
+  @shortdoc "Generated sabotage: scope, run, restore, verify, replay, coverage and behaviours"
 
   @moduledoc """
   Generated sabotage for the functions a change touched, the **Framework**
@@ -29,6 +29,7 @@ defmodule Mix.Tasks.Anchor.Sabotage do
       mix anchor.sabotage run [--base REF] [--max N|all] [--only ID]... [--dry-run]
                               [--coverage PATH] [--no-record] [--domain D]
                               [--ticket KEY] [--slot S] [--print-survivor-lines]
+                              [--scope diff|all] [--shard I/N|auto] [--report PATH]
       mix anchor.sabotage restore
 
   `run` applies the mutants of the changed functions one at a time, runs only
@@ -72,6 +73,43 @@ defmodule Mix.Tasks.Anchor.Sabotage do
   read, or mutants were run and none was measured: all invalid, crashed or
   without a test; the survivors file, or its copy at `--base`, cannot be
   read).
+
+  ## verify (DND-5516)
+
+      mix anchor.sabotage verify --base REF [--format text|json]
+
+  Checks, in seconds and with no load, that the mutants of the functions the
+  diff since `REF` changes are covered: each mutant id the current source
+  generates has a `killed`, `timeout` or `invalid` row in a sabotage record the
+  branch added or appended to, or an entry in the survivors list with a real
+  reason (`Anchor.Domain.Sabotage.Verify`). It compiles nothing, runs no test,
+  applies no mutant and writes nothing: a gate runs it after the captain's
+  `run` committed its record. A row of a changed function's latest run whose id
+  is no longer generated is a STALE RECORD; a landed record the branch deleted
+  is RECORD REMOVED; survivors the branch added are printed for review.
+
+  Exit codes: 0 every mutant covered, or no changed function
+  (`sabotage verify: no changed functions`); 1 UNCOVERED, STALE RECORD, BAD
+  SURVIVOR, BAD RECORD (a kill map that does not parse) or RECORD REMOVED,
+  each with one `Fix:`; 2 usage (no `--base`, a `REF` git cannot read or
+  Anchor refuses to pass to git, an unknown flag); 3 `COULD NOT MEASURE` (no
+  `sabotage:` config, the scope or a record or the survivors list could not be
+  read, changed source files in which nothing was found, one mutant id
+  generated twice).
+
+  ## The nightly scan (DND-5490)
+
+  `--scope all` scopes every function with a literal clause in the project's
+  `lib` files instead of the diff (`Anchor.Domain.Sabotage.Scope.all/1`);
+  `--shard I/N` keeps the mutants whose id, read as a hexadecimal number, is
+  `I` modulo `N`, and `--shard auto` is the shard of the day, the days since
+  1970-01-01 modulo `sabotage.scan_shards` (default 7). `--report PATH` writes the scan's
+  report (`Anchor.Domain.Sabotage.ScanReport`) to `PATH` and its term beside
+  it as `.etf`: the survivors the survivors list does not hold are its
+  findings. `--report` and `--scope all` write no record. With `--report` the
+  exit code ignores survivors: 0 measured, 2 the report not written or a
+  refusal, 3 COULD NOT MEASURE (no function in scope, a failing baseline,
+  nothing measured). A malformed `--shard` or `--scope` is a usage error (2).
 
   ## replay (DND-5485)
 
@@ -153,6 +191,7 @@ defmodule Mix.Tasks.Anchor.Sabotage do
   alias Anchor.Domain.Sabotage.Replay
   alias Anchor.Domain.Sabotage.Report
   alias Anchor.Domain.Sabotage.Scope
+  alias Anchor.Domain.Sabotage.Verify
   alias Anchor.Managers.Sabotage
   alias Anchor.Sabotage.CoverageCollector
 
@@ -162,13 +201,15 @@ defmodule Mix.Tasks.Anchor.Sabotage do
          mix anchor.sabotage run [--base REF] [--max N|all] [--only ID]... [--dry-run]
                                  [--coverage PATH] [--no-record] [--domain D]
                                  [--ticket KEY] [--slot S] [--print-survivor-lines]
+                                 [--scope diff|all] [--shard I/N|auto] [--report PATH]
          mix anchor.sabotage restore
+         mix anchor.sabotage verify --base REF [--format text|json]
          mix anchor.sabotage replay [--max N|all] [--records DIR_GLOB]...
          MIX_ENV=test mix anchor.sabotage coverage [--out PATH] [--local] [-- TEST_ARGS]
          mix anchor.sabotage behaviours [--coverage PATH] [--format text|json]
                                         [--write-baseline] [--base REF]
          mix anchor.sabotage coverage-compare FIRST SECOND
-  Fix: use one of these forms; --max takes a positive integer or `all`\
+  Fix: use one of these forms; --max takes a positive integer or `all`; --shard I/N needs 0 <= I < N\
   """
 
   @impl Mix.Task
@@ -197,6 +238,13 @@ defmodule Mix.Tasks.Anchor.Sabotage do
   end
 
   def run(["restore"], opts), do: report(Sabotage.restore(%{root: File.cwd!()}, opts))
+
+  def run(["verify" | argv], opts) do
+    case OptionParser.parse(argv, strict: [base: :string, format: :string]) do
+      {parsed, [], []} -> verify(parsed, format(parsed[:format]), opts)
+      _invalid -> usage()
+    end
+  end
 
   def run(["replay" | argv], opts) do
     case replay_facts(argv) do
@@ -246,11 +294,21 @@ defmodule Mix.Tasks.Anchor.Sabotage do
       domain: :string,
       ticket: :string,
       slot: :string,
-      print_survivor_lines: :boolean
+      print_survivor_lines: :boolean,
+      scope: :string,
+      shard: :string,
+      report: :string
     ]
 
     with {parsed, [], []} <- OptionParser.parse(argv, strict: switches),
-         {:ok, max} <- max(parsed[:max]) do
+         {:ok, max} <- max(parsed[:max]),
+         {:ok, scope} <- run_scope(parsed[:scope]),
+         {:ok, shard} <- shard(parsed[:shard]) do
+      # DND-5490: a scan's report, or the whole tree, is never a branch's record.
+      no_record =
+        Keyword.get(parsed, :record, true) == false or scope == :all or
+          is_binary(parsed[:report])
+
       facts = %{
         root: File.cwd!(),
         env: Mix.env(),
@@ -261,7 +319,10 @@ defmodule Mix.Tasks.Anchor.Sabotage do
         only: Keyword.get_values(parsed, :only),
         dry_run: Keyword.get(parsed, :dry_run, false),
         coverage: parsed[:coverage],
-        no_record: Keyword.get(parsed, :record, true) == false,
+        no_record: no_record,
+        scope: scope,
+        shard: shard,
+        report: parsed[:report],
         domain: parsed[:domain],
         ticket: parsed[:ticket],
         slot: parsed[:slot],
@@ -376,6 +437,26 @@ defmodule Mix.Tasks.Anchor.Sabotage do
     exit({:shutdown, code})
   end
 
+  defp run_scope(nil), do: {:ok, :diff}
+  defp run_scope("diff"), do: {:ok, :diff}
+  defp run_scope("all"), do: {:ok, :all}
+  defp run_scope(_other), do: :error
+
+  # The date is read here, as `now` is: `auto` is the scan's shard of the day.
+  defp shard(nil), do: {:ok, nil}
+  defp shard("auto"), do: {:ok, {:auto, Date.utc_today()}}
+
+  defp shard(text) do
+    with [i, n] <- String.split(text, "/"),
+         {i, ""} <- Integer.parse(i),
+         {n, ""} <- Integer.parse(n),
+         true <- n >= 1 and i >= 0 and i < n do
+      {:ok, {i, n}}
+    else
+      _bad -> :error
+    end
+  end
+
   defp max(nil), do: {:ok, nil}
   defp max("all"), do: {:ok, :all}
 
@@ -393,6 +474,25 @@ defmodule Mix.Tasks.Anchor.Sabotage do
       0 -> :ok
       code -> exit({:shutdown, code})
     end
+  end
+
+  defp verify(_parsed, :invalid, _opts), do: usage()
+
+  defp verify(parsed, format, opts) do
+    with base when is_binary(base) <- parsed[:base],
+         true <- Baseline.valid_ref?(base),
+         {:ok, verdict} <- Sabotage.verify(%{root: File.cwd!(), base: base}, opts) do
+      emit(Verify.exit_code(verdict), [Verify.render(verdict, format)])
+    else
+      nil -> refuse(Verify.usage_message(:no_base))
+      false -> refuse(Verify.usage_message({:bad_ref, parsed[:base]}))
+      {:error, reason} -> refuse(Verify.usage_message(reason))
+    end
+  end
+
+  defp refuse(message) do
+    Mix.shell().error(message)
+    exit({:shutdown, 2})
   end
 
   defp scope(_base, :invalid, _opts), do: usage()

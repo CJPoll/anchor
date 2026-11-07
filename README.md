@@ -1037,12 +1037,20 @@ every function's role from the compiled code (`Anchor.Domain.Effects`):
 The effect primitives are every function of `File`, `IO`, `Logger`,
 `:logger`, `:telemetry`, `System`, `Process`, `Port`, `Node`, `GenServer`,
 `Agent`, `Task`, `Task.Supervisor`, `Registry`, `:ets`, `:dets`,
-`:persistent_term`, `:gen_tcp`, `:gen_udp`, `:ssl`, `:httpc`, `:os`, `:file`
-and `:rand`; `send`, `spawn*`, the process dictionary, the clocks
-(`DateTime.utc_now`, `NaiveDateTime.utc_now`, `Date.utc_today`,
-`:erlang.system_time`, `:erlang.monotonic_time`) and
-`:crypto.strong_rand_bytes/1`; and every project module declaring `@behaviour
-Ecto.Repo`. `architecture.effects` adds to them; nothing removes one. A call is
+`:persistent_term`, `:gen_tcp`, `:gen_udp`, `:ssl`, `:httpc`, `:os` and
+`:file`; `send`, `spawn*`, the process dictionary; the clock reads
+(`DateTime.utc_now/now/now!`, `NaiveDateTime.utc_now/local_now`,
+`Time.utc_now`, `Date.utc_today`, `System.system_time/monotonic_time/os_time`,
+`:os.timestamp/system_time/perf_counter`, `:erlang.timestamp/now/time/date/
+localtime/universaltime/system_time/monotonic_time/time_offset`,
+`:calendar.local_time/universal_time`) and the random draws (every function of
+`:rand` and `:random`, `Enum.random/1`, `Enum.take_random/2`, `Enum.shuffle/1`,
+`:crypto.strong_rand_bytes/1`, `:crypto.rand_seed`, `System.unique_integer`),
+DND-5677: a chain that ends in one says so in the `Fix:` ("reads the clock",
+"draws a random value"); and every project module declaring `@behaviour
+Ecto.Repo`. `IO.iodata_to_binary/1`, `IO.iodata_length/1` and
+`IO.chardata_to_string/1` are pure and no primitive, by exact name and arity
+(DND-5678). `architecture.effects` adds to them; nothing removes one. A call is
 matched by every name it may have been written as (`System.unique_integer/0`
 reaches Core as `:erlang.unique_integer/0`, DND-5613).
 
@@ -1055,7 +1063,11 @@ project. A comprehension's collector (`for ..., into: target`) applies
 nothing to resolve when the target is a literal (no struct but a `MapSet`)
 or a `Map.new`/`MapSet.new`
 the function builds itself; into any other target (a parameter, which may be
-an `IO.stream/0`), it is unresolved. **An unresolved call counts as an effect**: it never makes a
+an `IO.stream/0`), it is unresolved. A call of a project function whose body
+Anchor did not read is unresolved too, naming the function and why (DND-5679):
+a function of a project module the graph could not decode (an Erlang module,
+`{:not_elixir, _}`, or a beam whose debug info is stripped) or a public
+function with no Core body. **An unresolved call counts as an effect**: it never makes a
 function look pure, and the run prints how many there were.
 
 For each module the rule selects in a bucket of role `domain`, `adapters` or
@@ -1858,6 +1870,88 @@ to one of them and dependencies' own internals; a write there is not in this
 proposal; see the README's What it does not read`. `mix anchor.propose
 --level aggregate` prints it once DND-5449's `mix anchor.propose` lands.
 
+### The test-time backstop: `Anchor.Backstop` (DND-5480)
+
+The static rules cannot read a transaction's write set whole when a write
+goes through a callback passed as a variable, a variable repo or a
+`Multi.merge` function. The tests already run those paths, so the backstop
+watches the repo's query telemetry while they do, and fails a test whose
+transaction wrote tables of two declared aggregates. Two calls are the whole
+integration:
+
+```elixir
+# test/test_helper.exs
+Anchor.Backstop.attach!(repo: MyApp.Repo)
+ExUnit.start()
+
+# test/support/data_case.ex
+setup tags do
+  Anchor.Backstop.watch(tags)
+  :ok
+end
+```
+
+`attach!/1` takes `repo:` (required), `ebins:` (default
+`[Mix.Project.compile_path()]`), `root:` (where `.anchor.yml` is looked up,
+default the working directory) and `escapes: :report | :fail` (default
+`:report`). Call it in `test_helper.exs`: its ETS table belongs to the
+process that calls it. It reads the declarations the static rules read
+(`aggregates:` and every persisted `@anchor_aggregate`) from the compiled
+beams, never by loading a project module. It needs `:telemetry` (an optional
+dependency of Anchor, and one every Ecto project has).
+
+How it reads the events (DND-5479's spike, pinned in gen_saas's
+`Todos.RepoTelemetryFactsTest`): `"begin"` opens a transaction in the
+emitting process and `"commit"` or `"rollback"` closes it (only the outermost
+`Repo.transaction` emits them; a `BEGIN ...` or `START TRANSACTION` spelling
+opens one too); a write's table is the event's `source`. An
+event belongs to a test when the emitting process is the test or has it in
+`$callers`, so async tests never see each other's writes. It records table
+names, statement kinds and pids, never `params`, `cast_params` or a result.
+The verdict runs in the test's `on_exit`, never in the handler: no sleep, no
+polling, no clock.
+
+A failure:
+
+```
+MyApp.OrdersTest test pays: transaction wrote aggregates MyApp.Orders (table orders) and MyApp.Billing (table invoices). Fix: write MyApp.Billing's change as an outbox row in MyApp.Orders, consumed by MyApp.Billing's owner; or declare one aggregate holding both.
+```
+
+Two transactions in one test that each write one aggregate do not fail it:
+a non-atomic crossing is the static rules' T2. What it cannot tie to a
+transaction is never read as clean. Each is counted per test and summed in
+one line when the suite ends; the first four fail the test under
+`escapes: :fail`:
+
+| Kind | What |
+|---|---|
+| `other-process` | a write from a process the test started or called (a Task, a GenServer): DND-5479 saw a Task's write land after its parent's commit, outside the transaction |
+| `unclassified` | a statement read as neither a read nor a write (`WITH`, `MERGE`, `TRUNCATE`, ...): never dropped as a read |
+| `no-source` | a write with no table (`Repo.query/2` raw SQL) |
+| `undeclared` | a table no aggregate declares |
+| `outside a transaction` | a write with no transaction open in its process: one statement, one table, so it cannot cross; counted only |
+| `unattributed` | a write from a process with no watched test in itself or its `$callers` (a sandbox allowance, a GenServer the test called, an unwatched test), or one that landed after its test's verdict: counted for the whole suite, never failing a test. A transaction a GenServer runs for the test is therefore not judged here |
+
+```
+anchor backstop: 120 tests watched, 0 crossings; escapes: 2 other-process, 0 no-source, 1 undeclared, 0 unclassified; not judged: 40 outside a transaction, 3 unattributed
+```
+
+It fails closed: the suite does not start with a backstop that checks
+nothing.
+
+| Case | Result |
+|---|---|
+| no `.anchor.yml`, or one that does not load | `attach!/1` raises `ArgumentError`: `anchor backstop: could not load .anchor.yml under <root>: <reason>. Fix: ...` |
+| no `aggregates:` section | raises: `anchor backstop: <path> has no aggregates: section. Fix: declare aggregates ...` |
+| `declare: none`, or zero aggregates declared | raises: `anchor backstop: the backstop checks nothing: no aggregate is declared. Fix: declare aggregates (mix anchor.propose --level aggregate).` |
+| zero beams read from `ebins` | raises, naming the paths |
+| `repo:` with no `telemetry_prefix` | raises, naming the repo |
+| `escapes:` other than `:report` or `:fail` | raises, naming the value |
+| no `repo:`, or an option `attach!/1` does not know (`escape: :fail`) | raises with `Fix:`, never read as the default |
+| `attach!/1` called a second time in one test VM | raises: `the backstop watches one repo. Fix: call Anchor.Backstop.attach!/1 once, in test_helper.exs.` |
+| `watch/1` before `attach!/1` | raises: `Fix: call Anchor.Backstop.attach!/1 in test_helper.exs.` |
+| the handler raised (`:telemetry` detached it) | every later verdict fails its test: `the backstop handler was detached` |
+
 ### Graph rows of the fail-closed table
 
 Like the Credo checks, the graph engine fails closed: a run that could not
@@ -1894,6 +1988,7 @@ line.
 | An `aggregates:` section of the wrong shape (DND-5476) | 3 | the config path | `aggregates.declare[1].schemas must be a list of exact module names: "MyApp.*" is not an exact Elixir module name (no glob, no Erlang module). Fix: name each module in full, as its defmodule spells it; aggregates: declare: - name: <Aggregate>, ...` |
 | An `analyses_complete` rule when the flow analysis hit its step bound (DND-5715) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "analyses_complete", analyses_complete): the higher-order flow analysis (Anchor.Domain.Cfa) hit its step bound after 40 steps, so every apply site reads any and no closure was resolved. Fix: this is a scale limit of Anchor; ...` |
 | An `analyses_complete` rule when the demand analysis hit its round bound (DND-5715) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "analyses_complete", analyses_complete): the demand analysis (Anchor.Domain.Demand) hit its round bound on 2 function(s) (MyApp.X.f/1, MyApp.X.g/2), so their parameters read as used without being judged. Fix: this is a scale limit of Anchor; ...` |
+| A `struct_owned_by_module_flow` rule when the struct value flow did not settle within its pass bound on some function (DND-5676) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "struct_owned_by_module_flow", struct_owned_by_module_flow): the struct value flow (Anchor.Domain.StructFlow) hit its bound of 6 passes on 1 function(s) (MyApp.X.f/1), so a write to a struct there may not be judged. Fix: split the function's nested anonymous functions apart, ...` |
 | An `analyses_complete` rule when a selected function with a Core body has no demand summary (DND-5715) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "analyses_complete", analyses_complete): 1 function(s) have a Core body and no demand summary (MyApp.X.f/1), so the analysis judged none of their parameters. Fix: this is an Anchor bug; ...` |
 | An `analyses_complete` rule when the analyses judged fewer than a floor it declares (DND-5715) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "analyses_complete", analyses_complete): the whole-program analyses judged 3, below min_functions 501, so they may be judging nothing. Fix: find what stopped them reading this code; ...` |
 | An `aggregate_declarations` rule with no aggregate declared anywhere (DND-5476) | 1, even under `enforcement: report`; never held by a baseline | the config | `rule 1 (id: "aggregate_declarations", aggregate_declarations) checks nothing: no aggregate is declared in .anchor.yml or by an @anchor_aggregate attribute. Fix: declare one or remove the rule: ...` |
@@ -1919,6 +2014,7 @@ line.
 | `--write-baseline` over an existing file, or naming no rule with a `baseline:` | 2 | the baseline path, or the config | `.anchor/baselines/web.txt exists; --write-baseline only creates, and never rewrites a baseline. Fix: ...` |
 | A `--base` ref with a character git must not see (a leading `-`, a space, `;`, `$`, `:`) | 2 | | usage, with a `Fix:` line |
 | A graph rule whose `needs/0` names an analysis the runner does not compute, or is not a list (DND-5574) | 1 | the config | `rule 2 (id: "web", layering) could not run: ArgumentError: MyApp.Rule.needs/0 names [:nope], which the graph runner does not compute (it computes [:aggregate_analysis, :cfa, :effects, :demand]), so it checked nothing. Fix: this is an Anchor bug; file it with this line.` The rule is not run; the other rules still run. |
+| A graph rule whose `needs/0` names an analysis without one it reads: `:effects` or `:demand` without `:cfa`, `:placement` without `:cfa` and `:effects` (DND-5675) | 1 | the config | `rule 2 (id: "effects", effects_match_bucket) could not run: ArgumentError: MyApp.Rule.needs/0 names :effects without :cfa, which :effects reads, so it would run degraded; add :cfa to MyApp.Rule.needs/0. Fix: this is an Anchor bug; file it with this line.` The rule is not run; the other rules still run. |
 | The higher-order flow analysis a rule needs raises, throws or exits (DND-5574) | 1 | the config | `rule 2 (id: "web", layering) could not run: the higher-order flow analysis it needs (Anchor.Domain.Cfa) crashed: RuntimeError: ..., so it checked nothing. Fix: this is an Anchor bug; file it with this line.` One per rule that needs it; the rules that do not still run. |
 | The effect inference a rule needs raises, throws or exits, or returns no `%Effects{}` (DND-5447) | 1 | the config | `rule 2 (id: "effects", effects_match_bucket) could not run: the effect inference it needs (Anchor.Domain.Effects) crashed: RuntimeError: ..., so it checked nothing. Fix: this is an Anchor bug; file it with this line.` One per rule that needs it; the rules that do not still run. |
 | The demand analysis a rule needs raises, throws or exits, or returns no `%Demand{}` (DND-5715) | 1 | the config | `rule 1 (id: "analyses_complete", analyses_complete) could not run: the demand analysis it needs (Anchor.Domain.Demand) crashed: ... Fix: this is an Anchor bug; file it with this line.` The other rules still run. |
@@ -2098,7 +2194,8 @@ mutable site`).
 ```bash
 mix anchor.sabotage run [--base REF] [--max N|all] [--only ID]... [--dry-run] [--coverage PATH]
                         [--no-record] [--domain D] [--ticket KEY] [--slot S]
-                        [--print-survivor-lines]
+                        [--print-survivor-lines] [--scope diff|all] [--shard I/N|auto]
+                        [--report PATH]
 mix anchor.sabotage restore
 ```
 
@@ -2134,6 +2231,7 @@ sabotage:
   survivors: .anchor/sabotage/survivors.txt  # the survivors list (DND-5483); named here, it must exist
   behaviour_locality_baseline: .anchor/baselines/behaviour-locality.txt  # DND-5489; named here, it must exist
   behaviour_locality_enforcement: report  # or enforce: fail on NEW, STALE or GREW
+  scan_shards: 7                     # the nightly scan's shards (DND-5490): --shard auto is days since 1970-01-01 mod 7
 ```
 
 ```gitignore
@@ -2248,7 +2346,7 @@ function with no literal clause is listed as an error, never as killed.
 | every measured mutant killed or timed out (an `invalid` one beside them changes nothing) | 0 |
 | zero changed functions from a good diff read (an empty scope: `sabotage: 0 changed functions in <base>..HEAD`) | 0 |
 | changed functions that yielded no mutant at all (every edit skipped, no literal clause, a `defimpl` target not a literal, no mutable site): one `sabotage: no mutant from M.f/a (file): <reason>` line per function, then `sabotage: no mutants generated from N changed functions: nothing was measured` (DND-5617) | 0 |
-| a mutant survived or had no test and is not on the survivors list (NEW), beside a measured one; a mutant crashed beside a measured one; a survivors entry now killed or no longer generated (STALE); a malformed survivors entry; a survivors file named in `sabotage.survivors` that does not exist (DND-5483) | 1 |
+| a mutant survived or had no test and is not on the survivors list (NEW), beside a measured one; a mutant crashed beside a measured one; a survivors entry now killed or no longer generated (STALE); a malformed survivors entry; a survivors file named in `sabotage.survivors` that does not exist (DND-5483) | 1 (a scan with `--report`: 0, see the nightly scan below) |
 | mutants were run and none was measured (all `invalid`, `crashed` or without a test) | 3, `COULD NOT MEASURE` with `Fix:` |
 | a record that could not be named (above); a record that could not be written, when every measured mutant passed (after the outcomes: a survivor stays 1 and an unmeasured run 3, each with `sabotage: record not written: <why>`; DND-5641); a dirty target file; the journal not git-ignored; the run lock or a journal another live run holds; a host with no `/proc`; a leftover journal whose file changed; a restore that did not reproduce the original (the journal is kept); an unknown `--only` id; no `timeout` binary; bad flags | 2, with `Fix:` |
 | no loadable config or no `sabotage:` section; the scope could not be measured; the baseline fails; changed functions whose files cannot be read; the survivors file, or its copy at `--base`, cannot be read (DND-5483) | 3, `COULD NOT MEASURE` with `Fix:` |
@@ -2299,6 +2397,43 @@ it. A base copy that cannot be read for any reason but its absence is exit 3.
 survivor, with the placeholder reason to replace. The run never writes the
 list.
 
+### Sabotage: verifying a branch's records
+
+```bash
+mix anchor.sabotage verify --base REF [--format text|json]
+```
+
+The cheap check a gate runs once a branch's `run` has committed its record
+(DND-5516). For the functions the diff since `REF` changes (the scope above),
+it regenerates every mutant id from the working tree's source and checks each
+is covered: by its latest row (records in path order, blocks in file order)
+in the `anchor-kills` blocks of the records the branch added or appended to,
+when that row is `killed`, `timeout` or `invalid`, or by a survivors entry
+with that id, file, function and operator. It compiles nothing, runs no test,
+applies no mutant and writes nothing, so it takes seconds and loads nothing.
+
+A record is append-only, a block per run. A changed function's latest block
+(records in path order, blocks in file order) is its last run; a row of that
+block whose id the current source no longer generates means the function
+changed after it was sabotaged. Older blocks are history.
+
+| Finding | Line | Exit |
+|---|---|---|
+| a mutant with no covering row and no survivors entry | `UNCOVERED <id> <file> <M.f/a> <operator>: ...` | 1 |
+| a row of a changed function's last run that is no longer generated | `STALE RECORD <path>: <M.f/a> changed after it was sabotaged ...` | 1 |
+| a survivors entry with an empty, `TODO` or placeholder reason, a duplicate id, a malformed line, or an id that names another file, function or operator; a survivors file `sabotage.survivors` names that is absent | `BAD SURVIVOR <path>, entry N: ...` | 1 |
+| a record the branch added or appended to whose kill map does not parse (it covers nothing) | `BAD RECORD <path>:<line>: ...` | 1 |
+| a landed record the branch deleted | `RECORD REMOVED <path>: ...` | 1 |
+| a changed function no literal clause defines | `NOT IN SOURCE <M.f/a>: ...` | unchanged |
+| a survivors entry the branch added against `REF` | `REVIEW survivor added: ...` | unchanged |
+| every mutant covered | `sabotage verify: F functions, M mutants, all covered (K killed, S survivors, I invalid)` (`K` counts timeouts too) | 0 |
+| no changed function | `sabotage verify: no changed functions` | 0 |
+| no `--base`, a `REF` git cannot read or Anchor refuses, an unknown flag | the usage, with a `Fix:` | 2 |
+| no `sabotage:` config; the scope, a record or the survivors list (or its copy at `REF`) cannot be read; changed source files in which no function, outside hunk or macro was found; one mutant id generated twice | `COULD NOT MEASURE: ...` with a `Fix:` | 3 |
+
+Every failure line ends with exactly one `Fix:`. `--format json` prints the
+verdict's fields, and its exit code, for agents.
+
 ### Sabotage: replaying landed records
 
 ```bash
@@ -2339,6 +2474,42 @@ crashed (exit 1): its kills went unchecked. Like `run`, a replay refuses (exit 2
 lock held, or the journal not git-ignored, and never writes a record or the
 survivors list. Anchor runs it weekly and on demand in CI
 (`.github/workflows/sabotage-replay.yml`, `--max all`).
+
+### Sabotage: the nightly improvement scan
+
+```bash
+mix anchor.sabotage run --scope all --shard I/N|auto --max all --report PATH [--coverage MAP]
+```
+
+Diff-scoped sabotage only checks what a branch touched; code that landed
+before the tool, or was never touched since, is never sabotaged. The scan
+runs the generator over every function with a literal clause in the
+project's `lib` files (`--scope all`, DND-5490), one shard at a time:
+`--shard I/N` keeps the mutants whose id, read as a hexadecimal number, is
+`I` modulo `N`. An id hashes the mutant's function, operator and target,
+never its line, so shards `0..N-1` together hold every mutant exactly once.
+`--shard auto` runs the day's shard, the days since 1970-01-01 modulo
+`sabotage.scan_shards` (default 7), so any 7 nights in a row scan all of main,
+across a new year too, and no night runs everything.
+
+`--report PATH` writes the report, markdown at `PATH` and its term beside it
+as `.etf` (`Anchor.Domain.Sabotage.ScanReport`), and never a record
+(`--scope all` writes none either). Its first line says how tests were
+selected: from the coverage map, or, with none, from the kill maps and the
+test mirror. Then the shard, the totals by status and by module, the
+**findings** (the survivors the survivors list does not hold), and the
+functions whose mutants had no test. Survivors never fail a scan: it exits 0
+when it measured, 2 when the report could not be written (or a refusal), 3
+`COULD NOT MEASURE` (no function in scope, a failing baseline, nothing
+measured). A malformed `--shard` or `--scope` is a usage error, 2.
+
+Anchor runs it nightly and on demand in CI (`.github/workflows/sabotage-scan.yml`):
+it downloads the latest `anchor-coverage` artifact main's Coverage map
+workflow uploaded (none is said, not a failure), runs the day's shard with
+`--max all`, writes the report to the job summary and uploads it as the
+`anchor-sabotage-scan` artifact. The job's token only reads. Whoever reads
+the summary files one ticket per module with findings; the job files nothing
+and fixes nothing.
 
 ### Sabotage: the per-test coverage map
 

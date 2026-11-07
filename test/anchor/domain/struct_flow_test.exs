@@ -5,6 +5,7 @@ defmodule Anchor.Domain.StructFlowTest do
   # `s` as `_s@1`; `known/1` here reads them back as `:s`.
   #
   # Sabotage record: ../../sabotage_records/struct_flow-20261103-dnd_5447_graph_rules_c.md
+  # Sabotage record (DND-5676): ../../sabotage_records/struct_flow-20261106-dnd_5676_effects_cfa_batch.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.StructFlowFixtures
@@ -27,6 +28,35 @@ defmodule Anchor.Domain.StructFlowTest do
   defmodule AnchorFixtures.StructFlow.Flow.Game do
     defstruct [:turn, :meta]
     @type t :: %__MODULE__{turn: AnchorFixtures.StructFlow.Flow.Turn.t(), meta: map()}
+  end
+
+  defmodule AnchorFixtures.StructFlow.Flow.Deep0 do
+    defstruct [:a]
+    @type t :: %__MODULE__{a: AnchorFixtures.StructFlow.Flow.Deep1.t()}
+  end
+  defmodule AnchorFixtures.StructFlow.Flow.Deep1 do
+    defstruct [:a]
+    @type t :: %__MODULE__{a: AnchorFixtures.StructFlow.Flow.Deep2.t()}
+  end
+  defmodule AnchorFixtures.StructFlow.Flow.Deep2 do
+    defstruct [:a]
+    @type t :: %__MODULE__{a: AnchorFixtures.StructFlow.Flow.Deep3.t()}
+  end
+  defmodule AnchorFixtures.StructFlow.Flow.Deep3 do
+    defstruct [:a]
+    @type t :: %__MODULE__{a: AnchorFixtures.StructFlow.Flow.Deep4.t()}
+  end
+  defmodule AnchorFixtures.StructFlow.Flow.Deep4 do
+    defstruct [:a]
+    @type t :: %__MODULE__{a: AnchorFixtures.StructFlow.Flow.Deep5.t()}
+  end
+  defmodule AnchorFixtures.StructFlow.Flow.Deep5 do
+    defstruct [:a]
+    @type t :: %__MODULE__{a: AnchorFixtures.StructFlow.Flow.Deep6.t()}
+  end
+  defmodule AnchorFixtures.StructFlow.Flow.Deep6 do
+    defstruct [:a]
+    @type t :: %__MODULE__{a: term()}
   end
 
   defmodule AnchorFixtures.StructFlow.Flow.W do
@@ -66,6 +96,36 @@ defmodule Anchor.Domain.StructFlowTest do
     def drop_struct(%Turn{} = s), do: {Map.delete(s, :__struct__), Map.drop(s, [:__struct__])}
     def unknown_put(s), do: Map.put(s, :n, 1)
     def meta_put(%Game{} = g), do: Map.put(g.meta, :a, 1)
+
+    # DND-5676: each nested fun's parameter (the innermost `x` included) is
+    # known one pass after the last: four levels settle within the bound of
+    # six passes, five do not.
+    def deep4(%AnchorFixtures.StructFlow.Flow.Deep0{} = g) do
+      f4 = fn p -> Map.update!(p, :a, fn x -> x end) end
+      f3 = fn p -> Map.update!(p, :a, f4) end
+      f2 = fn p -> Map.update!(p, :a, f3) end
+      f1 = fn p -> Map.update!(p, :a, f2) end
+      Map.update!(g, :a, f1)
+    end
+
+    def deep5(%AnchorFixtures.StructFlow.Flow.Deep0{} = g) do
+      f5 = fn p -> Map.update!(p, :a, fn x -> x end) end
+      f4 = fn p -> Map.update!(p, :a, f5) end
+      f3 = fn p -> Map.update!(p, :a, f4) end
+      f2 = fn p -> Map.update!(p, :a, f3) end
+      f1 = fn p -> Map.update!(p, :a, f2) end
+      Map.update!(g, :a, f1)
+    end
+
+    def deep6(%AnchorFixtures.StructFlow.Flow.Deep0{} = g) do
+      f6 = fn p -> Map.update!(p, :a, fn x -> x end) end
+      f5 = fn p -> Map.update!(p, :a, f6) end
+      f4 = fn p -> Map.update!(p, :a, f5) end
+      f3 = fn p -> Map.update!(p, :a, f4) end
+      f2 = fn p -> Map.update!(p, :a, f3) end
+      f1 = fn p -> Map.update!(p, :a, f2) end
+      Map.update!(g, :a, f1)
+    end
   end
   """
 
@@ -75,9 +135,9 @@ defmodule Anchor.Domain.StructFlowTest do
   end
 
   defp known(ctx, name, arity) do
-    ctx.graph
-    |> core!({@w, name, arity})
-    |> StructFlow.known(ctx.index, @w)
+    {:ok, known} = ctx.graph |> core!({@w, name, arity}) |> StructFlow.known(ctx.index, @w)
+
+    known
     |> Enum.flat_map(fn {var, value} ->
       case Regex.run(~r/^_(\w+)@\d+$/, to_string(var)) do
         [_all, source] -> [{String.to_atom(source), value}]
@@ -89,7 +149,8 @@ defmodule Anchor.Domain.StructFlowTest do
 
   defp writes(ctx, name, arity) do
     core = core!(ctx.graph, {@w, name, arity})
-    StructFlow.writes(core, ctx.index, @w)
+    {:ok, writes} = StructFlow.writes(core, ctx.index, @w)
+    writes
   end
 
   defp ops(ctx, name, arity), do: ctx |> writes(name, arity) |> Enum.map(&{&1.struct, &1.op})
@@ -181,7 +242,7 @@ defmodule Anchor.Domain.StructFlowTest do
       core = :cerl.c_fun([arg], :cerl.c_let([var], new, :cerl.c_seq(shadow, put)))
       index = %{fields: %{}, returns: %{{turn, :new, 0} => turn}}
 
-      assert [%{struct: ^turn, op: "Map.put", how: {:spec, {^turn, :new, 0}}, line: 7}] =
+      assert {:ok, [%{struct: ^turn, op: "Map.put", how: {:spec, {^turn, :new, 0}}, line: 7}]} =
                StructFlow.writes(core, index, @w)
     end
   end
@@ -200,6 +261,37 @@ defmodule Anchor.Domain.StructFlowTest do
     test "a write on an unknown value or a map()-typed field is none", ctx do
       assert writes(ctx, :unknown_put, 1) == []
       assert writes(ctx, :meta_put, 1) == []
+    end
+  end
+
+  describe "the pass bound (DND-5676)" do
+    @deep for k <- 0..6, do: Module.concat(AnchorFixtures.StructFlow.Flow, "Deep#{k}")
+
+    defp structs(writes), do: writes |> Enum.map(& &1.struct) |> Enum.sort()
+
+    test "nested funs that settle within the bound are {:ok, _}, every level written", ctx do
+      core = core!(ctx.graph, {@w, :deep4, 1})
+
+      assert {:ok, writes} = StructFlow.writes(core, ctx.index, @w)
+      assert structs(writes) == Enum.take(@deep, 5)
+      assert {:ok, _known} = StructFlow.known(core, ctx.index, @w)
+    end
+
+    test "one level more does not settle at the last pass: :bound_hit", ctx do
+      core = core!(ctx.graph, {@w, :deep5, 1})
+      passes = StructFlow.max_passes()
+
+      assert {:bound_hit, ^passes, _writes} = StructFlow.writes(core, ctx.index, @w)
+      assert {:bound_hit, ^passes, _known} = StructFlow.known(core, ctx.index, @w)
+    end
+
+    test "past the bound: the writes the last settled pass found, the deepest one missing",
+         ctx do
+      core = core!(ctx.graph, {@w, :deep6, 1})
+
+      assert {:bound_hit, _passes, writes} = StructFlow.writes(core, ctx.index, @w)
+      # The seventh level's write needs a seventh pass: it is the one not found.
+      assert structs(writes) == Enum.take(@deep, 6)
     end
   end
 end

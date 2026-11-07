@@ -4,6 +4,7 @@ defmodule Anchor.Domain.GraphRules.EffectsMatchBucketTest do
   #
   # Sabotage record: ../../../sabotage_records/effects-20261103-dnd_5447_graph_rules_c.md
   # The Fix as a rendered proposal (DND-5448): ../../../sabotage_records/placement-20261106-dnd_5448_placement_core.md
+  # Sabotage record (DND-5677, DND-5678): ../../../sabotage_records/effects-20261106-dnd_5676_effects_cfa_batch.md
   use ExUnit.Case, async: true
 
   import Anchor.Test.EffectsModels
@@ -189,5 +190,49 @@ defmodule Anchor.Domain.GraphRules.EffectsMatchBucketTest do
     assert shape =~ "domain reaches no effect"
     assert shape =~ "adapters performs an effect"
     assert shape =~ "managers orchestrates effects through other modules"
+  end
+
+  describe "clock and randomness reads (DND-5677)" do
+    test "a domain function that reads the clock or draws a random value is an issue saying so" do
+      modules = [{D, "domain", [{:now, 0}, {:pick, 1}, {:total, 1}], []}]
+
+      calls = [
+        {{D, :now, 0}, {Time, :utc_now, 0}},
+        {{D, :pick, 1}, {Enum, :random, 1}},
+        {{D, :total, 1}, {Enum, :sum, 1}}
+      ]
+
+      [now, pick] = modules |> check(calls) |> Enum.sort_by(& &1.trigger)
+
+      assert now.key == "effects|D.now/0|adapters"
+      assert now.message =~ "D.now/0 -> Time.utc_now/0 (reads the clock)"
+      assert pick.key == "effects|D.pick/1|adapters"
+      assert pick.message =~ "D.pick/1 -> Enum.random/1 (draws a random value)"
+    end
+
+    test "control: another effect's chain carries no kind" do
+      [violation] = check([{D, "domain", [{:f, 1}], []}], [{{D, :f, 1}, {File, :read, 1}}])
+
+      assert violation.message =~ "D.f/1 -> File.read/1"
+      refute violation.message =~ "(reads the clock)"
+      refute violation.message =~ "(draws a random value)"
+    end
+  end
+
+  describe "pure IO helpers (DND-5678)" do
+    test "a domain function converting iodata is clean; one writing with IO.puts is an issue" do
+      modules = [{D, "domain", [{:render, 1}, {:size, 1}, {:text, 1}, {:say, 1}], []}]
+
+      calls = [
+        {{D, :render, 1}, {:erlang, :iolist_to_binary, 1}},
+        {{D, :size, 1}, {:erlang, :iolist_size, 1}},
+        {{D, :text, 1}, {IO, :chardata_to_string, 1}},
+        {{D, :say, 1}, {IO, :puts, 1}}
+      ]
+
+      assert [say] = check(modules, calls)
+      assert say.key == "effects|D.say/1|adapters"
+      assert say.message =~ "D.say/1 -> IO.puts/1"
+    end
   end
 end

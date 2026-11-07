@@ -621,6 +621,24 @@ defmodule Anchor.Domain.Failures do
   end
 
   @doc """
+  The `struct_owned_by_module_flow` issue when the value flow of some functions
+  did not settle within `Anchor.Domain.StructFlow`'s pass bound (DND-5676): what
+  those functions write was not fully judged. `functions` is sorted.
+  """
+  @spec struct_flow_bound_hit(map(), [mfa()], pos_integer(), String.t() | nil) :: Violation.t()
+  def struct_flow_bound_hit(rule, functions, passes, config_path) do
+    graph_issue(
+      config_path || @config_filename,
+      nil,
+      "#{rule_label(rule)}: the struct value flow (Anchor.Domain.StructFlow) hit its bound of " <>
+        "#{passes} passes on #{length(functions)} function(s) (#{some_functions(functions)}), " <>
+        "so a write to a struct there may not be judged. Fix: split the function's nested " <>
+        "anonymous functions apart, or file this line as a scale limit of Anchor. Raising the " <>
+        "bound is the owner's call."
+    )
+  end
+
+  @doc """
   The `analyses_complete` issue when functions with a Core body have no demand
   summary (DND-5715). `missing` is sorted.
   """
