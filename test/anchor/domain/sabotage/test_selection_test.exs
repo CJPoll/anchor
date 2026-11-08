@@ -40,6 +40,82 @@ defmodule Anchor.Domain.Sabotage.TestSelectionTest do
     end
   end
 
+  describe "select/2 with the mirror's siblings (DND-6070)" do
+    # A module's tests split into `<stem>_<topic>_test.exs` files beside the
+    # mirror file run too: the killers of crew's MachineDecider mutants sit in
+    # machine_decider_agents_test.exs, which the mirror alone never ran.
+    @dir "apps/runtime/test/runtime/agents/domain"
+    @decider "apps/runtime/lib/runtime/agents/domain/machine_decider.ex"
+
+    test "1: the mirror file and its existing siblings, sorted" do
+      existing = [
+        "#{@dir}/machine_decider_test.exs",
+        "#{@dir}/machine_decider_agents_test.exs",
+        "#{@dir}/machine_decider_launch_test.exs",
+        "#{@dir}/conversation_decider_test.exs",
+        "#{@dir}/machine_deciders_test.exs"
+      ]
+
+      assert TestSelection.select(mutant(@decider), inputs(existing)) ==
+               {:mirror,
+                [
+                  "#{@dir}/machine_decider_agents_test.exs",
+                  "#{@dir}/machine_decider_launch_test.exs",
+                  "#{@dir}/machine_decider_test.exs"
+                ]}
+    end
+
+    test "2: siblings with no mirror file still select: the mutant is no longer no_tests" do
+      assert TestSelection.select(mutant("lib/x.ex"), inputs(["test/x_more_test.exs"])) ==
+               {:mirror, ["test/x_more_test.exs"]}
+
+      assert TestSelection.select(mutant("lib/x.ex"), inputs(["test/xy_test.exs"])) ==
+               {:none, []}
+    end
+
+    test "3: a kill-map selection adds the siblings beside the killers and the mirror" do
+      inputs =
+        inputs(["test/x_test.exs", "test/x_more_test.exs", "test/t1_test.exs"])
+        |> Map.put(:kill_map, %{"M.f/1" => ["test/t1_test.exs"]})
+
+      assert TestSelection.select(%{file: "lib/x.ex", module: M, function: {:f, 1}}, inputs) ==
+               {:kill_map, ["test/t1_test.exs", "test/x_more_test.exs", "test/x_test.exs"]}
+    end
+
+    test "4: a coverage selection adds a sibling changed since the map, whole, as the mirror" do
+      base =
+        inputs(["test/x_test.exs", "test/x_more_test.exs", "test/a_test.exs"])
+        |> Map.put(:coverage, %{"M.f/1" => ["test/a_test.exs:10"]})
+
+      mutant = %{file: "lib/x.ex", module: M, function: {:f, 1}}
+
+      assert TestSelection.select(mutant, base) == {:coverage, ["test/a_test.exs:10"]}
+
+      stale = Map.put(base, :stale_tests, MapSet.new(["test/x_more_test.exs"]))
+
+      assert TestSelection.select(mutant, stale) ==
+               {:coverage, ["test/a_test.exs:10", "test/x_more_test.exs"]}
+
+      all = Map.put(base, :stale_tests, :all)
+
+      assert TestSelection.select(mutant, all) ==
+               {:coverage, ["test/a_test.exs", "test/x_more_test.exs", "test/x_test.exs"]}
+    end
+
+    test "5: a sibling of a mirror target outside the project is never selected" do
+      rules = [%{from: "lib/**/*.ex", to: "../{rest}_test.exs"}]
+      inputs = %{mirror: rules, existing_tests: MapSet.new(["../x_more_test.exs"])}
+
+      assert TestSelection.select(%{file: "lib/x.ex"}, inputs) == {:none, []}
+    end
+
+    test "mirror_dir/2 names the directory the siblings are listed from, or nil" do
+      assert TestSelection.mirror_dir(mutant(@decider), @rules) == @dir
+      assert TestSelection.mirror_dir(mutant("lib/x.ex"), @rules) == "test"
+      assert TestSelection.mirror_dir(mutant("src/x.ex"), @rules) == nil
+    end
+  end
+
   describe "select/2 with a coverage index (DND-5474)" do
     # Sabotage record: ../../../sabotage_records/sabotage-20261103-dnd_5474_coverage_map.md
     defp mutant(file, module, function), do: %{file: file, module: module, function: function}

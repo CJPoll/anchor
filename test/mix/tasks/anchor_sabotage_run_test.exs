@@ -31,6 +31,8 @@ defmodule Mix.Tasks.Anchor.SabotageRunTest do
   setup do
     stub(SourceMutationMock, :take_lock, fn _root -> :ok end)
     stub(SourceMutationMock, :release_lock, fn _root -> :ok end)
+    # DND-6070: no mirror directory holds a sibling of the mirror file.
+    stub(SourceMutationMock, :files_in, fn _dirs -> [] end)
     :ok
   end
 

@@ -232,6 +232,22 @@ defmodule Anchor.Adapters.SourcePatcher do
   @impl Anchor.Adapters.SourceMutation
   def existing(paths), do: Enum.filter(paths, &File.regular?/1)
 
+  # DND-6070: a directory that cannot be listed holds no file here, as a
+  # path that is not a regular file is not `existing/1`'s; the mutant that
+  # then has no test is reported `no_tests`, never silently passed.
+  @impl Anchor.Adapters.SourceMutation
+  def files_in(dirs), do: Enum.flat_map(dirs, &regular_files_in/1)
+
+  defp regular_files_in(dir) do
+    case File.ls(dir) do
+      {:ok, names} ->
+        names |> Enum.sort() |> Enum.map(&Path.join(dir, &1)) |> Enum.filter(&File.regular?/1)
+
+      {:error, _reason} ->
+        []
+    end
+  end
+
   # DND-5485: each component under `root` is `lstat`ed, shallowest first,
   # as `Anchor.Adapters.BaselineFile` does; a component that does not exist
   # ends the walk (nothing below it can be a symlink).

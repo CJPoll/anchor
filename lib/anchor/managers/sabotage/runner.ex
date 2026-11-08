@@ -722,10 +722,21 @@ defmodule Anchor.Managers.Sabotage.Runner do
       |> Enum.reject(&is_nil/1)
       |> Enum.uniq()
 
+    # DND-6070: the files in each mirror directory, so the mirror's siblings
+    # (`<stem>_<topic>_test.exs`) are selected beside the mirror file.
+    listed =
+      planned
+      |> Enum.map(&TestSelection.mirror_dir(&1, config.test_mirror))
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq()
+      |> Enum.map(&Path.join(root, &1))
+      |> patcher.files_in()
+
     existing =
       candidates
       |> Enum.map(&Path.join(root, &1))
       |> patcher.existing()
+      |> Enum.concat(listed)
       |> MapSet.new(&Path.relative_to(&1, root))
 
     inputs =

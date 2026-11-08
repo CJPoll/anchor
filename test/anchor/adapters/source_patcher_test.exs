@@ -177,6 +177,27 @@ defmodule Anchor.Adapters.SourcePatcherTest do
     assert File.read!(run_path) == "bytes"
   end
 
+  # DND-6070: the mirror directories are listed so the mirror's siblings run.
+  test "files_in/1 lists the regular files directly in each directory, sorted; a missing one is none",
+       %{tmp_dir: root} do
+    a = Path.join(root, "a")
+    File.mkdir_p!(Path.join(a, "sub_test.exs"))
+    File.mkdir_p!(Path.join(root, "b"))
+    File.write!(Path.join(a, "y_test.exs"), "")
+    File.write!(Path.join(a, "x_test.exs"), "")
+    File.write!(Path.join(a, "sub_test.exs/deep_test.exs"), "")
+    File.write!(Path.join(root, "b/z_test.exs"), "")
+
+    assert SourcePatcher.files_in([a, Path.join(root, "missing"), Path.join(root, "b")]) == [
+             Path.join(a, "x_test.exs"),
+             Path.join(a, "y_test.exs"),
+             Path.join(root, "b/z_test.exs")
+           ]
+
+    assert SourcePatcher.files_in([Path.join(a, "x_test.exs")]) == []
+    assert SourcePatcher.files_in([]) == []
+  end
+
   defp mtime(path), do: File.stat!(path, time: :posix).mtime
 
   test "DND-5485: symlinked/2 names each path with a symlink at the file or a directory above it",

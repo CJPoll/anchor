@@ -636,7 +636,10 @@ keeps every call's arguments out of the collector, and the collector reduces a s
 event's arguments to the one pid they name. A test that turns VM-wide
 tracing on is tagged `@moduletag :global_tracing`, and the coverage build runs
 with `--exclude global_tracing`. `run --coverage PATH` selects a mutant's tests
-from the map first (source `coverage`), then the mirror.
+from the map first (source `coverage`), then the mirror. The mirror
+selection takes the mirror file's `<stem>_<topic>_test.exs` siblings too
+(DND-6070, `TestMirror.sibling?/2`; the runner lists the mirror directory
+through `SourceMutation.files_in/1`): they only add tests.
 
 The workflow, on pull requests too, builds the map twice in one job at one seed and
 runs `mix anchor.sabotage coverage-compare FIRST SECOND`

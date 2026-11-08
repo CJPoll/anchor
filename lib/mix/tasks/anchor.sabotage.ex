@@ -40,7 +40,8 @@ defmodule Mix.Tasks.Anchor.Sabotage do
   `--dry-run` prints the plan and writes nothing. `restore` puts back a file a
   killed run left mutated (`.anchor/sabotage/in-flight.json`). `--coverage
   PATH` (or the config's `coverage_map`) selects each mutant's tests from a
-  per-test coverage map (DND-5474) first, then the mirror file; each line says
+  per-test coverage map (DND-5474) first, then the mirror file and its
+  `<stem>_<topic>_test.exs` siblings (DND-6070); each line says
   which source chose them.
 
   After the run it writes the sabotage record (DND-5484;

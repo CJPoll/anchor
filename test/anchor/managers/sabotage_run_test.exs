@@ -35,6 +35,9 @@ defmodule Anchor.Managers.SabotageRunTest do
   setup do
     stub(SourceMutationMock, :take_lock, fn "/repo" -> :ok end)
     stub(SourceMutationMock, :release_lock, fn "/repo" -> :ok end)
+    # DND-6070: the mirror directories hold no sibling; the sibling test
+    # expects its own listing.
+    stub(SourceMutationMock, :files_in, fn _dirs -> [] end)
     # DND-5484: no record is there yet; the record tests expect their own.
     stub(Anchor.RecordStoreMock, :list, fn "/repo", "test/sabotage_records" -> [] end)
     # DND-5483: an empty survivors list, here and on the base; the survivors
@@ -679,6 +682,45 @@ defmodule Anchor.Managers.SabotageRunTest do
       assert length(run.planned) == 2
       assert Report.exit_code(run) == 0
       assert Report.render(run) =~ "2 mutants planned; nothing applied"
+    end
+
+    # DND-6070: the mirror's directory is listed, and a `<stem>_<topic>_test.exs`
+    # sibling runs beside the mirror file, in the baseline and for each mutant;
+    # another module's test in the same directory does not.
+    test "the mirror's siblings are selected and run beside the mirror file" do
+      expect_journal(:none)
+      expect_config()
+      expect_ignored()
+      expect_scope()
+      expect_clean()
+      expect_tests_exist(true)
+
+      expect(SourceMutationMock, :files_in, fn ["/repo/test"] ->
+        call(:files_in, [
+          "/repo/test/calc_more_test.exs",
+          "/repo/test/calc_test.exs",
+          "/repo/test/calculator_test.exs",
+          "/repo/test/notes.md"
+        ])
+      end)
+
+      tests = ["test/calc_more_test.exs", "test/calc_test.exs"]
+
+      expect(TestExecutionMock, :run, 3, fn _argv, ^tests, _opts ->
+        if calls_seen(:baseline),
+          do: call({:tests, tests}, test_run(:failed, [@killer])),
+          else: call(:baseline, test_run(:passed))
+      end)
+
+      expect_patcher(2)
+      expect_delete_journal(2)
+      expect_save()
+
+      run = Sabotage.run(@facts, @opts)
+
+      assert_received {:call, :files_in}
+      assert Enum.all?(run.planned, fn {_m, sel} -> sel == {:mirror, tests} end)
+      assert Enum.map(run.outcomes, & &1.status) == [:killed, :killed]
     end
 
     test "the cap: --max 1 runs one mutant and lists the other as not run" do
