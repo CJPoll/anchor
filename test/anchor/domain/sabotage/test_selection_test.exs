@@ -102,6 +102,16 @@ defmodule Anchor.Domain.Sabotage.TestSelectionTest do
                {:coverage, ["test/a_test.exs", "test/x_more_test.exs", "test/x_test.exs"]}
     end
 
+    test "a coverage selection with no mirror file and no sibling is the refs alone" do
+      inputs =
+        inputs(["test/a_test.exs"])
+        |> Map.put(:coverage, %{"M.f/1" => ["test/a_test.exs:10"]})
+        |> Map.put(:stale_tests, :all)
+
+      assert TestSelection.select(%{file: "lib/x.ex", module: M, function: {:f, 1}}, inputs) ==
+               {:coverage, ["test/a_test.exs"]}
+    end
+
     test "5: a sibling of a mirror target outside the project is never selected" do
       rules = [%{from: "lib/**/*.ex", to: "../{rest}_test.exs"}]
       inputs = %{mirror: rules, existing_tests: MapSet.new(["../x_more_test.exs"])}
