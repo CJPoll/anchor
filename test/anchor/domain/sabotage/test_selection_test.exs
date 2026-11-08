@@ -44,6 +44,7 @@ defmodule Anchor.Domain.Sabotage.TestSelectionTest do
     # A module's tests split into `<stem>_<topic>_test.exs` files beside the
     # mirror file run too: the killers of crew's MachineDecider mutants sit in
     # machine_decider_agents_test.exs, which the mirror alone never ran.
+    # Sabotage record: ../../../sabotage_records/sabotage-20261108-dnd_6070_anchor_mirror_selection.md
     @dir "apps/runtime/test/runtime/agents/domain"
     @decider "apps/runtime/lib/runtime/agents/domain/machine_decider.ex"
 

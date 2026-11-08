@@ -2,6 +2,7 @@ defmodule Anchor.Adapters.SourcePatcherTest do
   # DND-5473: the journal and file writes on a real tmp directory.
   # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5473_sabotage_run.md
   # Sabotage record (DND-5570): ../../sabotage_records/sabotage-20261103-dnd_5570_sabotage_hardening.md
+  # Sabotage record (DND-6070): ../../sabotage_records/source_patcher-20261108-dnd_6070_anchor_mirror_selection.md
   use ExUnit.Case, async: true
 
   alias Anchor.Adapters.SourcePatcher

@@ -1,6 +1,7 @@
 defmodule Anchor.Domain.Sabotage.TestMirrorTest do
   # DND-6070: a mirror file's siblings, the `<stem>_<topic>_test.exs` files a
   # module's tests are split into, which a mutant runs beside the mirror file.
+  # Sabotage record: ../../../sabotage_records/sabotage-20261108-dnd_6070_anchor_mirror_selection.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Sabotage.TestMirror

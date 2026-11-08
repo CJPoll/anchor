@@ -1393,3 +1393,104 @@ afd30ec8b657	lib/anchor/domain/sabotage/test_selection.ex	Anchor.Domain.Sabotage
 51a27fafcb78	lib/anchor/managers/sabotage/runner.ex	Anchor.Managers.Sabotage.Runner.select/5	force_condition	no_tests	
 b85b7e1b536a	lib/anchor/managers/sabotage/runner.ex	Anchor.Managers.Sabotage.Runner.select/5	force_condition	no_tests	
 ```
+
+## Hand sabotage (DND-6070)
+
+- **Run at:** 8ff6309 (run 2 committed; lib unchanged since run 2), through `test-slot`, by `hand.sh`: it breaks lib code (never a test), runs the named test file, and restores with `git checkout HEAD -- <file>`; lib was clean after every row.
+- **Why:** run 2 lists `sabotage_run_test.exs:690` under *Tests still lacking a red* (its code is skipped mutants: orphaned `listed`), and holds two `Runner.select/5` mutants as no_tests because `runner.ex`'s tests are `test/anchor/managers/sabotage_run_test.exs`, not its mirror `runner_test.exs`. H2 and H3 show that file kills both.
+- **H1, first attempt invalid:** deleting `|> Enum.concat(listed)` left `listed` unused and failed to compile under warnings-as-errors; the row is the rewritten break.
+
+### H1: Runner.select/5: the listed mirror directory never reaches existing_tests (siblings dropped)
+
+- **Code under test:** `lib/anchor/managers/sabotage/runner.ex`
+- **Suite run:** `mix test test/anchor/managers/sabotage_run_test.exs`: 88 tests, 1 failure
+- **Break:**
+
+```diff
+-      |> Enum.concat(listed)
++      |> Enum.concat(Enum.take(listed, 0))
+```
+
+Failures, as ExUnit printed them (first 1):
+
+```
+  1) test run/2: the mutants the mirror's siblings are selected and run beside the mirror file (Anchor.Managers.SabotageRunTest)
+     test/anchor/managers/sabotage_run_test.exs:690
+     ** (FunctionClauseError) no function clause matching in anonymous fn/3 in Anchor.Managers.SabotageRunTest."test run/2: the mutants the mirror's siblings are selected and run beside the mirror file"/1
+
+     The following arguments were given to anonymous fn/3 in Anchor.Managers.SabotageRunTest."test run/2: the mutants the mirror's siblings are selected and run beside the mirror file"/1:
+
+         # 1
+         ["mix", "test", "--max-cases", "2"]
+
+```
+
+### H2: Runner.select/5: force `if coverage` false (51a27fafcb78, held as no_tests)
+
+- **Code under test:** `lib/anchor/managers/sabotage/runner.ex`
+- **Suite run:** `mix test test/anchor/managers/sabotage_run_test.exs`: 88 tests, 8 failures
+- **Break:**
+
+```diff
+-    index = if coverage, do: coverage.index
++    index = if false, do: coverage.index
+```
+
+Failures, as ExUnit printed them (first 2):
+
+```
+  1) test run/2 with a coverage map (DND-5474) the config's coverage_map is read when no --coverage is given (Anchor.Managers.SabotageRunTest)
+     test/anchor/managers/sabotage_run_test.exs:1010
+     Assertion with == failed
+     code:  assert Enum.sort(paths) == ["/repo/test/calc_test.exs", "/repo/test/other_test.exs"]
+     left:  ["/repo/test/calc_test.exs"]
+     right: ["/repo/test/calc_test.exs", "/repo/test/other_test.exs"]
+     stacktrace:
+       test/anchor/managers/sabotage_run_test.exs:903: anonymous fn/2 in Anchor.Managers.SabotageRunTest.expect_cov_tests/1
+       (hammox 0.7.0) lib/hammox.ex:402: anonymous fn/2 in Hammox.protected_code/3
+
+  2) test run/2 with a coverage map (DND-5474) a map that names no commit is used, with a warning, every file whole (Anchor.Managers.SabotageRunTest)
+     test/anchor/managers/sabotage_run_test.exs:967
+     Assertion with == failed
+     code:  assert Enum.sort(paths) == ["/repo/test/calc_test.exs", "/repo/test/other_test.exs"]
+     left:  ["/repo/test/calc_test.exs"]
+     right: ["/repo/test/calc_test.exs", "/repo/test/other_test.exs"]
+     stacktrace:
+       test/anchor/managers/sabotage_run_test.exs:903: anonymous fn/2 in Anchor.Managers.SabotageRunTest.expect_cov_tests/1
+       (hammox 0.7.0) lib/hammox.ex:402: anonymous fn/2 in Hammox.protected_code/3
+```
+
+### H3: Runner.select/5: force `if coverage` true (b85b7e1b536a, held as no_tests)
+
+- **Code under test:** `lib/anchor/managers/sabotage/runner.ex`
+- **Suite run:** `mix test test/anchor/managers/sabotage_run_test.exs`: 88 tests, 47 failures
+- **Break:**
+
+```diff
+-    index = if coverage, do: coverage.index
++    index = if true, do: coverage.index
+```
+
+Failures, as ExUnit printed them (first 2):
+
+```
+  1) test run/2: sabotage records (DND-5484) a record that cannot be written is said loudly; the survivor keeps exit 1 (DND-5641) (Anchor.Managers.SabotageRunTest)
+     test/anchor/managers/sabotage_run_test.exs:1219
+     ** (BadMapError) expected a map, got:
+
+         nil
+
+     code: run = Sabotage.run(@rec_facts, @opts)
+     stacktrace:
+       (anchor 0.1.0) lib/anchor/managers/sabotage/runner.ex:713: Anchor.Managers.Sabotage.Runner.select/5
+
+  2) test run/2: sabotage records (DND-5484) an earlier record's kill map selects the killers' files for the same function (Anchor.Managers.SabotageRunTest)
+     test/anchor/managers/sabotage_run_test.exs:1281
+     ** (BadMapError) expected a map, got:
+
+         nil
+
+     code: run = Sabotage.run(%{@facts | dry_run: true}, @opts)
+     stacktrace:
+       (anchor 0.1.0) lib/anchor/managers/sabotage/runner.ex:713: Anchor.Managers.Sabotage.Runner.select/5
+```

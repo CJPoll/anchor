@@ -11,6 +11,7 @@ defmodule Anchor.Managers.SabotageRunTest do
   # Sabotage record (DND-5653): ../../sabotage_records/sabotage-20261103-dnd_5639_sabotage_followups.md
   # Sabotage record (DND-5654): ../../sabotage_records/sabotage-20261103-dnd_5639_sabotage_followups.md
   # Sabotage record (DND-5635): ../../sabotage_records/sabotage-20261103-dnd_5630_graph_hardening.md
+  # Sabotage record (DND-6070): ../../sabotage_records/sabotage-20261108-dnd_6070_anchor_mirror_selection.md
   use ExUnit.Case, async: true
 
   import Hammox
