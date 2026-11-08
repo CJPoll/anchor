@@ -24,6 +24,9 @@ defmodule Anchor.Adapters.SourceMutation do
     * `touch_ahead/1` — moves the mtime forward, so Mix recompiles the file;
     * `sha256_file/1` — the file's lowercase hex sha256;
     * `existing/1` — which of the paths are regular files;
+    * `files_in/1` — the regular files directly in each directory, sorted
+      per directory, none for one that cannot be listed (DND-6070: the
+      mirror's siblings);
     * `symlinked/2` — which of the paths (relative to `root`) have a symlink
       at the file or at a directory above it under `root`, dangling or not
       (DND-5485: a replayed record must never steer a read or a write
@@ -43,6 +46,7 @@ defmodule Anchor.Adapters.SourceMutation do
   @callback touch_ahead(path :: String.t()) :: :ok | {:error, posix()}
   @callback sha256_file(path :: String.t()) :: {:ok, String.t()} | {:error, posix()}
   @callback existing(paths :: [String.t()]) :: [String.t()]
+  @callback files_in(dirs :: [String.t()]) :: [String.t()]
   @callback symlinked(root :: String.t(), paths :: [String.t()]) :: [String.t()]
   @callback save_run(path :: String.t(), bytes :: binary()) :: :ok | {:error, posix()}
   @callback owner_alive?(Journal.owner() | nil) :: boolean()

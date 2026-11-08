@@ -45,6 +45,39 @@ defmodule Anchor.Domain.Sabotage.TestMirror do
   @spec first_target([rule()], String.t()) :: String.t() | nil
   def first_target(rules, path), do: Enum.find_value(rules, &target(&1, path))
 
+  @test_suffix "_test.exs"
+
+  @doc """
+  Whether `path` is a sibling of the mirror path `mirror` (DND-6070): a file in
+  the same directory named `<stem>_<topic>_test.exs`, where `mirror` is
+  `<stem>_test.exs` and `<topic>` is not empty. A module's tests split by
+  topic (`machine_decider_agents_test.exs` beside `machine_decider_test.exs`)
+  are its siblings; another module's test (`xy_test.exs` beside
+  `x_test.exs`) is not. A `mirror` that is not a non-empty `<stem>_test.exs`
+  has no siblings.
+  """
+  @spec sibling?(String.t(), String.t()) :: boolean()
+  def sibling?(mirror, path) do
+    stem = test_stem(Path.basename(mirror))
+
+    stem != nil and Path.dirname(mirror) == Path.dirname(path) and
+      topic_of?(Path.basename(path), stem)
+  end
+
+  defp test_stem(name) do
+    if String.ends_with?(name, @test_suffix) and byte_size(name) > byte_size(@test_suffix),
+      do: String.replace_suffix(name, @test_suffix, ""),
+      else: nil
+  end
+
+  # `<stem>_<topic>_test.exs` with a non-empty topic.
+  defp topic_of?(name, stem) do
+    prefix = stem <> "_"
+
+    String.starts_with?(name, prefix) and String.ends_with?(name, @test_suffix) and
+      byte_size(name) > byte_size(prefix) + byte_size(@test_suffix)
+  end
+
   defp from_segments(from) when is_binary(from) do
     parts = String.split(from, "/")
     {init, [last]} = Enum.split(parts, -1)

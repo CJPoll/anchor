@@ -16,6 +16,13 @@ defmodule Anchor.Domain.Sabotage.TestSelection do
        mutant's file names a test file, which must exist;
     4. `:none`.
 
+  Wherever the mirror file is selected, so are its siblings (DND-6070): the
+  existing `<stem>_<topic>_test.exs` files beside it (`TestMirror.sibling?/2`),
+  where a module's tests are split by topic. With no mirror file, the
+  siblings alone are a `:mirror` selection. The caller lists the mirror's
+  directory (`mirror_dir/2`) into `existing_tests`. They only add tests: a
+  mutant never runs fewer than the mirror file alone would.
+
   A function absent from the coverage index (or a run with no map) falls to
   the next source. The source is always stated in the report.
 
@@ -95,6 +102,19 @@ defmodule Anchor.Domain.Sabotage.TestSelection do
   @spec mirror_path(%{file: String.t()}, [TestMirror.rule()]) :: String.t() | nil
   def mirror_path(%{file: file}, rules), do: TestMirror.first_target(rules, file)
 
+  @doc """
+  The directory of the mirror path, which the caller lists so the mirror's
+  siblings (`TestMirror.sibling?/2`) can be selected, or `nil` when no rule
+  matches the file.
+  """
+  @spec mirror_dir(%{file: String.t()}, [TestMirror.rule()]) :: String.t() | nil
+  def mirror_dir(mutant, rules) do
+    case mirror_path(mutant, rules) do
+      nil -> nil
+      path -> Path.dirname(path)
+    end
+  end
+
   @doc "`\"Module.fun/arity\"` of a mutant, or `nil` for a bare `%{file: ...}`."
   @spec mfa(map()) :: String.t() | nil
   def mfa(%{module: module, function: {name, arity}}), do: "#{inspect(module)}.#{name}/#{arity}"
@@ -107,7 +127,7 @@ defmodule Anchor.Domain.Sabotage.TestSelection do
 
     mirror =
       case mirror(rules, file, existing) do
-        {:mirror, [path]} -> if stale?(stale, path), do: [path], else: []
+        {:mirror, paths} -> Enum.filter(paths, &stale?(stale, &1))
         {:none, []} -> []
       end
 
@@ -125,10 +145,20 @@ defmodule Anchor.Domain.Sabotage.TestSelection do
 
   defp emit?(path, existing), do: TestPath.safe_arg?(path) and MapSet.member?(existing, path)
 
+  # The mirror file, when it exists, and its existing siblings (DND-6070).
   defp mirror(rules, file, existing) do
     case TestMirror.first_target(rules, file) do
       nil -> {:none, []}
-      path -> if emit?(path, existing), do: {:mirror, [path]}, else: {:none, []}
+      path -> mirror_files(path, existing)
+    end
+  end
+
+  defp mirror_files(path, existing) do
+    siblings = Enum.filter(existing, &TestMirror.sibling?(path, &1))
+
+    case Enum.filter([path | siblings], &emit?(&1, existing)) do
+      [] -> {:none, []}
+      paths -> {:mirror, paths |> Enum.uniq() |> Enum.sort()}
     end
   end
 end

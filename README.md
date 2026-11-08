@@ -2276,7 +2276,11 @@ How a run goes:
    `none`. Between coverage and the mirror comes `kill_map`: the test files
    whose tests killed a mutant of the same function in the records already
    there, with the mirror file when it exists, so a branch's new tests run
-   too. Every path handed to `mix test`, from any source, must be a project
+   too. Wherever the mirror file is selected, so are its siblings (DND-6070):
+   the `<stem>_<topic>_test.exs` files beside it (`calc_more_test.exs` beside
+   `calc_test.exs`, never `calculator_test.exs`), where a module's tests are
+   split by topic; with no mirror file they are the `mirror` selection alone.
+   They only add tests, never fewer. Every path handed to `mix test`, from any source, must be a project
    `_test.exs` path: never starting with `-` or `/`, with no `..` or empty
    segment (DND-5640). A record holding a killer that fails this is skipped
    and named, as is one whose kill map does not parse (said:

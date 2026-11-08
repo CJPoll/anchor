@@ -2,6 +2,7 @@ defmodule Anchor.Adapters.SourcePatcherTest do
   # DND-5473: the journal and file writes on a real tmp directory.
   # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5473_sabotage_run.md
   # Sabotage record (DND-5570): ../../sabotage_records/sabotage-20261103-dnd_5570_sabotage_hardening.md
+  # Sabotage record (DND-6070): ../../sabotage_records/source_patcher-20261108-dnd_6070_anchor_mirror_selection.md
   use ExUnit.Case, async: true
 
   alias Anchor.Adapters.SourcePatcher
@@ -175,6 +176,27 @@ defmodule Anchor.Adapters.SourcePatcherTest do
     run_path = Path.join(root, "_build/dev/anchor/sabotage/last-run.etf")
     assert SourcePatcher.save_run(run_path, "bytes") == :ok
     assert File.read!(run_path) == "bytes"
+  end
+
+  # DND-6070: the mirror directories are listed so the mirror's siblings run.
+  test "files_in/1 lists the regular files directly in each directory, sorted; a missing one is none",
+       %{tmp_dir: root} do
+    a = Path.join(root, "a")
+    File.mkdir_p!(Path.join(a, "sub_test.exs"))
+    File.mkdir_p!(Path.join(root, "b"))
+    File.write!(Path.join(a, "y_test.exs"), "")
+    File.write!(Path.join(a, "x_test.exs"), "")
+    File.write!(Path.join(a, "sub_test.exs/deep_test.exs"), "")
+    File.write!(Path.join(root, "b/z_test.exs"), "")
+
+    assert SourcePatcher.files_in([a, Path.join(root, "missing"), Path.join(root, "b")]) == [
+             Path.join(a, "x_test.exs"),
+             Path.join(a, "y_test.exs"),
+             Path.join(root, "b/z_test.exs")
+           ]
+
+    assert SourcePatcher.files_in([Path.join(a, "x_test.exs")]) == []
+    assert SourcePatcher.files_in([]) == []
   end
 
   defp mtime(path), do: File.stat!(path, time: :posix).mtime

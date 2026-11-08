@@ -28,6 +28,8 @@ defmodule Anchor.Managers.SabotageScanTest do
   setup do
     stub(SourceMutationMock, :take_lock, fn "/repo" -> :ok end)
     stub(SourceMutationMock, :release_lock, fn "/repo" -> :ok end)
+    # DND-6070: no mirror directory holds a sibling of the mirror file.
+    stub(SourceMutationMock, :files_in, fn _dirs -> [] end)
     stub(RecordStoreMock, :list, fn "/repo", "test/sabotage_records" -> [] end)
 
     stub(Anchor.BaselineStoreMock, :read, fn "/repo", ".anchor/sabotage/survivors.txt" ->

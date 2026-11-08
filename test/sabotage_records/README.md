@@ -100,10 +100,11 @@ before coining a synonym.
   `Anchor.Domain.StructTypes`, `Anchor.Domain.StructFlow`,
   `Anchor.Domain.GraphRules.StructOwnedByModuleFlow`, and the scope it shares
   with the AST rule, `Anchor.Domain.StructOwnership`.
-- `mix` and `record_file` — the words `mix anchor.sabotage run`'s own records
-  derive (`domain_from: module` after `domain_strip_prefixes`) for
-  `Mix.Tasks.Anchor.Sabotage` and `Anchor.Adapters.RecordFile`; a hand record
-  for that code stays under `sabotage`.
+- `mix`, `record_file` and `source_patcher` — the words `mix anchor.sabotage
+  run`'s own records derive (`domain_from: module` after
+  `domain_strip_prefixes`) for `Mix.Tasks.Anchor.Sabotage`,
+  `Anchor.Adapters.RecordFile` and `Anchor.Adapters.SourcePatcher` (DND-6070);
+  a hand record for that code stays under `sabotage`.
 - `sabotage` — the causal sabotage generator (DND-5471): every
   `Anchor.Domain.Sabotage.*` module that makes mutants (`Mutator`,
   `Operators`, `OrphanCheck`, `SourceTree`, `Patch`, `MutantId`,
