@@ -1423,6 +1423,13 @@ Failures, as ExUnit printed them (first 1):
          # 1
          ["mix", "test", "--max-cases", "2"]
 
+         # 2
+         ["test/calc_test.exs"]
+
+         # 3
+         [cd: "/repo", results_path: "/builds/repo-test/anchor/sabotage/results.bin", timeout_seconds: 300]
+
+     code: run = Sabotage.run(@facts, @opts)
 ```
 
 ### H2: Runner.select/5: force `if coverage` false (51a27fafcb78, held as no_tests)
