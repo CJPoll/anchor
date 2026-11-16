@@ -4,7 +4,9 @@ defmodule Anchor.Check.MustUseModule do
     explanations: [
       check: """
       This check ensures that modules must use specific modules
-      as specified in the .anchor.yml configuration file.
+      as specified in the .anchor.yml configuration file: every module under
+      `required_modules`, or at least one of the modules under
+      `required_any_of_modules` (the two keys cannot be combined on one rule).
       """
     ]
 

@@ -48,6 +48,20 @@ defmodule Anchor.Domain.ConfigTest do
       assert rule.recursive == false
     end
 
+    test "parses required_any_of_modules as module atoms, absent as []" do
+      rule =
+        parse_rule(%{
+          "type" => "must_use_module",
+          "paths" => ["lib/**/*.ex"],
+          "required_any_of_modules" => ["MyApp.Worker", ":cowboy"]
+        })
+
+      assert rule.required_any_of_modules == [MyApp.Worker, :cowboy]
+      assert rule.required_modules == []
+
+      assert parse_rule(%{"type" => "no_direct_dependency"}).required_any_of_modules == []
+    end
+
     # Row 3
     test "module strings become module atoms via Module.concat" do
       rule =

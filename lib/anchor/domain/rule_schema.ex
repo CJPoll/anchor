@@ -81,7 +81,9 @@ defmodule Anchor.Domain.RuleSchema do
     * `no_direct_dependency`: `forbidden_functions`, `forbidden_modules`,
       `forbidden_patterns`;
     * `no_transitive_dependency`: `forbidden_modules`, `forbidden_patterns`;
-    * `must_use_module`: `required_modules`.
+    * `must_use_module`: `required_modules` (the module must use every one) or
+      `required_any_of_modules` (it must use at least one); the two keys are
+      alternatives, so a rule carrying both is refused (`validate_required_any_of/1`).
 
   Every other type maps to `[]`, which says, explicitly, that the type has no
   relation to require:
@@ -226,7 +228,7 @@ defmodule Anchor.Domain.RuleSchema do
     layering: [],
     max_file_length: ~w(max_lines),
     module_pattern_restrictions: ~w(allowed_functions),
-    must_use_module: ~w(required_modules),
+    must_use_module: ~w(required_any_of_modules required_modules),
     no_comparison_in_if: [],
     no_direct_dependency:
       ~w(allowed_callers context_depth forbidden_functions forbidden_modules forbidden_patterns
@@ -266,7 +268,7 @@ defmodule Anchor.Domain.RuleSchema do
     max_file_length: [],
     module_one_component: [],
     module_pattern_restrictions: [],
-    must_use_module: ~w(required_modules),
+    must_use_module: ~w(required_any_of_modules required_modules),
     no_comparison_in_if: [],
     no_direct_dependency: ~w(forbidden_functions forbidden_modules forbidden_patterns),
     no_discarded_pure_expression: [],
@@ -340,12 +342,13 @@ defmodule Anchor.Domain.RuleSchema do
     "forbidden_functions" => ~s(a list of "Module.function" or "Module.function/arity"),
     "forbidden_modules" => "a list of module names",
     "forbidden_patterns" => "a list of module-name globs",
-    "required_modules" => "a list of module names"
+    "required_any_of_modules" => "a list of module names, at least one of which must be used",
+    "required_modules" => "a list of module names, every one of which must be used"
   }
 
   # Keys whose value is a list of strings, each of which must be non-blank.
   @string_list_keys ~w(allowed_callers allowed_functions forbidden_functions forbidden_modules
-                       forbidden_patterns owned_namespaces pure_patterns required_modules)
+                       forbidden_patterns owned_namespaces pure_patterns required_any_of_modules required_modules)
 
   # A misspelling this close to a known key (String.jaro_distance/2) is
   # suggested as that key.
@@ -482,6 +485,7 @@ defmodule Anchor.Domain.RuleSchema do
   def validate(rule, type) when is_map(rule) do
     with :ok <- validate_common(rule, engine(type), Map.fetch!(@keys_by_type, type), type),
          :ok <- validate_string_lists(rule),
+         :ok <- validate_required_any_of(rule),
          :ok <- validate_function_refs(rule),
          :ok <- validate_allowed_callers(rule),
          :ok <- require_relation(rule, type),
@@ -862,6 +866,30 @@ defmodule Anchor.Domain.RuleSchema do
       {:error, reason} -> {:error, "`allowed_callers` entry #{inspect(token)} #{reason}"}
     end
   end
+
+  # `required_any_of_modules` means "use at least one of these" where
+  # `required_modules` means "use every one", so a rule carrying both has two
+  # meanings and no way to say how they combine: refused. An empty any-of list
+  # is refused too: no alternative can be satisfied, and reading it as "nothing
+  # required" would make the rule check nothing. Runs after
+  # `validate_string_lists/1`, so a present value is a list of non-blank strings.
+  defp validate_required_any_of(%{"required_any_of_modules" => []}) do
+    {:error,
+     "`required_any_of_modules` is empty, so no alternative could be used and the rule " <>
+       "would check nothing; list the modules a file may use one of, or remove the key"}
+  end
+
+  defp validate_required_any_of(%{
+         "required_any_of_modules" => _any_of,
+         "required_modules" => _every_of
+       }) do
+    {:error,
+     "`required_modules` (use every one) and `required_any_of_modules` (use at least one of) " <>
+       "are alternatives and cannot be combined on one rule; keep the one you mean, or split " <>
+       "it into two rules"}
+  end
+
+  defp validate_required_any_of(_rule), do: :ok
 
   defp require_relation(rule, type) do
     case relation_keys(type) do

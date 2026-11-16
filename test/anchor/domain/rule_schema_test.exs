@@ -49,6 +49,8 @@ defmodule Anchor.Domain.RuleSchemaTest do
     "pattern" => "*.Domain.*",
     "pure_patterns" => ["MyApp.*.Domain.*"],
     "recursive" => true,
+    # Mutually exclusive with `required_modules`: the all-keys case below drops it.
+    "required_any_of_modules" => ["MyApp.Base"],
     "required_modules" => ["MyApp.Base"],
     "same_context" => true,
     "uses_module" => "MyApp.Base"
@@ -90,6 +92,100 @@ defmodule Anchor.Domain.RuleSchemaTest do
 
   defp rule(type, extra \\ %{}) do
     Map.merge(%{"type" => Atom.to_string(type), "pattern" => "*.Domain.*"}, extra)
+  end
+
+  describe "must_use_module required_any_of_modules" do
+    defp any_of(extra),
+      do: Map.merge(%{"type" => "must_use_module", "paths" => ["lib/**/*.ex"]}, extra)
+
+    test "a non-empty list is a relation by itself" do
+      assert %{type: :must_use_module, required_any_of_modules: [MyApp.A, MyApp.B]} =
+               Config.parse_rule(any_of(%{"required_any_of_modules" => ["MyApp.A", "MyApp.B"]}))
+    end
+
+    test "an empty any-of list is a config error naming the key" do
+      assert {:error, {:invalid_rule, reason}} =
+               Config.parse_rule(any_of(%{"required_any_of_modules" => []}))
+
+      assert reason =~ "`required_any_of_modules` is empty"
+    end
+
+    test "an empty any-of list is refused beside required_modules too" do
+      assert {:error, {:invalid_rule, reason}} =
+               Config.parse_rule(
+                 any_of(%{"required_modules" => ["MyApp.A"], "required_any_of_modules" => []})
+               )
+
+      assert reason =~ "required_any_of_modules"
+    end
+
+    test "a value that is not a list of module names is a config error" do
+      for bad <- ["MyApp.A", %{"a" => 1}, 3, [""]] do
+        assert {:error, {:invalid_rule, reason}} =
+                 Config.parse_rule(any_of(%{"required_any_of_modules" => bad})),
+               "#{inspect(bad)} loaded"
+
+        assert reason =~ "required_any_of_modules"
+      end
+    end
+
+    test "both keys on one rule is a config error that says to pick one meaning" do
+      assert {:error, {:invalid_rule, reason}} =
+               Config.parse_rule(
+                 any_of(%{
+                   "required_modules" => ["MyApp.A"],
+                   "required_any_of_modules" => ["MyApp.B", "MyApp.C"]
+                 })
+               )
+
+      assert reason =~ "required_modules"
+      assert reason =~ "required_any_of_modules"
+      assert reason =~ "every"
+      assert reason =~ "one of"
+    end
+
+    test "the no-relation message names both keys" do
+      assert {:error, {:invalid_rule, reason}} = Config.parse_rule(any_of(%{}))
+      assert reason =~ "required_modules"
+      assert reason =~ "required_any_of_modules"
+    end
+
+    test "other types refuse the key" do
+      assert {:error, {:invalid_rule, reason}} =
+               Config.parse_rule(
+                 rule(:no_direct_dependency, %{
+                   "forbidden_modules" => ["X"],
+                   "required_any_of_modules" => ["MyApp.A"]
+                 })
+               )
+
+      assert reason =~ ~s(unknown key "required_any_of_modules")
+    end
+  end
+
+  describe "each refusal in validate/2 is its own step" do
+    # One rule per validator, each otherwise valid, so a validator whose result
+    # `validate/2` stopped honouring lets its rule through.
+    test "a rule only that validator refuses is refused" do
+      rules = [
+        {:no_direct_dependency, %{"forbidden_functions" => ["MyApp.Repo"]},
+         "forbidden_functions"},
+        {:no_direct_dependency, %{"forbidden_modules" => ["X"], "allowed_callers" => ["*"]},
+         "allowed_callers"},
+        {:no_direct_dependency,
+         %{"forbidden_functions" => ["MyApp.Repo.insert/1"], "match" => "call"}, "match"},
+        {:no_discarded_pure_expression, %{"pure_patterns" => ["*"]}, "pure_patterns"},
+        {:struct_owned_by_module, %{"owned_namespaces" => []}, "owned_namespaces"}
+      ]
+
+      for {type, extra, key} <- rules do
+        assert {:error, reason} =
+                 RuleSchema.validate(Map.merge(%{"paths" => ["lib/**/*.ex"]}, extra), type),
+               "#{type} with #{key} was accepted"
+
+        assert reason =~ key
+      end
+    end
   end
 
   describe "an unknown key inside a rule" do
@@ -197,7 +293,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
       for type <- Config.rule_types() do
         data =
           for key <- RuleSchema.known_keys(type),
-              key not in ~w(type pattern uses_module bucket),
+              key not in ~w(type pattern uses_module bucket required_any_of_modules),
               into: %{"type" => "#{type}"} do
             {key, Map.fetch!(@valid_values, key)}
           end

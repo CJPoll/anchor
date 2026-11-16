@@ -13,6 +13,9 @@ defmodule Anchor.Domain.Checks.MustUseModuleTest do
 
   defp rule(required_modules), do: %{type: :must_use_module, required_modules: required_modules}
 
+  defp any_rule(any_of),
+    do: %{type: :must_use_module, required_modules: [], required_any_of_modules: any_of}
+
   describe "detect_violations/2" do
     test "flags a module missing a required use (message/trigger/line)" do
       ast =
@@ -121,6 +124,40 @@ defmodule Anchor.Domain.Checks.MustUseModuleTest do
         """)
 
       assert MustUseModule.detect_violations(ast, []) == []
+    end
+  end
+
+  describe "detect_violations/2 with required_any_of_modules" do
+    test "passes when the module uses any one of the alternatives" do
+      for used <- [MyApp.Worker, MyApp.ProWorker] do
+        ast = ast("defmodule S do\n  use #{inspect(used)}\nend\n")
+
+        assert MustUseModule.detect_violations(ast, [
+                 any_rule([MyApp.Worker, MyApp.ProWorker])
+               ]) == []
+      end
+    end
+
+    test "passes when the module uses several of the alternatives" do
+      ast = ast("defmodule S do\n  use MyApp.Worker\n  use MyApp.ProWorker\nend\n")
+
+      assert MustUseModule.detect_violations(ast, [any_rule([MyApp.Worker, MyApp.ProWorker])]) ==
+               []
+    end
+
+    test "one violation naming every accepted alternative when none is used" do
+      ast = ast("defmodule S do\n  use Other.Thing\nend\n")
+
+      assert [%Violation{} = violation] =
+               MustUseModule.detect_violations(ast, [any_rule([MyApp.Worker, MyApp.ProWorker])])
+
+      assert violation.message ==
+               "Module must use one of MyApp.Worker, MyApp.ProWorker" <>
+                 ". Fix: use one of MyApp.Worker, MyApp.ProWorker in the module's own " <>
+                 "defmodule body"
+
+      assert violation.trigger == "MyApp.Worker | MyApp.ProWorker"
+      assert violation.line == 1
     end
   end
 end
