@@ -32,6 +32,18 @@ defmodule Anchor.Domain.Graph.SourceFactsAttributeNamesTest do
            }
   end
 
+  test "a use of an attribute's value is not a literal use" do
+    text = """
+    defmodule A do
+      @base Some.Base
+      use @base
+      use GenServer
+    end
+    """
+
+    assert %{uses: %{"A" => ["GenServer"]}} = SourceFacts.from_source("a.ex", text)
+  end
+
   for name <- @attribute_names do
     test "an attribute named @#{name} reads as one named @value" do
       assert SourceFacts.from_source("a.ex", source(unquote(name))) ==

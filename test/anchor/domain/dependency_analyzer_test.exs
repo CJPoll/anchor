@@ -452,6 +452,17 @@ defmodule Anchor.Domain.DependencyAnalyzerTest do
       assert DependencyAnalyzer.extract_uses(ast(src)) == [MyApp.Schema]
     end
 
+    test "a use of a name that is not all literal (`__MODULE__.Base`) is not collected" do
+      src = """
+      defmodule Test do
+        use __MODULE__.Base
+        use MyApp.Schema
+      end
+      """
+
+      assert DependencyAnalyzer.extract_uses(ast(src)) == [MyApp.Schema]
+    end
+
     # Row 4
     test "result sorted and de-duplicated" do
       src = """
