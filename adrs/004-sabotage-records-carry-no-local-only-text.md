@@ -41,7 +41,9 @@ were found in records already committed here.
 ### Generated records are redacted when they are written
 
 `Anchor.Domain.Sabotage.Record.render/2` runs every file's content through
-`Anchor.Domain.Sabotage.RecordHygiene.redact/2`:
+`Anchor.Domain.Sabotage.RecordHygiene.redact_record/2`. A mutant's ` ```diff `
+block and the ` ```anchor-kills ` block are the project's own source and test
+names, in every checkout, so they are kept as written. Everywhere else:
 
 - a scheduler line is dropped;
 - a path under the run's root is written relative to the root, and the root
@@ -61,8 +63,8 @@ Write a path relative to the project root, and leave scheduler output out.
 ### The gate
 
 `test/anchor/sabotage_record_hygiene_test.exs`, part of `mix test`, fails on any
-record under `test/sabotage_records/` that carries either kind of text
-(`RecordHygiene.leaks/1`).
+record under `test/sabotage_records/` that carries either kind of text outside
+those two blocks (`RecordHygiene.record_leaks/1`).
 
 Records committed before the redaction are listed in
 `.anchor/sabotage/record_leaks.txt`, and the list only shrinks. The test also
@@ -113,8 +115,13 @@ test-slot: WAITING for 8 unit(s) -- cpu pool ..., 8 held:
 - Shortening keeps the path from the first project directory on. A branch
   whose name contains a project directory's name past its first segment keeps
   those later segments.
+- Failure output can quote a test's own code. A home path written as a literal
+  in a failing assertion is rewritten like one the run printed, because nothing
+  tells them apart; the test file holds the original.
 - A scheduler line glued to the end of another line, with no newline between
-  them, is not recognised.
+  them, is not recognised. Neither is a home directory outside `/home/` and
+  `/Users/` (such as `/root`), and a user name with a space in it keeps the
+  text after the space.
 - The records listed in `.anchor/sabotage/record_leaks.txt` still hold their
   leaks, and so does git history. Removing them is a separate decision.
 

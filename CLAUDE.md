@@ -686,7 +686,8 @@ reader lists the dirs `Record.dir_globs/1` names, never one glob. Its `anchor-ki
 (source `kill_map`, after `coverage`, before `mirror`) and what DND-5485
 replays. `RecordFile.create/3` never overwrites; a README is never written;
 nothing is staged or committed. The date is a fact the Mix task reads.
-Every record's text goes through `RecordHygiene.redact/2` (ADR 004): scheduler
+Every record's text outside its diff and kill-map blocks goes through
+`RecordHygiene.redact_record/2` (ADR 004): scheduler
 status lines are dropped and paths under a home or worktree directory are
 rewritten (relative to the run's root when under it).
 `test/anchor/sabotage_record_hygiene_test.exs` fails on a record that still

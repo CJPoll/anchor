@@ -158,3 +158,31 @@ fb681b5c945b (`RecordHygiene.digits?/1` return_input: every segment counted
 as digits). Two tests were added for it: "keeps a line shaped like a waiting
 line whose count is not a number" and "the date is the first eight-digit
 segment, not any eight-character one"; the next run's record shows it.
+
+## The diff and kill-map blocks are kept (after the standing critic)
+
+The critic found that redacting a record's whole text also rewrote its diff
+blocks and any failing assertion's quoted code: both are the project's source.
+`Record.render/2` now calls `RecordHygiene.redact_record/2`, which keeps the
+` ```diff ` and ` ```anchor-kills ` blocks as written; the guard reads records
+with `record_leaks/1`, which skips the same blocks.
+
+| Row | Mutation (the code as it was) | Test that failed | Result |
+|---|---|---|---|
+| G | `Record.render/2` redacting the whole content (head 7b1380c) | `record_test.exs` H4 "a mutant's diff and the kill map are the project's source, kept as written" | 24 tests, 1 failure |
+
+```
+  1) test local-only text never reaches a record H4: a mutant's diff and the kill map are the project's source, kept as written (Anchor.Domain.Sabotage.RecordTest)
+     test/anchor/domain/sabotage/record_test.exs:518
+     Assertion with =~ failed
+     code:  assert entry.content =~ literal
+     right: "-    \"<home>\"\n+    \"<worktree>\"\n"
+```
+
+(The `right:` line is written redacted, per ADR 004: the test's literal holds
+a home path and a worktree path.)
+
+The generated record `sabotage-20261116-sabotage_record_redaction.md` was then
+regenerated from scratch, so its diffs are verbatim; the four earlier runs,
+written with the whole-content redaction, are in this branch's history at
+commit 7b1380c.

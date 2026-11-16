@@ -40,11 +40,12 @@ defmodule Anchor.Domain.Sabotage.Record do
   An appended section starts `## Run HH:MM UTC` and repeats sections 2 to 8
   one heading level down.
 
-  Every file's content goes through `Anchor.Domain.Sabotage.RecordHygiene.redact/2`
-  before it is returned: a scheduler status line a run's output picked up is
-  dropped, and an absolute path under a home directory is rewritten (relative
-  to `root` when it is under it), so a committed record names no user, no
-  checkout and no other run.
+  Every file's content goes through
+  `Anchor.Domain.Sabotage.RecordHygiene.redact_record/2` before it is returned
+  (ADR 004): outside the diff and kill-map blocks, a scheduler status line a
+  run's output picked up is dropped, and a path under a home or worktree
+  directory is rewritten (relative to `root` when it is under it), so a
+  committed record names no user, no checkout and no other run.
 
   `ctx`: `records` (the naming config, with `adr`: the rule a hand sabotage
   follows), `date` (`Date`), `time`
@@ -134,7 +135,10 @@ defmodule Anchor.Domain.Sabotage.Record do
       name = Path.basename(path)
       mode = if name in names, do: :append, else: :create
       {lacking, done} = lacking(app, run, ctx, done)
-      content = mode |> content(domain, items, lacking, ctx) |> RecordHygiene.redact(root(ctx))
+
+      content =
+        mode |> content(domain, items, lacking, ctx) |> RecordHygiene.redact_record(root(ctx))
+
       existing = Map.update(existing, dir, [name], &[name | &1])
       {:cont, {:ok, [%{path: path, content: content, mode: mode} | entries], existing, done}}
     else

@@ -515,6 +515,19 @@ defmodule Anchor.Domain.Sabotage.RecordTest do
       assert Anchor.Domain.Sabotage.RecordHygiene.leaks(entry.content) == []
     end
 
+    test "H4: a mutant's diff and the kill map are the project's source, kept as written" do
+      outcome = killed("aaa111")
+      literal = ~s(-    "/home/alice/x"\n+    "~/.local/worktrees/y"\n)
+      patch = outcome.mutant.patch <> literal
+      killer = {"test/anchor/x_test.exs", 9, "test reads /home/alice/x"}
+      outcome = %{outcome | mutant: %{outcome.mutant | patch: patch}, killers: [killer]}
+
+      {:ok, [entry]} = Record.render(%{leaking_run() | outcomes: [outcome]}, ctx(%{root: @root}))
+
+      assert entry.content =~ literal
+      assert entry.content =~ "\ttest/anchor/x_test.exs:9 test reads /home/alice/x\n"
+    end
+
     test "H3: with no root in ctx a home path still loses its user and checkout" do
       {:ok, [entry]} = Record.render(leaking_run(), ctx())
 

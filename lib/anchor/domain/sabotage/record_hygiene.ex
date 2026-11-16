@@ -30,6 +30,14 @@ defmodule Anchor.Domain.Sabotage.RecordHygiene do
   keeps those segments. `leaks/1` names each line that still carries one, by
   number and kind, never by its text: it is the redaction's own scan, so a
   redacted text never leaks.
+
+  A record also quotes the project's own source: each mutant's ` ```diff `
+  block and the ` ```anchor-kills ` block (test names, read back by replay
+  and verify). That text is in every checkout, so `redact_record/2` and
+  `record_leaks/1` leave those blocks as they are and apply the rules to the
+  rest. The rest includes failure output, which can quote a test's own code:
+  a home path written as a literal in a failing assertion is rewritten too,
+  since nothing tells it from one the run printed.
   """
 
   @type kind :: :scheduler_line | :local_path
@@ -63,6 +71,37 @@ defmodule Anchor.Domain.Sabotage.RecordHygiene do
     |> Enum.map_join("\n", &(&1 |> strip_root(root) |> rewrite_all()))
   end
 
+  @doc """
+  A record's text, redacted as `redact/2` does outside its source blocks
+  (` ```diff ` and ` ```anchor-kills `), which are kept as written.
+  """
+  @spec redact_record(String.t(), String.t() | nil) :: String.t()
+  def redact_record(text, root) when is_binary(text) do
+    root = usable_root(root)
+
+    text
+    |> String.split("\n")
+    |> in_source_blocks()
+    |> Enum.reject(fn {line, source?} -> not source? and scheduler_line?(line) end)
+    |> Enum.map_join("\n", fn
+      {line, true} -> line
+      {line, false} -> line |> strip_root(root) |> rewrite_all()
+    end)
+  end
+
+  @doc "`leaks/1` over a record's text outside its source blocks; line numbers are the record's."
+  @spec record_leaks(String.t()) :: [{pos_integer(), kind()}]
+  def record_leaks(text) when is_binary(text) do
+    text
+    |> String.split("\n")
+    |> in_source_blocks()
+    |> Enum.with_index(1)
+    |> Enum.flat_map(fn
+      {{_line, true}, _n} -> []
+      {{line, false}, n} -> leak(line, n)
+    end)
+  end
+
   @doc "Each line (1-based) that carries a scheduler line or a local path, with its kind."
   @spec leaks(String.t()) :: [{pos_integer(), kind()}]
   def leaks(text) when is_binary(text) do
@@ -91,7 +130,7 @@ defmodule Anchor.Domain.Sabotage.RecordHygiene do
     unlisted =
       for {path, content} <- Enum.sort(records),
           not MapSet.member?(listed_set, path),
-          {line, kind} <- leaks(content),
+          {line, kind} <- record_leaks(content),
           do: {:leak, path, line, kind}
 
     unlisted ++ Enum.flat_map(Enum.sort(listed), &listed_finding(&1, records, newest))
@@ -136,6 +175,22 @@ defmodule Anchor.Domain.Sabotage.RecordHygiene do
   defp date_of(nil), do: :error
 
   defp digits?(text), do: text |> String.to_charlist() |> Enum.all?(&(&1 in ?0..?9))
+
+  # -- source blocks ----------------------------------------------------------
+
+  # Each line with whether it is inside a source block: from a ```diff or
+  # ```anchor-kills fence to the next bare ``` (both fences count as inside).
+  defp in_source_blocks(lines) do
+    {tagged, _inside} = Enum.map_reduce(lines, false, &source_line/2)
+    tagged
+  end
+
+  defp source_line(line, false) when line in ["```diff", "```anchor-kills"],
+    do: {{line, true}, true}
+
+  defp source_line(line, false), do: {{line, false}, false}
+  defp source_line("```" = line, true), do: {{line, true}, false}
+  defp source_line(line, true), do: {{line, true}, true}
 
   # -- scheduler lines --------------------------------------------------------
 

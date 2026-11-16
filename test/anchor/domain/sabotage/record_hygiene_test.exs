@@ -174,6 +174,69 @@ defmodule Anchor.Domain.Sabotage.RecordHygieneTest do
     end
   end
 
+  describe "redact_record/2 and record_leaks/1: a record's source blocks are kept" do
+    @record Enum.join(
+              [
+                "left: \"/home/alice/x\"",
+                "test-slot: queued",
+                "```diff",
+                "-    \"/home/alice/x\"",
+                "test-slot: a source line",
+                "```",
+                "```",
+                "right: \"/home/alice/y\"",
+                "```",
+                "```anchor-kills",
+                "id\tfile\ttest reads /home/alice/z",
+                "```",
+                "after /Users/bob/q"
+              ],
+              "\n"
+            )
+
+    test "only text outside the diff and kill-map blocks is redacted" do
+      assert RecordHygiene.redact_record(@record, nil) ==
+               Enum.join(
+                 [
+                   "left: \"<home>\"",
+                   "```diff",
+                   "-    \"/home/alice/x\"",
+                   "test-slot: a source line",
+                   "```",
+                   "```",
+                   "right: \"<home>\"",
+                   "```",
+                   "```anchor-kills",
+                   "id\tfile\ttest reads /home/alice/z",
+                   "```",
+                   "after <home>"
+                 ],
+                 "\n"
+               )
+    end
+
+    test "record_leaks/1 reports only lines outside those blocks, by the record's line number" do
+      assert RecordHygiene.record_leaks(@record) == [
+               {1, :local_path},
+               {2, :scheduler_line},
+               {8, :local_path},
+               {13, :local_path}
+             ]
+    end
+
+    test "a redacted record has no record leaks, though its blocks still hold home paths" do
+      redacted = RecordHygiene.redact_record(@record, nil)
+      assert RecordHygiene.record_leaks(redacted) == []
+      assert RecordHygiene.leaks(redacted) != []
+    end
+
+    test "judge/3 reads a record the same way: a home path in a diff block is no finding" do
+      record = "x\n```diff\n+ \"/home/alice/x\"\n```\n"
+      path = "test/sabotage_records/a-20260105-branch_a.md"
+      assert RecordHygiene.judge(%{path => record}, [], ~D[2026-01-10]) == []
+    end
+  end
+
   describe "judge/3: committed records against the shrink-only list" do
     @newest ~D[2026-01-10]
     @old "test/sabotage_records/x-20260105-branch_x.md"
