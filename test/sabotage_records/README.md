@@ -45,6 +45,10 @@ performed.
 Derive `<domain>` from the check or module under test. Reuse a word already here
 before coining a synonym.
 
+- `record_hygiene` — `Anchor.Domain.Sabotage.RecordHygiene` and the record
+  guard `test/anchor/sabotage_record_hygiene_test.exs` (ADR 004): what a
+  committed record must not carry. Its generated runs fall under `sabotage`
+  with the rest of the runner's Domain modules; this word holds hand reds.
 - `config` — configuration parsing and loading: the pure parser
   (`Anchor.Config`), the pure candidate-path computation
   (`Anchor.Domain.ConfigPaths`), and the file adapter

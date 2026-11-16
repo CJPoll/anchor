@@ -20,6 +20,7 @@ are adopted and are never reused.
 - [001 -- Five-Bucket Architecture](./001-five-bucket-architecture.md)
 - [002 -- Fast, Comprehensive, High-Signal Tests](./002-fast-comprehensive-high-signal-tests.md)
 - [003 -- One File Per Sabotage Run, Beside the Suite It Describes](./003-sabotage-records-one-file-per-run.md)
+- [004 -- Sabotage Records Carry No Local-Only Text](./004-sabotage-records-carry-no-local-only-text.md)
 
 ## Adding a new ADR
 

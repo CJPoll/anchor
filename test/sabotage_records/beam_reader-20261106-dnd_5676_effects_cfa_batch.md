@@ -133,14 +133,14 @@ test/anchor/adapters/beam_reader_test.exs:365 test read_ebins/1 one bad file amo
 
 match (=) failed
      The following variables were pinned:
-       z_path = "/home/cjpoll/.local/worktrees/anchor/dnd-5676-effects-cfa-batch/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Z.beam"
+       z_path = "<worktree>/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Z.beam"
 code:  assert [%Beam{module: Plain}, error: %{path: ^z_path, reason: {:unreadable, _reason}}] =
               BeamReader.read_ebins(demo: dir)
 left:  [
               %Anchor.Domain.Graph.Beam{module: AnchorFixtures.BeamReaderTest.Plain},
               error: %{path: ^z_path, reason: {:unreadable, _reason}}
             ]
-right: [error: %{module: AnchorFixtures.BeamReaderTest.Plain, reason: :no_debug_info, path: "/home/cjpoll/.local/worktrees/anchor/dnd-5676-effects-cfa-batch/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Plain.beam"}, error: %{module: nil, reason: {:unreadable, {:not_a_beam_file, "garbage"}}, path: "/home/cjpoll/.local/worktrees/anchor/dnd-5676-effects-cfa-batch/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Z.beam"}]
+right: [error: %{module: AnchorFixtures.BeamReaderTest.Plain, reason: :no_debug_info, path: "<worktree>/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Plain.beam"}, error: %{module: nil, reason: {:unreadable, {:not_a_beam_file, "garbage"}}, path: "<worktree>/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Z.beam"}]
 
 ```
 
@@ -846,14 +846,14 @@ test/anchor/adapters/beam_reader_test.exs:365 test read_ebins/1 one bad file amo
 
 match (=) failed
      The following variables were pinned:
-       z_path = "/home/cjpoll/.local/worktrees/anchor/dnd-5676-effects-cfa-batch/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Z.beam"
+       z_path = "<worktree>/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Z.beam"
 code:  assert [%Beam{module: Plain}, error: %{path: ^z_path, reason: {:unreadable, _reason}}] =
               BeamReader.read_ebins(demo: dir)
 left:  [
               %Anchor.Domain.Graph.Beam{module: AnchorFixtures.BeamReaderTest.Plain},
               error: %{path: ^z_path, reason: {:unreadable, _reason}}
             ]
-right: [%Anchor.Domain.Graph.Beam{module: AnchorFixtures.BeamReaderTest.Plain, app: :demo, path: "/home/cjpoll/.local/worktrees/anchor/dnd-5676-effects-cfa-batch/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Plain.beam", elixir: %{attributes: [behaviour: AnchorFixtures.BeamReaderTest.Contract, tag: :hello], module: AnchorFixtures.BeamReaderTest.Plain, file: "lib/plain.ex", deprecated: [], unreachable: [], anno: {1, 1}, struct: [%{default: nil, field: :a, required: false}, %{default: 2, field: :b, required: false}], after_verify: [], defines_behaviour: false, definitions: [{{:run, 1}, :def, [line: 8, column: 7], [{[line: 8, column: 7], [{:x, [version: 0, line: 8, column: 11], nil}], [], {:helper, [line: 8, column: 19], [{:x, [version: 0, line: 8, column: 26], nil}]}}]}, {{:helper, 1}, :defp, [line: 10, column: 8], [{[line: 10, column: 8], [{:x, [version: 0, line: 10, column: 15], nil}], [], {{:., [line: 10, column: 25], [:erlang, :+]}, [line: 10, column: 25], [{:x, [...], ...}, ...]}}]}, ...], ...}, ...}, ...]
+right: [%Anchor.Domain.Graph.Beam{module: AnchorFixtures.BeamReaderTest.Plain, app: :demo, path: "<worktree>/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Plain.beam", elixir: %{attributes: [behaviour: AnchorFixtures.BeamReaderTest.Contract, tag: :hello], module: AnchorFixtures.BeamReaderTest.Plain, file: "lib/plain.ex", deprecated: [], unreachable: [], anno: {1, 1}, struct: [%{default: nil, field: :a, required: false}, %{default: 2, field: :b, required: false}], after_verify: [], defines_behaviour: false, definitions: [{{:run, 1}, :def, [line: 8, column: 7], [{[line: 8, column: 7], [{:x, [version: 0, line: 8, column: 11], nil}], [], {:helper, [line: 8, column: 19], [{:x, [version: 0, line: 8, column: 26], nil}]}}]}, {{:helper, 1}, :defp, [line: 10, column: 8], [{[line: 10, column: 8], [{:x, [version: 0, line: 10, column: 15], nil}], [], {{:., [line: 10, column: 25], [:erlang, :+]}, [line: 10, column: 25], [{:x, [...], ...}, ...]}}]}, ...], ...}, ...}, ...]
 
 ```
 
@@ -1052,14 +1052,14 @@ test/anchor/adapters/beam_reader_test.exs:365 test read_ebins/1 one bad file amo
 
 match (=) failed
      The following variables were pinned:
-       z_path = "/home/cjpoll/.local/worktrees/anchor/dnd-5676-effects-cfa-batch/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Z.beam"
+       z_path = "<worktree>/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Z.beam"
 code:  assert [%Beam{module: Plain}, error: %{path: ^z_path, reason: {:unreadable, _reason}}] =
               BeamReader.read_ebins(demo: dir)
 left:  [
               %Anchor.Domain.Graph.Beam{module: AnchorFixtures.BeamReaderTest.Plain},
               error: %{path: ^z_path, reason: {:unreadable, _reason}}
             ]
-right: [%Anchor.Domain.Graph.Beam{module: AnchorFixtures.BeamReaderTest.Plain, app: :demo, path: "/home/cjpoll/.local/worktrees/anchor/dnd-5676-effects-cfa-batch/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Plain.beam", elixir: %{attributes: [behaviour: AnchorFixtures.BeamReaderTest.Contract, tag: :hello], module: AnchorFixtures.BeamReaderTest.Plain, file: "lib/plain.ex", deprecated: [], unreachable: [], anno: {1, 1}, struct: [%{default: nil, field: :a, required: false}, %{default: 2, field: :b, required: false}], after_verify: [], defines_behaviour: false, definitions: [{{:run, 1}, :def, [line: 8, column: 7], [{[line: 8, column: 7], [{:x, [version: 0, line: 8, column: 11], nil}], [], {:helper, [line: 8, column: 19], [{:x, [version: 0, line: 8, column: 26], nil}]}}]}, {{:helper, 1}, :defp, [line: 10, column: 8], [{[line: 10, column: 8], [{:x, [version: 0, line: 10, column: 15], nil}], [], {{:., [line: 10, column: 25], [:erlang, :+]}, [line: 10, column: 25], [{:x, [...], ...}, ...]}}]}, ...], ...}, ...}, ...]
+right: [%Anchor.Domain.Graph.Beam{module: AnchorFixtures.BeamReaderTest.Plain, app: :demo, path: "<worktree>/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Plain.beam", elixir: %{attributes: [behaviour: AnchorFixtures.BeamReaderTest.Contract, tag: :hello], module: AnchorFixtures.BeamReaderTest.Plain, file: "lib/plain.ex", deprecated: [], unreachable: [], anno: {1, 1}, struct: [%{default: nil, field: :a, required: false}, %{default: 2, field: :b, required: false}], after_verify: [], defines_behaviour: false, definitions: [{{:run, 1}, :def, [line: 8, column: 7], [{[line: 8, column: 7], [{:x, [version: 0, line: 8, column: 11], nil}], [], {:helper, [line: 8, column: 19], [{:x, [version: 0, line: 8, column: 26], nil}]}}]}, {{:helper, 1}, :defp, [line: 10, column: 8], [{[line: 10, column: 8], [{:x, [version: 0, line: 10, column: 15], nil}], [], {{:., [line: 10, column: 25], [:erlang, :+]}, [line: 10, column: 25], [{:x, [...], ...}, ...]}}]}, ...], ...}, ...}, ...]
 
 ```
 
@@ -1263,14 +1263,14 @@ test/anchor/adapters/beam_reader_test.exs:365 test read_ebins/1 one bad file amo
 
 match (=) failed
      The following variables were pinned:
-       z_path = "/home/cjpoll/.local/worktrees/anchor/dnd-5676-effects-cfa-batch/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Z.beam"
+       z_path = "<worktree>/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Z.beam"
 code:  assert [%Beam{module: Plain}, error: %{path: ^z_path, reason: {:unreadable, _reason}}] =
               BeamReader.read_ebins(demo: dir)
 left:  [
               %Anchor.Domain.Graph.Beam{module: AnchorFixtures.BeamReaderTest.Plain},
               error: %{path: ^z_path, reason: {:unreadable, _reason}}
             ]
-right: [%Anchor.Domain.Graph.Beam{module: AnchorFixtures.BeamReaderTest.Plain, app: :demo, path: "/home/cjpoll/.local/worktrees/anchor/dnd-5676-effects-cfa-batch/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Plain.beam", elixir: %{attributes: [behaviour: AnchorFixtures.BeamReaderTest.Contract, tag: :hello], module: AnchorFixtures.BeamReaderTest.Plain, file: "lib/plain.ex", deprecated: [], unreachable: [], anno: {1, 1}, struct: [%{default: nil, field: :a, required: false}, %{default: 2, field: :b, required: false}], after_verify: [], defines_behaviour: false, definitions: [{{:run, 1}, :def, [line: 8, column: 7], [{[line: 8, column: 7], [{:x, [version: 0, line: 8, column: 11], nil}], [], {:helper, [line: 8, column: 19], [{:x, [version: 0, line: 8, column: 26], nil}]}}]}, {{:helper, 1}, :defp, [line: 10, column: 8], [{[line: 10, column: 8], [{:x, [version: 0, line: 10, column: 15], nil}], [], {{:., [line: 10, column: 25], [:erlang, :+]}, [line: 10, column: 25], [{:x, [...], ...}, ...]}}]}, ...], ...}, ...}, ...]
+right: [%Anchor.Domain.Graph.Beam{module: AnchorFixtures.BeamReaderTest.Plain, app: :demo, path: "<worktree>/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Plain.beam", elixir: %{attributes: [behaviour: AnchorFixtures.BeamReaderTest.Contract, tag: :hello], module: AnchorFixtures.BeamReaderTest.Plain, file: "lib/plain.ex", deprecated: [], unreachable: [], anno: {1, 1}, struct: [%{default: nil, field: :a, required: false}, %{default: 2, field: :b, required: false}], after_verify: [], defines_behaviour: false, definitions: [{{:run, 1}, :def, [line: 8, column: 7], [{[line: 8, column: 7], [{:x, [version: 0, line: 8, column: 11], nil}], [], {:helper, [line: 8, column: 19], [{:x, [version: 0, line: 8, column: 26], nil}]}}]}, {{:helper, 1}, :defp, [line: 10, column: 8], [{[line: 10, column: 8], [{:x, [version: 0, line: 10, column: 15], nil}], [], {{:., [line: 10, column: 25], [:erlang, :+]}, [line: 10, column: 25], [{:x, [...], ...}, ...]}}]}, ...], ...}, ...}, ...]
 
 ```
 
@@ -1477,14 +1477,14 @@ test/anchor/adapters/beam_reader_test.exs:365 test read_ebins/1 one bad file amo
 
 match (=) failed
      The following variables were pinned:
-       z_path = "/home/cjpoll/.local/worktrees/anchor/dnd-5676-effects-cfa-batch/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Z.beam"
+       z_path = "<worktree>/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Z.beam"
 code:  assert [%Beam{module: Plain}, error: %{path: ^z_path, reason: {:unreadable, _reason}}] =
               BeamReader.read_ebins(demo: dir)
 left:  [
               %Anchor.Domain.Graph.Beam{module: AnchorFixtures.BeamReaderTest.Plain},
               error: %{path: ^z_path, reason: {:unreadable, _reason}}
             ]
-right: [%Anchor.Domain.Graph.Beam{module: AnchorFixtures.BeamReaderTest.Plain, app: :demo, path: "/home/cjpoll/.local/worktrees/anchor/dnd-5676-effects-cfa-batch/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Plain.beam", elixir: %{attributes: [behaviour: AnchorFixtures.BeamReaderTest.Contract, tag: :hello], module: AnchorFixtures.BeamReaderTest.Plain, file: "lib/plain.ex", deprecated: [], unreachable: [], anno: {1, 1}, struct: [%{default: nil, field: :a, required: false}, %{default: 2, field: :b, required: false}], after_verify: [], defines_behaviour: false, definitions: [{{:run, 1}, :def, [line: 8, column: 7], [{[line: 8, column: 7], [{:x, [version: 0, line: 8, column: 11], nil}], [], {:helper, [line: 8, column: 19], [{:x, [version: 0, line: 8, column: 26], nil}]}}]}, {{:helper, 1}, :defp, [line: 10, column: 8], [{[line: 10, column: 8], [{:x, [version: 0, line: 10, column: 15], nil}], [], {{:., [line: 10, column: 25], [:erlang, :+]}, [line: 10, column: 25], [{:x, [...], ...}, ...]}}]}, ...], ...}, ...}, ...]
+right: [%Anchor.Domain.Graph.Beam{module: AnchorFixtures.BeamReaderTest.Plain, app: :demo, path: "<worktree>/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Plain.beam", elixir: %{attributes: [behaviour: AnchorFixtures.BeamReaderTest.Contract, tag: :hello], module: AnchorFixtures.BeamReaderTest.Plain, file: "lib/plain.ex", deprecated: [], unreachable: [], anno: {1, 1}, struct: [%{default: nil, field: :a, required: false}, %{default: 2, field: :b, required: false}], after_verify: [], defines_behaviour: false, definitions: [{{:run, 1}, :def, [line: 8, column: 7], [{[line: 8, column: 7], [{:x, [version: 0, line: 8, column: 11], nil}], [], {:helper, [line: 8, column: 19], [{:x, [version: 0, line: 8, column: 26], nil}]}}]}, {{:helper, 1}, :defp, [line: 10, column: 8], [{[line: 10, column: 8], [{:x, [version: 0, line: 10, column: 15], nil}], [], {{:., [line: 10, column: 25], [:erlang, :+]}, [line: 10, column: 25], [{:x, [...], ...}, ...]}}]}, ...], ...}, ...}, ...]
 
 ```
 

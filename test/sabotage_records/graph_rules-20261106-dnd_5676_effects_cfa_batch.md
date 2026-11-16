@@ -774,9 +774,6 @@ Finished in 0.3 seconds (0.3s async, 0.00s sync)
 .............
 Finished in 0.06 seconds (0.06s async, 0.00s sync)
 18 tests, 1 failure
-test-slot: HELD before queuing (walt_ui first, DND-3526): heavy-go: HOLD repo=anchor step=gate: load1 13.32 (holds at > 12.0); captain_cap=5
-test-slot: Fix: nothing to do; this run queues by itself once heavy-go says GO (re-asked every 30s, within --wait-timeout). A run already holding units keeps them.
-test-slot: heavy-go: GO after 60s held; queuing for 8 unit(s)
 ```
 
 ### Traps

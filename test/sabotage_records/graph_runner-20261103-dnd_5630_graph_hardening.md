@@ -186,7 +186,7 @@ With `Request.source_dirs` added and nothing reading it, the three files ran `45
      test/mix/tasks/anchor_graph_test.exs:213
      ** (FunctionClauseError) no function clause matching in anonymous fn/1 in Mix.Tasks.Anchor.GraphTest."test an umbrella's app-relative source paths are keyed from the umbrella root"/1
          # 1
-         [anchor: "/home/cjpoll/.local/worktrees/anchor/dnd-5630-graph-hardening/_build/test/lib/anchor/ebin"]
+         [anchor: "<worktree>/_build/test/lib/anchor/ebin"]
 ```
 
 After: the four files and the integration tests run `82 tests, 1 failure`, the one
@@ -246,7 +246,7 @@ imposes (untouched; it passes under the default bound).
      test/mix/tasks/anchor_graph_test.exs:213
      ** (FunctionClauseError) no function clause matching in anonymous fn/2 in Mix.Tasks.Anchor.GraphTest."test an umbrella's app-relative source paths are keyed from the umbrella root"/1
          # 1
-         "/home/cjpoll/.local/worktrees/anchor/dnd-5630-graph-hardening"
+         "<worktree>"
 ```
 
 ### E

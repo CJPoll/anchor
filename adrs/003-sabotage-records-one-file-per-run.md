@@ -10,6 +10,11 @@ summary table above the per-mutant sections. Standard unchanged — see
 "Amendment: generated records open with a summary table" under Required
 content.
 
+Narrowed by ADR 004 (`004-sabotage-records-carry-no-local-only-text.md`,
+2026-11-16) for two kinds of text: a record drops test-scheduler status lines
+and rewrites paths under a home or worktree directory, so its failure strings
+are verbatim except for those.
+
 ## Context
 
 ADR 002 states the rule that produces these records: *a test is not finished
@@ -280,6 +285,9 @@ adrs/sabotage_records/…                   # outside the test tree it describes
   to be: `^[a-z0-9_]+-[0-9]{8}-[A-Za-z0-9_]+\.md$`.
 
 ## References
+
+- ADR 004 (`004-sabotage-records-carry-no-local-only-text.md`) — what a record
+  must not carry, the one narrowing of *Failure strings verbatim*, and its gate.
 
 - ADR 002 (`002-fast-comprehensive-high-signal-tests.md`) — the sabotage rule
   this ADR gives a home to, and the catalogue of ways a sabotage run lies about

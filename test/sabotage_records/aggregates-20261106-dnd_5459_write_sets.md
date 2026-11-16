@@ -8579,7 +8579,7 @@ the model gives no analysis (`lib/anchor/domain/model.ex`). Result: `2 tests, 2 
                 label: "anchor.graph",
                 enforcement: :enforce,
                 key: nil,
-                file: "/home/cjpoll/.local/worktrees/anchor/dnd-5459-write-sets/test/fixtures/graph_canary/aggregate_write_sources/.anchor.yml",
+                file: "<worktree>/test/fixtures/graph_canary/aggregate_write_sources/.anchor.yml",
                 line: nil,
                 message: "rule 1 (id: \"aggregate_write_sources\", aggregate_write_sources): no Ecto repo found: no module declares @behaviour Ecto.Repo and aggregates.repos is empty. Fix: list the repo under aggregates.repos."
               }
@@ -8603,7 +8603,7 @@ the model gives no analysis (`lib/anchor/domain/model.ex`). Result: `2 tests, 2 
                   label: "anchor.graph",
                   enforcement: :enforce,
                   key: nil,
-                  file: "/home/cjpoll/.local/worktrees/anchor/dnd-5459-write-sets/test/fixtures/graph_canary/aggregate_write_sources/.anchor.yml",
+                  file: "<worktree>/test/fixtures/graph_canary/aggregate_write_sources/.anchor.yml",
                   line: nil,
                   message: "rule 1 (id: \"aggregate_write_sources\", aggregate_write_sources): no Ecto repo found: no module declares @behaviour Ecto.Repo and aggregates.repos is empty. Fix: list the repo under aggregates.repos."
                 }

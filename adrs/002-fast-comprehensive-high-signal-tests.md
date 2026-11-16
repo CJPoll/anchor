@@ -212,7 +212,9 @@ load-bearing — and the row is now a bug report — or the value is genuinely
 prospective, which is a real answer a deleted row would have hidden.
 
 Records are kept per ADR 003 (`003-sabotage-records-one-file-per-run.md`), in
-`test/sabotage_records/`, with the failure string copied verbatim.
+`test/sabotage_records/`, with the failure string copied verbatim (save the
+local-only text ADR 004 removes: scheduler status lines and paths under a home
+or worktree directory).
 
 ### Never use `Process.sleep/1` for timing, and never `Application.put_env/3`
 

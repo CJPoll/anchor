@@ -477,4 +477,62 @@ defmodule Anchor.Domain.Sabotage.RecordTest do
       assert entry.content =~ "## Summary\n\nNone.\n\n## Mutants\n"
     end
   end
+
+  describe "local-only text never reaches a record" do
+    @root "/home/alice/.local/worktrees/repo/branch-x"
+
+    defp leaking_run do
+      failure = %{
+        @failure
+        | text:
+            "** (ExUnit.AssertionError)\n" <>
+              ~s(left:  "#{@root}/_build/test/anchor"\n) <>
+              ~s(right: "/home/bob/.local/worktrees/repo/ticket-1234/tmp/ATest/x.beam"\n) <>
+              "47 tests, 5 failures\n" <>
+              "test-slot: HELD before queuing (ticket-1234): heavy-go: HOLD repo=repo step=gate\n" <>
+              "  units 1-4 (4 of weight 4): ticket-1234 in /home/bob/w since 06:00 (pid 4, diagnostic)"
+      }
+
+      outcome = killed("aaa111")
+      %{run() | outcomes: [%{outcome | test_run: %{outcome.test_run | failures: [failure]}}]}
+    end
+
+    test "H1: a first failure's scheduler lines are dropped and its home paths rewritten" do
+      {:ok, [entry]} = Record.render(leaking_run(), ctx(%{root: @root}))
+
+      assert Anchor.Domain.Sabotage.RecordHygiene.leaks(entry.content) == []
+      refute entry.content =~ "ticket-1234"
+      assert entry.content =~ ~s(left:  "_build/test/anchor"\n)
+      assert entry.content =~ ~s(right: "<worktree>/tmp/ATest/x.beam"\n)
+      assert entry.content =~ "47 tests, 5 failures\n"
+    end
+
+    test "H2: an appended section is redacted the same way" do
+      existing = %{"test/sabotage_records" => ["sabotage-20261105-dnd_5484_records.md"]}
+      {:ok, [entry]} = Record.render(leaking_run(), ctx(%{root: @root, existing: existing}))
+
+      assert entry.mode == :append
+      assert Anchor.Domain.Sabotage.RecordHygiene.leaks(entry.content) == []
+    end
+
+    test "H4: a mutant's diff and the kill map are the project's source, kept as written" do
+      outcome = killed("aaa111")
+      literal = ~s(-    "/home/alice/x"\n+    "~/.local/worktrees/y"\n)
+      patch = outcome.mutant.patch <> literal
+      killer = {"test/anchor/x_test.exs", 9, "test reads /home/alice/x"}
+      outcome = %{outcome | mutant: %{outcome.mutant | patch: patch}, killers: [killer]}
+
+      {:ok, [entry]} = Record.render(%{leaking_run() | outcomes: [outcome]}, ctx(%{root: @root}))
+
+      assert entry.content =~ literal
+      assert entry.content =~ "\ttest/anchor/x_test.exs:9 test reads /home/alice/x\n"
+    end
+
+    test "H3: with no root in ctx a home path still loses its user and checkout" do
+      {:ok, [entry]} = Record.render(leaking_run(), ctx())
+
+      assert Anchor.Domain.Sabotage.RecordHygiene.leaks(entry.content) == []
+      assert entry.content =~ ~s(left:  "<worktree>/_build/test/anchor"\n)
+    end
+  end
 end

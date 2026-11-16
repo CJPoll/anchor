@@ -40,15 +40,24 @@ defmodule Anchor.Domain.Sabotage.Record do
   An appended section starts `## Run HH:MM UTC` and repeats sections 2 to 8
   one heading level down.
 
+  Every file's content goes through
+  `Anchor.Domain.Sabotage.RecordHygiene.redact_record/2` before it is returned
+  (ADR 004): outside the diff and kill-map blocks, a scheduler status line a
+  run's output picked up is dropped, and a path under a home or worktree
+  directory is rewritten (relative to `root` when it is under it), so a
+  committed record names no user, no checkout and no other run.
+
   `ctx`: `records` (the naming config, with `adr`: the rule a hand sabotage
   follows), `date` (`Date`), `time`
   (`"HH:MM"`), `branch`, `slot` (`RecordNaming.slot/2`), `base_sha`,
   `head_sha`, `command`, `version`, `test_command` (argv), `domain` (overrides the derived one, or `nil`),
-  `changed_tests` (`ChangedTests` results), and `existing` (`dir =>` the
-  record file names already there).
+  `changed_tests` (`ChangedTests` results), `existing` (`dir =>` the
+  record file names already there), and optionally `root` (the project's
+  absolute root, which a path in the run's output is made relative to).
   """
 
   alias Anchor.Domain.Sabotage.KillMap
+  alias Anchor.Domain.Sabotage.RecordHygiene
   alias Anchor.Domain.Sabotage.RecordNaming
   alias Anchor.Domain.Sabotage.Run
 
@@ -126,7 +135,10 @@ defmodule Anchor.Domain.Sabotage.Record do
       name = Path.basename(path)
       mode = if name in names, do: :append, else: :create
       {lacking, done} = lacking(app, run, ctx, done)
-      content = content(mode, domain, items, lacking, ctx)
+
+      content =
+        mode |> content(domain, items, lacking, ctx) |> RecordHygiene.redact_record(root(ctx))
+
       existing = Map.update(existing, dir, [name], &[name | &1])
       {:cont, {:ok, [%{path: path, content: content, mode: mode} | entries], existing, done}}
     else
@@ -156,6 +168,9 @@ defmodule Anchor.Domain.Sabotage.Record do
 
     {tests, Enum.into(tests, done, &{&1.file, &1.line})}
   end
+
+  # The run's project root, so a path under it is written relative to it.
+  defp root(ctx), do: Map.get(ctx, :root)
 
   defp claims?(test, app, cfg) do
     test_app = RecordNaming.app_for(test.file)

@@ -99,7 +99,7 @@ test/anchor/adapters/source_patcher_test.exs:181 test files_in/1 lists the regul
 
 Got value:
 
-    "/home/cjpoll/.local/worktrees/anchor/dnd-6070-anchor-mirror-selection/tmp/Anchor.Adapters.SourcePatcherTest/test-files_in-1-lists-the-regular-files-directly-in-each-directory,-sorted;-a-missing-one-is-none-d43e3f84/a"
+    "<worktree>/tmp/Anchor.Adapters.SourcePatcherTest/test-files_in-1-lists-the-regular-files-directly-in-each-directory,-sorted;-a-missing-one-is-none-d43e3f84/a"
 
 ```
 
@@ -225,7 +225,7 @@ test/anchor/adapters/source_patcher_test.exs:181 test files_in/1 lists the regul
 
 Got value:
 
-    "/home/cjpoll/.local/worktrees/anchor/dnd-6070-anchor-mirror-selection/tmp/Anchor.Adapters.SourcePatcherTest/test-files_in-1-lists-the-regular-files-directly-in-each-directory,-sorted;-a-missing-one-is-none-d43e3f84/a"
+    "<worktree>/tmp/Anchor.Adapters.SourcePatcherTest/test-files_in-1-lists-the-regular-files-directly-in-each-directory,-sorted;-a-missing-one-is-none-d43e3f84/a"
 
 ```
 
