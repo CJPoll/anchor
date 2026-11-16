@@ -375,6 +375,18 @@ defmodule Anchor.Domain.Checks.NoTransitiveDependencyTest do
                NoTransitiveDependency.find_dependency_path(modules_map, S, Forbidden)
     end
 
+    test "of two routes, the path is the first in dependency order, not the shortest" do
+      modules_map = %{
+        S => %{direct_dependencies: [A, B]},
+        A => %{direct_dependencies: [C]},
+        B => %{direct_dependencies: [Forbidden]},
+        C => %{direct_dependencies: [Forbidden]}
+      }
+
+      assert {[S, A, C, Forbidden], 3} =
+               NoTransitiveDependency.find_dependency_path(modules_map, S, Forbidden)
+    end
+
     test "a module first met on the current branch (a cycle) is still left for a later route" do
       modules_map = %{
         S => %{direct_dependencies: [A]},
