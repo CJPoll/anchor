@@ -1321,6 +1321,10 @@ defmodule Anchor.Domain.DependencyAnalyzer do
         {:quote, _meta, args}, locals when is_list(args) ->
           {nil, locals}
 
+        # `@def helper(1)` has the shape of a `def` under its `@`; it defines nothing.
+        {:@, _meta, _args} = node, locals ->
+          {AttributeNode.without_name(node), locals}
+
         {kind, _meta, [head | _rest]} = node, locals when kind in @def_kinds ->
           {node, add_signatures(locals, head)}
 

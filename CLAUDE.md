@@ -106,9 +106,11 @@ name is `{name, meta, context_atom}` (DND-1310). The table in
 
 A module attribute with such a name is not that form either: `@use X` is
 `{:@, meta, [{:use, meta, [X]}]}`, the shape of a `use` call under its `@`. A
-walker that descends into an `@` node walks only its value, through
-`Anchor.Domain.AttributeNode` (`children/1` for a recursive walker,
-`without_name/1` in a `Macro.prewalk/3` callback). The same table drives the
+walker that descends into an `@` node walks only its value. A walker with no
+`@` clause of its own (the dependency analyzer's main walk and
+`Sabotage.OrphanCheck` have one) does it through `Anchor.Domain.AttributeNode`
+(`children/1` for a recursive walker, `without_name/1` in a `Macro.prewalk/3`
+callback). The same table drives the
 `*_attribute_names_test.exs` files.
 
 A rule may carry only the keys its type reads, and needs a selector (`paths`,

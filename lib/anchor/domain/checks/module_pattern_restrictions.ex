@@ -151,6 +151,7 @@ defmodule Anchor.Domain.Checks.ModulePatternRestrictions do
         {:defp, meta, [{^function_atom, _, _} | _]} = node, _acc ->
           {node, Keyword.get(meta, :line)}
 
+        # An attribute named `def` or `defp` is not the definition.
         node, acc ->
           {AttributeNode.without_name(node), acc}
       end)

@@ -19,10 +19,13 @@ defmodule Anchor.Domain.AttributeNode do
 
   @doc """
   The code under the attribute node `node`: `[value]` for `@name value`, `[]`
-  for a read `@name`, and the node's own arguments for any other `@` node.
+  for a read `@name`, the arguments of an attribute given several
+  (`@def foo, do: x` parses, though it does not compile), and the node's own
+  arguments for any other `@` node.
   """
   @spec children(Macro.t()) :: [Macro.t()]
-  def children({:@, _meta, [{name, _name_meta, [value]}]}) when is_atom(name), do: [value]
+  def children({:@, _meta, [{name, _name_meta, args}]}) when is_atom(name) and is_list(args),
+    do: args
 
   def children({:@, _meta, [{name, _name_meta, context}]})
       when is_atom(name) and is_atom(context),

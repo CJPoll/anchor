@@ -48,6 +48,22 @@ defmodule Anchor.Domain.Sabotage.ChangedTestsTest do
     assert in_ranges([{7, 0}]) == {:ok, []}
   end
 
+  test "an attribute named test or describe is not a test" do
+    source = """
+    defmodule BTest do
+      use ExUnit.Case
+
+      @test "not a test"
+      @describe "not a describe"
+
+      test "real", do: assert(true)
+    end
+    """
+
+    assert ChangedTests.in_ranges(source, "test/b_test.exs", [{1, 8}]) ==
+             {:ok, [%{file: "test/b_test.exs", line: 7, name: "test real"}]}
+  end
+
   test "a file that does not parse is an error naming the line" do
     assert {:error, {_line, _message}} =
              ChangedTests.in_ranges("test \"x\" do", "test/b_test.exs", [{1, 1}])

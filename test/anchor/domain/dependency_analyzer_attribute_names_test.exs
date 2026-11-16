@@ -20,15 +20,18 @@ defmodule Anchor.Domain.DependencyAnalyzerAttributeNamesTest do
   # shape of a block call's arguments) and from a `fn`, then read in a function.
   # The references after it prove the attribute left the lexical environment
   # alone: `__MODULE__.Sub` (a quote would suppress it), `Mod` (an alias would
-  # rewrite it) and a local call (an import would claim it).
+  # rewrite it) and `helper(x)`, the imported `Foo.helper/1` (an attribute read
+  # as a definition, `@def helper(1)`, would make it a local call).
   defp source(name) do
     """
     defmodule Sample.AttrUser do
       alias Foo.Bar
+      import Foo
 
       @#{name} Other.Mod
       @#{name} [do: Third.Mod]
       @#{name} fn x -> x end
+      @#{name} helper(1)
 
       def run(x) do
         y = Bar.call(@#{name})
@@ -58,8 +61,8 @@ defmodule Anchor.Domain.DependencyAnalyzerAttributeNamesTest do
     test "the plain-named baseline has the expected dependencies (positive control)" do
       assert %{
                module_names: [Sample.AttrUser],
-               direct: [Foo.Bar, Mod, Other.Mod, Sample.AttrUser.Sub, Third.Mod],
-               call: [Foo.Bar, Mod, Sample.AttrUser.Sub],
+               direct: [Foo, Foo.Bar, Mod, Other.Mod, Sample.AttrUser.Sub, Third.Mod],
+               call: [Foo, Foo.Bar, Mod, Sample.AttrUser.Sub],
                unresolved: [],
                uses: []
              } = analysis(ast(source(:value)))

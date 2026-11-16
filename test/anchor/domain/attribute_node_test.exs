@@ -17,6 +17,13 @@ defmodule Anchor.Domain.AttributeNodeTest do
       assert AttributeNode.children(node) == []
     end
 
+    test "an attribute given several arguments has those arguments, never its name" do
+      assert {:@, _meta, [{:def, _name_meta, [_name, _block]}]} =
+               node = ast("@def foo, do: :x")
+
+      assert AttributeNode.children(node) == [{:foo, [line: 1], nil}, [do: :x]]
+    end
+
     test "an @ node of any other shape keeps its arguments" do
       node = {:@, [], [1, 2]}
       assert AttributeNode.children(node) == [1, 2]

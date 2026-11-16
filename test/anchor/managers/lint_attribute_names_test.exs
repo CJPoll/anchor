@@ -37,7 +37,7 @@ defmodule Anchor.Managers.LintAttributeNamesTest do
       "type" => "no_direct_dependency",
       "match" => "call",
       "forbidden_patterns" => ["*.Sub"],
-      "forbidden_functions" => ["Foo.Bar.call/1"]
+      "forbidden_functions" => ["Foo.Bar.call/1", "Foo.helper/1"]
     },
     %{"type" => "no_transitive_dependency", "forbidden_modules" => ["Foo.Bar"]},
     %{"type" => "must_use_module", "required_modules" => ["Other.Mod"]},
@@ -61,20 +61,25 @@ defmodule Anchor.Managers.LintAttributeNamesTest do
           })
 
   # The attribute is set from a module, from a keyword list with a `do:` (the
-  # shape of a block call's arguments) and read inside a function; the
-  # references after it prove the attribute left the lexical environment alone.
+  # shape of a block call's arguments), from a local call and from a struct
+  # built outside its module, and read inside a function; the references after
+  # it prove the attribute left the lexical environment alone (`helper(x)` is
+  # the imported `Foo.helper/1`).
   defp source(name) do
     """
     defmodule Sample.AttrUser do
       alias Foo.Bar
+      import Foo
 
       @#{name} Other.Mod
       @#{name} [do: Third.Mod]
+      @#{name} helper(1)
+      @#{name} %Other.Mod{x: 1}
 
       def run(x) do
         y = Bar.call(@#{name})
         __MODULE__.Sub.go(y)
-        Mod.go(x)
+        Mod.go(helper(x))
       end
     end
     """
@@ -108,7 +113,10 @@ defmodule Anchor.Managers.LintAttributeNamesTest do
     assert fail_closed == []
 
     assert Enum.map(by_check[Anchor.Check.NoDependency], &elem(&1, 2)) |> Enum.sort() ==
-             ["Foo.Bar", "Foo.Bar.call/1", "Sample.AttrUser.Sub"]
+             ["Foo.Bar", "Foo.Bar.call/1", "Foo.helper/1", "Sample.AttrUser.Sub"]
+
+    # The struct built outside its module is flagged.
+    assert by_check[Anchor.Check.StructOwnedByModule] != []
 
     assert by_check[Anchor.Check.NoTransitiveDependency] != []
 
