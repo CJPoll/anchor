@@ -44,7 +44,7 @@ never an adapter.
 | Framework | `Anchor.Check.*` (Credo checks, `Anchor.Check.Base`, `Anchor.Check.Source`), `Anchor.Aggregate` (the compile-time macro, DND-5476), `Anchor.Backstop` (the test-time backstop, DND-5480, in `lib/mix/tasks/anchor/backstop/`), `Mix.Tasks.Anchor.*` (`lib/mix/tasks/`; `Mix.Tasks.Anchor.Sabotage`, `.Graph`, `.Explain`), the `Anchor` module (by name), `Anchor.Sabotage.CoverageCollector` (an OTP process, in `lib/mix/tasks/anchor/sabotage/` so `mix anchor.graph` buckets it as Framework) |
 | Managers | `Anchor.Managers.Lint`, `Anchor.Managers.AstBaseline`, `Anchor.Managers.Sabotage` (`.Runner`, `.Coverage`, `.CoverageCompare`, `.Replay`, `.Behaviours`, `.Verify`), `Anchor.Managers.Graph` (`.Request`), `Anchor.Managers.Explain`, `Anchor.Managers.Backstop` |
 | Side Effects | ports: `Anchor.Adapters.ConfigLoader`, `ChangeSource`, `BeamSource`, `Tracing`, `InProcessTests`, `ProjectModuleSource`, `CoverageStore`, `BaselineStore`, `GitBase`, `LintKeys`, `SourceSource`, `GraphStore`, `TestExecution`, `SourceMutation`, `BehaviourSource`, `WriteRecorder`, `TransactionProbe`; adapters: `ConfigFile`, `CredoKeys`, `GitChangeSource`, `BeamReader`, `BehaviourReader`, `CallTracer`, `SuiteRunner`, `ProjectModules`, `CoverageFile`, `RecordFile` (port `RecordStore`), `BaselineFile`, `GitShow`, `SourceReader`, `GraphArtifact`, `TestRunner`, `SourcePatcher`, `GitStatus`, `GitWorktree`, `TelemetryRecorder`, `EctoTransactionProbe` (`lib/anchor/adapters/`); `GitEnv`, the environment the git adapters run git with (DND-5581); `Anchor.Sabotage.ExUnitFormatter` (`lib/anchor/sabotage/`) |
-| Domain | everything under `lib/anchor/domain/`, including `Anchor.Domain.Sabotage.*` (`Mutator`, `Operators`, `DiffHunks`, `FunctionSpans`, `Scope`, `CoverageMap`, `Record`, `RecordNaming`, `KillMap`, `ChangedTests`, `TestPath`: the one rule for a path handed to `mix test`, DND-5640; `Verify`, the verdict of `mix anchor.sabotage verify`, DND-5516; `ScanReport`, the nightly scan's report, DND-5490) and `Anchor.Domain.Graph.*`, the graph rules (`GraphRules.*`), `Model`, `Classification`, `Interfaces`, `Explain`, `Subject`, `RuleShapes`, `Placement` (`.CallGraph`, `.FunctionFacts`, `.Ownership`, `.Rules`), `Proposal` |
+| Domain | everything under `lib/anchor/domain/`, including `Anchor.Domain.Sabotage.*` (`Mutator`, `Operators`, `DiffHunks`, `FunctionSpans`, `Scope`, `CoverageMap`, `Record`, `RecordNaming`, `RecordHygiene` (what a record must not carry, ADR 004), `KillMap`, `ChangedTests`, `TestPath`: the one rule for a path handed to `mix test`, DND-5640; `Verify`, the verdict of `mix anchor.sabotage verify`, DND-5516; `ScanReport`, the nightly scan's report, DND-5490) and `Anchor.Domain.Graph.*`, the graph rules (`GraphRules.*`), `Model`, `Classification`, `Interfaces`, `Explain`, `Subject`, `RuleShapes`, `Placement` (`.CallGraph`, `.FunctionFacts`, `.Ownership`, `.Rules`), `Proposal` |
 
 ADR 001's module map (*How this maps to Anchor*) lists every `lib/` module
 with its bucket; `test/anchor/adr_module_map_test.exs` fails on a module with
@@ -686,6 +686,11 @@ reader lists the dirs `Record.dir_globs/1` names, never one glob. Its `anchor-ki
 (source `kill_map`, after `coverage`, before `mirror`) and what DND-5485
 replays. `RecordFile.create/3` never overwrites; a README is never written;
 nothing is staged or committed. The date is a fact the Mix task reads.
+Every record's text goes through `RecordHygiene.redact/2` (ADR 004): scheduler
+status lines are dropped and paths under a home or worktree directory are
+rewritten (relative to the run's root when under it).
+`test/anchor/sabotage_record_hygiene_test.exs` fails on a record that still
+holds one, against the shrink-only `.anchor/sabotage/record_leaks.txt`.
 
 ## The survivors list (DND-5483)
 

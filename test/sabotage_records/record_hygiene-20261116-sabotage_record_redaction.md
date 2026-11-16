@@ -19,7 +19,7 @@ watched by hand: the tests written before the fix, and the mutants of
 |---|---|---|---|
 | A | `Record.render/2` with no redaction (before this branch) | `record_test.exs` H1, H2, H3 | 3 failures |
 | B | `Runner.recording/7` builds its ctx with `root: nil` | `sabotage_run_test.exs` "a path under the run's root in a failure is written relative to it" | 1 failure |
-| C | `.anchor/sabotage_record_leaks.txt` without the `cfa-20261106-...` entry, plus an entry `zzz-20261120-later.md` | `sabotage_record_hygiene_test.exs` "every committed record is clean, or listed while it still leaks" | 1 failure |
+| C | `.anchor/sabotage/record_leaks.txt` without the `cfa-20261106-...` entry, plus an entry `zzz-20261120-later.md` | `sabotage_record_hygiene_test.exs` "every committed record is clean, or listed while it still leaks" | 1 failure |
 
 A (H1, verbatim):
 
@@ -68,24 +68,7 @@ C:
      Fix: a :leak is a record carrying a scheduler line or a home path: ...
 ```
 
-## Tests the generated run left lacking a red
-
-The rerun lists four tests no generated mutant failed. Three have their red
-above: `record_test.exs` H3 (row A), the runner's root test (row B) and the
-guard (row C). The fourth:
-
-| Row | Mutation | Test that failed | Result |
-|---|---|---|---|
-| D | `@start` (the "no path character before it" lookbehind of every path pattern) set to `""` | `record_hygiene_test.exs:94` "paths that are not under a home directory are kept" | 1 test, 1 failure |
-
-```
-  1) test redact/2: local absolute paths paths that are not under a home directory are kept (Anchor.Domain.Sabotage.RecordHygieneTest)
-     test/anchor/domain/sabotage/record_hygiene_test.exs:94
-     Assertion with == failed
-     code:  assert RecordHygiene.redact(text, @root) == text
-     left:  "/tmp/a /usr/lib/erlang /homework/x lib~"
-     right: "/tmp/a /usr/lib/erlang /homework/x lib/home/y"
-```
+@@LACKING@@
 
 ## Runner.recording/7 mutants, run by hand against the runner's tests
 

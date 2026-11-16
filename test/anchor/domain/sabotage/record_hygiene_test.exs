@@ -81,19 +81,41 @@ defmodule Anchor.Domain.Sabotage.RecordHygieneTest do
                "cd <worktree> now"
     end
 
-    test "any other home path loses the user name, macOS or Linux" do
+    test "any other home path becomes <home> and its project path, macOS or Linux" do
       assert RecordHygiene.redact("/Users/carol/src/app/lib/a.ex and /home/dave/notes", nil) ==
-               "~/src/app/lib/a.ex and ~/notes"
+               "<home>/lib/a.ex and <home>"
+    end
+
+    test "a home path with something before it is rewritten too" do
+      text = "file:///home/bob/x -I/home/bob/inc /var/home/bob/dev/p/test/t.exs"
+
+      assert RecordHygiene.redact(text, nil) ==
+               "file://<home> -I<home> /var<home>/test/t.exs"
+    end
+
+    test "the user name ends at closing punctuation, which is kept" do
+      text = "(/home/bob) PATH=/home/bob,x /home/bob:/usr/bin [/home/bob]"
+
+      assert RecordHygiene.redact(text, nil) ==
+               "(<home>) PATH=<home>,x <home>:/usr/bin [<home>]"
+    end
+
+    test "a kept project path that holds a home path of its own is rewritten as well" do
+      assert RecordHygiene.redact("/home/u/x/lib/home/y/z", nil) == "<home>/lib<home>"
     end
 
     test "a charlist, a list and a quoted path are each rewritten up to the quote" do
       text = ~s(~c"#{@root}/a", ["/home/bob/x/y"], '/home/bob/z')
-      assert RecordHygiene.redact(text, @root) == ~s(~c"a", ["~/x/y"], '~/z')
+      assert RecordHygiene.redact(text, @root) == ~s(~c"a", ["<home>"], '<home>')
     end
 
     test "paths that are not under a home directory are kept" do
-      text = "/tmp/a /usr/lib/erlang /homework/x lib/home/y"
+      text = "/tmp/a /usr/lib/erlang /homework/x lib/homey/y /home/ alone"
       assert RecordHygiene.redact(text, @root) == text
+    end
+
+    test "a sibling of the root is not the root" do
+      assert RecordHygiene.redact("#{@root}2/lib/a.ex", @root) == "<worktree>/lib/a.ex"
     end
 
     test "a redacted text has no leaks left" do
@@ -114,7 +136,7 @@ defmodule Anchor.Domain.Sabotage.RecordHygieneTest do
             ~s(left: "/home/alice/x"),
             "  units 1 (1 of weight 1): a in b since c (pid 1, diagnostic)",
             "/Users/carol/y",
-            "~/z and <worktree>/q are fine"
+            "~/z, <home>/a and <worktree>/q are fine"
           ],
           "\n"
         )
@@ -129,6 +151,17 @@ defmodule Anchor.Domain.Sabotage.RecordHygieneTest do
 
     test "a worktree path without the home prefix is still a leak" do
       assert RecordHygiene.leaks("x ~/.local/worktrees/repo/b/y") == [{1, :local_path}]
+    end
+
+    test "a home path anywhere in a line is a leak" do
+      text = "file:///home/bob/x\n-I/home/bob/inc\n/var/home/bob/p\n/usr/home/bob/p"
+
+      assert RecordHygiene.leaks(text) == [
+               {1, :local_path},
+               {2, :local_path},
+               {3, :local_path},
+               {4, :local_path}
+             ]
     end
 
     test "a clean text has none" do

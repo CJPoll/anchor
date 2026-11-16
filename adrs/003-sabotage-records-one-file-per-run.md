@@ -10,6 +10,11 @@ summary table above the per-mutant sections. Standard unchanged — see
 "Amendment: generated records open with a summary table" under Required
 content.
 
+Narrowed by ADR 004 (`004-sabotage-records-carry-no-local-only-text.md`,
+2026-11-16) for two kinds of text: a record drops test-scheduler status lines
+and rewrites paths under a home or worktree directory, so its failure strings
+are verbatim except for those.
+
 ## Context
 
 ADR 002 states the rule that produces these records: *a test is not finished
@@ -163,29 +168,6 @@ section requires. Neither replaces the other, and a hand-written record still
 needs only the body above. The standard is unchanged: the table is an index
 over the sections, never a substitute for a verbatim string.
 
-#### Amendment: a record carries nothing only one machine knows (2026-11-16)
-
-A record is committed, and this repository is public, so a record holds
-only what any checkout would show. A run's output can pick up two things
-that are not that: the status lines of a test scheduler the run was queued
-behind (they name other runs and their checkouts), and absolute paths under
-a home directory (they name the user and, for a worktree, the branch).
-
-- `mix anchor.sabotage run` redacts both in every record it writes
-  (`Anchor.Domain.Sabotage.RecordHygiene.redact/2`): a scheduler line is
-  dropped, a path under the run's root is written relative to it, another
-  worktree's path becomes `<worktree>/...`, and any other home path `~/...`.
-  This is the one exception to *failure strings verbatim*: a failure string
-  is kept except for those paths and lines.
-- A hand-written record follows the same rule: write a path relative to the
-  project root, and leave scheduler output out.
-- `test/anchor/sabotage_record_hygiene_test.exs` fails on any record under
-  `test/sabotage_records/` that carries either. Records committed before the
-  redaction are listed in `.anchor/sabotage_record_leaks.txt`, shrink only:
-  the test also fails on an entry whose file is clean or gone, and on an entry
-  dated after the list landed, so a new record can never be listed. Removing
-  those files from history is the owner's call; their entries go with them.
-
 ### No index file
 
 The directory gets a `README.md` describing the *convention* and listing the
@@ -301,11 +283,11 @@ adrs/sabotage_records/…                   # outside the test tree it describes
   the case *walk through* rather than fail everything — are not lint-shaped.
 - The **naming** rule is the one mechanically checkable part, should it ever need
   to be: `^[a-z0-9_]+-[0-9]{8}-[A-Za-z0-9_]+\.md$`.
-- **Local-only text is a mechanical gate** (amendment 2026-11-16): `mix test`
-  fails on a record holding a scheduler status line or a home-directory path,
-  through `test/anchor/sabotage_record_hygiene_test.exs`.
 
 ## References
+
+- ADR 004 (`004-sabotage-records-carry-no-local-only-text.md`) — what a record
+  must not carry, the one narrowing of *Failure strings verbatim*, and its gate.
 
 - ADR 002 (`002-fast-comprehensive-high-signal-tests.md`) — the sabotage rule
   this ADR gives a home to, and the catalogue of ways a sabotage run lies about

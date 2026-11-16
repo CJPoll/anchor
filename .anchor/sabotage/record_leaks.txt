@@ -3,11 +3,12 @@
 # Each file below was committed before `mix anchor.sabotage run` redacted its
 # records, and holds a scheduler status line or an absolute path under a home
 # directory (Anchor.Domain.Sabotage.RecordHygiene.leaks/1).
-# test/anchor/sabotage_record_hygiene_test.exs fails on any other record that
-# holds one, on an entry here whose file no longer leaks or is gone (remove it),
-# and on an entry dated after 2026-11-08, the newest file here when the list
-# landed: a new record is never listed. A purge of these files removes their
-# entries.
+# test/anchor/sabotage_record_hygiene_test.exs (ADR 004) fails on any other
+# record that holds one, on an entry here whose file no longer leaks or is gone
+# (remove it), on an entry dated after 2026-11-08 (the newest file here when
+# the list landed), and on an entry the test's own pinned copy of this list
+# does not hold: a new record is never listed. A purge of these files removes
+# their entries.
 test/sabotage_records/aggregates-20261103-dnd_5459_write_sets.md
 test/sabotage_records/aggregates-20261106-dnd_5459_write_sets.md
 test/sabotage_records/baseline-20261103-dnd_5648_graph_followups.md
