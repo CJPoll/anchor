@@ -102,8 +102,9 @@ defmodule Anchor.Domain.Checks.NoTransitiveDependency do
     path_description = format_dependency_path(path)
 
     # The line where the current module references the first hop of the path.
-    direct_dep = Enum.at(path, 1)
-    line = if direct_dep, do: find_module_reference_line(ast, direct_dep)
+    # The forbidden module is reachable and is not the current module, so the
+    # path always has a first hop.
+    line = find_module_reference_line(ast, Enum.at(path, 1))
 
     %Violation{
       message:
@@ -121,9 +122,13 @@ defmodule Anchor.Domain.Checks.NoTransitiveDependency do
   first path that order reaches, or `nil` when there is none. One visited set is
   shared by every branch of the search, so each module is expanded at most once
   and the search is linear in the graph's size. A module the search has left
-  without reaching the target cannot reach it by a route the search has not
-  already tried, so skipping it later reports the same path a search of every
-  route would.
+  without reaching the target reaches it, if at all, only through a module still
+  on the current branch, which a simple path from that branch cannot revisit
+  either; so skipping it later reports the same path a search of every simple
+  path would.
+
+  The count is there so a test can see how much was searched; the check itself
+  uses only the path.
   """
   @spec find_dependency_path(map(), module(), module()) :: {[module()] | nil, non_neg_integer()}
   def find_dependency_path(modules_map, start_module, target_module) do

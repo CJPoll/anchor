@@ -21,6 +21,14 @@ defmodule Anchor.Domain.Checks.NoTransitiveDependencyTest do
   alias Anchor.Domain.Checks.NoTransitiveDependency
   alias Anchor.Domain.Violation
 
+  # A path search that stops terminating (a cycle followed forever) fails its
+  # test at this heap bound, about 16 MB, instead of growing until the host
+  # kills the run. Every test here needs a small fraction of it.
+  setup do
+    Process.flag(:max_heap_size, %{size: 2_000_000, kill: true, error_logger: false})
+    :ok
+  end
+
   defp ast(source), do: Code.string_to_quoted!(source)
 
   defp rule(forbidden), do: %{type: :no_transitive_dependency, forbidden_modules: forbidden}
@@ -408,22 +416,24 @@ defmodule Anchor.Domain.Checks.NoTransitiveDependencyTest do
                NoTransitiveDependency.find_dependency_path(modules_map, Root, Elsewhere)
     end
 
-    test "detect_violations/3 reports the chain over a graph too deep to walk route by route" do
-      # 4^30 routes through the layers: only a search that expands each module
-      # once returns at all.
-      modules_map = layered_graph(4, 30)
-
-      source =
-        ast("""
-        defmodule Root do
-          def f, do: Bridge.call()
-        end
-        """)
+    test "detect_violations/3 reports the first path in dependency order, past a shared dead end" do
+      # A and B both reach the dead end C; the first route to Forbidden is
+      # through B, then D, though B -> Forbidden is shorter and comes later.
+      modules_map = %{
+        A => %{direct_dependencies: [C, B]},
+        B => %{direct_dependencies: [C, D, Forbidden]},
+        C => %{direct_dependencies: []},
+        D => %{direct_dependencies: [Forbidden]}
+      }
 
       assert [%Violation{} = violation] =
-               NoTransitiveDependency.detect_violations(source, [rule([Forbidden])], modules_map)
+               NoTransitiveDependency.detect_violations(
+                 a_refs_b(),
+                 [rule([Forbidden])],
+                 modules_map
+               )
 
-      assert violation.message =~ "dependency chain: Root -> Bridge -> Forbidden"
+      assert violation.message =~ "dependency chain: A -> B -> D -> Forbidden"
       assert violation.line == 2
     end
   end
