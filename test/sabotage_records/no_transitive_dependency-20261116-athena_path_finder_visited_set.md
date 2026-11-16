@@ -666,3 +666,559 @@ f88a5b16f4ee	lib/anchor/domain/checks/no_transitive_dependency.ex	Anchor.Domain.
 164de9cc3b92	lib/anchor/domain/checks/no_transitive_dependency.ex	Anchor.Domain.Checks.NoTransitiveDependency.search/5	return_input	killed	test/anchor/domain/checks/no_transitive_dependency_test.exs:110 test detect_violations/3 chain that never reaches the forbidden module passes ; test/anchor/domain/checks/no_transitive_dependency_test.exs:83 test detect_violations/3 direct dependency also counts as transitive, with no chain suffix ; test/anchor/domain/checks/no_transitive_dependency_test.exs:365 test find_dependency_path/3 a dead-end subtree reached by two routes is expanded once, and the path is the first in dependency order ; test/anchor/domain/checks/no_transitive_dependency_test.exs:62 test detect_violations/3 flags across a two-hop chain (A->B->C->Repo) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:203 test detect_violations/3 empty forbidden list flags nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:179 test detect_violations/3 module absent from the map yields nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:290 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_modules and forbidden_patterns both fire transitively ; test/anchor/domain/checks/no_transitive_dependency_test.exs:161 test detect_violations/3 cycle in the graph terminates and still detects ; test/anchor/domain/checks/no_transitive_dependency_test.exs:411 test find_dependency_path/3 detect_violations/3 reports the chain over a graph too deep to walk route by route ; test/anchor/domain/checks/no_transitive_dependency_test.exs:378 test find_dependency_path/3 of two routes, the path is the first in dependency order, not the shortest ; test/anchor/domain/checks/no_transitive_dependency_test.exs:357 test find_dependency_path/3 expands each module of a dense layered graph at most once ; test/anchor/domain/checks/no_transitive_dependency_test.exs:133 test detect_violations/3 self-reference does not produce a spurious hit (self removed) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:226 test detect_violations/3 no matching rules (empty rule list) flags nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:390 test find_dependency_path/3 a module first met on the current branch (a cycle) is still left for a later route ; test/anchor/domain/checks/no_transitive_dependency_test.exs:255 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_patterns flags a transitively-reached adapter ; test/anchor/domain/checks/no_transitive_dependency_test.exs:41 test detect_violations/3 flags a forbidden module reached through one intermediary (A->B->Repo)
 4cdad30be498	lib/anchor/domain/checks/no_transitive_dependency.ex	Anchor.Domain.Checks.NoTransitiveDependency.search/5	return_input	killed	test/anchor/domain/checks/no_transitive_dependency_test.exs:110 test detect_violations/3 chain that never reaches the forbidden module passes ; test/anchor/domain/checks/no_transitive_dependency_test.exs:83 test detect_violations/3 direct dependency also counts as transitive, with no chain suffix ; test/anchor/domain/checks/no_transitive_dependency_test.exs:365 test find_dependency_path/3 a dead-end subtree reached by two routes is expanded once, and the path is the first in dependency order ; test/anchor/domain/checks/no_transitive_dependency_test.exs:62 test detect_violations/3 flags across a two-hop chain (A->B->C->Repo) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:203 test detect_violations/3 empty forbidden list flags nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:179 test detect_violations/3 module absent from the map yields nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:290 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_modules and forbidden_patterns both fire transitively ; test/anchor/domain/checks/no_transitive_dependency_test.exs:161 test detect_violations/3 cycle in the graph terminates and still detects ; test/anchor/domain/checks/no_transitive_dependency_test.exs:411 test find_dependency_path/3 detect_violations/3 reports the chain over a graph too deep to walk route by route ; test/anchor/domain/checks/no_transitive_dependency_test.exs:378 test find_dependency_path/3 of two routes, the path is the first in dependency order, not the shortest ; test/anchor/domain/checks/no_transitive_dependency_test.exs:357 test find_dependency_path/3 expands each module of a dense layered graph at most once ; test/anchor/domain/checks/no_transitive_dependency_test.exs:133 test detect_violations/3 self-reference does not produce a spurious hit (self removed) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:226 test detect_violations/3 no matching rules (empty rule list) flags nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:390 test find_dependency_path/3 a module first met on the current branch (a cycle) is still left for a later route ; test/anchor/domain/checks/no_transitive_dependency_test.exs:255 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_patterns flags a transitively-reached adapter ; test/anchor/domain/checks/no_transitive_dependency_test.exs:41 test detect_violations/3 flags a forbidden module reached through one intermediary (A->B->Repo)
 ```
+
+## Run 09:20 UTC
+
+- **Code under test:** `Anchor.Domain.Checks.NoTransitiveDependency.continue_unless_found/1`, `Anchor.Domain.Checks.NoTransitiveDependency.dependencies_of/2`, `Anchor.Domain.Checks.NoTransitiveDependency.expand/2`, `Anchor.Domain.Checks.NoTransitiveDependency.find_dependency_path/3`, `Anchor.Domain.Checks.NoTransitiveDependency.search/5`
+- **Generated by:** `mix anchor.sabotage run --base dfb40e27ba9f53575ecf0d759c776199a3383a9e --print-survivor-lines` (Anchor 0.1.0), base dfb40e27ba9f53575ecf0d759c776199a3383a9e, head 2135bb4aa54321c56409bb2868f0526c393977ed
+
+### Summary
+
+| id | function | mutation | status | killers |
+|---|---|---|---|---|
+| 8ea5887d81d0 | `Anchor.Domain.Checks.NoTransitiveDependency.continue_unless_found/1` | narrow_clause | killed | 16 |
+| b664e814937e | `Anchor.Domain.Checks.NoTransitiveDependency.continue_unless_found/1` | narrow_clause | killed | 8 |
+| 9b7357cf880e | `Anchor.Domain.Checks.NoTransitiveDependency.continue_unless_found/1` | return_input [0] | killed | 16 |
+| 071c80053074 | `Anchor.Domain.Checks.NoTransitiveDependency.dependencies_of/2` | narrow_clause | killed | 2 |
+| 43859de243a3 | `Anchor.Domain.Checks.NoTransitiveDependency.dependencies_of/2` | narrow_clause | killed | 17 |
+| 5ec9cd839cc7 | `Anchor.Domain.Checks.NoTransitiveDependency.dependencies_of/2` | return_input [0] | killed | 16 |
+| b00fe4bda961 | `Anchor.Domain.Checks.NoTransitiveDependency.dependencies_of/2` | return_input [1] | killed | 17 |
+| 28ba59cc6dd8 | `Anchor.Domain.Checks.NoTransitiveDependency.expand/2` | return_input [1] | killed | 17 |
+| 42de7de20c55 | `Anchor.Domain.Checks.NoTransitiveDependency.find_dependency_path/3` | return_input [2] | invalid | 0 |
+| 74705366d1fe | `Anchor.Domain.Checks.NoTransitiveDependency.find_dependency_path/3` | return_input [0] | invalid | 0 |
+| d700ff8b7a71 | `Anchor.Domain.Checks.NoTransitiveDependency.find_dependency_path/3` | return_input [1] | invalid | 0 |
+| 4435d9f752a9 | `Anchor.Domain.Checks.NoTransitiveDependency.search/5` | force_condition [false] | killed | 6 |
+| f88a5b16f4ee | `Anchor.Domain.Checks.NoTransitiveDependency.search/5` | force_condition [true] | killed | 17 |
+| 286f65222171 | `Anchor.Domain.Checks.NoTransitiveDependency.search/5` | narrow_clause | killed | 17 |
+| 3e8e455549bc | `Anchor.Domain.Checks.NoTransitiveDependency.search/5` | narrow_clause | killed | 16 |
+| 164de9cc3b92 | `Anchor.Domain.Checks.NoTransitiveDependency.search/5` | return_input [2] | killed | 16 |
+| 4cdad30be498 | `Anchor.Domain.Checks.NoTransitiveDependency.search/5` | return_input [1] | killed | 16 |
+
+### Mutants
+
+#### 8ea5887d81d0 Anchor.Domain.Checks.NoTransitiveDependency.continue_unless_found/1 narrow_clause: killed
+
+```diff
+--- a/lib/anchor/domain/checks/no_transitive_dependency.ex
++++ b/lib/anchor/domain/checks/no_transitive_dependency.ex
+@@ -165,7 +165,7 @@
+   end
+ 
+   defp continue_unless_found({nil, state}), do: {:cont, {nil, state}}
+-  defp continue_unless_found(found), do: {:halt, found}
++  defp continue_unless_found(found) when node() == :__anchor_sabotage_never__, do: {:halt, found}
+ 
+   defp dependencies_of(modules_map, module) do
+     case Map.get(modules_map, module) do
+```
+
+Command: `mix test --max-cases 2 test/anchor/domain/checks/no_transitive_dependency_test.exs` (19 tests, 16 failures; tests selected by kill_map). Failed: test/anchor/domain/checks/no_transitive_dependency_test.exs:398 test find_dependency_path/3 a module first met on the current branch (a cycle) is still left for a later route, test/anchor/domain/checks/no_transitive_dependency_test.exs:211 test detect_violations/3 empty forbidden list flags nothing, test/anchor/domain/checks/no_transitive_dependency_test.exs:118 test detect_violations/3 chain that never reaches the forbidden module passes, test/anchor/domain/checks/no_transitive_dependency_test.exs:187 test detect_violations/3 module absent from the map yields nothing, test/anchor/domain/checks/no_transitive_dependency_test.exs:263 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_patterns flags a transitively-reached adapter, test/anchor/domain/checks/no_transitive_dependency_test.exs:169 test detect_violations/3 cycle in the graph terminates and still detects, test/anchor/domain/checks/no_transitive_dependency_test.exs:419 test find_dependency_path/3 detect_violations/3 reports the first path in dependency order, past a shared dead end, test/anchor/domain/checks/no_transitive_dependency_test.exs:373 test find_dependency_path/3 a dead-end subtree reached by two routes is expanded once, and the path is the first in dependency order, test/anchor/domain/checks/no_transitive_dependency_test.exs:386 test find_dependency_path/3 of two routes, the path is the first in dependency order, not the shortest, test/anchor/domain/checks/no_transitive_dependency_test.exs:141 test detect_violations/3 self-reference does not produce a spurious hit (self removed), test/anchor/domain/checks/no_transitive_dependency_test.exs:70 test detect_violations/3 flags across a two-hop chain (A->B->C->Repo), test/anchor/domain/checks/no_transitive_dependency_test.exs:234 test detect_violations/3 no matching rules (empty rule list) flags nothing, test/anchor/domain/checks/no_transitive_dependency_test.exs:49 test detect_violations/3 flags a forbidden module reached through one intermediary (A->B->Repo), test/anchor/domain/checks/no_transitive_dependency_test.exs:365 test find_dependency_path/3 expands each module of a dense layered graph at most once, test/anchor/domain/checks/no_transitive_dependency_test.exs:298 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_modules and forbidden_patterns both fire transitively, test/anchor/domain/checks/no_transitive_dependency_test.exs:91 test detect_violations/3 direct dependency also counts as transitive, with no chain suffix
+
+```
+test/anchor/domain/checks/no_transitive_dependency_test.exs:398 test find_dependency_path/3 a module first met on the current branch (a cycle) is still left for a later route
+** (FunctionClauseError) no function clause matching in Anchor.Domain.Checks.NoTransitiveDependency.continue_unless_found/1
+```
+
+#### b664e814937e Anchor.Domain.Checks.NoTransitiveDependency.continue_unless_found/1 narrow_clause: killed
+
+```diff
+--- a/lib/anchor/domain/checks/no_transitive_dependency.ex
++++ b/lib/anchor/domain/checks/no_transitive_dependency.ex
+@@ -164,7 +164,7 @@
+     end)
+   end
+ 
+-  defp continue_unless_found({nil, state}), do: {:cont, {nil, state}}
++  defp continue_unless_found({nil, state}) when node() == :__anchor_sabotage_never__, do: {:cont, {nil, state}}
+   defp continue_unless_found(found), do: {:halt, found}
+ 
+   defp dependencies_of(modules_map, module) do
+```
+
+Command: `mix test --max-cases 2 test/anchor/domain/checks/no_transitive_dependency_test.exs` (19 tests, 8 failures; tests selected by kill_map). Failed: test/anchor/domain/checks/no_transitive_dependency_test.exs:410 test find_dependency_path/3 an unreachable target yields nil after expanding each reachable module once, test/anchor/domain/checks/no_transitive_dependency_test.exs:141 test detect_violations/3 self-reference does not produce a spurious hit (self removed), test/anchor/domain/checks/no_transitive_dependency_test.exs:365 test find_dependency_path/3 expands each module of a dense layered graph at most once, test/anchor/domain/checks/no_transitive_dependency_test.exs:373 test find_dependency_path/3 a dead-end subtree reached by two routes is expanded once, and the path is the first in dependency order, test/anchor/domain/checks/no_transitive_dependency_test.exs:298 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_modules and forbidden_patterns both fire transitively, test/anchor/domain/checks/no_transitive_dependency_test.exs:419 test find_dependency_path/3 detect_violations/3 reports the first path in dependency order, past a shared dead end, test/anchor/domain/checks/no_transitive_dependency_test.exs:398 test find_dependency_path/3 a module first met on the current branch (a cycle) is still left for a later route, test/anchor/domain/checks/no_transitive_dependency_test.exs:169 test detect_violations/3 cycle in the graph terminates and still detects
+
+```
+test/anchor/domain/checks/no_transitive_dependency_test.exs:410 test find_dependency_path/3 an unreachable target yields nil after expanding each reachable module once
+** (ExUnit.AssertionError) 
+
+match (=) failed
+code:  assert {nil, 27} = NoTransitiveDependency.find_dependency_path(modules_map, Root, Elsewhere)
+left:  {nil, 27}
+right: {nil, 9}
+
+```
+
+#### 9b7357cf880e Anchor.Domain.Checks.NoTransitiveDependency.continue_unless_found/1 return_input [0]: killed
+
+```diff
+--- a/lib/anchor/domain/checks/no_transitive_dependency.ex
++++ b/lib/anchor/domain/checks/no_transitive_dependency.ex
+@@ -165,7 +165,7 @@
+   end
+ 
+   defp continue_unless_found({nil, state}), do: {:cont, {nil, state}}
+-  defp continue_unless_found(found), do: {:halt, found}
++  defp continue_unless_found(found), do: found
+ 
+   defp dependencies_of(modules_map, module) do
+     case Map.get(modules_map, module) do
+```
+
+Command: `mix test --max-cases 2 test/anchor/domain/checks/no_transitive_dependency_test.exs` (19 tests, 16 failures; tests selected by kill_map). Failed: test/anchor/domain/checks/no_transitive_dependency_test.exs:386 test find_dependency_path/3 of two routes, the path is the first in dependency order, not the shortest, test/anchor/domain/checks/no_transitive_dependency_test.exs:169 test detect_violations/3 cycle in the graph terminates and still detects, test/anchor/domain/checks/no_transitive_dependency_test.exs:234 test detect_violations/3 no matching rules (empty rule list) flags nothing, test/anchor/domain/checks/no_transitive_dependency_test.exs:91 test detect_violations/3 direct dependency also counts as transitive, with no chain suffix, test/anchor/domain/checks/no_transitive_dependency_test.exs:373 test find_dependency_path/3 a dead-end subtree reached by two routes is expanded once, and the path is the first in dependency order, test/anchor/domain/checks/no_transitive_dependency_test.exs:211 test detect_violations/3 empty forbidden list flags nothing, test/anchor/domain/checks/no_transitive_dependency_test.exs:263 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_patterns flags a transitively-reached adapter, test/anchor/domain/checks/no_transitive_dependency_test.exs:70 test detect_violations/3 flags across a two-hop chain (A->B->C->Repo), test/anchor/domain/checks/no_transitive_dependency_test.exs:118 test detect_violations/3 chain that never reaches the forbidden module passes, test/anchor/domain/checks/no_transitive_dependency_test.exs:398 test find_dependency_path/3 a module first met on the current branch (a cycle) is still left for a later route, test/anchor/domain/checks/no_transitive_dependency_test.exs:419 test find_dependency_path/3 detect_violations/3 reports the first path in dependency order, past a shared dead end, test/anchor/domain/checks/no_transitive_dependency_test.exs:187 test detect_violations/3 module absent from the map yields nothing, test/anchor/domain/checks/no_transitive_dependency_test.exs:298 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_modules and forbidden_patterns both fire transitively, test/anchor/domain/checks/no_transitive_dependency_test.exs:141 test detect_violations/3 self-reference does not produce a spurious hit (self removed), test/anchor/domain/checks/no_transitive_dependency_test.exs:49 test detect_violations/3 flags a forbidden module reached through one intermediary (A->B->Repo), test/anchor/domain/checks/no_transitive_dependency_test.exs:365 test find_dependency_path/3 expands each module of a dense layered graph at most once
+
+```
+test/anchor/domain/checks/no_transitive_dependency_test.exs:386 test find_dependency_path/3 of two routes, the path is the first in dependency order, not the shortest
+** (FunctionClauseError) no function clause matching in Enumerable.List.reduce/3
+```
+
+#### 071c80053074 Anchor.Domain.Checks.NoTransitiveDependency.dependencies_of/2 narrow_clause: killed
+
+```diff
+--- a/lib/anchor/domain/checks/no_transitive_dependency.ex
++++ b/lib/anchor/domain/checks/no_transitive_dependency.ex
+@@ -169,7 +169,7 @@
+ 
+   defp dependencies_of(modules_map, module) do
+     case Map.get(modules_map, module) do
+-      nil -> []
++      nil when node() == :__anchor_sabotage_never__ -> []
+       %{direct_dependencies: deps} -> deps
+     end
+   end
+```
+
+Command: `mix test --max-cases 2 test/anchor/domain/checks/no_transitive_dependency_test.exs` (19 tests, 2 failures; tests selected by kill_map). Failed: test/anchor/domain/checks/no_transitive_dependency_test.exs:298 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_modules and forbidden_patterns both fire transitively, test/anchor/domain/checks/no_transitive_dependency_test.exs:410 test find_dependency_path/3 an unreachable target yields nil after expanding each reachable module once
+
+```
+test/anchor/domain/checks/no_transitive_dependency_test.exs:298 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_modules and forbidden_patterns both fire transitively
+** (CaseClauseError) no case clause matching:
+
+    nil
+
+```
+
+#### 43859de243a3 Anchor.Domain.Checks.NoTransitiveDependency.dependencies_of/2 narrow_clause: killed
+
+```diff
+--- a/lib/anchor/domain/checks/no_transitive_dependency.ex
++++ b/lib/anchor/domain/checks/no_transitive_dependency.ex
+@@ -170,7 +170,7 @@
+   defp dependencies_of(modules_map, module) do
+     case Map.get(modules_map, module) do
+       nil -> []
+-      %{direct_dependencies: deps} -> deps
++      %{direct_dependencies: deps} when node() == :__anchor_sabotage_never__ -> deps
+     end
+   end
+ 
+```
+
+Command: `mix test --max-cases 2 test/anchor/domain/checks/no_transitive_dependency_test.exs` (19 tests, 17 failures; tests selected by kill_map). Failed: test/anchor/domain/checks/no_transitive_dependency_test.exs:373 test find_dependency_path/3 a dead-end subtree reached by two routes is expanded once, and the path is the first in dependency order, test/anchor/domain/checks/no_transitive_dependency_test.exs:169 test detect_violations/3 cycle in the graph terminates and still detects, test/anchor/domain/checks/no_transitive_dependency_test.exs:70 test detect_violations/3 flags across a two-hop chain (A->B->C->Repo), test/anchor/domain/checks/no_transitive_dependency_test.exs:118 test detect_violations/3 chain that never reaches the forbidden module passes, test/anchor/domain/checks/no_transitive_dependency_test.exs:91 test detect_violations/3 direct dependency also counts as transitive, with no chain suffix, test/anchor/domain/checks/no_transitive_dependency_test.exs:386 test find_dependency_path/3 of two routes, the path is the first in dependency order, not the shortest, test/anchor/domain/checks/no_transitive_dependency_test.exs:398 test find_dependency_path/3 a module first met on the current branch (a cycle) is still left for a later route, test/anchor/domain/checks/no_transitive_dependency_test.exs:211 test detect_violations/3 empty forbidden list flags nothing, test/anchor/domain/checks/no_transitive_dependency_test.exs:298 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_modules and forbidden_patterns both fire transitively, test/anchor/domain/checks/no_transitive_dependency_test.exs:419 test find_dependency_path/3 detect_violations/3 reports the first path in dependency order, past a shared dead end, test/anchor/domain/checks/no_transitive_dependency_test.exs:410 test find_dependency_path/3 an unreachable target yields nil after expanding each reachable module once, test/anchor/domain/checks/no_transitive_dependency_test.exs:49 test detect_violations/3 flags a forbidden module reached through one intermediary (A->B->Repo), test/anchor/domain/checks/no_transitive_dependency_test.exs:263 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_patterns flags a transitively-reached adapter, test/anchor/domain/checks/no_transitive_dependency_test.exs:365 test find_dependency_path/3 expands each module of a dense layered graph at most once, test/anchor/domain/checks/no_transitive_dependency_test.exs:187 test detect_violations/3 module absent from the map yields nothing, test/anchor/domain/checks/no_transitive_dependency_test.exs:141 test detect_violations/3 self-reference does not produce a spurious hit (self removed), test/anchor/domain/checks/no_transitive_dependency_test.exs:234 test detect_violations/3 no matching rules (empty rule list) flags nothing
+
+```
+test/anchor/domain/checks/no_transitive_dependency_test.exs:373 test find_dependency_path/3 a dead-end subtree reached by two routes is expanded once, and the path is the first in dependency order
+** (CaseClauseError) no case clause matching:
+
+    %{direct_dependencies: [A, B]}
+
+```
+
+#### 5ec9cd839cc7 Anchor.Domain.Checks.NoTransitiveDependency.dependencies_of/2 return_input [0]: killed
+
+```diff
+--- a/lib/anchor/domain/checks/no_transitive_dependency.ex
++++ b/lib/anchor/domain/checks/no_transitive_dependency.ex
+@@ -167,11 +167,8 @@
+   defp continue_unless_found({nil, state}), do: {:cont, {nil, state}}
+   defp continue_unless_found(found), do: {:halt, found}
+ 
+-  defp dependencies_of(modules_map, module) do
+-    case Map.get(modules_map, module) do
+-      nil -> []
+-      %{direct_dependencies: deps} -> deps
+-    end
++  defp dependencies_of(modules_map, _module) do
++    modules_map
+   end
+ 
+   defp format_dependency_path(nil), do: ""
+```
+
+Command: `mix test --max-cases 2 test/anchor/domain/checks/no_transitive_dependency_test.exs` (19 tests, 16 failures; tests selected by kill_map). Failed: test/anchor/domain/checks/no_transitive_dependency_test.exs:169 test detect_violations/3 cycle in the graph terminates and still detects, test/anchor/domain/checks/no_transitive_dependency_test.exs:141 test detect_violations/3 self-reference does not produce a spurious hit (self removed), test/anchor/domain/checks/no_transitive_dependency_test.exs:234 test detect_violations/3 no matching rules (empty rule list) flags nothing, test/anchor/domain/checks/no_transitive_dependency_test.exs:263 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_patterns flags a transitively-reached adapter, test/anchor/domain/checks/no_transitive_dependency_test.exs:49 test detect_violations/3 flags a forbidden module reached through one intermediary (A->B->Repo), test/anchor/domain/checks/no_transitive_dependency_test.exs:91 test detect_violations/3 direct dependency also counts as transitive, with no chain suffix, test/anchor/domain/checks/no_transitive_dependency_test.exs:70 test detect_violations/3 flags across a two-hop chain (A->B->C->Repo), test/anchor/domain/checks/no_transitive_dependency_test.exs:187 test detect_violations/3 module absent from the map yields nothing, test/anchor/domain/checks/no_transitive_dependency_test.exs:298 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_modules and forbidden_patterns both fire transitively, test/anchor/domain/checks/no_transitive_dependency_test.exs:419 test find_dependency_path/3 detect_violations/3 reports the first path in dependency order, past a shared dead end, test/anchor/domain/checks/no_transitive_dependency_test.exs:398 test find_dependency_path/3 a module first met on the current branch (a cycle) is still left for a later route, test/anchor/domain/checks/no_transitive_dependency_test.exs:211 test detect_violations/3 empty forbidden list flags nothing, test/anchor/domain/checks/no_transitive_dependency_test.exs:386 test find_dependency_path/3 of two routes, the path is the first in dependency order, not the shortest, test/anchor/domain/checks/no_transitive_dependency_test.exs:118 test detect_violations/3 chain that never reaches the forbidden module passes, test/anchor/domain/checks/no_transitive_dependency_test.exs:365 test find_dependency_path/3 expands each module of a dense layered graph at most once, test/anchor/domain/checks/no_transitive_dependency_test.exs:373 test find_dependency_path/3 a dead-end subtree reached by two routes is expanded once, and the path is the first in dependency order
+
+```
+test/anchor/domain/checks/no_transitive_dependency_test.exs:169 test detect_violations/3 cycle in the graph terminates and still detects
+** (Protocol.UndefinedError) protocol Enumerable not implemented for Atom. This protocol is implemented for: Date.Range, File.Stream, Function, GenEvent.Stream, HashDict, HashSet, IO.Stream, Jason.OrderedObject, List, Map, MapSet, Range, Stream
+
+Got value:
+
+    nil
+
+```
+
+#### b00fe4bda961 Anchor.Domain.Checks.NoTransitiveDependency.dependencies_of/2 return_input [1]: killed
+
+```diff
+--- a/lib/anchor/domain/checks/no_transitive_dependency.ex
++++ b/lib/anchor/domain/checks/no_transitive_dependency.ex
+@@ -167,11 +167,8 @@
+   defp continue_unless_found({nil, state}), do: {:cont, {nil, state}}
+   defp continue_unless_found(found), do: {:halt, found}
+ 
+-  defp dependencies_of(modules_map, module) do
+-    case Map.get(modules_map, module) do
+-      nil -> []
+-      %{direct_dependencies: deps} -> deps
+-    end
++  defp dependencies_of(_modules_map, module) do
++    module
+   end
+ 
+   defp format_dependency_path(nil), do: ""
+```
+
+Command: `mix test --max-cases 2 test/anchor/domain/checks/no_transitive_dependency_test.exs` (19 tests, 17 failures; tests selected by kill_map). Failed: test/anchor/domain/checks/no_transitive_dependency_test.exs:298 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_modules and forbidden_patterns both fire transitively, test/anchor/domain/checks/no_transitive_dependency_test.exs:91 test detect_violations/3 direct dependency also counts as transitive, with no chain suffix, test/anchor/domain/checks/no_transitive_dependency_test.exs:263 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_patterns flags a transitively-reached adapter, test/anchor/domain/checks/no_transitive_dependency_test.exs:398 test find_dependency_path/3 a module first met on the current branch (a cycle) is still left for a later route, test/anchor/domain/checks/no_transitive_dependency_test.exs:386 test find_dependency_path/3 of two routes, the path is the first in dependency order, not the shortest, test/anchor/domain/checks/no_transitive_dependency_test.exs:141 test detect_violations/3 self-reference does not produce a spurious hit (self removed), test/anchor/domain/checks/no_transitive_dependency_test.exs:211 test detect_violations/3 empty forbidden list flags nothing, test/anchor/domain/checks/no_transitive_dependency_test.exs:118 test detect_violations/3 chain that never reaches the forbidden module passes, test/anchor/domain/checks/no_transitive_dependency_test.exs:373 test find_dependency_path/3 a dead-end subtree reached by two routes is expanded once, and the path is the first in dependency order, test/anchor/domain/checks/no_transitive_dependency_test.exs:49 test detect_violations/3 flags a forbidden module reached through one intermediary (A->B->Repo), test/anchor/domain/checks/no_transitive_dependency_test.exs:234 test detect_violations/3 no matching rules (empty rule list) flags nothing, test/anchor/domain/checks/no_transitive_dependency_test.exs:419 test find_dependency_path/3 detect_violations/3 reports the first path in dependency order, past a shared dead end, test/anchor/domain/checks/no_transitive_dependency_test.exs:169 test detect_violations/3 cycle in the graph terminates and still detects, test/anchor/domain/checks/no_transitive_dependency_test.exs:187 test detect_violations/3 module absent from the map yields nothing, test/anchor/domain/checks/no_transitive_dependency_test.exs:365 test find_dependency_path/3 expands each module of a dense layered graph at most once, test/anchor/domain/checks/no_transitive_dependency_test.exs:70 test detect_violations/3 flags across a two-hop chain (A->B->C->Repo), test/anchor/domain/checks/no_transitive_dependency_test.exs:410 test find_dependency_path/3 an unreachable target yields nil after expanding each reachable module once
+
+```
+test/anchor/domain/checks/no_transitive_dependency_test.exs:298 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_modules and forbidden_patterns both fire transitively
+** (Protocol.UndefinedError) protocol Enumerable not implemented for Atom. This protocol is implemented for: Date.Range, File.Stream, Function, GenEvent.Stream, HashDict, HashSet, IO.Stream, Jason.OrderedObject, List, Map, MapSet, Range, Stream
+
+Got value:
+
+    A
+
+```
+
+#### 28ba59cc6dd8 Anchor.Domain.Checks.NoTransitiveDependency.expand/2 return_input [1]: killed
+
+```diff
+--- a/lib/anchor/domain/checks/no_transitive_dependency.ex
++++ b/lib/anchor/domain/checks/no_transitive_dependency.ex
+@@ -155,8 +155,8 @@
+     end
+   end
+ 
+-  defp expand(%{visited: visited, expanded: expanded}, module),
+-    do: %{visited: MapSet.put(visited, module), expanded: expanded + 1}
++  defp expand(%{visited: _visited, expanded: _expanded}, module),
++    do: module
+ 
+   defp search_each(deps, modules_map, target, reversed_path, state) do
+     Enum.reduce_while(deps, {nil, state}, fn dep, {nil, acc} ->
+```
+
+Command: `mix test --max-cases 2 test/anchor/domain/checks/no_transitive_dependency_test.exs` (19 tests, 17 failures; tests selected by kill_map). Failed: test/anchor/domain/checks/no_transitive_dependency_test.exs:169 test detect_violations/3 cycle in the graph terminates and still detects, test/anchor/domain/checks/no_transitive_dependency_test.exs:365 test find_dependency_path/3 expands each module of a dense layered graph at most once, test/anchor/domain/checks/no_transitive_dependency_test.exs:91 test detect_violations/3 direct dependency also counts as transitive, with no chain suffix, test/anchor/domain/checks/no_transitive_dependency_test.exs:398 test find_dependency_path/3 a module first met on the current branch (a cycle) is still left for a later route, test/anchor/domain/checks/no_transitive_dependency_test.exs:234 test detect_violations/3 no matching rules (empty rule list) flags nothing, test/anchor/domain/checks/no_transitive_dependency_test.exs:298 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_modules and forbidden_patterns both fire transitively, test/anchor/domain/checks/no_transitive_dependency_test.exs:70 test detect_violations/3 flags across a two-hop chain (A->B->C->Repo), test/anchor/domain/checks/no_transitive_dependency_test.exs:419 test find_dependency_path/3 detect_violations/3 reports the first path in dependency order, past a shared dead end, test/anchor/domain/checks/no_transitive_dependency_test.exs:211 test detect_violations/3 empty forbidden list flags nothing, test/anchor/domain/checks/no_transitive_dependency_test.exs:141 test detect_violations/3 self-reference does not produce a spurious hit (self removed), test/anchor/domain/checks/no_transitive_dependency_test.exs:263 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_patterns flags a transitively-reached adapter, test/anchor/domain/checks/no_transitive_dependency_test.exs:410 test find_dependency_path/3 an unreachable target yields nil after expanding each reachable module once, test/anchor/domain/checks/no_transitive_dependency_test.exs:49 test detect_violations/3 flags a forbidden module reached through one intermediary (A->B->Repo), test/anchor/domain/checks/no_transitive_dependency_test.exs:187 test detect_violations/3 module absent from the map yields nothing, test/anchor/domain/checks/no_transitive_dependency_test.exs:373 test find_dependency_path/3 a dead-end subtree reached by two routes is expanded once, and the path is the first in dependency order, test/anchor/domain/checks/no_transitive_dependency_test.exs:118 test detect_violations/3 chain that never reaches the forbidden module passes, test/anchor/domain/checks/no_transitive_dependency_test.exs:386 test find_dependency_path/3 of two routes, the path is the first in dependency order, not the shortest
+
+```
+test/anchor/domain/checks/no_transitive_dependency_test.exs:169 test detect_violations/3 cycle in the graph terminates and still detects
+** (UndefinedFunctionError) function A.visited/0 is undefined (module A is not available). Make sure the module name is correct and has been specified in full (or that an alias has been defined)
+```
+
+#### 42de7de20c55 Anchor.Domain.Checks.NoTransitiveDependency.find_dependency_path/3 return_input [2]: invalid
+
+```diff
+--- a/lib/anchor/domain/checks/no_transitive_dependency.ex
++++ b/lib/anchor/domain/checks/no_transitive_dependency.ex
+@@ -131,11 +131,8 @@
+   uses only the path.
+   """
+   @spec find_dependency_path(map(), module(), module()) :: {[module()] | nil, non_neg_integer()}
+-  def find_dependency_path(modules_map, start_module, target_module) do
+-    {reversed_path, %{expanded: expanded}} =
+-      search(modules_map, start_module, target_module, [], %{visited: MapSet.new(), expanded: 0})
+-
+-    {reversed_path && Enum.reverse(reversed_path), expanded}
++  def find_dependency_path(_modules_map, _start_module, target_module) do
++    target_module
+   end
+ 
+   # `reversed_path` holds the modules above `current`, nearest first.
+```
+
+Command: `mix test --max-cases 2 test/anchor/domain/checks/no_transitive_dependency_test.exs` (0 tests, 0 failures; tests selected by mirror). Failed: none
+
+```
+did not compile: warning: function search_each/5 is unused
+```
+
+#### 74705366d1fe Anchor.Domain.Checks.NoTransitiveDependency.find_dependency_path/3 return_input [0]: invalid
+
+```diff
+--- a/lib/anchor/domain/checks/no_transitive_dependency.ex
++++ b/lib/anchor/domain/checks/no_transitive_dependency.ex
+@@ -131,11 +131,8 @@
+   uses only the path.
+   """
+   @spec find_dependency_path(map(), module(), module()) :: {[module()] | nil, non_neg_integer()}
+-  def find_dependency_path(modules_map, start_module, target_module) do
+-    {reversed_path, %{expanded: expanded}} =
+-      search(modules_map, start_module, target_module, [], %{visited: MapSet.new(), expanded: 0})
+-
+-    {reversed_path && Enum.reverse(reversed_path), expanded}
++  def find_dependency_path(modules_map, _start_module, _target_module) do
++    modules_map
+   end
+ 
+   # `reversed_path` holds the modules above `current`, nearest first.
+```
+
+Command: `mix test --max-cases 2 test/anchor/domain/checks/no_transitive_dependency_test.exs` (0 tests, 0 failures; tests selected by mirror). Failed: none
+
+```
+did not compile: warning: function search_each/5 is unused
+```
+
+#### d700ff8b7a71 Anchor.Domain.Checks.NoTransitiveDependency.find_dependency_path/3 return_input [1]: invalid
+
+```diff
+--- a/lib/anchor/domain/checks/no_transitive_dependency.ex
++++ b/lib/anchor/domain/checks/no_transitive_dependency.ex
+@@ -131,11 +131,8 @@
+   uses only the path.
+   """
+   @spec find_dependency_path(map(), module(), module()) :: {[module()] | nil, non_neg_integer()}
+-  def find_dependency_path(modules_map, start_module, target_module) do
+-    {reversed_path, %{expanded: expanded}} =
+-      search(modules_map, start_module, target_module, [], %{visited: MapSet.new(), expanded: 0})
+-
+-    {reversed_path && Enum.reverse(reversed_path), expanded}
++  def find_dependency_path(_modules_map, start_module, _target_module) do
++    start_module
+   end
+ 
+   # `reversed_path` holds the modules above `current`, nearest first.
+```
+
+Command: `mix test --max-cases 2 test/anchor/domain/checks/no_transitive_dependency_test.exs` (0 tests, 0 failures; tests selected by mirror). Failed: none
+
+```
+did not compile: warning: function search_each/5 is unused
+```
+
+#### 4435d9f752a9 Anchor.Domain.Checks.NoTransitiveDependency.search/5 force_condition [false]: killed
+
+```diff
+--- a/lib/anchor/domain/checks/no_transitive_dependency.ex
++++ b/lib/anchor/domain/checks/no_transitive_dependency.ex
+@@ -146,7 +146,7 @@
+     do: {[target | reversed_path], state}
+ 
+   defp search(modules_map, current, target, reversed_path, state) do
+-    if MapSet.member?(state.visited, current) do
++    if Process.get(:__anchor_sabotage__) != nil do
+       {nil, state}
+     else
+       modules_map
+```
+
+Command: `mix test --max-cases 2 test/anchor/domain/checks/no_transitive_dependency_test.exs` (19 tests, 6 failures; tests selected by kill_map). Failed: test/anchor/domain/checks/no_transitive_dependency_test.exs:373 test find_dependency_path/3 a dead-end subtree reached by two routes is expanded once, and the path is the first in dependency order, test/anchor/domain/checks/no_transitive_dependency_test.exs:141 test detect_violations/3 self-reference does not produce a spurious hit (self removed), test/anchor/domain/checks/no_transitive_dependency_test.exs:169 test detect_violations/3 cycle in the graph terminates and still detects, test/anchor/domain/checks/no_transitive_dependency_test.exs:398 test find_dependency_path/3 a module first met on the current branch (a cycle) is still left for a later route, test/anchor/domain/checks/no_transitive_dependency_test.exs:365 test find_dependency_path/3 expands each module of a dense layered graph at most once, test/anchor/domain/checks/no_transitive_dependency_test.exs:410 test find_dependency_path/3 an unreachable target yields nil after expanding each reachable module once
+
+```
+test/anchor/domain/checks/no_transitive_dependency_test.exs:373 test find_dependency_path/3 a dead-end subtree reached by two routes is expanded once, and the path is the first in dependency order
+** (ExUnit.AssertionError) 
+
+match (=) failed
+code:  assert {[S, B, D, Forbidden], 5} = NoTransitiveDependency.find_dependency_path(modules_map, S, Forbidden)
+left:  {[S, B, D, Forbidden], 5}
+right: {[S, B, D, Forbidden], 6}
+
+```
+
+#### f88a5b16f4ee Anchor.Domain.Checks.NoTransitiveDependency.search/5 force_condition [true]: killed
+
+```diff
+--- a/lib/anchor/domain/checks/no_transitive_dependency.ex
++++ b/lib/anchor/domain/checks/no_transitive_dependency.ex
+@@ -146,7 +146,7 @@
+     do: {[target | reversed_path], state}
+ 
+   defp search(modules_map, current, target, reversed_path, state) do
+-    if MapSet.member?(state.visited, current) do
++    if Process.get(:__anchor_sabotage__) == nil do
+       {nil, state}
+     else
+       modules_map
+```
+
+Command: `mix test --max-cases 2 test/anchor/domain/checks/no_transitive_dependency_test.exs` (19 tests, 17 failures; tests selected by kill_map). Failed: test/anchor/domain/checks/no_transitive_dependency_test.exs:365 test find_dependency_path/3 expands each module of a dense layered graph at most once, test/anchor/domain/checks/no_transitive_dependency_test.exs:169 test detect_violations/3 cycle in the graph terminates and still detects, test/anchor/domain/checks/no_transitive_dependency_test.exs:419 test find_dependency_path/3 detect_violations/3 reports the first path in dependency order, past a shared dead end, test/anchor/domain/checks/no_transitive_dependency_test.exs:410 test find_dependency_path/3 an unreachable target yields nil after expanding each reachable module once, test/anchor/domain/checks/no_transitive_dependency_test.exs:141 test detect_violations/3 self-reference does not produce a spurious hit (self removed), test/anchor/domain/checks/no_transitive_dependency_test.exs:91 test detect_violations/3 direct dependency also counts as transitive, with no chain suffix, test/anchor/domain/checks/no_transitive_dependency_test.exs:118 test detect_violations/3 chain that never reaches the forbidden module passes, test/anchor/domain/checks/no_transitive_dependency_test.exs:263 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_patterns flags a transitively-reached adapter, test/anchor/domain/checks/no_transitive_dependency_test.exs:373 test find_dependency_path/3 a dead-end subtree reached by two routes is expanded once, and the path is the first in dependency order, test/anchor/domain/checks/no_transitive_dependency_test.exs:211 test detect_violations/3 empty forbidden list flags nothing, test/anchor/domain/checks/no_transitive_dependency_test.exs:234 test detect_violations/3 no matching rules (empty rule list) flags nothing, test/anchor/domain/checks/no_transitive_dependency_test.exs:398 test find_dependency_path/3 a module first met on the current branch (a cycle) is still left for a later route, test/anchor/domain/checks/no_transitive_dependency_test.exs:49 test detect_violations/3 flags a forbidden module reached through one intermediary (A->B->Repo), test/anchor/domain/checks/no_transitive_dependency_test.exs:386 test find_dependency_path/3 of two routes, the path is the first in dependency order, not the shortest, test/anchor/domain/checks/no_transitive_dependency_test.exs:70 test detect_violations/3 flags across a two-hop chain (A->B->C->Repo), test/anchor/domain/checks/no_transitive_dependency_test.exs:187 test detect_violations/3 module absent from the map yields nothing, test/anchor/domain/checks/no_transitive_dependency_test.exs:298 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_modules and forbidden_patterns both fire transitively
+
+```
+test/anchor/domain/checks/no_transitive_dependency_test.exs:365 test find_dependency_path/3 expands each module of a dense layered graph at most once
+** (ExUnit.AssertionError) 
+
+match (=) failed
+code:  assert {[Root, Bridge, Forbidden], 26} =
+              NoTransitiveDependency.find_dependency_path(modules_map, Root, Forbidden)
+left:  {[Root, Bridge, Forbidden], 26}
+right: {nil, 0}
+
+```
+
+#### 286f65222171 Anchor.Domain.Checks.NoTransitiveDependency.search/5 narrow_clause: killed
+
+```diff
+--- a/lib/anchor/domain/checks/no_transitive_dependency.ex
++++ b/lib/anchor/domain/checks/no_transitive_dependency.ex
+@@ -145,7 +145,7 @@
+   defp search(_modules_map, target, target, reversed_path, state),
+     do: {[target | reversed_path], state}
+ 
+-  defp search(modules_map, current, target, reversed_path, state) do
++  defp search(modules_map, current, target, reversed_path, state) when node() == :__anchor_sabotage_never__ do
+     if MapSet.member?(state.visited, current) do
+       {nil, state}
+     else
+```
+
+Command: `mix test --max-cases 2 test/anchor/domain/checks/no_transitive_dependency_test.exs` (19 tests, 17 failures; tests selected by kill_map). Failed: test/anchor/domain/checks/no_transitive_dependency_test.exs:70 test detect_violations/3 flags across a two-hop chain (A->B->C->Repo), test/anchor/domain/checks/no_transitive_dependency_test.exs:365 test find_dependency_path/3 expands each module of a dense layered graph at most once, test/anchor/domain/checks/no_transitive_dependency_test.exs:211 test detect_violations/3 empty forbidden list flags nothing, test/anchor/domain/checks/no_transitive_dependency_test.exs:187 test detect_violations/3 module absent from the map yields nothing, test/anchor/domain/checks/no_transitive_dependency_test.exs:410 test find_dependency_path/3 an unreachable target yields nil after expanding each reachable module once, test/anchor/domain/checks/no_transitive_dependency_test.exs:91 test detect_violations/3 direct dependency also counts as transitive, with no chain suffix, test/anchor/domain/checks/no_transitive_dependency_test.exs:118 test detect_violations/3 chain that never reaches the forbidden module passes, test/anchor/domain/checks/no_transitive_dependency_test.exs:298 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_modules and forbidden_patterns both fire transitively, test/anchor/domain/checks/no_transitive_dependency_test.exs:373 test find_dependency_path/3 a dead-end subtree reached by two routes is expanded once, and the path is the first in dependency order, test/anchor/domain/checks/no_transitive_dependency_test.exs:141 test detect_violations/3 self-reference does not produce a spurious hit (self removed), test/anchor/domain/checks/no_transitive_dependency_test.exs:419 test find_dependency_path/3 detect_violations/3 reports the first path in dependency order, past a shared dead end, test/anchor/domain/checks/no_transitive_dependency_test.exs:263 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_patterns flags a transitively-reached adapter, test/anchor/domain/checks/no_transitive_dependency_test.exs:169 test detect_violations/3 cycle in the graph terminates and still detects, test/anchor/domain/checks/no_transitive_dependency_test.exs:386 test find_dependency_path/3 of two routes, the path is the first in dependency order, not the shortest, test/anchor/domain/checks/no_transitive_dependency_test.exs:49 test detect_violations/3 flags a forbidden module reached through one intermediary (A->B->Repo), test/anchor/domain/checks/no_transitive_dependency_test.exs:234 test detect_violations/3 no matching rules (empty rule list) flags nothing, test/anchor/domain/checks/no_transitive_dependency_test.exs:398 test find_dependency_path/3 a module first met on the current branch (a cycle) is still left for a later route
+
+```
+test/anchor/domain/checks/no_transitive_dependency_test.exs:70 test detect_violations/3 flags across a two-hop chain (A->B->C->Repo)
+** (FunctionClauseError) no function clause matching in Anchor.Domain.Checks.NoTransitiveDependency.search/5
+```
+
+#### 3e8e455549bc Anchor.Domain.Checks.NoTransitiveDependency.search/5 narrow_clause: killed
+
+```diff
+--- a/lib/anchor/domain/checks/no_transitive_dependency.ex
++++ b/lib/anchor/domain/checks/no_transitive_dependency.ex
+@@ -142,7 +142,7 @@
+   # `state.visited` is every module expanded so far, on any branch;
+   # `state.expanded` counts the expansions, apart from the set, so a search that
+   # expanded a module twice would say so.
+-  defp search(_modules_map, target, target, reversed_path, state),
++  defp search(_modules_map, target, target, reversed_path, state) when node() == :__anchor_sabotage_never__,
+     do: {[target | reversed_path], state}
+ 
+   defp search(modules_map, current, target, reversed_path, state) do
+```
+
+Command: `mix test --max-cases 2 test/anchor/domain/checks/no_transitive_dependency_test.exs` (19 tests, 16 failures; tests selected by kill_map). Failed: test/anchor/domain/checks/no_transitive_dependency_test.exs:263 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_patterns flags a transitively-reached adapter, test/anchor/domain/checks/no_transitive_dependency_test.exs:169 test detect_violations/3 cycle in the graph terminates and still detects, test/anchor/domain/checks/no_transitive_dependency_test.exs:141 test detect_violations/3 self-reference does not produce a spurious hit (self removed), test/anchor/domain/checks/no_transitive_dependency_test.exs:187 test detect_violations/3 module absent from the map yields nothing, test/anchor/domain/checks/no_transitive_dependency_test.exs:386 test find_dependency_path/3 of two routes, the path is the first in dependency order, not the shortest, test/anchor/domain/checks/no_transitive_dependency_test.exs:91 test detect_violations/3 direct dependency also counts as transitive, with no chain suffix, test/anchor/domain/checks/no_transitive_dependency_test.exs:398 test find_dependency_path/3 a module first met on the current branch (a cycle) is still left for a later route, test/anchor/domain/checks/no_transitive_dependency_test.exs:298 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_modules and forbidden_patterns both fire transitively, test/anchor/domain/checks/no_transitive_dependency_test.exs:234 test detect_violations/3 no matching rules (empty rule list) flags nothing, test/anchor/domain/checks/no_transitive_dependency_test.exs:49 test detect_violations/3 flags a forbidden module reached through one intermediary (A->B->Repo), test/anchor/domain/checks/no_transitive_dependency_test.exs:70 test detect_violations/3 flags across a two-hop chain (A->B->C->Repo), test/anchor/domain/checks/no_transitive_dependency_test.exs:373 test find_dependency_path/3 a dead-end subtree reached by two routes is expanded once, and the path is the first in dependency order, test/anchor/domain/checks/no_transitive_dependency_test.exs:365 test find_dependency_path/3 expands each module of a dense layered graph at most once, test/anchor/domain/checks/no_transitive_dependency_test.exs:118 test detect_violations/3 chain that never reaches the forbidden module passes, test/anchor/domain/checks/no_transitive_dependency_test.exs:419 test find_dependency_path/3 detect_violations/3 reports the first path in dependency order, past a shared dead end, test/anchor/domain/checks/no_transitive_dependency_test.exs:211 test detect_violations/3 empty forbidden list flags nothing
+
+```
+test/anchor/domain/checks/no_transitive_dependency_test.exs:263 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_patterns flags a transitively-reached adapter
+** (Protocol.UndefinedError) protocol Enumerable not implemented for Atom. This protocol is implemented for: Date.Range, File.Stream, Function, GenEvent.Stream, HashDict, HashSet, IO.Stream, Jason.OrderedObject, List, Map, MapSet, Range, Stream
+
+Got value:
+
+    nil
+
+```
+
+#### 164de9cc3b92 Anchor.Domain.Checks.NoTransitiveDependency.search/5 return_input [2]: killed
+
+```diff
+--- a/lib/anchor/domain/checks/no_transitive_dependency.ex
++++ b/lib/anchor/domain/checks/no_transitive_dependency.ex
+@@ -142,8 +142,8 @@
+   # `state.visited` is every module expanded so far, on any branch;
+   # `state.expanded` counts the expansions, apart from the set, so a search that
+   # expanded a module twice would say so.
+-  defp search(_modules_map, target, target, reversed_path, state),
+-    do: {[target | reversed_path], state}
++  defp search(_modules_map, target, target, _reversed_path, _state),
++    do: target
+ 
+   defp search(modules_map, current, target, reversed_path, state) do
+     if MapSet.member?(state.visited, current) do
+```
+
+Command: `mix test --max-cases 2 test/anchor/domain/checks/no_transitive_dependency_test.exs` (19 tests, 16 failures; tests selected by kill_map). Failed: test/anchor/domain/checks/no_transitive_dependency_test.exs:419 test find_dependency_path/3 detect_violations/3 reports the first path in dependency order, past a shared dead end, test/anchor/domain/checks/no_transitive_dependency_test.exs:365 test find_dependency_path/3 expands each module of a dense layered graph at most once, test/anchor/domain/checks/no_transitive_dependency_test.exs:169 test detect_violations/3 cycle in the graph terminates and still detects, test/anchor/domain/checks/no_transitive_dependency_test.exs:373 test find_dependency_path/3 a dead-end subtree reached by two routes is expanded once, and the path is the first in dependency order, test/anchor/domain/checks/no_transitive_dependency_test.exs:187 test detect_violations/3 module absent from the map yields nothing, test/anchor/domain/checks/no_transitive_dependency_test.exs:263 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_patterns flags a transitively-reached adapter, test/anchor/domain/checks/no_transitive_dependency_test.exs:398 test find_dependency_path/3 a module first met on the current branch (a cycle) is still left for a later route, test/anchor/domain/checks/no_transitive_dependency_test.exs:141 test detect_violations/3 self-reference does not produce a spurious hit (self removed), test/anchor/domain/checks/no_transitive_dependency_test.exs:118 test detect_violations/3 chain that never reaches the forbidden module passes, test/anchor/domain/checks/no_transitive_dependency_test.exs:386 test find_dependency_path/3 of two routes, the path is the first in dependency order, not the shortest, test/anchor/domain/checks/no_transitive_dependency_test.exs:211 test detect_violations/3 empty forbidden list flags nothing, test/anchor/domain/checks/no_transitive_dependency_test.exs:234 test detect_violations/3 no matching rules (empty rule list) flags nothing, test/anchor/domain/checks/no_transitive_dependency_test.exs:49 test detect_violations/3 flags a forbidden module reached through one intermediary (A->B->Repo), test/anchor/domain/checks/no_transitive_dependency_test.exs:298 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_modules and forbidden_patterns both fire transitively, test/anchor/domain/checks/no_transitive_dependency_test.exs:91 test detect_violations/3 direct dependency also counts as transitive, with no chain suffix, test/anchor/domain/checks/no_transitive_dependency_test.exs:70 test detect_violations/3 flags across a two-hop chain (A->B->C->Repo)
+
+```
+test/anchor/domain/checks/no_transitive_dependency_test.exs:419 test find_dependency_path/3 detect_violations/3 reports the first path in dependency order, past a shared dead end
+** (MatchError) no match of right hand side value:
+
+    Forbidden
+
+```
+
+#### 4cdad30be498 Anchor.Domain.Checks.NoTransitiveDependency.search/5 return_input [1]: killed
+
+```diff
+--- a/lib/anchor/domain/checks/no_transitive_dependency.ex
++++ b/lib/anchor/domain/checks/no_transitive_dependency.ex
+@@ -142,8 +142,8 @@
+   # `state.visited` is every module expanded so far, on any branch;
+   # `state.expanded` counts the expansions, apart from the set, so a search that
+   # expanded a module twice would say so.
+-  defp search(_modules_map, target, target, reversed_path, state),
+-    do: {[target | reversed_path], state}
++  defp search(_modules_map, target, target, _reversed_path, _state),
++    do: target
+ 
+   defp search(modules_map, current, target, reversed_path, state) do
+     if MapSet.member?(state.visited, current) do
+```
+
+Command: `mix test --max-cases 2 test/anchor/domain/checks/no_transitive_dependency_test.exs` (19 tests, 16 failures; tests selected by kill_map). Failed: test/anchor/domain/checks/no_transitive_dependency_test.exs:419 test find_dependency_path/3 detect_violations/3 reports the first path in dependency order, past a shared dead end, test/anchor/domain/checks/no_transitive_dependency_test.exs:365 test find_dependency_path/3 expands each module of a dense layered graph at most once, test/anchor/domain/checks/no_transitive_dependency_test.exs:169 test detect_violations/3 cycle in the graph terminates and still detects, test/anchor/domain/checks/no_transitive_dependency_test.exs:373 test find_dependency_path/3 a dead-end subtree reached by two routes is expanded once, and the path is the first in dependency order, test/anchor/domain/checks/no_transitive_dependency_test.exs:187 test detect_violations/3 module absent from the map yields nothing, test/anchor/domain/checks/no_transitive_dependency_test.exs:263 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_patterns flags a transitively-reached adapter, test/anchor/domain/checks/no_transitive_dependency_test.exs:398 test find_dependency_path/3 a module first met on the current branch (a cycle) is still left for a later route, test/anchor/domain/checks/no_transitive_dependency_test.exs:141 test detect_violations/3 self-reference does not produce a spurious hit (self removed), test/anchor/domain/checks/no_transitive_dependency_test.exs:118 test detect_violations/3 chain that never reaches the forbidden module passes, test/anchor/domain/checks/no_transitive_dependency_test.exs:386 test find_dependency_path/3 of two routes, the path is the first in dependency order, not the shortest, test/anchor/domain/checks/no_transitive_dependency_test.exs:211 test detect_violations/3 empty forbidden list flags nothing, test/anchor/domain/checks/no_transitive_dependency_test.exs:234 test detect_violations/3 no matching rules (empty rule list) flags nothing, test/anchor/domain/checks/no_transitive_dependency_test.exs:49 test detect_violations/3 flags a forbidden module reached through one intermediary (A->B->Repo), test/anchor/domain/checks/no_transitive_dependency_test.exs:298 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_modules and forbidden_patterns both fire transitively, test/anchor/domain/checks/no_transitive_dependency_test.exs:91 test detect_violations/3 direct dependency also counts as transitive, with no chain suffix, test/anchor/domain/checks/no_transitive_dependency_test.exs:70 test detect_violations/3 flags across a two-hop chain (A->B->C->Repo)
+
+```
+test/anchor/domain/checks/no_transitive_dependency_test.exs:419 test find_dependency_path/3 detect_violations/3 reports the first path in dependency order, past a shared dead end
+** (MatchError) no match of right hand side value:
+
+    Forbidden
+
+```
+
+### Survivors
+
+None.
+
+### Kills by timeout
+
+None.
+
+### Skipped, invalid, not run
+
+- 42de7de20c55 Anchor.Domain.Checks.NoTransitiveDependency.find_dependency_path/3 return_input [2]: invalid (did not compile: warning: function search_each/5 is unused)
+- 74705366d1fe Anchor.Domain.Checks.NoTransitiveDependency.find_dependency_path/3 return_input [0]: invalid (did not compile: warning: function search_each/5 is unused)
+- d700ff8b7a71 Anchor.Domain.Checks.NoTransitiveDependency.find_dependency_path/3 return_input [1]: invalid (did not compile: warning: function search_each/5 is unused)
+- skipped Anchor.Domain.Checks.NoTransitiveDependency.build_violation/4 delete_statement `{path, _expanded} = find_dependency_path(modules_map, current_module, forbidden_module)`: orphans variable `path` bound at line 101 and used at line 102
+- skipped Anchor.Domain.Checks.NoTransitiveDependency.build_violation/4 delete_statement `path_description = format_dependency_path(path)`: orphans variable `path_description` bound at line 102 and used at line 109
+- skipped Anchor.Domain.Checks.NoTransitiveDependency.build_violation/4 delete_statement `line = find_module_reference_line(ast, Enum.at(path, 1))`: orphans variable `line` bound at line 107 and used at line 109
+- skipped Anchor.Domain.Checks.NoTransitiveDependency.build_violation/4 return_input [0] `build_violation(forbidden_module, current_module, modules_map, ast)`: removes the last use of function `find_module_reference_line/2`
+- skipped Anchor.Domain.Checks.NoTransitiveDependency.build_violation/4 return_input [1] `build_violation(forbidden_module, current_module, modules_map, ast)`: removes the last use of function `find_module_reference_line/2`
+- skipped Anchor.Domain.Checks.NoTransitiveDependency.build_violation/4 return_input [2] `build_violation(forbidden_module, current_module, modules_map, ast)`: removes the last use of function `find_module_reference_line/2`
+- skipped Anchor.Domain.Checks.NoTransitiveDependency.build_violation/4 return_input [3] `build_violation(forbidden_module, current_module, modules_map, ast)`: removes the last use of function `find_module_reference_line/2`
+- skipped Anchor.Domain.Checks.NoTransitiveDependency.find_dependency_path/3 delete_statement `{reversed_path, %{expanded: expanded}} =
+  search(modules_map, start_module, target_module, [], %{visited: MapSet.new(), expanded: 0})`: orphans variable `expanded` bound at line 135 and used at line 138
+- skipped Anchor.Domain.Checks.NoTransitiveDependency.search/5 return_input [3] `search(_modules_map, target, target, reversed_path, state)`: `target` appears more than once in the head
+- skipped Anchor.Domain.Checks.NoTransitiveDependency.search/5 return_input [4] `search(_modules_map, target, target, reversed_path, state)`: `target` appears more than once in the head
+- skipped Anchor.Domain.Checks.NoTransitiveDependency.search/5 return_input [0] `search(modules_map, current, target, reversed_path, state)`: removes the last use of function `dependencies_of/2`
+- skipped Anchor.Domain.Checks.NoTransitiveDependency.search/5 return_input [1] `search(modules_map, current, target, reversed_path, state)`: removes the last use of function `dependencies_of/2`
+- skipped Anchor.Domain.Checks.NoTransitiveDependency.search/5 return_input [2] `search(modules_map, current, target, reversed_path, state)`: removes the last use of function `dependencies_of/2`
+- skipped Anchor.Domain.Checks.NoTransitiveDependency.search/5 return_input [3] `search(modules_map, current, target, reversed_path, state)`: removes the last use of function `dependencies_of/2`
+- skipped Anchor.Domain.Checks.NoTransitiveDependency.search/5 return_input [4] `search(modules_map, current, target, reversed_path, state)`: removes the last use of function `dependencies_of/2`
+- skipped Anchor.Domain.Checks.NoTransitiveDependency.search_each/5 return_input [0] `search_each(deps, modules_map, target, reversed_path, state)`: removes the last use of function `continue_unless_found/1`
+- skipped Anchor.Domain.Checks.NoTransitiveDependency.search_each/5 return_input [1] `search_each(deps, modules_map, target, reversed_path, state)`: removes the last use of function `continue_unless_found/1`
+- skipped Anchor.Domain.Checks.NoTransitiveDependency.search_each/5 return_input [2] `search_each(deps, modules_map, target, reversed_path, state)`: removes the last use of function `continue_unless_found/1`
+- skipped Anchor.Domain.Checks.NoTransitiveDependency.search_each/5 return_input [3] `search_each(deps, modules_map, target, reversed_path, state)`: removes the last use of function `continue_unless_found/1`
+- skipped Anchor.Domain.Checks.NoTransitiveDependency.search_each/5 return_input [4] `search_each(deps, modules_map, target, reversed_path, state)`: removes the last use of function `continue_unless_found/1`
+
+### Tests still lacking a red
+
+None.
+
+### Kill map
+
+```anchor-kills
+# id	file	mfa	operator	status	killers
+8ea5887d81d0	lib/anchor/domain/checks/no_transitive_dependency.ex	Anchor.Domain.Checks.NoTransitiveDependency.continue_unless_found/1	narrow_clause	killed	test/anchor/domain/checks/no_transitive_dependency_test.exs:398 test find_dependency_path/3 a module first met on the current branch (a cycle) is still left for a later route ; test/anchor/domain/checks/no_transitive_dependency_test.exs:211 test detect_violations/3 empty forbidden list flags nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:118 test detect_violations/3 chain that never reaches the forbidden module passes ; test/anchor/domain/checks/no_transitive_dependency_test.exs:187 test detect_violations/3 module absent from the map yields nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:263 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_patterns flags a transitively-reached adapter ; test/anchor/domain/checks/no_transitive_dependency_test.exs:169 test detect_violations/3 cycle in the graph terminates and still detects ; test/anchor/domain/checks/no_transitive_dependency_test.exs:419 test find_dependency_path/3 detect_violations/3 reports the first path in dependency order, past a shared dead end ; test/anchor/domain/checks/no_transitive_dependency_test.exs:373 test find_dependency_path/3 a dead-end subtree reached by two routes is expanded once, and the path is the first in dependency order ; test/anchor/domain/checks/no_transitive_dependency_test.exs:386 test find_dependency_path/3 of two routes, the path is the first in dependency order, not the shortest ; test/anchor/domain/checks/no_transitive_dependency_test.exs:141 test detect_violations/3 self-reference does not produce a spurious hit (self removed) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:70 test detect_violations/3 flags across a two-hop chain (A->B->C->Repo) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:234 test detect_violations/3 no matching rules (empty rule list) flags nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:49 test detect_violations/3 flags a forbidden module reached through one intermediary (A->B->Repo) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:365 test find_dependency_path/3 expands each module of a dense layered graph at most once ; test/anchor/domain/checks/no_transitive_dependency_test.exs:298 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_modules and forbidden_patterns both fire transitively ; test/anchor/domain/checks/no_transitive_dependency_test.exs:91 test detect_violations/3 direct dependency also counts as transitive, with no chain suffix
+b664e814937e	lib/anchor/domain/checks/no_transitive_dependency.ex	Anchor.Domain.Checks.NoTransitiveDependency.continue_unless_found/1	narrow_clause	killed	test/anchor/domain/checks/no_transitive_dependency_test.exs:410 test find_dependency_path/3 an unreachable target yields nil after expanding each reachable module once ; test/anchor/domain/checks/no_transitive_dependency_test.exs:141 test detect_violations/3 self-reference does not produce a spurious hit (self removed) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:365 test find_dependency_path/3 expands each module of a dense layered graph at most once ; test/anchor/domain/checks/no_transitive_dependency_test.exs:373 test find_dependency_path/3 a dead-end subtree reached by two routes is expanded once, and the path is the first in dependency order ; test/anchor/domain/checks/no_transitive_dependency_test.exs:298 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_modules and forbidden_patterns both fire transitively ; test/anchor/domain/checks/no_transitive_dependency_test.exs:419 test find_dependency_path/3 detect_violations/3 reports the first path in dependency order, past a shared dead end ; test/anchor/domain/checks/no_transitive_dependency_test.exs:398 test find_dependency_path/3 a module first met on the current branch (a cycle) is still left for a later route ; test/anchor/domain/checks/no_transitive_dependency_test.exs:169 test detect_violations/3 cycle in the graph terminates and still detects
+9b7357cf880e	lib/anchor/domain/checks/no_transitive_dependency.ex	Anchor.Domain.Checks.NoTransitiveDependency.continue_unless_found/1	return_input	killed	test/anchor/domain/checks/no_transitive_dependency_test.exs:386 test find_dependency_path/3 of two routes, the path is the first in dependency order, not the shortest ; test/anchor/domain/checks/no_transitive_dependency_test.exs:169 test detect_violations/3 cycle in the graph terminates and still detects ; test/anchor/domain/checks/no_transitive_dependency_test.exs:234 test detect_violations/3 no matching rules (empty rule list) flags nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:91 test detect_violations/3 direct dependency also counts as transitive, with no chain suffix ; test/anchor/domain/checks/no_transitive_dependency_test.exs:373 test find_dependency_path/3 a dead-end subtree reached by two routes is expanded once, and the path is the first in dependency order ; test/anchor/domain/checks/no_transitive_dependency_test.exs:211 test detect_violations/3 empty forbidden list flags nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:263 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_patterns flags a transitively-reached adapter ; test/anchor/domain/checks/no_transitive_dependency_test.exs:70 test detect_violations/3 flags across a two-hop chain (A->B->C->Repo) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:118 test detect_violations/3 chain that never reaches the forbidden module passes ; test/anchor/domain/checks/no_transitive_dependency_test.exs:398 test find_dependency_path/3 a module first met on the current branch (a cycle) is still left for a later route ; test/anchor/domain/checks/no_transitive_dependency_test.exs:419 test find_dependency_path/3 detect_violations/3 reports the first path in dependency order, past a shared dead end ; test/anchor/domain/checks/no_transitive_dependency_test.exs:187 test detect_violations/3 module absent from the map yields nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:298 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_modules and forbidden_patterns both fire transitively ; test/anchor/domain/checks/no_transitive_dependency_test.exs:141 test detect_violations/3 self-reference does not produce a spurious hit (self removed) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:49 test detect_violations/3 flags a forbidden module reached through one intermediary (A->B->Repo) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:365 test find_dependency_path/3 expands each module of a dense layered graph at most once
+071c80053074	lib/anchor/domain/checks/no_transitive_dependency.ex	Anchor.Domain.Checks.NoTransitiveDependency.dependencies_of/2	narrow_clause	killed	test/anchor/domain/checks/no_transitive_dependency_test.exs:298 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_modules and forbidden_patterns both fire transitively ; test/anchor/domain/checks/no_transitive_dependency_test.exs:410 test find_dependency_path/3 an unreachable target yields nil after expanding each reachable module once
+43859de243a3	lib/anchor/domain/checks/no_transitive_dependency.ex	Anchor.Domain.Checks.NoTransitiveDependency.dependencies_of/2	narrow_clause	killed	test/anchor/domain/checks/no_transitive_dependency_test.exs:373 test find_dependency_path/3 a dead-end subtree reached by two routes is expanded once, and the path is the first in dependency order ; test/anchor/domain/checks/no_transitive_dependency_test.exs:169 test detect_violations/3 cycle in the graph terminates and still detects ; test/anchor/domain/checks/no_transitive_dependency_test.exs:70 test detect_violations/3 flags across a two-hop chain (A->B->C->Repo) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:118 test detect_violations/3 chain that never reaches the forbidden module passes ; test/anchor/domain/checks/no_transitive_dependency_test.exs:91 test detect_violations/3 direct dependency also counts as transitive, with no chain suffix ; test/anchor/domain/checks/no_transitive_dependency_test.exs:386 test find_dependency_path/3 of two routes, the path is the first in dependency order, not the shortest ; test/anchor/domain/checks/no_transitive_dependency_test.exs:398 test find_dependency_path/3 a module first met on the current branch (a cycle) is still left for a later route ; test/anchor/domain/checks/no_transitive_dependency_test.exs:211 test detect_violations/3 empty forbidden list flags nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:298 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_modules and forbidden_patterns both fire transitively ; test/anchor/domain/checks/no_transitive_dependency_test.exs:419 test find_dependency_path/3 detect_violations/3 reports the first path in dependency order, past a shared dead end ; test/anchor/domain/checks/no_transitive_dependency_test.exs:410 test find_dependency_path/3 an unreachable target yields nil after expanding each reachable module once ; test/anchor/domain/checks/no_transitive_dependency_test.exs:49 test detect_violations/3 flags a forbidden module reached through one intermediary (A->B->Repo) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:263 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_patterns flags a transitively-reached adapter ; test/anchor/domain/checks/no_transitive_dependency_test.exs:365 test find_dependency_path/3 expands each module of a dense layered graph at most once ; test/anchor/domain/checks/no_transitive_dependency_test.exs:187 test detect_violations/3 module absent from the map yields nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:141 test detect_violations/3 self-reference does not produce a spurious hit (self removed) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:234 test detect_violations/3 no matching rules (empty rule list) flags nothing
+5ec9cd839cc7	lib/anchor/domain/checks/no_transitive_dependency.ex	Anchor.Domain.Checks.NoTransitiveDependency.dependencies_of/2	return_input	killed	test/anchor/domain/checks/no_transitive_dependency_test.exs:169 test detect_violations/3 cycle in the graph terminates and still detects ; test/anchor/domain/checks/no_transitive_dependency_test.exs:141 test detect_violations/3 self-reference does not produce a spurious hit (self removed) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:234 test detect_violations/3 no matching rules (empty rule list) flags nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:263 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_patterns flags a transitively-reached adapter ; test/anchor/domain/checks/no_transitive_dependency_test.exs:49 test detect_violations/3 flags a forbidden module reached through one intermediary (A->B->Repo) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:91 test detect_violations/3 direct dependency also counts as transitive, with no chain suffix ; test/anchor/domain/checks/no_transitive_dependency_test.exs:70 test detect_violations/3 flags across a two-hop chain (A->B->C->Repo) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:187 test detect_violations/3 module absent from the map yields nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:298 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_modules and forbidden_patterns both fire transitively ; test/anchor/domain/checks/no_transitive_dependency_test.exs:419 test find_dependency_path/3 detect_violations/3 reports the first path in dependency order, past a shared dead end ; test/anchor/domain/checks/no_transitive_dependency_test.exs:398 test find_dependency_path/3 a module first met on the current branch (a cycle) is still left for a later route ; test/anchor/domain/checks/no_transitive_dependency_test.exs:211 test detect_violations/3 empty forbidden list flags nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:386 test find_dependency_path/3 of two routes, the path is the first in dependency order, not the shortest ; test/anchor/domain/checks/no_transitive_dependency_test.exs:118 test detect_violations/3 chain that never reaches the forbidden module passes ; test/anchor/domain/checks/no_transitive_dependency_test.exs:365 test find_dependency_path/3 expands each module of a dense layered graph at most once ; test/anchor/domain/checks/no_transitive_dependency_test.exs:373 test find_dependency_path/3 a dead-end subtree reached by two routes is expanded once, and the path is the first in dependency order
+b00fe4bda961	lib/anchor/domain/checks/no_transitive_dependency.ex	Anchor.Domain.Checks.NoTransitiveDependency.dependencies_of/2	return_input	killed	test/anchor/domain/checks/no_transitive_dependency_test.exs:298 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_modules and forbidden_patterns both fire transitively ; test/anchor/domain/checks/no_transitive_dependency_test.exs:91 test detect_violations/3 direct dependency also counts as transitive, with no chain suffix ; test/anchor/domain/checks/no_transitive_dependency_test.exs:263 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_patterns flags a transitively-reached adapter ; test/anchor/domain/checks/no_transitive_dependency_test.exs:398 test find_dependency_path/3 a module first met on the current branch (a cycle) is still left for a later route ; test/anchor/domain/checks/no_transitive_dependency_test.exs:386 test find_dependency_path/3 of two routes, the path is the first in dependency order, not the shortest ; test/anchor/domain/checks/no_transitive_dependency_test.exs:141 test detect_violations/3 self-reference does not produce a spurious hit (self removed) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:211 test detect_violations/3 empty forbidden list flags nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:118 test detect_violations/3 chain that never reaches the forbidden module passes ; test/anchor/domain/checks/no_transitive_dependency_test.exs:373 test find_dependency_path/3 a dead-end subtree reached by two routes is expanded once, and the path is the first in dependency order ; test/anchor/domain/checks/no_transitive_dependency_test.exs:49 test detect_violations/3 flags a forbidden module reached through one intermediary (A->B->Repo) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:234 test detect_violations/3 no matching rules (empty rule list) flags nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:419 test find_dependency_path/3 detect_violations/3 reports the first path in dependency order, past a shared dead end ; test/anchor/domain/checks/no_transitive_dependency_test.exs:169 test detect_violations/3 cycle in the graph terminates and still detects ; test/anchor/domain/checks/no_transitive_dependency_test.exs:187 test detect_violations/3 module absent from the map yields nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:365 test find_dependency_path/3 expands each module of a dense layered graph at most once ; test/anchor/domain/checks/no_transitive_dependency_test.exs:70 test detect_violations/3 flags across a two-hop chain (A->B->C->Repo) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:410 test find_dependency_path/3 an unreachable target yields nil after expanding each reachable module once
+28ba59cc6dd8	lib/anchor/domain/checks/no_transitive_dependency.ex	Anchor.Domain.Checks.NoTransitiveDependency.expand/2	return_input	killed	test/anchor/domain/checks/no_transitive_dependency_test.exs:169 test detect_violations/3 cycle in the graph terminates and still detects ; test/anchor/domain/checks/no_transitive_dependency_test.exs:365 test find_dependency_path/3 expands each module of a dense layered graph at most once ; test/anchor/domain/checks/no_transitive_dependency_test.exs:91 test detect_violations/3 direct dependency also counts as transitive, with no chain suffix ; test/anchor/domain/checks/no_transitive_dependency_test.exs:398 test find_dependency_path/3 a module first met on the current branch (a cycle) is still left for a later route ; test/anchor/domain/checks/no_transitive_dependency_test.exs:234 test detect_violations/3 no matching rules (empty rule list) flags nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:298 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_modules and forbidden_patterns both fire transitively ; test/anchor/domain/checks/no_transitive_dependency_test.exs:70 test detect_violations/3 flags across a two-hop chain (A->B->C->Repo) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:419 test find_dependency_path/3 detect_violations/3 reports the first path in dependency order, past a shared dead end ; test/anchor/domain/checks/no_transitive_dependency_test.exs:211 test detect_violations/3 empty forbidden list flags nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:141 test detect_violations/3 self-reference does not produce a spurious hit (self removed) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:263 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_patterns flags a transitively-reached adapter ; test/anchor/domain/checks/no_transitive_dependency_test.exs:410 test find_dependency_path/3 an unreachable target yields nil after expanding each reachable module once ; test/anchor/domain/checks/no_transitive_dependency_test.exs:49 test detect_violations/3 flags a forbidden module reached through one intermediary (A->B->Repo) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:187 test detect_violations/3 module absent from the map yields nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:373 test find_dependency_path/3 a dead-end subtree reached by two routes is expanded once, and the path is the first in dependency order ; test/anchor/domain/checks/no_transitive_dependency_test.exs:118 test detect_violations/3 chain that never reaches the forbidden module passes ; test/anchor/domain/checks/no_transitive_dependency_test.exs:386 test find_dependency_path/3 of two routes, the path is the first in dependency order, not the shortest
+42de7de20c55	lib/anchor/domain/checks/no_transitive_dependency.ex	Anchor.Domain.Checks.NoTransitiveDependency.find_dependency_path/3	return_input	invalid	
+74705366d1fe	lib/anchor/domain/checks/no_transitive_dependency.ex	Anchor.Domain.Checks.NoTransitiveDependency.find_dependency_path/3	return_input	invalid	
+d700ff8b7a71	lib/anchor/domain/checks/no_transitive_dependency.ex	Anchor.Domain.Checks.NoTransitiveDependency.find_dependency_path/3	return_input	invalid	
+4435d9f752a9	lib/anchor/domain/checks/no_transitive_dependency.ex	Anchor.Domain.Checks.NoTransitiveDependency.search/5	force_condition	killed	test/anchor/domain/checks/no_transitive_dependency_test.exs:373 test find_dependency_path/3 a dead-end subtree reached by two routes is expanded once, and the path is the first in dependency order ; test/anchor/domain/checks/no_transitive_dependency_test.exs:141 test detect_violations/3 self-reference does not produce a spurious hit (self removed) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:169 test detect_violations/3 cycle in the graph terminates and still detects ; test/anchor/domain/checks/no_transitive_dependency_test.exs:398 test find_dependency_path/3 a module first met on the current branch (a cycle) is still left for a later route ; test/anchor/domain/checks/no_transitive_dependency_test.exs:365 test find_dependency_path/3 expands each module of a dense layered graph at most once ; test/anchor/domain/checks/no_transitive_dependency_test.exs:410 test find_dependency_path/3 an unreachable target yields nil after expanding each reachable module once
+f88a5b16f4ee	lib/anchor/domain/checks/no_transitive_dependency.ex	Anchor.Domain.Checks.NoTransitiveDependency.search/5	force_condition	killed	test/anchor/domain/checks/no_transitive_dependency_test.exs:365 test find_dependency_path/3 expands each module of a dense layered graph at most once ; test/anchor/domain/checks/no_transitive_dependency_test.exs:169 test detect_violations/3 cycle in the graph terminates and still detects ; test/anchor/domain/checks/no_transitive_dependency_test.exs:419 test find_dependency_path/3 detect_violations/3 reports the first path in dependency order, past a shared dead end ; test/anchor/domain/checks/no_transitive_dependency_test.exs:410 test find_dependency_path/3 an unreachable target yields nil after expanding each reachable module once ; test/anchor/domain/checks/no_transitive_dependency_test.exs:141 test detect_violations/3 self-reference does not produce a spurious hit (self removed) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:91 test detect_violations/3 direct dependency also counts as transitive, with no chain suffix ; test/anchor/domain/checks/no_transitive_dependency_test.exs:118 test detect_violations/3 chain that never reaches the forbidden module passes ; test/anchor/domain/checks/no_transitive_dependency_test.exs:263 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_patterns flags a transitively-reached adapter ; test/anchor/domain/checks/no_transitive_dependency_test.exs:373 test find_dependency_path/3 a dead-end subtree reached by two routes is expanded once, and the path is the first in dependency order ; test/anchor/domain/checks/no_transitive_dependency_test.exs:211 test detect_violations/3 empty forbidden list flags nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:234 test detect_violations/3 no matching rules (empty rule list) flags nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:398 test find_dependency_path/3 a module first met on the current branch (a cycle) is still left for a later route ; test/anchor/domain/checks/no_transitive_dependency_test.exs:49 test detect_violations/3 flags a forbidden module reached through one intermediary (A->B->Repo) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:386 test find_dependency_path/3 of two routes, the path is the first in dependency order, not the shortest ; test/anchor/domain/checks/no_transitive_dependency_test.exs:70 test detect_violations/3 flags across a two-hop chain (A->B->C->Repo) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:187 test detect_violations/3 module absent from the map yields nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:298 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_modules and forbidden_patterns both fire transitively
+286f65222171	lib/anchor/domain/checks/no_transitive_dependency.ex	Anchor.Domain.Checks.NoTransitiveDependency.search/5	narrow_clause	killed	test/anchor/domain/checks/no_transitive_dependency_test.exs:70 test detect_violations/3 flags across a two-hop chain (A->B->C->Repo) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:365 test find_dependency_path/3 expands each module of a dense layered graph at most once ; test/anchor/domain/checks/no_transitive_dependency_test.exs:211 test detect_violations/3 empty forbidden list flags nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:187 test detect_violations/3 module absent from the map yields nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:410 test find_dependency_path/3 an unreachable target yields nil after expanding each reachable module once ; test/anchor/domain/checks/no_transitive_dependency_test.exs:91 test detect_violations/3 direct dependency also counts as transitive, with no chain suffix ; test/anchor/domain/checks/no_transitive_dependency_test.exs:118 test detect_violations/3 chain that never reaches the forbidden module passes ; test/anchor/domain/checks/no_transitive_dependency_test.exs:298 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_modules and forbidden_patterns both fire transitively ; test/anchor/domain/checks/no_transitive_dependency_test.exs:373 test find_dependency_path/3 a dead-end subtree reached by two routes is expanded once, and the path is the first in dependency order ; test/anchor/domain/checks/no_transitive_dependency_test.exs:141 test detect_violations/3 self-reference does not produce a spurious hit (self removed) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:419 test find_dependency_path/3 detect_violations/3 reports the first path in dependency order, past a shared dead end ; test/anchor/domain/checks/no_transitive_dependency_test.exs:263 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_patterns flags a transitively-reached adapter ; test/anchor/domain/checks/no_transitive_dependency_test.exs:169 test detect_violations/3 cycle in the graph terminates and still detects ; test/anchor/domain/checks/no_transitive_dependency_test.exs:386 test find_dependency_path/3 of two routes, the path is the first in dependency order, not the shortest ; test/anchor/domain/checks/no_transitive_dependency_test.exs:49 test detect_violations/3 flags a forbidden module reached through one intermediary (A->B->Repo) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:234 test detect_violations/3 no matching rules (empty rule list) flags nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:398 test find_dependency_path/3 a module first met on the current branch (a cycle) is still left for a later route
+3e8e455549bc	lib/anchor/domain/checks/no_transitive_dependency.ex	Anchor.Domain.Checks.NoTransitiveDependency.search/5	narrow_clause	killed	test/anchor/domain/checks/no_transitive_dependency_test.exs:263 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_patterns flags a transitively-reached adapter ; test/anchor/domain/checks/no_transitive_dependency_test.exs:169 test detect_violations/3 cycle in the graph terminates and still detects ; test/anchor/domain/checks/no_transitive_dependency_test.exs:141 test detect_violations/3 self-reference does not produce a spurious hit (self removed) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:187 test detect_violations/3 module absent from the map yields nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:386 test find_dependency_path/3 of two routes, the path is the first in dependency order, not the shortest ; test/anchor/domain/checks/no_transitive_dependency_test.exs:91 test detect_violations/3 direct dependency also counts as transitive, with no chain suffix ; test/anchor/domain/checks/no_transitive_dependency_test.exs:398 test find_dependency_path/3 a module first met on the current branch (a cycle) is still left for a later route ; test/anchor/domain/checks/no_transitive_dependency_test.exs:298 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_modules and forbidden_patterns both fire transitively ; test/anchor/domain/checks/no_transitive_dependency_test.exs:234 test detect_violations/3 no matching rules (empty rule list) flags nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:49 test detect_violations/3 flags a forbidden module reached through one intermediary (A->B->Repo) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:70 test detect_violations/3 flags across a two-hop chain (A->B->C->Repo) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:373 test find_dependency_path/3 a dead-end subtree reached by two routes is expanded once, and the path is the first in dependency order ; test/anchor/domain/checks/no_transitive_dependency_test.exs:365 test find_dependency_path/3 expands each module of a dense layered graph at most once ; test/anchor/domain/checks/no_transitive_dependency_test.exs:118 test detect_violations/3 chain that never reaches the forbidden module passes ; test/anchor/domain/checks/no_transitive_dependency_test.exs:419 test find_dependency_path/3 detect_violations/3 reports the first path in dependency order, past a shared dead end ; test/anchor/domain/checks/no_transitive_dependency_test.exs:211 test detect_violations/3 empty forbidden list flags nothing
+164de9cc3b92	lib/anchor/domain/checks/no_transitive_dependency.ex	Anchor.Domain.Checks.NoTransitiveDependency.search/5	return_input	killed	test/anchor/domain/checks/no_transitive_dependency_test.exs:419 test find_dependency_path/3 detect_violations/3 reports the first path in dependency order, past a shared dead end ; test/anchor/domain/checks/no_transitive_dependency_test.exs:365 test find_dependency_path/3 expands each module of a dense layered graph at most once ; test/anchor/domain/checks/no_transitive_dependency_test.exs:169 test detect_violations/3 cycle in the graph terminates and still detects ; test/anchor/domain/checks/no_transitive_dependency_test.exs:373 test find_dependency_path/3 a dead-end subtree reached by two routes is expanded once, and the path is the first in dependency order ; test/anchor/domain/checks/no_transitive_dependency_test.exs:187 test detect_violations/3 module absent from the map yields nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:263 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_patterns flags a transitively-reached adapter ; test/anchor/domain/checks/no_transitive_dependency_test.exs:398 test find_dependency_path/3 a module first met on the current branch (a cycle) is still left for a later route ; test/anchor/domain/checks/no_transitive_dependency_test.exs:141 test detect_violations/3 self-reference does not produce a spurious hit (self removed) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:118 test detect_violations/3 chain that never reaches the forbidden module passes ; test/anchor/domain/checks/no_transitive_dependency_test.exs:386 test find_dependency_path/3 of two routes, the path is the first in dependency order, not the shortest ; test/anchor/domain/checks/no_transitive_dependency_test.exs:211 test detect_violations/3 empty forbidden list flags nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:234 test detect_violations/3 no matching rules (empty rule list) flags nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:49 test detect_violations/3 flags a forbidden module reached through one intermediary (A->B->Repo) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:298 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_modules and forbidden_patterns both fire transitively ; test/anchor/domain/checks/no_transitive_dependency_test.exs:91 test detect_violations/3 direct dependency also counts as transitive, with no chain suffix ; test/anchor/domain/checks/no_transitive_dependency_test.exs:70 test detect_violations/3 flags across a two-hop chain (A->B->C->Repo)
+4cdad30be498	lib/anchor/domain/checks/no_transitive_dependency.ex	Anchor.Domain.Checks.NoTransitiveDependency.search/5	return_input	killed	test/anchor/domain/checks/no_transitive_dependency_test.exs:419 test find_dependency_path/3 detect_violations/3 reports the first path in dependency order, past a shared dead end ; test/anchor/domain/checks/no_transitive_dependency_test.exs:365 test find_dependency_path/3 expands each module of a dense layered graph at most once ; test/anchor/domain/checks/no_transitive_dependency_test.exs:169 test detect_violations/3 cycle in the graph terminates and still detects ; test/anchor/domain/checks/no_transitive_dependency_test.exs:373 test find_dependency_path/3 a dead-end subtree reached by two routes is expanded once, and the path is the first in dependency order ; test/anchor/domain/checks/no_transitive_dependency_test.exs:187 test detect_violations/3 module absent from the map yields nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:263 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_patterns flags a transitively-reached adapter ; test/anchor/domain/checks/no_transitive_dependency_test.exs:398 test find_dependency_path/3 a module first met on the current branch (a cycle) is still left for a later route ; test/anchor/domain/checks/no_transitive_dependency_test.exs:141 test detect_violations/3 self-reference does not produce a spurious hit (self removed) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:118 test detect_violations/3 chain that never reaches the forbidden module passes ; test/anchor/domain/checks/no_transitive_dependency_test.exs:386 test find_dependency_path/3 of two routes, the path is the first in dependency order, not the shortest ; test/anchor/domain/checks/no_transitive_dependency_test.exs:211 test detect_violations/3 empty forbidden list flags nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:234 test detect_violations/3 no matching rules (empty rule list) flags nothing ; test/anchor/domain/checks/no_transitive_dependency_test.exs:49 test detect_violations/3 flags a forbidden module reached through one intermediary (A->B->Repo) ; test/anchor/domain/checks/no_transitive_dependency_test.exs:298 test detect_violations/3 — forbidden_patterns (Gap A / DND-142) forbidden_modules and forbidden_patterns both fire transitively ; test/anchor/domain/checks/no_transitive_dependency_test.exs:91 test detect_violations/3 direct dependency also counts as transitive, with no chain suffix ; test/anchor/domain/checks/no_transitive_dependency_test.exs:70 test detect_violations/3 flags across a two-hop chain (A->B->C->Repo)
+```
