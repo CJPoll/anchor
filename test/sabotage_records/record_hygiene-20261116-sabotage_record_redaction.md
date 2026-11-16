@@ -212,3 +212,19 @@ history now.
         :scheduler_line}
      ]
 ```
+
+The last generated run lists the plain guard's two tests and H3, H4 and the
+runner's root test as lacking a red. H3 is row A, H4 row G, the root test row
+B, the guard row H. The positive control:
+
+| Row | Mutation | Test that failed | Result |
+|---|---|---|---|
+| I | `@records_glob` pointed at `test/no_records/*.md` | `sabotage_record_hygiene_test.exs` "positive control: the records directory is read" | 2 tests, 1 failure |
+
+```
+  1) test positive control: the records directory is read (Anchor.SabotageRecordHygieneTest)
+     test/anchor/sabotage_record_hygiene_test.exs:26
+     Assertion with != failed, both sides are exactly equal
+     code: assert Path.wildcard(@records_glob) != []
+     left: []
+```
