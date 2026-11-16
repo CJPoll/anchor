@@ -1128,7 +1128,8 @@ defmodule Anchor.Managers.Sabotage.Runner do
          test_command: config.test_command,
          domain: Map.get(facts, :domain),
          changed_tests: changed_tests(facts.root, scope, ports),
-         existing: records.names
+         existing: records.names,
+         root: facts.root
        }}
     end
   end

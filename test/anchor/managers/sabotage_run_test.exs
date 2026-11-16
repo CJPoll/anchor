@@ -1105,7 +1105,7 @@ defmodule Anchor.Managers.SabotageRunTest do
     end
 
     # Two mutants: the first killed, the second survives (exit 1).
-    defp expect_full_run(config \\ %SabotageConfig{}) do
+    defp expect_full_run(config \\ %SabotageConfig{}, killer \\ @killer) do
       [_first, second] = mutants()
       expect_until_selection(config: config)
       expect_baseline(test_run(:passed))
@@ -1116,8 +1116,26 @@ defmodule Anchor.Managers.SabotageRunTest do
       expect(TestExecutionMock, :run, 2, fn _argv, ["test/calc_test.exs"], _opts ->
         if calls_seen({:write_journal, second.id}),
           do: test_run(:passed),
-          else: test_run(:failed, [@killer])
+          else: test_run(:failed, [killer])
       end)
+    end
+
+    test "a path under the run's root in a failure is written relative to it" do
+      text = ~s(left: "#{@root}/_build/test/calc"\ntest-slot: queued behind ticket-1234)
+      expect_full_run(%SabotageConfig{}, %{@killer | text: text})
+      expect_git_for_record()
+
+      expect(Anchor.RecordStoreMock, :create, fn @root, @record_path, content ->
+        send(self(), {:record, content})
+        :ok
+      end)
+
+      Sabotage.run(@rec_facts, @opts)
+
+      assert_received {:record, content}
+      assert content =~ ~s(left: "_build/test/calc"\n)
+      refute content =~ "#{@root}/"
+      refute content =~ "test-slot:"
     end
 
     test "1: a run's record is created at Record.render's path with its content" do
