@@ -171,6 +171,11 @@ defmodule Anchor.Domain.Sabotage.RecordHygieneTest do
              ]
     end
 
+    test "a listed record whose date is no calendar date is late" do
+      bad = "test/sabotage_records/w-20261399-branch_w.md"
+      assert RecordHygiene.judge(%{bad => @leaky}, [bad], @newest) == [{:late, bad}]
+    end
+
     test "a record dated on newest itself may be listed" do
       on = "test/sabotage_records/z-20260110-branch_z.md"
       assert RecordHygiene.judge(%{on => @leaky}, [on], @newest) == []
