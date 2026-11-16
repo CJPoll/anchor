@@ -68,6 +68,25 @@ C:
      Fix: a :leak is a record carrying a scheduler line or a home path: ...
 ```
 
+## Tests the generated run left lacking a red
+
+The rerun lists four tests no generated mutant failed. Three have their red
+above: `record_test.exs` H3 (row A), the runner's root test (row B) and the
+guard (row C). The fourth:
+
+| Row | Mutation | Test that failed | Result |
+|---|---|---|---|
+| D | `@start` (the "no path character before it" lookbehind of every path pattern) set to `""` | `record_hygiene_test.exs:94` "paths that are not under a home directory are kept" | 1 test, 1 failure |
+
+```
+  1) test redact/2: local absolute paths paths that are not under a home directory are kept (Anchor.Domain.Sabotage.RecordHygieneTest)
+     test/anchor/domain/sabotage/record_hygiene_test.exs:94
+     Assertion with == failed
+     code:  assert RecordHygiene.redact(text, @root) == text
+     left:  "/tmp/a /usr/lib/erlang /homework/x lib~"
+     right: "/tmp/a /usr/lib/erlang /homework/x lib/home/y"
+```
+
 ## Runner.recording/7 mutants, run by hand against the runner's tests
 
 Each patch is the generated record's, applied with `git apply`, then the file
