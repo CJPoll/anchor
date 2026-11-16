@@ -719,7 +719,7 @@ defmodule Anchor.Domain.Checks.StructOwnedByModuleTest do
   test "a bodiless function head matches a struct; it builds none" do
     source = """
     defmodule App.Builder do
-      def a(%App.Turn{} = t, opts \\\\ [])
+      def a(%App.Turn{status: :idle}, opts \\\\ [])
       def a(t, _opts), do: t
     end
     """
