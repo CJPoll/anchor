@@ -1,6 +1,6 @@
 defmodule Anchor.Check.NoDiscardingArrowInWith do
   use Anchor.Check.Base,
-    category: :refactoring,
+    category: :refactor,
     explanations: [
       check: """
       This check ensures that `with` expressions don't use unnecessary arrows (`<-`) when the
