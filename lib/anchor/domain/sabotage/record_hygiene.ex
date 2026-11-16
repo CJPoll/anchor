@@ -166,7 +166,8 @@ defmodule Anchor.Domain.Sabotage.RecordHygiene do
   defp usable_root(_root), do: nil
 
   # `root/x` becomes `x`; `root` at a token's end becomes `.`; `root` followed
-  # by anything else (a sibling such as `root2`) is left for rewrite_all/1.
+  # by anything else (a sibling such as `root2`), or inside a longer path, is
+  # left for rewrite_all/1.
   defp strip_root(line, nil), do: line
 
   defp strip_root(line, root) do
@@ -174,10 +175,25 @@ defmodule Anchor.Domain.Sabotage.RecordHygiene do
     Enum.reduce(rest, first, &join_root(&2, &1, root))
   end
 
-  defp join_root(acc, "/" <> after_root, _root), do: acc <> after_root
-
+  # The root counts only where a path starts: `/srv/app/x` holds `/app` but is
+  # not under it.
   defp join_root(acc, after_root, root) do
+    if path_start?(acc), do: rooted(acc, after_root, root), else: acc <> root <> after_root
+  end
+
+  defp rooted(acc, "/" <> after_root, _root), do: acc <> after_root
+
+  defp rooted(acc, after_root, root) do
     if token_end?(after_root), do: acc <> "." <> after_root, else: acc <> root <> after_root
+  end
+
+  # Nothing before, or a character no path holds (a space, a quote, `=`, `(`).
+  defp path_start?(""), do: true
+
+  defp path_start?(before) do
+    last = :binary.last(before)
+
+    not (last in ?a..?z or last in ?A..?Z or last in ?0..?9 or last in ~c"._-~/")
   end
 
   # -- local paths --------------------------------------------------------------

@@ -119,6 +119,13 @@ defmodule Anchor.Domain.Sabotage.RecordHygieneTest do
       assert RecordHygiene.redact(text, @root) == text
     end
 
+    test "the root inside a longer path is not the root" do
+      text = "deps at /srv/app/deps/x, a/app/b and x=/app/lib/a.ex (/app)"
+
+      assert RecordHygiene.redact(text, "/app") ==
+               "deps at /srv/app/deps/x, a/app/b and x=lib/a.ex (.)"
+    end
+
     test "a sibling of the root is not the root" do
       assert RecordHygiene.redact("#{@root}2/lib/a.ex", @root) == "<worktree>/lib/a.ex"
     end
