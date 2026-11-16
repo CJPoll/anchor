@@ -228,3 +228,19 @@ B, the guard row H. The positive control:
      code: assert Path.wildcard(@records_glob) != []
      left: []
 ```
+
+## The root counts only where a path starts (after the third critic round)
+
+| Row | Mutation (the code as it was) | Test that failed | Result |
+|---|---|---|---|
+| J | `strip_root/2` cutting the root wherever it appears (head 5f36ba1) | `record_hygiene_test.exs` "the root inside a longer path is not the root" | 25 tests, 1 failure |
+
+```
+     Assertion with == failed
+     code:  assert RecordHygiene.redact(text, "/app") == "deps at /srv/app/deps/x, a/app/b and x=lib/a.ex (.)"
+     left:  "deps at /srvdeps/x, ab and x=lib/a.ex (.)"
+     right: "deps at /srv/app/deps/x, a/app/b and x=lib/a.ex (.)"
+```
+
+The run that followed lists the same five tests as lacking a red: rows A
+(H3), G (H4), B (the runner's root test), H and I (the guard).
