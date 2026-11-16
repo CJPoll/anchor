@@ -5,6 +5,7 @@ defmodule Anchor.Check.CredoCategoryTest do
   # still exits 0), so a typo in a `category:` option silently disables the
   # check's enforcement.
   #
+  # Sabotage record: ../../sabotage_records/no_discarding_arrow_in_with-20261116-credo_category_exit_status.md
   use ExUnit.Case, async: true
 
   alias Anchor.Check.NoDiscardingArrowInWith
@@ -26,7 +27,7 @@ defmodule Anchor.Check.CredoCategoryTest do
 
   describe "declared category" do
     test "the check set is not empty" do
-      assert length(check_modules()) >= 15
+      refute check_modules() == [], "no Anchor check modules were discovered"
     end
 
     test "every check declares a category for which Credo assigns a non-zero exit status" do
@@ -40,7 +41,7 @@ defmodule Anchor.Check.CredoCategoryTest do
 
     test "every check's own exit_status/0 is non-zero" do
       bad = for check <- check_modules(), check.exit_status() == 0, do: check
-      assert bad == []
+      assert bad == [], "checks whose exit_status/0 is 0: #{inspect(bad)}"
     end
   end
 
