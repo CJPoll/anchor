@@ -98,12 +98,13 @@ defmodule Anchor.Domain.Checks.NoTransitiveDependency do
   end
 
   defp build_violation(forbidden_module, current_module, modules_map, ast) do
-    path = find_dependency_path(modules_map, current_module, forbidden_module)
+    {path, _expanded} = find_dependency_path(modules_map, current_module, forbidden_module)
     path_description = format_dependency_path(path)
 
     # The line where the current module references the first hop of the path.
-    direct_dep = Enum.at(path, 1)
-    line = if direct_dep, do: find_module_reference_line(ast, direct_dep)
+    # The forbidden module is reachable and is not the current module, so the
+    # path always has a first hop.
+    line = find_module_reference_line(ast, Enum.at(path, 1))
 
     %Violation{
       message:
@@ -113,37 +114,63 @@ defmodule Anchor.Domain.Checks.NoTransitiveDependency do
     }
   end
 
-  # Pure DFS for one concrete path from `start_module` to `target_module` over
-  # the graph, terminating on cycles (visited set). Returns the node list or
-  # `nil` when no path exists.
-  defp find_dependency_path(modules_map, start_module, target_module) do
-    find_path_dfs(modules_map, start_module, target_module, [], MapSet.new())
+  @doc """
+  One dependency path from `start_module` to `target_module` over `modules_map`,
+  and the number of modules the search expanded (read the dependencies of).
+
+  The path is a depth-first search in `direct_dependencies` order and returns the
+  first path that order reaches, or `nil` when there is none. One visited set is
+  shared by every branch of the search, so each module is expanded at most once
+  and the search is linear in the graph's size. A module the search has left
+  without reaching the target reaches it, if at all, only through a module still
+  on the current branch, which a simple path from that branch cannot revisit
+  either; so skipping it later reports the same path a search of every simple
+  path would.
+
+  The count is there so a test can see how much was searched; the check itself
+  uses only the path.
+  """
+  @spec find_dependency_path(map(), module(), module()) :: {[module()] | nil, non_neg_integer()}
+  def find_dependency_path(modules_map, start_module, target_module) do
+    {reversed_path, %{expanded: expanded}} =
+      search(modules_map, start_module, target_module, [], %{visited: MapSet.new(), expanded: 0})
+
+    {reversed_path && Enum.reverse(reversed_path), expanded}
   end
 
-  defp find_path_dfs(modules_map, current, target, path, visited) do
-    new_path = path ++ [current]
+  # `reversed_path` holds the modules above `current`, nearest first.
+  # `state.visited` is every module expanded so far, on any branch;
+  # `state.expanded` counts the expansions, apart from the set, so a search that
+  # expanded a module twice would say so.
+  defp search(_modules_map, target, target, reversed_path, state),
+    do: {[target | reversed_path], state}
 
-    cond do
-      current == target ->
-        new_path
-
-      MapSet.member?(visited, current) ->
-        nil
-
-      true ->
-        descend(modules_map, current, target, new_path, MapSet.put(visited, current))
+  defp search(modules_map, current, target, reversed_path, state) do
+    if MapSet.member?(state.visited, current) do
+      {nil, state}
+    else
+      modules_map
+      |> dependencies_of(current)
+      |> search_each(modules_map, target, [current | reversed_path], expand(state, current))
     end
   end
 
-  defp descend(modules_map, current, target, path, visited) do
-    case Map.get(modules_map, current) do
-      nil ->
-        nil
+  defp expand(%{visited: visited, expanded: expanded}, module),
+    do: %{visited: MapSet.put(visited, module), expanded: expanded + 1}
 
-      %{direct_dependencies: deps} ->
-        Enum.find_value(deps, fn dep ->
-          find_path_dfs(modules_map, dep, target, path, visited)
-        end)
+  defp search_each(deps, modules_map, target, reversed_path, state) do
+    Enum.reduce_while(deps, {nil, state}, fn dep, {nil, acc} ->
+      modules_map |> search(dep, target, reversed_path, acc) |> continue_unless_found()
+    end)
+  end
+
+  defp continue_unless_found({nil, state}), do: {:cont, {nil, state}}
+  defp continue_unless_found(found), do: {:halt, found}
+
+  defp dependencies_of(modules_map, module) do
+    case Map.get(modules_map, module) do
+      nil -> []
+      %{direct_dependencies: deps} -> deps
     end
   end
 

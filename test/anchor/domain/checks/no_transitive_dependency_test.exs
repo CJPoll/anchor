@@ -21,6 +21,14 @@ defmodule Anchor.Domain.Checks.NoTransitiveDependencyTest do
   alias Anchor.Domain.Checks.NoTransitiveDependency
   alias Anchor.Domain.Violation
 
+  # A path search that stops terminating (a cycle followed forever) fails its
+  # test at this heap bound, about 16 MB, instead of growing until the host
+  # kills the run. Every test here needs a small fraction of it.
+  setup do
+    Process.flag(:max_heap_size, %{size: 2_000_000, kill: true, error_logger: false})
+    :ok
+  end
+
   defp ast(source), do: Code.string_to_quoted!(source)
 
   defp rule(forbidden), do: %{type: :no_transitive_dependency, forbidden_modules: forbidden}
@@ -320,6 +328,113 @@ defmodule Anchor.Domain.Checks.NoTransitiveDependencyTest do
                [pattern_rule(["*.Adapters.*"])],
                modules_map
              ) == []
+    end
+  end
+
+  # The path finder shares one visited set across every branch of its search, so
+  # each module is expanded (its dependency list read) at most once. A search
+  # that only remembered the modules on the current branch re-walked every
+  # shared subtree once per route into it: exponential in the graph's depth on a
+  # layered graph, and a credo run over a large tree never finished once a
+  # violation existed. The tests count expansions, never time.
+  #
+  # Sabotage record:
+  #   ../../../sabotage_records/no_transitive_dependency-20261116-athena_path_finder_visited_set.md
+  describe "find_dependency_path/3" do
+    # `Root` depends on every module of layer 1 and then on `Bridge`; every
+    # module of layer i depends on every module of layer i + 1; the last layer
+    # depends on nothing; `Bridge` depends on `Forbidden`. The only route to
+    # `Forbidden` is the last one tried, after the whole layered subgraph.
+    defp layered_graph(width, depth) do
+      layer = fn i -> Enum.map(1..width, &Module.concat([Layer, "L#{i}", "N#{&1}"])) end
+
+      layers =
+        Map.new(1..depth, fn i ->
+          next = if i < depth, do: layer.(i + 1), else: []
+          {i, Enum.map(layer.(i), &{&1, %{direct_dependencies: next}})}
+        end)
+
+      layers
+      |> Map.values()
+      |> List.flatten()
+      |> Map.new()
+      |> Map.put(Root, %{direct_dependencies: layer.(1) ++ [Bridge]})
+      |> Map.put(Bridge, %{direct_dependencies: [Forbidden]})
+    end
+
+    test "expands each module of a dense layered graph at most once" do
+      modules_map = layered_graph(3, 8)
+
+      # Root, the 24 layer modules and Bridge: every module but the target.
+      assert {[Root, Bridge, Forbidden], 26} =
+               NoTransitiveDependency.find_dependency_path(modules_map, Root, Forbidden)
+    end
+
+    test "a dead-end subtree reached by two routes is expanded once, and the path is the first in dependency order" do
+      modules_map = %{
+        S => %{direct_dependencies: [A, B]},
+        A => %{direct_dependencies: [C]},
+        B => %{direct_dependencies: [C, D]},
+        C => %{direct_dependencies: []},
+        D => %{direct_dependencies: [Forbidden]}
+      }
+
+      assert {[S, B, D, Forbidden], 5} =
+               NoTransitiveDependency.find_dependency_path(modules_map, S, Forbidden)
+    end
+
+    test "of two routes, the path is the first in dependency order, not the shortest" do
+      modules_map = %{
+        S => %{direct_dependencies: [A, B]},
+        A => %{direct_dependencies: [C]},
+        B => %{direct_dependencies: [Forbidden]},
+        C => %{direct_dependencies: [Forbidden]}
+      }
+
+      assert {[S, A, C, Forbidden], 3} =
+               NoTransitiveDependency.find_dependency_path(modules_map, S, Forbidden)
+    end
+
+    test "a module first met on the current branch (a cycle) is still left for a later route" do
+      modules_map = %{
+        S => %{direct_dependencies: [A]},
+        A => %{direct_dependencies: [B, C]},
+        B => %{direct_dependencies: [A]},
+        C => %{direct_dependencies: [Forbidden]}
+      }
+
+      assert {[S, A, C, Forbidden], 4} =
+               NoTransitiveDependency.find_dependency_path(modules_map, S, Forbidden)
+    end
+
+    test "an unreachable target yields nil after expanding each reachable module once" do
+      modules_map = layered_graph(3, 8)
+
+      # 26, and Forbidden itself: here it is not the target, so it is expanded
+      # (it has no entry, so no dependencies).
+      assert {nil, 27} =
+               NoTransitiveDependency.find_dependency_path(modules_map, Root, Elsewhere)
+    end
+
+    test "detect_violations/3 reports the first path in dependency order, past a shared dead end" do
+      # A and B both reach the dead end C; the first route to Forbidden is
+      # through B, then D, though B -> Forbidden is shorter and comes later.
+      modules_map = %{
+        A => %{direct_dependencies: [C, B]},
+        B => %{direct_dependencies: [C, D, Forbidden]},
+        C => %{direct_dependencies: []},
+        D => %{direct_dependencies: [Forbidden]}
+      }
+
+      assert [%Violation{} = violation] =
+               NoTransitiveDependency.detect_violations(
+                 a_refs_b(),
+                 [rule([Forbidden])],
+                 modules_map
+               )
+
+      assert violation.message =~ "dependency chain: A -> B -> D -> Forbidden"
+      assert violation.line == 2
     end
   end
 end
