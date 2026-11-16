@@ -7,37 +7,55 @@
   (now public: the path, and the number of modules the search expanded) and
   `detect_violations/3`, which reports that path in its message
 - **Suite run:** `mix test test/anchor/domain/checks/no_transitive_dependency_test.exs`
+  (19 tests), at commit 5b44830; each mutation applied alone, then the file
+  restored with `git checkout`
 
 The path finder kept only the modules on the current branch as visited, so it
 re-walked every shared subtree once per route into it: exponential in depth on a
 layered graph, and a credo run over a large tree did not finish once a violation
 existed. It now shares one visited set across every branch. The tests count
 expansions through a counter kept apart from the visited set; none of them time
-anything.
+anything. Each test runs under a heap bound (`Process.flag(:max_heap_size, ...)`,
+about 16 MB), so a search that stops terminating fails at the bound instead of
+growing until the host kills the run.
 
 The fixture `layered_graph(width, depth)`: `Root` depends on every module of
 layer 1 and then on `Bridge`; each layer depends on all of the next; `Bridge`
 depends on `Forbidden`. The route to `Forbidden` is tried last.
 
+## Hand mutations
+
 | # | Mutation | Tests failed | Failure string |
 |---|---|---|---|
-| A | The unfixed algorithm: the visited set passed down each branch and dropped when the branch returns (per-branch, not shared), with the same counter | 3 of the 4 counting tests (run without the 4^30-route test, which the unfixed code does not return from) | `left: {[Root, Bridge, Forbidden], 26}` `right: {[Root, Bridge, Forbidden], 9842}`; `left: {nil, 26}` `right: {nil, 9843}` (that row now expects 27, see below); `left: {[S, B, D, Forbidden], 5}` `right: {[S, B, D, Forbidden], 6}` |
-| B | Stop counting (`expanded: expanded + 1` -> `expanded: expanded`) | 4 | `left: {[Root, Bridge, Forbidden], 26}` `right: {[Root, Bridge, Forbidden], 0}` (and `0` on the other three counting rows) |
-| C | Search the dependencies in reverse order (`Enum.reduce_while(deps, ...)` -> `Enum.reduce_while(Enum.reverse(deps), ...)`) | 4 | `left: {[S, A, C, Forbidden], 3}` `right: {[S, B, Forbidden], 2}` (the two-route row); the counting rows see fewer expansions, e.g. `right: {[Root, Bridge, Forbidden], 2}` |
+| A | The defect: visited is only the current branch (`if MapSet.member?(state.visited, current)` -> `if current in reversed_path`), the counter unchanged | 3 | `left: {[Root, Bridge, Forbidden], 26}` `right: {[Root, Bridge, Forbidden], 9842}`; `left: {nil, 27}` `right: {nil, 9843}`; `left: {[S, B, D, Forbidden], 5}` `right: {[S, B, D, Forbidden], 6}` |
+| B | Stop counting (`expanded: expanded + 1` -> `expanded: expanded`) | 5 | `left: {[Root, Bridge, Forbidden], 26}` `right: {[Root, Bridge, Forbidden], 0}`, and `right: {..., 0}` on the other four counting rows |
+| C | Search the dependencies in reverse order (`Enum.reduce_while(deps, ...)` -> `Enum.reduce_while(Enum.reverse(deps), ...)`) | 5 | `left: {[S, A, C, Forbidden], 3}` `right: {[S, B, Forbidden], 2}` (two routes); detect_violations/3: `left: "Module has transitive dependency on forbidden module Forbidden (dependency chain: A -> B -> Forbidden). Fix: ..."` `right: "dependency chain: A -> B -> D -> Forbidden"`; the counting rows see fewer expansions, e.g. `right: {[Root, Bridge, Forbidden], 2}` |
+| D | No visited check at all (`if MapSet.member?(state.visited, current)` -> `if false`) | 6 | the three cycle tests die at the heap bound: `** (EXIT from #PID<0.1504.0>) killed` (self-reference), `killed` (cycle row 6), `killed` (cycle met on the current branch); the counting rows as under A, e.g. `right: {[Root, Bridge, Forbidden], 9842}`. The whole file finished in 0.1 s |
+
+## Stayed green, and why
+
+- Under **A**, the cycle-on-the-current-branch test (count 4 either way) and
+  the two-route test (count 3 either way): neither graph has a module reached by
+  two routes, so the shared set changes nothing there. They pin cycle handling
+  and order, not the shared set. The detect_violations/3 order test also stays
+  green: A changes how much is searched, not which path is found.
+- Under **B**, the detect_violations/3 rows: the check does not read the count.
+- Under **C**, the unreachable-target test: every module is expanded in either
+  order (27 both ways).
 
 ## Notes
 
-- **A** is the defect itself. The paths are equal on both sides of every failure:
-  the fix changes how much is searched, not which path is reported.
+- **A** is the pre-fix half of the refactor (ADR 002): the old search's visited
+  set was exactly the modules on the current path, rebuilt here as one changed
+  line on the new code so the same counter measures both. The paths on both
+  sides of every A failure are equal: the fix changes how much is searched, not
+  which path is reported. The commit that made the fix holds the same red
+  against a full copy of the old code.
+- **D** is the generated run's crashed mutant `4435d9f752a9` (run 09:13 UTC
+  below): before the heap bound, the cycle tests recursed until the test run
+  was killed by signal 9.
 - The unreachable-target row expects 27, not 26: when `Forbidden` is not the
-  target it is expanded too (it has no entry, so no dependencies). Under A that
-  row reported 9843.
-- **C** pins the reported path to the first in dependency order. Before the
-  two-route row was added, reversing the order failed only on counts: every
-  other fixture has one route to the target.
-- Not run: removing the visited-set check entirely. Without it a cycle never
-  terminates (the cycle rows would not return), and the shared set's effect is
-  already what A measures.
+  target it is expanded too (it has no entry, so no dependencies).
 
 ## Run 09:13 UTC
 
