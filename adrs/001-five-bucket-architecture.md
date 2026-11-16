@@ -421,6 +421,7 @@ Only the classification of subjects the table had not yet listed is added.
 | `Anchor.Domain.Checks.*` | Domain | Each Credo check's pure detection, called through `Anchor.Managers.Lint`. |
 | `Anchor.Domain.LandedJudge` | Domain | What the landed judge decides beyond the ratchet (DND-5658): the base rules a change removes or retypes, the FIRST LANDING notes, and the rules it runs. Pure, over rule lists the Manager read. |
 | `Anchor.Domain.RuleSchema`, `Anchor.Domain.RuleMatching`, `Anchor.Domain.RuleCoverage`, `Anchor.Domain.Failures`, `Anchor.Domain.Violation`, `Anchor.Domain.GlobPattern`, `Anchor.Domain.AllowedCallers`, `Anchor.Domain.PureCalls`, `Anchor.Domain.EffectPrimitives` | Domain | The rule schema, rule selection, the fail-closed messages, the violation struct and the pattern grammars every rule shares. |
+| `Anchor.Domain.AttributeNode` | Domain | How an AST walker reads a module attribute's node: its value is code, its name never is (`@use X` is not a `use`). Pure. |
 
 #### Amendment (2026-11-06, DND-5480): the test-time backstop's modules are listed
 

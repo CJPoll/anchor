@@ -104,6 +104,13 @@ An AST clause that matches a special form or directive by name (`quote`,
 name is `{name, meta, context_atom}` (DND-1310). The table in
 `test/fixtures/special_variable_names.txt` drives the analyzer and every check.
 
+A module attribute with such a name is not that form either: `@use X` is
+`{:@, meta, [{:use, meta, [X]}]}`, the shape of a `use` call under its `@`. A
+walker that descends into an `@` node walks only its value, through
+`Anchor.Domain.AttributeNode` (`children/1` for a recursive walker,
+`without_name/1` in a `Macro.prewalk/3` callback). The same table drives the
+`*_attribute_names_test.exs` files.
+
 A rule may carry only the keys its type reads, and needs a selector (`paths`,
 `pattern` or `uses_module`); anything else fails the load (DND-1286). The
 per-type key allowlist has one home, `Anchor.Domain.RuleSchema`. A new rule key

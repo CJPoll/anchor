@@ -42,6 +42,7 @@ defmodule Anchor.Domain.Checks.ModulePatternRestrictions do
   in `?`.
   """
 
+  alias Anchor.Domain.AttributeNode
   alias Anchor.Domain.DependencyAnalyzer
   alias Anchor.Domain.GlobPattern
   alias Anchor.Domain.RuleShapes
@@ -123,8 +124,9 @@ defmodule Anchor.Domain.Checks.ModulePatternRestrictions do
         {:defp, _meta, [{name, _, _} | _]} = node, acc when is_atom(name) ->
           {node, MapSet.put(acc, to_string(name))}
 
+        # `@def Other.Mod` has the shape of a `def` under its `@`; it defines nothing.
         node, acc ->
-          {node, acc}
+          {AttributeNode.without_name(node), acc}
       end)
 
     MapSet.to_list(functions)
@@ -150,7 +152,7 @@ defmodule Anchor.Domain.Checks.ModulePatternRestrictions do
           {node, Keyword.get(meta, :line)}
 
         node, acc ->
-          {node, acc}
+          {AttributeNode.without_name(node), acc}
       end)
 
     line

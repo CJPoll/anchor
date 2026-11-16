@@ -37,6 +37,8 @@ defmodule Anchor.Domain.Graph.SourceFacts do
   takes the text.
   """
 
+  alias Anchor.Domain.AttributeNode
+
   @type t :: %{
           defmodules: [String.t()],
           uses: %{optional(String.t()) => [String.t()]},
@@ -72,6 +74,10 @@ defmodule Anchor.Domain.Graph.SourceFacts do
   # first. `current` is the name of the module whose body is being walked, nil
   # at the top level, or `:nonliteral` inside a module whose name is not literal.
   defp walk({:quote, _meta, args}, _current, acc) when is_list(args), do: acc
+
+  # `@use X` has the shape of a `use` under its `@`; only its value is code.
+  defp walk({:@, _meta, _args} = node, current, acc),
+    do: walk(AttributeNode.children(node), current, acc)
 
   defp walk({:defmodule, _meta, [name_ast, body]}, current, acc) do
     case module_name(name_ast, current, :file_aliased in acc) do
