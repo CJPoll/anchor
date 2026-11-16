@@ -46,6 +46,11 @@ defmodule Anchor.Domain.Sabotage.RecordHygieneTest do
       assert RecordHygiene.redact(text, nil) == "before\nafter\n"
     end
 
+    test "keeps a line shaped like a waiting line whose count is not a number" do
+      text = "many waiting (this run: none)\n waiting (this run: none)"
+      assert RecordHygiene.redact(text, nil) == text
+    end
+
     test "keeps a line that only mentions test-slot mid-sentence" do
       text = "the run used test-slot: once\nassert x == 1"
       assert RecordHygiene.redact(text, nil) == text
@@ -207,6 +212,11 @@ defmodule Anchor.Domain.Sabotage.RecordHygieneTest do
     test "a listed record whose date is no calendar date is late" do
       bad = "test/sabotage_records/w-20261399-branch_w.md"
       assert RecordHygiene.judge(%{bad => @leaky}, [bad], @newest) == [{:late, bad}]
+    end
+
+    test "the date is the first eight-digit segment, not any eight-character one" do
+      named = "test/sabotage_records/a-notadate-20260105-branch_a.md"
+      assert RecordHygiene.judge(%{named => @leaky}, [named], @newest) == []
     end
 
     test "a record dated on newest itself may be listed" do

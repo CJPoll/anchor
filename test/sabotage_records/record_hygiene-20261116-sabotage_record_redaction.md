@@ -19,7 +19,7 @@ watched by hand: the tests written before the fix, and the mutants of
 |---|---|---|---|
 | A | `Record.render/2` with no redaction (before this branch) | `record_test.exs` H1, H2, H3 | 3 failures |
 | B | `Runner.recording/7` builds its ctx with `root: nil` | `sabotage_run_test.exs` "a path under the run's root in a failure is written relative to it" | 1 failure |
-| C | `.anchor/sabotage/record_leaks.txt` without the `cfa-20261106-...` entry, plus an entry `zzz-20261120-later.md` | `sabotage_record_hygiene_test.exs` "every committed record is clean, or listed while it still leaks" | 1 failure |
+| C | the list (then `.anchor/sabotage_record_leaks.txt`) without the `cfa-20261106-...` entry, plus an entry `zzz-20261120-later.md` | `sabotage_record_hygiene_test.exs` "every committed record is clean, or listed while it still leaks" | 1 failure |
 
 A (H1, verbatim):
 
@@ -68,7 +68,61 @@ C:
      Fix: a :leak is a record carrying a scheduler line or a home path: ...
 ```
 
-@@LACKING@@
+## Tests the generated runs left lacking a red
+
+The last generated run lists five tests no mutant failed. `record_test.exs` H3
+has its red in row A and the runner's root test in row B. The guard's three
+tests were run by hand against the guard as it stands after the review round
+(list at `.anchor/sabotage/record_leaks.txt`, landed copy pinned in the test),
+each with the list file changed and then restored:
+
+| Row | Mutation of the list | Test that failed | Result |
+|---|---|---|---|
+| C2 | the `cfa-20261106-...` entry removed | "every committed record is clean, or listed while it still leaks" | 3 tests, 1 failure |
+| E | an entry added for `aggregates-20261103-dnd_5476_aggregate_decls.md` (a clean record, dated before the cutoff) | "the list only shrinks: every entry is one it landed with" (and the clean-or-listed test, as `:stale`) | 3 tests, 2 failures |
+| F | the two `aggregates-` entries swapped | "the list is sorted and has no duplicate" | 3 tests, 1 failure |
+
+C2:
+
+```
+  1) test every committed record is clean, or listed while it still leaks (Anchor.SabotageRecordHygieneTest)
+     test/anchor/sabotage_record_hygiene_test.exs:49
+     [
+       {:leak, "test/sabotage_records/cfa-20261106-dnd_5676_effects_cfa_batch.md",
+        99, :scheduler_line},
+       {:leak, "test/sabotage_records/cfa-20261106-dnd_5676_effects_cfa_batch.md",
+        100, :scheduler_line},
+       {:leak, "test/sabotage_records/cfa-20261106-dnd_5676_effects_cfa_batch.md",
+        101, :scheduler_line}
+     ]
+```
+
+E:
+
+```
+  1) test the list only shrinks: every entry is one it landed with (Anchor.SabotageRecordHygieneTest)
+     test/anchor/sabotage_record_hygiene_test.exs:59
+     Fix: a record that was not on the list never joins it
+     code: assert listed() -- landed == [], "Fix: a record that was not on the list never joins it"
+  2) test every committed record is clean, or listed while it still leaks (Anchor.SabotageRecordHygieneTest)
+     test/anchor/sabotage_record_hygiene_test.exs:49
+     [stale: "test/sabotage_records/aggregates-20261103-dnd_5476_aggregate_decls.md"]
+```
+
+F:
+
+```
+  1) test the list is sorted and has no duplicate (Anchor.SabotageRecordHygieneTest)
+     test/anchor/sabotage_record_hygiene_test.exs:64
+     Assertion with == failed
+     code:  assert listed() == Enum.uniq(Enum.sort(listed()))
+     left:  ["test/sabotage_records/aggregates-20261106-dnd_5459_write_sets.md",
+             "test/sabotage_records/aggregates-20261103-dnd_5459_write_sets.md",
+             ...
+```
+
+Row C above is the same guard before the review round (list then at the
+repository's `.anchor/` root, no pinned copy).
 
 ## Runner.recording/7 mutants, run by hand against the runner's tests
 
@@ -93,8 +147,14 @@ restored.
 | E2 | 2a94c6d56834 with_passthrough: `{_, branch} <- branch(facts.root, ports)` | `sabotage_run_test.exs` | 89 tests, 0 failures | the same: `branch/2` refuses with `{:refuse, 3, message}` |
 | E3 | 198c78fe3380 with_passthrough: `{_, dir} <- RecordNaming.dir(ctx.records, app)` in `Record.entry/5` | generated run (`record_test.exs` and neighbours) | 59 tests, 0 failures | on `{:error, :no_app}` the next step, `RecordNaming.path/2`, calls `dir/2` with the same config and app and returns the same error, so the result is identical |
 
-The generated run's other survivor, ac7e92c56c31 (`RecordHygiene.dated_after?/2`
+The first generated run's other survivor, ac7e92c56c31 (`RecordHygiene.dated_after?/2`
 with_passthrough on `Date.from_iso8601/1`), was a real gap: a listed path
 whose date is no calendar date raised instead of being late. The test "a
 listed record whose date is no calendar date is late" was added for it; the
 rerun's record shows it killed.
+
+The run after the review round (no regex, ADR 004) left one survivor,
+fb681b5c945b (`RecordHygiene.digits?/1` return_input: every segment counted
+as digits). Two tests were added for it: "keeps a line shaped like a waiting
+line whose count is not a number" and "the date is the first eight-digit
+segment, not any eight-character one"; the next run's record shows it.
