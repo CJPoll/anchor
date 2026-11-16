@@ -2,6 +2,8 @@ defmodule Anchor.Domain.Graph.SourceFactsAttributeNamesTest do
   # A module attribute named like a directive (`@use Other.Mod`) is
   # `{:@, meta, [{:use, meta, [value]}]}`: the inner node has the shape of a
   # `use` call. It uses nothing, for every name in the special-names table.
+  #
+  # Sabotage record: ../../../sabotage_records/graph-20261116-athena_quote_attribute_crash.md, ../../../sabotage_records/attribute_node-20261116-athena_quote_attribute_crash.md (E)
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Graph.SourceFacts

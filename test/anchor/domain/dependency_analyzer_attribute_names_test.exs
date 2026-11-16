@@ -7,6 +7,8 @@ defmodule Anchor.Domain.DependencyAnalyzerAttributeNamesTest do
   # (`@quote` read as a quote block with no body) or recorded the wrong thing
   # (`@use Other.Mod` read as `use Other.Mod`). Every such name must read
   # exactly as an attribute with a plain name does.
+  #
+  # Sabotage record: ../../sabotage_records/dependency_analyzer-20261116-athena_quote_attribute_crash.md (hand runs A, B), ../../sabotage_records/attribute_node-20261116-athena_quote_attribute_crash.md (D, F)
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.DependencyAnalyzer

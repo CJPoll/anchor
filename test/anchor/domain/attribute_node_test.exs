@@ -1,5 +1,7 @@
 defmodule Anchor.Domain.AttributeNodeTest do
   # Domain: an attribute's name is never code, only its value is.
+  #
+  # Sabotage record: ../../sabotage_records/attribute_node-20261116-athena_quote_attribute_crash.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.AttributeNode

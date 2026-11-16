@@ -3,6 +3,8 @@ defmodule Anchor.Domain.Sabotage.FunctionSpansAttributeNamesTest do
   # `{:@, meta, [{:def, meta, [value]}]}`: the inner node has the shape of a
   # `def` call. It defines no function, so it has no span, for every name in
   # the special-names table.
+  #
+  # Sabotage record: ../../../sabotage_records/sabotage-20261116-athena_quote_attribute_crash.md (hand run C)
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Sabotage.FunctionSpans

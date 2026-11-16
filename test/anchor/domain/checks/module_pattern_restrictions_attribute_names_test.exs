@@ -3,6 +3,8 @@ defmodule Anchor.Domain.Checks.ModulePatternRestrictionsAttributeNamesTest do
   # `{:@, meta, [{:def, meta, [value]}]}`: the inner node has the shape of a
   # `def` call. It defines no function, and `@use Some.Base` uses nothing, for
   # every name in the special-names table.
+  #
+  # Sabotage record: ../../../sabotage_records/module_pattern_restrictions-20261116-athena_quote_attribute_crash.md
   use ExUnit.Case, async: true
 
   alias Anchor.Domain.Checks.ModulePatternRestrictions

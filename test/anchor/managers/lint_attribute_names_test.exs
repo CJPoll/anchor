@@ -12,6 +12,8 @@ defmodule Anchor.Managers.LintAttributeNamesTest do
   # The config loader is a Hammox mock (`expect/3`, so each load self-proves);
   # everything else is real: parsing, facts, selection, the module graph and
   # every check's detection.
+  #
+  # Sabotage record: ../../sabotage_records/dependency_analyzer-20261116-athena_quote_attribute_crash.md (hand run B)
   use ExUnit.Case, async: true
 
   import Hammox
