@@ -92,7 +92,8 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
     assert RuleSchema.relation_keys(:no_transitive_dependency) ==
              ~w(forbidden_modules forbidden_patterns)
 
-    assert RuleSchema.relation_keys(:must_use_module) == ~w(required_modules)
+    assert RuleSchema.relation_keys(:must_use_module) ==
+             ~w(required_any_of_modules required_modules)
   end
 
   test "two rules with the same id are refused, naming both positions" do
@@ -310,7 +311,7 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
 
   defp table(:must_use_module) do
     no_relation = Map.delete(base(:must_use_module), "required_modules")
-    missing = "required_modules is missing or empty"
+    missing = "required_any_of_modules and required_modules are missing or empty"
 
     common_rows(:must_use_module) ++
       [
@@ -320,7 +321,20 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
         {"required_modules of empty strings", Map.put(no_relation, "required_modules", [""]),
          {:refused, "`required_modules` must be a list of non-empty strings"}},
         {"required_modules that is a string", Map.put(no_relation, "required_modules", "A"),
-         {:refused, "`required_modules` must be a list of non-empty strings"}}
+         {:refused, "`required_modules` must be a list of non-empty strings"}},
+        {"positive: required_any_of_modules alone",
+         Map.put(no_relation, "required_any_of_modules", ["MyApp.A", "MyApp.B"]), :accepted},
+        {"required_any_of_modules: []", Map.put(no_relation, "required_any_of_modules", []),
+         {:refused, "`required_any_of_modules` is empty"}},
+        {"required_any_of_modules of empty strings",
+         Map.put(no_relation, "required_any_of_modules", [""]),
+         {:refused, "`required_any_of_modules` must be a list of non-empty strings"}},
+        {"required_any_of_modules that is a string",
+         Map.put(no_relation, "required_any_of_modules", "A"),
+         {:refused, "`required_any_of_modules` must be a list of non-empty strings"}},
+        {"required_any_of_modules beside required_modules",
+         Map.put(base(:must_use_module), "required_any_of_modules", ["MyApp.A"]),
+         {:refused, "are alternatives and cannot be combined"}}
       ]
   end
 

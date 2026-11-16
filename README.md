@@ -183,7 +183,8 @@ rule's position (and its `id`, when it has one) and ending with `Fix:`:
   whose `forbidden_functions`, `forbidden_modules` and `forbidden_patterns` are
   all missing or empty, a `no_transitive_dependency` rule whose
   `forbidden_modules` and `forbidden_patterns` are both missing or empty, or a
-  `must_use_module` rule with no `required_modules`. The table below lists each
+  `must_use_module` rule with neither `required_modules` nor
+  `required_any_of_modules`. The table below lists each
   type's relation;
 - a relation list that is not a list of non-blank strings
   (`forbidden_modules: [""]`, or a bare `-` in YAML);
@@ -413,7 +414,8 @@ semantics and edge cases.
 | `baseline` | any rule | A path relative to the project root, no `..` (convention `.anchor/baselines/<id>.txt`): the rule's shrink-only baseline. Needs `id`. A graph rule's is judged by `mix anchor.graph`, an ast rule's by its Credo check and `mix anchor.baseline` (DND-5632). |
 | `bucket` | graph rules | Selector: the modules of that `architecture:` bucket. Must name one of its buckets. |
 | `min_modules` | graph rules | Positive integer, default `1`: the fewest modules the rule must select; fewer is an issue. A graph rule's floor (`min_files` is refused there). |
-| `forbidden_modules` / `required_modules` | `no_direct_dependency`, `no_transitive_dependency` / `must_use_module` | Exact module tokens (see the token syntax below). |
+| `forbidden_modules` / `required_modules` | `no_direct_dependency`, `no_transitive_dependency` / `must_use_module` | Exact module tokens (see the token syntax below). `required_modules`: the module must use every one. |
+| `required_any_of_modules` | `must_use_module` | Exact module tokens, as `required_modules`, but the module must use at least one. Refused when empty, when not a list, and beside `required_modules`. The violation names every accepted alternative. |
 | `forbidden_patterns` | `no_direct_dependency`, `no_transitive_dependency` | Module-name globs; forbids any referenced/reachable module whose name matches. |
 | `forbidden_functions` | `no_direct_dependency` | `"Module.function"` or `"Module.function/arity"` tokens; forbids calling (or capturing) that function, in every call shape. A malformed token fails the load. See [Forbidding functions](#forbidding-functions-forbidden_functions). |
 | `allowed_callers` | `no_direct_dependency` | Exact module names, default `[]`. Code in a listed module is exempt from every relation of this rule. A glob, an Erlang module or a malformed name fails the load; an entry no selected file defines is an issue. See [Allowing named callers](#allowing-named-callers-allowed_callers). |
@@ -467,7 +469,7 @@ compiled code (DND-5440; `layering`, DND-5442, `context_acyclic`, DND-5445,
 | `max_file_length` | `max_lines` | none | `ast` |
 | `module_one_component` | none | none | `graph` |
 | `module_pattern_restrictions` | `allowed_functions` | none | `ast` |
-| `must_use_module` | `required_modules` | `required_modules` | `ast` |
+| `must_use_module` | `required_any_of_modules`, `required_modules` | `required_any_of_modules`, `required_modules` | `ast` |
 | `no_comparison_in_if` | none | none | `ast` |
 | `no_direct_dependency` | `allowed_callers`, `context_depth`, `forbidden_functions`, `forbidden_modules`, `forbidden_patterns`, `match`, `same_context` | `forbidden_functions`, `forbidden_modules`, `forbidden_patterns` | `ast` |
 | `no_discarded_pure_expression` | `pure_patterns` | none | `ast` |
@@ -534,7 +536,7 @@ merely held as an atom passes. This is the "Domain-router-holds-atoms" carve-out
 ```
 
 **Leading-colon `:atom` module syntax.** A `forbidden_modules` /
-`required_modules` token that starts with `:` names an Erlang/OTP module and is
+`required_modules` / `required_any_of_modules` token that starts with `:` names an Erlang/OTP module and is
 kept as the raw atom (via `String.to_atom`, **not** `Module.concat`), so it
 matches a bare-atom remote call. Quote it so YAML keeps it a string.
 
@@ -2682,9 +2684,9 @@ Prevents direct dependencies on forbidden modules.
   recursive: true
 ```
 
-#### Module token syntax (`forbidden_modules` / `required_modules`)
+#### Module token syntax (`forbidden_modules` / `required_modules` / `required_any_of_modules`)
 
-Each entry in `forbidden_modules` and `required_modules` names a module in one of
+Each entry in `forbidden_modules`, `required_modules` and `required_any_of_modules` names a module in one of
 two forms:
 
 - **Elixir alias** — a CamelCase token such as `MyApp.Repo` or `Ecto.Query`.
@@ -3036,6 +3038,24 @@ Ensures modules in specific directories use required modules.
     - MyApp.Schema
   recursive: true
 ```
+
+`required_modules` means the module must `use` **every** one listed. To accept
+any one of several bases, list them under `required_any_of_modules` instead:
+
+```yaml
+- type: must_use_module
+  paths:
+    - "lib/my_app/workers/**/*.ex"
+  required_any_of_modules:
+    - MyApp.Worker
+    - MyApp.ProWorker
+```
+
+A module that uses none of them gets one violation naming every accepted
+alternative (`Module must use one of MyApp.Worker, MyApp.ProWorker`). The two
+keys are alternatives: a rule carrying both, or a `required_any_of_modules`
+that is empty or not a list of module names, fails the config load. For
+"every one of these, and one of those", write two rules.
 
 ### `module_pattern_restrictions`
 

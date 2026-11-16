@@ -63,7 +63,7 @@ defmodule Anchor.Config do
   `Anchor.Domain.RuleSchema`, and nowhere else: a new rule key is added there,
   then parsed here.
 
-  ## Module tokens (`forbidden_modules` / `required_modules`)
+  ## Module tokens (`forbidden_modules` / `required_modules` / `required_any_of_modules`)
 
   Each entry is turned into the module it names. A CamelCase token
   (`"MyApp.Repo"`) is an Elixir alias and becomes the module atom `MyApp.Repo`
@@ -481,6 +481,10 @@ defmodule Anchor.Config do
       # has already refused a malformed entry. Absent => `[]` (no exemption).
       allowed_callers: parse_allowed_callers(rule["allowed_callers"]),
       required_modules: parse_modules(rule["required_modules"]),
+      # `must_use_module`: use at least one of these (`required_modules` is
+      # every one). `RuleSchema.validate/2` refuses both keys together and an
+      # empty list. Absent => `[]`.
+      required_any_of_modules: parse_modules(rule["required_any_of_modules"]),
       # Gap A (DND-142): module-name globs (e.g. `"*.Adapters.*"`), matched with
       # `Anchor.Domain.GlobPattern.matches_module_pattern?/2`. Absent ⇒ `[]`.
       # Patterns are strings (not run through `parse_modules`, unlike

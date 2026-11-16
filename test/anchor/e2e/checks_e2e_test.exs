@@ -702,7 +702,7 @@ defmodule Anchor.E2E.ChecksE2ETest do
       assert [issue] = issues
       assert issue.filename == Path.join(dir, ".anchor.yml")
       assert issue.message =~ "rule 1: a must_use_module rule has no relation"
-      assert issue.message =~ "required_modules is missing or empty"
+      assert issue.message =~ "required_any_of_modules and required_modules are missing or empty"
       assert issue.message =~ "no Anchor rule was checked"
       assert issue.message =~ ~r/Fix: [^\n]+\z/
     end
