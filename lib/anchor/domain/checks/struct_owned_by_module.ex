@@ -46,6 +46,7 @@ defmodule Anchor.Domain.Checks.StructOwnedByModule do
   is itself reported, so a new namespace is never silently unchecked.
   """
 
+  alias Anchor.Domain.AttributeNode
   alias Anchor.Domain.DependencyAnalyzer
   alias Anchor.Domain.StructOwnership
   alias Anchor.Domain.Violation
@@ -131,6 +132,10 @@ defmodule Anchor.Domain.Checks.StructOwnedByModule do
     do: walk_head(head, ctx, acc)
 
   defp walk({:@, _meta, [{attr, _ameta, _value}]}, _ctx, acc) when attr in @type_attrs, do: acc
+
+  # `@def %S{}` has the shape of a `def` under its `@`; only its value is code.
+  defp walk({:@, _meta, _args} = node, ctx, acc),
+    do: walk(AttributeNode.children(node), ctx, acc)
 
   defp walk({:cond, _meta, [[do: clauses]]}, ctx, acc) when is_list(clauses) do
     Enum.reduce(clauses, acc, fn

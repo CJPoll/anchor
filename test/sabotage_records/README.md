@@ -153,7 +153,11 @@ before coining a synonym.
   `Anchor.Domain.GraphReport` (DND-5461 batch). A hand record for those modules
   stays under `graph_runner`.
 - `source_facts` — `Anchor.Domain.Graph.SourceFacts` (DND-5438): the literal
-  `defmodule`s and `use`s of a source file.
+  `defmodule`s and `use`s of a source file. `graph` is the word `mix
+  anchor.sabotage run` derives for its generated runs on that module; a hand
+  record stays under `source_facts`.
+- `attribute_node` — `Anchor.Domain.AttributeNode`: how an AST walker reads a
+  module attribute's node (its value is code, its name never is).
 - `glob_pattern` — `Anchor.Domain.GlobPattern` (glob / module-name pattern
   matching for rule selection).
 - `rule_matching` — `Anchor.Domain.RuleMatching` (pure rule-selection predicate).

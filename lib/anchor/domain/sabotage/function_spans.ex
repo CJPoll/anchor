@@ -25,6 +25,7 @@ defmodule Anchor.Domain.Sabotage.FunctionSpans do
       `unquote` are marked `excluded_macro`.
   """
 
+  alias Anchor.Domain.AttributeNode
   alias Anchor.Domain.Sabotage.Span
 
   @defs [:def, :defp, :defmacro, :defmacrop, :defguard, :defguardp]
@@ -76,6 +77,10 @@ defmodule Anchor.Domain.Sabotage.FunctionSpans do
 
   defp walk({:quote, _meta, args}, ctx, acc) when is_list(args),
     do: walk(args, %{ctx | quoted: true}, acc)
+
+  # `@def x` has the shape of a `def` under its `@`; only its value is code.
+  defp walk({:@, _meta, _args} = node, ctx, acc),
+    do: walk(AttributeNode.children(node), ctx, acc)
 
   defp walk({call, _meta, args}, ctx, acc) when is_list(args),
     do: walk(args, ctx, walk(call, ctx, acc))

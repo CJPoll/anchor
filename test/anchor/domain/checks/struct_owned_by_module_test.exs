@@ -698,4 +698,35 @@ defmodule Anchor.Domain.Checks.StructOwnedByModuleTest do
     kernel = String.replace(source, "{struct(App.Turn, attrs)", "{Kernel.struct(App.Turn, attrs)")
     assert triggers(kernel) == ["struct"], "positive control: Kernel.struct is Kernel's"
   end
+
+  test "a bare path function the module defines itself is not Kernel's" do
+    source = """
+    defmodule App.Builder do
+      import Kernel, except: [put_in: 2]
+
+      def a(%App.Turn{} = t), do: put_in(t.status, :idle)
+
+      defp put_in(_target, value), do: value
+    end
+    """
+
+    assert triggers(source) == []
+
+    kernel = String.replace(source, "do: put_in(t.status", "do: Kernel.put_in(t.status")
+    assert triggers(kernel) == ["put_in"], "positive control: Kernel.put_in is Kernel's"
+  end
+
+  test "a bodiless function head matches a struct; it builds none" do
+    source = """
+    defmodule App.Builder do
+      def a(%App.Turn{status: :idle}, opts \\\\ [])
+      def a(t, _opts), do: t
+    end
+    """
+
+    assert triggers(source) == []
+
+    body = String.replace(source, "def a(t, _opts), do: t", "def b, do: %App.Turn{}")
+    assert triggers(body) == ["%App.Turn{"], "positive control: a struct built in a body is"
+  end
 end

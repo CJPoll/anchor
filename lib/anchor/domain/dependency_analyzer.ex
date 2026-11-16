@@ -168,8 +168,12 @@ defmodule Anchor.Domain.DependencyAnalyzer do
   A clause that matches a special form or a directive by name (`quote`,
   `alias`, `import`, `defmodule`, ...) matches the call only (`args` a list),
   so a variable with that name (`<<?\\\\, quote, t::binary>>` in Elixir's own
-  `OptionParser.split/1`) is an ordinary variable.
+  `OptionParser.split/1`) is an ordinary variable. A module attribute with that
+  name (`@quote x`, `@use X`) is an attribute: its name is never code, only its
+  value is (`Anchor.Domain.AttributeNode`).
   """
+
+  alias Anchor.Domain.AttributeNode
 
   @def_kinds [:def, :defp, :defmacro, :defmacrop, :defguard, :defguardp, :defdelegate]
 
@@ -1317,6 +1321,10 @@ defmodule Anchor.Domain.DependencyAnalyzer do
         {:quote, _meta, args}, locals when is_list(args) ->
           {nil, locals}
 
+        # `@def helper(1)` has the shape of a `def` under its `@`; it defines nothing.
+        {:@, _meta, _args} = node, locals ->
+          {AttributeNode.without_name(node), locals}
+
         {kind, _meta, [head | _rest]} = node, locals when kind in @def_kinds ->
           {node, add_signatures(locals, head)}
 
@@ -1426,6 +1434,10 @@ defmodule Anchor.Domain.DependencyAnalyzer do
       {node, acc}
     end
   end
+
+  # An attribute named `use` (`@use Other.Mod`) has the shape of a `use` call
+  # under its `@`; only its value is code.
+  defp collect_use({:@, _meta, _args} = node, acc), do: {AttributeNode.without_name(node), acc}
 
   defp collect_use(node, acc), do: {node, acc}
 end

@@ -13,6 +13,8 @@ defmodule Anchor.Domain.Sabotage.ChangedTests do
   known at run time).
   """
 
+  alias Anchor.Domain.AttributeNode
+
   @type test :: %{file: String.t(), line: pos_integer(), name: String.t()}
 
   @spec in_ranges(String.t(), String.t(), [{non_neg_integer(), non_neg_integer()}]) ::
@@ -42,6 +44,10 @@ defmodule Anchor.Domain.Sabotage.ChangedTests do
     last = meta |> Keyword.get(:end, line: line) |> Keyword.fetch!(:line)
     [{line..last//1, line, full_name(describe, name)} | acc]
   end
+
+  # `@test "x"` has the shape of a `test` under its `@`; only its value is code.
+  defp walk({:@, _meta, _args} = node, describe, acc),
+    do: walk(AttributeNode.children(node), describe, acc)
 
   defp walk({_call, _meta, args}, describe, acc) when is_list(args),
     do: Enum.reduce(args, acc, &walk(&1, describe, &2))
