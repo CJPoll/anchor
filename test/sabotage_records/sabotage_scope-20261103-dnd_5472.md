@@ -1472,7 +1472,7 @@ code: capture_io(:stderr, fn ->
 
 ```
 test/mix/tasks/anchor_sabotage_scope_test.exs:75
-** (Mox.UnexpectedCallError) no expectation defined for Anchor.ChangeSourceMock.merge_base/2 in process #PID<0.242.0> with args ["/home/cjpoll/.local/worktrees/anchor/dnd-5472", "origin/main"]
+** (Mox.UnexpectedCallError) no expectation defined for Anchor.ChangeSourceMock.merge_base/2 in process #PID<0.242.0> with args ["<worktree>", "origin/main"]
 code: for argv <- [
 ```
 
@@ -1497,7 +1497,7 @@ test/mix/tasks/anchor_sabotage_scope_test.exs:42
 The following arguments were given to anonymous fn/2 in Mix.Tasks.Anchor.SabotageScopeTest.expect_one_change/1:
 
     # 1
-    "/home/cjpoll/.local/worktrees/anchor/dnd-5472"
+    "<worktree>"
 
     # 2
     "main"

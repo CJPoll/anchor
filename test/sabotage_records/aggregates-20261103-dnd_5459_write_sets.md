@@ -2270,7 +2270,7 @@ the model never builds the analysis (`lib/anchor/domain/model.ex`). Result: `2 t
                   label: "anchor.graph",
                   enforcement: :enforce,
                   key: nil,
-                  file: "/home/cjpoll/.local/worktrees/anchor/dnd-5459-write-sets/test/fixtures/graph_canary/aggregate_write_sources/.anchor.yml",
+                  file: "<worktree>/test/fixtures/graph_canary/aggregate_write_sources/.anchor.yml",
                   line: nil,
                   message: "rule 1 (id: \"aggregate_write_sources\", aggregate_write_sources): no Ecto repo found: no module declares @behaviour Ecto.Repo and aggregates.repos is empty. Fix: list the repo under aggregates.repos."
                 }
@@ -2307,7 +2307,7 @@ the model never builds the analysis (`lib/anchor/domain/model.ex`). Result: `2 t
                 label: "anchor.graph",
                 enforcement: :enforce,
                 key: nil,
-                file: "/home/cjpoll/.local/worktrees/anchor/dnd-5459-write-sets/test/fixtures/graph_canary/aggregate_write_sources/.anchor.yml",
+                file: "<worktree>/test/fixtures/graph_canary/aggregate_write_sources/.anchor.yml",
                 line: nil,
                 message: "rule 1 (id: \"aggregate_write_sources\", aggregate_write_sources): no Ecto repo found: no module declares @behaviour Ecto.Repo and aggregates.repos is empty. Fix: list the repo under aggregates.repos."
               }
@@ -4846,7 +4846,7 @@ the index does not keep none (`lib/anchor/domain/aggregates/index.ex`). Result: 
                 label: "anchor.graph",
                 enforcement: :enforce,
                 key: nil,
-                file: "/home/cjpoll/.local/worktrees/anchor/dnd-5459-write-sets/test/fixtures/graph_canary/aggregates_none/.anchor.yml",
+                file: "<worktree>/test/fixtures/graph_canary/aggregates_none/.anchor.yml",
                 line: nil,
                 message: "rule 1 (id: \"aggregate_declarations\", aggregate_declarations) checks nothing: no aggregate is declared in .anchor.yml or by an @anchor_aggregate attribute. Fix: declare one or remove the rule: aggregates: declare: - name: <Aggregate>, schemas: [<Schema>...], tables: [\"<table>\"...], owners: [<Module>...], or use Anchor.Aggregate, name: <Aggregate>, schemas: [<Schema>...]"
               }
@@ -4870,7 +4870,7 @@ the index does not keep none (`lib/anchor/domain/aggregates/index.ex`). Result: 
                   label: "anchor.graph",
                   enforcement: :enforce,
                   key: nil,
-                  file: "/home/cjpoll/.local/worktrees/anchor/dnd-5459-write-sets/test/fixtures/graph_canary/aggregates_none/.anchor.yml",
+                  file: "<worktree>/test/fixtures/graph_canary/aggregates_none/.anchor.yml",
                   line: nil,
                   message: "rule 1 (id: \"aggregate_declarations\", aggregate_declarations) checks nothing: no aggregate is declared in .anchor.yml or by an @anchor_aggregate attribute. Fix: declare one or remove the rule: aggregates: declare: - name: <Aggregate>, schemas: [<Schema>...], tables: [\"<table>\"...], owners: [<Module>...], or use Anchor.Aggregate, name: <Aggregate>, schemas: [<Schema>...]"
                 }
@@ -5184,7 +5184,7 @@ none still reports checks-nothing (`lib/anchor/domain/graph_rules/aggregate_decl
                 label: "anchor.graph",
                 enforcement: :enforce,
                 key: nil,
-                file: "/home/cjpoll/.local/worktrees/anchor/dnd-5459-write-sets/test/fixtures/graph_canary/aggregates_none/.anchor.yml",
+                file: "<worktree>/test/fixtures/graph_canary/aggregates_none/.anchor.yml",
                 line: nil,
                 message: "rule 1 (id: \"aggregate_declarations\", aggregate_declarations) checks nothing: no aggregate is declared in .anchor.yml or by an @anchor_aggregate attribute. Fix: declare one or remove the rule: aggregates: declare: - name: <Aggregate>, schemas: [<Schema>...], tables: [\"<table>\"...], owners: [<Module>...], or use Anchor.Aggregate, name: <Aggregate>, schemas: [<Schema>...]"
               }
@@ -5208,7 +5208,7 @@ none still reports checks-nothing (`lib/anchor/domain/graph_rules/aggregate_decl
                   label: "anchor.graph",
                   enforcement: :enforce,
                   key: nil,
-                  file: "/home/cjpoll/.local/worktrees/anchor/dnd-5459-write-sets/test/fixtures/graph_canary/aggregates_none/.anchor.yml",
+                  file: "<worktree>/test/fixtures/graph_canary/aggregates_none/.anchor.yml",
                   line: nil,
                   message: "rule 1 (id: \"aggregate_declarations\", aggregate_declarations) checks nothing: no aggregate is declared in .anchor.yml or by an @anchor_aggregate attribute. Fix: declare one or remove the rule: aggregates: declare: - name: <Aggregate>, schemas: [<Schema>...], tables: [\"<table>\"...], owners: [<Module>...], or use Anchor.Aggregate, name: <Aggregate>, schemas: [<Schema>...]"
                 }

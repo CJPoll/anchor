@@ -31,7 +31,7 @@ the task test that sets `MIX_BUILD_PATH` failed: `49 tests, 10 failures`.
      test/mix/tasks/anchor_sabotage_run_test.exs:139
      Assertion with == failed
      code:  assert path == Path.join(build, "anchor/sabotage/last-run.etf")
-     left:  "/home/cjpoll/.local/worktrees/anchor/dnd-5630-graph-hardening/_build/test/anchor/sabotage/last-run.etf"
+     left:  "<worktree>/_build/test/anchor/sabotage/last-run.etf"
      right: "/tmp/anchor-build-3779/anchor/sabotage/last-run.etf"
 ```
 
@@ -63,6 +63,6 @@ After: the two files and the run integration test run `50 tests, 0 failures`.
      test/mix/tasks/anchor_sabotage_run_test.exs:139
      Assertion with == failed
      code:  assert path == Path.join(build, "anchor/sabotage/last-run.etf")
-     left:  "/home/cjpoll/.local/worktrees/anchor/dnd-5630-graph-hardening/_build/test/anchor/sabotage/last-run.etf"
+     left:  "<worktree>/_build/test/anchor/sabotage/last-run.etf"
      right: "/tmp/anchor-build-1092/anchor/sabotage/last-run.etf"
 ```

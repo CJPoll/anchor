@@ -107,7 +107,7 @@ Run summary: `16 tests, 1 failure`
      test/anchor/adapters/beam_reader_test.exs:261
      match (=) failed
      The following variables were pinned:
-       missing = "/home/cjpoll/.local/worktrees/anchor/dnd-5438/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-a-missing-ebin-directory-is-one-error-naming-it,-never----925ad88d/missing"
+       missing = "<worktree>/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-a-missing-ebin-directory-is-one-error-naming-it,-never----925ad88d/missing"
      code:  assert [error: %{path: ^missing, module: nil, reason: {:unreadable, :enoent}}] =
               BeamReader.read_ebins(demo: missing)
      left:  [error: %{path: ^missing, module: nil, reason: {:unreadable, :enoent}}]
@@ -203,7 +203,7 @@ Run summary: `16 tests, 2 failures`
      Assertion with == failed
      code:  assert :code.is_loaded(behaviour) == false
      left:  {:file,
-             ~c"/home/cjpoll/.local/worktrees/anchor/dnd-5438/tmp/Anchor.Adapters.BeamReaderTest/test-decode-2-never-loads-a-behaviour-the-decoded-module-names,-even-when-it-is-on-the-code-path-c97dcf2f/Elixir.AnchorFixtures.BeamReaderTest.Behaviour.beam"}
+             ~c"<worktree>/tmp/Anchor.Adapters.BeamReaderTest/test-decode-2-never-loads-a-behaviour-the-decoded-module-names,-even-when-it-is-on-the-code-path-c97dcf2f/Elixir.AnchorFixtures.BeamReaderTest.Behaviour.beam"}
      right: false
      stacktrace:
        test/anchor/adapters/beam_reader_test.exs:113: (test)
@@ -320,7 +320,7 @@ Run summary: `16 tests, 2 failures`
      test/anchor/adapters/beam_reader_test.exs:270
      match (=) failed
      The following variables were pinned:
-       z_path = "/home/cjpoll/.local/worktrees/anchor/dnd-5438/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Z.beam"
+       z_path = "<worktree>/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Z.beam"
      code:  assert [%Beam{module: Plain}, error: %{path: ^z_path, reason: {:unreadable, _reason}}] =
               BeamReader.read_ebins(demo: dir)
      left:  [
@@ -331,7 +331,7 @@ Run summary: `16 tests, 2 failures`
               %Anchor.Domain.Graph.Beam{
                 module: AnchorFixtures.BeamReaderTest.Plain,
                 app: :demo,
-                path: "/home/cjpoll/.local/worktrees/anchor/dnd-5438/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Plain.beam",
+                path: "<worktree>/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Plain.beam",
                 elixir: %{
                   attributes: [
                     behaviour: AnchorFixtures.BeamReaderTest.Contract,
@@ -427,17 +427,17 @@ Run summary: `16 tests, 12 failures`
               error: %{
                 module: AnchorFixtures.BeamReaderTest.X,
                 reason: :no_debug_info,
-                path: "/home/cjpoll/.local/worktrees/anchor/dnd-5438/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-reads-every-beam-of-every-ebin,-sorted-by-path-e0fddf4a/Elixir.X.beam"
+                path: "<worktree>/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-reads-every-beam-of-every-ebin,-sorted-by-path-e0fddf4a/Elixir.X.beam"
               },
               error: %{
                 module: AnchorFixtures.BeamReaderTest.Y,
                 reason: :no_debug_info,
-                path: "/home/cjpoll/.local/worktrees/anchor/dnd-5438/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-reads-every-beam-of-every-ebin,-sorted-by-path-e0fddf4a/Elixir.Y.beam"
+                path: "<worktree>/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-reads-every-beam-of-every-ebin,-sorted-by-path-e0fddf4a/Elixir.Y.beam"
               },
               error: %{
                 module: AnchorFixtures.BeamReaderTest.Plain,
                 reason: :no_debug_info,
-                path: "/home/cjpoll/.local/worktrees/anchor/dnd-5438/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-reads-every-beam-of-every-ebin,-sorted-by-path-e0fddf4a/other/Elixir.Plain.beam"
+                path: "<worktree>/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-reads-every-beam-of-every-ebin,-sorted-by-path-e0fddf4a/other/Elixir.Plain.beam"
               }
             ]
      stacktrace:
@@ -612,7 +612,7 @@ Run summary: `16 tests, 12 failures`
      test/anchor/adapters/beam_reader_test.exs:270
      match (=) failed
      The following variables were pinned:
-       z_path = "/home/cjpoll/.local/worktrees/anchor/dnd-5438/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Z.beam"
+       z_path = "<worktree>/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Z.beam"
      code:  assert [%Beam{module: Plain}, error: %{path: ^z_path, reason: {:unreadable, _reason}}] =
               BeamReader.read_ebins(demo: dir)
      left:  [
@@ -623,12 +623,12 @@ Run summary: `16 tests, 12 failures`
               error: %{
                 module: AnchorFixtures.BeamReaderTest.Plain,
                 reason: :no_debug_info,
-                path: "/home/cjpoll/.local/worktrees/anchor/dnd-5438/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Plain.beam"
+                path: "<worktree>/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Plain.beam"
               },
               error: %{
                 module: nil,
                 reason: {:unreadable, {:not_a_beam_file, "garbage"}},
-                path: "/home/cjpoll/.local/worktrees/anchor/dnd-5438/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Z.beam"
+                path: "<worktree>/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Z.beam"
               }
             ]
      stacktrace:
@@ -660,7 +660,7 @@ Run summary: `16 tests, 2 failures`
               %Anchor.Domain.Graph.Beam{
                 module: AnchorFixtures.BeamReaderTest.Y,
                 app: :demo,
-                path: "/home/cjpoll/.local/worktrees/anchor/dnd-5438/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-reads-every-beam-of-every-ebin,-sorted-by-path-e0fddf4a/Elixir.Y.beam",
+                path: "<worktree>/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-reads-every-beam-of-every-ebin,-sorted-by-path-e0fddf4a/Elixir.Y.beam",
                 elixir: %{
                   attributes: [],
                   module: AnchorFixtures.BeamReaderTest.Y,
@@ -711,7 +711,7 @@ Run summary: `16 tests, 2 failures`
      test/anchor/adapters/beam_reader_test.exs:270
      match (=) failed
      The following variables were pinned:
-       z_path = "/home/cjpoll/.local/worktrees/anchor/dnd-5438/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Z.beam"
+       z_path = "<worktree>/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Z.beam"
      code:  assert [%Beam{module: Plain}, error: %{path: ^z_path, reason: {:unreadable, _reason}}] =
               BeamReader.read_ebins(demo: dir)
      left:  [
@@ -724,12 +724,12 @@ Run summary: `16 tests, 2 failures`
                  module: nil,
                  reason: {:unreadable,
                   {:not_a_beam_file, "garbage"}},
-                 path: "/home/cjpoll/.local/worktrees/anchor/dnd-5438/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Z.beam"
+                 path: "<worktree>/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Z.beam"
                }},
               %Anchor.Domain.Graph.Beam{
                 module: AnchorFixtures.BeamReaderTest.Plain,
                 app: :demo,
-                path: "/home/cjpoll/.local/worktrees/anchor/dnd-5438/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Plain.beam",
+                path: "<worktree>/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-one-bad-file-among-good-ones-is-an-error-beside-the-good-beam-12927c74/Elixir.Plain.beam",
                 elixir: %{
                   attributes: [
                     behaviour: AnchorFixtures.BeamReaderTest.Contract,
@@ -805,7 +805,7 @@ Run summary: `16 tests, 1 failure`
               %Anchor.Domain.Graph.Beam{
                 module: AnchorFixtures.BeamReaderTest.X,
                 app: :demo,
-                path: "/home/cjpoll/.local/worktrees/anchor/dnd-5438/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-reads-every-beam-of-every-ebin,-sorted-by-path-e0fddf4a/Elixir.X.beam",
+                path: "<worktree>/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-reads-every-beam-of-every-ebin,-sorted-by-path-e0fddf4a/Elixir.X.beam",
                 elixir: %{
                   attributes: [],
                   module: AnchorFixtures.BeamReaderTest.X,
@@ -888,7 +888,7 @@ Run summary: `18 tests, 1 failure`
      test/anchor/adapters/beam_reader_test.exs:288
      match (=) failed
      The following variables were pinned:
-       path = "/home/cjpoll/.local/worktrees/anchor/dnd-5438/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-an-unreadable-beam-file-is---unreadable,-posix--naming-it-1b1cdd76/Elixir.Plain.beam"
+       path = "<worktree>/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-an-unreadable-beam-file-is---unreadable,-posix--naming-it-1b1cdd76/Elixir.Plain.beam"
      code:  assert [error: %{path: ^path, module: nil, reason: {:unreadable, :eacces}}] =
               BeamReader.read_ebins(demo: dir)
      left:  [error: %{path: ^path, module: nil, reason: {:unreadable, :eacces}}]
@@ -896,7 +896,7 @@ Run summary: `18 tests, 1 failure`
               error: %{
                 module: nil,
                 reason: :no_debug_info,
-                path: "/home/cjpoll/.local/worktrees/anchor/dnd-5438/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-an-unreadable-beam-file-is---unreadable,-posix--naming-it-1b1cdd76/Elixir.Plain.beam"
+                path: "<worktree>/tmp/Anchor.Adapters.BeamReaderTest/test-read_ebins-1-an-unreadable-beam-file-is---unreadable,-posix--naming-it-1b1cdd76/Elixir.Plain.beam"
               }
             ]
      stacktrace:

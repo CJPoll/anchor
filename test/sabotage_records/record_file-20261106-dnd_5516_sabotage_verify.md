@@ -55,7 +55,7 @@ Assertion with == failed
 code:  assert RecordFile.write_report(root, "out/scan.md", "old\n", "old") ==
               {:ok, [Path.join(root, "out/scan.md"), Path.join(root, "out/scan.etf")]}
 left:  "old"
-right: {:ok, ["/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.md", "/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.etf"]}
+right: {:ok, ["<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.md", "<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.etf"]}
 
 ```
 
@@ -92,8 +92,8 @@ test/anchor/adapters/record_file_test.exs:48 test DND-5490: write_report writes 
 Assertion with == failed
 code:  assert RecordFile.write_report(root, "out/scan.md", "old\n", "old") ==
               {:ok, [Path.join(root, "out/scan.md"), Path.join(root, "out/scan.etf")]}
-left:  "/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e"
-right: {:ok, ["/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.md", "/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.etf"]}
+left:  "<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e"
+right: {:ok, ["<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.md", "<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.etf"]}
 
 ```
 
@@ -131,7 +131,7 @@ Assertion with == failed
 code:  assert RecordFile.write_report(root, "out/scan.md", "old\n", "old") ==
               {:ok, [Path.join(root, "out/scan.md"), Path.join(root, "out/scan.etf")]}
 left:  "old\n"
-right: {:ok, ["/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.md", "/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.etf"]}
+right: {:ok, ["<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.md", "<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.etf"]}
 
 ```
 
@@ -169,7 +169,7 @@ Assertion with == failed
 code:  assert RecordFile.write_report(root, "out/scan.md", "old\n", "old") ==
               {:ok, [Path.join(root, "out/scan.md"), Path.join(root, "out/scan.etf")]}
 left:  "out/scan.md"
-right: {:ok, ["/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.md", "/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.etf"]}
+right: {:ok, ["<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.md", "<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.etf"]}
 
 ```
 
@@ -324,7 +324,7 @@ Assertion with == failed
 code:  assert RecordFile.write_report(root, "out/scan.md", "old\n", "old") ==
               {:ok, [Path.join(root, "out/scan.md"), Path.join(root, "out/scan.etf")]}
 left:  "old"
-right: {:ok, ["/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.md", "/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.etf"]}
+right: {:ok, ["<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.md", "<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.etf"]}
 
 ```
 
@@ -360,7 +360,7 @@ test/anchor/adapters/record_file_test.exs:65 test DND-5490: write_report says wh
 
 Assertion with == failed
 code:  assert RecordFile.write_report(root, "file/scan.md", "m", "t") == {:error, :enotdir}
-left:  "/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-says-why-it-could-not-write,-at-each-step-dbc83938"
+left:  "<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-says-why-it-could-not-write,-at-each-step-dbc83938"
 right: {:error, :enotdir}
 
 ```
@@ -436,7 +436,7 @@ Assertion with == failed
 code:  assert RecordFile.write_report(root, "out/scan.md", "old\n", "old") ==
               {:ok, [Path.join(root, "out/scan.md"), Path.join(root, "out/scan.etf")]}
 left:  "out/scan.md"
-right: {:ok, ["/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.md", "/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.etf"]}
+right: {:ok, ["<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.md", "<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.etf"]}
 
 ```
 
@@ -486,7 +486,7 @@ test/anchor/adapters/record_file_test.exs:65 test DND-5490: write_report says wh
 
 Assertion with == failed
 code:  assert RecordFile.write_report(root, "a/scan.md", "m", "t") == {:error, :eisdir}
-left:  {:ok, ["/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-says-why-it-could-not-write,-at-each-step-dbc83938/a/scan.md", "/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-says-why-it-could-not-write,-at-each-step-dbc83938/a/scan.etf"]}
+left:  {:ok, ["<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-says-why-it-could-not-write,-at-each-step-dbc83938/a/scan.md", "<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-says-why-it-could-not-write,-at-each-step-dbc83938/a/scan.etf"]}
 right: {:error, :eisdir}
 
 ```
@@ -515,7 +515,7 @@ test/anchor/adapters/record_file_test.exs:65 test DND-5490: write_report says wh
 
 Assertion with == failed
 code:  assert RecordFile.write_report(root, "b/scan.md", "m", "t") == {:error, :eisdir}
-left:  {:ok, ["/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-says-why-it-could-not-write,-at-each-step-dbc83938/b/scan.md", "/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-says-why-it-could-not-write,-at-each-step-dbc83938/b/scan.etf"]}
+left:  {:ok, ["<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-says-why-it-could-not-write,-at-each-step-dbc83938/b/scan.md", "<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-says-why-it-could-not-write,-at-each-step-dbc83938/b/scan.etf"]}
 right: {:error, :eisdir}
 
 ```
@@ -603,7 +603,7 @@ Assertion with == failed
 code:  assert RecordFile.write_report(root, "out/scan.md", "old\n", "old") ==
               {:ok, [Path.join(root, "out/scan.md"), Path.join(root, "out/scan.etf")]}
 left:  "old"
-right: {:ok, ["/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.md", "/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.etf"]}
+right: {:ok, ["<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.md", "<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.etf"]}
 
 ```
 
@@ -640,8 +640,8 @@ test/anchor/adapters/record_file_test.exs:48 test DND-5490: write_report writes 
 Assertion with == failed
 code:  assert RecordFile.write_report(root, "out/scan.md", "old\n", "old") ==
               {:ok, [Path.join(root, "out/scan.md"), Path.join(root, "out/scan.etf")]}
-left:  "/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e"
-right: {:ok, ["/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.md", "/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.etf"]}
+left:  "<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e"
+right: {:ok, ["<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.md", "<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.etf"]}
 
 ```
 
@@ -679,7 +679,7 @@ Assertion with == failed
 code:  assert RecordFile.write_report(root, "out/scan.md", "old\n", "old") ==
               {:ok, [Path.join(root, "out/scan.md"), Path.join(root, "out/scan.etf")]}
 left:  "old\n"
-right: {:ok, ["/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.md", "/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.etf"]}
+right: {:ok, ["<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.md", "<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.etf"]}
 
 ```
 
@@ -717,7 +717,7 @@ Assertion with == failed
 code:  assert RecordFile.write_report(root, "out/scan.md", "old\n", "old") ==
               {:ok, [Path.join(root, "out/scan.md"), Path.join(root, "out/scan.etf")]}
 left:  "out/scan.md"
-right: {:ok, ["/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.md", "/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.etf"]}
+right: {:ok, ["<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.md", "<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.etf"]}
 
 ```
 
@@ -774,7 +774,7 @@ test/anchor/adapters/record_file_test.exs:65 test DND-5490: write_report says wh
 
 Assertion with == failed
 code:  assert RecordFile.write_report(root, "a/scan.md", "m", "t") == {:error, :eisdir}
-left:  {:ok, ["/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-says-why-it-could-not-write,-at-each-step-dbc83938/a/scan.md", "/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-says-why-it-could-not-write,-at-each-step-dbc83938/a/scan.etf"]}
+left:  {:ok, ["<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-says-why-it-could-not-write,-at-each-step-dbc83938/a/scan.md", "<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-says-why-it-could-not-write,-at-each-step-dbc83938/a/scan.etf"]}
 right: {:error, :eisdir}
 
 ```
@@ -803,7 +803,7 @@ test/anchor/adapters/record_file_test.exs:65 test DND-5490: write_report says wh
 
 Assertion with == failed
 code:  assert RecordFile.write_report(root, "b/scan.md", "m", "t") == {:error, :eisdir}
-left:  {:ok, ["/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-says-why-it-could-not-write,-at-each-step-dbc83938/b/scan.md", "/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-says-why-it-could-not-write,-at-each-step-dbc83938/b/scan.etf"]}
+left:  {:ok, ["<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-says-why-it-could-not-write,-at-each-step-dbc83938/b/scan.md", "<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-says-why-it-could-not-write,-at-each-step-dbc83938/b/scan.etf"]}
 right: {:error, :eisdir}
 
 ```
@@ -927,8 +927,8 @@ test/anchor/adapters/record_file_test.exs:48 test DND-5490: write_report writes 
 Assertion with == failed
 code:  assert RecordFile.write_report(root, "out/scan.md", "old\n", "old") ==
               {:ok, [Path.join(root, "out/scan.md"), Path.join(root, "out/scan.etf")]}
-left:  "/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e"
-right: {:ok, ["/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.md", "/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.etf"]}
+left:  "<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e"
+right: {:ok, ["<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.md", "<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.etf"]}
 
 ```
 
@@ -966,7 +966,7 @@ Assertion with == failed
 code:  assert RecordFile.write_report(root, "out/scan.md", "old\n", "old") ==
               {:ok, [Path.join(root, "out/scan.md"), Path.join(root, "out/scan.etf")]}
 left:  "old\n"
-right: {:ok, ["/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.md", "/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.etf"]}
+right: {:ok, ["<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.md", "<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-writes-the-markdown-and-its-.etf,-overwriting-both-66fb946e/out/scan.etf"]}
 
 ```
 
@@ -1060,7 +1060,7 @@ test/anchor/adapters/record_file_test.exs:65 test DND-5490: write_report says wh
 
 Assertion with == failed
 code:  assert RecordFile.write_report(root, "a/scan.md", "m", "t") == {:error, :eisdir}
-left:  {:ok, ["/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-says-why-it-could-not-write,-at-each-step-dbc83938/a/scan.md", "/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-says-why-it-could-not-write,-at-each-step-dbc83938/a/scan.etf"]}
+left:  {:ok, ["<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-says-why-it-could-not-write,-at-each-step-dbc83938/a/scan.md", "<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-says-why-it-could-not-write,-at-each-step-dbc83938/a/scan.etf"]}
 right: {:error, :eisdir}
 
 ```
@@ -1089,7 +1089,7 @@ test/anchor/adapters/record_file_test.exs:65 test DND-5490: write_report says wh
 
 Assertion with == failed
 code:  assert RecordFile.write_report(root, "b/scan.md", "m", "t") == {:error, :eisdir}
-left:  {:ok, ["/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-says-why-it-could-not-write,-at-each-step-dbc83938/b/scan.md", "/home/cjpoll/.local/worktrees/anchor/dnd-5516-sabotage-verify/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-says-why-it-could-not-write,-at-each-step-dbc83938/b/scan.etf"]}
+left:  {:ok, ["<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-says-why-it-could-not-write,-at-each-step-dbc83938/b/scan.md", "<worktree>/tmp/Anchor.Adapters.RecordFileTest/test-DND-5490--write_report-says-why-it-could-not-write,-at-each-step-dbc83938/b/scan.etf"]}
 right: {:error, :eisdir}
 
 ```

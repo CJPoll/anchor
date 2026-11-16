@@ -406,7 +406,7 @@ Run summary: `31 tests, 1 failure`
      left:  :ok
      right: {:error,
              {:escaped_root,
-              "/home/cjpoll/.local/worktrees/anchor/dnd-5648-graph-followups/tmp/Anchor.Adapters.BaselineFileTest/test-a-directory-swapped-for-a-symlink-after-the-check-(DND-5647)-a-root-reached-through-a-symlink-is-its-real-path,-not-an-escape-64c266c4/root/.anchor/baselines/r.txt"}}
+              "<worktree>/tmp/Anchor.Adapters.BaselineFileTest/test-a-directory-swapped-for-a-symlink-after-the-check-(DND-5647)-a-root-reached-through-a-symlink-is-its-real-path,-not-an-escape-64c266c4/root/.anchor/baselines/r.txt"}}
      stacktrace:
        test/anchor/adapters/baseline_file_test.exs:221: (test)
 

@@ -690,8 +690,8 @@ Every record's text outside its diff and kill-map blocks goes through
 `RecordHygiene.redact_record/2` (ADR 004): scheduler
 status lines are dropped and paths under a home or worktree directory are
 rewritten (relative to the run's root when under it).
-`test/anchor/sabotage_record_hygiene_test.exs` fails on a record that still
-holds one, against the shrink-only `.anchor/sabotage/record_leaks.txt`.
+`test/anchor/sabotage_record_hygiene_test.exs` fails on any record that still
+holds one; no record is exempt.
 
 ## The survivors list (DND-5483)
 

@@ -66,16 +66,10 @@ Write a path relative to the project root, and leave scheduler output out.
 record under `test/sabotage_records/` that carries either kind of text outside
 those two blocks (`RecordHygiene.record_leaks/1`).
 
-Records committed before the redaction are listed in
-`.anchor/sabotage/record_leaks.txt`, and the list only shrinks. The test also
-fails on:
-
-- an entry whose file no longer leaks, or is gone;
-- an entry dated after the newest file on the list when the list landed;
-- an entry its own pinned copy of the list does not hold.
-
-Growing the list therefore means editing the test, which is loosening the
-check.
+No record is exempt. The records committed before the redaction (14 files,
+6 scheduler lines and 70 path lines) were rewritten in place by
+`redact_record/2` when this ADR landed: a scheduler line dropped, each path
+shortened to `<worktree>/...` or `<home>/...`, every other line unchanged.
 
 ## Examples
 
@@ -122,14 +116,15 @@ test-slot: WAITING for 8 unit(s) -- cpu pool ..., 8 held:
   them, is not recognised. Neither is a home directory outside `/home/` and
   `/Users/` (such as `/root`), and a user name with a space in it keeps the
   text after the space.
-- The records listed in `.anchor/sabotage/record_leaks.txt` still hold their
-  leaks, and so does git history. Removing them is a separate decision.
+- Git history still holds the earlier text of those 14 records. The decision
+  was to fix forward: clean the tree, rewrite no history.
 
 ## Enforcement
 
 - `test/anchor/sabotage_record_hygiene_test.exs`, in `mix test` (CI's Test
   step).
-- `RecordHygiene.redact/2`, in `Record.render/2`, for every generated record.
+- `RecordHygiene.redact_record/2`, in `Record.render/2`, for every generated
+  record.
 
 ## References
 

@@ -42,13 +42,6 @@ defmodule Anchor.Domain.Sabotage.RecordHygiene do
 
   @type kind :: :scheduler_line | :local_path
 
-  @typedoc "One reason a set of committed records fails `judge/3`."
-  @type finding ::
-          {:leak, String.t(), pos_integer(), kind()}
-          | {:stale, String.t()}
-          | {:missing, String.t()}
-          | {:late, String.t()}
-
   @homes ["/home/", "/Users/"]
   @worktrees "/.local/worktrees"
   @markers ["/home/", "/Users/", "~/.local/worktrees"]
@@ -110,69 +103,6 @@ defmodule Anchor.Domain.Sabotage.RecordHygiene do
     |> Enum.with_index(1)
     |> Enum.flat_map(fn {line, n} -> leak(line, n) end)
   end
-
-  @doc """
-  The findings over committed `records` (`path => content`) against the
-  shrink-only `listed` paths, whose files leaked before records were redacted:
-
-    * `{:leak, path, line, kind}`: a record not listed carries a leak;
-    * `{:stale, path}`: a listed record carries none any more (drop its entry);
-    * `{:missing, path}`: a listed record is gone (drop its entry);
-    * `{:late, path}`: a listed path's `-YYYYMMDD-` date is after `newest`, or
-      it has none: only a record that existed when the list landed is listed.
-
-  No findings is `[]`.
-  """
-  @spec judge(%{String.t() => String.t()}, [String.t()], Date.t()) :: [finding()]
-  def judge(records, listed, %Date{} = newest) do
-    listed_set = MapSet.new(listed)
-
-    unlisted =
-      for {path, content} <- Enum.sort(records),
-          not MapSet.member?(listed_set, path),
-          {line, kind} <- record_leaks(content),
-          do: {:leak, path, line, kind}
-
-    unlisted ++ Enum.flat_map(Enum.sort(listed), &listed_finding(&1, records, newest))
-  end
-
-  # -- judging ----------------------------------------------------------------
-
-  defp listed_finding(path, records, newest),
-    do: late(path, newest) ++ presence(path, Map.fetch(records, path))
-
-  defp late(path, newest), do: if(dated_after?(path, newest), do: [{:late, path}], else: [])
-
-  defp presence(path, :error), do: [{:missing, path}]
-
-  defp presence(path, {:ok, content}),
-    do: if(leaks(content) == [], do: [{:stale, path}], else: [])
-
-  # The first `-YYYYMMDD-` of the file name, as a date after `newest`; a name
-  # with none, or with no calendar date there, is late.
-  defp dated_after?(path, newest) do
-    case name_date(Path.basename(path)) do
-      {:ok, date} -> Date.after?(date, newest)
-      :error -> true
-    end
-  end
-
-  defp name_date(name) do
-    name
-    |> String.split("-")
-    |> Enum.drop(1)
-    |> Enum.find(&(byte_size(&1) == 8 and digits?(&1)))
-    |> date_of()
-  end
-
-  defp date_of(<<y::binary-size(4), m::binary-size(2), d::binary-size(2)>>) do
-    case Date.from_iso8601("#{y}-#{m}-#{d}") do
-      {:ok, date} -> {:ok, date}
-      {:error, _reason} -> :error
-    end
-  end
-
-  defp date_of(nil), do: :error
 
   defp digits?(text), do: text |> String.to_charlist() |> Enum.all?(&(&1 in ?0..?9))
 

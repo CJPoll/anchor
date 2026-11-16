@@ -27,7 +27,7 @@ failures`. The adapter's two new tests failed against the old shape check: `5 te
      test/mix/tasks/anchor_graph_test.exs:120
      Assertion with == failed
      code:  assert dir == Path.join(build, "anchor")
-     left:  "/home/cjpoll/.local/worktrees/anchor/dnd-5581-hardening-batch/_build/test/anchor"
+     left:  "<worktree>/_build/test/anchor"
      right: "/tmp/anchor-build-3716/anchor"
 
   1) test a build path not named _build/<env> is accepted (Anchor.Adapters.GraphArtifactTest)
@@ -69,7 +69,7 @@ dir); under B and C every Manager and task test (the store is a double).
      test/mix/tasks/anchor_graph_test.exs:120
      Assertion with == failed
      code:  assert dir == Path.join(build, "anchor")
-     left:  "/home/cjpoll/.local/worktrees/anchor/dnd-5581-hardening-batch/_build/test/anchor"
+     left:  "<worktree>/_build/test/anchor"
      right: "/tmp/anchor-build-2/anchor"
 ```
 

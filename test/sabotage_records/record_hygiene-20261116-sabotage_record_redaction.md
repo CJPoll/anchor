@@ -186,3 +186,29 @@ The generated record `sabotage-20261116-sabotage_record_redaction.md` was then
 regenerated from scratch, so its diffs are verbatim; the four earlier runs,
 written with the whole-content redaction, are in this branch's history at
 commit 7b1380c.
+
+## The records on main are cleaned, and the list is gone (fix forward)
+
+The decision was to fix forward: clean the tree, rewrite no history. The 14
+records that leaked were rewritten in place with `redact_record/2` (6
+scheduler lines dropped, 70 path lines shortened, nothing else changed), the
+shrink-only list and its pinned copy were removed, and the guard became a plain
+check over every record: rows C, C2, E and F above exercised the list and are
+history now.
+
+| Row | Mutation | Test that failed | Result |
+|---|---|---|---|
+| H | `cfa-20261106-dnd_5676_effects_cfa_batch.md` put back as it is on main (its 3 scheduler lines) | `sabotage_record_hygiene_test.exs` "no committed record carries a scheduler line or a local path" | 2 tests, 1 failure |
+
+```
+  1) test no committed record carries a scheduler line or a local path (Anchor.SabotageRecordHygieneTest)
+     test/anchor/sabotage_record_hygiene_test.exs:13
+     [
+       {"test/sabotage_records/cfa-20261106-dnd_5676_effects_cfa_batch.md", 99,
+        :scheduler_line},
+       {"test/sabotage_records/cfa-20261106-dnd_5676_effects_cfa_batch.md", 100,
+        :scheduler_line},
+       {"test/sabotage_records/cfa-20261106-dnd_5676_effects_cfa_batch.md", 101,
+        :scheduler_line}
+     ]
+```
