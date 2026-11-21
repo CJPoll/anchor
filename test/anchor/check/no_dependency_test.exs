@@ -7,7 +7,7 @@ defmodule Anchor.Check.NoDependencyTest do
   # `[%Credo.Issue{}]`. These rows assert the *intended* behaviour in
   # docs/five-bucket-test-matrix.md ("no_dependency.ex -> check_file/3 -> #1-8"),
   # which supersedes the T1 characterization pins — in particular row 7 now reports
-  # the FIRST reference line, not the last.
+  # every reference line, so a line-level disable covers only its own line.
   #
   # Sabotage record: ../../sabotage_records/no_dependency-20260913-dnd_126_t6_1_no_dependency.md
   use ExUnit.Case, async: true
@@ -104,9 +104,9 @@ defmodule Anchor.Check.NoDependencyTest do
       assert issues(source, []) == []
     end
 
-    # Row 7 — Control Flow Decisioning: FIRST reference line when a module
-    # appears twice (references on lines 2 and 4 -> reported at line 2).
-    test "reports the first reference line when a forbidden module appears twice" do
+    # Row 7 — Control Flow Decisioning: every reference line when a module
+    # appears twice (references on lines 2 and 4 -> reported at both).
+    test "reports each reference line when a forbidden module appears twice" do
       source = """
       defmodule W do
         def f, do: MyApp.Repo.all(Q)
@@ -115,8 +115,8 @@ defmodule Anchor.Check.NoDependencyTest do
       end
       """
 
-      assert [issue] = issues(source, [MyApp.Repo])
-      assert issue.line_no == 2
+      assert [first, second] = issues(source, [MyApp.Repo])
+      assert {first.line_no, second.line_no} == {2, 4}
     end
 
     # Row 8 — Rule Selection: a rule that does not select the file never reaches
@@ -132,6 +132,115 @@ defmodule Anchor.Check.NoDependencyTest do
 
       source_file = SourceFile.parse(source, "lib/some_module.ex")
       assert NoDependency.check_file(source_file, [], []) == []
+    end
+  end
+
+  # Every reference site is reported at its own line, so a Credo line-level
+  # disable excuses exactly the line under it and never a later reference.
+  # `issues_after_disables/2` applies Credo's own comment filter
+  # (`Credo.CLI.Filter`) to the check's issues, as `mix credo` does.
+  describe "check_file/3 — every reference site, so a disable covers one line" do
+    defp issues_after_disables(source, forbidden_modules) do
+      source_file = SourceFile.parse(source, "lib/some_module.ex")
+
+      comment_map =
+        case Credo.Check.ConfigCommentFinder.find_and_set_in_source_file(source_file) do
+          nil -> %{}
+          {filename, comments} -> %{filename => comments}
+        end
+
+      issues = NoDependency.check_file(source_file, [rule(forbidden_modules)], [])
+
+      Credo.CLI.Filter.valid_issues(issues, %{config_comment_map: comment_map})
+    end
+
+    defp rule(forbidden_modules),
+      do: %{type: :no_direct_dependency, forbidden_modules: forbidden_modules}
+
+    test "a disable on the first reference does not hide the second" do
+      source = """
+      defmodule Sample.Web.Thing do
+        # credo:disable-for-next-line Anchor.Check.NoDependency
+        def f, do: Sample.Repo.all(Q)
+
+        def g, do: Sample.Repo.one(Q)
+      end
+      """
+
+      assert [issue] = issues_after_disables(source, [Sample.Repo])
+      assert issue.line_no == 5
+      assert issue.trigger == "Sample.Repo"
+    end
+
+    test "a disable on every reference reports nothing" do
+      source = """
+      defmodule Sample.Web.Thing do
+        # credo:disable-for-next-line Anchor.Check.NoDependency
+        def f, do: Sample.Repo.all(Q)
+
+        # credo:disable-for-next-line Anchor.Check.NoDependency
+        def g, do: Sample.Repo.one(Q)
+      end
+      """
+
+      assert issues_after_disables(source, [Sample.Repo]) == []
+    end
+
+    test "no disable reports every reference, each at its own line" do
+      source = """
+      defmodule Sample.Web.Thing do
+        def f, do: Sample.Repo.all(Q)
+
+        def g, do: Sample.Repo.one(Q)
+      end
+      """
+
+      assert [first, second] = issues_after_disables(source, [Sample.Repo])
+      assert {first.line_no, second.line_no} == {2, 4}
+    end
+
+    test "a disable on the first call of a forbidden function does not hide the second" do
+      source = """
+      defmodule Sample.Web.Thing do
+        # credo:disable-for-next-line Anchor.Check.NoDependency
+        def f, do: Sample.Repo.all(Q)
+
+        def g, do: Sample.Repo.all(Q)
+      end
+      """
+
+      source_file = SourceFile.parse(source, "lib/some_module.ex")
+
+      {filename, comments} =
+        Credo.Check.ConfigCommentFinder.find_and_set_in_source_file(source_file)
+
+      rule = %{
+        type: :no_direct_dependency,
+        forbidden_modules: [],
+        forbidden_functions: [
+          %Anchor.Domain.FunctionRef{module: Sample.Repo, function: :all, arity: :any}
+        ]
+      }
+
+      issues = NoDependency.check_file(source_file, [rule], [])
+
+      assert [issue] =
+               Credo.CLI.Filter.valid_issues(issues, %{
+                 config_comment_map: %{filename => comments}
+               })
+
+      assert issue.line_no == 5
+    end
+
+    test "two references to one module on a single line are one issue" do
+      source = """
+      defmodule Sample.Web.Thing do
+        def f, do: Sample.Repo.all(Sample.Repo.query())
+      end
+      """
+
+      assert [issue] = issues_after_disables(source, [Sample.Repo])
+      assert issue.line_no == 2
     end
   end
 
@@ -158,11 +267,10 @@ defmodule Anchor.Check.NoDependencyTest do
       assert issue.line_no == 2
     end
 
-    # Reports the FIRST reference line for a bare-atom module appearing twice —
-    # the atom-path analogue of the alias-path row above (proves
-    # `atom_reference_line/2` short-circuits on the earliest occurrence, and that
-    # `first_reference_line/2` never calls `Module.split/1` on a bare atom).
-    test "reports the first reference line for a bare-atom module referenced twice" do
+    # Reports each reference line for a bare-atom module appearing twice — the
+    # atom-path analogue of the alias-path row above (proves every site of a bare
+    # atom is found, and that the walk never calls `Module.split/1` on one).
+    test "reports each reference line for a bare-atom module referenced twice" do
       source = """
       defmodule W do
         def f, do: :telemetry.execute([:a], %{}, %{})
@@ -171,8 +279,8 @@ defmodule Anchor.Check.NoDependencyTest do
       end
       """
 
-      assert [issue] = issues(source, [:telemetry])
-      assert issue.line_no == 2
+      assert [first, second] = issues(source, [:telemetry])
+      assert {first.line_no, second.line_no} == {2, 4}
     end
 
     # Absence assertion (paired with the row-9 positive control above): an inert
@@ -330,8 +438,15 @@ defmodule Anchor.Check.NoDependencyTest do
           match: unquote(mode)
         }
 
-        assert [issue] = NoDependency.check_file(source_file, [rule], [])
-        assert issue.trigger == "MyApp.Repo"
+        # The `alias` line is a site of its own in reference mode; the call is
+        # the only site in call mode.
+        issues = NoDependency.check_file(source_file, [rule], [])
+
+        assert Enum.map(issues, &{&1.line_no, &1.trigger}) ==
+                 Enum.map(
+                   unquote(if mode == :reference, do: [2, 4], else: [4]),
+                   &{&1, "MyApp.Repo"}
+                 )
       end
     end
   end

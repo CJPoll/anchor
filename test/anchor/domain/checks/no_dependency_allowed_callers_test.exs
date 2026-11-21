@@ -6,8 +6,8 @@ defmodule Anchor.Domain.Checks.NoDependencyAllowedCallersTest do
   # each run against one rule per relation (`forbidden_modules`,
   # `forbidden_patterns`, `forbidden_functions`) in both `match` modes. Every
   # row's code reaches the target the same way, `Bad.Web.f(1)`, so every
-  # relation must give the same answer: `[line]` (the first line a module that
-  # is not an allowed caller reaches it) or `[]` (only allowed callers do).
+  # relation must give the same answer: `[line, ...]` (every line a module that
+  # is not an allowed caller reaches it on) or `[]` (only allowed callers do).
   #
   # Code is attributed to the module whose body it is in. A nested module is its
   # own module, in both directions. A `defimpl` body belongs to the module the
@@ -70,7 +70,7 @@ defmodule Anchor.Domain.Checks.NoDependencyAllowedCallersTest do
        def b, do: Bad.Web.f(1)
      end
      """, @allowed, [6]},
-    {"two unlisted modules calling: reported once, at the first line",
+    {"two unlisted modules calling: each call is reported at its own line",
      """
      defmodule App.One do
        def a, do: Bad.Web.f(1)
@@ -79,7 +79,14 @@ defmodule Anchor.Domain.Checks.NoDependencyAllowedCallersTest do
      defmodule App.Two do
        def b, do: Bad.Web.f(1)
      end
-     """, @allowed, [2]},
+     """, @allowed, [2, 6]},
+    {"one unlisted module calling twice: each call is reported at its own line",
+     """
+     defmodule App.One do
+       def a, do: Bad.Web.f(1)
+       def b, do: Bad.Web.f(1)
+     end
+     """, @allowed, [2, 3]},
     {"an allowed module nested in an unlisted one: its own call is allowed",
      """
      defmodule App do

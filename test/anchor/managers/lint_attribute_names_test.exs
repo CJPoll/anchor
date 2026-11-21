@@ -115,7 +115,14 @@ defmodule Anchor.Managers.LintAttributeNamesTest do
     assert fail_closed == []
 
     assert Enum.map(by_check[Anchor.Check.NoDependency], &elem(&1, 2)) |> Enum.sort() ==
-             ["Foo.Bar", "Foo.Bar.call/1", "Foo.helper/1", "Sample.AttrUser.Sub"]
+             [
+               "Foo.Bar",
+               "Foo.Bar",
+               "Foo.Bar.call/1",
+               "Foo.helper/1",
+               "Foo.helper/1",
+               "Sample.AttrUser.Sub"
+             ]
 
     # The struct built outside its module is flagged.
     assert by_check[Anchor.Check.StructOwnedByModule] != []

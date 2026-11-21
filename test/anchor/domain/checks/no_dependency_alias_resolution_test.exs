@@ -26,7 +26,9 @@ defmodule Anchor.Domain.Checks.NoDependencyAliasResolutionTest do
   end
 
   defp triggers(source, forbidden, mode) do
-    source |> detect(forbidden, mode) |> Enum.map(& &1.trigger) |> Enum.sort()
+    # Which modules are reported, not how many sites: a directive line and each
+    # call line are separate sites, and these tests are about resolution.
+    source |> detect(forbidden, mode) |> Enum.map(& &1.trigger) |> Enum.uniq() |> Enum.sort()
   end
 
   for mode <- [:reference, :call] do
@@ -481,7 +483,7 @@ defmodule Anchor.Domain.Checks.NoDependencyAliasResolutionTest do
       assert [%Violation{line: 4}] = detect(source, [Forbidden.Target], :call)
     end
 
-    test "a module called twice is reported once, at its first call" do
+    test "a module called twice is reported at each call" do
       source = """
       defmodule W do
         alias Forbidden.Target
@@ -491,7 +493,8 @@ defmodule Anchor.Domain.Checks.NoDependencyAliasResolutionTest do
       end
       """
 
-      assert [%Violation{line: 4}] = detect(source, [Forbidden.Target], :call)
+      assert [%Violation{line: 4}, %Violation{line: 5}] =
+               detect(source, [Forbidden.Target], :call)
     end
 
     test "reference mode reports a multi-alias element's line" do

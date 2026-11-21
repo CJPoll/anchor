@@ -76,12 +76,14 @@ defmodule Anchor.E2E.ChecksE2ETest do
           |> run_check(NoDependency)
         end)
 
-      # One issue per function reached, at its first line (as a module-level
-      # rule reports each module once). The per-shape table is
+      # One issue per call line of each function reached, so a line-level
+      # disable covers only its own line. The per-shape table is
       # Anchor.Domain.Checks.NoDependencyForbiddenFunctionsTest.
       assert issues |> Enum.map(&{&1.line_no, &1.trigger}) |> Enum.sort() == [
                {5, "Athena.Slack.user_info/1"},
-               {8, "Athena.Slack.rule_post/2"}
+               {7, "Athena.Slack.user_info/1"},
+               {8, "Athena.Slack.rule_post/2"},
+               {9, "Athena.Slack.rule_post/2"}
              ]
     end
   end

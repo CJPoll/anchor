@@ -48,7 +48,7 @@ The rows and caveats below marked "macro/quote" specify this graceful-degradatio
 | 4 | clean module with no forbidden dep | src: module that references only `Enum`<br>rule: `forbidden_modules: [MyApp.Repo]` | `[]` | Positive Control |
 | 5 | forbidden module named but not referenced | src references `MyApp.Other` only<br>rule: `forbidden_modules: [MyApp.Repo]` | `[]` | Positive Control |
 | 6 | empty forbidden list flags nothing | src references `MyApp.Repo`<br>rule: `forbidden_modules: []` | `[]` | Validation |
-| 7 | reports the first reference line when forbidden module appears twice | src references `MyApp.Repo` on lines 2 and 4<br>rule: `forbidden_modules: [MyApp.Repo]` | 1 issue, line_no 2 | Control Flow Decisioning |
+| 7 | reports each reference line when forbidden module appears twice | src references `MyApp.Repo` on lines 2 and 4<br>rule: `forbidden_modules: [MyApp.Repo]` | 2 issues, line_no 2 and 4 | Control Flow Decisioning |
 | 8 | rule not selecting the file yields nothing | src references `MyApp.Repo`<br>rule paths do not match the file's path | `[]` (rule filtered by Base before `check_file`) | Rule Selection |
 
 Caveat: rule selection (rows 8) is performed by `Base.find_matching_rules/2` before `check_file/3`;
