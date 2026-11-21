@@ -96,8 +96,8 @@ defmodule Anchor.Domain.Checks.NoDependencyTest do
     end
 
     # Matrix row 5 — Control Flow Decisioning: a pattern-matched module is
-    # reported once, at its first reference line.
-    test "a pattern-matched module referenced twice is reported once at the first line" do
+    # reported at every line that references it, so a disable covers one line.
+    test "a pattern-matched module referenced twice is reported at each reference line" do
       source = """
       defmodule W do
         def f, do: X.Adapters.Y.a(q)
@@ -108,9 +108,11 @@ defmodule Anchor.Domain.Checks.NoDependencyTest do
 
       rule = %{forbidden_modules: [], forbidden_patterns: ["*.Adapters.*"], match: :reference}
 
-      assert [%Violation{} = violation] = detect(source, rule)
-      assert violation.trigger == "X.Adapters.Y"
-      assert violation.line == 2
+      assert [
+               %Violation{trigger: "X.Adapters.Y", line: 2},
+               %Violation{trigger: "X.Adapters.Y", line: 4}
+             ] =
+               detect(source, rule)
     end
 
     # Matrix row 6 — Happy Path: match: :reference (default) flags an inert

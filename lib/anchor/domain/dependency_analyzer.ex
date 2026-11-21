@@ -221,12 +221,16 @@ defmodule Anchor.Domain.DependencyAnalyzer do
 
   @initial_acc %{
     file: %{},
+    file_sites: %{},
+    owned_sites: %{},
     by_module: %{},
     unresolved: [],
     calls: %{},
     dynamic: [],
     owned: %{},
     owned_calls: %{},
+    call_sites: %{},
+    owned_call_sites: %{},
     defined: MapSet.new(),
     resolved: %{}
   }
@@ -369,6 +373,63 @@ defmodule Anchor.Domain.DependencyAnalyzer do
       by_owner:
         acc.owned
         |> Enum.map(fn {{owner, module}, line} -> {owner, module, line} end)
+        |> Enum.sort()
+    }
+  end
+
+  @doc """
+  `attributed_dependency_lines/2`, with every line a dependency is referenced
+  on instead of only its first.
+
+    * `:file` — `[{module, [line]}]`, sorted by module: each distinct line the
+      module is referenced on, ascending (`[nil]` when the AST carries no line);
+    * `:by_owner` — `[{owner, module, [line]}]`, sorted: the same, per
+      `{owner, module}`.
+
+  A line that references the module twice is listed once. The head of each
+  list is the line `attributed_dependency_lines/2` reports.
+  """
+  @spec attributed_dependency_sites(Macro.t(), :reference | :call) :: %{
+          file: [{module(), [pos_integer() | nil]}],
+          by_owner: [{owner(), module(), [pos_integer() | nil]}]
+        }
+  def attributed_dependency_sites(ast, mode) do
+    acc = analyze(ast, mode)
+
+    %{
+      file:
+        acc.file_sites
+        |> Enum.map(fn {module, lines} -> {module, sites(lines)} end)
+        |> Enum.sort(),
+      by_owner:
+        acc.owned_sites
+        |> Enum.map(fn {{owner, module}, lines} -> {owner, module, sites(lines)} end)
+        |> Enum.sort()
+    }
+  end
+
+  @doc """
+  `attributed_function_references/1`, with every line a function is called on
+  instead of only its first.
+
+    * `:calls` — `[{{module, function, arity}, [line]}]`, sorted: each distinct
+      line the call is made on, ascending (`[nil]` when the AST carries no line);
+    * `:by_owner` — `[{owner, {module, function, arity}, [line]}]`, sorted: the
+      same, per `{owner, mfa}`.
+  """
+  @spec attributed_function_sites(Macro.t()) :: %{
+          calls: [{{module(), atom(), arity() | :any}, [pos_integer() | nil]}],
+          by_owner: [{owner(), {module(), atom(), arity() | :any}, [pos_integer() | nil]}]
+        }
+  def attributed_function_sites(ast) do
+    acc = analyze(ast, :call)
+
+    %{
+      calls:
+        acc.call_sites |> Enum.map(fn {mfa, lines} -> {mfa, sites(lines)} end) |> Enum.sort(),
+      by_owner:
+        acc.owned_call_sites
+        |> Enum.map(fn {{owner, mfa}, lines} -> {owner, mfa, sites(lines)} end)
         |> Enum.sort()
     }
   end
@@ -1382,9 +1443,23 @@ defmodule Anchor.Domain.DependencyAnalyzer do
     %{
       acc
       | file: Map.put_new(acc.file, module, line),
+        file_sites: add_site(acc.file_sites, module, line),
         by_module: by_module,
-        owned: Map.put_new(acc.owned, {owner(env), module}, line)
+        owned: Map.put_new(acc.owned, {owner(env), module}, line),
+        owned_sites: add_site(acc.owned_sites, {owner(env), module}, line)
     }
+  end
+
+  # Every line a key is referenced on, newest first (see `sites/1`).
+  defp add_site(sites, key, line), do: Map.update(sites, key, [line], &[line | &1])
+
+  # A key's reference lines, distinct and ascending; `nil` (an AST that carries
+  # no line) only when no site has one.
+  defp sites(lines) do
+    case lines |> Enum.reject(&is_nil/1) |> Enum.uniq() |> Enum.sort() do
+      [] -> [nil]
+      numbered -> numbered
+    end
   end
 
   # A call on `module.function/arity` (DND-1267), first line wins. Recorded
@@ -1395,7 +1470,9 @@ defmodule Anchor.Domain.DependencyAnalyzer do
     %{
       acc
       | calls: Map.put_new(acc.calls, mfa, line),
-        owned_calls: Map.put_new(acc.owned_calls, {owner(env), mfa}, line)
+        owned_calls: Map.put_new(acc.owned_calls, {owner(env), mfa}, line),
+        call_sites: add_site(acc.call_sites, mfa, line),
+        owned_call_sites: add_site(acc.owned_call_sites, {owner(env), mfa}, line)
     }
   end
 

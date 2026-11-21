@@ -70,7 +70,7 @@ defmodule Anchor.Domain.Checks.NoDependencyAllowedCallersTest do
        def b, do: Bad.Web.f(1)
      end
      """, @allowed, [6]},
-    {"two unlisted modules calling: reported once, at the first line",
+    {"two unlisted modules calling: each call is reported at its own line",
      """
      defmodule App.One do
        def a, do: Bad.Web.f(1)
@@ -79,7 +79,7 @@ defmodule Anchor.Domain.Checks.NoDependencyAllowedCallersTest do
      defmodule App.Two do
        def b, do: Bad.Web.f(1)
      end
-     """, @allowed, [2]},
+     """, @allowed, [2, 6]},
     {"an allowed module nested in an unlisted one: its own call is allowed",
      """
      defmodule App do

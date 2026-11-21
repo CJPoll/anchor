@@ -18,10 +18,12 @@ defmodule Anchor.Domain.Checks.NoDependency do
   ## What it detects
 
   For each rule, every forbidden module the file depends on in the rule's `match`
-  mode (per `Anchor.Domain.DependencyAnalyzer.dependency_lines/2`, which resolves
-  aliases and imports — DND-1266) yields one violation. A forbidden module that
-  appears more than once is reported once, at the line of its **first**
-  occurrence in source order; `nil` only when the AST carries no line (Credo then
+  mode (per `Anchor.Domain.DependencyAnalyzer.attributed_dependency_sites/2`,
+  which resolves aliases and imports) yields one violation **per line
+  it is referenced on**, in source order. Every site is reported at its own
+  line, so a line-level Credo disable excuses exactly the line under it and never
+  a later reference to the same module. Several references on one line are one
+  violation; the line is `nil` only when the AST carries no line (Credo then
   defaults it).
 
   A `forbidden_modules` entry may be an Elixir alias (`MyApp.Repo`) or a bare
@@ -32,7 +34,7 @@ defmodule Anchor.Domain.Checks.NoDependency do
   A rule's `forbidden_functions` (`%Anchor.Domain.FunctionRef{}`s) is checked
   against every function the file calls or captures
   (`DependencyAnalyzer.function_references/1`), whatever the rule's `match`:
-  one violation per rule per function reached, at its first line. A call site
+  one violation per rule per function reached, at every line it is called on. A call site
   whose module or function the source cannot show is reported once, however
   many rules apply, when it could reach a forbidden function of any of them.
 
@@ -48,12 +50,12 @@ defmodule Anchor.Domain.Checks.NoDependency do
   `forbidden_functions`, and a dynamic call that could reach one of its
   forbidden functions. The exemption is per defining module, never per file:
   each dependency and call is attributed to the module whose body it is in
-  (`DependencyAnalyzer.attributed_dependency_lines/2`,
+  (`DependencyAnalyzer.attributed_dependency_sites/2`,
   `attributed_function_references/1`), so a file holding an allowed module and
   another module cannot launder the other's calls. Code the source cannot place
   in a module (top level, a `quote`, a non-literal `defmodule`, a `defimpl`
-  for a list) is never exempt. A module-level dependency is reported at the
-  first line a module that is not exempt reaches it.
+  for a list) is never exempt. A module-level dependency is reported at every
+  line a module that is not exempt reaches it.
 
   It exempts nothing else. The exemption is per rule: another rule that does
   not list the module still reports it. An unresolvable directive is reported
@@ -166,7 +168,7 @@ defmodule Anchor.Domain.Checks.NoDependency do
 
   # DND-1267: `forbidden_functions`. Every function the file calls or captures
   # (`DependencyAnalyzer.function_references/1`) that a rule's token names is
-  # one violation per rule, at its first line. A function is reached only by a
+  # one violation per rule per call line. A function is reached only by a
   # call, so the rule's `match` mode does not apply here.
   #
   # A call site whose module or function cannot be resolved is reported once
@@ -179,16 +181,17 @@ defmodule Anchor.Domain.Checks.NoDependency do
     if Enum.all?(rules, &(forbidden_functions(&1) == [])) do
       []
     else
-      references = DependencyAnalyzer.attributed_function_references(ast)
+      sites = DependencyAnalyzer.attributed_function_sites(ast)
+      dynamic = DependencyAnalyzer.attributed_function_references(ast).dynamic
 
-      Enum.flat_map(rules, &rule_forbidden_calls(&1, references)) ++
-        Enum.flat_map(references.dynamic, &dynamic_violation(&1, reachable_refs(&1, rules)))
+      Enum.flat_map(rules, &rule_forbidden_calls(&1, sites)) ++
+        Enum.flat_map(dynamic, &dynamic_violation(&1, reachable_refs(&1, rules)))
     end
   end
 
-  defp rule_forbidden_calls(rule, references) do
-    references
-    |> then(&rule_calls(rule, &1))
+  defp rule_forbidden_calls(rule, sites) do
+    sites
+    |> then(&rule_dependencies(rule, %{file: &1.calls, by_owner: &1.by_owner}))
     |> forbidden_calls(forbidden_functions(rule))
     |> Enum.map(&RuleShapes.with_shape(&1, shape(rule)))
   end
@@ -197,32 +200,38 @@ defmodule Anchor.Domain.Checks.NoDependency do
 
   defp allowed_callers(rule), do: Map.get(rule, :allowed_callers) || []
 
-  # `{:file, ...}` from `dependencies_for/2`: the file-wide set a rule with no
-  # allowed callers reads, unchanged; the attributed set, less the allowed
-  # callers' entries, otherwise.
+  # The `{module, [line]}` sites from `dependencies_for/2`: the file-wide set a
+  # rule with no allowed callers reads; the attributed set, less the allowed
+  # callers' entries, otherwise. Either way, one `{module, line}` per reference
+  # line, so each site is its own violation.
   defp rule_dependencies(rule, %{file: file, by_owner: by_owner}) do
     case allowed_callers(rule) do
-      [] -> file
-      allowed -> not_exempt(by_owner, allowed)
+      [] -> Enum.flat_map(file, &expand_sites/1)
+      allowed -> by_owner |> not_exempt_sites(allowed) |> Enum.flat_map(&expand_sites/1)
     end
   end
 
-  defp rule_calls(rule, %{calls: calls, by_owner: by_owner}) do
-    case allowed_callers(rule) do
-      [] -> calls
-      allowed -> not_exempt(by_owner, allowed)
-    end
-  end
+  defp expand_sites({key, lines}), do: Enum.map(lines, &{key, &1})
 
-  # `[{owner, key, line}]` less the entries an allowed caller owns, as
-  # `[{key, first_line}]`, sorted. A line is an integer or `nil`, and every
-  # integer sorts before `nil`, so `nil` is kept only when no entry has a line.
-  defp not_exempt(by_owner, allowed) do
+  # `[{owner, key, [line]}]` less the entries an allowed caller owns, as
+  # `[{key, [line]}]`, sorted: the lines of the owners that are not exempt,
+  # merged per key.
+  defp not_exempt_sites(by_owner, allowed) do
     by_owner
-    |> Enum.reject(fn {owner, _key, _line} -> AllowedCallers.allows?(allowed, owner) end)
-    |> Enum.group_by(fn {_owner, key, _line} -> key end, fn {_owner, _key, line} -> line end)
-    |> Enum.map(fn {key, lines} -> {key, Enum.min(lines)} end)
+    |> Enum.reject(fn {owner, _key, _lines} -> AllowedCallers.allows?(allowed, owner) end)
+    |> Enum.group_by(fn {_owner, key, _lines} -> key end, fn {_owner, _key, lines} -> lines end)
+    |> Enum.map(fn {key, lines} ->
+      {key, lines |> List.flatten() |> Enum.uniq() |> sort_lines()}
+    end)
     |> Enum.sort()
+  end
+
+  # Integer lines ascending, then `nil`; `nil` is kept only when no site has a line.
+  defp sort_lines(lines) do
+    case lines |> Enum.reject(&is_nil/1) |> Enum.sort() do
+      [] -> [nil]
+      numbered -> numbered
+    end
   end
 
   # The forbidden functions a dynamic call site could reach, from the rules
@@ -282,7 +291,7 @@ defmodule Anchor.Domain.Checks.NoDependency do
   # call-position dependencies only (honoring the router carve-out); `:reference`
   # (default) at every referenced module. Both resolve aliases and imports
   # (DND-1266). Computed once per mode per file, not once per rule.
-  defp dependencies_for(ast, mode), do: DependencyAnalyzer.attributed_dependency_lines(ast, mode)
+  defp dependencies_for(ast, mode), do: DependencyAnalyzer.attributed_dependency_sites(ast, mode)
 
   # DND-1266: a directive whose target cannot be resolved statically hides every
   # reference made through it. It is reported once per file (the caller has at

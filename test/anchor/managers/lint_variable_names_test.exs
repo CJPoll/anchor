@@ -118,7 +118,7 @@ defmodule Anchor.Managers.LintVariableNamesTest do
     end
 
     assert Enum.map(by_check[Anchor.Check.NoDependency], &elem(&1, 2)) |> Enum.sort() ==
-             ["Foo.Bar", "Foo.Bar.call/1", "Sample.VarUser.Sub"]
+             ["Foo.Bar", "Foo.Bar", "Foo.Bar.call/1", "Sample.VarUser.Sub"]
 
     assert by_check[Anchor.Check.SingleControlFlow] == []
   end
@@ -145,6 +145,6 @@ defmodule Anchor.Managers.LintVariableNamesTest do
     assert fail_closed(by_check) == []
 
     # Positive control: the dependency check read past the `quote` variables.
-    assert Enum.map(by_check[Anchor.Check.NoDependency], &elem(&1, 2)) == ["Enum"]
+    assert Enum.map(by_check[Anchor.Check.NoDependency], &elem(&1, 2)) == ["Enum", "Enum"]
   end
 end

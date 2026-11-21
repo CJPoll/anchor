@@ -293,10 +293,10 @@ defmodule Anchor.Domain.Checks.NoDependencyForbiddenFunctionsTest do
       assert violation.line == 2
     end
 
-    test "the same function called twice is reported once, at its first line" do
+    test "the same function called twice is reported at each call line" do
       source = file("  def a(x), do: Bad.Mod.f(x)\n  def b(x), do: Bad.Mod.f(x)")
 
-      assert [%Violation{line: 2}] = detect(source, [rule(:call)])
+      assert [%Violation{line: 2}, %Violation{line: 3}] = detect(source, [rule(:call)])
     end
 
     test "each distinct arity is its own violation" do

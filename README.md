@@ -2684,6 +2684,23 @@ Prevents direct dependencies on forbidden modules.
   recursive: true
 ```
 
+#### Every reference is reported at its own line
+
+A forbidden module or function is reported at **every line** that references or
+calls it, one issue per line (several references on one line are one issue). A
+Credo line-level disable, `# credo:disable-for-next-line Anchor.Check.NoDependency`,
+therefore excuses exactly the line under it and never a later reference to the
+same dependency in the same file. An `alias` or `import` line that names a
+forbidden module is a reference of its own, so it is reported too (in
+`match: reference` mode).
+
+**Upgrading:** earlier versions reported a forbidden module once per file, at
+its first line, and a forbidden function once per rule, at its first line. A
+disable on that first line hid every later reference, so a file can now report
+more issues than before. This raises the reported count and weakens nothing:
+fix each newly visible site, or annotate it with its own disable. Do not add
+an exclusion or a baseline entry to silence the new count.
+
 #### Module token syntax (`forbidden_modules` / `required_modules` / `required_any_of_modules`)
 
 Each entry in `forbidden_modules`, `required_modules` and `required_any_of_modules` names a module in one of
@@ -2795,7 +2812,7 @@ token in `architecture.effects` is matched the same way, so the demand analysis
 reads a token `Process.monitor/1` against a Core `:erlang.monitor(:port, p)`
 too: a false positive there, never a miss.
 
-Each function reached is reported once per rule, at its first line. Where the
+Each function reached is reported once per rule at every line it is called on. Where the
 source does not show an arity (`apply(M, :f, args)`), the call matches every
 arity. An arity token matches that arity only, as Elixir counts it:
 `"MyApp.Repo.insert/2"` does not match `Repo.insert(changeset)`, even when a
