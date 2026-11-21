@@ -291,8 +291,8 @@ defmodule Anchor.Domain.Checks.NoDependency do
 
   defp rule_mode(rule), do: if(Map.get(rule, :match) == :call, do: :call, else: :reference)
 
-  # Gap A' (DND-142): the dependency set a rule consults, as `{module, line}`
-  # with each module's first-occurrence line. `:call` mode looks at
+  # Gap A': the dependency set a rule consults, as `{module, [line]}`
+  # with every line the module is referenced on. `:call` mode looks at
   # call-position dependencies only (honoring the router carve-out); `:reference`
   # (default) at every referenced module. Both resolve aliases and imports
   # (DND-1266). Computed once per mode per file, not once per rule.
@@ -385,7 +385,7 @@ defmodule Anchor.Domain.Checks.NoDependency do
     Enum.any?(patterns, &GlobPattern.matches_module_pattern?(module_name, &1))
   end
 
-  # `line` is the dependency's first occurrence in source order, as the analyzer
+  # `line` is one reference site of the dependency, as the analyzer
   # resolved it — so an aliased or imported reference points at the line that
   # reaches the module, not at a literal spelling of its full name.
   defp build_violation({forbidden_module, line}) do

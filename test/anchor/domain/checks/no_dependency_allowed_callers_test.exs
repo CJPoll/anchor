@@ -6,8 +6,8 @@ defmodule Anchor.Domain.Checks.NoDependencyAllowedCallersTest do
   # each run against one rule per relation (`forbidden_modules`,
   # `forbidden_patterns`, `forbidden_functions`) in both `match` modes. Every
   # row's code reaches the target the same way, `Bad.Web.f(1)`, so every
-  # relation must give the same answer: `[line]` (the first line a module that
-  # is not an allowed caller reaches it) or `[]` (only allowed callers do).
+  # relation must give the same answer: `[line, ...]` (every line a module that
+  # is not an allowed caller reaches it on) or `[]` (only allowed callers do).
   #
   # Code is attributed to the module whose body it is in. A nested module is its
   # own module, in both directions. A `defimpl` body belongs to the module the

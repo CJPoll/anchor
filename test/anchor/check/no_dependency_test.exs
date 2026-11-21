@@ -7,7 +7,7 @@ defmodule Anchor.Check.NoDependencyTest do
   # `[%Credo.Issue{}]`. These rows assert the *intended* behaviour in
   # docs/five-bucket-test-matrix.md ("no_dependency.ex -> check_file/3 -> #1-8"),
   # which supersedes the T1 characterization pins — in particular row 7 now reports
-  # the FIRST reference line, not the last.
+  # every reference line, so a line-level disable covers only its own line.
   #
   # Sabotage record: ../../sabotage_records/no_dependency-20260913-dnd_126_t6_1_no_dependency.md
   use ExUnit.Case, async: true
@@ -267,10 +267,9 @@ defmodule Anchor.Check.NoDependencyTest do
       assert issue.line_no == 2
     end
 
-    # Reports the FIRST reference line for a bare-atom module appearing twice —
-    # the atom-path analogue of the alias-path row above (proves
-    # `atom_reference_line/2` short-circuits on the earliest occurrence, and that
-    # `first_reference_line/2` never calls `Module.split/1` on a bare atom).
+    # Reports each reference line for a bare-atom module appearing twice — the
+    # atom-path analogue of the alias-path row above (proves every site of a bare
+    # atom is found, and that the walk never calls `Module.split/1` on one).
     test "reports each reference line for a bare-atom module referenced twice" do
       source = """
       defmodule W do
@@ -439,9 +438,15 @@ defmodule Anchor.Check.NoDependencyTest do
           match: unquote(mode)
         }
 
+        # The `alias` line is a site of its own in reference mode; the call is
+        # the only site in call mode.
         issues = NoDependency.check_file(source_file, [rule], [])
-        assert issues != []
-        assert issues |> Enum.map(& &1.trigger) |> Enum.uniq() == ["MyApp.Repo"]
+
+        assert Enum.map(issues, &{&1.line_no, &1.trigger}) ==
+                 Enum.map(
+                   unquote(if mode == :reference, do: [2, 4], else: [4]),
+                   &{&1, "MyApp.Repo"}
+                 )
       end
     end
   end

@@ -2699,7 +2699,9 @@ its first line, and a forbidden function once per rule, at its first line. A
 disable on that first line hid every later reference, so a file can now report
 more issues than before. This raises the reported count and weakens nothing:
 fix each newly visible site, or annotate it with its own disable. Do not add
-an exclusion or a baseline entry to silence the new count.
+an exclusion or a baseline entry to silence the new count. A rule at `enforcement: enforce` with a
+baseline keeps its entries per module, not per line, so the newly visible sites of a baselined
+module are reported as new findings.
 
 #### Module token syntax (`forbidden_modules` / `required_modules` / `required_any_of_modules`)
 

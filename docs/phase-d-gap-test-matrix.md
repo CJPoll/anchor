@@ -133,7 +133,7 @@ first reference line.
 | 2 | Domain-only file passes the pattern rule (A positive control) | ast references only `WaltUi.Contacts.Domain.Foo`; same rule | `[]` | Positive Control |
 | 3 | **pattern is dot-bounded — no substring match (A)** | ast references `Foo.AdaptersHelper`; rule `forbidden_patterns: ["*.Adapters.*"]` | `[]` (no dot-bounded `.Adapters.` segment) | Validation |
 | 4 | `forbidden_modules` and `forbidden_patterns` both fire (A) | ast references `MyApp.Repo` (line 2) and `X.Adapters.Y` (line 3); rule `%{forbidden_modules: [MyApp.Repo], forbidden_patterns: ["*.Adapters.*"], match: :reference}` | 2 violations, triggers `MyApp.Repo` and `X.Adapters.Y` | Happy Path |
-| 5 | a pattern-matched module is reported once at its first reference line (A) | ast references `X.Adapters.Y` on lines 2 and 4; pattern rule | 1 violation, line 2 | Control Flow Decisioning |
+| 5 | a pattern-matched module is reported at each reference line (A) | ast references `X.Adapters.Y` on lines 2 and 4; pattern rule | 2 violations, lines 2 and 4 | Control Flow Decisioning |
 | 6 | `match: :reference` (default) flags an inert reference (A′) | ast holds `%{a: Foo.Adapters.L}` (no call, ref on line 2); rule `%{forbidden_patterns: ["*.Adapters.*"], match: :reference}` | 1 violation, line 2 | Happy Path |
 | 7 | **`match: :call` passes an inert map value (A′ router carve-out)** | same ast; rule `%{forbidden_patterns: ["*.Adapters.*"], match: :call}` | `[]` (atom held, not called) | Validation |
 | 8 | `match: :call` flags a real call (A′) | ast `Foo.Adapters.L.enrich(x)` (line 2); rule `%{forbidden_patterns: ["*.Adapters.*"], match: :call}` | 1 violation, line 2 | Happy Path |
@@ -142,7 +142,7 @@ first reference line.
 
 Caveat: row 9 requires the first-reference-line lookup to handle a bare-atom callee (match the
 `{{:., _, [:telemetry, _]}, _, _}` node) since `Module.split/1` raises on a non-Elixir atom; a `nil`
-line here would be a partial fix and row 9 asserts line 2. Row 5's "first line" property is the same
+line here would be a partial fix and row 9 asserts line 2. Row 5's every-line property is the same
 one the existing `forbidden_modules` path guarantees, reused for patterns.
 
 ---
