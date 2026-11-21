@@ -3,7 +3,7 @@
 - **Domain:** no_dependency
 - **Branch:** athena/no-dependency-report-every-site
 - **Date:** 2026-11-21
-- **Code under test:** `Anchor.Domain.Checks.NoDependency` (`expand_sites/1`, `not_exempt_sites/2`), `Anchor.Domain.DependencyAnalyzer` (`sites/1`, `add_site/3`, `attributed_dependency_sites/2`, `attributed_function_sites/1`)
+- **Code under test:** `Anchor.Domain.Checks.NoDependency` (`expand_sites/1`, `not_exempt_sites/2`), `Anchor.Domain.DependencyAnalyzer` (`sites/1`, `add_site/3`, `attributed_dependency_lines/2`, `attributed_function_references/1`)
 - **Suite run:** `mix test` (whole suite; the rows name the tests that went red)
 
 The check used to report a forbidden module once per file, and a forbidden

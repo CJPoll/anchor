@@ -359,11 +359,18 @@ defmodule Anchor.Domain.DependencyAnalyzer do
 
     * `:file` — exactly `dependency_lines(ast, mode)`;
     * `:by_owner` — `[{owner, module, line}]`, sorted, one entry per distinct
-      `{owner, module}` at its first line in that owner.
+      `{owner, module}` at its first line in that owner;
+    * `:file_sites` — `[{module, [line]}]`, sorted by module: each distinct line
+      the module is referenced on, ascending (`[nil]` when the AST carries no
+      line). A line that references it twice is listed once;
+    * `:by_owner_sites` — `[{owner, module, [line]}]`, sorted: the same, per
+      `{owner, module}`.
   """
   @spec attributed_dependency_lines(Macro.t(), :reference | :call) :: %{
           file: [{module(), pos_integer() | nil}],
-          by_owner: [{owner(), module(), pos_integer() | nil}]
+          by_owner: [{owner(), module(), pos_integer() | nil}],
+          file_sites: [{module(), [pos_integer() | nil]}],
+          by_owner_sites: [{owner(), module(), [pos_integer() | nil]}]
         }
   def attributed_dependency_lines(ast, mode) do
     acc = analyze(ast, mode)
@@ -373,63 +380,14 @@ defmodule Anchor.Domain.DependencyAnalyzer do
       by_owner:
         acc.owned
         |> Enum.map(fn {{owner, module}, line} -> {owner, module, line} end)
-        |> Enum.sort()
-    }
-  end
-
-  @doc """
-  `attributed_dependency_lines/2`, with every line a dependency is referenced
-  on instead of only its first.
-
-    * `:file` — `[{module, [line]}]`, sorted by module: each distinct line the
-      module is referenced on, ascending (`[nil]` when the AST carries no line);
-    * `:by_owner` — `[{owner, module, [line]}]`, sorted: the same, per
-      `{owner, module}`.
-
-  A line that references the module twice is listed once. The head of each
-  list is the line `attributed_dependency_lines/2` reports.
-  """
-  @spec attributed_dependency_sites(Macro.t(), :reference | :call) :: %{
-          file: [{module(), [pos_integer() | nil]}],
-          by_owner: [{owner(), module(), [pos_integer() | nil]}]
-        }
-  def attributed_dependency_sites(ast, mode) do
-    acc = analyze(ast, mode)
-
-    %{
-      file:
+        |> Enum.sort(),
+      file_sites:
         acc.file_sites
         |> Enum.map(fn {module, lines} -> {module, sites(lines)} end)
         |> Enum.sort(),
-      by_owner:
+      by_owner_sites:
         acc.owned_sites
         |> Enum.map(fn {{owner, module}, lines} -> {owner, module, sites(lines)} end)
-        |> Enum.sort()
-    }
-  end
-
-  @doc """
-  `attributed_function_references/1`, with every line a function is called on
-  instead of only its first.
-
-    * `:calls` — `[{{module, function, arity}, [line]}]`, sorted: each distinct
-      line the call is made on, ascending (`[nil]` when the AST carries no line);
-    * `:by_owner` — `[{owner, {module, function, arity}, [line]}]`, sorted: the
-      same, per `{owner, mfa}`.
-  """
-  @spec attributed_function_sites(Macro.t()) :: %{
-          calls: [{{module(), atom(), arity() | :any}, [pos_integer() | nil]}],
-          by_owner: [{owner(), {module(), atom(), arity() | :any}, [pos_integer() | nil]}]
-        }
-  def attributed_function_sites(ast) do
-    acc = analyze(ast, :call)
-
-    %{
-      calls:
-        acc.call_sites |> Enum.map(fn {mfa, lines} -> {mfa, sites(lines)} end) |> Enum.sort(),
-      by_owner:
-        acc.owned_call_sites
-        |> Enum.map(fn {{owner, mfa}, lines} -> {owner, mfa, sites(lines)} end)
         |> Enum.sort()
     }
   end
@@ -441,12 +399,19 @@ defmodule Anchor.Domain.DependencyAnalyzer do
     * `:calls` — exactly `function_references(ast).calls`;
     * `:by_owner` — `[{owner, {module, function, arity}, line}]`, sorted, one
       entry per distinct `{owner, mfa}` at its first line in that owner;
+    * `:call_sites` — `[{{module, function, arity}, [line]}]`, sorted: each
+      distinct line the call is made on, ascending (`[nil]` when the AST carries
+      no line);
+    * `:by_owner_sites` — `[{owner, {module, function, arity}, [line]}]`, sorted:
+      the same, per `{owner, mfa}`;
     * `:dynamic` — `function_references(ast).dynamic`, each site carrying its
       `:owner`.
   """
   @spec attributed_function_references(Macro.t()) :: %{
           calls: [{{module(), atom(), arity() | :any}, pos_integer() | nil}],
           by_owner: [{owner(), {module(), atom(), arity() | :any}, pos_integer() | nil}],
+          call_sites: [{{module(), atom(), arity() | :any}, [pos_integer() | nil]}],
+          by_owner_sites: [{owner(), {module(), atom(), arity() | :any}, [pos_integer() | nil]}],
           dynamic: [%{owner: owner()}]
         }
   def attributed_function_references(ast) do
@@ -457,6 +422,12 @@ defmodule Anchor.Domain.DependencyAnalyzer do
       by_owner:
         acc.owned_calls
         |> Enum.map(fn {{owner, mfa}, line} -> {owner, mfa, line} end)
+        |> Enum.sort(),
+      call_sites:
+        acc.call_sites |> Enum.map(fn {mfa, lines} -> {mfa, sites(lines)} end) |> Enum.sort(),
+      by_owner_sites:
+        acc.owned_call_sites
+        |> Enum.map(fn {{owner, mfa}, lines} -> {owner, mfa, sites(lines)} end)
         |> Enum.sort(),
       dynamic: Enum.reverse(acc.dynamic)
     }
