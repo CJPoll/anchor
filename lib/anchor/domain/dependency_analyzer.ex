@@ -221,7 +221,6 @@ defmodule Anchor.Domain.DependencyAnalyzer do
 
   @initial_acc %{
     file: %{},
-    file_sites: %{},
     owned_sites: %{},
     by_module: %{},
     unresolved: [],
@@ -229,7 +228,6 @@ defmodule Anchor.Domain.DependencyAnalyzer do
     dynamic: [],
     owned: %{},
     owned_calls: %{},
-    call_sites: %{},
     owned_call_sites: %{},
     defined: MapSet.new(),
     resolved: %{}
@@ -360,16 +358,13 @@ defmodule Anchor.Domain.DependencyAnalyzer do
     * `:file` — exactly `dependency_lines(ast, mode)`;
     * `:by_owner` — `[{owner, module, line}]`, sorted, one entry per distinct
       `{owner, module}` at its first line in that owner;
-    * `:file_sites` — `[{module, [line]}]`, sorted by module: each distinct line
-      the module is referenced on, ascending (`[nil]` when the AST carries no
-      line). A line that references it twice is listed once;
-    * `:by_owner_sites` — `[{owner, module, [line]}]`, sorted: the same, per
-      `{owner, module}`.
+    * `:by_owner_sites` — `[{owner, module, [line]}]`, sorted: every distinct line
+      the module is referenced on in that owner, ascending (`[nil]` when the AST
+      carries no line). A line that references it twice is listed once.
   """
   @spec attributed_dependency_lines(Macro.t(), :reference | :call) :: %{
           file: [{module(), pos_integer() | nil}],
           by_owner: [{owner(), module(), pos_integer() | nil}],
-          file_sites: [{module(), [pos_integer() | nil]}],
           by_owner_sites: [{owner(), module(), [pos_integer() | nil]}]
         }
   def attributed_dependency_lines(ast, mode) do
@@ -380,10 +375,6 @@ defmodule Anchor.Domain.DependencyAnalyzer do
       by_owner:
         acc.owned
         |> Enum.map(fn {{owner, module}, line} -> {owner, module, line} end)
-        |> Enum.sort(),
-      file_sites:
-        acc.file_sites
-        |> Enum.map(fn {module, lines} -> {module, sites(lines)} end)
         |> Enum.sort(),
       by_owner_sites:
         acc.owned_sites
@@ -399,18 +390,15 @@ defmodule Anchor.Domain.DependencyAnalyzer do
     * `:calls` — exactly `function_references(ast).calls`;
     * `:by_owner` — `[{owner, {module, function, arity}, line}]`, sorted, one
       entry per distinct `{owner, mfa}` at its first line in that owner;
-    * `:call_sites` — `[{{module, function, arity}, [line]}]`, sorted: each
-      distinct line the call is made on, ascending (`[nil]` when the AST carries
-      no line);
     * `:by_owner_sites` — `[{owner, {module, function, arity}, [line]}]`, sorted:
-      the same, per `{owner, mfa}`;
+      every distinct line the call is made on in that owner, ascending (`[nil]`
+      when the AST carries no line);
     * `:dynamic` — `function_references(ast).dynamic`, each site carrying its
       `:owner`.
   """
   @spec attributed_function_references(Macro.t()) :: %{
           calls: [{{module(), atom(), arity() | :any}, pos_integer() | nil}],
           by_owner: [{owner(), {module(), atom(), arity() | :any}, pos_integer() | nil}],
-          call_sites: [{{module(), atom(), arity() | :any}, [pos_integer() | nil]}],
           by_owner_sites: [{owner(), {module(), atom(), arity() | :any}, [pos_integer() | nil]}],
           dynamic: [%{owner: owner()}]
         }
@@ -423,8 +411,6 @@ defmodule Anchor.Domain.DependencyAnalyzer do
         acc.owned_calls
         |> Enum.map(fn {{owner, mfa}, line} -> {owner, mfa, line} end)
         |> Enum.sort(),
-      call_sites:
-        acc.call_sites |> Enum.map(fn {mfa, lines} -> {mfa, sites(lines)} end) |> Enum.sort(),
       by_owner_sites:
         acc.owned_call_sites
         |> Enum.map(fn {{owner, mfa}, lines} -> {owner, mfa, sites(lines)} end)
@@ -1414,7 +1400,6 @@ defmodule Anchor.Domain.DependencyAnalyzer do
     %{
       acc
       | file: Map.put_new(acc.file, module, line),
-        file_sites: add_site(acc.file_sites, module, line),
         by_module: by_module,
         owned: Map.put_new(acc.owned, {owner(env), module}, line),
         owned_sites: add_site(acc.owned_sites, {owner(env), module}, line)
@@ -1442,7 +1427,6 @@ defmodule Anchor.Domain.DependencyAnalyzer do
       acc
       | calls: Map.put_new(acc.calls, mfa, line),
         owned_calls: Map.put_new(acc.owned_calls, {owner(env), mfa}, line),
-        call_sites: add_site(acc.call_sites, mfa, line),
         owned_call_sites: add_site(acc.owned_call_sites, {owner(env), mfa}, line)
     }
   end

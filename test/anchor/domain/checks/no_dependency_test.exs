@@ -452,4 +452,67 @@ defmodule Anchor.Domain.Checks.NoDependencyTest do
       assert detect(source, rule) == []
     end
   end
+
+  # Several modules in one file, each its own owner: the sites read in source
+  # order whichever owner is named first, with or without allowed callers.
+  describe "detect_violations/2 — site order" do
+    @two_modules """
+    defmodule App.Two do
+      def a, do: Sample.Repo.all(Q)
+    end
+
+    defmodule App.One do
+      def b, do: Sample.Repo.all(Q)
+    end
+    """
+
+    test "violations are in ascending line order across owners, with allowed callers" do
+      rule = %{
+        forbidden_modules: [Sample.Repo],
+        forbidden_patterns: [],
+        match: :call,
+        allowed_callers: [App.Allowed]
+      }
+
+      assert Enum.map(detect(@two_modules, rule), & &1.line) == [2, 6]
+    end
+  end
+
+  # An AST built without positions has no line to report at: each dependency is
+  # one violation with `line: nil`, however many times it is referenced, with or
+  # without allowed callers.
+  describe "detect_violations/2 — an AST that carries no line" do
+    defp without_lines(ast) do
+      Macro.prewalk(ast, fn
+        {form, meta, args} when is_list(meta) -> {form, Keyword.delete(meta, :line), args}
+        other -> other
+      end)
+    end
+
+    @unlined """
+    defmodule App.One do
+      def a, do: Sample.Repo.all(Q)
+      def b, do: Sample.Repo.one(Q)
+    end
+    """
+
+    test "a forbidden module referenced twice is one violation, at no line" do
+      rule = %{forbidden_modules: [Sample.Repo], forbidden_patterns: [], match: :call}
+
+      assert [%Violation{line: nil}] =
+               NoDependency.detect_violations(without_lines(ast(@unlined)), [rule])
+    end
+
+    test "the same holds for a rule with allowed callers" do
+      rule = %{
+        forbidden_modules: [Sample.Repo],
+        forbidden_patterns: [],
+        match: :call,
+        allowed_callers: [App.Allowed]
+      }
+
+      assert [%Violation{line: nil}] =
+               NoDependency.detect_violations(without_lines(ast(@unlined)), [rule])
+    end
+  end
 end

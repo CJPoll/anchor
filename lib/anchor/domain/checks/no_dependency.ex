@@ -199,21 +199,17 @@ defmodule Anchor.Domain.Checks.NoDependency do
 
   defp allowed_callers(rule), do: Map.get(rule, :allowed_callers) || []
 
-  # The `{module, [line]}` sites from `dependencies_for/2`: the file-wide set a
-  # rule with no allowed callers reads; the attributed set, less the allowed
-  # callers' entries, otherwise. Either way, one `{module, line}` per reference
-  # line, so each site is its own violation.
-  defp rule_dependencies(rule, %{file_sites: file, by_owner_sites: by_owner}),
-    do: expand_rule_sites(rule, file, by_owner)
+  # The `{module, [line]}` sites from `dependencies_for/2`, less the entries an
+  # allowed caller owns (none, for a rule with no allowed callers): one
+  # `{module, line}` per reference line, so each site is its own violation.
+  defp rule_dependencies(rule, %{by_owner_sites: by_owner}), do: rule_sites(rule, by_owner)
 
-  defp rule_call_sites(rule, %{call_sites: calls, by_owner_sites: by_owner}),
-    do: expand_rule_sites(rule, calls, by_owner)
+  defp rule_call_sites(rule, %{by_owner_sites: by_owner}), do: rule_sites(rule, by_owner)
 
-  defp expand_rule_sites(rule, file, by_owner) do
-    case allowed_callers(rule) do
-      [] -> Enum.flat_map(file, &expand_sites/1)
-      allowed -> by_owner |> not_exempt_sites(allowed) |> Enum.flat_map(&expand_sites/1)
-    end
+  defp rule_sites(rule, by_owner) do
+    by_owner
+    |> not_exempt_sites(allowed_callers(rule))
+    |> Enum.flat_map(&expand_sites/1)
   end
 
   defp expand_sites({key, lines}), do: Enum.map(lines, &{key, &1})
