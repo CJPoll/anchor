@@ -90,6 +90,7 @@ defmodule Anchor.Adapters.GitStatusTest do
   end
 
   describe "last_commit/2 (DND-7453)" do
+    # Sabotage record: ../../sabotage_records/git_status-20261122-DND_7453.md
     test "the last commit that touched a path; nil for an untracked or unknown one", %{
       tmp_dir: root
     } do

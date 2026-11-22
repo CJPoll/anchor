@@ -1,5 +1,6 @@
 defmodule Anchor.Domain.Sabotage.NewerTestsTest do
   # DND-7453: which new survivors a test added after a committed record may
+  # Sabotage record: ../../../sabotage_records/sabotage-20261122-DND_7453.md
   # kill, built from the records' own rows and plain git facts, no test run.
   use ExUnit.Case, async: true
 

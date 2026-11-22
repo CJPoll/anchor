@@ -1789,7 +1789,7 @@ defmodule Anchor.Managers.SabotageRunTest do
   end
 
   describe "run/2: a test newer than a record (DND-7453)" do
-    # Sabotage record (DND-7453): ../../sabotage_records/sabotage-20261121-dnd_7453_newer_test_note.md
+    # Sabotage record (DND-7453): ../../sabotage_records/sabotage-20261122-DND_7453.md
     @old_record "test/sabotage_records/old-20261101-x.md"
     @old_commit String.duplicate("a", 40)
     @old_kills "```anchor-kills\nid1\tlib/calc.ex\tCalc.add/2\top\tkilled\ttest/calc_test.exs:3 test k\n```\n"
