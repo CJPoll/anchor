@@ -2408,9 +2408,9 @@ it. A base copy that cannot be read for any reason but its absence is exit 3.
 survivor, with the placeholder reason to replace. The run never writes the
 list.
 
-A run selects tests from the kill maps of the records already committed and
-the function's mirror file, so a test added after a record, in a file neither
-names, is not run, and a mutant it would kill shows as NEW. The run does not
+When a mutant's tests come from the records' kill maps or the function's
+mirror (step 4 above), a test added after a record, in a file
+neither names, is not run, and a mutant it would kill shows as NEW. The run does not
 learn that test's kills (that would be a test run per record). Instead a NEW
 survivor whose function a committed record lists carries a `Note:` when a
 test file the branch changed since that record's last commit was not selected
@@ -2419,7 +2419,9 @@ mutant, and this run did not select it: <tests>`. Its `Fix:` is to fold the
 test into a file the run selects, then re-run. The note only adds
 information: the survivor stays NEW and the exit code does not change. A
 record no commit has touched (not yet committed) is not "before" any test and
-says nothing; a git failure is a run note, `could not tell which tests changed
+says nothing; a test file no diff names (untracked) is not the branch's change
+and is not named, and a record's "since" is its file's last commit, so silence
+is not a claim that no newer test exists; a git failure is a run note, `could not tell which tests changed
 since record <path>`.
 
 ### Sabotage: verifying a branch's records

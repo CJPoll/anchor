@@ -1088,39 +1088,49 @@ defmodule Anchor.Managers.Sabotage.Runner do
   defp note_newer_tests(
          %Run{survivors: %{judgement: %{new: [_ | _] = new}}} = run,
          %{entries: entries},
-         scope,
+         %{test_changes: test_changes},
          root,
          %{git: git}
-       ) do
+       )
+       when map_size(test_changes) > 0 do
     wanted = MapSet.new(new, &TestSelection.mfa(&1.mutant))
     relevant = Enum.filter(entries, &(not MapSet.disjoint?(wanted, MapSet.new(&1.mfas))))
 
-    {facts, notes} =
-      Enum.reduce(relevant, {[], []}, fn entry, {facts, notes} ->
-        case record_fact(entry, root, git) do
-          {:ok, fact} -> {facts ++ [fact], notes}
-          :none -> {facts, notes}
-          {:note, note} -> {facts, notes ++ [note]}
+    {facts, notes, _since} =
+      Enum.reduce(relevant, {[], [], %{}}, fn entry, {facts, notes, since} ->
+        case record_fact(entry, root, git, since) do
+          {:ok, fact, since} -> {facts ++ [fact], notes, since}
+          :none -> {facts, notes, since}
+          {:note, note} -> {facts, notes ++ [note], since}
         end
       end)
 
     %{
       run
-      | newer_tests: NewerTests.find(new, facts, Map.keys(scope.test_changes)),
+      | newer_tests: NewerTests.find(new, facts, Map.keys(test_changes)),
         notes: run.notes ++ notes
     }
   end
 
   defp note_newer_tests(run, _records, _scope, _root, _ports), do: run
 
-  defp record_fact(%{path: path, mfas: mfas}, root, git) do
+  # `since` caches the files changed since a commit: records often share one.
+  defp record_fact(%{path: path, mfas: mfas}, root, git, since) do
     with {:last, {:ok, commit}} when is_binary(commit) <- {:last, git.last_commit(root, path)},
-         {:since, {:ok, changed}} <- {:since, git.changed_since(root, commit)} do
-      {:ok, %{path: path, commit: commit, mfas: mfas, changed: changed}}
+         {:since, {:ok, changed}} <- {:since, changed_since(git, root, commit, since)} do
+      {:ok, %{path: path, commit: commit, mfas: mfas, changed: changed},
+       Map.put(since, commit, {:ok, changed})}
     else
       {:last, {:ok, nil}} -> :none
       {:last, {:error, reason}} -> {:note, cannot_tell(path, reason)}
       {:since, {:error, reason}} -> {:note, cannot_tell(path, reason)}
+    end
+  end
+
+  defp changed_since(git, root, commit, since) do
+    case Map.fetch(since, commit) do
+      {:ok, cached} -> cached
+      :error -> git.changed_since(root, commit)
     end
   end
 

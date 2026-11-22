@@ -242,7 +242,7 @@ defmodule Anchor.Domain.Sabotage.Report do
   end
 
   defp new_survivor(%{mutant: m} = outcome, path, newer_tests) do
-    newer = newer_tests |> Map.get(m.id, []) |> Enum.flat_map(&NewerTests.note(&1, outcome))
+    newer = newer_tests |> Map.get(m.id, []) |> NewerTests.note(outcome)
 
     ["NEW survivor #{m.id} #{m.file} #{mfa(m)} #{m.operator}"] ++
       newer ++

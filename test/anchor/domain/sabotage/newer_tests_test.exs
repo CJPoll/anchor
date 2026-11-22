@@ -78,7 +78,11 @@ defmodule Anchor.Domain.Sabotage.NewerTestsTest do
     test "a changed file that is not a test file, or an unsafe path, is not named" do
       rec = record(%{changed: ["lib/calc.ex", "--opt_test.exs", "/abs/x_test.exs"]})
 
-      assert NewerTests.find([outcome("aaa")], [rec], ["lib/calc.ex", "--opt_test.exs"]) == %{}
+      assert NewerTests.find(
+               [outcome("aaa")],
+               [rec],
+               ["lib/calc.ex", "--opt_test.exs", "/abs/x_test.exs"]
+             ) == %{}
     end
 
     test "every record that lists the function and has newer tests is named, in record order" do
@@ -112,24 +116,39 @@ defmodule Anchor.Domain.Sabotage.NewerTestsTest do
   end
 
   describe "note/2" do
-    test "names the record, its short commit, the tests and a Fix line" do
+    test "a Note per record with its short commit and the tests, then one Fix" do
       [found] = NewerTests.find([outcome("aaa")], [record()], @branch)["aaa"]
+      other = %{record: "r2.md", commit: "abc", tests: ["test/z_test.exs"]}
 
-      assert NewerTests.note(found, outcome("aaa")) == [
+      assert NewerTests.note([found, other], outcome("aaa")) == [
                "  Note: a test added after record test/sabotage_records/calc-20261101-first.md " <>
                  "(0123456789ab) may kill this mutant, and this run did not select it: " <>
                  "test/extra_test.exs",
+               "  Note: a test added after record r2.md (abc) may kill this mutant, and this " <>
+                 "run did not select it: test/z_test.exs",
                "  Fix: fold that test into a test file this run selects (test/calc_test.exs), " <>
                  "then re-run: a run selects only the files a record's kill map and the " <>
                  "function's mirror name"
              ]
     end
 
+    test "no findings, no lines" do
+      assert NewerTests.note([], outcome("aaa")) == []
+    end
+
+    test "a survivor whose selection is empty says so in the Fix" do
+      found = %{record: "r.md", commit: "abc", tests: ["test/z_test.exs"]}
+      [_note, fix] = NewerTests.note([found], outcome("aaa", []))
+
+      assert fix =~ "this run selected none"
+      refute fix =~ "()"
+    end
+
     test "more than five tests are cut with a count" do
       tests = for n <- 1..7, do: "test/t#{n}_test.exs"
       found = %{record: "r.md", commit: "abc", tests: tests}
 
-      [line | _] = NewerTests.note(found, outcome("aaa"))
+      [line | _] = NewerTests.note([found], outcome("aaa"))
       assert line =~ "test/t5_test.exs and 2 more"
       refute line =~ "test/t6_test.exs"
     end

@@ -20,8 +20,15 @@ defmodule Anchor.Domain.Sabotage.NewerTests do
   branch's news, and not named. Every path named passes
   `Anchor.Domain.Sabotage.TestPath.check/1`.
 
-  `note/2` words one finding for the report. It only adds information: the
-  survivor stays NEW, and the exit code is the survivors list's.
+  `note/2` words a survivor's findings for the report. It only adds
+  information: the survivor stays NEW, and the exit code is the survivors
+  list's.
+
+  Its limits: a record's "since" is its file's last commit, so a test added
+  after the record's block was written but before a later commit touched the
+  same file (another run appended to it) is not newer, and the note is silent;
+  and a test file no diff names (untracked) is not the branch's change, so it
+  is not named. Silence is not a claim that no newer test exists.
   """
 
   alias Anchor.Domain.Sabotage.TestPath
@@ -49,19 +56,30 @@ defmodule Anchor.Domain.Sabotage.NewerTests do
         do: {mutant.id, findings}
   end
 
-  @doc "The report lines of one finding of `survivor`, which names its selection."
-  @spec note(finding(), map()) :: [String.t()]
-  def note(%{record: record, commit: commit, tests: tests}, %{selection: {_source, args}}) do
+  @doc """
+  The report lines of one survivor's findings: a `Note:` per record, then one
+  `Fix:`. `survivor` names the selection the run made.
+  """
+  @spec note([finding()], map()) :: [String.t()]
+  def note([], _survivor), do: []
+
+  def note(findings, %{selection: {_source, args}}) do
     selected = args |> Enum.map(&ref_file/1) |> Enum.uniq()
 
-    [
-      "  Note: a test added after record #{record} (#{String.slice(commit, 0, 12)}) may " <>
-        "kill this mutant, and this run did not select it: #{listed(tests)}",
-      "  Fix: fold that test into a test file this run selects (#{Enum.join(selected, ", ")}), " <>
-        "then re-run: a run selects only the files a record's kill map and the function's " <>
-        "mirror name"
-    ]
+    Enum.map(findings, &note_line/1) ++
+      [
+        "  Fix: fold that test into #{selects(selected)}, then re-run: a run selects only " <>
+          "the files a record's kill map and the function's mirror name"
+      ]
   end
+
+  defp note_line(%{record: record, commit: commit, tests: tests}),
+    do:
+      "  Note: a test added after record #{record} (#{String.slice(commit, 0, 12)}) may " <>
+        "kill this mutant, and this run did not select it: #{listed(tests)}"
+
+  defp selects([]), do: "a test file the function's mirror names (this run selected none)"
+  defp selects(files), do: "a test file this run selects (#{Enum.join(files, ", ")})"
 
   defp findings(%{mutant: mutant, selection: {_source, args}}, records, branch) do
     mfa = TestSelection.mfa(mutant)
