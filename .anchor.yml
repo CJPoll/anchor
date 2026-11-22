@@ -251,11 +251,11 @@ aggregates:
 # the mutated module's name (Anchor.Domain.Sabotage.Mutator -> sabotage,
 # Anchor.Check.NoDependency -> no_dependency, Anchor.Config -> config).
 sabotage:
-  # The Runner's tests live in sabotage_run_test.exs, not the runner_test.exs
+  # The sabotage managers' tests live in sabotage_run_test.exs, not the <name>_test.exs
   # the default mirror looks for (DND-7453): a mutant of it was `no_tests`.
   # An exact rule first, then the defaults.
   test_mirror:
-    - from: "lib/anchor/managers/sabotage/runner.ex"
+    - from: "lib/anchor/managers/sabotage/*.ex"
       to: "test/anchor/managers/sabotage_run_test.exs"
     - from: "apps/*/lib/**/*.ex"
       to: "apps/{app}/test/{rest}_test.exs"

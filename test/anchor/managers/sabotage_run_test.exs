@@ -564,6 +564,25 @@ defmodule Anchor.Managers.SabotageRunTest do
                "the original is back, but .anchor/sabotage/in-flight.json could not be deleted"
     end
 
+    test "every changed function unreadable at generation is COULD NOT MEASURE, exit 3, nothing run" do
+      expect_journal(:none)
+      expect_config()
+      expect_ignored()
+      expect(ChangeSourceMock, :merge_base, fn @root, "origin/main" -> {:ok, "abc"} end)
+      expect(ChangeSourceMock, :diff, fn @root, "abc" -> {:ok, @diff} end)
+      expect(ChangeSourceMock, :untracked, fn @root -> {:ok, []} end)
+
+      expect(ChangeSourceMock, :read, 2, fn @root, "lib/calc.ex" ->
+        if calls_seen(:first_read), do: {:error, :eacces}, else: call(:first_read, {:ok, @source})
+      end)
+
+      expect(ChangeSourceMock, :show, fn @root, "abc", "lib/calc.ex" -> {:ok, @source} end)
+      expect_clean()
+
+      assert %{refusal: {3, message}, outcomes: []} = Sabotage.run(@facts, @opts)
+      assert message =~ "lib/calc.ex cannot be read (:eacces)"
+    end
+
     test "a stale results file the runner cannot remove is COULD NOT MEASURE, exit 3" do
       expect_until_selection()
       expect_baseline({:error, {:results_not_removed, "/repo/_build/x/results.bin", :eisdir}})
