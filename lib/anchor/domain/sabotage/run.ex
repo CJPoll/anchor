@@ -38,6 +38,9 @@ defmodule Anchor.Domain.Sabotage.Run do
     * `survivors` — `nil` (not judged: a dry run, a refusal), or the list's
       judgement, `%{path, base, judgement, grew}`
       (`Anchor.Domain.Sabotage.Survivors`, DND-5483);
+    * `newer_tests` — `mutant id => findings` of the new survivors a test added
+      after a committed record may kill (`Anchor.Domain.Sabotage.NewerTests`,
+      DND-7453); information for the report only;
     * `print_survivor_lines` — print the line to add for each new survivor
       (`--print-survivor-lines`); nothing is written.
     * `scan` — `nil`, or a scan run's `%{report, shard, coverage}` (DND-5490:
@@ -71,6 +74,7 @@ defmodule Anchor.Domain.Sabotage.Run do
             scope_functions: [],
             not_selected: [],
             survivors: nil,
+            newer_tests: %{},
             print_survivor_lines: false,
             scan: nil,
             report: [],
@@ -111,6 +115,7 @@ defmodule Anchor.Domain.Sabotage.Run do
                 judgement: Anchor.Domain.Sabotage.Survivors.Judgement.t(),
                 grew: Anchor.Domain.Sabotage.Survivors.grew()
               },
+          newer_tests: %{String.t() => [Anchor.Domain.Sabotage.NewerTests.finding()]},
           print_survivor_lines: boolean(),
           scan:
             nil

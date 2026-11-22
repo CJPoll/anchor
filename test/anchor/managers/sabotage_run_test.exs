@@ -130,12 +130,12 @@ defmodule Anchor.Managers.SabotageRunTest do
         {:ok, answer}
       end)
 
-  defp expect_scope(reads \\ 2) do
+  defp expect_scope(reads \\ 2, diff \\ @diff) do
     expect(ChangeSourceMock, :merge_base, fn @root, "origin/main" ->
       call(:scope, {:ok, "abc"})
     end)
 
-    expect(ChangeSourceMock, :diff, fn @root, "abc" -> {:ok, @diff} end)
+    expect(ChangeSourceMock, :diff, fn @root, "abc" -> {:ok, diff} end)
     expect(ChangeSourceMock, :untracked, fn @root -> {:ok, []} end)
     expect(ChangeSourceMock, :read, reads, fn @root, "lib/calc.ex" -> {:ok, @source} end)
     expect(ChangeSourceMock, :show, fn @root, "abc", "lib/calc.ex" -> {:ok, @source} end)
@@ -1766,6 +1766,126 @@ defmodule Anchor.Managers.SabotageRunTest do
              ]
 
       assert Enum.all?(run.outcomes, &(&1.status == :killed))
+    end
+  end
+
+  describe "run/2: a test newer than a record (DND-7453)" do
+    # Sabotage record (DND-7453): ../../sabotage_records/sabotage-20261121-dnd_7453_newer_test_note.md
+    @old_record "test/sabotage_records/old-20261101-x.md"
+    @old_commit String.duplicate("a", 40)
+    @old_kills "```anchor-kills\nid1\tlib/calc.ex\tCalc.add/2\top\tkilled\ttest/calc_test.exs:3 test k\n```\n"
+    @diff_with_test @diff <>
+                      "diff --git a/test/extra_test.exs b/test/extra_test.exs\nindex 1..2 100644\n--- a/test/extra_test.exs\n+++ b/test/extra_test.exs\n@@ -1 +1 @@\n-old\n+new\n"
+
+    # The record lists Calc.add/2; the run selects its killer's file; the
+    # second mutant survives (the first is killed), so it is NEW.
+    defp newer_test_run(diff \\ @diff_with_test) do
+      [_first, second] = mutants()
+      stub(Anchor.RecordStoreMock, :list, fn @root, "test/sabotage_records" -> [@old_record] end)
+      expect(Anchor.RecordStoreMock, :read, fn @root, @old_record -> {:ok, @old_kills} end)
+      expect_journal(:none)
+      expect_config()
+      expect_ignored()
+      expect_scope(2, diff)
+      expect_clean()
+      expect_tests_exist(true)
+      expect_baseline(test_run(:passed))
+      expect_patcher(2)
+      expect_delete_journal(2)
+      expect_save()
+
+      expect(TestExecutionMock, :run, 2, fn _argv, ["test/calc_test.exs"], _opts ->
+        if calls_seen({:write_journal, second.id}),
+          do: call(:tests, test_run(:passed)),
+          else: call(:tests, test_run(:failed, [@killer]))
+      end)
+
+      second
+    end
+
+    test "N1: a branch test changed since the record, not selected: the NEW survivor says so" do
+      second = newer_test_run()
+
+      expect(GitWorktreeMock, :last_commit, fn @root, @old_record -> {:ok, @old_commit} end)
+
+      expect(GitWorktreeMock, :changed_since, fn @root, @old_commit ->
+        {:ok, ["test/extra_test.exs", "lib/other.ex"]}
+      end)
+
+      run = Sabotage.run(@facts, @opts)
+      text = Report.render(run)
+
+      assert [%{mutant: %{id: id}}] = run.survivors.judgement.new
+      assert id == second.id
+      assert Report.exit_code(run) == 1
+
+      assert text =~
+               "NEW survivor #{second.id} lib/calc.ex Calc.add/2 #{second.operator}\n" <>
+                 "  Note: a test added after record #{@old_record} (#{String.duplicate("a", 12)}) " <>
+                 "may kill this mutant, and this run did not select it: test/extra_test.exs\n" <>
+                 "  Fix: fold that test into a test file this run selects (test/calc_test.exs)"
+    end
+
+    test "N2: a test the branch did not change is not named, and the exit code is the same" do
+      newer_test_run(@diff)
+
+      expect(GitWorktreeMock, :last_commit, fn @root, @old_record -> {:ok, @old_commit} end)
+
+      expect(GitWorktreeMock, :changed_since, fn @root, @old_commit ->
+        {:ok, ["test/extra_test.exs"]}
+      end)
+
+      run = Sabotage.run(@facts, @opts)
+
+      refute Report.render(run) =~ "Note: a test added after"
+      assert Report.exit_code(run) == 1
+    end
+
+    test "N3: a record no commit touched (not yet committed) says nothing, asks git nothing more" do
+      newer_test_run()
+      expect(GitWorktreeMock, :last_commit, fn @root, @old_record -> {:ok, nil} end)
+
+      run = Sabotage.run(@facts, @opts)
+
+      refute Report.render(run) =~ "Note: a test added after"
+      assert [%{}] = run.survivors.judgement.new
+    end
+
+    test "N4: git cannot say: the run notes it and the survivor is reported as before" do
+      newer_test_run()
+      expect(GitWorktreeMock, :last_commit, fn @root, @old_record -> {:ok, @old_commit} end)
+
+      expect(GitWorktreeMock, :changed_since, fn @root, @old_commit ->
+        {:error, {:git_failed, ["diff"], 128, "bad object"}}
+      end)
+
+      run = Sabotage.run(@facts, @opts)
+      text = Report.render(run)
+
+      refute text =~ "Note: a test added after"
+      assert text =~ "could not tell which tests changed since record #{@old_record}"
+      assert Report.exit_code(run) == 1
+    end
+
+    test "N5: a run with no NEW survivor asks git nothing" do
+      [first, second] = mutants()
+      stub(Anchor.RecordStoreMock, :list, fn @root, "test/sabotage_records" -> [@old_record] end)
+      expect(Anchor.RecordStoreMock, :read, fn @root, @old_record -> {:ok, @old_kills} end)
+      expect_until_selection()
+      expect_baseline(test_run(:passed))
+      expect_patcher(2)
+      expect_delete_journal(2)
+      expect_save()
+
+      expect(TestExecutionMock, :run, 2, fn _argv, _tests, _opts ->
+        call(:tests, test_run(:failed, [@killer]))
+      end)
+
+      assert [first.id, second.id] != []
+      run = Sabotage.run(@facts, @opts)
+
+      assert run.survivors.judgement.new == []
+      assert Report.exit_code(run) == 0
     end
   end
 

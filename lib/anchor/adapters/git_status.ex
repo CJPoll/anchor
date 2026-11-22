@@ -15,6 +15,8 @@ defmodule Anchor.Adapters.GitStatus do
     * `git diff --name-only --relative -z <sha> --` and
       `git ls-files --others --exclude-standard -z` (both relative to `root`,
       so a project below the git root gets its own paths);
+    * `git log -1 --format=%H -- <path>` (the last commit that touched a path;
+      empty output: none; DND-7453);
     * `git symbolic-ref --quiet --short HEAD` (exit 1: a detached `HEAD`;
       DND-5484).
   """
@@ -78,6 +80,23 @@ defmodule Anchor.Adapters.GitStatus do
     with {:ok, changed} <- names(root, ["diff", "--name-only", "--relative", "-z", sha, "--"]),
          {:ok, untracked} <- names(root, ["ls-files", "--others", "--exclude-standard", "-z"]) do
       {:ok, Enum.uniq(changed ++ untracked)}
+    end
+  end
+
+  @impl Anchor.Adapters.GitWorktree
+  def last_commit(root, path) do
+    args = ["log", "-1", "--format=%H", "--", path]
+
+    case git(root, args) do
+      {out, 0} -> {:ok, last_sha(out)}
+      {out, status} -> {:error, {:git_failed, args, status, out}}
+    end
+  end
+
+  defp last_sha(out) do
+    case String.trim(out) do
+      "" -> nil
+      sha -> sha
     end
   end
 

@@ -89,6 +89,26 @@ defmodule Anchor.Adapters.GitStatusTest do
     end
   end
 
+  describe "last_commit/2 (DND-7453)" do
+    test "the last commit that touched a path; nil for an untracked or unknown one", %{
+      tmp_dir: root
+    } do
+      {:ok, first} = GitStatus.head_sha(root)
+      assert GitStatus.last_commit(root, "lib/clean.ex") == {:ok, first}
+
+      File.write!(Path.join(root, "lib/dirty.ex"), "after")
+      git!(root, ["commit", "-q", "-am", "second"])
+      {:ok, second} = GitStatus.head_sha(root)
+
+      assert GitStatus.last_commit(root, "lib/dirty.ex") == {:ok, second}
+      assert GitStatus.last_commit(root, "lib/clean.ex") == {:ok, first}
+
+      File.write!(Path.join(root, "lib/new.ex"), "untracked")
+      assert GitStatus.last_commit(root, "lib/new.ex") == {:ok, nil}
+      assert GitStatus.last_commit(root, "lib/none.ex") == {:ok, nil}
+    end
+  end
+
   describe "branch/1 (DND-5484)" do
     # Sabotage record: ../../sabotage_records/sabotage-20261103-dnd_5484_records.md
     test "the branch's short name; nil on a detached HEAD", %{tmp_dir: root} do

@@ -90,6 +90,13 @@ defmodule Anchor.Managers.Sabotage.Runner do
   and named in the notes (`could not read kill map in <path>:<line>`), never
   read as an empty map.
 
+  A NEW survivor a test added after a committed record may kill carries a
+  note (DND-7453, `Anchor.Domain.Sabotage.NewerTests`): for each record that
+  lists a new survivor's function, git is asked for the commit that last
+  touched it and the files changed since, and the branch's changed test
+  files among them that the survivor's selection did not run are named. No
+  test is run; the verdict and exit code are unchanged.
+
   The exit code is `Anchor.Domain.Sabotage.Report`'s (DND-5570): the Runner
   only sets `Run.changed_functions` (the scope's count, `0` for a good diff
   read that found none) and classifies a raised test run as `:crashed`.
@@ -131,6 +138,7 @@ defmodule Anchor.Managers.Sabotage.Runner do
   alias Anchor.Domain.Sabotage.Patch
   alias Anchor.Domain.Sabotage.FunctionSpans
   alias Anchor.Domain.Sabotage.KillMap
+  alias Anchor.Domain.Sabotage.NewerTests
   alias Anchor.Domain.Sabotage.Plan
   alias Anchor.Domain.Sabotage.Record
   alias Anchor.Domain.Sabotage.RecordNaming
@@ -283,6 +291,7 @@ defmodule Anchor.Managers.Sabotage.Runner do
           run
           |> measure(facts, config, sources, planned, ports)
           |> judge_survivors(list)
+          |> note_newer_tests(records, scope, root, ports)
           |> write_records(recording, root, ports)
           |> write_report(list, root, ports)
           |> save(facts, ports)
@@ -1047,13 +1056,15 @@ defmodule Anchor.Managers.Sabotage.Runner do
   defp existing_records(root, config, %{records: store}) do
     paths = list_records(root, config, store)
 
-    {rows, notes} =
-      Enum.reduce(paths, {[], []}, fn path, {rows, notes} ->
+    {read, notes} =
+      Enum.reduce(paths, {[], []}, fn path, {read, notes} ->
         case kill_rows(store, root, path) do
-          {:ok, more} -> {rows ++ more, notes}
-          {:error, note} -> {rows, notes ++ [note]}
+          {:ok, more} -> {read ++ [{path, more}], notes}
+          {:error, note} -> {read, notes ++ [note]}
         end
       end)
+
+    rows = Enum.flat_map(read, fn {_path, rows} -> rows end)
 
     kill_map =
       rows
@@ -1062,9 +1073,61 @@ defmodule Anchor.Managers.Sabotage.Runner do
         {mfa, killers |> Enum.map(&KillMap.killer_file/1) |> Enum.uniq()}
       end)
 
+    entries =
+      for {path, rows} <- read, do: %{path: path, mfas: rows |> Enum.map(& &1.mfa) |> Enum.uniq()}
+
     names = Enum.group_by(paths, &Path.dirname/1, &Path.basename/1)
-    {:ok, %{kill_map: kill_map, names: names, notes: notes}}
+    {:ok, %{kill_map: kill_map, names: names, notes: notes, entries: entries}}
   end
+
+  # DND-7453: a NEW survivor a test added after a committed record may kill.
+  # Only the records that list a new survivor's function are asked of git
+  # (the commit that last touched the record, the files changed since); a
+  # record no commit touched is not "before" anything. It only adds to the
+  # report: a git failure is a note, and the verdict and exit code stand.
+  defp note_newer_tests(
+         %Run{survivors: %{judgement: %{new: [_ | _] = new}}} = run,
+         %{entries: entries},
+         scope,
+         root,
+         %{git: git}
+       ) do
+    wanted = MapSet.new(new, &TestSelection.mfa(&1.mutant))
+    relevant = Enum.filter(entries, &(not MapSet.disjoint?(wanted, MapSet.new(&1.mfas))))
+
+    {facts, notes} =
+      Enum.reduce(relevant, {[], []}, fn entry, {facts, notes} ->
+        case record_fact(entry, root, git) do
+          {:ok, fact} -> {facts ++ [fact], notes}
+          :none -> {facts, notes}
+          {:note, note} -> {facts, notes ++ [note]}
+        end
+      end)
+
+    %{
+      run
+      | newer_tests: NewerTests.find(new, facts, Map.keys(scope.test_changes)),
+        notes: run.notes ++ notes
+    }
+  end
+
+  defp note_newer_tests(run, _records, _scope, _root, _ports), do: run
+
+  defp record_fact(%{path: path, mfas: mfas}, root, git) do
+    with {:last, {:ok, commit}} when is_binary(commit) <- {:last, git.last_commit(root, path)},
+         {:since, {:ok, changed}} <- {:since, git.changed_since(root, commit)} do
+      {:ok, %{path: path, commit: commit, mfas: mfas, changed: changed}}
+    else
+      {:last, {:ok, nil}} -> :none
+      {:last, {:error, reason}} -> {:note, cannot_tell(path, reason)}
+      {:since, {:error, reason}} -> {:note, cannot_tell(path, reason)}
+    end
+  end
+
+  defp cannot_tell(path, reason),
+    do:
+      "could not tell which tests changed since record #{path} (#{inspect(reason)}); " <>
+        "a newer test is not listed for the survivors it covers"
 
   # DND-6031: every records directory, outside_apps_dir too; a path two globs
   # list is read once.
