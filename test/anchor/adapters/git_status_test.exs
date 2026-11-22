@@ -107,6 +107,19 @@ defmodule Anchor.Adapters.GitStatusTest do
       assert GitStatus.last_commit(root, "lib/new.ex") == {:ok, nil}
       assert GitStatus.last_commit(root, "lib/none.ex") == {:ok, nil}
     end
+
+    test "a directory that is no repository is an error, not a missing commit" do
+      dir =
+        Path.join(System.tmp_dir!(), "anchor-last-commit-#{System.unique_integer([:positive])}")
+
+      File.mkdir_p!(dir)
+      on_exit(fn -> File.rm_rf!(dir) end)
+
+      assert {:error, {:git_failed, ["log" | _], status, _out}} =
+               GitStatus.last_commit(dir, "lib/clean.ex")
+
+      assert status != 0
+    end
   end
 
   describe "branch/1 (DND-5484)" do

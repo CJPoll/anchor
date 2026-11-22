@@ -118,14 +118,14 @@ defmodule Anchor.Domain.Sabotage.NewerTestsTest do
   describe "note/2" do
     test "a Note per record with its short commit and the tests, then one Fix" do
       [found] = NewerTests.find([outcome("aaa")], [record()], @branch)["aaa"]
-      other = %{record: "r2.md", commit: "abc", tests: ["test/z_test.exs"]}
+      other = %{record: "r2.md", commit: "abc", tests: ["test/y_test.exs", "test/z_test.exs"]}
 
       assert NewerTests.note([found, other], outcome("aaa")) == [
                "  Note: a test added after record test/sabotage_records/calc-20261101-first.md " <>
                  "(0123456789ab) may kill this mutant, and this run did not select it: " <>
                  "test/extra_test.exs",
                "  Note: a test added after record r2.md (abc) may kill this mutant, and this " <>
-                 "run did not select it: test/z_test.exs",
+                 "run did not select it: test/y_test.exs, test/z_test.exs",
                "  Fix: fold that test into a test file this run selects (test/calc_test.exs), " <>
                  "then re-run: a run selects only the files a record's kill map and the " <>
                  "function's mirror name"
