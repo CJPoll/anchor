@@ -2386,6 +2386,7 @@ mutant id:
 | Case | Printed | Exit |
 |---|---|---|
 | a `survived` or `no_tests` mutant the list does not hold | `NEW survivor <id> ...`, then a `Fix:` with the exact line to add | 1 |
+| a NEW survivor whose function a committed record lists, when a test the branch changed after that record was not selected for it (DND-7453) | a `Note:` and a `Fix:` under the NEW line, naming the record, its commit and the tests (the first five) | 1, as above |
 | a listed mutant now killed, timed out or invalid, or no longer generated (its function changed) | `STALE survivor <id> ... Fix: delete its line from <path>` | 1 |
 | an entry whose id names a mutant of another file, function or operator | `survivors file <path>, entry N (...)` with a `Fix:` | 1 |
 | a listed survivor | its run line ends `listed in <path>: <reason>` | 0 |
@@ -2406,6 +2407,22 @@ it. A base copy that cannot be read for any reason but its absence is exit 3.
 `--print-survivor-lines` prints, at the end, the line to add for each NEW
 survivor, with the placeholder reason to replace. The run never writes the
 list.
+
+When a mutant's tests come from the records' kill maps or the function's
+mirror (step 4 above), a test added after a record, in a file
+neither names, is not run, and a mutant it would kill shows as NEW. The run does not
+learn that test's kills (that would be a test run per record). Instead a NEW
+survivor whose function a committed record lists carries a `Note:` when a
+test file the branch changed since that record's last commit was not selected
+for the mutant: `a test added after record <path> (<commit>) may kill this
+mutant, and this run did not select it: <tests>`. Its `Fix:` is to fold the
+test into a file the run selects, then re-run. The note only adds
+information: the survivor stays NEW and the exit code does not change. A
+record no commit has touched (not yet committed) is not "before" any test and
+says nothing; a test file no diff names (untracked) is not the branch's change
+and is not named, and a record's "since" is its file's last commit, so silence
+is not a claim that no newer test exists; a git failure is a run note, `could not tell which tests changed
+since record <path>`.
 
 ### Sabotage: verifying a branch's records
 

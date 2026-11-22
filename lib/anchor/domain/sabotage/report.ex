@@ -58,6 +58,11 @@ defmodule Anchor.Domain.Sabotage.Report do
   line. A NEW, STALE or malformed entry fails the run (1); a listed survivor
   or `no_tests` mutant does not; a `crashed` one still does. The GREW block
   never changes the exit code. A run that measured nothing stays exit 3.
+  A NEW survivor a test added after a committed record may kill carries a
+  `Note:` and a `Fix:` line under its header (DND-7453,
+  `Anchor.Domain.Sabotage.NewerTests`): information only, the exit code is the
+  same.
+
   `--print-survivor-lines` adds one block of the NEW survivors' lines at the
   end, to paste; the run writes no file.
 
@@ -72,6 +77,7 @@ defmodule Anchor.Domain.Sabotage.Report do
 
   alias Anchor.Domain.Sabotage.BehaviourMap
   alias Anchor.Domain.Sabotage.Run
+  alias Anchor.Domain.Sabotage.NewerTests
   alias Anchor.Domain.Sabotage.Survivors
 
   @statuses [:killed, :survived, :timeout, :invalid, :crashed, :no_tests]
@@ -216,8 +222,8 @@ defmodule Anchor.Domain.Sabotage.Report do
 
   defp survivors(%Run{survivors: nil}), do: []
 
-  defp survivors(%Run{survivors: %{path: path, base: base, judgement: j, grew: grew}}) do
-    Enum.flat_map(j.new, &new_survivor(&1, path)) ++
+  defp survivors(%Run{survivors: %{path: path, base: base, judgement: j, grew: grew}} = run) do
+    Enum.flat_map(j.new, &new_survivor(&1, path, run.newer_tests)) ++
       Enum.map(j.stale, fn {e, why} ->
         "STALE survivor #{e.id} #{e.mfa} #{e.operator} (#{why}). Fix: delete its line from #{path}"
       end) ++
@@ -235,12 +241,15 @@ defmodule Anchor.Domain.Sabotage.Report do
       ]
   end
 
-  defp new_survivor(%{mutant: m} = outcome, path) do
-    [
-      "NEW survivor #{m.id} #{m.file} #{mfa(m)} #{m.operator}",
-      "  Fix: add a test that fails under this mutant, or add to #{path}:",
-      "  " <> Survivors.line_for(outcome)
-    ]
+  defp new_survivor(%{mutant: m} = outcome, path, newer_tests) do
+    newer = newer_tests |> Map.get(m.id, []) |> NewerTests.note(outcome)
+
+    ["NEW survivor #{m.id} #{m.file} #{mfa(m)} #{m.operator}"] ++
+      newer ++
+      [
+        "  Fix: add a test that fails under this mutant, or add to #{path}:",
+        "  " <> Survivors.line_for(outcome)
+      ]
   end
 
   defp not_judged(:not_run), do: "not run, cap"

@@ -12,6 +12,9 @@ defmodule Anchor.Adapters.GitWorktree do
       (`git merge-base --is-ancestor`; a commit git does not have is not one);
     * `changed_since/2` — the paths whose working-tree content differs from
       that commit's, untracked (not ignored) files included;
+    * `last_commit/2` — the full sha of the last commit that touched a path,
+      `nil` when no commit did (untracked, or only in the working tree;
+      DND-7453);
     * `branch/1` — the checked-out branch's short name, `nil` on a detached
       `HEAD` (DND-5484).
   """
@@ -27,5 +30,7 @@ defmodule Anchor.Adapters.GitWorktree do
               {:ok, boolean()} | {:error, git_error()}
   @callback changed_since(root :: String.t(), sha :: String.t()) ::
               {:ok, [String.t()]} | {:error, git_error()}
+  @callback last_commit(root :: String.t(), path :: String.t()) ::
+              {:ok, String.t() | nil} | {:error, git_error()}
   @callback branch(root :: String.t()) :: {:ok, String.t() | nil} | {:error, git_error()}
 end
