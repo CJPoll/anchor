@@ -98,12 +98,15 @@ defmodule Anchor.Domain.Cfa do
   letrecs of one function that reuse a name never merge their reaching sets.
   A name no letrec in scope binds is a call of the module's own function.
 
-  Macros (`defmacro`) are compile-time code and are not analysed. Two Core
-  variables of one function with the same name (two `fn`s that each bind
-  `x@1`) share one abstract value, which over-approximates.
+  Macros (`defmacro`) are compile-time code and are not analysed. A
+  variable's node is its function and its name, so each function's Core is
+  renamed apart first (`Anchor.Domain.Cfa.Rename`, DND-8063): two bindings of
+  one name (two `fn`s that each bind `x@1`, or the compiler reusing `_X_@1`
+  across clauses) are two variables, and do not share an abstract value.
   """
 
   alias Anchor.Domain.Cfa.Eval
+  alias Anchor.Domain.Cfa.Rename
   alias Anchor.Domain.Cfa.Value
   alias Anchor.Domain.Core
   alias Anchor.Domain.Graph
@@ -188,7 +191,7 @@ defmodule Anchor.Domain.Cfa do
     functions =
       graph
       |> project_functions()
-      |> Enum.map(fn {mfa, node} -> {mfa, Core.label(node.core)} end)
+      |> Enum.map(fn {mfa, node} -> {mfa, node.core |> Rename.rename() |> Core.label()} end)
 
     lambdas =
       for {mfa, fun} <- functions, {ordinal, lambda} <- Core.lambdas(fun) do

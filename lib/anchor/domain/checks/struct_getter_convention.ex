@@ -148,13 +148,13 @@ defmodule Anchor.Domain.Checks.StructGetterConvention do
          acc
        )
        when is_list(parts) and is_list(opts) do
-    with true <- Enum.all?(parts, &is_atom/1),
-         {:ok, {:__aliases__, _, [short]}} <- Keyword.fetch(opts, :as),
-         true <- is_atom(short) do
-      Map.put(acc, short, Module.concat(parts))
-    else
-      _ -> acc
-    end
+    # An `if` and a helper rather than `with ... else` (DND-8063), with the
+    # same result: the base branch's CFA, which keys variables by name, joined
+    # the compiled `else` fun with another clause's same-named compiler
+    # variable and read an outside closure here. None is applied.
+    if Enum.all?(parts, &is_atom/1),
+      do: put_as_alias(acc, Keyword.fetch(opts, :as), parts),
+      else: acc
   end
 
   # `alias A.{B, C}` → %{B => A.B, C => A.C}
@@ -182,6 +182,11 @@ defmodule Anchor.Domain.Checks.StructGetterConvention do
   end
 
   defp collect_alias(_, acc), do: acc
+
+  defp put_as_alias(acc, {:ok, {:__aliases__, _, [short]}}, parts) when is_atom(short),
+    do: Map.put(acc, short, Module.concat(parts))
+
+  defp put_as_alias(acc, _as, _parts), do: acc
 
   defp add_plain_alias(acc, parts) do
     if parts != [] and Enum.all?(parts, &is_atom/1) do

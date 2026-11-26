@@ -724,13 +724,22 @@ defmodule Anchor.Domain.DependencyAnalyzer do
        when is_atom(ctx),
        do: nested_scope(env.owner_scope, literal_alias_parts({:__aliases__, [], tail}))
 
+  # A `case` and a helper rather than `with ... else` (DND-8063), with the
+  # same result. Elixir compiles a `with`'s `else` to a let-bound fun, and the
+  # earlier clauses' `env.owner_scope` binds a compiler variable of the same
+  # name; a CFA that keys variables by name (Anchor's before
+  # `Anchor.Domain.Cfa.Rename`) joined the two, read the `else` as applying a
+  # closure from outside the project, and classified every caller of this
+  # function as a Manager. No outside closure is applied here.
   defp module_scope(name_ast, env) do
-    with {:ok, module} <- resolve_module(name_ast, env),
-         true <- elixir_module?(module) do
-      {:module, Module.split(module)}
-    else
+    case resolve_module(name_ast, env) do
+      {:ok, module} -> elixir_scope(module)
       _unknown -> :unknown
     end
+  end
+
+  defp elixir_scope(module) do
+    if elixir_module?(module), do: {:module, Module.split(module)}, else: :unknown
   end
 
   # A module nested in another is qualified by it; one nested where the module
