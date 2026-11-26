@@ -30,6 +30,7 @@ defmodule Anchor.Domain.RuleShapes do
     context_acyclic: GraphRules.ContextAcyclic,
     directory_placement: GraphRules.DirectoryPlacement,
     effects_match_bucket: GraphRules.EffectsMatchBucket,
+    framework_test_mocks_manager: Checks.FrameworkTestMocksManager,
     function_placement: GraphRules.FunctionPlacement,
     interface: GraphRules.Interface,
     layering: GraphRules.Layering,

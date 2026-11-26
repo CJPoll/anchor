@@ -46,6 +46,7 @@
           {Anchor.Check.NoDiscardedPureExpression, []},
           {Anchor.Check.NoForwardingFunction, []},
           {Anchor.Check.StructOwnedByModule, []},
+          {Anchor.Check.FrameworkTestMocksManager, []},
 
           # More built-in checks...
           {Credo.Check.Design.AliasUsage, []},

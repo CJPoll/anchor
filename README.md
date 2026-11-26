@@ -20,6 +20,7 @@ Anchor allows you to define rules about module dependencies and usage patterns t
 - **Maximum File Length**: Enforce maximum file length limits to encourage better code organization
 - **No Comparison in If**: Enforce descriptive function names instead of direct comparisons in if statements
 - **Struct Getter Convention**: Ensure getter functions follow a consistent naming pattern matching the fields they extract
+- **Framework Tests Mock the Manager**: Require each Framework test file to expect on, and verify, a double of the Manager below the entry point
 - **Ask before you write**: `mix anchor.explain <path|Module>` prints a module's bucket, context, what it may call and the rules that select it, for a file that does not exist yet too
 - **Flexible Configuration**: YAML-based rules with support for umbrella applications
 
@@ -424,6 +425,7 @@ semantics and edge cases.
 | `context_depth` | `no_direct_dependency` | Positive integer, default `2`. Number of leading module-namespace segments that define a "context/subdomain". Inert unless `same_context: true`. |
 | `allowed_functions` | `module_pattern_restrictions` | Function-name allow-list (globs). |
 | `owned_namespaces` | `struct_owned_by_module`, `struct_owned_by_module_flow` | Exact module names, default: every struct. Limits the check to structs equal to or nested under an entry, and reports a selected top-level module outside them. `[]`, a glob, an Erlang module or a malformed name fails the load. See [`struct_owned_by_module`](#struct_owned_by_module). |
+| `mock_patterns` | `framework_test_mocks_manager` | Module-name globs, required: the doubles whose expectations count as mocking a Manager (`*.Managers.*Mock`, a facade's `MyApp.ContactsMock`). Missing, empty, a blank entry or a match-all glob (`*`, `**`) fails the load. See [`framework_test_mocks_manager`](#framework_test_mocks_manager). |
 | `pure_patterns` | `no_discarded_pure_expression` | Module-name globs, default `[]`: modules whose functions are pure, beside the stdlib pure set. A non-list, a blank entry or a match-all glob (`*`, `**`) fails the load. See [`no_discarded_pure_expression`](#no_discarded_pure_expression). |
 | `max_width` | `interface` | Positive integer, optional (DND-5443): a context whose interface exports more public functions is a violation; absent, the width is only printed. `0` or a non-integer fails the load. See [`interface`](#the-interface-rule-dnd-5443). |
 | `mode`, `max_lines` | `alphabetized_functions`, `max_file_length` | Style-check parameters. `mode` is `all`, `public_only` or `separate` (a leading colon is accepted); any other token fails the load. |
@@ -463,6 +465,7 @@ compiled code (DND-5440; `layering`, DND-5442, `context_acyclic`, DND-5445,
 | `context_acyclic` | none | none | `graph` |
 | `directory_placement` | none | none | `graph` |
 | `effects_match_bucket` | none | none | `graph` |
+| `framework_test_mocks_manager` | `mock_patterns` | `mock_patterns` | `ast` |
 | `function_placement` | none | none | `graph` |
 | `interface` | `max_width` | none | `graph` |
 | `layering` | none | none | `graph` |
@@ -580,7 +583,8 @@ Configure Credo to use the custom checks in `.credo.exs`:
           {Anchor.Check.StructGetterConvention, []},
           {Anchor.Check.NoDiscardedPureExpression, []},
           {Anchor.Check.NoForwardingFunction, []},
-          {Anchor.Check.StructOwnedByModule, []}
+          {Anchor.Check.StructOwnedByModule, []},
+          {Anchor.Check.FrameworkTestMocksManager, []}
         ]
       }
     }
@@ -3410,6 +3414,121 @@ architecture model knows, so those are the graph rule `no_inert_hop`'s.
     - "lib/my_app/**/*.ex"
   recursive: true
 ```
+
+### `framework_test_mocks_manager`
+
+A Framework test mocks the Manager: it asserts that the right
+Manager function is called with the expected arguments and that the entry
+point returns the expected value. Each test file the rule selects must:
+
+1. set at least one **expectation** on a double whose name matches
+   `mock_patterns`: `expect(Mock, :f, fun)`, `expect(Mock, :f, n, fun)`,
+   `Mox.expect/3,4`, `Hammox.expect/3,4`, or piped (`Mock |> expect(:f,
+   fun)`, chains too). A `stub` or `stub_with` does not count: a stub passes
+   with the call deleted. `expect(Mock, :f, 0, fun)` counts: it is how a test
+   proves the Manager was not reached (a refused request);
+2. **verify** its expectations: `setup :verify_on_exit!` (alone, in a list,
+   or as `{Mox, :verify_on_exit!}` / `{Hammox, :verify_on_exit!}`), or a call
+   of `verify_on_exit!` or `verify!/0` (bare, `Mox.` or `Hammox.`).
+   `verify!(Mock)` verifies only that double, so it counts only when it
+   names a manager double the file expects on.
+   A piped call is read with the pipe's head as its first argument, so
+   `Mock |> verify!()` is `verify!(Mock)`. `setup_all :verify_on_exit!` does
+   not verify (Mox verifies per test process), so such a file is reported. One `verify!(Mock)` naming one manager
+   double the file expects on passes the file, the file-level judgement
+   below.
+
+```yaml
+- type: framework_test_mocks_manager
+  paths:
+    - "test/my_app_web/**/*_test.exs"
+  recursive: true
+  mock_patterns:
+    - "*.Managers.*Mock"      # a Manager's double, named after it
+    - "MyApp.ContactsMock"    # a context facade the web code calls
+```
+
+**What counts as a Manager is configuration.** `mock_patterns` names the
+doubles that stand in for one, so a context facade (`MyApp.Contacts`, called
+by the web code but outside a `managers/` directory) counts once its double is
+listed. A match-all entry is refused: it would let an expectation on any
+adapter's mock satisfy the rule. Which test files are Framework tests is the
+selector's: select LiveView tests or leave them out by path. The match-all refusal covers entries made only of wildcards; a broad glob
+such as `*Mock` or `*.*` loads, and matches every double named that way, so
+name the Manager doubles and facades rather than a suffix every mock shares.
+
+**The double can be a Manager's port.** Where the entry point calls the
+Manager directly and hands it its ports (Anchor's own Mix tasks, ADR 002's
+amendment for them), the layer below the entry point is the ports, and the
+rule names their doubles. Anchor's own `.anchor.yml` does this (`Anchor.*Mock`,
+every one a port double); the finding still says "manager double", the
+double standing in for what the entry point reaches.
+
+Names resolve the way Elixir resolves them (aliases, `as:`), so `alias
+MyApp.Search.Managers.SearchMock` then `expect(SearchMock, ...)` names the
+full module. A bare `expect` is Mox's or Hammox's unless the file defines its
+own `expect` of the same arity (`def`, `defp`, `defmacro` or `defmacrop`,
+default arguments included), when it counts for nothing. The same holds for a
+bare `verify!` or `verify_on_exit!` the file defines, and for `setup
+:verify_on_exit!` when the file defines `verify_on_exit!/1` (setup calls it).
+A definition's head names that local function, so `defp verify!(conn)`
+verifies nothing.
+
+It fails closed. A double that is not a literal module name (`expect(mock,
+...)`, `expect(@mock, ...)`, `expect(mock(), ...)`) cannot be judged, so it
+never satisfies the rule, and the finding names each such site:
+
+```text
+Framework test sets no expectation on a manager double (a module matching
+*.Managers.*Mock); the double of 1 expectation(s) is not a module name, so it
+cannot be judged: line 12 `@mock`. Fix: expect the call on a manager double
+(*.Managers.*Mock) in this file, e.g. `expect(SearchMock, :search, fn input
+-> ... end)`, and verify it with `setup :verify_on_exit!`
+```
+
+An expectation on a double no entry names is named too (`its expectations
+name only MyApp.Adapters.RepoMock, which no mock_patterns entry matches`). A
+file with expectations and no verification is reported at its first
+expectation on a manager double.
+
+**Why verification is required.** An expectation nobody verifies passes when
+the endpoint never reaches the double, which is the very case the rule is
+for: the Manager's seam is not bound to the mock in test config. Once the
+file verifies, a test whose endpoint calls the real Manager fails (the
+expectation is unmet), so the static rule and the test run together prove the
+double is reached.
+
+**Rules to pair it with.** Three things this rule cannot see in one test
+file, and the rule or mechanism that covers each:
+
+| Claim | Covered by |
+|---|---|
+| The Framework module reaches the Manager only through its seam (a module read with `Application.compile_env/3`, or an argument), never by calling it directly | a `no_direct_dependency` rule over the Framework code, `match: call`, forbidding the Manager names (`*.Managers.*`, the facades). The seam's default is an atom, not a call, so it is allowed |
+| The test calls no Manager, repository or CQRS module itself | a `no_direct_dependency` rule over the same test paths, `match: call`: the test hands its double to `expect` as an argument and never calls it, so a `*.Managers.*` glob that also matches `MyApp.Search.Managers.SearchMock` flags only a real call |
+| Test config binds the seam to the double | the test run: the file verifies, so an unbound seam leaves the expectation unmet |
+
+**A Framework test that reaches no Manager** (a plug that only checks a
+header, a component rendered from assigns) has nothing to expect on, so the
+rule reports it. Keep it out of the rule, in one of three existing ways; the
+rule adds no exemption mechanism of its own:
+
+- **by path**, the default: `paths` lists only what it selects (there is no
+  exclude key), so keep such tests in a directory the globs do not name
+  (`test/my_app_web/plugs/`), or list the selected directories one by one;
+- **per file**, with Credo's own comment at the top of the file, which shows
+  in the diff where review judges it:
+  `# credo:disable-for-this-file Anchor.Check.FrameworkTestMocksManager`;
+- **as a baseline** while a tree adopts the rule: give it an `id` and a
+  `baseline:` (see [Baselines for ast rules](#baselines-for-ast-rules-dnd-5632)),
+  which only shrinks, or start it at `enforcement: report`.
+
+**What it does not prove.** That the double was declared for the Manager's
+contract (Mox requires `for:` a behaviour, at run time), that the test
+asserts the arguments and the returned value (an expectation may ignore its
+arguments), or that each test in the file mocks the Manager: it judges the
+file. A double reached from another process (a LiveView's async task) needs
+`Mox.allow/3` or global mode, which it does not check. An expectation armed
+in a helper module outside the file is not seen, and the file is reported.
 
 ### `struct_owned_by_module`
 

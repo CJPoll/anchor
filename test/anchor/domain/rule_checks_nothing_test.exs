@@ -27,6 +27,8 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
   #   ../../sabotage_records/rule_schema-20260929-dnd_1267_forbidden_functions.md
   # The DND-1269 `allowed_callers` rows:
   #   ../../sabotage_records/rule_schema-20260929-dnd_1269_allowed_callers.md
+  # The `framework_test_mocks_manager` rows:
+  #   ../../sabotage_records/framework_test_mocks_manager-20261127-athena_DND_8063_framework_tests_mock_manager.md
   # The DND-5451 `pure_patterns`, DND-5452 `no_forwarding_function` and
   # DND-5453 `owned_namespaces` rows:
   #   ../../sabotage_records/rule_schema-20261103-dnd_5451_ast_batch.md
@@ -46,6 +48,7 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
 
   # The relation each relation-bearing type checks, and a valid value for it.
   @relations %{
+    framework_test_mocks_manager: %{"mock_patterns" => ["*.Managers.*Mock"]},
     must_use_module: %{"required_modules" => ["MyApp.Base"]},
     no_direct_dependency: %{"forbidden_modules" => ["MyApp.Repo"]},
     no_transitive_dependency: %{"forbidden_modules" => ["MyApp.Repo"]}
@@ -84,7 +87,14 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
   test "exactly these types carry a relation" do
     with_relation = Enum.filter(RuleSchema.rule_types(), &(RuleSchema.relation_keys(&1) != []))
 
-    assert with_relation == [:must_use_module, :no_direct_dependency, :no_transitive_dependency]
+    assert with_relation == [
+             :framework_test_mocks_manager,
+             :must_use_module,
+             :no_direct_dependency,
+             :no_transitive_dependency
+           ]
+
+    assert RuleSchema.relation_keys(:framework_test_mocks_manager) == ~w(mock_patterns)
 
     assert RuleSchema.relation_keys(:no_direct_dependency) ==
              ~w(forbidden_functions forbidden_modules forbidden_patterns)
@@ -383,6 +393,39 @@ defmodule Anchor.Domain.RuleChecksNothingTest do
     common_rows(:max_file_length) ++
       [
         {"positive: max_lines", Map.put(base(:max_file_length), "max_lines", 200), :accepted}
+      ]
+  end
+
+  # `mock_patterns` is the relation: without it no double is a
+  # manager double, so every file would be reported for a rule that names
+  # nothing to expect on. A match-all entry makes every double one, so an
+  # expectation on any adapter's mock would satisfy it.
+  defp table(:framework_test_mocks_manager) do
+    no_relation = Map.delete(base(:framework_test_mocks_manager), "mock_patterns")
+    list = "`mock_patterns` must be a list of non-empty strings"
+    match_all = "makes every double a manager double"
+    missing = "mock_patterns is missing or empty"
+
+    common_rows(:framework_test_mocks_manager) ++
+      [
+        {"positive: two mock_patterns",
+         Map.put(no_relation, "mock_patterns", ["*.Managers.*Mock", "MyApp.ContactsMock"]),
+         :accepted},
+        {"no relation", no_relation, {:refused, missing}},
+        {"mock_patterns: []", Map.put(no_relation, "mock_patterns", []), {:refused, missing}},
+        {"mock_patterns that is a string", Map.put(no_relation, "mock_patterns", "*Mock"),
+         {:refused, list}},
+        {"mock_patterns of empty strings", Map.put(no_relation, "mock_patterns", [""]),
+         {:refused, list}},
+        {"mock_patterns of a non-string", Map.put(no_relation, "mock_patterns", [1]),
+         {:refused, list}},
+        {"mock_patterns: [\"*\"] makes every double a manager double",
+         Map.put(no_relation, "mock_patterns", ["*.Managers.*Mock", "*"]), {:refused, match_all}},
+        {"mock_patterns: [\"**\"] makes every double a manager double",
+         Map.put(no_relation, "mock_patterns", ["**"]), {:refused, match_all}},
+        {"an unknown key (a misspelt mock_patterns)",
+         Map.put(base(:framework_test_mocks_manager), "mock_pattern", ["*Mock"]),
+         {:refused, ~s(unknown key "mock_pattern" in a framework_test_mocks_manager rule)}}
       ]
   end
 

@@ -34,6 +34,7 @@ defmodule Anchor.E2E.ChecksE2ETest do
   # ExUnit runs sync modules in isolation, so the cwd change is safe.
   use Credo.Test.Case, async: false
 
+  alias Anchor.Check.FrameworkTestMocksManager
   alias Anchor.Check.ModulePatternRestrictions
   alias Anchor.Check.MustUseModule
   alias Anchor.Check.NoDependency
@@ -231,6 +232,64 @@ defmodule Anchor.E2E.ChecksE2ETest do
               to_source_file("defmodule App.Other do\nend\n", "lib/app/other.ex")
             ],
             StructOwnedByModule
+          )
+        end)
+
+      assert issues == []
+    end
+  end
+
+  # The rule type, from YAML to Credo issue, with no mocks. F2 is the
+  # control: the same file with the expectation verified.
+  # Sabotage record:
+  #   ../../sabotage_records/framework_test_mocks_manager-20261127-athena_DND_8063_framework_tests_mock_manager.md
+  describe "framework_test_mocks_manager through the real pipeline" do
+    @mocks_yaml """
+    rules:
+      - type: framework_test_mocks_manager
+        paths:
+          - "test/app_web/**/*_test.exs"
+        recursive: true
+        mock_patterns:
+          - "*.Managers.*Mock"
+    """
+
+    defp controller_test(verify) do
+      """
+      defmodule AppWeb.SearchControllerTest do
+        use ExUnit.Case, async: true
+        import Hammox
+        alias App.Search.Managers.SearchMock
+        #{verify}
+        test "searches", do: expect(SearchMock, :search, fn _ -> :ok end)
+      end
+      """
+    end
+
+    test "F1: a selected test that never verifies its expectation is reported at it" do
+      issues =
+        with_anchor_config(@mocks_yaml, fn ->
+          run_check(
+            [to_source_file(controller_test(""), "test/app_web/search_controller_test.exs")],
+            FrameworkTestMocksManager
+          )
+        end)
+
+      assert Enum.map(issues, &{&1.line_no, &1.trigger}) == [{6, "verify_on_exit!"}]
+    end
+
+    test "F2: the same test verifying it, and a file the rule does not select, have no issue" do
+      issues =
+        with_anchor_config(@mocks_yaml, fn ->
+          all_issues(
+            [
+              to_source_file(
+                controller_test("setup :verify_on_exit!"),
+                "test/app_web/search_controller_test.exs"
+              ),
+              to_source_file("defmodule App.Other do\nend\n", "test/app/other_test.exs")
+            ],
+            FrameworkTestMocksManager
           )
         end)
 

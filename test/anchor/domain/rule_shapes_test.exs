@@ -17,6 +17,7 @@ defmodule Anchor.Domain.RuleShapesTest do
 
     extra =
       case type do
+        :framework_test_mocks_manager -> %{"mock_patterns" => ["*.Managers.*Mock"]}
         :must_use_module -> %{"required_modules" => ["MyApp.Base"]}
         :no_direct_dependency -> %{"forbidden_modules" => ["MyApp.Repo"]}
         :no_transitive_dependency -> %{"forbidden_modules" => ["MyApp.Repo"]}

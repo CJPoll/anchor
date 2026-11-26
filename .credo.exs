@@ -87,6 +87,9 @@ if File.dir?(anchor_ebin), do: Code.append_path(String.to_charlist(anchor_ebin))
           # pipeline exists to wire into.
           {Anchor.Check.NoDependency, []},
           {Anchor.Check.MustUseModule, []},
+          # Every Mix task's test expects on, and verifies, a double
+          # of the layer below the task (.anchor.yml, Rule 4).
+          {Anchor.Check.FrameworkTestMocksManager, []},
 
           # DND-5451: listed, and off, until its report on Anchor's own tree
           # has been read. Enabling it here is a follow-up.

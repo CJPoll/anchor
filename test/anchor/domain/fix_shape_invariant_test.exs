@@ -84,6 +84,12 @@ defmodule Anchor.Domain.FixShapeInvariantTest do
              )
            )
          end},
+      framework_test_mocks_manager:
+        {%{"mock_patterns" => ["*.Managers.*Mock"]},
+         &Checks.FrameworkTestMocksManager.detect_violations(
+           ast("defmodule MTest do\n  test \"t\", do: :ok\nend"),
+           [&1]
+         )},
       no_forwarding_function:
         {%{},
          &Checks.NoForwardingFunction.detect_violations(

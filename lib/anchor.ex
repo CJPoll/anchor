@@ -28,6 +28,7 @@ defmodule Anchor do
   - `Anchor.Check.NoDiscardedPureExpression` - Reports a discarded expression that has no effect
   - `Anchor.Check.NoForwardingFunction` - Reports a function that only forwards to another in its module
   - `Anchor.Check.StructOwnedByModule` - Reports a struct built or changed outside its own module
+  - `Anchor.Check.FrameworkTestMocksManager` - Requires a Framework test to expect on, and verify, a manager double
 
   ## Integration with Credo
 
@@ -53,7 +54,8 @@ defmodule Anchor do
                 {Anchor.Check.StructGetterConvention, []},
                 {Anchor.Check.NoDiscardedPureExpression, []},
                 {Anchor.Check.NoForwardingFunction, []},
-                {Anchor.Check.StructOwnedByModule, []}
+                {Anchor.Check.StructOwnedByModule, []},
+                {Anchor.Check.FrameworkTestMocksManager, []}
               ]
             }
           }
@@ -80,7 +82,8 @@ defmodule Anchor do
       Anchor.Check.StructGetterConvention,
       Anchor.Check.NoDiscardedPureExpression,
       Anchor.Check.NoForwardingFunction,
-      Anchor.Check.StructOwnedByModule
+      Anchor.Check.StructOwnedByModule,
+      Anchor.Check.FrameworkTestMocksManager
     ]
   end
 end

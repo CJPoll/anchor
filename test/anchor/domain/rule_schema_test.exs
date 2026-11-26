@@ -43,6 +43,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
     "min_files" => 1,
     "min_functions" => 1,
     "min_modules" => 2,
+    "mock_patterns" => ["*.Managers.*Mock"],
     "owned_namespaces" => ["MyApp"],
     "mode" => "all",
     "paths" => ["lib/**/*.ex"],
@@ -67,6 +68,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
     context_acyclic: "min_module",
     directory_placement: "min_module",
     effects_match_bucket: "min_module",
+    framework_test_mocks_manager: "mock_pattern",
     function_placement: "min_module",
     interface: "max_widht",
     module_one_component: "min_module",
@@ -92,6 +94,36 @@ defmodule Anchor.Domain.RuleSchemaTest do
 
   defp rule(type, extra \\ %{}) do
     Map.merge(%{"type" => Atom.to_string(type), "pattern" => "*.Domain.*"}, extra)
+  end
+
+  # The mirror test of RuleSchema holds the mock_patterns refusals
+  # too, so a generated sabotage run of RuleSchema selects them.
+  describe "framework_test_mocks_manager mock_patterns" do
+    defp mocks(patterns),
+      do: %{
+        "type" => "framework_test_mocks_manager",
+        "paths" => ["test/**/*_test.exs"],
+        "mock_patterns" => patterns
+      }
+
+    test "named doubles load" do
+      assert %{type: :framework_test_mocks_manager, mock_patterns: ["*.Managers.*Mock"]} =
+               Config.parse_rule(mocks(["*.Managers.*Mock"]))
+    end
+
+    test "a match-all entry is refused, naming it" do
+      for entry <- ["*", "**"] do
+        assert {:error, {:invalid_rule, reason}} = Config.parse_rule(mocks(["*Mock", entry]))
+
+        assert reason =~
+                 "`mock_patterns` entry #{inspect(entry)} makes every double a manager double"
+      end
+    end
+
+    test "no mock_patterns is no relation" do
+      assert {:error, {:invalid_rule, reason}} = Config.parse_rule(mocks([]))
+      assert reason =~ "mock_patterns is missing or empty"
+    end
   end
 
   describe "must_use_module required_any_of_modules" do
@@ -317,7 +349,8 @@ defmodule Anchor.Domain.RuleSchemaTest do
 
     # Drift guard: the allowlist has an entry for exactly the shipped rule types.
     test "the ast types are exactly the rule types of Anchor.checks/0" do
-      check_types = Anchor.checks() |> Enum.map(& &1.__anchor_detector__().rule_type()) |> Enum.sort()
+      check_types =
+        Anchor.checks() |> Enum.map(& &1.__anchor_detector__().rule_type()) |> Enum.sort()
 
       assert RuleSchema.rule_types_for_engine(:ast) == check_types
     end

@@ -113,8 +113,50 @@ rules:
       - "lib/anchor/check/single_control_flow.ex"
       - "lib/anchor/check/struct_getter_convention.ex"
       - "lib/anchor/check/struct_owned_by_module.ex"
+      - "lib/anchor/check/framework_test_mocks_manager.ex"
     required_modules:
       - Anchor.Check.Base
+
+  # --- Rule 4: a Framework test doubles the layer below it ---
+  #
+  # ADR 002's Framework rule, as amended for the Mix tasks (DND-5518): test
+  # the entry point with the layer below it doubled, and assert what the entry
+  # point itself does. Anchor's Mix tasks call their Manager directly and hand
+  # it the Manager's ports as options (ADR 001), so the double a task test
+  # expects on is a port's: every `Anchor.*Mock` that test/test_helper.exs
+  # defines is a Hammox or Mox double of an `Anchor.Adapters.*` behaviour.
+  # Each task test must set an expectation (not a stub) on one and verify it
+  # (`setup :verify_on_exit!`), so a task whose Manager never reaches the
+  # double fails its test.
+  #
+  # Selected: the nine `test/mix/tasks/*_test.exs` files (one `*`, so one
+  # directory). Not selected, by ADR 002: the check tests under
+  # test/anchor/check/ (Framework too, but ADR 002 tests a check through
+  # Credo's own harness over real source, with no double), and
+  # test/mix/tasks/anchor/sabotage/coverage_collector_test.exs (the coverage
+  # collector is an OTP process the task starts; no Manager sits below it).
+  # `min_files: 9` makes a lost task test, or a glob that stops matching,
+  # fail the run rather than check fewer files.
+  - type: framework_test_mocks_manager
+    paths:
+      - "test/mix/tasks/*_test.exs"
+    min_files: 9
+    mock_patterns:
+      - "Anchor.*Mock"
+
+  # --- Rule 4b: a Framework test calls no Manager itself ---
+  #
+  # Rule 4's other half: the same task tests reach a Manager only through the
+  # task under test, never by calling one directly (which would test the
+  # Manager, not the entry point). `match: call` reads calls only; an
+  # `Anchor.*Mock` is no `Anchor.Managers.*` module.
+  - type: no_direct_dependency
+    paths:
+      - "test/mix/tasks/*_test.exs"
+    min_files: 9
+    match: call
+    forbidden_patterns:
+      - "Anchor.Managers.*"
 
   # --- Rule: aggregate declarations (DND-5476, DND-5659) ---
   #

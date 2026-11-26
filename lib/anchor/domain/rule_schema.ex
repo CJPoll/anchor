@@ -36,6 +36,8 @@ defmodule Anchor.Domain.RuleSchema do
     * a relation-bearing rule whose relation is missing or empty (see below);
     * a `pure_patterns` entry that is a match-all glob, which declares every
       module pure (DND-5451);
+    * a `mock_patterns` entry that is a match-all glob, which makes every
+      double a manager double;
     * an `owned_namespaces` list that is empty, which checks no struct, or that
       holds an entry that is not exactly one Elixir module name (DND-5453);
     * a `module_pattern_restrictions` rule whose `allowed_functions` holds a
@@ -81,6 +83,8 @@ defmodule Anchor.Domain.RuleSchema do
     * `no_direct_dependency`: `forbidden_functions`, `forbidden_modules`,
       `forbidden_patterns`;
     * `no_transitive_dependency`: `forbidden_modules`, `forbidden_patterns`;
+    * `framework_test_mocks_manager`: `mock_patterns`, the doubles
+      that stand in for a Manager;
     * `must_use_module`: `required_modules` (the module must use every one) or
       `required_any_of_modules` (it must use at least one); the two keys are
       alternatives, so a rule carrying both is refused (`validate_required_any_of/1`).
@@ -218,6 +222,8 @@ defmodule Anchor.Domain.RuleSchema do
     # DND-5447: effects_match_bucket reads only the graph common keys (the
     # buckets, effects and roots are the `architecture:` section's).
     effects_match_bucket: [],
+    # The doubles whose expectations count as mocking a Manager.
+    framework_test_mocks_manager: ~w(mock_patterns),
     # DND-5448: function_placement reads only the graph common keys.
     function_placement: [],
     # DND-5443: interface reads `max_width` (optional, a positive integer: a
@@ -262,6 +268,7 @@ defmodule Anchor.Domain.RuleSchema do
     context_acyclic: [],
     directory_placement: [],
     effects_match_bucket: [],
+    framework_test_mocks_manager: ~w(mock_patterns),
     function_placement: [],
     interface: [],
     layering: [],
@@ -297,6 +304,7 @@ defmodule Anchor.Domain.RuleSchema do
     context_acyclic: :graph,
     directory_placement: :graph,
     effects_match_bucket: :graph,
+    framework_test_mocks_manager: :ast,
     function_placement: :graph,
     interface: :graph,
     layering: :graph,
@@ -342,13 +350,15 @@ defmodule Anchor.Domain.RuleSchema do
     "forbidden_functions" => ~s(a list of "Module.function" or "Module.function/arity"),
     "forbidden_modules" => "a list of module names",
     "forbidden_patterns" => "a list of module-name globs",
+    "mock_patterns" => "a list of module-name globs naming the manager doubles",
     "required_any_of_modules" => "a list of module names, at least one of which must be used",
     "required_modules" => "a list of module names, every one of which must be used"
   }
 
   # Keys whose value is a list of strings, each of which must be non-blank.
   @string_list_keys ~w(allowed_callers allowed_functions forbidden_functions forbidden_modules
-                       forbidden_patterns owned_namespaces pure_patterns required_any_of_modules required_modules)
+                       forbidden_patterns mock_patterns owned_namespaces pure_patterns
+                       required_any_of_modules required_modules)
 
   # A misspelling this close to a known key (String.jaro_distance/2) is
   # suggested as that key.
@@ -491,6 +501,7 @@ defmodule Anchor.Domain.RuleSchema do
          :ok <- require_relation(rule, type),
          :ok <- refuse_unread_match(rule),
          :ok <- refuse_all_pure(rule),
+         :ok <- refuse_all_mocks(rule),
          :ok <- validate_owned_namespaces(rule) do
       refuse_allow_all(rule)
     end
@@ -640,6 +651,23 @@ defmodule Anchor.Domain.RuleSchema do
   end
 
   defp validate_owned_namespaces(_rule), do: :ok
+
+  # A `mock_patterns` entry of only wildcards makes every double a
+  # manager double, so an expectation on any adapter's mock would satisfy a
+  # rule that exists to require the Manager's. Runs after
+  # `validate_string_lists/1`, so each entry is a non-blank string here.
+  defp refuse_all_mocks(rule) do
+    case Enum.find(rule["mock_patterns"] || [], &GlobPattern.wildcard_only?/1) do
+      nil ->
+        :ok
+
+      entry ->
+        {:error,
+         "`mock_patterns` entry #{inspect(entry)} makes every double a manager double, so an " <>
+           "expectation on any mock would satisfy the rule; name the manager doubles " <>
+           ~s|(e.g. ["*.Managers.*Mock"])|}
+    end
+  end
 
   # DND-5451: a `pure_patterns` entry of only wildcards declares every module
   # pure, so every call to anything would read as an expression with no

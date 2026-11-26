@@ -497,6 +497,11 @@ defmodule Anchor.Config do
       # has already refused a non-list, a blank entry and a match-all glob.
       # Absent => `[]`.
       pure_patterns: rule["pure_patterns"] || [],
+      # Module-name globs (`GlobPattern`) naming the doubles whose
+      # expectations count, for a `framework_test_mocks_manager` rule, as
+      # mocking a Manager. `RuleSchema.validate/2` has already refused a
+      # missing or empty list, a blank entry and a match-all glob.
+      mock_patterns: rule["mock_patterns"] || [],
       # DND-5453: the namespaces a `struct_owned_by_module` rule checks, as
       # module atoms, or `nil` (absent: every struct). `RuleSchema.validate/2`
       # has already refused `[]` and an entry that is not a module name.
