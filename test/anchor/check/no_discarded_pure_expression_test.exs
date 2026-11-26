@@ -42,7 +42,9 @@ defmodule Anchor.Check.NoDiscardedPureExpressionTest do
   end
 
   test "rule_type/0 is the rule type the schema knows" do
-    assert NoDiscardedPureExpression.rule_type() == :no_discarded_pure_expression
+    assert NoDiscardedPureExpression.__anchor_detector__().rule_type() ==
+             :no_discarded_pure_expression
+
     assert :no_discarded_pure_expression in Anchor.Domain.RuleSchema.rule_types()
   end
 

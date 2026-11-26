@@ -31,6 +31,21 @@ defmodule Anchor.Domain.Checks.NoTransitiveDependency do
       chain suffix.
   """
 
+  use Anchor.Domain.Detector
+
+  @doc "The rule type this detector reads (DND-8063)."
+  @impl Anchor.Domain.Detector
+  def rule_type, do: :no_transitive_dependency
+
+  @doc false
+  @impl Anchor.Domain.Detector
+  def needs_module_graph?, do: true
+
+  @doc "Detects one file's `%Anchor.Domain.Detector.Input{}` (DND-8063)."
+  @impl Anchor.Domain.Detector
+  def detect(%Anchor.Domain.Detector.Input{} = input),
+    do: detect_violations(input.ast, input.rules, input.modules_map)
+
   alias Anchor.Domain.DependencyAnalyzer
   alias Anchor.Domain.GlobPattern
   alias Anchor.Domain.RuleShapes

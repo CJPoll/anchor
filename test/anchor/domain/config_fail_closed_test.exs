@@ -65,7 +65,7 @@ defmodule Anchor.Domain.ConfigFailClosedTest do
     # every one of its rules rejected; a type here with no check would accept a
     # rule nothing reads.
     test "the known types are the rule types of Anchor.checks/0 and of the graph rules" do
-      check_types = Anchor.checks() |> Enum.map(& &1.rule_type())
+      check_types = Anchor.checks() |> Enum.map(& &1.__anchor_detector__().rule_type())
       graph_types = Anchor.Domain.GraphRules.all() |> Enum.map(& &1.rule_type())
 
       assert Enum.sort(Config.rule_types()) == Enum.sort(check_types ++ graph_types)

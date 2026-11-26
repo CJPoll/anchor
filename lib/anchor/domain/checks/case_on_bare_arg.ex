@@ -22,6 +22,16 @@ defmodule Anchor.Domain.Checks.CaseOnBareArg do
   pattern (map/tuple match in the function head) is not flagged.
   """
 
+  use Anchor.Domain.Detector
+
+  @doc "The rule type this detector reads (DND-8063)."
+  @impl Anchor.Domain.Detector
+  def rule_type, do: :case_on_bare_arg
+
+  @doc "Detects one file's `%Anchor.Domain.Detector.Input{}` (DND-8063)."
+  @impl Anchor.Domain.Detector
+  def detect(%Anchor.Domain.Detector.Input{} = input), do: detect_violations(input.ast)
+
   alias Anchor.Domain.RuleShapes
   alias Anchor.Domain.Violation
 

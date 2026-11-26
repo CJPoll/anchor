@@ -339,8 +339,8 @@ defmodule Anchor.Check.NoDependencyTest do
     defp detect4(source, rules, module_names) do
       source_file = SourceFile.parse(source, "lib/some_module.ex")
       ast = Source.ast(source_file)
-      context = %{modules_map: %{}, params: [], module_names: module_names}
-      NoDependency.detect_violations(source_file, ast, rules, context)
+      input = %Anchor.Domain.Detector.Input{ast: ast, rules: rules, module_names: module_names}
+      NoDependency.__anchor_detector__().detect(input)
     end
 
     # Matrix row 1 — Happy Path: file context derived from the file's own module.
@@ -453,7 +453,7 @@ defmodule Anchor.Check.NoDependencyTest do
 
   describe "rule_type/0" do
     test "is :no_direct_dependency" do
-      assert NoDependency.rule_type() == :no_direct_dependency
+      assert NoDependency.__anchor_detector__().rule_type() == :no_direct_dependency
     end
   end
 end

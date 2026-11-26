@@ -987,11 +987,12 @@ anchor.graph: 40 modules in 1 apps, 1 rules, 1 violations (0 report-only, 0 base
 
 Anchor's own `.anchor.yml` runs it over `lib/` with a baseline. Its depth-2
 contexts are its buckets, so `interfaces.buckets` names every bucket but
-framework there, and the baseline holds what it found when it landed: the
-calls of `Anchor.Managers.Lint` into the check modules (DND-1288),
-`GraphRules.by_type/1`'s calls of each check's `rule_type/0`, the top-level
-`Anchor` module (no context at depth 2), `Mutator.generate/4`'s dynamic call,
-and the sabotage task starting `CoverageCollector`. The `.anchor.yml` comment
+framework there, and the baseline holds `Anchor.Managers.Lint`'s calls of
+`Anchor.Check.Source.ast/1` (DND-1288), the top-level `Anchor` module (no
+context at depth 2), `Mutator.generate/4`'s dynamic call, and the sabotage
+task starting `CoverageCollector`. Lint's and `GraphRules.by_type/1`'s calls on
+the check modules went with DND-8063: a check's detection is a Domain
+detector (`Anchor.Domain.Detector`), so a new check adds no entry. The `.anchor.yml` comment
 on the rule names the same groups.
 
 ### The `effects_match_bucket` rule (DND-5447)

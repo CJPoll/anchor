@@ -1,5 +1,6 @@
 defmodule Anchor.Check.NoDiscardedPureExpression do
   use Anchor.Check.Base,
+    detector: Anchor.Domain.Checks.NoDiscardedPureExpression,
     category: :warning,
     explanations: [
       check: """
@@ -42,13 +43,4 @@ defmodule Anchor.Check.NoDiscardedPureExpression do
       ```
       """
     ]
-
-  @doc false
-  def rule_type, do: :no_discarded_pure_expression
-
-  # Thin Framework delegate: detection is the pure Domain module's.
-  @doc false
-  def detect_violations(_source_file, ast, rules, _context) do
-    Anchor.Domain.Checks.NoDiscardedPureExpression.detect_violations(ast, rules)
-  end
 end

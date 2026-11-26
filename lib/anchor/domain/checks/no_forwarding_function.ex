@@ -37,6 +37,17 @@ defmodule Anchor.Domain.Checks.NoForwardingFunction do
   not reported: a miss is possible, a false report should not be.
   """
 
+  use Anchor.Domain.Detector
+
+  @doc "The rule type this detector reads (DND-8063)."
+  @impl Anchor.Domain.Detector
+  def rule_type, do: :no_forwarding_function
+
+  @doc "Detects one file's `%Anchor.Domain.Detector.Input{}` (DND-8063)."
+  @impl Anchor.Domain.Detector
+  def detect(%Anchor.Domain.Detector.Input{} = input),
+    do: detect_violations(input.ast, input.rules)
+
   alias Anchor.Domain.Violation
 
   @behaviour Anchor.Domain.RuleShape
@@ -51,7 +62,7 @@ defmodule Anchor.Domain.Checks.NoForwardingFunction do
   """
   @spec detect_violations(Macro.t(), [map()]) :: [Violation.t()]
   def detect_violations(ast, rules) do
-    Enum.flat_map(rules, fn _rule -> ast |> module_bodies([]) |> Enum.flat_map(&detect/1) end)
+    Enum.flat_map(rules, fn _rule -> ast |> module_bodies([]) |> Enum.flat_map(&detect_body/1) end)
   end
 
   @doc "The conforming shape: a violation's `Fix:` text."
@@ -80,7 +91,7 @@ defmodule Anchor.Domain.Checks.NoForwardingFunction do
 
   # ---- one module body ----
 
-  defp detect(statements) do
+  defp detect_body(statements) do
     entries = entries(statements)
     defined = entries |> Enum.flat_map(&arities/1) |> MapSet.new()
 

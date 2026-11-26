@@ -1,5 +1,6 @@
 defmodule Anchor.Check.MustUseModule do
   use Anchor.Check.Base,
+    detector: Anchor.Domain.Checks.MustUseModule,
     category: :design,
     explanations: [
       check: """
@@ -9,12 +10,4 @@ defmodule Anchor.Check.MustUseModule do
       `required_any_of_modules` (the two keys cannot be combined on one rule).
       """
     ]
-
-  @doc false
-  def rule_type, do: :must_use_module
-
-  @doc false
-  def detect_violations(_source_file, ast, rules, _context) do
-    Anchor.Domain.Checks.MustUseModule.detect_violations(ast, rules)
-  end
 end

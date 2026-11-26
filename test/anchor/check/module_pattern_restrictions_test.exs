@@ -174,7 +174,8 @@ defmodule Anchor.Check.ModulePatternRestrictionsTest do
 
   describe "rule_type/0" do
     test "is :module_pattern_restrictions" do
-      assert ModulePatternRestrictions.rule_type() == :module_pattern_restrictions
+      assert ModulePatternRestrictions.__anchor_detector__().rule_type() ==
+               :module_pattern_restrictions
     end
   end
 end

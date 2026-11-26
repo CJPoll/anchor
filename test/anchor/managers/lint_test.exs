@@ -40,7 +40,9 @@ defmodule Anchor.Managers.LintTest do
       expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
 
       assert {:ok, [{returned_file, violations}]} =
-               Lint.run(MustUseModule, [source_file], [], config_loader: ConfigLoaderMock)
+               Lint.run(MustUseModule.__anchor_detector__(), [source_file], [],
+                 config_loader: ConfigLoaderMock
+               )
 
       assert returned_file == source_file
 
@@ -56,7 +58,9 @@ defmodule Anchor.Managers.LintTest do
       expect(ConfigLoaderMock, :load, fn -> {:error, {:config_not_found, ["/p/.anchor.yml"]}} end)
 
       assert {:error, {:config_not_found, ["/p/.anchor.yml"]}} =
-               Lint.run(MustUseModule, [source_file], [], config_loader: ConfigLoaderMock)
+               Lint.run(MustUseModule.__anchor_detector__(), [source_file], [],
+                 config_loader: ConfigLoaderMock
+               )
     end
   end
 
@@ -104,7 +108,9 @@ defmodule Anchor.Managers.LintTest do
       expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: rules}} end)
 
       assert {:ok, [{_file, violations}]} =
-               Lint.run(MustUseModule, [source_file], [], config_loader: ConfigLoaderMock)
+               Lint.run(MustUseModule.__anchor_detector__(), [source_file], [],
+                 config_loader: ConfigLoaderMock
+               )
 
       assert violations |> Enum.map(&{&1.trigger, &1.enforcement}) |> Enum.sort() ==
                [{"MyApp.Enforced", :enforce}, {"MyApp.Reported", :report}]
@@ -123,7 +129,9 @@ defmodule Anchor.Managers.LintTest do
       expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: rules}} end)
 
       assert {:ok, [{_file, violations}]} =
-               Lint.run(NoDependency, [source_file], [], config_loader: ConfigLoaderMock)
+               Lint.run(NoDependency.__anchor_detector__(), [source_file], [],
+                 config_loader: ConfigLoaderMock
+               )
 
       assert [unresolved] = Enum.filter(violations, &(&1.message =~ "cannot statically resolve"))
       assert unresolved.enforcement == :enforce
@@ -137,7 +145,9 @@ defmodule Anchor.Managers.LintTest do
       expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: rules}} end)
 
       assert {:ok, [{_file, violations}]} =
-               Lint.run(NoDependency, [source_file], [], config_loader: ConfigLoaderMock)
+               Lint.run(NoDependency.__anchor_detector__(), [source_file], [],
+                 config_loader: ConfigLoaderMock
+               )
 
       assert [%Violation{enforcement: :report, message: message}] =
                Enum.filter(violations, &(&1.message =~ "cannot statically resolve"))
@@ -156,7 +166,9 @@ defmodule Anchor.Managers.LintTest do
       expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: rules}} end)
 
       assert {:ok, [{_file, [%Violation{trigger: "MyApp.Same", enforcement: :enforce}]}]} =
-               Lint.run(MustUseModule, [source_file], [], config_loader: ConfigLoaderMock)
+               Lint.run(MustUseModule.__anchor_detector__(), [source_file], [],
+                 config_loader: ConfigLoaderMock
+               )
     end
 
     test "positive control: with no report rule every finding is :enforce" do
@@ -164,7 +176,9 @@ defmodule Anchor.Managers.LintTest do
       expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [must_use(MyApp.A, %{})]}} end)
 
       assert {:ok, [{_file, [%Violation{enforcement: :enforce}]}]} =
-               Lint.run(MustUseModule, [source_file], [], config_loader: ConfigLoaderMock)
+               Lint.run(MustUseModule.__anchor_detector__(), [source_file], [],
+                 config_loader: ConfigLoaderMock
+               )
     end
   end
 
@@ -187,7 +201,9 @@ defmodule Anchor.Managers.LintTest do
       expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
 
       assert {:ok, [{_file, []}]} =
-               Lint.run(MustUseModule, [source_file], [], config_loader: ConfigLoaderMock)
+               Lint.run(MustUseModule.__anchor_detector__(), [source_file], [],
+                 config_loader: ConfigLoaderMock
+               )
     end
 
     test "pairs every source file with its violations (unselected file gets [])" do
@@ -202,7 +218,7 @@ defmodule Anchor.Managers.LintTest do
       expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
 
       assert {:ok, results} =
-               Lint.run(MustUseModule, [selected, unselected], [],
+               Lint.run(MustUseModule.__anchor_detector__(), [selected, unselected], [],
                  config_loader: ConfigLoaderMock
                )
 
@@ -214,8 +230,8 @@ defmodule Anchor.Managers.LintTest do
     test "only checks that need the cross-file graph declare needs_module_graph?/0" do
       # This is the switch the Manager branches on to decide whether to build the
       # graph. No loader is involved.
-      assert NoTransitiveDependency.needs_module_graph?()
-      refute MustUseModule.needs_module_graph?()
+      assert NoTransitiveDependency.__anchor_detector__().needs_module_graph?()
+      refute MustUseModule.__anchor_detector__().needs_module_graph?()
     end
 
     test "runs a graph-needing check and hands it the module graph via context" do
@@ -250,7 +266,7 @@ defmodule Anchor.Managers.LintTest do
       expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
 
       assert {:ok, [{^file_a, [violation]}, {^file_b, []}]} =
-               Lint.run(NoTransitiveDependency, [file_a, file_b], [],
+               Lint.run(NoTransitiveDependency.__anchor_detector__(), [file_a, file_b], [],
                  config_loader: ConfigLoaderMock
                )
 
@@ -299,7 +315,9 @@ defmodule Anchor.Managers.LintTest do
       expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
 
       assert {:ok, [{^source_file, [%Violation{trigger: "WaltUi.Contacts.Managers.Bar"}]}]} =
-               Lint.run(NoDependency, [source_file], [], config_loader: ConfigLoaderMock)
+               Lint.run(NoDependency.__anchor_detector__(), [source_file], [],
+                 config_loader: ConfigLoaderMock
+               )
     end
 
     # Matrix row 2 — Control Flow: rule selection is unchanged after facts are
@@ -333,7 +351,9 @@ defmodule Anchor.Managers.LintTest do
                 {^selected, [%Violation{trigger: "WaltUi.Contacts.Managers.Bar"}]},
                 {^unselected, []}
               ]} =
-               Lint.run(NoDependency, [selected, unselected], [], config_loader: ConfigLoaderMock)
+               Lint.run(NoDependency.__anchor_detector__(), [selected, unselected], [],
+                 config_loader: ConfigLoaderMock
+               )
     end
 
     # Matrix row 3 — Control Flow: a non-same_context check is unaffected by the
@@ -358,7 +378,9 @@ defmodule Anchor.Managers.LintTest do
       expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
 
       assert {:ok, [{^source_file, [%Violation{trigger: "MyApp.Repo", line: 2}]}]} =
-               Lint.run(NoDependency, [source_file], [], config_loader: ConfigLoaderMock)
+               Lint.run(NoDependency.__anchor_detector__(), [source_file], [],
+                 config_loader: ConfigLoaderMock
+               )
     end
   end
 
@@ -386,7 +408,9 @@ defmodule Anchor.Managers.LintTest do
       expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
 
       assert {:ok, [{^broken, [%Violation{} = violation]}]} =
-               Lint.run(MustUseModule, [broken], [], config_loader: ConfigLoaderMock)
+               Lint.run(MustUseModule.__anchor_detector__(), [broken], [],
+                 config_loader: ConfigLoaderMock
+               )
 
       assert violation.message =~ "could not parse"
       assert violation.message =~ "Fix:"
@@ -400,7 +424,7 @@ defmodule Anchor.Managers.LintTest do
       expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
 
       assert {:ok, [{^broken, []}]} =
-               Lint.run(MustUseModule, [broken], [],
+               Lint.run(MustUseModule.__anchor_detector__(), [broken], [],
                  config_loader: ConfigLoaderMock,
                  report_shared_failures: false
                )
@@ -432,7 +456,10 @@ defmodule Anchor.Managers.LintTest do
                 {^file_a, [%Violation{trigger: "MyApp.Repo"}]},
                 {^file_b, []}
               ]} =
-               Lint.run(NoTransitiveDependency, [broken, file_a, file_b], [],
+               Lint.run(
+                 NoTransitiveDependency.__anchor_detector__(),
+                 [broken, file_a, file_b],
+                 [],
                  config_loader: ConfigLoaderMock
                )
     end
@@ -442,7 +469,9 @@ defmodule Anchor.Managers.LintTest do
       expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
 
       assert {:ok, [{^broken, [_parse_violation]}, {^good, [%Violation{trigger: "MyApp.Base"}]}]} =
-               Lint.run(MustUseModule, [broken, good], [], config_loader: ConfigLoaderMock)
+               Lint.run(MustUseModule.__anchor_detector__(), [broken, good], [],
+                 config_loader: ConfigLoaderMock
+               )
     end
   end
 
@@ -482,7 +511,9 @@ defmodule Anchor.Managers.LintTest do
       end)
 
       assert {:ok, [{^thing, []}, {:config, [violation]}]} =
-               Lint.run(MustUseModule, [thing], [], config_loader: ConfigLoaderMock)
+               Lint.run(MustUseModule.__anchor_detector__(), [thing], [],
+                 config_loader: ConfigLoaderMock
+               )
 
       assert %Violation{kind: :fail_closed, filename: "/p/.anchor.yml"} = violation
       assert violation.message =~ ~s|rule 2 (id: "contexts", must_use_module) selected 0 of|
@@ -503,7 +534,9 @@ defmodule Anchor.Managers.LintTest do
       expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
 
       assert {:ok, [{^thing, []}, {^other, [_missing_use]}, {:config, [violation]}]} =
-               Lint.run(MustUseModule, [thing, other], [], config_loader: ConfigLoaderMock)
+               Lint.run(MustUseModule.__anchor_detector__(), [thing, other], [],
+                 config_loader: ConfigLoaderMock
+               )
 
       assert violation.message =~ "selected 2 of the 2 files"
       assert violation.message =~ "below its floor of 3 (min_files)"
@@ -523,7 +556,9 @@ defmodule Anchor.Managers.LintTest do
       expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
 
       assert {:ok, [{^thing, []}, {^other, [_missing_use]}]} =
-               Lint.run(MustUseModule, [thing, other], [], config_loader: ConfigLoaderMock)
+               Lint.run(MustUseModule.__anchor_detector__(), [thing, other], [],
+                 config_loader: ConfigLoaderMock
+               )
     end
 
     test "a module-selector rule counts the files it selects", %{thing: thing, other: other} do
@@ -532,7 +567,9 @@ defmodule Anchor.Managers.LintTest do
       expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
 
       assert {:ok, [_, _, {:config, [violation]}]} =
-               Lint.run(MustUseModule, [thing, other], [], config_loader: ConfigLoaderMock)
+               Lint.run(MustUseModule.__anchor_detector__(), [thing, other], [],
+                 config_loader: ConfigLoaderMock
+               )
 
       assert violation.message =~ "(must_use_module) selected 0 of the 2 files"
     end
@@ -543,7 +580,9 @@ defmodule Anchor.Managers.LintTest do
       expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
 
       assert {:ok, [{^thing, []}]} =
-               Lint.run(MustUseModule, [thing], [], config_loader: ConfigLoaderMock)
+               Lint.run(MustUseModule.__anchor_detector__(), [thing], [],
+                 config_loader: ConfigLoaderMock
+               )
     end
 
     test "a partial file set (enforce_selection_floors: false) reports no floor", %{
@@ -554,7 +593,7 @@ defmodule Anchor.Managers.LintTest do
       expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
 
       assert {:ok, [{^thing, []}]} =
-               Lint.run(MustUseModule, [thing], [],
+               Lint.run(MustUseModule.__anchor_detector__(), [thing], [],
                  config_loader: ConfigLoaderMock,
                  enforce_selection_floors: false
                )
@@ -573,7 +612,9 @@ defmodule Anchor.Managers.LintTest do
       expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
 
       assert {:ok, [{^broken, [%Violation{kind: :fail_closed}]}]} =
-               Lint.run(MustUseModule, [broken], [], config_loader: ConfigLoaderMock)
+               Lint.run(MustUseModule.__anchor_detector__(), [broken], [],
+                 config_loader: ConfigLoaderMock
+               )
     end
 
     # Review round: a module selector cannot be read off an unparseable file.
@@ -586,7 +627,9 @@ defmodule Anchor.Managers.LintTest do
       expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
 
       assert {:ok, [{^broken, [%Violation{kind: :fail_closed}]}]} =
-               Lint.run(MustUseModule, [broken], [], config_loader: ConfigLoaderMock)
+               Lint.run(MustUseModule.__anchor_detector__(), [broken], [],
+                 config_loader: ConfigLoaderMock
+               )
     end
   end
 
@@ -633,7 +676,9 @@ defmodule Anchor.Managers.LintTest do
       end)
 
       assert {:ok, [{^adapter, []}, {^other, [%Violation{trigger: "MyApp.Repo", line: 2}]}]} =
-               Lint.run(NoDependency, [adapter, other], [], config_loader: ConfigLoaderMock)
+               Lint.run(NoDependency.__anchor_detector__(), [adapter, other], [],
+                 config_loader: ConfigLoaderMock
+               )
     end
 
     test "a missing caller is one fail-closed violation on the config, naming it", %{
@@ -647,7 +692,9 @@ defmodule Anchor.Managers.LintTest do
       end)
 
       assert {:ok, [{^adapter, []}, {^other, [_repo]}, {:config, [violation]}]} =
-               Lint.run(NoDependency, [adapter, other], [], config_loader: ConfigLoaderMock)
+               Lint.run(NoDependency.__anchor_detector__(), [adapter, other], [],
+                 config_loader: ConfigLoaderMock
+               )
 
       assert %Violation{kind: :fail_closed, filename: "/p/.anchor.yml"} = violation
 
@@ -666,7 +713,7 @@ defmodule Anchor.Managers.LintTest do
       end)
 
       assert {:ok, [{^other, [_repo]}]} =
-               Lint.run(NoDependency, [other], [],
+               Lint.run(NoDependency.__anchor_detector__(), [other], [],
                  config_loader: ConfigLoaderMock,
                  enforce_selection_floors: false
                )
@@ -678,7 +725,9 @@ defmodule Anchor.Managers.LintTest do
       end)
 
       assert {:ok, [{^other, []}]} =
-               Lint.run(MustUseModule, [other], [], config_loader: ConfigLoaderMock)
+               Lint.run(MustUseModule.__anchor_detector__(), [other], [],
+                 config_loader: ConfigLoaderMock
+               )
     end
   end
 
@@ -704,7 +753,7 @@ defmodule Anchor.Managers.LintTest do
       expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
 
       assert {:ok, [{^thing, []}, {:config, [violation]}]} =
-               Lint.run(MustUseModule, [thing], [],
+               Lint.run(MustUseModule.__anchor_detector__(), [thing], [],
                  config_loader: ConfigLoaderMock,
                  enabled_rule_types: [:must_use_module],
                  checks_by_type: %{single_control_flow: Anchor.Check.SingleControlFlow}
@@ -720,7 +769,7 @@ defmodule Anchor.Managers.LintTest do
       expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
 
       assert {:ok, [{^thing, []}]} =
-               Lint.run(MustUseModule, [thing], [],
+               Lint.run(MustUseModule.__anchor_detector__(), [thing], [],
                  config_loader: ConfigLoaderMock,
                  report_shared_failures: false,
                  enabled_rule_types: [:must_use_module]
@@ -731,7 +780,9 @@ defmodule Anchor.Managers.LintTest do
       expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
 
       assert {:ok, [{^thing, []}]} =
-               Lint.run(MustUseModule, [thing], [], config_loader: ConfigLoaderMock)
+               Lint.run(MustUseModule.__anchor_detector__(), [thing], [],
+                 config_loader: ConfigLoaderMock
+               )
     end
   end
 end

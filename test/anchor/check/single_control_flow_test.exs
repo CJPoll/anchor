@@ -197,7 +197,7 @@ defmodule Anchor.Check.SingleControlFlowTest do
 
   describe "rule_type/0" do
     test "is :single_control_flow" do
-      assert SingleControlFlow.rule_type() == :single_control_flow
+      assert SingleControlFlow.__anchor_detector__().rule_type() == :single_control_flow
     end
   end
 end

@@ -158,7 +158,7 @@ defmodule Anchor.Check.CaseOnBareArgTest do
 
   describe "rule_type/0" do
     test "is :case_on_bare_arg" do
-      assert CaseOnBareArg.rule_type() == :case_on_bare_arg
+      assert CaseOnBareArg.__anchor_detector__().rule_type() == :case_on_bare_arg
     end
   end
 end

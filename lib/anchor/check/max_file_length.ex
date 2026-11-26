@@ -1,5 +1,6 @@
 defmodule Anchor.Check.MaxFileLength do
   use Anchor.Check.Base,
+    detector: Anchor.Domain.Checks.MaxFileLength,
     category: :readability,
     explanations: [
       check: """
@@ -16,23 +17,4 @@ defmodule Anchor.Check.MaxFileLength do
       The default maximum is 400 lines of code, but this can be configured.
       """
     ]
-
-  @doc false
-  def rule_type, do: :max_file_length
-
-  # Thin Framework delegate: acquire the file's lines (via `Source`) and hand
-  # them, the bare AST already acquired at the edge, the Manager-selected rules,
-  # and the filename to the pure Domain detector; `Base` maps the returned
-  # `%Anchor.Domain.Violation{}`s onto `Credo.Issue`s.
-  @doc false
-  def detect_violations(source_file, ast, rules, _context) do
-    lines = Source.to_lines(source_file)
-
-    Anchor.Domain.Checks.MaxFileLength.detect_violations(
-      lines,
-      ast,
-      rules,
-      source_file.filename
-    )
-  end
 end

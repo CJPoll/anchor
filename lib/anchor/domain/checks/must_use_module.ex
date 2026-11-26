@@ -18,6 +18,17 @@ defmodule Anchor.Domain.Checks.MustUseModule do
   a use of `Mod` (the options are irrelevant to the requirement).
   """
 
+  use Anchor.Domain.Detector
+
+  @doc "The rule type this detector reads (DND-8063)."
+  @impl Anchor.Domain.Detector
+  def rule_type, do: :must_use_module
+
+  @doc "Detects one file's `%Anchor.Domain.Detector.Input{}` (DND-8063)."
+  @impl Anchor.Domain.Detector
+  def detect(%Anchor.Domain.Detector.Input{} = input),
+    do: detect_violations(input.ast, input.rules)
+
   alias Anchor.Domain.DependencyAnalyzer
   alias Anchor.Domain.RuleShapes
   alias Anchor.Domain.Violation

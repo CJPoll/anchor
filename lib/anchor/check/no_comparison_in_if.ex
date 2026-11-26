@@ -1,5 +1,6 @@
 defmodule Anchor.Check.NoComparisonInIf do
   use Anchor.Check.Base,
+    detector: Anchor.Domain.Checks.NoComparisonInIf,
     category: :readability,
     explanations: [
       check: """
@@ -38,15 +39,4 @@ defmodule Anchor.Check.NoComparisonInIf do
       ```
       """
     ]
-
-  @doc false
-  def rule_type, do: :no_comparison_in_if
-
-  # Thin Framework delegate: the Manager hands over the bare AST and the rules
-  # it already selected; detection lives in the pure Domain module, and Base
-  # maps the returned `%Anchor.Domain.Violation{}`s onto `Credo.Issue`s.
-  @doc false
-  def detect_violations(_source_file, ast, rules, _context) do
-    Anchor.Domain.Checks.NoComparisonInIf.detect_violations(ast, rules)
-  end
 end

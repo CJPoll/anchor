@@ -29,6 +29,17 @@ defmodule Anchor.Domain.Checks.SingleControlFlow do
   name (`case = ...`) is not a structure (DND-1310).
   """
 
+  use Anchor.Domain.Detector
+
+  @doc "The rule type this detector reads (DND-8063)."
+  @impl Anchor.Domain.Detector
+  def rule_type, do: :single_control_flow
+
+  @doc "Detects one file's `%Anchor.Domain.Detector.Input{}` (DND-8063)."
+  @impl Anchor.Domain.Detector
+  def detect(%Anchor.Domain.Detector.Input{} = input),
+    do: detect_violations(input.ast, input.rules)
+
   alias Anchor.Domain.RuleShapes
   alias Anchor.Domain.Violation
 

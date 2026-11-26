@@ -1,5 +1,6 @@
 defmodule Anchor.Check.NoTupleMatchInHead do
   use Anchor.Check.Base,
+    detector: Anchor.Domain.Checks.NoTupleMatchInHead,
     category: :design,
     explanations: [
       check: """
@@ -20,15 +21,4 @@ defmodule Anchor.Check.NoTupleMatchInHead do
       - Inside maps: `def handle(%{result: {:error, reason}})`
       """
     ]
-
-  @doc false
-  def rule_type, do: :no_tuple_match_in_head
-
-  # Thin Framework delegate: the Manager hands over the bare AST and the rules it
-  # already selected; AST-based detection lives in the pure Domain module, and
-  # Base maps the returned `%Anchor.Domain.Violation{}`s onto `Credo.Issue`s.
-  @doc false
-  def detect_violations(_source_file, ast, rules, _context) do
-    Anchor.Domain.Checks.NoTupleMatchInHead.detect_violations(ast, rules)
-  end
 end

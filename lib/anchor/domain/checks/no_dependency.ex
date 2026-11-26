@@ -75,6 +75,17 @@ defmodule Anchor.Domain.Checks.NoDependency do
   entry point passes `file_context: nil` (no scoping).
   """
 
+  use Anchor.Domain.Detector
+
+  @doc "The rule type this detector reads (DND-8063)."
+  @impl Anchor.Domain.Detector
+  def rule_type, do: :no_direct_dependency
+
+  @doc "Detects one file's `%Anchor.Domain.Detector.Input{}` (DND-8063)."
+  @impl Anchor.Domain.Detector
+  def detect(%Anchor.Domain.Detector.Input{} = input),
+    do: detect_violations(input.ast, input.rules, file_context(input.module_names))
+
   alias Anchor.Domain.AllowedCallers
   alias Anchor.Domain.DependencyAnalyzer
   alias Anchor.Domain.FunctionRef
@@ -393,4 +404,18 @@ defmodule Anchor.Domain.Checks.NoDependency do
   end
 
   defp elixir_module?(module), do: match?("Elixir." <> _, Atom.to_string(module))
+
+  # The file's own context (Gap F, DND-150): the namespace segments of its
+  # first defining module, as bare strings (a leading `Elixir.` dropped, so
+  # real and test-supplied names both work). `nil` when the file defines no
+  # module. Moved here from the Credo check with DND-8063.
+  defp file_context([]), do: nil
+  defp file_context([module_name | _rest]), do: name_segments(module_name)
+
+  defp name_segments(module_name) do
+    case String.split(module_name, ".") do
+      ["Elixir" | rest] -> rest
+      segments -> segments
+    end
+  end
 end

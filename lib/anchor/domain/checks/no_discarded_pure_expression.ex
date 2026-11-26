@@ -63,6 +63,17 @@ defmodule Anchor.Domain.Checks.NoDiscardedPureExpression do
   parentheses).
   """
 
+  use Anchor.Domain.Detector
+
+  @doc "The rule type this detector reads (DND-8063)."
+  @impl Anchor.Domain.Detector
+  def rule_type, do: :no_discarded_pure_expression
+
+  @doc "Detects one file's `%Anchor.Domain.Detector.Input{}` (DND-8063)."
+  @impl Anchor.Domain.Detector
+  def detect(%Anchor.Domain.Detector.Input{} = input),
+    do: detect_violations(input.ast, input.rules)
+
   alias Anchor.Domain.DependencyAnalyzer
   alias Anchor.Domain.GlobPattern
   alias Anchor.Domain.Violation

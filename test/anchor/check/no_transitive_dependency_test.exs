@@ -12,22 +12,23 @@ defmodule Anchor.Check.NoTransitiveDependencyTest do
   use ExUnit.Case, async: true
 
   alias Anchor.Check.NoTransitiveDependency
+  alias Anchor.Domain.Detector.Input
   alias Anchor.Domain.Violation
   alias Credo.SourceFile
 
   describe "rule_type/0" do
     test "is :no_transitive_dependency" do
-      assert NoTransitiveDependency.rule_type() == :no_transitive_dependency
+      assert NoTransitiveDependency.__anchor_detector__().rule_type() == :no_transitive_dependency
     end
   end
 
   describe "needs_module_graph?/0" do
     test "is true (the Manager must build the cross-file graph for this check)" do
-      assert NoTransitiveDependency.needs_module_graph?() == true
+      assert NoTransitiveDependency.__anchor_detector__().needs_module_graph?() == true
     end
   end
 
-  describe "detect_violations/4" do
+  describe "its detector's detect/1 (DND-8063; detect_violations/4 before)" do
     test "delegates to the Domain detector, threading context.modules_map" do
       ast =
         Code.string_to_quoted!("""
@@ -47,7 +48,11 @@ defmodule Anchor.Check.NoTransitiveDependencyTest do
       }
 
       assert [%Violation{trigger: "MyApp.Repo", line: 2} = violation] =
-               NoTransitiveDependency.detect_violations(nil, ast, rules, context)
+               NoTransitiveDependency.__anchor_detector__().detect(%Input{
+                 ast: ast,
+                 rules: rules,
+                 modules_map: context.modules_map
+               })
 
       assert violation.message =~ "dependency chain: A -> B -> MyApp.Repo"
     end
@@ -63,7 +68,11 @@ defmodule Anchor.Check.NoTransitiveDependencyTest do
       rules = [%{type: :no_transitive_dependency, forbidden_modules: [MyApp.Repo]}]
       context = %{modules_map: %{}, params: []}
 
-      assert NoTransitiveDependency.detect_violations(nil, ast, rules, context) == []
+      assert NoTransitiveDependency.__anchor_detector__().detect(%Input{
+               ast: ast,
+               rules: rules,
+               modules_map: context.modules_map
+             }) == []
     end
   end
 

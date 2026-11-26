@@ -154,7 +154,8 @@ defmodule Anchor.Check.NoDiscardingArrowInWithTest do
 
   describe "rule_type/0" do
     test "is :no_discarding_arrow_in_with" do
-      assert NoDiscardingArrowInWith.rule_type() == :no_discarding_arrow_in_with
+      assert NoDiscardingArrowInWith.__anchor_detector__().rule_type() ==
+               :no_discarding_arrow_in_with
     end
   end
 end

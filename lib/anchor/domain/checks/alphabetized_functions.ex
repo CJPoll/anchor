@@ -33,6 +33,17 @@ defmodule Anchor.Domain.Checks.AlphabetizedFunctions do
   clause line, so mis-ordering it reports one violation, not one per clause.
   """
 
+  use Anchor.Domain.Detector
+
+  @doc "The rule type this detector reads (DND-8063)."
+  @impl Anchor.Domain.Detector
+  def rule_type, do: :alphabetized_functions
+
+  @doc "Detects one file's `%Anchor.Domain.Detector.Input{}` (DND-8063)."
+  @impl Anchor.Domain.Detector
+  def detect(%Anchor.Domain.Detector.Input{} = input),
+    do: detect_violations(input.ast, input.rules)
+
   alias Anchor.Domain.RuleShapes
   alias Anchor.Domain.Violation
 

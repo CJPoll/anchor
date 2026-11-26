@@ -25,24 +25,28 @@ defmodule Anchor.Managers.LintAnalysisCrashTest do
 
   setup :verify_on_exit!
 
-  defmodule RaisingCheck do
+  defmodule RaisingDetector do
     @moduledoc false
-    use Anchor.Check.Base, category: :design
+    use Anchor.Domain.Detector
 
-    @doc false
+    alias Anchor.Domain.Detector.Input
+
+    @impl Anchor.Domain.Detector
     def rule_type, do: :single_control_flow
 
     # Raises on `lib/boom.ex`, throws on `lib/throw.ex`; detects as the real
-    # check does everywhere else.
-    @doc false
-    def detect_violations(%{filename: "lib/boom.ex"}, _ast, _rules, _context),
-      do: raise(ArgumentError, "injected by the test")
+    # detector does everywhere else.
+    @impl Anchor.Domain.Detector
+    def detect(%Input{filename: "lib/boom.ex"}), do: raise(ArgumentError, "injected by the test")
+    def detect(%Input{filename: "lib/throw.ex"}), do: throw(:injected_by_the_test)
+    def detect(input), do: Anchor.Domain.Checks.SingleControlFlow.detect(input)
+  end
 
-    def detect_violations(%{filename: "lib/throw.ex"}, _ast, _rules, _context),
-      do: throw(:injected_by_the_test)
-
-    def detect_violations(_source_file, ast, rules, _context),
-      do: Anchor.Domain.Checks.SingleControlFlow.detect_violations(ast, rules)
+  defmodule RaisingCheck do
+    @moduledoc false
+    use Anchor.Check.Base,
+      category: :design,
+      detector: Anchor.Managers.LintAnalysisCrashTest.RaisingDetector
   end
 
   # The real analyzer, except that it raises on a file defining `Boom`: in the
@@ -100,7 +104,10 @@ defmodule Anchor.Managers.LintAnalysisCrashTest do
     expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [@rule]}} end)
 
     assert {:ok, [{^boom, [crash]}, {^flagged, [flag]}]} =
-             Lint.run(RaisingCheck, [boom, flagged], [], config_loader: ConfigLoaderMock)
+             Lint.run(RaisingCheck.__anchor_detector__(), [boom, flagged], [],
+               check: RaisingCheck,
+               config_loader: ConfigLoaderMock
+             )
 
     assert %Violation{kind: :fail_closed, filename: nil, line: nil} = crash
     assert crash.trigger == inspect(RaisingCheck)
@@ -120,7 +127,10 @@ defmodule Anchor.Managers.LintAnalysisCrashTest do
     expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [@rule]}} end)
 
     assert {:ok, [{^thrower, [crash]}]} =
-             Lint.run(RaisingCheck, [thrower], [], config_loader: ConfigLoaderMock)
+             Lint.run(RaisingCheck.__anchor_detector__(), [thrower], [],
+               check: RaisingCheck,
+               config_loader: ConfigLoaderMock
+             )
 
     assert %Violation{kind: :fail_closed} = crash
     assert crash.message =~ "against it: throw: :injected_by_the_test"
@@ -139,7 +149,8 @@ defmodule Anchor.Managers.LintAnalysisCrashTest do
       expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [@rule]}} end)
 
       assert {:ok, [{^boom, [crash]}, {^flagged, [flag]}]} =
-               Lint.run(Anchor.Check.SingleControlFlow, [boom, flagged], [],
+               Lint.run(Anchor.Check.SingleControlFlow.__anchor_detector__(), [boom, flagged], [],
+                 check: Anchor.Check.SingleControlFlow,
                  config_loader: ConfigLoaderMock,
                  analyzer: FactsCrashAnalyzer
                )
@@ -158,7 +169,8 @@ defmodule Anchor.Managers.LintAnalysisCrashTest do
       expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [@rule]}} end)
 
       assert {:ok, [{^boom, []}]} =
-               Lint.run(Anchor.Check.SingleControlFlow, [boom], [],
+               Lint.run(Anchor.Check.SingleControlFlow.__anchor_detector__(), [boom], [],
+                 check: Anchor.Check.SingleControlFlow,
                  config_loader: ConfigLoaderMock,
                  analyzer: FactsCrashAnalyzer,
                  report_shared_failures: false
@@ -172,7 +184,8 @@ defmodule Anchor.Managers.LintAnalysisCrashTest do
 
       # No `{:config, [floor violation]}` entry: the crash is the report.
       assert {:ok, [{^boom, [%Violation{kind: :fail_closed, trigger: "Anchor"}]}]} =
-               Lint.run(Anchor.Check.SingleControlFlow, [boom], [],
+               Lint.run(Anchor.Check.SingleControlFlow.__anchor_detector__(), [boom], [],
+                 check: Anchor.Check.SingleControlFlow,
                  config_loader: ConfigLoaderMock,
                  analyzer: FactsCrashAnalyzer
                )
@@ -206,7 +219,11 @@ defmodule Anchor.Managers.LintAnalysisCrashTest do
       expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
 
       assert {:ok, [{^boom, [crash]}, {^other, [flag]}]} =
-               Lint.run(Anchor.Check.NoTransitiveDependency, [boom, other], [],
+               Lint.run(
+                 Anchor.Check.NoTransitiveDependency.__anchor_detector__(),
+                 [boom, other],
+                 [],
+                 check: Anchor.Check.NoTransitiveDependency,
                  config_loader: ConfigLoaderMock,
                  analyzer: GraphCrashAnalyzer
                )

@@ -53,6 +53,12 @@ aggregate backstop: `Anchor.Backstop` (Framework, under `lib/mix/tasks/`),
 modules. Standard unchanged — see "Amendment (2026-11-06, DND-5480)" under
 "How this maps to Anchor".
 
+Amended 2026-11-26 (DND-8063): a Credo check names a Domain detector
+(`Anchor.Domain.Detector`) and exports no detection of its own, so
+`Anchor.Managers.Lint` runs detection through Domain and never calls the
+Framework bucket. Standard unchanged — see "Amendment (2026-11-26, DND-8063)"
+under "How this maps to Anchor".
+
 ## Context
 
 Anchor is a small library, but the class of problems the five-bucket
@@ -418,7 +424,7 @@ Only the classification of subjects the table had not yet listed is added.
 | `Anchor.Domain.AstBaseline`, `Anchor.Domain.EnforcementPasses`, `Anchor.Domain.Parity` | Domain | Report, baseline and enforce for the AST rules (DND-5632, DND-5631) and the parity of the two engines. |
 | `Anchor.Domain.Explain`, `Anchor.Domain.Subject` | Domain | What `mix anchor.explain` answers, and the subject it is asked about (DND-5446). |
 | `Collectable.Anchor.Domain.Sabotage.BoundedOutput` | Domain | The `Collectable` implementation of `Anchor.Domain.Sabotage.BoundedOutput`, defined in its file: a protocol implementation is a module of its own, in the bucket of the file that defines it. |
-| `Anchor.Domain.Checks.*` | Domain | Each Credo check's pure detection, called through `Anchor.Managers.Lint`. |
+| `Anchor.Domain.Checks.*`, `Anchor.Domain.Detector`, `Anchor.Domain.Detector.Input` | Domain | Each Credo check's pure detection, each an `Anchor.Domain.Detector` (DND-8063): the contract `Anchor.Managers.Lint` runs a check's detection through, and its plain per-file input. |
 | `Anchor.Domain.LandedJudge` | Domain | What the landed judge decides beyond the ratchet (DND-5658): the base rules a change removes or retypes, the FIRST LANDING notes, and the rules it runs. Pure, over rule lists the Manager read. |
 | `Anchor.Domain.RuleSchema`, `Anchor.Domain.RuleMatching`, `Anchor.Domain.RuleCoverage`, `Anchor.Domain.Failures`, `Anchor.Domain.Violation`, `Anchor.Domain.GlobPattern`, `Anchor.Domain.AllowedCallers`, `Anchor.Domain.PureCalls`, `Anchor.Domain.EffectPrimitives` | Domain | The rule schema, rule selection, the fail-closed messages, the violation struct and the pattern grammars every rule shares. |
 | `Anchor.Domain.AttributeNode` | Domain | How an AST walker reads a module attribute's node: its value is code, its name never is (`@use X` is not a `use`). Pure. |
@@ -495,6 +501,25 @@ defmodule Anchor.Config do
   def parse_config(_data), do: {:error, {:invalid_config, "no `rules:` list"}}
 end
 ```
+
+#### Amendment (2026-11-26, DND-8063): a check's detection is a Domain detector
+
+The Manager ran a check by calling `rule_type/0`, `needs_module_graph?/0` and
+`detect_violations/4` on the Credo check module: a Manager calling the
+Framework bucket, which the matrix above forbids. `mix anchor.graph` saw each
+call fanned out to every check module and baselined five `layering` and five
+`interface` findings per check, so a new check added ten. Now each
+`Anchor.Domain.Checks.*` module implements `Anchor.Domain.Detector` (rule type,
+input needs, `detect/1` over a plain `%Detector.Input{}`), a check `use`s
+`Anchor.Check.Base` with `detector:`, and Lint calls only `Detector`'s
+functions. Those make the dynamic calls, from Domain, and the only project
+modules exporting the called functions are Domain (the detectors, and the
+graph rules for `rule_type/0`), so `mix anchor.graph` finds nothing; a
+Framework module implementing `Detector` would be a `layering` finding. The
+one input only the Framework edge can acquire, a file's lines, is acquired by
+`Anchor.Check.Base` and passed to Lint as data. Lint's own call of
+`Anchor.Check.Source.ast/1` (DND-1288) is not changed by this amendment. The
+standard is unchanged; the module map gains the two rows.
 
 #### Amendment: fail-closed config example (2026-09-29, DND-1265)
 

@@ -11,14 +11,14 @@ defmodule Anchor.Check.Base do
   left here; loading config, building the module graph, acquiring ASTs, and
   selecting rules all live in the Manager now.
 
-  A check provides:
-
-    * `rule_type/0` — the `.anchor.yml` rule `type` this check consumes.
-    * `detect_violations/4` — `(source_file, ast, rules, context)` returning a
-      list of `%Anchor.Domain.Violation{}`; the check's Domain detection, called
-      by the Manager with the already-selected rules for that file.
-    * optionally `needs_module_graph?/0` — override to `true` when detection
-      needs the cross-file dependency graph (delivered in `context.modules_map`).
+  A check names its detector, `use Anchor.Check.Base, detector:
+  Anchor.Domain.Checks.X` (DND-8063): the Domain module implementing
+  `Anchor.Domain.Detector`, which holds the rule type, what its input needs
+  and the detection. The check exports no detection of its own, so the
+  Manager is handed a Domain module and never calls back into the Framework
+  (ADR 001). The one thing only the Framework edge can acquire for a detector,
+  a file's lines (`Anchor.Check.Source.to_lines/1`), is acquired here, for a
+  detector that `needs_lines?/0`, and handed to the Manager as data.
 
   ## Failing closed (DND-1265)
 
@@ -40,6 +40,9 @@ defmodule Anchor.Check.Base do
   (`enabled_rule_types/1`; the reporter names a rule whose check is off). The
   resulting violations sit on the config file.
   """
+
+  alias Anchor.Check.Source
+  alias Anchor.Domain.Detector
 
   @doc """
   Returns `true` when `check` reports the run's shared failures.
@@ -111,7 +114,7 @@ defmodule Anchor.Check.Base do
       {:ok,
        checks
        |> Enum.flat_map(&enabled_anchor_check/1)
-       |> Enum.map(& &1.rule_type())
+       |> Enum.map(&Detector.rule_type(&1.__anchor_detector__()))
        |> Enum.uniq()
        |> Enum.sort()}
     end
@@ -134,7 +137,10 @@ defmodule Anchor.Check.Base do
       report_shared_failures: shared_failure_reporter?(exec, check),
       enforce_selection_floors: whole_file_set?(exec, params),
       enabled_rule_types: known_types(enabled_rule_types(exec)),
-      checks_by_type: Map.new(Anchor.checks(), &{&1.rule_type(), &1}),
+      checks_by_type:
+        Map.new(Anchor.checks(), &{Detector.rule_type(&1.__anchor_detector__()), &1}),
+      # DND-8063: the check, named in a crash's violation.
+      check: check,
       # DND-5632: an ast rule's baseline path, and its keys' files, are
       # relative to the project root, where Credo runs.
       root: File.cwd!()
@@ -155,14 +161,28 @@ defmodule Anchor.Check.Base do
       else: []
   end
 
+  @doc false
+  # DND-8063: each file's lines, by filename, for a detector that reads them;
+  # `%{}` for every other detector, so no other run pays for them.
+  @spec lines(module(), [Credo.SourceFile.t()]) :: %{String.t() => [{integer(), String.t()}]}
+  def lines(detector, source_files) do
+    if Detector.needs_lines?(detector),
+      do: Map.new(source_files, &{&1.filename, Source.to_lines(&1)}),
+      else: %{}
+  end
+
   defmacro __using__(opts) do
+    detector = Keyword.fetch!(opts, :detector)
+    credo_opts = Keyword.delete(opts, :detector)
+
     quote do
-      use Credo.Check, unquote(opts)
+      use Credo.Check, unquote(credo_opts)
 
       import Credo.Check
 
       alias Anchor.Check.Source
       alias Anchor.Domain.DependencyAnalyzer
+      alias Anchor.Domain.Detector
       alias Anchor.Domain.Failures
       alias Anchor.Domain.Violation
       alias Anchor.Managers.Lint
@@ -170,16 +190,25 @@ defmodule Anchor.Check.Base do
       @fail_closed_priority Credo.Priority.to_integer(:higher)
       @report_priority Credo.Priority.to_integer(:low)
 
+      @detector unquote(detector)
+
       @doc false
       def __anchor_check__, do: true
 
+      @doc false
+      def __anchor_detector__, do: @detector
+
       @impl true
       def run_on_all_source_files(exec, source_files, params) do
-        lint_opts = Anchor.Check.Base.lint_opts(exec, __MODULE__, params)
+        lint_opts =
+          exec
+          |> Anchor.Check.Base.lint_opts(__MODULE__, params)
+          |> Keyword.put(:lines, Anchor.Check.Base.lines(@detector, source_files))
+
         reporter? = Keyword.fetch!(lint_opts, :report_shared_failures)
 
         issues =
-          case Lint.run(__MODULE__, source_files, params, lint_opts) do
+          case Lint.run(@detector, source_files, params, lint_opts) do
             {:ok, results} ->
               Enum.flat_map(results, fn {source_file, violations} ->
                 violations_to_issues(source_file, violations)
@@ -206,10 +235,18 @@ defmodule Anchor.Check.Base do
       def check_file(source_file, rules, params) do
         case Source.ast(source_file) do
           {:ok, ast} ->
-            context = %{modules_map: %{}, params: params}
+            lines = Anchor.Check.Base.lines(@detector, [source_file])
 
-            __MODULE__
-            |> Lint.detect_file(source_file, ast, rules, context)
+            input = %Detector.Input{
+              ast: ast,
+              rules: rules,
+              filename: source_file.filename,
+              params: params,
+              lines: Map.get(lines, source_file.filename)
+            }
+
+            @detector
+            |> Detector.run(input, __MODULE__)
             |> then(&violations_to_issues(source_file, &1))
 
           {:error, {line, message}} ->
@@ -268,20 +305,7 @@ defmodule Anchor.Check.Base do
         [message: violation.message, line_no: violation.line, trigger: violation.trigger]
       end
 
-      @doc false
-      def needs_module_graph?, do: false
-
-      # To be implemented by specific checks.
-      def rule_type, do: raise("rule_type/0 must be implemented")
-
-      def detect_violations(_source_file, _ast, _rules, _context) do
-        raise("detect_violations/4 must be implemented")
-      end
-
-      defoverridable rule_type: 0,
-                     detect_violations: 4,
-                     needs_module_graph?: 0,
-                     check_file: 3
+      defoverridable check_file: 3
     end
   end
 end

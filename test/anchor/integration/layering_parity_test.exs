@@ -89,7 +89,10 @@ defmodule Anchor.Integration.LayeringParityTest do
     expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: rules, path: ".anchor.yml"}} end)
 
     {:ok, results} =
-      Lint.run(check, files, [], config_loader: ConfigLoaderMock, enforce_selection_floors: false)
+      Lint.run(check.__anchor_detector__(), files, [],
+        config_loader: ConfigLoaderMock,
+        enforce_selection_floors: false
+      )
 
     for {%SourceFile{} = file, violations} <- results, do: {defined_module(file), violations}
   end

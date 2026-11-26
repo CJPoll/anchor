@@ -29,8 +29,17 @@ defmodule AnchorTest do
       assert function_exported?(check, :run_on_all_source_files, 3),
              "#{inspect(check)} does not implement run_on_all_source_files/3 (Anchor.Check.Base)"
 
-      assert function_exported?(check, :rule_type, 0),
-             "#{inspect(check)} does not implement rule_type/0 (Anchor.Check.Base)"
+      # DND-8063: a check names a Domain detector and exports no detection of
+      # its own, so the Manager is never handed a Framework module to call.
+      detector = check.__anchor_detector__()
+
+      assert Anchor.Domain.Detector in Keyword.get(detector.__info__(:attributes), :behaviour, []),
+             "#{inspect(check)}'s detector #{inspect(detector)} does not implement Anchor.Domain.Detector"
+
+      for {name, arity} <- [rule_type: 0, detect_violations: 4, needs_module_graph?: 0] do
+        refute function_exported?(check, name, arity),
+               "#{inspect(check)} exports #{name}/#{arity}: detection is its detector's (DND-8063)"
+      end
 
       assert function_exported?(check, :check_file, 3),
              "#{inspect(check)} does not implement check_file/3 (Anchor.Check.Base)"

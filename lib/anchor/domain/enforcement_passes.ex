@@ -2,7 +2,7 @@ defmodule Anchor.Domain.EnforcementPasses do
   @moduledoc """
   Joins the two detection passes of one file (DND-5631), **Domain** (ADR 001).
 
-  `Anchor.Managers.Lint.detect_file/5` detects the rules in `enforcement:
+  `Anchor.Domain.Detector.run/3` (DND-8063; `Lint.detect_file/5` before) detects the rules in `enforcement:
   report` apart from the enforced ones (DND-5441). A violation a check reports
   once per file, whatever the rules (an `alias`/`import`/`require` it cannot
   resolve, a dynamic call), then came once from each pass: the same line

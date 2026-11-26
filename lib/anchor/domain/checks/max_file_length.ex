@@ -30,6 +30,21 @@ defmodule Anchor.Domain.Checks.MaxFileLength do
   `max_lines` was silently ignored end-to-end).
   """
 
+  use Anchor.Domain.Detector
+
+  @doc "The rule type this detector reads (DND-8063)."
+  @impl Anchor.Domain.Detector
+  def rule_type, do: :max_file_length
+
+  @doc false
+  @impl Anchor.Domain.Detector
+  def needs_lines?, do: true
+
+  @doc "Detects one file's `%Anchor.Domain.Detector.Input{}` (DND-8063)."
+  @impl Anchor.Domain.Detector
+  def detect(%Anchor.Domain.Detector.Input{} = input),
+    do: detect_violations(input.lines, input.ast, input.rules, input.filename)
+
   alias Anchor.Domain.RuleShapes
   alias Anchor.Domain.Violation
 

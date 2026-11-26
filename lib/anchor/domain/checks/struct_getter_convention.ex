@@ -53,6 +53,17 @@ defmodule Anchor.Domain.Checks.StructGetterConvention do
   names, structs, or fields (macro/`unquote` forms) are skipped without crashing.
   """
 
+  use Anchor.Domain.Detector
+
+  @doc "The rule type this detector reads (DND-8063)."
+  @impl Anchor.Domain.Detector
+  def rule_type, do: :struct_getter_convention
+
+  @doc "Detects one file's `%Anchor.Domain.Detector.Input{}` (DND-8063)."
+  @impl Anchor.Domain.Detector
+  def detect(%Anchor.Domain.Detector.Input{} = input),
+    do: detect_violations(input.ast, input.rules)
+
   alias Anchor.Domain.RuleShapes
   alias Anchor.Domain.Violation
 

@@ -56,7 +56,7 @@ defmodule Anchor.Managers.LintBaselineTest do
 
     {:ok, results} =
       Lint.run(
-        NoDependency,
+        NoDependency.__anchor_detector__(),
         source_files,
         [],
         [config_loader: ConfigLoaderMock, baseline_store: BaselineStoreMock, root: @root] ++
@@ -193,7 +193,7 @@ defmodule Anchor.Managers.LintBaselineTest do
       end)
 
       assert_raise ArgumentError, ~r/:root/, fn ->
-        Lint.run(NoDependency, files(), [], config_loader: ConfigLoaderMock)
+        Lint.run(NoDependency.__anchor_detector__(), files(), [], config_loader: ConfigLoaderMock)
       end
     end
 
@@ -203,7 +203,9 @@ defmodule Anchor.Managers.LintBaselineTest do
       end)
 
       assert {:ok, _results} =
-               Lint.run(NoDependency, files(), [], config_loader: ConfigLoaderMock)
+               Lint.run(NoDependency.__anchor_detector__(), files(), [],
+                 config_loader: ConfigLoaderMock
+               )
     end
   end
 

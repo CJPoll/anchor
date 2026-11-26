@@ -1,5 +1,6 @@
 defmodule Anchor.Check.StructOwnedByModule do
   use Anchor.Check.Base,
+    detector: Anchor.Domain.Checks.StructOwnedByModule,
     category: :design,
     explanations: [
       check: """
@@ -27,13 +28,4 @@ defmodule Anchor.Check.StructOwnedByModule do
       ```
       """
     ]
-
-  @doc false
-  def rule_type, do: :struct_owned_by_module
-
-  # Thin Framework delegate: detection is the pure Domain module's.
-  @doc false
-  def detect_violations(_source_file, ast, rules, _context) do
-    Anchor.Domain.Checks.StructOwnedByModule.detect_violations(ast, rules)
-  end
 end

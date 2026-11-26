@@ -1,5 +1,6 @@
 defmodule Anchor.Check.StructGetterConvention do
   use Anchor.Check.Base,
+    detector: Anchor.Domain.Checks.StructGetterConvention,
     category: :consistency,
     explanations: [
       check: """
@@ -51,15 +52,4 @@ defmodule Anchor.Check.StructGetterConvention do
       structs when associations aren't loaded, as this is the natural behavior.
       """
     ]
-
-  @doc false
-  def rule_type, do: :struct_getter_convention
-
-  # Thin Framework delegate: the Manager hands over the bare AST; detection lives
-  # in the pure Domain module, and Base maps the returned
-  # `%Anchor.Domain.Violation{}`s onto `Credo.Issue`s.
-  @doc false
-  def detect_violations(_source_file, ast, rules, _context) do
-    Anchor.Domain.Checks.StructGetterConvention.detect_violations(ast, rules)
-  end
 end

@@ -37,7 +37,7 @@ defmodule Anchor.Integration.LintCompositionTest do
   # the selection decision under test.
   defp run(check, source_file, rule) do
     expect(ConfigLoaderMock, :load, fn -> {:ok, %Config{rules: [rule]}} end)
-    Lint.run(check, [source_file], [], config_loader: ConfigLoaderMock)
+    Lint.run(check.__anchor_detector__(), [source_file], [], config_loader: ConfigLoaderMock)
   end
 
   # Module `pattern` selection (matrix row #4) is the pure-predicate case OWNED

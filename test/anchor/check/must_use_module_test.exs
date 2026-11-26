@@ -126,7 +126,7 @@ defmodule Anchor.Check.MustUseModuleTest do
 
   describe "rule_type/0" do
     test "is :must_use_module" do
-      assert MustUseModule.rule_type() == :must_use_module
+      assert MustUseModule.__anchor_detector__().rule_type() == :must_use_module
     end
   end
 end

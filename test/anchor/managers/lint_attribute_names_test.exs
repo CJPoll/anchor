@@ -93,7 +93,12 @@ defmodule Anchor.Managers.LintAttributeNamesTest do
       source_file = SourceFile.parse(source, "lib/sample/attr_user.ex")
       expect(ConfigLoaderMock, :load, fn -> {:ok, @config} end)
 
-      assert {:ok, results} = Lint.run(check, [source_file], [], config_loader: ConfigLoaderMock)
+      assert {:ok, results} =
+               Lint.run(check.__anchor_detector__(), [source_file], [],
+                 check: check,
+                 lines: Anchor.Check.Base.lines(check.__anchor_detector__(), [source_file]),
+                 config_loader: ConfigLoaderMock
+               )
 
       violations =
         for {_file, violations} <- results, violation <- violations do

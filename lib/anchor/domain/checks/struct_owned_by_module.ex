@@ -46,6 +46,17 @@ defmodule Anchor.Domain.Checks.StructOwnedByModule do
   is itself reported, so a new namespace is never silently unchecked.
   """
 
+  use Anchor.Domain.Detector
+
+  @doc "The rule type this detector reads (DND-8063)."
+  @impl Anchor.Domain.Detector
+  def rule_type, do: :struct_owned_by_module
+
+  @doc "Detects one file's `%Anchor.Domain.Detector.Input{}` (DND-8063)."
+  @impl Anchor.Domain.Detector
+  def detect(%Anchor.Domain.Detector.Input{} = input),
+    do: detect_violations(input.ast, input.rules)
+
   alias Anchor.Domain.AttributeNode
   alias Anchor.Domain.DependencyAnalyzer
   alias Anchor.Domain.StructOwnership

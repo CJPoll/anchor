@@ -53,7 +53,12 @@ defmodule Anchor.Integration.GapCapstoneTest do
     path = Path.join(tmp_dir, ".anchor.yml")
     File.write!(path, yaml)
     expect(ConfigLoaderMock, :load, fn -> ConfigFile.load_from_path(path) end)
-    Anchor.Managers.Lint.run(check, [source_file], [], config_loader: ConfigLoaderMock)
+
+    Anchor.Managers.Lint.run(check.__anchor_detector__(), [source_file], [],
+      check: check,
+      lines: Anchor.Check.Base.lines(check.__anchor_detector__(), [source_file]),
+      config_loader: ConfigLoaderMock
+    )
   end
 
   describe "Gap A — forbidden_patterns (module-name glob) through the real pipeline" do

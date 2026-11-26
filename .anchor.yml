@@ -149,10 +149,11 @@ rules:
   # against `architecture: calls` below, including calls a macro injects and
   # dynamic calls on a computed module, which the AST rules above cannot see.
   #
-  # The baseline holds what it found when it landed: Lint's calls into
-  # Anchor.Check (DND-1288; a dynamic call on a computed check module is
-  # judged against every check exporting the function), GraphRules.by_type/1,
-  # and Mutator's apply/3 with a computed function name. It only shrinks;
+  # The baseline holds Lint's two calls of Anchor.Check.Source.ast/1
+  # (DND-1288) and Mutator's apply/3 with a computed function name. Lint's and
+  # GraphRules.by_type/1's dynamic calls on the check modules, an entry per
+  # check, went with DND-8063: a check's detection is a Domain detector. It
+  # only shrinks;
   # `mix anchor.graph --base origin/main` (CI, on a pull request) fails one a
   # branch adds.
   - type: layering
@@ -163,9 +164,11 @@ rules:
   # --- Rule: no cycle between contexts (DND-5445) ---
   #
   # The calls of lib/ collapsed to contexts (depth 2: Anchor.Domain,
-  # Anchor.Managers, ...) must form no cycle. The baseline holds what it
-  # found when it landed: one five-context cycle that runs through Lint's
-  # dynamic calls on the check modules (DND-1288), and Mutator's apply/3.
+  # Anchor.Managers, ...) must form no cycle. The baseline holds the
+  # two-context cycle Anchor.Check <-> Anchor.Managers (the checks call Lint,
+  # and Lint calls Anchor.Check.Source.ast/1, DND-1288; it was five contexts
+  # until DND-8063 removed Lint's dynamic calls on the checks), and
+  # Mutator's apply/3.
   - type: context_acyclic
     id: context_acyclic
     paths: ["lib/**/*.ex"]
@@ -225,11 +228,11 @@ rules:
   # into another must land on that context's interface: its managers bucket
   # (`architecture: interfaces` below: here every bucket but framework), or a
   # module listed in interfaces.exports. Anchor's replacement for Boundary's
-  # exports. The baseline holds what it found when it landed: Lint's calls
-  # into the Anchor.Check modules (DND-1288), GraphRules.by_type/1's calls of
-  # each check's rule_type/0 (also held in layering.txt), the top-level Anchor
-  # module (no context at depth 2), Mutator.generate/4's dynamic call, and
-  # the sabotage task starting CoverageCollector. It only shrinks.
+  # exports. The baseline holds Lint's calls of Anchor.Check.Source.ast/1
+  # (DND-1288), the top-level Anchor module (no context at depth 2),
+  # Mutator.generate/4's dynamic call, and the sabotage task starting
+  # CoverageCollector. Lint's and GraphRules.by_type/1's calls on the check
+  # modules went with DND-8063. It only shrinks.
   - type: interface
     id: interface
     paths: ["lib/**/*.ex"]
@@ -316,8 +319,8 @@ architecture:
   # Anchor.Managers, Anchor.Adapters, ...), not business contexts, so a
   # bucket's modules are its context's interface: a call between two of them
   # is judged by the calls matrix (layering). The interface rule then catches a
-  # call into Framework from another context (Lint into the Anchor.Check
-  # modules, DND-1288) and a module with no context. The framework bucket is
+  # call into Framework from another context (Lint into Anchor.Check.Source,
+  # DND-1288) and a module with no context. The framework bucket is
   # left out on purpose.
   interfaces:
     buckets: [managers, domain, adapters]

@@ -1,5 +1,6 @@
 defmodule Anchor.Check.CaseOnBareArg do
   use Anchor.Check.Base,
+    detector: Anchor.Domain.Checks.CaseOnBareArg,
     category: :design,
     explanations: [
       check: """
@@ -30,15 +31,4 @@ defmodule Anchor.Check.CaseOnBareArg do
           end
       """
     ]
-
-  @doc false
-  def rule_type, do: :case_on_bare_arg
-
-  # Thin Framework delegate: the Manager hands over the bare AST; detection
-  # lives in the pure Domain module, and Base maps the returned
-  # `%Anchor.Domain.Violation{}`s onto `Credo.Issue`s.
-  @doc false
-  def detect_violations(_source_file, ast, _rules, _context) do
-    Anchor.Domain.Checks.CaseOnBareArg.detect_violations(ast)
-  end
 end

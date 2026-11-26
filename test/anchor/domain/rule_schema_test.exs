@@ -317,7 +317,7 @@ defmodule Anchor.Domain.RuleSchemaTest do
 
     # Drift guard: the allowlist has an entry for exactly the shipped rule types.
     test "the ast types are exactly the rule types of Anchor.checks/0" do
-      check_types = Anchor.checks() |> Enum.map(& &1.rule_type()) |> Enum.sort()
+      check_types = Anchor.checks() |> Enum.map(& &1.__anchor_detector__().rule_type()) |> Enum.sort()
 
       assert RuleSchema.rule_types_for_engine(:ast) == check_types
     end

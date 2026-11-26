@@ -1,5 +1,6 @@
 defmodule Anchor.Check.AlphabetizedFunctions do
   use Anchor.Check.Base,
+    detector: Anchor.Domain.Checks.AlphabetizedFunctions,
     category: :readability,
     explanations: [
       check: """
@@ -20,15 +21,4 @@ defmodule Anchor.Check.AlphabetizedFunctions do
       2. Structural ordering: all public functions must come before all private functions
       """
     ]
-
-  @doc false
-  def rule_type, do: :alphabetized_functions
-
-  # Thin Framework delegate: the Manager hands over the bare AST and the rules it
-  # already selected; detection lives in the pure Domain module, and Base maps the
-  # returned `%Anchor.Domain.Violation{}`s onto `Credo.Issue`s.
-  @doc false
-  def detect_violations(_source_file, ast, rules, _context) do
-    Anchor.Domain.Checks.AlphabetizedFunctions.detect_violations(ast, rules)
-  end
 end

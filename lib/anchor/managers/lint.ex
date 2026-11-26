@@ -10,13 +10,14 @@ defmodule Anchor.Managers.Lint do
     1. Load configuration through the `Anchor.Adapters.ConfigLoader` behaviour
        (defaulting to `Anchor.Adapters.ConfigFile`, overridable for tests via the
        `:config_loader` option).
-    2. Build the cross-file module dependency graph once, but only when the check
-       declares `needs_module_graph?/0` — the transitive-dependency check needs
-       it; the others do not.
+    2. Build the cross-file module dependency graph once, but only when the
+       detector declares `needs_module_graph?/0` — the transitive-dependency
+       detector needs it; the others do not.
     3. For each file: acquire the AST at the framework edge, derive the pure
        facts the Domain selector operates on, select the rules that apply to this
        check and this file (`RuleMatching`, which uses `GlobPattern`), and — when at least
-       one rule matches — call the check's Domain detection.
+       one rule matches — run the detector (`Anchor.Domain.Detector.run/3`)
+       on the file's plain `%Detector.Input{}`.
     4. Return `{:ok, [{source_file, [%Anchor.Domain.Violation{}]}]}` — Domain
        objects, never `Credo.Issue`s. Mapping violations to Credo issues is the
        Framework's job (`Anchor.Check.Base`).
@@ -78,6 +79,7 @@ defmodule Anchor.Managers.Lint do
   alias Anchor.Domain.AstBaseline
   alias Anchor.Domain.Baseline
   alias Anchor.Domain.DependencyAnalyzer
+  alias Anchor.Domain.Detector
   alias Anchor.Domain.EnforcementPasses
   alias Anchor.Domain.Failures
   alias Anchor.Domain.RuleCoverage
@@ -94,7 +96,12 @@ defmodule Anchor.Managers.Lint do
           | {:error, term()}
 
   @doc """
-  Runs `check_module` over `source_files`, returning per-file violations.
+  Runs `detector` (an `Anchor.Domain.Detector`, DND-8063) over
+  `source_files`, returning per-file violations. `opts[:check]` names the
+  Credo check in a crash's violation (default: the detector), and
+  `opts[:lines]` holds each file's lines by filename, for a detector that
+  `needs_lines?/0` (the Framework acquires them). Lint calls the detector
+  only through `Anchor.Domain.Detector`, never a Framework module.
 
   `params` are the Credo check params, threaded through to the check's detection.
   `opts` accepts `:config_loader` — a module implementing
@@ -111,26 +118,30 @@ defmodule Anchor.Managers.Lint do
   inject a crash there. A crash is reported, never escapes: see "Analysis
   crashes" above.
   """
-  @spec run(module(), [Credo.SourceFile.t()], keyword(), keyword()) :: result()
-  def run(check_module, source_files, params, opts \\ []) do
+  @spec run(Detector.t(), [Credo.SourceFile.t()], keyword(), keyword()) :: result()
+  def run(detector, source_files, params, opts \\ []) do
+    check = Keyword.get(opts, :check, detector)
     config_loader = Keyword.get(opts, :config_loader, @default_config_loader)
     report_shared_failures? = Keyword.get(opts, :report_shared_failures, true)
     analyzer = Keyword.get(opts, :analyzer, @default_analyzer)
 
     case config_loader.load() do
       {:ok, %Config{rules: rules} = config} ->
-        {modules_map, graph_crashes} = build_modules_map(check_module, analyzer, source_files)
+        {modules_map, graph_crashes} =
+          build_modules_map(detector, check, analyzer, source_files)
 
         run_context = %{
-          check: check_module,
+          detector: detector,
+          check: check,
+          lines: Keyword.get(opts, :lines, %{}),
           analyzer: analyzer,
           rules: rules,
           modules_map: modules_map,
           graph_crashes: graph_crashes,
           params: params,
           report_shared_failures?: report_shared_failures?,
-          defined_modules?: lists_allowed_callers?(check_module, rules),
-          root: root!(opts, check_module, rules)
+          defined_modules?: lists_allowed_callers?(detector, rules),
+          root: root!(opts, detector, rules)
         }
 
         # Each file is parsed as it is checked and dropped afterwards, so a run
@@ -144,7 +155,7 @@ defmodule Anchor.Managers.Lint do
         facts = Enum.map(results, fn {_source_file, _violations, facts} -> facts end)
 
         {file_results, ratchet_violations} =
-          ratchet(file_results, own_baselined(check_module, rules), facts, run_context, opts)
+          ratchet(file_results, own_baselined(detector, rules), facts, run_context, opts)
 
         # A finding two passes made (two rules forbidding one module, a
         # check's once-per-file `alias` report) is printed once, enforced when
@@ -155,8 +166,7 @@ defmodule Anchor.Managers.Lint do
             {file, EnforcementPasses.unique(violations)}
           end)
 
-        {:ok,
-         file_results ++ config_results(check_module, config, facts, opts, ratchet_violations)}
+        {:ok, file_results ++ config_results(detector, config, facts, opts, ratchet_violations)}
 
       {:error, reason} ->
         {:error, reason}
@@ -168,8 +178,8 @@ defmodule Anchor.Managers.Lint do
   # checked something). Each check reports the floors of its own type's rules,
   # over the files it ran on; the shared-failure reporter also names the rules
   # no enabled check reads.
-  defp config_results(check_module, config, facts, opts, ratchet_violations) do
-    case floor_violations(check_module, config, facts, opts) ++
+  defp config_results(detector, config, facts, opts, ratchet_violations) do
+    case floor_violations(detector, config, facts, opts) ++
            unchecked_violations(config, opts) ++ ratchet_violations do
       [] -> []
       violations -> [{:config, violations}]
@@ -178,9 +188,9 @@ defmodule Anchor.Managers.Lint do
 
   # DND-1269: an allowed caller no selected file defines needs the whole file
   # set to tell, as a floor does, so it is reported only when floors are.
-  defp floor_violations(check_module, %Config{rules: rules, path: path}, facts, opts) do
+  defp floor_violations(detector, %Config{rules: rules, path: path}, facts, opts) do
     if Keyword.get(opts, :enforce_selection_floors, true) do
-      own_rules = own_rules(check_module, rules)
+      own_rules = own_rules(detector, rules)
 
       below_floor =
         own_rules
@@ -202,15 +212,15 @@ defmodule Anchor.Managers.Lint do
     end
   end
 
-  defp own_rules(check_module, rules) do
-    rule_type = check_module.rule_type()
+  defp own_rules(detector, rules) do
+    rule_type = Detector.rule_type(detector)
     Enum.filter(rules, &RuleMatching.rule_matches_type?(&1, rule_type))
   end
 
   # Whether a file's facts need the modules it defines: only when a rule this
   # check reads lists allowed callers, so no other run pays for the walk.
-  defp lists_allowed_callers?(check_module, rules) do
-    check_module
+  defp lists_allowed_callers?(detector, rules) do
+    detector
     |> own_rules(rules)
     |> Enum.any?(&(Map.get(&1, :allowed_callers) not in [nil, []]))
   end
@@ -270,21 +280,21 @@ defmodule Anchor.Managers.Lint do
   defp facts_crash(_violation, _run_context), do: []
 
   defp detect_for_file(source_file, ast, facts, run_context) do
-    %{check: check_module, rules: rules, modules_map: modules_map, params: params} = run_context
+    %{detector: detector, rules: rules} = run_context
     # Gap F (DND-150): the file's facts (its own module names among them) are
     # computed ONCE here and reused for BOTH rule selection and the check
     # context — no second AST walk. The file's `module_names` are threaded into
     # the check context so `same_context` detection can derive the file's context.
     {baselined, plain} =
-      check_module |> matching_rules(facts, rules) |> Enum.split_with(&baselined?/1)
+      detector |> matching_rules(facts, rules) |> Enum.split_with(&baselined?/1)
 
-    violations = detect(check_module, source_file, ast, plain, modules_map, facts, params)
+    violations = detect(source_file, ast, plain, facts, run_context)
 
     keyed =
       Enum.flat_map(baselined, fn rule ->
-        check_module
-        |> detect(source_file, ast, [rule], modules_map, facts, params)
-        |> keyed(check_module, rule, relative(source_file.filename, run_context.root))
+        source_file
+        |> detect(ast, [rule], facts, run_context)
+        |> keyed(run_context.check, rule, relative(source_file.filename, run_context.root))
       end)
 
     {source_file, violations ++ keyed, facts}
@@ -294,8 +304,8 @@ defmodule Anchor.Managers.Lint do
   # findings carries the rule's id and its key (`ViolationKey.ast_key/3`). A
   # key that cannot be built (a file holding `|`) is a crash on the file,
   # reported as one, never escaping the check.
-  defp keyed(violations, check_module, rule, file) do
-    case guarded(check_module, fn -> Enum.map(violations, &key(&1, rule, file)) end) do
+  defp keyed(violations, check, rule, file) do
+    case guarded(check, fn -> Enum.map(violations, &key(&1, rule, file)) end) do
       {:ok, keyed} -> keyed
       {:crashed, violation} -> [violation]
     end
@@ -308,15 +318,15 @@ defmodule Anchor.Managers.Lint do
 
   defp baselined?(rule), do: is_binary(Map.get(rule, :baseline))
 
-  defp own_baselined(check_module, rules),
-    do: check_module |> own_rules(rules) |> Enum.filter(&baselined?/1)
+  defp own_baselined(detector, rules),
+    do: detector |> own_rules(rules) |> Enum.filter(&baselined?/1)
 
   # The project root keys an ast rule's findings and finds its baseline
   # (DND-5632). The caller names it (`Check.Base` passes the working
   # directory): a Manager makes no file system call of its own (ADR 001). A
   # run with a baselined rule and no root is a caller's mistake, said so.
-  defp root!(opts, check_module, rules) do
-    case {Keyword.get(opts, :root), own_baselined(check_module, rules)} do
+  defp root!(opts, detector, rules) do
+    case {Keyword.get(opts, :root), own_baselined(detector, rules)} do
       {nil, [_ | _]} ->
         raise ArgumentError,
               "Anchor.Managers.Lint.run/4 needs opts[:root] (the project root) when a rule " <>
@@ -431,64 +441,23 @@ defmodule Anchor.Managers.Lint do
     }
   end
 
-  defp detect(_check_module, _source_file, _ast, [], _modules_map, _facts, _params), do: []
+  defp detect(_source_file, _ast, [], _facts, _run_context), do: []
 
-  defp detect(check_module, source_file, ast, matching_rules, modules_map, facts, params) do
-    context = %{modules_map: modules_map, params: params, module_names: facts.module_names}
-    detect_file(check_module, source_file, ast, matching_rules, context)
+  # DND-8063: the detector is Domain; the input is plain data, and the shared
+  # detection (enforcement split, crash guard) is `Detector.run/3`.
+  defp detect(source_file, ast, matching_rules, facts, run_context) do
+    input = %Detector.Input{
+      ast: ast,
+      rules: matching_rules,
+      filename: source_file.filename,
+      module_names: facts.module_names,
+      modules_map: run_context.modules_map,
+      params: run_context.params,
+      lines: Map.get(run_context.lines, source_file.filename)
+    }
+
+    Detector.run(run_context.detector, input, run_context.check)
   end
-
-  @doc """
-  Runs `check_module`'s detection on one parsed file with the rules already
-  selected for it, and returns the violations. The findings of rules in
-  `enforcement: report` are marked `:report` (DND-5441). A violation both
-  passes found (one a check makes once per file, such as an unresolvable
-  `alias`) is returned once, enforced, naming both modes
-  (`Anchor.Domain.EnforcementPasses.merge/2`, DND-5631).
-
-  A raise, throw or exit in the detection becomes one `:fail_closed` violation
-  on that file, naming the check and the reason (DND-1310,
-  `Anchor.Domain.Failures.analysis_crash_violation/4`). It never escapes: Credo's
-  runner would either abort the whole run on it or, with `crash_on_error:
-  false`, drop every issue the check found, which reads as a pass.
-  """
-  @spec detect_file(module(), Credo.SourceFile.t(), Macro.t(), [map()], map()) ::
-          [Anchor.Domain.Violation.t()]
-  def detect_file(check_module, source_file, ast, rules, context) do
-    case Enum.split_with(rules, &(RuleSchema.enforcement(&1) == :report)) do
-      {[], _enforce} ->
-        detect_group(check_module, source_file, ast, rules, context)
-
-      {report, enforce} ->
-        EnforcementPasses.merge(
-          detect_some(check_module, source_file, ast, enforce, context),
-          check_module
-          |> detect_group(source_file, ast, report, context)
-          |> Enum.map(&report_only/1)
-        )
-    end
-  end
-
-  # DND-5441: the rules in `enforcement: report` are detected apart from the
-  # enforced ones, and their findings marked `:report` (printed, never
-  # failing). With no report rule (the default) this is one detection call
-  # over every rule, as before. A crash stays a fail-closed violation.
-  defp detect_some(_check_module, _source_file, _ast, [], _context), do: []
-
-  defp detect_some(check_module, source_file, ast, rules, context),
-    do: detect_group(check_module, source_file, ast, rules, context)
-
-  defp detect_group(check_module, source_file, ast, rules, context) do
-    case guarded(check_module, fn ->
-           check_module.detect_violations(source_file, ast, rules, context)
-         end) do
-      {:ok, violations} -> violations
-      {:crashed, violation} -> [violation]
-    end
-  end
-
-  defp report_only(%Violation{kind: :rule} = violation), do: %{violation | enforcement: :report}
-  defp report_only(violation), do: violation
 
   # `{:ok, result}`, or `{:crashed, violation}` when `fun` raised, threw or
   # exited. `subject` is the check, or `:file_analysis`.
@@ -499,8 +468,8 @@ defmodule Anchor.Managers.Lint do
       {:crashed, Failures.analysis_crash_violation(subject, kind, reason, __STACKTRACE__)}
   end
 
-  defp matching_rules(check_module, facts, rules) do
-    rule_type = check_module.rule_type()
+  defp matching_rules(detector, facts, rules) do
+    rule_type = Detector.rule_type(detector)
 
     rules
     |> Enum.filter(&RuleMatching.rule_matches_type?(&1, rule_type))
@@ -532,9 +501,9 @@ defmodule Anchor.Managers.Lint do
 
   # `{modules_map, crashes}`: the graph, and, by filename, the violation for a
   # file whose graph nodes crashed (DND-1310), reported on that file.
-  defp build_modules_map(check_module, analyzer, source_files) do
-    if check_module.needs_module_graph?() do
-      Enum.reduce(source_files, {%{}, %{}}, &put_module_analyses(check_module, analyzer, &1, &2))
+  defp build_modules_map(detector, check, analyzer, source_files) do
+    if Detector.needs_module_graph?(detector) do
+      Enum.reduce(source_files, {%{}, %{}}, &put_module_analyses(check, analyzer, &1, &2))
     else
       {%{}, %{}}
     end
@@ -543,9 +512,9 @@ defmodule Anchor.Managers.Lint do
   # An unparseable file contributes no modules to the graph; it is reported on
   # its own (see `result_for_parse/3`). Neither does a file whose analysis
   # crashed; its crash is reported on it.
-  defp put_module_analyses(check_module, analyzer, source_file, {graph, crashes}) do
+  defp put_module_analyses(check, analyzer, source_file, {graph, crashes}) do
     with {:ok, ast} <- Source.ast(source_file),
-         {:ok, nodes} <- guarded(check_module, fn -> analyzer.module_dependencies(ast) end) do
+         {:ok, nodes} <- guarded(check, fn -> analyzer.module_dependencies(ast) end) do
       {Enum.into(nodes, graph), crashes}
     else
       {:error, _parse_error} -> {graph, crashes}

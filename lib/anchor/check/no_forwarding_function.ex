@@ -1,5 +1,6 @@
 defmodule Anchor.Check.NoForwardingFunction do
   use Anchor.Check.Base,
+    detector: Anchor.Domain.Checks.NoForwardingFunction,
     category: :design,
     explanations: [
       check: """
@@ -26,13 +27,4 @@ defmodule Anchor.Check.NoForwardingFunction do
       ```
       """
     ]
-
-  @doc false
-  def rule_type, do: :no_forwarding_function
-
-  # Thin Framework delegate: detection is the pure Domain module's.
-  @doc false
-  def detect_violations(_source_file, ast, rules, _context) do
-    Anchor.Domain.Checks.NoForwardingFunction.detect_violations(ast, rules)
-  end
 end

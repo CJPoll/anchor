@@ -25,7 +25,15 @@ The codebase follows a clear separation between the core library logic and Credo
 - `Anchor.DependencyAnalyzer` - Analyzes module dependencies and builds dependency graphs
 
 ### Credo Checks
-All checks inherit from `Anchor.Check.Base` and are located in `lib/anchor/check/`:
+All checks inherit from `Anchor.Check.Base` and are located in `lib/anchor/check/`.
+A check names its Domain detector (`use Anchor.Check.Base, detector:
+Anchor.Domain.Checks.X`, DND-8063) and exports no detection of its own: the
+detector implements `Anchor.Domain.Detector` (`rule_type/0`, `detect/1` over a
+plain `%Detector.Input{}`, optional `needs_module_graph?/0` and `needs_lines?/0`),
+and `Anchor.Managers.Lint` runs it through `Detector`'s functions only, so a
+new check adds no `mix anchor.graph` finding. A new input a detector needs is a
+field of `Detector.Input`, filled by Lint (or by `Check.Base` when only the
+Framework edge can acquire it, as it acquires lines):
 - `NoDependency` - Enforces forbidden dependencies between modules
 - `MustUseModule` - Ensures modules matching patterns use required modules
 - `ModulePatternRestrictions` - Restricts functions that can be defined in pattern-matched modules
@@ -331,7 +339,7 @@ anchor.graph` after credo.
 ## Report, baseline, enforce (DND-5441)
 
 Every rule takes `enforcement: report | enforce`. A report finding is
-`Violation.enforcement: :report`: `Anchor.Managers.Lint.detect_file/5`
+`Violation.enforcement: :report`: `Anchor.Domain.Detector.run/3` (DND-8063)
 detects report rules apart from enforced ones (one call as before when there
 are none), and `Anchor.Check.Base` gives their issues exit status 0 and low
 priority. A violation both passes found (a check's once-per-file report, such
@@ -403,9 +411,9 @@ left to the higher-order analysis. The walker gives `apply/2` and `apply/3`
 with a computed name the same shape, so `apply(fun, args)` is reported. One violation per (caller, callee)
 pair, at its first line. The canary has a framework bucket with
 `layering/compliant.ex` and `layering/violating.ex`. Anchor's own
-`.anchor.yml` runs the rule with a baseline (Lint's calls into
-`Anchor.Check`, DND-1288, most of them dynamic calls fanned out to every
-check module exporting the function).
+`.anchor.yml` runs the rule with a baseline (Lint's calls of
+`Anchor.Check.Source.ast/1`, DND-1288, and `Mutator`'s `apply/3`); a check's
+detection is a Domain detector (DND-8063), so a new check adds no entry.
 
 
 The engine split (DND-5491): `layering` is the authority, and
@@ -429,9 +437,10 @@ it and reports each SCC of two or more contexts once, keyed
 `ViolationKey.graph_key/2` (`<id>|A,B,C`), at the first witness of the edge to
 invert (fewest witnesses, ties lexical). The canary's cycle pair is
 `lib/canary/domain/cycle/` (`AnchorFixtures.CycleA`/`CycleB`, their own
-contexts). Anchor's own `.anchor.yml` runs it with a baseline holding one
-five-context cycle through Lint's dynamic calls on the checks (DND-1288),
-and `Mutator`'s `apply/3`.
+contexts). Anchor's own `.anchor.yml` runs it with a baseline holding the
+two-context cycle `Anchor.Check` <-> `Anchor.Managers` (Lint's calls of
+`Anchor.Check.Source.ast/1`, DND-1288; five contexts until DND-8063), and
+`Mutator`'s `apply/3`.
 
 ## The effects_match_bucket rule (DND-5447)
 
