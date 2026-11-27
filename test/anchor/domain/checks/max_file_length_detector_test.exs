@@ -32,7 +32,7 @@ defmodule Anchor.Domain.Checks.MaxFileLengthDetectorTest do
 
   test "detect/1 finds what detect_violations finds, from the input's fields" do
     rules = rules()
-    expected = MaxFileLength.detect_violations(lines(@source), ast(@source), rules, "lib/m.ex")
+    expected = MaxFileLength.detect_violations(lines(@source), rules, "lib/m.ex")
 
     assert expected != [], "control: the snippet violates the rule"
 

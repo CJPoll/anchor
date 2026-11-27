@@ -12,7 +12,8 @@ defmodule Anchor.Check.MaxFileLength do
       The check counts only lines with actual code, excluding:
       - Empty lines and whitespace-only lines
       - Comments (lines starting with #)
-      - Documentation (@moduledoc, @doc, @typedoc)
+      - Documentation: every line of an @moduledoc, @doc or @typedoc annotation,
+        whatever its value
 
       The default maximum is 400 lines of code, but this can be configured.
       """

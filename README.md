@@ -3169,6 +3169,8 @@ Sorting is case-insensitive.
 
 Ensures files do not exceed a maximum number of lines. Large files are harder to understand, navigate, and maintain. By limiting file length, you encourage better code organization and separation of concerns.
 
+Only lines of code are counted. Blank lines, lines starting with `#`, and every line of an `@moduledoc`, `@doc` or `@typedoc` annotation (whatever its value) are not.
+
 The default maximum is 400 lines, but this can be configured.
 
 ```yaml

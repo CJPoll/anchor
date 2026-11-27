@@ -3,13 +3,13 @@ defmodule Anchor.Domain.Checks.MaxFileLength do
   Pure detection for the "max file length" check — the **Domain** bucket
   (ADR 001).
 
-  Given the file's already-acquired lines and AST plus the rules already
-  selected for the file (the Manager selects rules; the Framework edge —
-  `Anchor.Check.Source` — acquires the lines via `to_lines/1` and the AST via
-  `ast/1`), this returns the `%Anchor.Domain.Violation{}` list the check
-  reports. Every function here is side-effect-free: same lines, AST, rules and
-  filename in, same violations out. There is **zero `Credo.*`** and no IO —
-  acquiring the lines/AST is `Anchor.Check.Source`'s job and mapping a
+  Given the file's already-acquired lines plus the rules already selected for
+  the file (the Manager selects rules; the Framework edge —
+  `Anchor.Check.Source` — acquires the lines via `to_lines/1`), this returns
+  the `%Anchor.Domain.Violation{}` list the check reports. Every function here
+  is side-effect-free: same lines, rules and filename in, same violations
+  out. There is **zero `Credo.*`** and no IO —
+  acquiring the lines is `Anchor.Check.Source`'s job and mapping a
   `%Violation{}` onto a `Credo.Issue` is the Framework's (`Anchor.Check.Base`).
 
   ## What it detects
@@ -17,9 +17,24 @@ defmodule Anchor.Domain.Checks.MaxFileLength do
   Only lines of *actual code* are counted; the following are excluded:
 
     * blank / whitespace-only lines,
-    * full-line `#` comments,
-    * `@moduledoc` / `@doc` / `@typedoc` heredoc bodies (located via the AST),
-    * `@doc false` lines.
+    * lines whose first non-blank character is `#`: full-line comments (and,
+      since the line alone is read, a line of a multi-line string that starts
+      with `#`),
+    * documentation annotations: every line of an `@moduledoc`, `@doc` or
+      `@typedoc` annotation, from its `@` line to the line its value ends on,
+      whatever the value is: a string, a heredoc, a sigil, an interpolated
+      string, `false`, a function call or pipeline, another module attribute,
+      or metadata such as `since:`. Those lines are excluded whole.
+
+  Everything else is code, a string outside those annotations, a read of one
+  (`@moduledoc` with no value) and every other attribute (`@shortdoc` among
+  them) included.
+
+  The end of an annotation is the parser's `end_of_expression` line, read by
+  parsing the lines again with `token_metadata: true` (the AST a detector is
+  handed does not carry it). The parser records none when code follows the
+  annotation with no newline or `;` between (`\""" end`, which `mix format`
+  never writes): only the `@` line is excluded then.
 
   For each rule, when the code-line count is **strictly greater** than the
   configured maximum, one violation is reported on line 1 with the filename as
@@ -43,7 +58,7 @@ defmodule Anchor.Domain.Checks.MaxFileLength do
   @doc "Detects one file's `%Anchor.Domain.Detector.Input{}` (DND-8063)."
   @impl Anchor.Domain.Detector
   def detect(%Anchor.Domain.Detector.Input{} = input),
-    do: detect_violations(input.lines, input.ast, input.rules, input.filename)
+    do: detect_violations(input.lines, input.rules, input.filename)
 
   alias Anchor.Domain.RuleShapes
   alias Anchor.Domain.Violation
@@ -58,19 +73,24 @@ defmodule Anchor.Domain.Checks.MaxFileLength do
 
   @default_max_lines 400
 
+  @doc_attributes [:moduledoc, :doc, :typedoc]
+
   @typedoc "A `{line_number, line_text}` pair, as produced by `Source.to_lines/1`."
   @type line :: {integer(), String.t()}
 
   @doc """
-  Returns the `%Violation{}` list for `lines`/`ast` against the already-selected
+  Returns the `%Violation{}` list for `lines` against the already-selected
   `rules`, attributing any violation's trigger to `filename`.
 
   Each rule contributes at most one violation: one when the file's code-line
   count strictly exceeds that rule's `:max_lines` (default 400).
+
+  `lines` must be a whole file that parses; one that does not raises, which
+  `Anchor.Domain.Detector.run/3` reports as a failed check.
   """
-  @spec detect_violations([line()], Macro.t(), [map()], String.t()) :: [Violation.t()]
-  def detect_violations(lines, ast, rules, filename) do
-    code_line_count = count_code_lines(lines, ast)
+  @spec detect_violations([line()], [map()], String.t()) :: [Violation.t()]
+  def detect_violations(lines, rules, filename) do
+    code_line_count = count_code_lines(lines)
 
     Enum.flat_map(rules, fn rule ->
       max_lines = get_max_lines(rule)
@@ -88,8 +108,8 @@ defmodule Anchor.Domain.Checks.MaxFileLength do
     end)
   end
 
-  defp count_code_lines(lines, ast) do
-    doc_line_ranges = extract_doc_line_ranges(ast)
+  defp count_code_lines(lines) do
+    doc_line_ranges = extract_doc_line_ranges(lines)
 
     Enum.count(lines, fn {line_number, line_content} ->
       code_line?(line_content, line_number, doc_line_ranges)
@@ -117,44 +137,28 @@ defmodule Anchor.Domain.Checks.MaxFileLength do
     end)
   end
 
-  defp extract_doc_line_ranges(ast) do
+  # The newline appended gives the file's last expression an
+  # `end_of_expression` too.
+  defp extract_doc_line_ranges(lines) do
+    source = Enum.map_join(lines, "\n", fn {_line_number, text} -> text end)
+
     {_ast, ranges} =
-      Macro.prewalk(ast, [], fn node, acc ->
-        case node do
-          # @moduledoc / @doc / @typedoc with documentation content
-          {:@, meta, [{doc_type, _, [doc_content]}]}
-          when doc_type in [:moduledoc, :doc, :typedoc] ->
-            case extract_doc_range(doc_content, meta[:line]) do
-              nil -> {node, acc}
-              range -> {node, [range | acc]}
-            end
-
-          # @doc false
-          {:@, meta, [{:doc, _, [false]}]} ->
-            {node, [{meta[:line], meta[:line]} | acc]}
-
-          _ ->
-            {node, acc}
-        end
-      end)
+      (source <> "\n")
+      |> Code.string_to_quoted!(token_metadata: true, emit_warnings: false)
+      |> Macro.prewalk([], &collect_doc_range/2)
 
     ranges
   end
 
-  defp extract_doc_range(doc_content, base_line) when is_binary(doc_content) do
-    lines_in_doc = doc_content |> String.split("\n") |> length()
-
-    if String.contains?(doc_content, "\n") do
-      # Multi-line doc: @doc line + content lines + closing delimiter line.
-      {base_line, base_line + lines_in_doc + 1}
-    else
-      # Single line doc.
-      {base_line, base_line}
-    end
+  # A read (`@doc`) has no argument list, so only an annotation that sets a
+  # value matches.
+  defp collect_doc_range({:@, meta, [{attribute, _, [_value]}]} = node, ranges)
+       when attribute in @doc_attributes do
+    last_line = get_in(meta, [:end_of_expression, :line]) || meta[:line]
+    {node, [{meta[:line], last_line} | ranges]}
   end
 
-  defp extract_doc_range(false, base_line), do: {base_line, base_line}
-  defp extract_doc_range(_content, _base_line), do: nil
+  defp collect_doc_range(node, ranges), do: {node, ranges}
 
   # BUG 2: the maximum lives under the ATOM key `:max_lines` on the parsed rule
   # (T3, `Anchor.Config.parse_rule/1`). The pre-refactor code read the string

@@ -46,7 +46,7 @@ defmodule Anchor.Domain.FixShapeInvariantTest do
         {%{"max_lines" => 1},
          fn rule ->
            source = "defmodule M do\n  def a, do: 1\n  def b, do: 2\nend"
-           Checks.MaxFileLength.detect_violations(lines(source), ast(source), [rule], "lib/m.ex")
+           Checks.MaxFileLength.detect_violations(lines(source), [rule], "lib/m.ex")
          end},
       module_pattern_restrictions:
         {%{"allowed_functions" => ["new"]},
