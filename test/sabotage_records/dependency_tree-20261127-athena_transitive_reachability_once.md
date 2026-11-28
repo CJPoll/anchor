@@ -47,11 +47,14 @@ Suite: `mix test test/anchor/domain/dependency_tree_test.exs test/anchor/domain/
 (602 tests), at commit 22c1c82 unless a row says otherwise; each mutation
 applied alone, then `lib` and `test/support` restored with `git checkout`.
 
-| # | Mutation | Tests failed |
-|---|---|---|
-| C | A module keeps the LAST parent it is met from | 7, the same rows as above |
-| D | Walk dependencies in reverse order | 6, the same rows as above |
-| E | "Seen" is "has a parent" | 3, the same rows as above |
+Every string below is copied from this round's own run logs, on 22c1c82,
+not from the earlier rounds.
+
+| # | Mutation | Tests failed | Failure strings, at 22c1c82 |
+|---|---|---|---|
+| C | A module keeps the LAST parent it is met from | 7 | path/2 "of two routes": `code:  assert DependencyTree.path(DependencyTree.build(modules_map, A), Repo) == [A, B, C, Repo]` `left:  [A, D, Repo]` `right: [A, B, C, Repo]`; "a module first met on a cycle": same `code:`, `left:  [A, C, Repo]` `right: [A, B, C, Repo]`; "on hand graphs": `code:  assert {target, tree_path} == {target, search_path}` `left:  {Repo, [A, D, Repo]}` `right: {Repo, [A, B, C, Repo]}`; "from a sample of the fixture's modules": `code:  assert {start, target, tree_path} == {start, target, search_path}` `left:  {MyApp.Domain.D21, MyApp.Domain.D1, [MyApp.Domain.D21, MyApp.Domain.D1]}` `right: {MyApp.Domain.D21, MyApp.Domain.D1, [MyApp.Domain.D21, MyApp.Domain.D8, MyApp.Domain.D2, MyApp.Domain.D1]}` (rejoined from ExUnit's wrapped lines); no_transitive_dependency_test.exs "detect_violations/3 reports the first path in dependency order, past a shared dead end": `code:  assert violation.message =~ "dependency chain: A -> B -> D -> Forbidden"` `left:  "Module has transitive dependency on forbidden module Forbidden (dependency chain: A -> B -> Forbidden). Fix: no chain of dependencies from the module reaches Forbidden; cut the chain where it first enters a module that depends on it"` `right: "dependency chain: A -> B -> D -> Forbidden"`; the parity walk-count row: `** (EXIT from #PID<0.2264.0>) killed` (the heap bound: a parent cycle read back forever); the parity row: `code:  assert {module, new} == {module, old}` `left:  {MyApp.Domain.D6, [ %Anchor.Domain.Violation{ line: 3, trigger: "MyApp.Repo", message: "Module has transitive dependency on forbidden module MyApp.Repo (dependency chain: MyApp.Domain.D6 -> MyApp.Services.S3068 -> MyApp.Adapters.A255 -> MyApp.Repo).` [excerpt: the first line of a two-sided diff of D6's violations] `right: {MyApp.Domain.D6, [ %Anchor.Domain.Violation{ line: 3, trigger: "MyApp.Repo", message: "Module has transitive dependency on forbidden module MyApp.Repo (dependency chain: MyApp.Domain.D6 -> MyApp.Services.S3068 -> MyApp.Services.S3050 -> MyApp.Services.S3047 -> MyApp.Adapters.A140 -> MyApp.Repo).` [excerpt: the first line of a two-sided diff of D6's violations] |
+| D | Walk dependencies in reverse order | 6 | the same six strings as C's rows "of two routes", "a module first met on a cycle", "on hand graphs", "from a sample of the fixture's modules", "past a shared dead end" and the parity row, each read again in the D log (identical text); no walk-count failure under D |
+| E | "Seen" is "has a parent" | 3 | build/2 "a cycle and a self-edge terminate, each module expanded once": `code:  assert tree.expanded == 3` `left:  4` `right: 3`; "equals find_transitive_dependencies/2, ... on the 5,000-module fixture": `code:  assert {start, tree.expanded} == {start, MapSet.size(reference)}` `left:  {MyApp.Domain.D346, 7}` `right: {MyApp.Domain.D346, 6}`; the parity walk-count row: `code:  assert {start, expanded} == {start, MapSet.size(reachable)}` `left:  {MyApp.Domain.D346, 7}` `right: {MyApp.Domain.D346, 6}` |
 
 ## Where the tests the generated runs list as lacking a red have theirs
 

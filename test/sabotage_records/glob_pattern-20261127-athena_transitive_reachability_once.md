@@ -49,11 +49,14 @@ Suite: `mix test test/anchor/domain/dependency_tree_test.exs test/anchor/domain/
 (602 tests), at commit 22c1c82 unless a row says otherwise; each mutation
 applied alone, then `lib` and `test/support` restored with `git checkout`.
 
-| # | Mutation | Tests failed |
-|---|---|---|
-| F | Only the first pattern is compiled | 1, the any-pattern row |
-| I | An empty pattern list matches every name | 15: "with no patterns, matches nothing" and the rows above |
-| J | The matcher tries no name form | 96: "a one-pattern matcher gives each name the documented answer" and the rows above |
+Every string below is copied from this round's own run logs, on 22c1c82,
+not from the earlier rounds.
+
+| # | Mutation | Tests failed | Failure strings, at 22c1c82 |
+|---|---|---|---|
+| F | Only the first pattern is compiled | 1 | `test module_pattern_matcher/1 (DND-8208) matches a name when any pattern matches it, in either name form` `Expected truthy, got false` `code: assert matches?.("Elixir.MyApp.Repo")` |
+| I | An empty pattern list matches every name | 15 | "with no patterns, matches nothing": `Expected false or nil, got true` `code: refute GlobPattern.module_pattern_matcher([]).("Elixir.MyApp.Repo")`; "matches a name when any pattern matches it": `Expected truthy, got false` `code: assert matches?.("Elixir.MyApp.Web.Foo")`; the parity row: `code:  assert {module, new} == {module, old}` `left:  {MyApp.Domain.D2, [ %Anchor.Domain.Violation{ line: 2, trigger: "MyApp.Domain.D1", message: "Module has transitive dependency on forbidden module MyApp.Domain.D1. Fix: no chain of dependencies from the module reaches MyApp.Services.S1, MyApp.Services.S2; cut the chain where it first enters a module that depends on it"` [excerpt] `right: {MyApp.Domain.D2, []}`; the other 12 by module: 8 in Anchor.Domain.Checks.NoTransitiveDependencyTest, 2 in Anchor.Managers.LintTest, 1 in Anchor.Check.NoTransitiveDependencyTest, 1 in Anchor.Managers.LintTransitiveWalksTest (rules with no patterns: every reachable module became a finding) |
+| J | The matcher tries no name form | 96 | "a one-pattern matcher gives each name the documented answer": `code:  assert {name, pattern, GlobPattern.module_pattern_matcher([pattern]).(name)} == {name, pattern, expected}` `left:  {"Elixir.MyApp.Web.Foo", "MyApp.Web.*", false}` `right: {"Elixir.MyApp.Web.Foo", "MyApp.Web.*", true}`; "matches a name when any pattern matches it": `Expected truthy, got false` `code: assert matches?.("Elixir.MyApp.Web.Foo")`; the parity row: `code:  assert {module, new} == {module, old}` `left:  {MyApp.Domain.D6, [ %Anchor.Domain.Violation{ line: 3, trigger: "MyApp.Repo", message: "Module has transitive dependency on forbidden module MyApp.Repo (dependency chain: MyApp.Domain.D6 -> MyApp.Services.S3068 -> MyApp.Services.S3050 -> MyApp.Services.S3047 -> MyApp.Adapters.A140 -> MyApp.Repo).` [excerpt: the first line of a two-sided diff of D6's violations]; the 96 by module: 38 FrameworkTestMocksManagerAttributeNamesTest, 15 FrameworkTestMocksManagerTest, 13 GlobPatternTest, 11 NoDependencyTest, 5 LintTest, 4 NoDependencyAllowedCallersTest, 3 NoDiscardedPureExpressionTest, 2 NoTransitiveDependencyParityTest, 2 NoTransitiveDependencyTest, 1 each ModulePatternRestrictionsDetectorTest, ModulePatternRestrictionsTest, NoDependencyDetectorTest (every module-pattern caller) |
 
 ## Run 18:27 UTC
 
