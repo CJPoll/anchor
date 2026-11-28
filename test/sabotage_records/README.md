@@ -126,6 +126,8 @@ before coining a synonym.
 - `dependency_analyzer` — `Anchor.Domain.DependencyAnalyzer`, the pure AST
   walk behind every dependency fact (module names, references, calls, uses,
   the module graph).
+- `dependency_tree` — `Anchor.Domain.DependencyTree` (DND-8208): one module's
+  depth-first search tree over the module graph, its reachable set and paths.
 - `beam_reader` — `Anchor.Adapters.BeamReader` (DND-5438): reading `.beam`
   files and decoding each through `:beam_lib` and its debug-info backend
   (`elixir_v1`, `core_v1`), and the decode error values.

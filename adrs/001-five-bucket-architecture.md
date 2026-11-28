@@ -263,6 +263,7 @@ and are dropped rather than adapted:
 | `Anchor.Config` | Domain | The `%Config{}` struct plus its pure parser (`parse_config/1`, `parse_rule/1`): decoded-YAML-map in, atom-keyed rule maps out. No IO. |
 | `Anchor.Domain.ConfigPaths` | Domain | `candidates/2`: a pure function of a working directory and an `apps?` boolean returning the ordered candidate-path list. No IO — the adapter decides which candidate exists. |
 | `Anchor.Domain.DependencyAnalyzer` (earlier prose and the Examples call it `Anchor.DependencyAnalyzer`) | Domain | Pure AST analysis: extracts dependencies and `use`s, computes transitive closures over an in-memory map. Same input, same output, no IO. |
+| `Anchor.Domain.DependencyTree` (DND-8208) | Domain | One module's depth-first search tree over the in-memory module map: its reachable set and the path to each module it reaches, from one walk. Pure; `NoTransitiveDependency` reads every finding from it. |
 | `%Anchor.Config{}` struct | Domain (data) | A typed struct is Domain data; the adapter that produced it is the Side Effect. |
 | Orchestration that loads config then runs analysis | Manager | Coordinates the Side Effect (config load) and Domain (analysis); `Anchor.Managers.Lint` below is that Manager. |
 | `Anchor.Aggregate` (DND-5476) | Framework | A compile-time macro: `use Anchor.Aggregate` persists one `@anchor_aggregate` attribute in the consumer's module and defines nothing else. It calls no Manager, adapter or Domain module at run time. |

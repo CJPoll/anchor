@@ -17,10 +17,11 @@ defmodule Anchor.Domain.Checks.NoTransitiveDependency do
 
   ## What it detects
 
-  For each module the file defines, it computes the transitively-reachable set
-  (`Anchor.Domain.DependencyAnalyzer.find_transitive_dependencies/2`) with the
-  module itself removed — a module is never its own transitive dependency, and
-  self-edges/cycles terminate rather than loop. Every forbidden module in that
+  For each module the file defines, it walks the graph once per call
+  (`Anchor.Domain.DependencyTree.build/2`) and takes the transitively-reachable
+  set (the set `Anchor.Domain.DependencyAnalyzer.find_transitive_dependencies/2`
+  returns) with the module itself removed — a module is never its own
+  transitive dependency, and self-edges/cycles terminate rather than loop. Every forbidden module in that
   set yields one violation, carrying:
 
     * the forbidden module's inspected name as the trigger,
@@ -47,6 +48,7 @@ defmodule Anchor.Domain.Checks.NoTransitiveDependency do
     do: detect_violations(input.ast, input.rules, input.modules_map)
 
   alias Anchor.Domain.DependencyAnalyzer
+  alias Anchor.Domain.DependencyTree
   alias Anchor.Domain.GlobPattern
   alias Anchor.Domain.RuleShapes
   alias Anchor.Domain.Violation
@@ -72,30 +74,58 @@ defmodule Anchor.Domain.Checks.NoTransitiveDependency do
   `modules_map` maps each module to `%{direct_dependencies: [module]}` — the
   graph the Manager builds. Each module the file defines contributes one
   violation per forbidden module it can reach transitively (self removed).
+
+  Each call does one depth-first walk per module the file defines
+  (`Anchor.Domain.DependencyTree.build/2`): its tree gives both the reachable
+  set and the path to every forbidden module the module reaches, so the work
+  does not grow with the number of findings (DND-8208). It is one walk per
+  module per call, not per run: `Anchor.Managers.Lint` calls the detector once
+  for a file's rules without a `baseline:` and once more for each baselined
+  rule, so a module that k baselined rules select is walked 1 + k times (k
+  alone when every selecting rule is baselined). `detect_with_trees/3` also
+  returns the trees, so a test can count the walks.
   """
   @spec detect_violations(Macro.t(), [map()], map()) :: [Violation.t()]
   def detect_violations(ast, rules, modules_map) do
-    ast
-    |> DependencyAnalyzer.extract_module_names()
-    |> Enum.flat_map(&violations_for_module(&1, modules_map, rules, ast))
+    {violations, _trees} = detect_with_trees(ast, rules, modules_map)
+    violations
   end
 
-  defp violations_for_module(module_name, modules_map, rules, ast) do
+  @doc """
+  `detect_violations/3`'s violations, and every search tree the detection
+  built, in the order it built them: one per module the file defines. A tree's
+  `expanded` is how many modules its walk read the dependencies of. The check
+  uses only the violations; the trees are there so a test can see the work.
+  """
+  @spec detect_with_trees(Macro.t(), [map()], map()) :: {[Violation.t()], [DependencyTree.t()]}
+  def detect_with_trees(ast, rules, modules_map) do
+    {per_module, trees} =
+      ast
+      |> DependencyAnalyzer.extract_module_names()
+      |> Enum.map(&violations_and_tree(DependencyTree.build(modules_map, &1), rules, ast))
+      |> Enum.unzip()
+
+    {Enum.concat(per_module), trees}
+  end
+
+  defp violations_and_tree(tree, rules, ast), do: {violations_for_module(tree, rules, ast), tree}
+
+  defp violations_for_module(tree, rules, ast) do
     transitive_deps =
-      modules_map
-      |> DependencyAnalyzer.find_transitive_dependencies(module_name)
-      |> MapSet.delete(module_name)
+      tree
+      |> DependencyTree.reachable()
+      |> MapSet.delete(tree.start)
       |> MapSet.to_list()
 
     Enum.flat_map(rules, fn rule ->
       forbidden = rule.forbidden_modules || []
-      forbidden_patterns = Map.get(rule, :forbidden_patterns, []) || []
+
+      matches_pattern? =
+        GlobPattern.module_pattern_matcher(Map.get(rule, :forbidden_patterns) || [])
 
       transitive_deps
-      |> Enum.filter(&forbidden?(&1, forbidden, forbidden_patterns))
-      |> Enum.map(
-        &RuleShapes.with_shape(build_violation(&1, module_name, modules_map, ast), shape(rule))
-      )
+      |> Enum.filter(&forbidden?(&1, forbidden, matches_pattern?))
+      |> Enum.map(&RuleShapes.with_shape(build_violation(&1, tree, ast), shape(rule)))
     end)
   end
 
@@ -103,17 +133,16 @@ defmodule Anchor.Domain.Checks.NoTransitiveDependency do
   # exact `forbidden_modules` entry OR its module name matches a
   # `forbidden_patterns` glob. Graph edges stay reference-based; `match` mode is
   # A'-scoped to `NoDependency` and is not consulted here.
-  defp forbidden?(module, forbidden_modules, forbidden_patterns) do
-    module in forbidden_modules or matches_any_pattern?(module, forbidden_patterns)
+  # The patterns are compiled once per rule and module (`matches_pattern?`), not
+  # once per reachable module (DND-8208).
+  defp forbidden?(module, forbidden_modules, matches_pattern?) do
+    module in forbidden_modules or matches_pattern?.(to_string(module))
   end
 
-  defp matches_any_pattern?(module, patterns) do
-    module_name = to_string(module)
-    Enum.any?(patterns, &GlobPattern.matches_module_pattern?(module_name, &1))
-  end
-
-  defp build_violation(forbidden_module, current_module, modules_map, ast) do
-    {path, _expanded} = find_dependency_path(modules_map, current_module, forbidden_module)
+  # The path is read from the module's one search tree, and is the path a
+  # targeted first-hit search reports (see `Anchor.Domain.DependencyTree`).
+  defp build_violation(forbidden_module, tree, ast) do
+    path = DependencyTree.path(tree, forbidden_module)
     path_description = format_dependency_path(path)
 
     # The line where the current module references the first hop of the path.
@@ -127,66 +156,6 @@ defmodule Anchor.Domain.Checks.NoTransitiveDependency do
       line: line,
       trigger: inspect(forbidden_module)
     }
-  end
-
-  @doc """
-  One dependency path from `start_module` to `target_module` over `modules_map`,
-  and the number of modules the search expanded (read the dependencies of).
-
-  The path is a depth-first search in `direct_dependencies` order and returns the
-  first path that order reaches, or `nil` when there is none. One visited set is
-  shared by every branch of the search, so each module is expanded at most once
-  and the search is linear in the graph's size. A module the search has left
-  without reaching the target reaches it, if at all, only through a module still
-  on the current branch, which a simple path from that branch cannot revisit
-  either; so skipping it later reports the same path a search of every simple
-  path would.
-
-  The count is there so a test can see how much was searched; the check itself
-  uses only the path.
-  """
-  @spec find_dependency_path(map(), module(), module()) :: {[module()] | nil, non_neg_integer()}
-  def find_dependency_path(modules_map, start_module, target_module) do
-    {reversed_path, %{expanded: expanded}} =
-      search(modules_map, start_module, target_module, [], %{visited: MapSet.new(), expanded: 0})
-
-    {reversed_path && Enum.reverse(reversed_path), expanded}
-  end
-
-  # `reversed_path` holds the modules above `current`, nearest first.
-  # `state.visited` is every module expanded so far, on any branch;
-  # `state.expanded` counts the expansions, apart from the set, so a search that
-  # expanded a module twice would say so.
-  defp search(_modules_map, target, target, reversed_path, state),
-    do: {[target | reversed_path], state}
-
-  defp search(modules_map, current, target, reversed_path, state) do
-    if MapSet.member?(state.visited, current) do
-      {nil, state}
-    else
-      modules_map
-      |> dependencies_of(current)
-      |> search_each(modules_map, target, [current | reversed_path], expand(state, current))
-    end
-  end
-
-  defp expand(%{visited: visited, expanded: expanded}, module),
-    do: %{visited: MapSet.put(visited, module), expanded: expanded + 1}
-
-  defp search_each(deps, modules_map, target, reversed_path, state) do
-    Enum.reduce_while(deps, {nil, state}, fn dep, {nil, acc} ->
-      modules_map |> search(dep, target, reversed_path, acc) |> continue_unless_found()
-    end)
-  end
-
-  defp continue_unless_found({nil, state}), do: {:cont, {nil, state}}
-  defp continue_unless_found(found), do: {:halt, found}
-
-  defp dependencies_of(modules_map, module) do
-    case Map.get(modules_map, module) do
-      nil -> []
-      %{direct_dependencies: deps} -> deps
-    end
   end
 
   defp format_dependency_path(nil), do: ""

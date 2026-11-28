@@ -112,6 +112,47 @@ defmodule Anchor.Domain.GlobPatternTest do
     end
   end
 
+  # DND-8208: the matcher compiles its patterns once and matches as
+  # `matches_module_pattern?/2` does, for any of them.
+  # Sabotage record: ../../sabotage_records/glob_pattern-20261127-athena_transitive_reachability_once.md
+  describe "module_pattern_matcher/1 (DND-8208)" do
+    test "matches a name when any pattern matches it, in either name form" do
+      matches? = GlobPattern.module_pattern_matcher(["MyApp.Web.*", "*.Repo"])
+
+      assert matches?.("Elixir.MyApp.Web.Foo")
+      assert matches?.("Elixir.MyApp.Repo")
+      refute matches?.("Elixir.MyApp.Domain.Foo")
+      refute matches?.("Elixir.MyApp.RepoHelper")
+    end
+
+    # Literal expectations, not `matches_module_pattern?/2`: that function is
+    # now built on the matcher, so comparing the two would compare it with
+    # itself.
+    test "a one-pattern matcher gives each name the documented answer" do
+      rows = [
+        {"Elixir.MyApp.Web.Foo", "MyApp.Web.*", true},
+        {"Elixir.MyApp.Web.Foo", "Elixir.MyApp.Web.*", true},
+        {"Elixir.MyApp.Web.Foo", "*.Web.*", true},
+        {"Elixir.MyApp.Domain.Foo", "MyApp.Web.*", false},
+        {"Elixir.MyApp.Repo", "*.Repo", true},
+        {"Elixir.MyApp.RepoHelper", "*.Repo", false},
+        {"Elixir.MyApp.Domain.Foo", "MyApp.Domain.Foo", true},
+        {"Elixir.MyApp.Domain.FooBar", "MyApp.Domain.Foo", false},
+        {"telemetry", "telemetry*", true},
+        {"telemetry", "Elixir.telemetry", false}
+      ]
+
+      for {name, pattern, expected} <- rows do
+        assert {name, pattern, GlobPattern.module_pattern_matcher([pattern]).(name)} ==
+                 {name, pattern, expected}
+      end
+    end
+
+    test "with no patterns, matches nothing" do
+      refute GlobPattern.module_pattern_matcher([]).("Elixir.MyApp.Repo")
+    end
+  end
+
   # DND-1292: the glob syntax is `*` and (in recursive path globs) `**`, and
   # nothing else. Before this ticket only `.` was escaped, so every other regex
   # metacharacter in a glob was live regex: `allowed_functions: ["*?"]` was a

@@ -20,6 +20,7 @@ defmodule Anchor.Domain.Checks.NoTransitiveDependencyTest do
 
   alias Anchor.Domain.Checks.NoTransitiveDependency
   alias Anchor.Domain.Violation
+  alias Anchor.Test.TransitiveDependencyOracle
 
   # A path search that stops terminating (a cycle followed forever) fails its
   # test at this heap bound, about 16 MB, instead of growing until the host
@@ -340,7 +341,11 @@ defmodule Anchor.Domain.Checks.NoTransitiveDependencyTest do
   #
   # Sabotage record:
   #   ../../../sabotage_records/no_transitive_dependency-20261116-athena_path_finder_visited_set.md
-  describe "find_dependency_path/3" do
+  # DND-8208: the check no longer runs this targeted search; it reads every
+  # path from one search tree per module. The search moved, unchanged, to the
+  # parity tests' oracle (test/support/transitive_dependency_oracle.ex), where
+  # it is the reference the tree is compared with, so these rows still pin it.
+  describe "find_dependency_path/3 (the reference search, now in the oracle)" do
     # `Root` depends on every module of layer 1 and then on `Bridge`; every
     # module of layer i depends on every module of layer i + 1; the last layer
     # depends on nothing; `Bridge` depends on `Forbidden`. The only route to
@@ -367,7 +372,7 @@ defmodule Anchor.Domain.Checks.NoTransitiveDependencyTest do
 
       # Root, the 24 layer modules and Bridge: every module but the target.
       assert {[Root, Bridge, Forbidden], 26} =
-               NoTransitiveDependency.find_dependency_path(modules_map, Root, Forbidden)
+               TransitiveDependencyOracle.find_dependency_path(modules_map, Root, Forbidden)
     end
 
     test "a dead-end subtree reached by two routes is expanded once, and the path is the first in dependency order" do
@@ -380,7 +385,7 @@ defmodule Anchor.Domain.Checks.NoTransitiveDependencyTest do
       }
 
       assert {[S, B, D, Forbidden], 5} =
-               NoTransitiveDependency.find_dependency_path(modules_map, S, Forbidden)
+               TransitiveDependencyOracle.find_dependency_path(modules_map, S, Forbidden)
     end
 
     test "of two routes, the path is the first in dependency order, not the shortest" do
@@ -392,7 +397,7 @@ defmodule Anchor.Domain.Checks.NoTransitiveDependencyTest do
       }
 
       assert {[S, A, C, Forbidden], 3} =
-               NoTransitiveDependency.find_dependency_path(modules_map, S, Forbidden)
+               TransitiveDependencyOracle.find_dependency_path(modules_map, S, Forbidden)
     end
 
     test "a module first met on the current branch (a cycle) is still left for a later route" do
@@ -404,7 +409,7 @@ defmodule Anchor.Domain.Checks.NoTransitiveDependencyTest do
       }
 
       assert {[S, A, C, Forbidden], 4} =
-               NoTransitiveDependency.find_dependency_path(modules_map, S, Forbidden)
+               TransitiveDependencyOracle.find_dependency_path(modules_map, S, Forbidden)
     end
 
     test "an unreachable target yields nil after expanding each reachable module once" do
@@ -413,7 +418,7 @@ defmodule Anchor.Domain.Checks.NoTransitiveDependencyTest do
       # 26, and Forbidden itself: here it is not the target, so it is expanded
       # (it has no entry, so no dependencies).
       assert {nil, 27} =
-               NoTransitiveDependency.find_dependency_path(modules_map, Root, Elsewhere)
+               TransitiveDependencyOracle.find_dependency_path(modules_map, Root, Elsewhere)
     end
 
     test "detect_violations/3 reports the first path in dependency order, past a shared dead end" do

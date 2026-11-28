@@ -74,9 +74,23 @@ defmodule Anchor.Domain.GlobPattern do
   forbidding by one checked nothing.
   """
   @spec matches_module_pattern?(String.t(), String.t()) :: boolean()
-  def matches_module_pattern?(module_name, pattern) do
-    regex = to_regex(pattern, :module)
-    Enum.any?(module_name_forms(module_name), &Regex.match?(regex, &1))
+  def matches_module_pattern?(module_name, pattern),
+    do: module_pattern_matcher([pattern]).(module_name)
+
+  @doc """
+  A predicate that is `true` for a module name matching any of `patterns`, as
+  `matches_module_pattern?/2` matches each. The patterns are compiled once, when
+  the predicate is made, so a caller testing many names against the same
+  patterns does not compile them again for each name (DND-8208).
+  """
+  @spec module_pattern_matcher([String.t()]) :: (String.t() -> boolean())
+  def module_pattern_matcher(patterns) do
+    regexes = Enum.map(patterns, &to_regex(&1, :module))
+
+    fn module_name ->
+      forms = module_name_forms(module_name)
+      Enum.any?(regexes, fn regex -> Enum.any?(forms, &Regex.match?(regex, &1)) end)
+    end
   end
 
   @doc """
