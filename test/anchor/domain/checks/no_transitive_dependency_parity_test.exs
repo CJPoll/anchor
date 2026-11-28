@@ -102,13 +102,17 @@ defmodule Anchor.Domain.Checks.NoTransitiveDependencyParityTest do
   test "the check's one graph search is the DependencyTree.build/2 call in detect_with_trees/3" do
     ast = @check_source |> File.read!() |> Code.string_to_quoted!(token_metadata: true)
 
+    # Every line each call is made on (`by_owner_sites`): `calls` keeps one line
+    # per function called, so a second call site of the same function would
+    # not show there.
     searches =
-      for {{module, function, _arity} = mfa, line} <-
-            DependencyAnalyzer.function_references(ast).calls,
+      for {_owner, {module, function, _arity} = mfa, lines} <-
+            DependencyAnalyzer.attributed_function_references(ast).by_owner_sites,
           {module, function} in [
             {DependencyTree, :build},
             {DependencyAnalyzer, :find_transitive_dependencies}
           ] or module == TransitiveDependencyOracle,
+          line <- lines,
           do: {mfa, line}
 
     assert [{{DependencyTree, :build, 2}, line}] = searches
