@@ -9,6 +9,17 @@
   (562 tests), at commit b83b24e; each mutation applied alone, then `lib`
   restored with `git checkout`
 
+**Which code these runs describe.** The earlier hand rounds ran on local
+commits made before the branch was squashed (b83b24e, cd3ecfe, ea2e7da), and
+the three generated runs below ("Run 18:27 UTC", "20:16", "23:24") on others
+(c814255, 61e483f, 4c613db; 4c613db had the same tree as eed0b93, an earlier
+delivery candidate). None of those commits is in the delivered history, and
+the code changed after them (the targeted search moved to the oracle, a
+structural guard and a Lint walk-count test were added). The code that
+ships is described by the final round below, run on 22c1c82 (the change) and
+dd98c9a (its guard fix), and by the generated run in
+`dependency_tree-20261128-athena_transitive_reachability_once.md`, made on 22c1c82.
+
 The tree must reach the set `DependencyAnalyzer.find_transitive_dependencies/2`
 reaches, expand each module once, and give each target the path
 `NoTransitiveDependency.find_dependency_path/3` reports: the first in
@@ -29,6 +40,37 @@ cycle followed forever fails at the bound.
   which parent a module keeps or the order it is found in.
 - Under **E**, every path row: re-expanding the start adds no new parent, since
   every module it reaches is already reached.
+
+## Hand mutations, final round (the delivered code)
+
+Suite: `mix test test/anchor/domain/dependency_tree_test.exs test/anchor/domain/checks/ test/anchor/check/no_transitive_dependency_test.exs test/anchor/domain/glob_pattern_test.exs test/anchor/managers/lint_transitive_walks_test.exs test/anchor/managers/lint_test.exs test/anchor/managers/lint_detector_test.exs`
+(602 tests), at commit 22c1c82 unless a row says otherwise; each mutation
+applied alone, then `lib` and `test/support` restored with `git checkout`.
+
+| # | Mutation | Tests failed |
+|---|---|---|
+| C | A module keeps the LAST parent it is met from | 7, the same rows as above |
+| D | Walk dependencies in reverse order | 6, the same rows as above |
+| E | "Seen" is "has a parent" | 3, the same rows as above |
+
+## Where the tests the generated runs list as lacking a red have theirs
+
+Each generated run below, and the one in the 2026-11-28 file, ends with
+"Tests still lacking a red". No generated mutant of lib can fail these; each
+has a hand red in a sibling record:
+
+- parity "the fixture has 5,000 modules and 1,200 Domain files" (earlier
+  "the fixture is the size of a large umbrella ..."): K, in
+  no_transitive_dependency-20261127-athena_transitive_reachability_once.md;
+- parity "the check's one graph search is the DependencyTree.build/2 call in
+  detect_with_trees/3": Q (at dd98c9a) and R, same record;
+- the five no_transitive_dependency_test.exs `find_dependency_path/3` rows
+  (the reference search, now in the oracle): O1, O2, O3, same record;
+- the three lint_transitive_walks_test.exs rows: B, H and L, same record;
+- glob_pattern_test.exs "matches a name when any pattern matches it": F;
+  "a one-pattern matcher gives each name the documented answer": J; "with no
+  patterns, matches nothing": I; in
+  glob_pattern-20261127-athena_transitive_reachability_once.md.
 
 ## Run 18:27 UTC
 

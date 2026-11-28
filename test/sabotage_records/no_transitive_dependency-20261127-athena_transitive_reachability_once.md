@@ -8,6 +8,17 @@
   the pattern test `forbidden?/3`. The first two rounds below ran against an
   earlier shape, `detect_violations/4` with an injected tree builder; see the
   third round
+
+**Which code these runs describe.** The earlier hand rounds ran on local
+commits made before the branch was squashed (b83b24e, cd3ecfe, ea2e7da), and
+the three generated runs below ("Run 18:27 UTC", "20:16", "23:24") on others
+(c814255, 61e483f, 4c613db; 4c613db had the same tree as eed0b93, an earlier
+delivery candidate). None of those commits is in the delivered history, and
+the code changed after them (the targeted search moved to the oracle, a
+structural guard and a Lint walk-count test were added). The code that
+ships is described by the final round below, run on 22c1c82 (the change) and
+dd98c9a (its guard fix), and by the generated run in
+`no_transitive_dependency-20261128-athena_transitive_reachability_once.md`, made on 22c1c82.
 - **Suite run:** `mix test test/anchor/domain/dependency_tree_test.exs test/anchor/domain/checks/ test/anchor/check/no_transitive_dependency_test.exs test/anchor/domain/glob_pattern_test.exs`
   (562 tests), at commit b83b24e; each mutation applied alone, then `lib`
   restored with `git checkout`
@@ -84,6 +95,40 @@ mutation applied alone, then `lib` and `test/support` restored with
 | H | One more walk per finding (`[{findings, tree} \| Enum.map(findings, fn _f -> {[], DependencyTree.build(modules_map, module)} end)]`) | 2 | `code:  assert old_searched > new_walked` `left:  460231` `right: 932760`; and the once-per-run row |
 | A | A walk per rule (`Enum.map(rules, &violations_and_tree(DependencyTree.build(modules_map, module), [&1], ast))`) | 1 | `code:  assert Enum.map(walks, &elem(&1, 0)) == TransitiveGraphFixtures.domain_modules()` `left:  [MyApp.Domain.D1, MyApp.Domain.D1, MyApp.Domain.D2, MyApp.Domain.D2,` `right: [MyApp.Domain.D1, MyApp.Domain.D2, MyApp.Domain.D3, MyApp.Domain.D4,` [excerpt: each list's first line] |
 | B | Two walks per module (`[{[], DependencyTree.build(modules_map, module)}, violations_and_tree(...)]`) | 1 | as A |
+
+## Hand mutations, final round (the delivered code)
+
+Suite: `mix test test/anchor/domain/dependency_tree_test.exs test/anchor/domain/checks/ test/anchor/check/no_transitive_dependency_test.exs test/anchor/domain/glob_pattern_test.exs test/anchor/managers/lint_transitive_walks_test.exs test/anchor/managers/lint_test.exs test/anchor/managers/lint_detector_test.exs`
+(602 tests), at commit 22c1c82 unless a row says otherwise; each mutation
+applied alone, then `lib` and `test/support` restored with `git checkout`.
+
+The once-per-run test of the earlier rounds is now "one walk per module per
+detect call, whatever the number of findings, each module expanded once":
+`Anchor.Managers.Lint` calls the detector once for a file's rules without a
+`baseline:` and once more for each baselined rule, so a run walks a module
+1 + k times when k baselined rules select it. `lint_transitive_walks_test.exs`
+measures that through Lint.
+
+| # | Mutation | Tests failed | Failure string |
+|---|---|---|---|
+| P | The defect DND-8208 removed: each finding's path from a fresh targeted search (`{path, _expanded} = find_dependency_path(modules_map, tree.start, forbidden_module)`, `modules_map` threaded to `build_violation`). Run on ef4a394, the code before this round, in a scratch worktree, since the final code has no targeted search to call | 0 | measured zero: `562 tests, 0 failures` (the suite had 562 tests at ef4a394; the Lint walk rows came in this round). The output is identical and the check reports no extra tree, so neither the parity test nor the walk count can see it. That zero is why the structural guard below exists, and why the search moved out of lib |
+| Q | A fresh, unreported tree per finding (`path = modules_map \|> DependencyTree.build(tree.start) \|> DependencyTree.path(forbidden_module)`) | 0 at 22c1c82; 1 at dd98c9a | at 22c1c82 a measured zero: the guard then read `function_references/1` `calls`, one line per function called, so the second `DependencyTree.build/2` site did not show. Fixed in dd98c9a (every call site, `by_owner_sites`); there: `code:  assert [{{DependencyTree, :build, 2}, line}] = searches` `right: [{{Anchor.Domain.DependencyTree, :build, 2}, 105}, {{Anchor.Domain.DependencyTree, :build, 2}, 146}]` (rejoined from ExUnit's wrapped lines) |
+| R | A reachability walk per finding, result unused (`_reach = DependencyAnalyzer.find_transitive_dependencies(modules_map, tree.start)`) | 1, at 22c1c82 and at dd98c9a | the guard: `right: [{{Anchor.Domain.DependencyAnalyzer, :find_transitive_dependencies, 2}, 146}, {{Anchor.Domain.DependencyTree, :build, 2}, 105}]` (rejoined) |
+| H | One more walk per finding, reported (`[{findings, tree} \| Enum.map(findings, fn _f -> {[], DependencyTree.build(modules_map, module)} end)]`) | 5 | the three Lint walk rows, e.g. `code:  assert walks == [MyApp.A, MyApp.A, MyApp.A]` `left:  [MyApp.A, MyApp.A, MyApp.A, MyApp.A, MyApp.A, MyApp.A, MyApp.A,` [excerpt]; the walk-count row; the parity row's `assert old_searched > new_walked` |
+| A | A walk per rule | 1 | `code:  assert Enum.map(walks, &elem(&1, 0)) == TransitiveGraphFixtures.domain_modules()` `left:  [MyApp.Domain.D1, MyApp.Domain.D1, MyApp.Domain.D2, MyApp.Domain.D2,` [excerpt]. The Lint rows stay green: each of their rules forbids both modules, and one rule per call is what A walks per |
+| B | Two walks per module, both reported | 4 | the three Lint walk rows, e.g. `code:  assert walks == [MyApp.A]` `left:  [MyApp.A, MyApp.A]` `right: [MyApp.A]`; the walk-count row |
+| L | Lint hands the detector an empty plain rule set too (its `defp detect(_source_file, _ast, [], _facts, _run_context), do: []` clause removed), in `lib/anchor/managers/lint.ex` | 4 | `code:  assert walks == [MyApp.A]` `left:  [MyApp.A, MyApp.A, MyApp.B]` `right: [MyApp.A]`; 1 + 2 row `left:  [MyApp.A, MyApp.A, MyApp.A, MyApp.B]`; and lint_detector_test.exs "a file no rule selects is not detected" |
+| G | No pattern matches | 4 | as before: the two Gap A rows, the walk-count row, the parity row |
+| K | The fixture shrinks by one service | 2 | `code:  assert map_size(modules_map) == 5000` `left:  4999`; the parity row `code:  assert length(violations) > 5000` `left:  4166` |
+| O1 | The oracle's targeted search remembers only the current branch (`if MapSet.member?(state.visited, current)` -> `if current in reversed_path`), in `test/support/transitive_dependency_oracle.ex` | 3 | `code:  assert {[S, B, D, Forbidden], 5} =` `right: {[S, B, D, Forbidden], 6}`; the dense-layered and unreachable rows |
+| O2 | The oracle's search tries dependencies in reverse order | 7 | `code:  assert {[Root, Bridge, Forbidden], 26} =` `right: {[Root, Bridge, Forbidden], 2}`; every `find_dependency_path/3` order row, both DependencyTree comparison rows, the parity row |
+| O3 | The oracle's search stops counting (`expanded: expanded + 1` -> `expanded: expanded`) | 6 | `code:  assert {nil, 27} = TransitiveDependencyOracle.find_dependency_path(modules_map, Root, Elsewhere)` `right: {nil, 0}`; the four other counting rows; the parity row (`old_searched > new_walked`) |
+
+O1 to O3 are the 2026-11-16 record's mutations A, C and B, re-run on the
+search where it lives now (the oracle, the reference the tree is compared
+with), so the five `find_dependency_path/3` rows of
+no_transitive_dependency_test.exs, listed by the generated run as still
+lacking a red, each have one here: O2 reds four of them and O3 all five.
 
 ## Run 18:27 UTC
 

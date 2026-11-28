@@ -9,6 +9,17 @@
   (562 tests), at commit b83b24e; each mutation applied alone, then `lib`
   restored with `git checkout`
 
+**Which code these runs describe.** The earlier hand rounds ran on local
+commits made before the branch was squashed (b83b24e, cd3ecfe, ea2e7da), and
+the three generated runs below ("Run 18:27 UTC", "20:16", "23:24") on others
+(c814255, 61e483f, 4c613db; 4c613db had the same tree as eed0b93, an earlier
+delivery candidate). None of those commits is in the delivered history, and
+the code changed after them (the targeted search moved to the oracle, a
+structural guard and a Lint walk-count test were added). The code that
+ships is described by the final round below, run on 22c1c82 (the change) and
+dd98c9a (its guard fix), and by the generated run in
+`glob_pattern-20261128-athena_transitive_reachability_once.md`, made on 22c1c82.
+
 ## Hand mutations
 
 | # | Mutation | Tests failed | Failure string |
@@ -31,6 +42,18 @@ applied alone, then `lib` and `test/support` restored with `git checkout`.
 |---|---|---|---|
 | I | An empty pattern list matches every name (`Enum.any?(regexes, ...)` -> `Enum.all?(regexes, ...)`) | 12 | `test module_pattern_matcher/1 (DND-8208) with no patterns, matches nothing` `Expected false or nil, got true` `code: refute GlobPattern.module_pattern_matcher([]).("Elixir.MyApp.Repo")`; the any-pattern row, the parity row, and nine `no_transitive_dependency` rows (eight in its Domain test, one in its Framework test) whose rules carry no patterns, so every reachable module became a finding |
 | J | The matcher tries no name form (`module_name_forms(module_name) \|> Enum.take(0)`) | 91 | `test module_pattern_matcher/1 (DND-8208) a one-pattern matcher gives each name the documented answer` `code:  assert {name, pattern, GlobPattern.module_pattern_matcher([pattern]).(name)} == {name, pattern, expected}` `left:  {"Elixir.MyApp.Web.Foo", "MyApp.Web.*", false}` `right: {"Elixir.MyApp.Web.Foo", "MyApp.Web.*", true}`; with it every `matches_module_pattern?/2` row and both parity rows |
+
+## Hand mutations, final round (the delivered code)
+
+Suite: `mix test test/anchor/domain/dependency_tree_test.exs test/anchor/domain/checks/ test/anchor/check/no_transitive_dependency_test.exs test/anchor/domain/glob_pattern_test.exs test/anchor/managers/lint_transitive_walks_test.exs test/anchor/managers/lint_test.exs test/anchor/managers/lint_detector_test.exs`
+(602 tests), at commit 22c1c82 unless a row says otherwise; each mutation
+applied alone, then `lib` and `test/support` restored with `git checkout`.
+
+| # | Mutation | Tests failed |
+|---|---|---|
+| F | Only the first pattern is compiled | 1, the any-pattern row |
+| I | An empty pattern list matches every name | 15: "with no patterns, matches nothing" and the rows above |
+| J | The matcher tries no name form | 96: "a one-pattern matcher gives each name the documented answer" and the rows above |
 
 ## Run 18:27 UTC
 
